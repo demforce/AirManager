@@ -17,8 +17,9 @@ shared e2e database (`airmanager`), filled by `prisma/seed-load.ts` to
 stress-test the app at realistic volume. It is **never** created or touched
 by CI (`.github/workflows/ci.yml` never invokes the seed).
 
-To create it from scratch (inside the `postgres` container — there is no
-`psql` and no system Postgres on this host, only the compose container):
+To create it from scratch (inside the `postgres` container — the local
+compose setup has no `psql` and no system Postgres, only the compose
+container):
 
 ```bash
 docker compose exec -T postgres psql -U airmanager -d airmanager -c \
@@ -97,11 +98,16 @@ this story. Raise it with the env var when a deployment can afford more
 connections, subject to:
 
 ```
-DATABASE_POOL_MAX × (number of Node processes serving this DATABASE_URL) <= max_connections - reserved
+DATABASE_POOL_MAX × 2 × (number of Node processes serving this DATABASE_URL) <= max_connections - reserved
 ```
 
-`max_connections` defaults to 100 (`SHOW max_connections`); the pool is
-**per Node process** (multiply by however many `next start`/container
+`max_connections` defaults to 100 (`SHOW max_connections`, `reserved` =
+`superuser_reserved_connections`, 3 by default). The `× 2` is not one pool
+per process: a production build opens it **per Next layer** — route
+handlers and page rendering each instantiate `src/server/db/prisma.ts` in
+their own layer, so one `next start` opens up to 2 × `DATABASE_POOL_MAX`
+connections (measured: 6 client backends at `DATABASE_POOL_MAX=3` under one
+API+page burst; multiply further by however many `next start`/container
 instances point at the same database). This story does not change the
 default or fix the `P2028 Unable to start a transaction in the given time`
 that shows up under contention — see the harness's pool-10-vs-20 comparison
@@ -118,8 +124,14 @@ same tool (rule **[I-a]**, below).
 
 ## 5. Reference numbers (baseline vs. load DB)
 
-Full method in `perf-load-report.md` §1-§2; these are the numbers this
-story's harness reproduced, to compare epic 17's stories against.
+**Baseline audit 2026-09-10, factory Postgres (`shared_buffers` 128 MB /
+`work_mem` 4 MB / `effective_cache_size` 4 GB, `shm_size` 64 MB) — NOT
+comparable to a post-17.1 measurement.** Full method in
+`perf-load-report.md` §1-§2. These numbers were produced by the audit's own
+scratchpad scripts, not by `scripts/perf/` (story 17.1 promoted and fixed
+that harness afterwards — see its Dev Agent Record for what changed). A
+story that diffs its own numbers against this table would credit itself
+with story 17.1's container-tuning gains on top of its own.
 
 | Target | Baseline (e2e DB) p50 | Load DB p50 (quiet run) | Burst of 10 on load DB |
 |---|---|---|---|
@@ -138,9 +150,11 @@ Browser cost at load (`render.mjs`, 1280 px): Overview **43 417 nodes**,
 fps**; Bookings 42 754 nodes / 2 714 ms / 29 fps; Billing 15 202 nodes /
 3 081 ms; Reports 16 158 nodes / 2 703 ms.
 
-The errors above were measured **before** this story's `shm_size`/pool
-work — story 17.1's Dev Agent Record has the after numbers on the same
-targets.
+**Epic 17's actual "before" reference is the post-17.1 run**, produced by
+the committed harness (`PERSON`/`AIRCRAFT` explicit) against the retuned
+container: story 17.1's Dev Agent Record §C (and its Review Record for the
+corrected numbers). Story 17.2 onward measures its own prima/dopo against
+that run, not against the table above.
 
 ## 6. Rule [I-a]
 

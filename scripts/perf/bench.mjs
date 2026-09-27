@@ -18,7 +18,7 @@ import path from 'node:path';
 const BASE = process.env.BASE ?? 'http://localhost:3000';
 const EMAIL = process.env.EMAIL ?? 'admin@airmanager.local';
 const PASSWORD = process.env.PASSWORD;
-const OUT = process.env.OUT ?? path.join(process.env.TMPDIR ?? '/tmp', 'airmanager-perf');
+const OUT = process.env.OUT ?? path.join(process.env.TMPDIR || '/tmp', 'airmanager-perf');
 const DUMP = process.env.DUMP ? path.join(OUT, 'dump') : null;
 const targetsPath = process.argv[2];
 const ITER = Number(process.argv[3] ?? 5);
@@ -157,17 +157,33 @@ async function timeOne(t) {
   return { ms, status: res.status, bytes: buf.byteLength, count, ct: ct.split(';')[0] };
 }
 
-async function main() {
-  await login();
-  const rawTargets = JSON.parse(fs.readFileSync(targetsPath, 'utf8'));
-  const { values, provenance } = await resolvePlaceholders();
+// The six keys `resolvePlaceholders()` always returns (AD-2's table) — used
+// to validate target names BEFORE logging in, so an unknown placeholder
+// exits without sending a single request (AC 3).
+const KNOWN_PLACEHOLDERS = ['{PERSON}', '{AIRCRAFT}', '{TODAY}', '{MONTH_START}', '{WEEK_FROM}', '{WEEK_TO}'];
 
-  // Fail-fast (AD-2): an unresolved placeholder becoming a 404/500 measured
-  // as if it were a real target is worse than not running at all.
+async function main() {
+  const rawTargets = JSON.parse(fs.readFileSync(targetsPath, 'utf8'));
+
+  // Fail-fast (AD-2), before any network call: an unknown placeholder name
+  // is a typo in the target list, not something login or the API resolves.
   for (const t of rawTargets) {
     const unresolved = t.path.match(/\{[A-Z_]+\}/);
-    if (unresolved && !(unresolved[0] in values)) {
+    if (unresolved && !KNOWN_PLACEHOLDERS.includes(unresolved[0])) {
       console.error(`unknown placeholder ${unresolved[0]} in target "${t.name}" (${t.path})`);
+      process.exit(2);
+    }
+  }
+
+  await login();
+  const { values, provenance } = await resolvePlaceholders();
+
+  // A known placeholder resolved to '' (e.g. an empty people/aircraft list)
+  // would silently measure a malformed path (`/api/v1/people//account`)
+  // instead of failing — worse than not running at all (AD-2).
+  for (const [key, value] of Object.entries(values)) {
+    if (value === '' && rawTargets.some((t) => t.path.includes(key))) {
+      console.error(`placeholder ${key} resolved to an empty value (used by at least one target)`);
       process.exit(2);
     }
   }

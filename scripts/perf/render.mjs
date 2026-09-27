@@ -15,7 +15,7 @@
 // list does not cover.
 import { chromium } from '@playwright/test';
 
-const BASE = process.env.BASE ?? 'http://localhost:3001';
+const BASE = process.env.BASE ?? 'http://localhost:3000';
 const EMAIL = process.env.EMAIL ?? 'admin@airmanager.local';
 const PASSWORD = process.env.PASSWORD;
 const WIDTHS = process.argv.slice(2).map(Number).filter((n) => Number.isFinite(n) && n > 0);
@@ -39,13 +39,18 @@ await page.waitForURL(/dashboard/);
 
 console.log('| page | width | nodes | html KB | domInteractive ms | load ms | longTasks | longTaskTotal ms | scroll fps sample |');
 console.log('|---|---|---|---|---|---|---|---|---|');
+// Registered ONCE: Playwright accumulates init scripts on a page, so one
+// per navigation (as it was inside the loop below) re-registers a new
+// PerformanceObserver on every page visited, and each surviving observer
+// keeps pushing into the fresh `window.__lt` on top of the count already
+// there — the k-th page of the run counts every long task k times.
+await page.addInitScript(() => {
+  window.__lt = [];
+  new PerformanceObserver((l) => l.getEntries().forEach((e) => window.__lt.push(e.duration))).observe({ type: 'longtask', buffered: true });
+});
 for (const w of WIDTHS) {
   await page.setViewportSize({ width: w, height: w < 500 ? 812 : 900 });
   for (const p of PAGES) {
-    await page.addInitScript(() => {
-      window.__lt = [];
-      new PerformanceObserver((l) => l.getEntries().forEach((e) => window.__lt.push(e.duration))).observe({ type: 'longtask', buffered: true });
-    });
     await page.goto(BASE + p, { waitUntil: 'load' });
     await page.waitForTimeout(1500);
     const m = await page.evaluate(async () => {

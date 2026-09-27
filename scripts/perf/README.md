@@ -14,7 +14,7 @@ env -u NODE_ENV npm run build   # NODE_ENV from .env breaks `next build` — alw
 set -a; . <(grep -vE '^DATABASE_URL=' .env); set +a
 export DATABASE_URL='postgresql://airmanager:airmanager@localhost:5432/airmanager_load?schema=public'
 export JOBS_SECRET='<a real value, NOT the .env.example placeholder>'   # production NODE_ENV rejects the placeholder at boot
-env -u NODE_ENV npx next start -p 3001   # pick a free port — see docs/operations/load-testing.md for which ports are in use
+env -u NODE_ENV npx next start -p 3001   # pick a free port — check with `ss -ltnp` first
 ```
 
 Reusing an already-running server for a whole series of measurements (rather
@@ -121,7 +121,11 @@ a request for an unresolved path.
 
 ```bash
 set -a && . ./.env && set +a
-LOAD_SEED_TARGET_DB=<db-name-in-DATABASE_URL> npm run seed:load
+# .env's own DATABASE_URL points at the e2e database (`airmanager`) — override
+# it here, do not seed load data into it. See docs/operations/load-testing.md
+# §1 for creating `airmanager_load` from scratch.
+export DATABASE_URL='postgresql://airmanager:airmanager@localhost:5432/airmanager_load?schema=public'
+LOAD_SEED_TARGET_DB=airmanager_load npm run seed:load
 ```
 
 `prisma/seed-load.ts` refuses to run unless `LOAD_SEED_TARGET_DB` names the
@@ -135,23 +139,29 @@ container tuning it exercises: `docs/operations/load-testing.md`.
 The audit that produced this harness also ranked slow statements from the
 Postgres log to find which query dominates a page (story 17.1 AD-10). That
 aggregator is **not** promoted into the repo — it depends on
-`log_min_duration_statement` set by hand, `docker compose logs`, and
-`python3`, four environmental couplings for a one-off question a future
-story can redo in five minutes:
+`log_min_duration_statement` and `log_line_prefix` set by hand, `docker
+compose logs`, and `python3`, four environmental couplings for a one-off
+question a future story can redo in five minutes:
 
 ```bash
-# turn on statement logging for slow queries only, then reset it afterwards
+# turn on statement logging for slow queries only, with the DB name in the
+# log prefix (the container's default `log_line_prefix` is `%m [%p] `, with
+# no `db=%d` — the grep below has nothing to match without this), then
+# reset both afterwards
 docker compose exec -T postgres psql -U airmanager -d airmanager_load \
   -c "ALTER SYSTEM SET log_min_duration_statement = 100;" \
+  -c "ALTER SYSTEM SET log_line_prefix = '%m [%p] db=%d ';" \
   -c "SELECT pg_reload_conf();"
 
+START_TS=$(date -Iseconds)
 # ... run bench.mjs / exercise the app ...
 
 docker compose logs postgres --since "$START_TS" | grep 'db=airmanager_load' | grep 'duration:' > slow.log
 
-# reset when done — do not leave statement logging on
+# reset when done — do not leave statement logging or the prefix change on
 docker compose exec -T postgres psql -U airmanager -d airmanager_load \
   -c "ALTER SYSTEM RESET log_min_duration_statement;" \
+  -c "ALTER SYSTEM RESET log_line_prefix;" \
   -c "SELECT pg_reload_conf();"
 ```
 
