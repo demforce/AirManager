@@ -61,6 +61,10 @@ export type NewBookingFormLabels = {
     EXPIRED_DOCUMENTS: string;
     /** Story 15.4 (ratifica R-15.4-g): already interpolated server-side with the airfield's own window — the settings live on the page, not in this component. */
     BOOKING_OUTSIDE_WINDOW: string;
+    /** Story 16.3 (ops F2): the booked PERSON already has an approved booking over the interval, on any aircraft. */
+    PERSON_BUSY: string;
+    /** Story 16.3 (ops F2): the indicated INSTRUCTOR already has an approved booking over the interval, on any aircraft. */
+    INSTRUCTOR_BUSY: string;
     overlap: string;
     generic: string;
   };
@@ -306,13 +310,16 @@ export function NewBookingForm({
     });
 
     if (!response.ok) {
-      // 409 (overlap) is never conflated with a 422 domain code (Dev Notes).
-      if (response.status === 409) {
-        setFormError(labels.errors.overlap);
-        return;
-      }
       const errorBody = (await response.json().catch(() => null)) as ApiErrorBody | null;
       const code = errorBody?.error?.code;
+      // 409 (overlap) is never conflated with a 422 domain code (Dev Notes).
+      // Story 16.3: the body is read FIRST, because a 409 is no longer always
+      // about the aircraft — a busy person/instructor says so; every other 409
+      // keeps the aircraft message.
+      if (response.status === 409) {
+        setFormError(code === 'PERSON_BUSY' || code === 'INSTRUCTOR_BUSY' ? labels.errors[code] : labels.errors.overlap);
+        return;
+      }
       if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
         // Story AOG-1a, AC 7 (precedente R-15.4-g: a 422 must SAY the
         // constraint it hit). With a date on file the message adds the fermo

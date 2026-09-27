@@ -158,10 +158,18 @@ function reachable(el: HTMLElement): boolean {
  */
 async function createPendingBooking(page: Page, seed: BookingSeed): Promise<string> {
   const id = await createBooking(page, seed);
+  // Story 16.3 (ops F9): NO_SHOW is refused on a booking that has not STARTED
+  // (422 `BOOKING_NOT_STARTED`), so the two hops run with the booking moved to
+  // the same slot YESTERDAY (staff is exempt from `BOOKING_IN_PAST` on a move),
+  // and the booking goes back to its own slot once PENDING: every test below
+  // reads exactly the fixture it read before.
+  const twoDaysMs = 2 * 86_400_000;
+  await moveBooking(page, id, seed.startsAtMs - twoDaysMs, seed.endsAtMs - twoDaysMs);
   for (const to of ['NO_SHOW', 'PENDING'] as const) {
     const response = await page.request.post(`/api/v1/bookings/${id}/transition`, { data: { to } });
     expect(response.status(), `${to}: ${await response.text()}`).toBe(200);
   }
+  await moveBooking(page, id, seed.startsAtMs, seed.endsAtMs);
   return id;
 }
 

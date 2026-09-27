@@ -36,6 +36,9 @@ export type EditBookingFormLabels = {
     EXPIRED_DOCUMENTS: string;
     /** Story 15.4 (ratifica R-15.4-g): already interpolated server-side with the airfield's own window — same message the create form shows. */
     BOOKING_OUTSIDE_WINDOW: string;
+    /** Story 16.3 (ops F2): the booking's person / instructor already has ANOTHER approved booking over the new interval, on any aircraft — the create form's own two strings. */
+    PERSON_BUSY: string;
+    INSTRUCTOR_BUSY: string;
     conflict: string;
     generic: string;
   };
@@ -165,12 +168,14 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
     });
 
     if (!response.ok) {
-      if (response.status === 409) {
-        setFormError(labels.errors.conflict);
-        return;
-      }
       const body = await errorBodyOf(response);
       const code = body?.error?.code;
+      // Story 16.3 — same rule as the create form: a busy person/instructor
+      // says so, every other 409 keeps the existing message.
+      if (response.status === 409) {
+        setFormError(code === 'PERSON_BUSY' || code === 'INSTRUCTOR_BUSY' ? labels.errors[code] : labels.errors.conflict);
+        return;
+      }
       if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
         // Story AOG-1a, AC 7 — same two-template rule as the create form (see
         // `new-booking-form.tsx`): the fermo clause only when a date exists,

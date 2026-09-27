@@ -97,11 +97,22 @@ test.describe('story 15.3 — the pending card declares its own truncation (revi
       createdBookingIds.push(id);
       // An admin-created booking is born APPROVED; these two legal hops reach
       // PENDING with public API calls only (same route `mobile-overview.spec`
-      // documents).
+      // documents). Story 16.3 (ops F9): NO_SHOW is refused before the slot
+      // STARTS, so the hops run with the booking moved to the same slot
+      // YESTERDAY, and it goes back to its own slot once PENDING — the card
+      // measured below lists exactly the rows it listed before.
+      const slot = { startsAt: new Date(startsAt).toISOString(), endsAt: new Date(startsAt + 25 * 60_000).toISOString() };
+      const yesterdayStartsAt = startsAt - 2 * 86_400_000;
+      const toYesterday = await page.request.patch(`/api/v1/bookings/${id}`, {
+        data: { startsAt: new Date(yesterdayStartsAt).toISOString(), endsAt: new Date(yesterdayStartsAt + 25 * 60_000).toISOString() },
+      });
+      expect(toYesterday.status(), await toYesterday.text()).toBe(200);
       for (const to of ['NO_SHOW', 'PENDING'] as const) {
         const transition = await page.request.post(`/api/v1/bookings/${id}/transition`, { data: { to } });
         expect(transition.status(), `${to}: ${await transition.text()}`).toBe(200);
       }
+      const back = await page.request.patch(`/api/v1/bookings/${id}`, { data: slot });
+      expect(back.status(), await back.text()).toBe(200);
     }
 
     await page.setViewportSize(PHONE);

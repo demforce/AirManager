@@ -434,11 +434,23 @@ test.describe('story 15.4 — pianificazione mobile', () => {
       endsAt: `${tomorrow}T09:00:00.000Z`,
     });
     // Staff-created bookings are APPROVED; reopen one to PENDING to get the
-    // approve/reject pair in the sheet.
+    // approve/reject pair in the sheet. Story 16.3 (ops F9): FLOWN is refused
+    // before the slot STARTS, so the booking takes the same slot YESTERDAY for
+    // the two hops and then returns to its own — the sheet geometry asserted
+    // below reads exactly the fixture it read before.
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const toYesterday = await page.request.patch(`/api/v1/bookings/${approved}`, {
+      data: { startsAt: `${yesterday}T08:00:00.000Z`, endsAt: `${yesterday}T09:00:00.000Z` },
+    });
+    expect(toYesterday.status(), await toYesterday.text()).toBe(200);
     const reopen = await page.request.post(`/api/v1/bookings/${approved}/transition`, { data: { to: 'FLOWN' } });
     expect(reopen.status()).toBe(200);
     const backToPending = await page.request.post(`/api/v1/bookings/${approved}/transition`, { data: { to: 'PENDING' } });
     expect(backToPending.status()).toBe(200);
+    const backToTomorrow = await page.request.patch(`/api/v1/bookings/${approved}`, {
+      data: { startsAt: `${tomorrow}T08:00:00.000Z`, endsAt: `${tomorrow}T09:00:00.000Z` },
+    });
+    expect(backToTomorrow.status(), await backToTomorrow.text()).toBe(200);
 
     await page.setViewportSize(PHONE);
     const card = await findMobileCard(page, pilot.lastName);

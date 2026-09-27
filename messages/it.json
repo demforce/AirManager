@@ -1650,6 +1650,8 @@
         "EXPIRED_DOCUMENTS": "Impossibile creare la prenotazione: risultano scaduti i seguenti documenti: {documents}.",
         "BOOKING_OUTSIDE_WINDOW": "Orario fuori dalla finestra di prenotazione ({window}).",
         "overlap": "Il velivolo è già prenotato per un intervallo che si sovrappone a questo.",
+        "PERSON_BUSY": "Questa persona ha già una prenotazione approvata che si sovrappone a questo intervallo.",
+        "INSTRUCTOR_BUSY": "L'istruttore indicato ha già una prenotazione approvata che si sovrappone a questo intervallo.",
         "generic": "Impossibile creare la prenotazione. Riprova."
       },
       "schedulingWindow": {
@@ -1722,6 +1724,7 @@
           "BOOKING_DENY_REASON_REQUIRED": "Il motivo del rifiuto è obbligatorio.",
           "EXPIRED_DOCUMENTS": "Impossibile completare l'operazione: risultano scaduti i seguenti documenti: {documents}.",
           "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
+          "BOOKING_NOT_STARTED": "La prenotazione non è ancora iniziata: può essere segnata come effettuata o assente solo dopo l'orario di inizio.",
           "conflict": "Il velivolo è già prenotato per questo intervallo, oppure la prenotazione non è più valida. Ricarica la pagina e riprova.",
           "generic": "Operazione non riuscita. Riprova."
         }

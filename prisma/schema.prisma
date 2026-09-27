@@ -1101,13 +1101,24 @@ model Flight {
 /// the same aircraft where one ends exactly when the other starts are NOT
 /// overlapping — `startsAt`/`endsAt` are full instants (`DateTime`
 /// timestamptz), the first datetime fields in this codebase (wire format
-/// ISO 8601 UTC, AD-8). The concurrency guard against a double booking on
-/// the same aircraft (AC 2) is a `FOR UPDATE` lock on the `Aircraft` row
-/// inside `prisma.$transaction` (`bookings.service.ts#createBooking`, the
-/// exact pattern of `flights.service.ts#registerFlight`) — deliberately NOT
-/// a Postgres exclusion constraint (`btree_gist`): the lock already makes
-/// the pre-check-overlap + insert airtight, and story 7.3 reuses the same
-/// discipline (multi-aircraft lock) for a booking MOVE.
+/// ISO 8601 UTC, AD-8). The overlap invariant has THREE subjects since
+/// story 16.3 (ops F2): the aircraft, the person (`personId`) and the
+/// instructor (`instructorProfileId`) — none of them may hold two APPROVED
+/// bookings over overlapping intervals (409 `CONFLICT` / `PERSON_BUSY` /
+/// `INSTRUCTOR_BUSY`, `bookings.service.ts#findBookingConflict`). The
+/// concurrency guard is a `FOR UPDATE` row lock per subject inside
+/// `prisma.$transaction`, in one global order on every write path —
+/// `Aircraft` (the exact pattern of `flights.service.ts#registerFlight`;
+/// story 7.3 locks N of them `ORDER BY id` for a MOVE) → `Person` →
+/// `InstructorProfile` — which makes the pre-check-overlap + write airtight.
+/// Deliberately NOT a Postgres exclusion constraint (`btree_gist`), a choice
+/// first made with one subject and RE-EVALUATED with three in story 16.3:
+/// it would take three partial constraints on `status = 'APPROVED'` (raw
+/// migration + extension) that the load DB already violates (18 person + 11
+/// instructor pairs measured), its `23P01` would have to be told apart by
+/// constraint NAME to pick the 409 code, and it would not remove the
+/// `Aircraft` lock, which also guards the aircraft's STATE read. If the DB is
+/// ever to become the arbiter, this is where to reopen the question.
 ///
 /// **Soft-cancel, never delete** (story 7.3, same `FlightStatus` pattern as
 /// `Flight`): cancelling flips `status` to `CANCELLED`
@@ -1210,12 +1221,17 @@ model Booking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// Backs both the overlap scan (`aircraftId` + range on `startsAt`) and
-  /// the calendar view (story 7.2). No separate `@@index([status])`:
-  /// every query already filters on `aircraftId`/`startsAt` (this index) or
-  /// scans the whole (small) active set — `status` alone would not narrow
-  /// either access path enough to earn its own index (doc-comment per
-  /// story 7.3's Task 1, deliberately omitted).
+  /// Backs both the AIRCRAFT overlap scan (`aircraftId` + range on
+  /// `startsAt`) and the calendar view (story 7.2). The PERSON and
+  /// INSTRUCTOR overlap scans (story 16.3) are served by the two plain
+  /// indexes below — measured on the 40 000-booking load DB: a bitmap index
+  /// scan on `Booking_personId_idx`, 0.17 ms, at most 25 bookings per person
+  /// and 31 per instructor — so neither needed a composite index. No
+  /// separate `@@index([status])`: every query already filters on
+  /// `aircraftId`/`startsAt`, `personId` or `instructorProfileId`, or scans
+  /// the whole (small) active set — `status` alone would not narrow any
+  /// access path enough to earn its own index (doc-comment per story 7.3's
+  /// Task 1, deliberately omitted).
   @@index([aircraftId, startsAt])
   @@index([personId])
   @@index([instructorProfileId])

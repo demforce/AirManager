@@ -282,7 +282,19 @@ async function registerExpiry(page: Page, personId: string, expiryTypeId: string
   expect(response.status()).toBe(201);
 }
 
-/** Far enough in the future to never collide with "today" no matter when this suite runs. */
+/**
+ * Far enough in the future to never collide with "today" no matter when this suite runs.
+ *
+ * Story 16.3: a PERSON (and an instructor) can hold only ONE approved booking
+ * per interval, on any aircraft (409 `PERSON_BUSY`/`INSTRUCTOR_BUSY`) — and a
+ * PENDING booking cannot even be created over a person's approved one. So a
+ * test that leaves an APPROVED booking behind on this fixed day books it for a
+ * run-unique person, NEVER for the seed pilot (`PILOT_EMAIL`): that identity is
+ * shared by every spec and never reset, and its leftover approved slot would
+ * collide with the next run of the same test, or with a parallel test booking
+ * the same band. Every seed-pilot booking in the suite ends PENDING,
+ * CANCELLED, DENIED or FLOWN (api-v1.spec.ts closes its own within the test).
+ */
 const FUTURE_DAY = '2031-03-10';
 
 /**
@@ -301,6 +313,31 @@ function runUniqueFutureDay(): string {
   const date = new Date(base + dayOffsetMs);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+}
+
+/**
+ * Yesterday 07:30Z-08:30Z (story 16.3, ops F9): Effettuato/Assente need a
+ * slot that has STARTED, and nobody can CREATE a booking in the past — staff
+ * moves a future one here instead (a move is exempt from `BOOKING_IN_PAST`
+ * for staff). Always less than 48 h ago, so the row stays in the list
+ * (`listFrom = now - 48h`), and inside every opening window the suite sets
+ * (07:00-21:00 Europe/Rome, both DST offsets).
+ */
+function yesterdaySlot(): { startsAt: string; endsAt: string } {
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  return { startsAt: `${yesterday}T07:30:00.000Z`, endsAt: `${yesterday}T08:30:00.000Z` };
+}
+
+/**
+ * Three days ago, 07:30Z-08:30Z (story 16.3): a started slot for API-only
+ * fixtures, deliberately OUTSIDE the 48 h window every list and the Overview
+ * card read — a booking closed there and left behind never crowds the
+ * soonest-first cards other specs assert on (`home-dashboard.spec.ts`), unlike
+ * `yesterdaySlot()`, which only the UI tests that must SEE the row use.
+ */
+function longPastSlot(): { startsAt: string; endsAt: string } {
+  const day = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+  return { startsAt: `${day}T07:30:00.000Z`, endsAt: `${day}T08:30:00.000Z` };
 }
 
 // Story 7.4: an expiry dated well before FUTURE_DAY — genuinely expired for
@@ -408,9 +445,13 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
   test('pilot books via UI for a future interval; an overlap on an APPROVED booking shows 409 in the form; back-to-back (semi-open) succeeds', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    // Story 16.3: a run-unique pilot, never the seed one — this test leaves an
+    // APPROVED booking behind (see the note at `FUTURE_DAY`).
+    const pilotPassword = `PilotaPrenota${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
 
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
 
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
@@ -441,7 +482,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(approveResponse.status()).toBe(200);
 
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const formAfterApproval = page.getByTestId('new-booking-form');
@@ -1160,9 +1201,13 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
   test('an overlap on a move shows 409 in the Sposta form', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    // Story 16.3: a run-unique pilot, never the seed one — this test leaves an
+    // APPROVED booking behind (see the note at `FUTURE_DAY`).
+    const pilotPassword = `PilotaSposta${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
 
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
 
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
@@ -1197,7 +1242,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     expect(approveResponse.status()).toBe(200);
 
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
     await gotoBookingsAndWaitForHydration(page);
 
     expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
@@ -1632,10 +1677,13 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
    * freshly logged-in pilot creates it, story 12.2 AC 2 — `bookings.manage.own`
    * always starts PENDING), then logs back in as staff and lands on the
    * bookings page. Returns the aircraft (for a run-unique `booking-row`
-   * filter, same convention as every other test in this file) and the row
-   * locator itself.
+   * filter, same convention as every other test in this file), the booking id
+   * (story 16.3: the Effettuato/Assente test moves it into the past) and the
+   * row locator itself.
    */
-  async function setupPendingBookingAsStaff(page: Page): Promise<{ aircraft: { id: string; registration: string }; row: ReturnType<Page['getByTestId']> }> {
+  async function setupPendingBookingAsStaff(
+    page: Page,
+  ): Promise<{ aircraft: { id: string; registration: string }; bookingId: string; row: ReturnType<Page['getByTestId']> }> {
     // Review 12.3 F5: this helper can run TWICE in the same test (e.g. the
     // Effettuato/Assente test below) — without clearing cookies first, the
     // SECOND call's `loginExpectingDashboard(ADMIN_EMAIL)` hits `/it/login`
@@ -1654,12 +1702,19 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
       data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` },
     });
     expect(response.status()).toBe(201);
+    const { booking } = (await response.json()) as { booking: { id: string } };
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toContainText('In attesa');
-    return { aircraft, row };
+    return { aircraft, bookingId: booking.id, row };
+  }
+
+  /** Story 16.3 (ops F9): staff moves a booking to `yesterdaySlot()` — Effettuato/Assente are refused (422 `BOOKING_NOT_STARTED`) on a booking that has not started yet. */
+  async function moveIntoThePast(page: Page, bookingId: string): Promise<void> {
+    const response = await page.request.patch(`/api/v1/bookings/${bookingId}`, { data: yesterdaySlot() });
+    expect(response.status(), await response.text()).toBe(200);
   }
 
   test('staff approves a PENDING booking: badge changes, decisional actions gone, Effettuato/Assente/Annulla appear', async ({ page }) => {
@@ -1725,7 +1780,13 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     // (`router.refresh()` re-fetches the SAME `?page=N` the row was found
     // on, but the row's rank — and so its page — can shift meanwhile on a
     // dirty, concurrently-written-to dev DB, see the approve test's comment).
-    const { aircraft: flownAircraft, row: pendingFlownRow } = await setupPendingBookingAsStaff(page);
+    // Story 16.3 (ops F9): each booking is moved into the past BEFORE it is
+    // approved (a past booking stays approvable, R-16-b), because Effettuato/
+    // Assente need a slot that has started — then re-located, since the move
+    // changes its rank (and page) in the startsAt-ordered list.
+    const { aircraft: flownAircraft, bookingId: flownBookingId } = await setupPendingBookingAsStaff(page);
+    await moveIntoThePast(page, flownBookingId);
+    const pendingFlownRow = await findBookingRow(page, flownAircraft.registration);
     await pendingFlownRow.getByTestId('booking-approve-action').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione approvata.' })).toBeVisible();
 
@@ -1740,7 +1801,9 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     await expect(flownRow.getByTestId('booking-cancel-action')).toHaveCount(0);
     await expect(flownRow.getByTestId('booking-reopen-action')).toBeVisible();
 
-    const { aircraft: noShowAircraft, row: pendingNoShowRow } = await setupPendingBookingAsStaff(page);
+    const { aircraft: noShowAircraft, bookingId: noShowBookingId } = await setupPendingBookingAsStaff(page);
+    await moveIntoThePast(page, noShowBookingId);
+    const pendingNoShowRow = await findBookingRow(page, noShowAircraft.registration);
     await pendingNoShowRow.getByTestId('booking-approve-action').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione approvata.' })).toBeVisible();
 
@@ -1753,6 +1816,16 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     await expect(noShowRow).toContainText('Assente');
     await expect(noShowRow.getByTestId('booking-noshow-action')).toHaveCount(0);
     await expect(noShowRow.getByTestId('booking-reopen-action')).toBeVisible();
+
+    // Story 16.3 — cleanup, not an assertion: both bookings go back to their
+    // own FUTURE_DAY slot ("riapri", then a move), so no closed booking is left
+    // inside the 48 h window the Overview card lists soonest-first
+    // (`home-dashboard.spec.ts` asserts on its first page).
+    for (const bookingId of [flownBookingId, noShowBookingId]) {
+      expect((await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'PENDING' } })).status()).toBe(200);
+      const back = await page.request.patch(`/api/v1/bookings/${bookingId}`, { data: { startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` } });
+      expect(back.status(), await back.text()).toBe(200);
+    }
   });
 
   test('own-path pilot sees only Modifica/Annulla on their own PENDING booking, no decisional actions, and a PENDING row on another pilot\'s booking has no actions at all', async ({
@@ -1830,9 +1903,13 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
     });
     expect(otherBookingResponse.status()).toBe(201);
 
-    // The seed PILOT books their OWN slot (own-path -> PENDING), then admin approves it.
+    // The PILOT books their OWN slot (own-path -> PENDING), then admin
+    // approves it. Story 16.3: a run-unique pilot, never the seed one — the
+    // APPROVED booking stays behind (see the note at `FUTURE_DAY`).
+    const pilotPassword = `PilotaPrivacy${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
     const me = await (await page.request.get('/api/v1/me')).json();
     const ownBookingResponse = await page.request.post('/api/v1/bookings', {
       data: { aircraftId: aircraftMine.id, personId: me.person.id, startsAt: `${FUTURE_DAY}T06:00:00.000Z`, endsAt: `${FUTURE_DAY}T07:00:00.000Z` },
@@ -1847,7 +1924,7 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
 
     // --- Pilot: schedule (day view) ---------------------------------------
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
     await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
 
     const ownScheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraftMine.registration });
@@ -1942,5 +2019,221 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
     const pilotCellValue = sheet.getRow(2).getCell(2).value;
     expect(pilotCellValue).toBe('Occupato');
     expect(String(pilotCellValue)).not.toContain(otherPilot.lastName);
+  });
+});
+
+test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16-a/R-16-b)', () => {
+  // Every subject below is run-unique — aircraft, pilots, instructor. The
+  // person/instructor overlap guard keys on the person across EVERY aircraft,
+  // so a shared identity (the seed pilot) would couple these tests to every
+  // other spec running under `fullyParallel`, and to their leftovers.
+
+  /** A run-unique instructor PERSON (no login) and its `InstructorProfile.id`, read back from the one admin write that returns it — an hourly rate, harmless on an instructor nobody else uses. */
+  async function createInstructorProfileId(page: Page): Promise<string> {
+    const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Istruttore', lastName: `Occupato-${uniqueSuffix()}` } });
+    expect(personResponse.status()).toBe(201);
+    const person = (await personResponse.json()) as { id: string };
+    const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: { ratings: 'FI(A)' } });
+    expect(profileResponse.status()).toBe(200);
+    const rateResponse = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, { data: { priceCentsPerHour: 3000, validFrom: '2020-01-01' } });
+    expect(rateResponse.status()).toBe(201);
+    return ((await rateResponse.json()) as { instructorProfileId: string }).instructorProfileId;
+  }
+
+  async function postBooking(page: Page, data: { aircraftId: string; personId: string; instructorProfileId?: string; startsAt: string; endsAt: string }) {
+    return page.request.post('/api/v1/bookings', { data });
+  }
+
+  // A day of its own, one week AFTER `FUTURE_DAY`: nothing here reads the
+  // paginated list, and a row inserted on a LATER day never shifts the rank
+  // (and the page) of the `FUTURE_DAY` rows other tests re-read after a
+  // `router.refresh()`. Fixed rather than `runUniqueFutureDay()`: those 2040+
+  // days fall beyond the `sched.maxAdvanceDays` (3650) the settings specs
+  // leave behind on a used DB. Every subject is run-unique, so reruns on the
+  // same day never collide.
+  const DAY = '2031-03-17';
+  const at = (hhmm: string): string => `${DAY}T${hhmm}:00.000Z`;
+
+  test('PERSON_BUSY: the same person already APPROVED elsewhere blocks a create and a move on ANY aircraft, naming the conflicting booking; touching intervals do not overlap; with the aircraft ALSO busy the aircraft 409 wins, unchanged', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftA = await createAircraft(page);
+    const aircraftB = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+
+    const first = await postBooking(page, { aircraftId: aircraftA.id, personId: pilot.personId, startsAt: at('09:00'), endsAt: at('10:00') });
+    expect(first.status()).toBe(201);
+    const { booking: approved } = (await first.json()) as { booking: { id: string; status: string } };
+    expect(approved.status).toBe('APPROVED');
+    const personBusy = {
+      code: 'PERSON_BUSY',
+      message: 'This person already has an approved booking for an overlapping interval.',
+      details: { bookingId: approved.id, startsAt: at('09:00'), endsAt: at('10:00') },
+    };
+
+    // A different, FREE aircraft over an overlapping interval.
+    const onOtherAircraft = await postBooking(page, { aircraftId: aircraftB.id, personId: pilot.personId, startsAt: at('09:30'), endsAt: at('10:30') });
+    expect(onOtherAircraft.status()).toBe(409);
+    expect(((await onOtherAircraft.json()) as { error: unknown }).error).toEqual(personBusy);
+
+    // Semi-open `[startsAt, endsAt)`: starting exactly when the first ends is no overlap.
+    const touching = await postBooking(page, { aircraftId: aircraftB.id, personId: pilot.personId, startsAt: at('10:00'), endsAt: at('11:00') });
+    expect(touching.status()).toBe(201);
+    const { booking: second } = (await touching.json()) as { booking: { id: string } };
+
+    // A MOVE onto the busy interval answers the same 409.
+    const move = await page.request.patch(`/api/v1/bookings/${second.id}`, { data: { startsAt: at('09:30'), endsAt: at('10:30') } });
+    expect(move.status()).toBe(409);
+    expect(((await move.json()) as { error: unknown }).error).toEqual(personBusy);
+
+    // The aircraft AND the person busy: the aircraft 409 comes first and is
+    // byte-identical to the pre-story one — no `details` (that booking could
+    // be anyone's, AD-3).
+    const both = await postBooking(page, { aircraftId: aircraftA.id, personId: pilot.personId, startsAt: at('09:30'), endsAt: at('10:30') });
+    expect(both.status()).toBe(409);
+    expect(((await both.json()) as { error: unknown }).error).toEqual({ code: 'CONFLICT', message: 'This aircraft is already booked for an overlapping interval.' });
+  });
+
+  test('two PARALLEL approvals of one person\'s overlapping PENDING bookings on two different aircraft yield exactly one 200 and one 409 PERSON_BUSY (the Person row lock, AC 5)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftA = await createAircraft(page);
+    const aircraftB = await createAircraft(page);
+    const pilotPassword = `PilotaOccupato${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
+    const bookingIds: string[] = [];
+    for (const aircraft of [aircraftA, aircraftB]) {
+      const response = await postBooking(page, { aircraftId: aircraft.id, personId: pilot.personId, startsAt: at('09:00'), endsAt: at('10:00') });
+      // Two PENDING bookings of one person over one interval coexist by
+      // design: only an APPROVED booking occupies a slot, on every subject.
+      expect(response.status()).toBe(201);
+      const { booking } = (await response.json()) as { booking: { id: string; status: string } };
+      expect(booking.status).toBe('PENDING');
+      bookingIds.push(booking.id);
+    }
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const responses = await Promise.all(bookingIds.map((id) => page.request.post(`/api/v1/bookings/${id}/transition`, { data: { to: 'APPROVED' } })));
+
+    expect(responses.map((response) => response.status()).sort()).toEqual([200, 409]);
+    const loser = responses.findIndex((response) => response.status() === 409);
+    const loserBody = (await responses[loser]!.json()) as { error: { code: string; details: { bookingId: string } } };
+    expect(loserBody.error.code).toBe('PERSON_BUSY');
+    expect(loserBody.error.details.bookingId).toBe(bookingIds[1 - loser]);
+  });
+
+  test('INSTRUCTOR_BUSY: the same instructor already APPROVED elsewhere blocks an APPROVAL, a create and a move on ANY aircraft, naming the conflicting booking; touching intervals do not overlap', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftA = await createAircraft(page);
+    const aircraftB = await createAircraft(page);
+    const aircraftC = await createAircraft(page);
+    const pilotA = await createPilotPerson(page);
+    const pilotB = await createPilotPerson(page);
+    const pilotC = await createPilotPerson(page);
+    const instructorProfileId = await createInstructorProfileId(page);
+
+    // A PENDING booking WITH this instructor, reached with staff calls only:
+    // staff-created bookings are born APPROVED, and "riapri" (FLOWN -> PENDING)
+    // is the one way back — FLOWN needs a started slot, so the booking takes
+    // a slot three days ago for the two hops and then returns to its own.
+    const pendingResponse = await postBooking(page, { aircraftId: aircraftB.id, personId: pilotB.personId, instructorProfileId, startsAt: at('09:30'), endsAt: at('10:30') });
+    expect(pendingResponse.status()).toBe(201);
+    const { booking: pending } = (await pendingResponse.json()) as { booking: { id: string } };
+    expect((await page.request.patch(`/api/v1/bookings/${pending.id}`, { data: longPastSlot() })).status()).toBe(200);
+    for (const to of ['FLOWN', 'PENDING'] as const) {
+      expect((await page.request.post(`/api/v1/bookings/${pending.id}/transition`, { data: { to } })).status()).toBe(200);
+    }
+    expect((await page.request.patch(`/api/v1/bookings/${pending.id}`, { data: { startsAt: at('09:30'), endsAt: at('10:30') } })).status()).toBe(200);
+
+    // The instructor's APPROVED booking on another aircraft — the PENDING one
+    // above does not stand in its way (only APPROVED occupies a slot).
+    const approvedResponse = await postBooking(page, { aircraftId: aircraftA.id, personId: pilotA.personId, instructorProfileId, startsAt: at('09:00'), endsAt: at('10:00') });
+    expect(approvedResponse.status()).toBe(201);
+    const { booking: approved } = (await approvedResponse.json()) as { booking: { id: string } };
+    const instructorBusy = {
+      code: 'INSTRUCTOR_BUSY',
+      message: 'This instructor already has an approved booking for an overlapping interval.',
+      details: { bookingId: approved.id, startsAt: at('09:00'), endsAt: at('10:00') },
+    };
+
+    // APPROVAL: the booking lock reads the instructor, the predicate sees them busy.
+    const approval = await page.request.post(`/api/v1/bookings/${pending.id}/transition`, { data: { to: 'APPROVED' } });
+    expect(approval.status()).toBe(409);
+    expect(((await approval.json()) as { error: unknown }).error).toEqual(instructorBusy);
+
+    // CREATE on a third, free aircraft, with a third person.
+    const create = await postBooking(page, { aircraftId: aircraftC.id, personId: pilotC.personId, instructorProfileId, startsAt: at('09:45'), endsAt: at('10:15') });
+    expect(create.status()).toBe(409);
+    expect(((await create.json()) as { error: unknown }).error).toEqual(instructorBusy);
+
+    // Touching the instructor's slot is no overlap; a MOVE into it is.
+    const touching = await postBooking(page, { aircraftId: aircraftC.id, personId: pilotC.personId, instructorProfileId, startsAt: at('10:00'), endsAt: at('11:00') });
+    expect(touching.status()).toBe(201);
+    const { booking: movable } = (await touching.json()) as { booking: { id: string } };
+    const move = await page.request.patch(`/api/v1/bookings/${movable.id}`, { data: { startsAt: at('09:45'), endsAt: at('10:45') } });
+    expect(move.status()).toBe(409);
+    expect(((await move.json()) as { error: unknown }).error).toEqual(instructorBusy);
+  });
+
+  test('Effettuato/Assente on a booking that has NOT STARTED answer 422 BOOKING_NOT_STARTED; once its slot has started the same transition works (ops F9, R-16-b)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+    const created = await postBooking(page, { aircraftId: aircraft.id, personId: pilot.personId, startsAt: at('09:00'), endsAt: at('10:00') });
+    expect(created.status()).toBe(201);
+    const { booking } = (await created.json()) as { booking: { id: string } };
+
+    for (const to of ['FLOWN', 'NO_SHOW'] as const) {
+      const response = await page.request.post(`/api/v1/bookings/${booking.id}/transition`, { data: { to } });
+      expect(response.status()).toBe(422);
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe('BOOKING_NOT_STARTED');
+    }
+
+    expect((await page.request.patch(`/api/v1/bookings/${booking.id}`, { data: longPastSlot() })).status()).toBe(200);
+    const flown = await page.request.post(`/api/v1/bookings/${booking.id}/transition`, { data: { to: 'FLOWN' } });
+    expect(flown.status()).toBe(200);
+    expect(((await flown.json()) as { status: string }).status).toBe('FLOWN');
+  });
+
+  test('the create form names the busy PERSON on a person-only conflict, and keeps the aircraft message when the aircraft is busy too (AD-7)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftA = await createAircraft(page);
+    const aircraftB = await createAircraft(page);
+    // Alphabetically early, so the staff picker renders it whatever the DB holds (see `createPilotPerson`).
+    const pilot = await createPilotPerson(page, '0Pilota');
+
+    // 06:30-12:00Z: wide enough that the form's LOCAL 09:00-10:00 below
+    // overlaps it in UTC (CI) and in Europe/Rome (this machine) alike, in
+    // either DST offset of the run-unique day.
+    const approved = await postBooking(page, { aircraftId: aircraftA.id, personId: pilot.personId, startsAt: at('06:30'), endsAt: at('12:00') });
+    expect(approved.status()).toBe(201);
+
+    await gotoBookingsAndWaitForHydration(page);
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    await form.getByLabel('Velivolo').selectOption({ label: aircraftA.registration });
+    await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await form.getByLabel('Inizio').fill(`${DAY}T09:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${DAY}T10:00`);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+    // Same aircraft AND same person: the aircraft message, as before the story.
+    await expect(page.getByTestId('booking-form-error')).toContainText('Il velivolo è già prenotato');
+
+    await form.getByLabel('Velivolo').selectOption({ label: aircraftB.registration });
+    await form.getByRole('button', { name: 'Prenota' }).click();
+    // A free aircraft: the PERSON is what is busy, and the form says so.
+    const error = page.getByTestId('booking-form-error');
+    await expect(error).toContainText('Questa persona ha già una prenotazione approvata che si sovrappone a questo intervallo.');
+    await expect(error).not.toContainText('velivolo');
   });
 });

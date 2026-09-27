@@ -31,6 +31,11 @@ export type BookingTransitionErrorLabels = {
   EXPIRED_DOCUMENTS: string;
   /** `{reason}` placeholder, client-filled. */
   AIRCRAFT_OUT_OF_SERVICE: string;
+  /** Story 16.3 (ops F9): FLOWN/NO_SHOW on a booking whose slot has not started yet. */
+  BOOKING_NOT_STARTED: string;
+  /** Story 16.3 (ops F2): the two 409s that are NOT about this booking's row — another booking of the same person/instructor overlaps. */
+  PERSON_BUSY: string;
+  INSTRUCTOR_BUSY: string;
   conflict: string;
   generic: string;
 };
@@ -55,6 +60,10 @@ export function bookingErrorMessage(code: string | undefined, body: BookingApiEr
     }
     case 'AIRCRAFT_OUT_OF_SERVICE':
       return labels.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', body?.error?.details?.reason ?? '');
+    case 'BOOKING_NOT_STARTED':
+      // Story 16.3: without this case the 422 fell to "Riprova", which is the
+      // one thing that cannot work until the slot starts (lesson R-15.4-g).
+      return labels.BOOKING_NOT_STARTED;
     default:
       return labels.generic;
   }
@@ -64,7 +73,8 @@ export type BookingTransitionOutcome =
   | { ok: true }
   /**
    * `conflict` is the 409 — which on THIS endpoint means slot overlap or an
-   * archived aircraft, exactly what `labels.conflict` describes.
+   * archived aircraft, exactly what `labels.conflict` describes, or (story
+   * 16.3) the booking's person/instructor busy on ANOTHER booking.
    *
    * `stale` is the broader question a caller actually asks ("is the row on my
    * screen still real?"), and review 15.3 F2 measured that the two are not the
@@ -97,10 +107,17 @@ export async function postBookingTransition(
   });
 
   if (response.ok) return { ok: true };
-  if (response.status === 409) return { ok: false, conflict: true, stale: true, message: labels.conflict };
 
   const body = await readBookingApiError(response);
   const code = body?.error?.code;
+  if (response.status === 409) {
+    // Story 16.3: `PERSON_BUSY`/`INSTRUCTOR_BUSY` say that ANOTHER booking of
+    // the same person/instructor is in the way — the row on screen is alive,
+    // so it is NOT stale (closing and refreshing over it is review 15.3 F2's
+    // mistake again). Every other 409 keeps today's answer, byte for byte.
+    if (code === 'PERSON_BUSY' || code === 'INSTRUCTOR_BUSY') return { ok: false, conflict: true, stale: false, message: labels[code] };
+    return { ok: false, conflict: true, stale: true, message: labels.conflict };
+  }
   return {
     ok: false,
     conflict: false,

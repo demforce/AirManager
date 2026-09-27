@@ -129,8 +129,23 @@ function futureInterval(): { startsAt: string; endsAt: string } {
   return { startsAt: start.toISOString(), endsAt: end.toISOString() };
 }
 
+/**
+ * Three days ago, 07:30Z-08:30Z (story 16.3, ops F9): a booking is closed as
+ * FLOWN only once its slot has STARTED, and nobody can CREATE one in the past —
+ * so the fixture is created in the future and moved here by staff (exempt from
+ * `BOOKING_IN_PAST` on a move). Deliberately OUTSIDE the 48 h window every
+ * list and the Overview card read (`listFrom = now - 48h`): the closed booking
+ * stays behind, and inside that window it would crowd the soonest-first cards
+ * other specs assert on (`home-dashboard.spec.ts`). Inside every opening window
+ * the suite sets (07:00-21:00 Europe/Rome, both DST offsets).
+ */
+function longPastInterval(): { startsAt: string; endsAt: string } {
+  const day = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+  return { startsAt: `${day}T07:30:00.000Z`, endsAt: `${day}T08:30:00.000Z` };
+}
+
 test.describe('Booking approval workflow — API (Story 12.2)', () => {
-  test('pilot creates a self-booking (PENDING); staff approves it (re-checking create-time rules) then marks it FLOWN', async ({ page }) => {
+  test('pilot creates a self-booking (PENDING); staff moves it into the past, approves it (re-checking create-time rules, R-16-b: a past booking stays approvable) then marks it FLOWN', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
 
@@ -156,6 +171,12 @@ test.describe('Booking approval workflow — API (Story 12.2)', () => {
     // Staff approves (AC 3): re-runs the create-time checks and stamps decidedAt/decidedByUserId.
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    // Story 16.3 (ops F9): FLOWN needs a slot that has STARTED — staff moves
+    // the booking into the past first, so the approval below also proves,
+    // end to end, that a past booking stays approvable (ratifica R-16-b).
+    const moveResponse = await page.request.patch(`/api/v1/bookings/${bookingId}`, { data: longPastInterval() });
+    expect(moveResponse.status(), await moveResponse.text()).toBe(200);
 
     const approveResponse = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'APPROVED' } });
     expect(approveResponse.status()).toBe(200);

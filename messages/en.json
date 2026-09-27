@@ -1650,6 +1650,8 @@
         "EXPIRED_DOCUMENTS": "Cannot create this booking: the following documents are expired: {documents}.",
         "BOOKING_OUTSIDE_WINDOW": "This time falls outside the booking window ({window}).",
         "overlap": "The aircraft is already booked for an overlapping interval.",
+        "PERSON_BUSY": "This person already has an approved booking overlapping this interval.",
+        "INSTRUCTOR_BUSY": "The selected instructor already has an approved booking overlapping this interval.",
         "generic": "Could not create the booking. Please try again."
       },
       "schedulingWindow": {
@@ -1722,6 +1724,7 @@
           "BOOKING_DENY_REASON_REQUIRED": "A reason is required to reject this booking.",
           "EXPIRED_DOCUMENTS": "Cannot complete this operation: the following documents are expired: {documents}.",
           "AIRCRAFT_OUT_OF_SERVICE": "The aircraft is out of service: {reason}.",
+          "BOOKING_NOT_STARTED": "This booking has not started yet: it can only be marked as flown or no-show after its start time.",
           "conflict": "The aircraft is already booked for that interval, or this booking is no longer valid. Reload the page and try again.",
           "generic": "The operation failed. Please try again."
         }
