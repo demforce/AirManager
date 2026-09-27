@@ -63,11 +63,12 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  * **Concurrency (AC 2; three subjects since story 16.3)**: the overlap
  * invariant has three subjects — the aircraft, the person, the instructor
  * (`findBookingConflict`, the ONE implementation of the three predicates) —
- * and each is serialized by a `SELECT ... FOR UPDATE` row lock inside
- * `prisma.$transaction`, the pattern of `flights.service.ts#registerFlight`.
- * The `Aircraft` lock is the FIRST statement of `createBooking`/
- * `updateBooking` (`transitionBooking` locks its `Booking` row before it):
- * it serializes the writers of the SAME aircraft. The `Person` lock and, when
+ * and each is serialized by a row lock inside `prisma.$transaction`, the
+ * pattern of `flights.service.ts#registerFlight` (`SELECT ... FOR UPDATE` on
+ * the aircraft, `FOR NO KEY UPDATE` on the two people — see
+ * `lockBookingPeople`). The `Aircraft` lock is the FIRST statement of
+ * `createBooking`/`updateBooking` (`transitionBooking` locks its `Booking`
+ * row before it): it serializes the writers of the SAME aircraft. The `Person` lock and, when
  * the booking has one, the `InstructorProfile` lock (`lockBookingPeople`)
  * serialize the writers of the same person/instructor on DIFFERENT aircraft,
  * which the aircraft lock alone never did (ops F2): without them the person
@@ -310,8 +311,8 @@ async function assertActiveInstructorProfile(client: Prisma.TransactionClient, i
 // --- The overlap invariant on its three subjects (story 16.3, ops F2) -------
 
 /**
- * Row locks (`FOR UPDATE`) on the booking's PERSON and, when it has one, its
- * INSTRUCTOR (story 16.3, AD-2) — taken by the three write paths inside their
+ * Row locks on the booking's PERSON and, when it has one, its INSTRUCTOR
+ * (story 16.3, AD-2) — taken by the three write paths inside their
  * transaction, AFTER their `Aircraft` lock(s) and BEFORE
  * {@link findBookingConflict}. The `Aircraft` lock serializes only the writers
  * of the SAME aircraft: two approvals of the same person on two DIFFERENT
@@ -320,11 +321,20 @@ async function assertActiveInstructorProfile(client: Prisma.TransactionClient, i
  * construction (FKs on `Booking`), so there is no 404 to raise: the result is
  * never read, the effect IS the lock — same idiom as the `Account` lock of
  * `accounts.service.ts#recordAdjustment`.
+ *
+ * `FOR NO KEY UPDATE`, not `FOR UPDATE` (decision of the main session,
+ * 2026-09-27): it conflicts with itself, so two booking writers on the same
+ * person/instructor still serialize, but NOT with the `FOR KEY SHARE` every
+ * foreign-key check takes on its parent row. So an insert elsewhere that
+ * references the same person (a flight, an expiry, an account movement) is
+ * never blocked by a booking transaction — and no lock cycle can form with a
+ * transaction whose FK checks visit `InstructorProfile` before `Person`
+ * (today none does, but that order is decided by trigger OIDs, not by code).
  */
 async function lockBookingPeople(tx: Prisma.TransactionClient, personId: string, instructorProfileId: string | null): Promise<void> {
-  await tx.$queryRaw`SELECT "id" FROM "Person" WHERE "id" = ${personId} FOR UPDATE`;
+  await tx.$queryRaw`SELECT "id" FROM "Person" WHERE "id" = ${personId} FOR NO KEY UPDATE`;
   if (instructorProfileId) {
-    await tx.$queryRaw`SELECT "id" FROM "InstructorProfile" WHERE "id" = ${instructorProfileId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT "id" FROM "InstructorProfile" WHERE "id" = ${instructorProfileId} FOR NO KEY UPDATE`;
   }
 }
 

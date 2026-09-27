@@ -1106,11 +1106,13 @@ model Flight {
 /// instructor (`instructorProfileId`) — none of them may hold two APPROVED
 /// bookings over overlapping intervals (409 `CONFLICT` / `PERSON_BUSY` /
 /// `INSTRUCTOR_BUSY`, `bookings.service.ts#findBookingConflict`). The
-/// concurrency guard is a `FOR UPDATE` row lock per subject inside
-/// `prisma.$transaction`, in one global order on every write path —
-/// `Aircraft` (the exact pattern of `flights.service.ts#registerFlight`;
-/// story 7.3 locks N of them `ORDER BY id` for a MOVE) → `Person` →
-/// `InstructorProfile` — which makes the pre-check-overlap + write airtight.
+/// concurrency guard is a row lock per subject inside `prisma.$transaction`,
+/// in one global order on every write path — `Aircraft` `FOR UPDATE` (the
+/// exact pattern of `flights.service.ts#registerFlight`; story 7.3 locks N of
+/// them `ORDER BY id` for a MOVE) → `Person` → `InstructorProfile`, the last
+/// two `FOR NO KEY UPDATE` so that no foreign-key check elsewhere ever waits
+/// on them (`bookings.service.ts#lockBookingPeople`) — which makes the
+/// pre-check-overlap + write airtight.
 /// Deliberately NOT a Postgres exclusion constraint (`btree_gist`), a choice
 /// first made with one subject and RE-EVALUATED with three in story 16.3:
 /// it would take three partial constraints on `status = 'APPROVED'` (raw

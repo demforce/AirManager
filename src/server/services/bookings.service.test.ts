@@ -1227,7 +1227,8 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
 
     // Story 16.3 (AD-2): TWO `$queryRaw` now — every Aircraft row in the ONE
     // ordered query below, then the booking's Person row (no instructor on
-    // this booking, so no third lock).
+    // this booking, so no third lock), `FOR NO KEY UPDATE` (lead decision
+    // 2026-09-27: never blocks a foreign-key check on that person).
     expect(queryRawMock).toHaveBeenCalledTimes(2);
     const [strings, joined] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray, { values: string[] }];
     expect(strings.join('?')).toContain('FOR UPDATE');
@@ -1235,7 +1236,7 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
     expect(strings.join('?')).toContain('ORDER BY');
     expect(joined.values.slice().sort()).toEqual(['aircraft_1', 'aircraft_2']);
     const [personStrings, personId] = queryRawMock.mock.calls[1] as unknown as [TemplateStringsArray, string];
-    expect(personStrings.join('?')).toBe('SELECT "id" FROM "Person" WHERE "id" = ? FOR UPDATE');
+    expect(personStrings.join('?')).toBe('SELECT "id" FROM "Person" WHERE "id" = ? FOR NO KEY UPDATE');
     expect(personId).toBe('person_pilot');
   });
 
@@ -1897,15 +1898,21 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
   });
 
   it.each(['create', 'move', 'approve'] as const)(
-    '%s: Person then InstructorProfile are locked FOR UPDATE, right AFTER the Aircraft lock and BEFORE the first overlap predicate (AC 5, AD-2 global order)',
+    '%s: Person then InstructorProfile are locked (FOR NO KEY UPDATE), right AFTER the Aircraft lock (FOR UPDATE) and BEFORE the first overlap predicate (AC 5, AD-2 global order)',
     async (path) => {
       await runPath(path);
 
       const sqls = rawSqls();
       const lockedTables = sqls.map((sql) => /FROM "(\w+)"/.exec(sql)?.[1]);
       expect(lockedTables).toEqual(path === 'approve' ? ['Booking', 'Aircraft', 'Person', 'InstructorProfile'] : ['Aircraft', 'Person', 'InstructorProfile']);
-      expect(sqls.every((sql) => sql.includes('FOR UPDATE'))).toBe(true);
       const personLock = lockedTables.indexOf('Person');
+      // The pre-existing Booking/Aircraft locks stay FOR UPDATE; the two new
+      // ones are FOR NO KEY UPDATE (lead decision 2026-09-27, `lockBookingPeople`).
+      expect(sqls.slice(0, personLock).every((sql) => /FOR UPDATE$/.test(sql.trim()))).toBe(true);
+      expect(sqls.slice(personLock)).toEqual([
+        'SELECT "id" FROM "Person" WHERE "id" = ? FOR NO KEY UPDATE',
+        'SELECT "id" FROM "InstructorProfile" WHERE "id" = ? FOR NO KEY UPDATE',
+      ]);
       expect(queryRawMock.mock.calls[personLock]![1]).toBe(PATH_PERSON[path]);
       expect(queryRawMock.mock.calls[personLock + 1]![1]).toBe('instr_profile_1');
       const lastLockOrder = queryRawMock.mock.invocationCallOrder[personLock + 1]!;
