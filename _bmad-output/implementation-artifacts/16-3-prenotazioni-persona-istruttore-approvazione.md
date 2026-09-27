@@ -4,7 +4,7 @@ baseline_commit: 738d399
 
 # Story 16.3: Una persona in un posto solo — sovrapposizioni per persona e istruttore, ri-verifica in approvazione, guardia temporale sulle transizioni
 
-Status: **review** — 2026-09-27 (dev su `325b7e5`, commit `4a1ae4d`; era ready-for-dev dal 2026-09-10). **Modello dev**: **Opus 5 xhigh** — la story **scrive codice UI**, e non per scelta: i tre punti in cui il client oggi tratta *ogni* 409 come «il velivolo è già prenotato» sono precisamente ciò che i due codici nuovi rendono **falso** (`new-booking-form.tsx:310`, `edit-booking-form.tsx:168`, `booking-transition.ts:100` — v. AD-7 con le righe esatte). Non c'è layout, non c'è CSS, non c'è componente nuovo: è **branching su codice d'errore + 6 stringhe i18n**, ma la regola utente 2026-07-29 («Opus 5 xhigh se la story scrive codice UI») **non ha una soglia** e questa story la attraversa. Review: **Opus 5 xhigh adversarial**, come sempre.
+Status: **review** — 2026-09-27 (dev su `325b7e5`, commit `4a1ae4d` + `24d4072`; era ready-for-dev dal 2026-09-10). **Modello dev**: **Opus 5 xhigh** — la story **scrive codice UI**, e non per scelta: i tre punti in cui il client oggi tratta *ogni* 409 come «il velivolo è già prenotato» sono precisamente ciò che i due codici nuovi rendono **falso** (`new-booking-form.tsx:310`, `edit-booking-form.tsx:168`, `booking-transition.ts:100` — v. AD-7 con le righe esatte). Non c'è layout, non c'è CSS, non c'è componente nuovo: è **branching su codice d'errore + 6 stringhe i18n**, ma la regola utente 2026-07-29 («Opus 5 xhigh se la story scrive codice UI») **non ha una soglia** e questa story la attraversa. Review: **Opus 5 xhigh adversarial**, come sempre.
 
 > ⚠️ **Baseline**: `738d399`. Ogni `file:riga` di questo file è **misurato su questo HEAD**. Vantaggio verificato: `git diff b7b8d13..HEAD -- src/server/services/bookings.service.ts src/server/services/errors.ts` è **vuoto**, quindi **tutte** le righe citate dall'ops-audit (misurate su `b7b8d13`) valgono ancora **invariate** — `:566`, `:936`, `:1161`, `:1038-1051`, `:1127-1176` sono confermate una per una in §3. Se il dev parte da un HEAD più avanzato, rilegge le righe citate e **corregge questo file** dove sono slittate.
 >
@@ -123,6 +123,8 @@ async function findBookingConflict(
 **Perché il predicato-persona NON passa per l'istruttore, e viceversa.** Un istruttore è anche una persona: la stessa creatura umana può essere `personId` di una prenotazione e `instructorProfileId` di un'altra, e i due predicati **non se ne accorgono**. È un buco **reale e residuo**, e va **dichiarato** (§6, TD 16.3-a): chiuderlo vuol dire un predicato su «l'essere umano» via join `InstructorProfile.personId`, cioè un terzo codice e una domanda al PO su quale dei due nomi mostrare. R-16-a nomina **due** soggetti e **due** codici: la story ne implementa due. Il dev **non** allarga.
 
 ### AD-2 — La corsa si chiude con due **row lock** nuovi (`Person`, `InstructorProfile`), in un ordine globale dichiarato
+
+> 🔁 **EMENDAMENTO — `FOR NO KEY UPDATE` invece di `FOR UPDATE` — decisione tecnica della sessione principale, 2026-09-27** (commit `24d4072`), sui **soli due lock nuovi** (`Person`, `InstructorProfile`); il lock `Aircraft` resta `FOR UPDATE` e il predicato velivolo byte-identico. **Motivazione**: il censimento di questa AD-2 contava solo i `FOR UPDATE` espliciti; ogni `INSERT` in una tabella con FK verso `Person`/`InstructorProfile` prende però `FOR KEY SHARE` sulla riga padre, che **confligge con `FOR UPDATE`** (non con `FOR NO KEY UPDATE`). `FOR NO KEY UPDATE` confligge con se stesso — gli scrittori di prenotazioni della stessa persona/istruttore restano serializzati — ma **non blocca mai un controllo FK** (un volo, una scadenza, un movimento che referenzia la stessa persona), ed elimina per costruzione la classe di deadlock «lock esplicito vs trigger RI» invece di affidarla all'ordine dei trigger (deciso dagli OID, non dal codice). Prove nel Dev Agent Record §A/§B AC 5/§D: probe SQL a due sessioni, unit con la SQL esatta (G16), corsa e2e verde 10/10 e rossa senza il lock (21/24 `[200, 200]`).
 
 **Decisione: opzione A — `SELECT … FOR UPDATE` sulla riga `Person` e, quando presente, sulla riga `InstructorProfile`, dentro la stessa transazione, DOPO il lock (o i lock) `Aircraft` e PRIMA dei tre predicati.**
 
@@ -297,6 +299,7 @@ Identico ad AC 2 su `instructorProfileId`, con lo stesso `details`. Una prenotaz
 Messaggio, codice (`CONFLICT`) e **assenza** di `details` del conflitto-velivolo sono **byte-identici** a oggi nei tre punti. Prove: `bookings.service.test.ts:566-580` (asserzione **esatta** sul `where`) e `:1238-1249`/`:1607-1617` restano verdi **senza modifiche**; `e2e/bookings.spec.ts:429` (`:454` su HEAD `325b7e5`) continua a leggere «già prenotato» su un caso che è **anche** persona-occupata (dimostrazione della precedenza sul vivo).
 
 **AC 5 — La corsa è chiusa, e la prova è parallela (misurato).**
+> 🔁 **EMENDAMENTO (sessione principale, 2026-09-27)**: dove questo AC dice «bloccate `FOR UPDATE`», leggere **`FOR NO KEY UPDATE`** per `Person` e `InstructorProfile` (il lock `Aircraft` resta `FOR UPDATE`) — motivazione in AD-2. Le prove richieste restano le stesse (SQL/ordine dei lock nei unit, corsa e2e `[200, 409]`).
 `Person` e, quando presente, `InstructorProfile` sono bloccate `FOR UPDATE` dentro la transazione, **dopo** i lock `Aircraft` e **prima** dei predicati, nei tre call-site. Prove richieste:
 1. **unit** sull'SQL e sull'ordine: le chiamate `$queryRaw` di ogni percorso contengono `FOR UPDATE` su `"Aircraft"`, poi su `"Person"`, poi su `"InstructorProfile"`; `invocationCallOrder` del lock persona **precede** la prima `booking.findFirst` (stesso idioma di `:553-564`);
 2. **e2e reale, due approvazioni concorrenti**: un pilota (login run-unique) crea **due** prenotazioni PENDING per **sé** sullo **stesso intervallo** e su **due velivoli run-unique diversi** (legale: `PENDING` non blocca, [I-c]); lo staff manda **due `Promise.all` di `POST …/transition {to:'APPROVED'}`** → `statuses.sort()` **`[200, 409]`**, e il 409 ha codice **`PERSON_BUSY`**. Idioma da riusare: `e2e/bookings.spec.ts:1033-1054` (`:1061-1082` su HEAD `325b7e5`). È l'estensione alla persona della PROBE 6 dell'audit (§5.1).
@@ -593,7 +596,7 @@ Nessun ordine contrario esiste: `flights` non blocca mai `Person`/`InstructorPro
 
 ## Dev Agent Record
 
-Dev: subagent `dev-16-3` (Opus 5.5), 2026-09-27. Branch `dev`, HEAD di partenza `325b7e5`; implementazione in **`4a1ae4d`**. Skill seguite: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` + `ui-ux-pro-max` (sul solo testo dei messaggi: niente layout, niente CSS).
+Dev: subagent `dev-16-3` (Opus 5.5), 2026-09-27. Branch `dev`, HEAD di partenza `325b7e5`; implementazione in **`4a1ae4d`** + **`24d4072`** (lock `FOR NO KEY UPDATE`, decisione della sessione principale). Skill seguite: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` + `ui-ux-pro-max` (sul solo testo dei messaggi: niente layout, niente CSS).
 
 ### §A — Verifica della ricognizione sul HEAD corrente
 
@@ -612,13 +615,19 @@ Dev: subagent `dev-16-3` (Opus 5.5), 2026-09-27. Branch `dev`, HEAD di partenza 
 | probe di ricognizione in `/tmp/…/74e5575d…/story-16-3/` | **non esiste più** | i 12 casi sono stati riscritti dai titoli verbatim di AC 12 dentro `bookings.service.test.ts` (id A0…C3 nei titoli) |
 | `prisma.ts` (17.1: `transactionOptions {maxWait 2000, timeout 5000}`, pool esplicito) | nessun impatto | la story aggiunge 1-2 `SELECT … FOR UPDATE` + 1-2 `findFirst` indicizzati per scrittura, ben dentro i 5 s |
 
-**Censimento dei lock allargato ai lock IMPLICITI** (non chiesto da AD-2, trovato in ricognizione e segnalato al lead): ogni `INSERT` in una tabella con FK verso `Person`/`InstructorProfile` prende `FOR KEY SHARE` sulla riga padre, che **confligge** con `FOR UPDATE`. Tabelle con FK verso i due target (misurato su `pg_constraint`): `User`, `PilotProfile`, `StudentProfile`, `InstructorProfile`, `Account`, `HourPackage`, `Flight`, `Expiry`, `Booking` → `Person`; `InstructorRate`, `Flight`, `Booking`, `StudentInstructorAssignment`, `TrainingNote`, `InstructorPayout` → `InstructorProfile`. L'unico scrittore multi-statement che tocca **entrambi** è `Flight` (in `registerFlight`/`correctFlight`, dopo i propri lock `Aircraft → Account`): l'ordine dei suoi trigger RI misurato sul DB e2e è `Aircraft (c_48841) → Person (c_48846) → InstructorProfile (c_48851)`, **lo stesso** dei lock nuovi → nessun ciclo possibile su HEAD. `InstructorPayout` (unica altra transazione, `instructor-compensation.service.ts:484`) tocca solo `InstructorProfile` + `CashMovement`. Alternativa più forte **non** applicata (contraddirebbe il letterale «FOR UPDATE» di AC 5): `FOR NO KEY UPDATE` serializza gli scrittori di prenotazioni identicamente e non blocca mai i controlli FK → nota per la review (§H).
+**Censimento dei lock allargato ai lock IMPLICITI** (non chiesto da AD-2, trovato in ricognizione e segnalato al lead): ogni `INSERT` in una tabella con FK verso `Person`/`InstructorProfile` prende `FOR KEY SHARE` sulla riga padre, che **confligge** con `FOR UPDATE`. Tabelle con FK verso i due target (misurato su `pg_constraint`): `User`, `PilotProfile`, `StudentProfile`, `InstructorProfile`, `Account`, `HourPackage`, `Flight`, `Expiry`, `Booking` → `Person`; `InstructorRate`, `Flight`, `Booking`, `StudentInstructorAssignment`, `TrainingNote`, `InstructorPayout` → `InstructorProfile`. L'unico scrittore multi-statement che tocca **entrambi** è `Flight` (in `registerFlight`/`correctFlight`, dopo i propri lock `Aircraft → Account`): l'ordine dei suoi trigger RI misurato sul DB e2e è `Aircraft (c_48841) → Person (c_48846) → InstructorProfile (c_48851)`, **lo stesso** dei lock nuovi → nessun ciclo possibile su HEAD. `InstructorPayout` (unica altra transazione, `instructor-compensation.service.ts:484`) tocca solo `InstructorProfile` + `CashMovement`. Segnalato al lead in ricognizione → **decisione della sessione principale (2026-09-27): `FOR NO KEY UPDATE` sui due lock nuovi** (commit `24d4072`, emendamento visibile in AD-2/AC 5): serializza gli scrittori di prenotazioni identicamente (confligge con se stesso) e non blocca mai i controlli FK. **Probe SQL a due sessioni** sul DB e2e (`scratchpad/lock-probe.sh`, righe di prova in `ROLLBACK`, residuo 0), sessione A che tiene il lock sulla persona del pilota del seed per 5 s:
+
+| A tiene | B: `INSERT INTO "Expiry"` per la stessa persona (`lock_timeout 2s`) | C: secondo scrittore `SELECT … FOR NO KEY UPDATE` sulla stessa persona |
+|---|---|---|
+| `FOR NO KEY UPDATE` | **passa subito** (`Time: 1.902 ms`) | **bloccato**: `ERROR: canceling statement due to lock timeout` dopo 2002 ms — la serializzazione fra scrittori resta |
+| `FOR UPDATE` (il testo originale di AD-2) | **bloccato** dopo 2017 ms, sul controllo FK stesso: `SQL statement "SELECT 1 FROM ONLY "public"."Person" x WHERE "id" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x"` | bloccato 1778 ms, fino al rilascio di A |
+
 
 `grep -rn 'data-testid\^=' e2e/`: la story **non aggiunge testid** (AD-7), la convenzione `-mobile`/`mobile-` non è in gioco.
 
 ### §B — Riepilogo per AC con le prove
 
-**AC 1 — una funzione, tre predicati, una precedenza, tre call-site.** `findBookingConflict` (`bookings.service.ts:359-394`) + `bookingConflictError` (`:407-415`) + `lockBookingPeople` (`:324-329`). `grep -c findBookingConflict` → **9** righe = 1 definizione (`:359`) + **3 call-site** (`:716` create, `:1090` update, `:1345` transition) + 5 menzioni nei doc-comment. `grep -n "status: 'APPROVED', startsAt: { lt"` → solo `:869` (`listCalendarBookings`, filtro di lettura); l'unico predicato-guardia è `:364` (`const overlapping = { status: 'APPROVED' as const, startsAt: { lt… }, endsAt: { gt… } }`, dentro la funzione). Precedenza: unit `%s: precedence AIRCRAFT -> PERSON -> INSTRUCTOR …` ×3 percorsi (tre conflitti insieme → `CONFLICT`, messaggio velivolo, **nessun** `details`, `findFirst` chiamata **1** volta) + `%s: with the person AND the instructor busy, the person wins` ×3.
+**AC 1 — una funzione, tre predicati, una precedenza, tre call-site.** `findBookingConflict` (`bookings.service.ts:369-404`) + `bookingConflictError` (`:417-425`) + `lockBookingPeople` (`:334-339`) — righe su `24d4072`. `grep -c findBookingConflict` → **9** righe = 1 definizione (`:369`) + **3 call-site** (`:726` create, `:1100` update, `:1355` transition) + 5 menzioni nei doc-comment. `grep -n "status: 'APPROVED', startsAt: { lt"` → solo `:879` (`listCalendarBookings`, filtro di lettura); l'unico predicato-guardia è `:374` (`const overlapping = { status: 'APPROVED' as const, startsAt: { lt… }, endsAt: { gt… } }`, dentro la funzione). Precedenza: unit `%s: precedence AIRCRAFT -> PERSON -> INSTRUCTOR …` ×3 percorsi (tre conflitti insieme → `CONFLICT`, messaggio velivolo, **nessun** `details`, `findFirst` chiamata **1** volta) + `%s: with the person AND the instructor busy, the person wins` ×3.
 
 **AC 2 — `PERSON_BUSY` su creazione, spostamento, approvazione.** Unit A1/A3/A4 (`$probe $path: … 409 PERSON_BUSY naming the conflicting booking`): codice, messaggio, `details` `{ bookingId, startsAt, endsAt }` (ISO a mano, idioma 16.2), niente scritto. PENDING che non blocca e bordi semi-aperti: unit `%s: the person and instructor predicates are EXACTLY the aircraft one re-keyed` (uguaglianza **esatta** su `where`/`orderBy`/`select` → `status: 'APPROVED'`, `lt`/`gt` stretti; un `lte`/`gte` o la perdita di `status` lo fanno rosso). e2e reale: `PERSON_BUSY: … blocks a create and a move on ANY aircraft … touching intervals do not overlap …` (409 su velivolo libero con `details` esatti, 201 sul bordo 10:00, 409 sullo spostamento).
 
@@ -626,13 +635,13 @@ Dev: subagent `dev-16-3` (Opus 5.5), 2026-09-27. Branch `dev`, HEAD di partenza 
 
 **AC 4 — il 409 del velivolo è invariato e vince la precedenza.** `bookings.service.test.ts:566-580`, `:1238-1249`, `:1607-1617` **verdi senza una modifica** (i tre file di test li contengono identici). e2e: `bookings.spec.ts:454` (ora sotto un pilota run-unique, §G) continua a leggere «già prenotato» su un caso aereo+persona; il nuovo e2e PERSON_BUSY asserisce l'envelope **esatto** `{ code: 'CONFLICT', message: 'This aircraft is already booked for an overlapping interval.' }` (nessuna chiave `details`); il nuovo e2e UI mostra «Il velivolo è già prenotato» con aereo+persona occupati.
 
-**AC 5 — la corsa è chiusa (misurato).** (1) unit `%s: Person then InstructorProfile are locked FOR UPDATE, right AFTER the Aircraft lock and BEFORE the first overlap predicate` ×3: tabelle bloccate in ordine esatto `['Aircraft','Person','InstructorProfile']` (transition: `['Booking','Aircraft','Person','InstructorProfile']`), tutte `FOR UPDATE`, valori legati `personId`/`instructorProfileId`, `invocationCallOrder` dell'ultimo lock < primo `findFirst`. (2) e2e `two PARALLEL approvals …` (pilota con login run-unique, due PENDING sullo stesso intervallo su due velivoli run-unique, `Promise.all` di due approvazioni): **`[200, 409]`, il 409 è `PERSON_BUSY` e nomina l'altra**. Misura della discriminanza sul vivo: con la build **senza** il lock `Person` (e il predicato presente) 27 tentativi → **24 `[200, 200]`** (7 failed + 2 flaky su 10 ripetizioni con retry); con la build reale **10/10 passed** (log in §L).
+**AC 5 — la corsa è chiusa (misurato; lock `FOR NO KEY UPDATE` per decisione della sessione principale, §G #11).** (1) unit `%s: Person then InstructorProfile are locked (FOR NO KEY UPDATE), right AFTER the Aircraft lock (FOR UPDATE) and BEFORE the first overlap predicate` ×3: tabelle bloccate in ordine esatto `['Aircraft','Person','InstructorProfile']` (transition: `['Booking','Aircraft','Person','InstructorProfile']`), `Booking`/`Aircraft` `FOR UPDATE`, SQL **esatta** dei due nuovi `… FOR NO KEY UPDATE` (rossa se tornano `FOR UPDATE`, §D G16), valori legati `personId`/`instructorProfileId`, `invocationCallOrder` dell'ultimo lock < primo `findFirst`. (2) e2e `two PARALLEL approvals …` (pilota con login run-unique, due PENDING sullo stesso intervallo su due velivoli run-unique, `Promise.all` di due approvazioni): **`[200, 409]`, il 409 è `PERSON_BUSY` e nomina l'altra**. Misura della discriminanza sul vivo, ripetuta dopo il cambio di modo: build **senza** il lock `Person` → **21/24 tentativi `[200, 200]`** (7 failed + 3 passed su 10 ripetizioni con retry; con `FOR UPDATE` era 24/27); build reale con `FOR NO KEY UPDATE` → **10/10 passed**; sorgente ripristinato a sha `918e9f3b…` prima della build di verifica (log in §L). (3) Probe SQL a due sessioni: un `INSERT` che referenzia la stessa persona **non** è bloccato dal lock, un secondo scrittore sì (§A).
 
 **AC 6 — l'approvazione ri-verifica chi approva, con gli stessi codici di `createBooking`.** Unit B1/B2/B3 eseguono **sia** `createBooking` (staff) **sia** l'approvazione sulla stessa fixture e asseriscono che `[classe, code, message]` sono **uguali** fra i due percorsi e pari a `[ConflictError,'CONFLICT','Cannot book an aircraft for an archived person.']`, `[ValidationError,'PERSON_NOT_BOOKABLE','Person must have an active pilot, student or instructor profile to be booked.']`, `[ConflictError,'CONFLICT','This instructor profile is deactivated.']`. `grep -c` di ciascun messaggio nel file → **1** (un solo `throw` per verdetto, negli helper `assertPersonNotArchived`/`assertPersonHasActiveFlyingProfile`/`assertActiveInstructorProfile`). Precedenza: `precedence: an archived person WITH a blocking expired document answers the 409 archived …` (e `expiry.findMany` **mai** chiamata). Velivolo archiviato: già coperto (`:1600-1605`), invariato.
 
-**AC 7 — approvare nel passato resta permesso, e il commento lo dice.** Unit B4 (pin verde prima e dopo). Doc-comment corretti: modulo (`:43-91`, risoluzione fuori/lock dentro e «Concurrency» sui tre soggetti con l'ordine globale e la rivalutazione `btree_gist`), `transitionBooking` (`:1238-1261`, nomina **R-16-b** e «staff regularize bookings after the fact»), inline nella finestra (`:1321-1324`, «minus the one ratified exception (R-16-b)»), `schema.prisma` (Booking + indice). e2e: `api-v1.spec.ts` «crea futura → sposta nel passato (staff) → approva **200** → FLOWN **200**».
+**AC 7 — approvare nel passato resta permesso, e il commento lo dice.** Unit B4 (pin verde prima e dopo). Doc-comment corretti: modulo (`:43-92`, risoluzione fuori/lock dentro e «Concurrency» sui tre soggetti con l'ordine globale e la rivalutazione `btree_gist`), `transitionBooking` (`:1248-1271`, nomina **R-16-b** e «staff regularize bookings after the fact»), inline nella finestra (`:1331-1334`, «minus the one ratified exception (R-16-b)»), `schema.prisma` (Booking + indice). e2e: `api-v1.spec.ts` «crea futura → sposta nel passato (staff) → approva **200** → FLOWN **200**».
 
-**AC 8 — `FLOWN`/`NO_SHOW` futuro → 422 `BOOKING_NOT_STARTED`.** Guardia a `bookings.service.ts:1294-1299`, dopo `isLegalBookingTransition` e prima del ramo APPROVED, su `existing.startsAt` letto sotto il lock. Unit C1/C2 (2099: il «2027» dell'audit fissato su una data che non invecchia), C3 ×2 (slot **iniziato** → 200 su entrambi), riapri da FLOWN/NO_SHOW/DENIED su futura → 200, coppia illegale su futura → `BOOKING_TRANSITION_INVALID` (la matrice viene prima). e2e `Effettuato/Assente on a booking that has NOT STARTED answer 422 …` (poi, spostata a ieri, FLOWN → 200). Verifica UI: il toast del desktop mostra il messaggio nuovo e la riga resta «Approvato» (§K).
+**AC 8 — `FLOWN`/`NO_SHOW` futuro → 422 `BOOKING_NOT_STARTED`.** Guardia a `bookings.service.ts:1304-1309`, dopo `isLegalBookingTransition` e prima del ramo APPROVED, su `existing.startsAt` letto sotto il lock. Unit C1/C2 (2099: il «2027» dell'audit fissato su una data che non invecchia), C3 ×2 (slot **iniziato** → 200 su entrambi), riapri da FLOWN/NO_SHOW/DENIED su futura → 200, coppia illegale su futura → `BOOKING_TRANSITION_INVALID` (la matrice viene prima). e2e `Effettuato/Assente on a booking that has NOT STARTED answer 422 …` (poi, spostata a ieri, FLOWN → 200). Verifica UI: il toast del desktop mostra il messaggio nuovo e la riga resta «Approvato» (§K).
 
 **AC 9 — `details` sul filo e OpenAPI.** `handler.ts` già inoltra i `details` di `ConflictError` dalla 16.2 (unit esistenti `handler.test.ts:270-313`, rosso al pre-fix: §D G13). `git show --stat 4a1ae4d -- src/lib/schemas/registry.ts` → `1 file changed, 3 insertions(+), 3 deletions(-)`: POST (PERSON_BUSY/INSTRUCTOR_BUSY con la forma dei `details`, precedenza, lock), PATCH (idem sul nuovo intervallo), transition (ri-verifiche F4 nell'ordine di create, PERSON_BUSY/INSTRUCTOR_BUSY, **R-16-b** esplicita, `BOOKING_NOT_STARTED` 422, riapri sempre). `npm run gates` (build incluso) verde.
 
@@ -656,22 +665,22 @@ it-only: 0 en-only: 0
 
 **AC 13 — gate e suite.** §L.
 
-### §C — Censimento `[I-2]` rifatto (predicati di sovrapposizione in `bookings.service.ts`)
+### §C — Censimento `[I-2]` rifatto (predicati di sovrapposizione in `bookings.service.ts`, righe su `24d4072`)
 
 `grep -n "startsAt: { lt\|endsAt: { gt\|startsAt: { lte"`:
 
 | riga | dove | natura |
 |---|---|---|
-| `:364` | `findBookingConflict` — **l'unico** predicato-guardia, condiviso dai tre soggetti (3 `findFirst`: velivolo, persona, istruttore) chiamati dai 3 call-site | **guardia** (prima: 3 copie inline a `:566`, `:936`, `:1161`) |
-| `:789-790` | `listBookings`, filtri `from`/`to` | filtro di lettura |
-| `:869` | `listCalendarBookings` | filtro di lettura |
-| `:1511` | `listReservedAircraftIds` (`lte`/`gt` su `now`) | filtro di lettura |
+| `:374` | `findBookingConflict` — **l'unico** predicato-guardia, condiviso dai tre soggetti (3 `findFirst`: velivolo, persona, istruttore) chiamati dai 3 call-site | **guardia** (prima: 3 copie inline a `:566`, `:936`, `:1161`) |
+| `:799-800` | `listBookings`, filtri `from`/`to` | filtro di lettura |
+| `:879` | `listCalendarBookings` | filtro di lettura |
+| `:1521` | `listReservedAircraftIds` (`lte`/`gt` su `now`) | filtro di lettura |
 
 I filtri di lettura **non sono toccati** (AD-8).
 
 ### §D — Tabella guardia → discriminanza (pre-fix simulato UNA guardia alla volta, repo ripristinato byte-identico)
 
-Harness fuori repo (`scratchpad/discriminance.py`): per ogni riga applica una sola mutazione, esegue `env -u DATABASE_URL -u AUTH_SECRET npx vitest run --reporter=json <file>`, ripristina e **asserisce** lo sha256 identico. sha256 dei file sotto mutazione (= contenuto di `4a1ae4d`): `bookings.service.ts` `4fbe51e74827f101ed591ba14b63dee95887952b03a33f799da3067c1a5a7bf8`, `handler.ts` `f6ec6ba2ed54351ce391a546e61d8fee27c2e38cc2f45a9d3b85f90af421b7ed`, `booking-transition.ts` `9cba07bed02c53cf49ec12dee7e4567239029506fd67ee5b0b53bf18d5bfcfee` — tutti «restored identical».
+Harness fuori repo (`scratchpad/discriminance.py`): per ogni riga applica una sola mutazione, esegue `env -u DATABASE_URL -u AUTH_SECRET npx vitest run --reporter=json <file>`, ripristina e **asserisce** lo sha256 identico. sha256 dei file sotto mutazione: `bookings.service.ts` `4fbe51e74827f101ed591ba14b63dee95887952b03a33f799da3067c1a5a7bf8` (`4a1ae4d`) — **tabella ri-eseguita per intero su `24d4072`** (`918e9f3b98cd3bb0a02eed6af53ae5ff74ba9f934232b96b33d51950ad529e73`, stessi esiti G1-G15 riga per riga, più G16), `handler.ts` `f6ec6ba2ed54351ce391a546e61d8fee27c2e38cc2f45a9d3b85f90af421b7ed`, `booking-transition.ts` `9cba07bed02c53cf49ec12dee7e4567239029506fd67ee5b0b53bf18d5bfcfee` — tutti «restored identical».
 
 | # | pre-fix simulato | esito | test rossi |
 |---|---|---|---|
@@ -679,6 +688,7 @@ Harness fuori repo (`scratchpad/discriminance.py`): per ogni riga applica una so
 | G2 | predicato **istruttore** rimosso | **RED 6/278** | A2, A2m, A2a; `where` esatti ×3 |
 | G3 | lock `Person` rimosso | **RED 4/278** | ordine dei lock ×3; `updateBooking … locks BOTH …` (`$queryRaw` ×2 + `calls[1]` = Person) |
 | G4 | lock `InstructorProfile` rimosso | **RED 3/278** | ordine dei lock ×3 |
+| G16 | i due lock nuovi tornano `FOR UPDATE` (il testo di AD-2 prima della decisione) | **RED 4/278** | ordine/SQL dei lock ×3; `updateBooking … locks BOTH …` (SQL esatta del lock Person) |
 | G5 | lock `Booking` senza `instructorProfileId` | **RED 1/278** | «the Booking row lock reads the booking's instructorProfileId» |
 | G6 | approvazione senza ri-verifica **archiviato** | **RED 2/278** | B1; precedenza archiviato>scadenze |
 | G7 | approvazione senza gate **profilo di volo** | **RED 1/278** | B2 |
@@ -690,7 +700,7 @@ Harness fuori repo (`scratchpad/discriminance.py`): per ogni riga applica una so
 | G13 | `handler.ts` senza `ConflictError` nei `details` (la riga pre-16.2) | **RED 1/42** | `handler.test.ts` «ConflictError … WITH its `details` (story 16.2)» |
 | G14 | UI: `PERSON_BUSY`/`INSTRUCTOR_BUSY` nel 409 generico `stale:true` | **RED 2/4** | `booking-transition.test.ts` ×2 |
 | G15 | UI: nessun `case 'BOOKING_NOT_STARTED'` | **RED 1/4** | `booking-transition.test.ts` «422 BOOKING_NOT_STARTED …» |
-| E1 | **e2e**, build senza lock `Person` | **24/27 tentativi `[200, 200]`** | `two PARALLEL approvals …` (§B AC 5) — sorgente ripristinato a sha `4fbe51e7…` prima della build di verifica, poi build reale 10/10 |
+| E1 | **e2e**, build senza lock `Person` | **21/24 tentativi `[200, 200]`** su `24d4072` (24/27 su `4a1ae4d`) | `two PARALLEL approvals …` (§B AC 5) — sorgente ripristinato a sha `4fbe51e7…` prima della build di verifica, poi build reale 10/10 |
 
 ### §E — Fixture e2e riparate (nessuna asserzione indebolita)
 
@@ -708,6 +718,33 @@ Vincoli rispettati: ieri 07:30Z/08:00Z < 48 h (visibile in lista) solo dove il t
 
 **(B) Il rischio `PERSON_BUSY` fra spec: il censimento della story era incompleto (§G #1).** Guardava solo «una PENDING non blocca»; la direzione opposta — **una CREAZIONE del pilota del seed è bloccata da una sua APPROVED sovrapposta** — rompeva tre test esistenti: `:408` (09:00-10:00 locale), `:1160` (02:00-03:00 locale), `:1808` (06:00-07:00Z) lasciano ciascuno una APPROVED del pilota del seed su `FUTURE_DAY` → **al secondo run sullo stesso DB ognuno collide col proprio residuo** (deterministico); e nello **stesso** run `:1086` crea 02:00-03:00 locale mentre `:1160` tiene 02:00-03:00 locale APPROVED → flake da ordinamento sotto `fullyParallel`. Riparazione: i tre test passano a un **pilota run-unique con login** (`createPilotWithLogin`, già in casa), stessi flussi UI, **ogni asserzione identica** (`:454` «già prenotato», `:1217` «già prenotato», masking: `me` è ora il pilota run-unique). Il commento a `FUTURE_DAY` (`bookings.spec.ts:285-298`) dichiara l'invariante: nessun test lascia il pilota del seed APPROVED. Censimento finale del pilota del seed: `:1086` (PENDING→CANCELLED, poi PENDING), `:1220` (PENDING→CANCELLED), `:1264`/`:1520` (403 prima di ogni query), `:1758` (PENDING), `:1920` (nessuna prenotazione propria), `api-v1` (FLOWN/DENIED nel test), `aircraft-out-of-service-until` (PENDING o 422 `AIRCRAFT_OUT_OF_SERVICE`, che precede il predicato) → **nessuna APPROVED residua**.
 
+**Censimento sull'INTERA suite** (condizione del lead): `grep` di `PILOT_EMAIL`/`pilot@airmanager.local`/`INSTRUCTOR_EMAIL`/`/api/v1/me`/`instructorProfileId`/`transition`/`APPROVED` su ogni `e2e/*.spec.ts` che crea prenotazioni (14 file) + i 10 spec della catena serializzata di `playwright.config.ts`. Righe su `4a1ae4d`:
+
+| spec:riga | uso dell'identità del seed | stato finale | verdetto |
+|---|---|---|---|
+| `bookings.spec.ts:433` (era `:408`) | pilota via UI, poi approvata dallo staff | — | **convertito** (run-unique) |
+| `bookings.spec.ts:1127` (era `:1086`) | pilota del seed: UI 02:00-03:00 locale PENDING → spostata → annullata; ricreata via API 13:00-14:00Z | PENDING / CANCELLED | ok (mai APPROVED) |
+| `bookings.spec.ts:1201` (era `:1160`) | pilota via UI, la prima approvata dallo staff | — | **convertito** |
+| `bookings.spec.ts:1265` (era `:1220`) | pilota del seed, now+4 s, PENDING → annullata dallo staff | CANCELLED | ok |
+| `bookings.spec.ts:1309` (era `:1264`) | pilota del seed su prenotazione altrui | — | **403** |
+| `bookings.spec.ts:1558` (era `:1520`) | `force:true` del pilota del seed | — | **403** prima di ogni query |
+| `bookings.spec.ts:1831` (era `:1758`) | pilota del seed, propria 14:00-15:00Z | PENDING | ok |
+| `bookings.spec.ts:1882` (era `:1808`) | pilota proprio, approvato dallo staff | — | **convertito** |
+| `bookings.spec.ts:1997` (era `:1920`) | export xlsx del pilota del seed, nessuna prenotazione propria | — | nessuna prenotazione |
+| `api-v1.spec.ts:148` | pilota del seed PENDING → spostata a tre giorni fa → APPROVED → FLOWN nello stesso test | FLOWN | ok (APPROVED transitoria su uno slot fuori da ogni banda condivisa) |
+| `api-v1.spec.ts:193` | pilota del seed PENDING → DENIED | DENIED | ok |
+| `aircraft-out-of-service-until.spec.ts:279-340` | pilota del seed: 2 creazioni via UI + 1 EN → **422** `AIRCRAFT_OUT_OF_SERVICE` (controllato prima del predicato persona); 1 via API oggi+120 11:00-12:00Z; spostamento → 422 | PENDING / 422 | ok |
+| `aircraft-out-of-service-until.spec.ts:348` e `:641` | pilota del seed: creazione via UI → 422 / solo viste del registro voli | — | **422** / nessuna prenotazione |
+| `pdf-exports.spec.ts:283`, `:306` | pilota del seed: PDF del proprio estratto conto, 403 sui PDF staff, `GET /bookings/pdf` | — | nessuna prenotazione; le prenotazioni dello spec sono su persone run-unique |
+| `aircraft-management.spec.ts:175/:182` | pilota del seed: solo viste 403; la prenotazione «Riservato» è su una persona run-unique | — | run-unique |
+| `home-dashboard.spec.ts:151/:168/:179` | pilota/allievo/istruttore del seed: solo landing; la prenotazione è su un pilota run-unique | PENDING | run-unique |
+| `mobile-planning.spec.ts`, `mobile-overview.spec.ts` | seed solo per le «facce» per ruolo; tutte le prenotazioni su piloti run-unique | — | run-unique |
+| `aog-impact-email`, `booking-window`, `datetime-picker`, `mobile-a11y-sweep`, `mobile-ink-targets`, `mobile-overview-overflow` | nessuna identità del seed | — | run-unique |
+| catena serializzata (`settings`, `booking-window`, `reports`, `treasury-settings`, `billing-global`, `mobile-metar`, `mobile-overview-overflow`, `mobile-membership-fee`, `mobile-settings`, `aog-overview-count`) | solo `booking-window` e `mobile-overview-overflow` creano prenotazioni, su persone run-unique; `my-account.spec.ts` non ne crea | — | run-unique |
+| **istruttore del seed** (INSTRUCTOR_BUSY) | nessuna prenotazione della suite porta l'`instructorProfileId` dell'istruttore del seed: le sole con istruttore sono `bookings.spec.ts:570` (istruttore run-unique, via UI, PENDING) e il test nuovo INSTRUCTOR_BUSY (istruttore run-unique); l'istruttore del seed fa solo login per le viste | — | nessuna |
+
+Esito: **nessuno spec lascia una prenotazione APPROVED del pilota o dell'istruttore del seed su una banda fissa**; l'invariante è scritta a `FUTURE_DAY` (`bookings.spec.ts:285-298`).
+
 **(C) Test nuovi** (`bookings.spec.ts:2025-2239`, describe «One person in one place», tutti soggetti run-unique, giorno proprio `2031-03-17` — §G #10): PERSON_BUSY (create/move/bordo/precedenza), corsa parallela, INSTRUCTOR_BUSY (approvazione/create/move/bordo; la PENDING con istruttore si ottiene con sole chiamate staff via «riapri» su uno slot di tre giorni fa, l'`instructorProfileId` si legge dalla risposta di `POST …/instructor-rates`), BOOKING_NOT_STARTED, messaggio persona vs velivolo nel form.
 
 ### §F — Conteggi `findFirst` / `$queryRaw` per scrittura, prima e dopo
@@ -720,9 +757,11 @@ Vincoli rispettati: ieri 07:30Z/08:00Z < 48 h (visibile in lista) solo dove il t
 | FLOWN / NO_SHOW / DENIED / riapri | 1 (Booking) · 0 | invariato | invariato |
 | conflitto velivolo trovato | — | 1 `findFirst` (gli altri due non partono) | idem |
 
+**Corsa residua dichiarata (nota del lead)**: la pulizia «riapri + ritorno allo slot» del test Effettuato/Assente (§E riga 2-3) lascia comunque, mentre il test gira (~15-20 s), le sue due prenotazioni chiuse a ieri 07:30Z dentro la finestra 48 h della Panoramica: un `home-dashboard.spec.ts:228` che giri in parallelo in quei secondi può ancora perdere la sua riga. Probabilistica, non deterministica (le suite #2 e i run mirati la mostrano verde); la causa strutturale è TD 16.3-e (§H).
+
 ### §G — Deviazioni motivate
 
-1. **Tre test esistenti spostati su piloti run-unique** (`bookings.spec.ts:408/:1160/:1808` di HEAD) contro «la story non riscrive la suite» — il censimento §3.4 (B) era incompleto (§E (B)). Segnalato al lead prima di procedere; è solo test, stesse asserzioni.
+1. **Tre test esistenti spostati su piloti run-unique** (`bookings.spec.ts:408/:1160/:1808` di HEAD) contro «la story non riscrive la suite» — il censimento §3.4 (B) era incompleto (§E (B)). Segnalato al lead prima di procedere, **approvato dal lead** con la condizione del censimento sull'intera suite (§E (B), fatto); è solo test, stesse asserzioni.
 2. **`orderBy: { startsAt: 'asc' }`** sui predicati persona/istruttore: i `details` nominano la prenotazione in conflitto **più vicina** (stessa regola di `FLIGHT_OVERLAP`, 16.2) invece di una arbitraria; il predicato velivolo resta byte-identico (select `{ id }`, niente `orderBy`).
 3. **`details.startsAt/endsAt` come stringhe ISO scritte a mano** (disciplina 16.2) invece di `Date` lasciate a `NextResponse.json`: identico sul filo.
 4. **`person.findUniqueOrThrow` nell'approvazione** invece di `findUnique`: la FK garantisce la riga; il default dei test diventa un mock **separato** (`personFindUniqueOrThrow` = `ACTIVE_PILOT_PERSON`) invece di riscrivere il default `personFindUnique` dell'email di DENY (§3.5 riga `:238`), che resta intatto.
@@ -732,16 +771,21 @@ Vincoli rispettati: ieri 07:30Z/08:00Z < 48 h (visibile in lista) solo dove il t
 8. Instructor e2e via «riapri» (FLOWN su uno slot spostato a tre giorni fa e ritorno) invece di un login istruttore: nessun flusso Mailpit in più, e l'approvazione con istruttore è provata sul vero DB.
 9. **Slot passati: «ieri» SOLO dove il test deve vedere la riga, «tre giorni fa» per i fixture solo-API** (la story prescriveva «ieri 07:30Z» ovunque). Misurato sulla prima suite completa: le 4 prenotazioni chiuse lasciate a «ieri» (api-v1, Effettuato/Assente ×2, BOOKING_NOT_STARTED) finivano in testa alla card «Prenotazioni» della Panoramica (8 righe da `now - 48h`, `startsAt` crescente) e spingevano fuori pagina la prenotazione di domani di `home-dashboard.spec.ts:228` → **rosso deterministico** (3/3 tentativi). Correzione nel commit d'implementazione (amend, `4d3277c` → `bc8480d`, solo e2e): fixture solo-API a tre giorni fa (fuori da ogni finestra), e il test UI Effettuato/Assente riporta le sue due prenotazioni sul loro slot `FUTURE_DAY` dopo le asserzioni.
 10. **Il describe nuovo vive su un giorno suo, `2031-03-17`** (una settimana DOPO `FUTURE_DAY`), non su `FUTURE_DAY`. Misurato sulla seconda suite completa: flaky `bookings.spec.ts:1127` (il test `:1086`, non toccato: dopo il `router.refresh()` dell'annullamento la riga trovata non è più sulla stessa pagina — classe «rank shift», il test non ri-localizza); le ~12 righe dei test nuovi sulle 09:00-11:00 di `FUTURE_DAY` stavano PRIMA della sua riga e ne alzavano la probabilità. Righe su un giorno successivo non spostano mai il rango di quelle di `FUTURE_DAY`. Non `runUniqueFutureDay()`: i suoi giorni 2040+ superano il `sched.maxAdvanceDays` (3650) che gli spec dei settings lasciano sul DB usato → 422 misurato. Amend `bc8480d` → `4a1ae4d` (solo e2e; sha del service invariato).
+11. **Lock `FOR NO KEY UPDATE` sui due lock nuovi** invece del `FOR UPDATE` di AD-2/AC 5 — **decisione tecnica della sessione principale, 2026-09-27**, in un commit nuovo (`24d4072`, non un amend); emendamento visibile in AD-2 e AC 5; prove: §A (probe SQL), §B AC 5, §D G16/E1.
+12. **Commit**: `4a1ae4d` è il commit d'implementazione emendato due volte (solo e2e, §G #9/#10); dopo l'indicazione del lead («commit nuovi, mai amend») la correzione del lock è un commit a sé (`24d4072`) e questo record un `docs` nuovo.
 
 ### §H — TD e note per la review
 
-- **TD 16.3-a…d**: confermati come scritti nella story (§7). **TD 16.3-b** si restringe: l'invariante è ora rispettata dall'intera suite (§E (B)); resta come regola per gli spec futuri, scritta a `FUTURE_DAY`.
-- **Nota (non TD)**: `FOR NO KEY UPDATE` al posto di `FOR UPDATE` sui due lock nuovi eliminerebbe per costruzione la classe di deadlock «lock esplicito vs `FOR KEY SHARE` dei trigger FK» (§A); su HEAD non esiste ciclo perché l'unico scrittore multi-FK (`Flight`) controlla `Person` prima di `InstructorProfile`, ma l'ordine dei trigger RI dipende dagli OID (nome `RI_ConstraintTrigger_c_<oid>`, ordinato come stringa). Segnalato al lead; nessuna risposta al momento della chiusura.
+- **TD 16.3-a…d**: confermati come scritti nella story (§7). **TD 16.3-b** si restringe: l'invariante è ora rispettata dall'intera suite (censimento §E (B)); resta come regola per gli spec futuri, scritta a `FUTURE_DAY`.
+- **TD 16.3-e (nuovo)**: `home-dashboard.spec.ts:228` assume che la sua prenotazione di domani 09:00Z stia fra le prime 8 della card «Prenotazioni» della Panoramica da `now - 48h` (stessa classe dei lookup di pagina 1 corretti da `2ee2a1c`): qualunque spec metta ≥8 prenotazioni in `[now - 48h, domani 09:00Z]` la rompe (misurato: suite #1, 3/3). Non corretto qui (non è uno scoping banale: la card non ha filtro per velivolo).
+- **TD 16.3-f (nuovo)**: `bookings.spec.ts:1127` (il test `:1086` di HEAD) non ri-localizza la riga dopo il `router.refresh()` dell'annullamento (`movedRow` riusato) — classe «page rank»: un'inserzione concorrente prima della sua riga la sposta di pagina (flaky della suite #2). Mitigato in questa story togliendo i test nuovi da `FUTURE_DAY` (§G #10), non corretto.
+- Lock `FOR NO KEY UPDATE`: **applicato** (§G #11) — la classe di deadlock «lock esplicito vs `FOR KEY SHARE` dei trigger FK» è chiusa per costruzione, non più per l'ordine dei trigger RI (che dipende dagli OID).
+- `q.txt` non tracciato nella radice del repo **non è mio** (presente già nel `git status` d'inizio sessione): non toccato, non committato.
 - Il desktop mostra ancora «Effettuato»/«Assente» su una APPROVED futura: il click risponde ora col messaggio chiaro (§K), ma nascondere le azioni sarebbe un cambio di UI fuori da AD-7.
 
-### §I — File toccati (`4a1ae4d`)
+### §I — File toccati (`4a1ae4d` + `24d4072`)
 
-Produzione: `src/server/services/bookings.service.ts`, `src/lib/schemas/registry.ts`, `prisma/schema.prisma` (solo doc-comment: `npx prisma migrate diff --from-schema <HEAD> --to-schema prisma/schema.prisma` → «No difference detected.»), `src/app/[locale]/dashboard/bookings/{booking-transition.ts,new-booking-form.tsx,edit-booking-form.tsx,booking-labels.ts}`, `messages/{it,en}.json`. Test: `src/server/services/bookings.service.test.ts`, `src/app/[locale]/dashboard/bookings/booking-transition.test.ts` (nuovo), `e2e/{bookings,api-v1,mobile-overview,mobile-overview-overflow,mobile-planning}.spec.ts`. Più questo story file (commit `docs(16.3)`).
+Produzione: `src/server/services/bookings.service.ts`, `src/lib/schemas/registry.ts`, `prisma/schema.prisma` (solo doc-comment: `npx prisma migrate diff --from-schema <HEAD> --to-schema prisma/schema.prisma` → «No difference detected.»), `src/app/[locale]/dashboard/bookings/{booking-transition.ts,new-booking-form.tsx,edit-booking-form.tsx,booking-labels.ts}`, `messages/{it,en}.json`. Test: `src/server/services/bookings.service.test.ts`, `src/app/[locale]/dashboard/bookings/booking-transition.test.ts` (nuovo), `e2e/{bookings,api-v1,mobile-overview,mobile-overview-overflow,mobile-planning}.spec.ts`. `24d4072` tocca di nuovo `bookings.service.ts` (i due lock + doc-comment), `bookings.service.test.ts` (SQL esatta dei lock), `schema.prisma` (doc-comment; `prisma migrate diff` invariato: solo commenti), `registry.ts` (descrizione POST). Più questo story file (commit `docs(16.3)`).
 
 ### §J — Cosa NON ho fatto
 
@@ -786,7 +830,17 @@ dopo il fix §G #9 (bc8480d): -g "Effettuato|One person in one place|Booking app
   9 passed (25.2s)            E2E_EXIT=0
 dopo il fix §G #10 (4a1ae4d): -g "One person in one place" --repeat-each=2
   10 passed (15.0s)           E2E_EXIT=0
+FOR NO KEY UPDATE (24d4072), DB usato dopo la suite #2:
+  -g "One person in one place"                         5 passed (10.8s)    E2E_EXIT=0
+  -g "two PARALLEL approvals" --repeat-each=10          10 passed (26.8s)   E2E_EXIT=0
+  build SENZA lock Person, stessa corsa --repeat-each=10  7 failed · 3 passed (1.4m)  E2E_EXIT=1  (21/24 tentativi [200, 200])
+  4 spec principali (bookings/api-v1/mobile-overview/mobile-planning): 61 passed · 1 flaky · 8 failed  E2E_EXIT=1
+    -> gli 8 sono tutti della classe «DB usato» dopo una suite completa, NON del cambio di lock: 422
+       BOOKING_OUTSIDE_WINDOW su date 2099/2040+ (sched.maxAdvanceDays 3650 lasciato dalla catena) e su
+       fasce che attraversano la mezzanotte (finestra 00:00-23:59 lasciata), e timeout di 30 s dei walker
+       di pagina/picker su 546 persone; tutti verdi nella suite #2 su DB fresco
 ```
+`npm run gates` su `24d4072`: `PASS lint · PASS typecheck · PASS test — Tests 1922 passed (1922) · PASS build`.
 
 Suite completa, `CI=1 scripts/e2e.sh start` (build propria, nessun server mio attivo), DB fresco verificato via SQL prima di ogni lancio (`Booking` 0, `Person` 4, `Flight` 0, `AppSetting` 0, `LoginAttempt` 0):
 ```
@@ -800,8 +854,9 @@ Suite completa, `CI=1 scripts/e2e.sh start` (build propria, nessun server mio at
   541 + 1 = 542 = baseline 537 + 5 test nuovi, zero failed, zero did not run
   flaky   bookings.spec.ts:1127 (test :1086 non toccato, «rank shift» dopo router.refresh) -> probabilità alzata dai miei test su FUTURE_DAY, mitigato (§G #10)
 ```
-**Stato dell'arbitro**: la #2 è su `bc8480d`; `4a1ae4d` ne differisce **solo** per la costante del giorno del describe nuovo (e2e, service identico, gates verdi, describe verde 10/10 sopra). Ho chiesto al lead un terzo reset per una #3 su `4a1ae4d`: non arrivato entro ~30 minuti, quindi chiudo su questa evidenza e **l'arbitro finale su `4a1ae4d` resta alla sessione principale**.
+**Stato dell'arbitro** (decisione del lead: niente terza suite): la #2 è su `bc8480d`; `4a1ae4d` ne differisce **solo** in e2e (la costante del giorno del describe nuovo; sha256 del service invariato); `24d4072` cambia il modo dei due lock nuovi (service + unit + doc), coperto da gates, unit, discriminanze G1-G16, probe SQL e corse mirate sopra. **L'arbitro finale su DB fresco lo esegue il reviewer adversarial sul HEAD.**
 
 ### Change Log
 
+- 2026-09-27 — `24d4072` fix(16.3): lock `FOR NO KEY UPDATE` su `Person`/`InstructorProfile` (decisione tecnica della sessione principale); record: emendamento AD-2/AC 5, censimento dell'intera suite, TD 16.3-e/f, corsa residua dichiarata.
 - 2026-09-27 — `4a1ae4d` feat(16.3): implementazione, test, fixture e2e (commit d'implementazione emendato due volte, solo e2e: `4d3277c` → `bc8480d` §G #9 → `4a1ae4d` §G #10); story file: derive corrette in place, Dev Agent Record, Status → review.
