@@ -20,12 +20,14 @@
  * text.
  */
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Field, Input, InputGroup } from '@/components/ui/field';
 import { SlideOver } from '@/components/ui/slide-over';
 import { LiveExpiryEditor, type LiveExpiryEditorLabels } from '@/components/dashboard/expiry-editor';
+import { parseApiError } from '@/lib/api-field-errors';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import type { ProfileFlags } from '@/lib/expiry-scope';
 import { formatCents, parseCents } from '@/lib/money';
 import { updatePersonSchema, type UpdatePersonInput } from '@/lib/schemas/people';
@@ -49,8 +51,10 @@ export type InstructorEditorLabels = {
     fiscalCode: string;
     save: string;
     loadError: string;
+    /** Story 14.2, AC 1/4: this section had NO required-field feedback at all (not even `aria-invalid`) — its own `updatePersonSchema` RHF errors were silently dropped. */
+    requiredField: string;
   };
-  payoutRate: { sectionTitle: string; label: string; noValue: string; save: string; readOnlyHint: string };
+  payoutRate: { sectionTitle: string; label: string; noValue: string; save: string };
   ratings: { sectionTitle: string } & LiveExpiryEditorLabels;
   readOnly: { sectionTitle: string; hoursTotal: string; owedTotal: string };
   studentRate: InstructorRatesPanelLabels & { heading: string };
@@ -65,8 +69,6 @@ type InstructorEditorProps = {
   onClose: () => void;
   onMutated: () => void;
   canManagePeople: boolean;
-  canManagePayouts: boolean;
-  canManageSettings: boolean;
   locale: 'it' | 'en';
   labels: InstructorEditorLabels;
   toast: ToastHandle;
@@ -90,8 +92,6 @@ export function InstructorEditor({
   onClose,
   onMutated,
   canManagePeople,
-  canManagePayouts,
-  canManageSettings,
   locale,
   labels,
   toast,
@@ -112,6 +112,8 @@ export function InstructorEditor({
   // (`onMutated`'s `router.refresh()` already keeps the TABLE row itself
   // correct in the meantime).
   const [current, setCurrent] = useState<InstructorRow | null>(instructor);
+  /** Mirrors `IdentitySection`: `ready` = the editable form is mounted (not the load-error, loading or read-only branch), `busy` = a save is in flight. */
+  const [identityForm, setIdentityForm] = useState<{ ready: boolean; busy: boolean }>({ ready: false, busy: false });
 
   function applyPatch(patch: Partial<InstructorRow>): void {
     setCurrent((existing) => (existing ? { ...existing, ...patch } : existing));
@@ -121,8 +123,27 @@ export function InstructorEditor({
   const open = current !== null;
   const title = current ? `${current.lastName} ${current.firstName}` : '';
 
+  /* Story 15.10 (R-15.10-f): the anagrafica's save moves from the in-body
+     `.so-actions` bar to `SlideOver`'s `footer` (`.so-foot`, OUTSIDE the
+     scrolling `.so-body`), wired to its form with `form="instructor-identity-form"`.
+     Measured at 375px before the move: `.so-body` scrolls 2642px inside 716px
+     and the sticky bar ended at `top -1383.53`, with `elementFromPoint` on the
+     submit returning FALSE. It renders only when the identity form itself does
+     — the section has a load-error, a loading and a READ-ONLY branch (no
+     `canManagePeople`), and a footer submit pointing at a form that is not in
+     the DOM would be a dead control. The rate/tariffa submits below stay in
+     their own sections, as ratified. */
+  const identityFooter = identityForm.ready ? (
+    <>
+      <div style={{ flex: 1 }} />
+      <button type="submit" form="instructor-identity-form" disabled={identityForm.busy} className="btn primary" data-testid="instructor-identity-submit">
+        {labels.identity.save}
+      </button>
+    </>
+  ) : undefined;
+
   return (
-    <SlideOver open={open} onClose={onClose} title={title} closeLabel={labels.closeLabel}>
+    <SlideOver open={open} onClose={onClose} title={title} closeLabel={labels.closeLabel} footer={identityFooter}>
       {current ? (
         <>
           <IdentitySection
@@ -132,6 +153,7 @@ export function InstructorEditor({
             labels={labels.identity}
             toast={toast}
             toastLabels={toastLabels}
+            onFormStateChange={setIdentityForm}
             onSaved={(patch) => applyPatch(patch)}
           />
 
@@ -143,8 +165,6 @@ export function InstructorEditor({
             <PayoutRateForm
               personId={current.personId}
               initialRateCents={current.payoutRateCents}
-              canManagePayouts={canManagePayouts}
-              locale={locale}
               labels={labels.payoutRate}
               errorLabels={labels.errors}
               toast={toast}
@@ -160,7 +180,6 @@ export function InstructorEditor({
               key={current.personId}
               personId={current.personId}
               toast={toast}
-              canAddRate={canManageSettings}
               labels={labels.studentRate}
             />
           </Section>
@@ -197,6 +216,7 @@ function IdentitySection({
   labels,
   toast,
   toastLabels,
+  onFormStateChange,
   onSaved,
 }: {
   personId: string;
@@ -205,11 +225,14 @@ function IdentitySection({
   labels: InstructorEditorLabels['identity'];
   toast: ToastHandle;
   toastLabels: ToastLabels;
+  /** `useState`'s setter — stable by contract, so the effect below cannot loop. */
+  onFormStateChange: (state: { ready: boolean; busy: boolean }) => void;
   onSaved: (patch: Partial<InstructorRow>) => void;
 }) {
   const [identity, setIdentity] = useState<PersonIdentity | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,11 +252,20 @@ function IdentitySection({
   const {
     register,
     handleSubmit,
-    formState: { isSubmitting },
+    setError,
+    formState: { errors, isSubmitting },
   } = useForm<UpdatePersonInput>({
     resolver: zodResolver(updatePersonSchema),
     values: identity ?? undefined,
   });
+
+  // The submit that runs this form lives in the panel's `.so-foot` (story
+  // 15.10), outside this component: it needs to know whether the form exists
+  // at all and whether a request is in flight.
+  const formMounted = !loadError && identity !== null && canManagePeople;
+  useEffect(() => {
+    onFormStateChange({ ready: formMounted, busy: isSubmitting });
+  }, [formMounted, isSubmitting, onFormStateChange]);
 
   async function onSubmit(values: UpdatePersonInput): Promise<void> {
     setFormError(null);
@@ -243,6 +275,24 @@ function IdentitySection({
       body: JSON.stringify(values),
     });
     if (!response.ok) {
+      if (response.status === 422) {
+        // Review F1: this section had no 422-mapping at all (twin gap to
+        // `pilots/pilot-editor.tsx#IdentitySection`'s own `updatePersonSchema`
+        // form) — same field-shaped 422 handling, reusing `labels.requiredField`.
+        const { fieldErrors } = await parseApiError(response);
+        const known: Array<keyof UpdatePersonInput> = ['firstName', 'lastName', 'email', 'phone', 'address', 'fiscalCode'];
+        let mapped = false;
+        for (const field of known) {
+          if (fieldErrors.has(field)) {
+            setError(field, { type: 'server', message: labels.requiredField });
+            mapped = true;
+          }
+        }
+        if (mapped) {
+          setTimeout(() => focusFirstInvalid(formRef.current), 0);
+          return;
+        }
+      }
       setFormError(toastLabels.genericError);
       return;
     }
@@ -275,25 +325,25 @@ function IdentitySection({
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-identity-form">
+    <form id="instructor-identity-form" ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-identity-form">
       <div className="form-grid">
-        <Field label={labels.firstName}>
-          <Input {...register('firstName')} />
+        <Field label={labels.firstName} error={errors.firstName ? labels.requiredField : undefined}>
+          <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
         </Field>
-        <Field label={labels.lastName}>
-          <Input {...register('lastName')} />
+        <Field label={labels.lastName} error={errors.lastName ? labels.requiredField : undefined}>
+          <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
         </Field>
-        <Field label={labels.email} wide>
-          <Input type="email" {...register('email')} />
+        <Field label={labels.email} wide error={errors.email ? labels.requiredField : undefined}>
+          <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
-        <Field label={labels.phone}>
-          <Input type="tel" {...register('phone')} />
+        <Field label={labels.phone} error={errors.phone ? labels.requiredField : undefined}>
+          <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
         </Field>
-        <Field label={labels.address} wide>
-          <Input {...register('address')} />
+        <Field label={labels.address} wide error={errors.address ? labels.requiredField : undefined}>
+          <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
         </Field>
-        <Field label={labels.fiscalCode}>
-          <Input {...register('fiscalCode')} />
+        <Field label={labels.fiscalCode} error={errors.fiscalCode ? labels.requiredField : undefined}>
+          <Input aria-invalid={Boolean(errors.fiscalCode)} {...register('fiscalCode')} />
         </Field>
       </div>
       {formError ? (
@@ -301,11 +351,6 @@ function IdentitySection({
           {formError}
         </p>
       ) : null}
-      <div style={{ marginTop: 10 }}>
-        <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="instructor-identity-submit">
-          {labels.save}
-        </button>
-      </div>
     </form>
   );
 }
@@ -330,8 +375,6 @@ type PayoutRateFormValues = z.infer<typeof payoutRateFormSchema>;
 function PayoutRateForm({
   personId,
   initialRateCents,
-  canManagePayouts,
-  locale,
   labels,
   errorLabels,
   toast,
@@ -340,8 +383,6 @@ function PayoutRateForm({
 }: {
   personId: string;
   initialRateCents: number | null;
-  canManagePayouts: boolean;
-  locale: 'it' | 'en';
   labels: InstructorEditorLabels['payoutRate'];
   errorLabels: InstructorEditorLabels['errors'];
   toast: ToastHandle;
@@ -377,30 +418,15 @@ function PayoutRateForm({
     onSaved({ payoutRateCents });
   }
 
-  if (!canManagePayouts) {
-    return (
-      <p className="fld-label" style={{ textTransform: 'none' }}>
-        {initialRateCents === null ? labels.noValue : `${formatCents(initialRateCents, locale)}/h`}
-        {' — '}
-        {labels.readOnlyHint}
-      </p>
-    );
-  }
-
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-payout-rate-form">
       <div className="form-grid">
-        <Field label={labels.label}>
+        <Field label={labels.label} error={errors.rate ? errorLabels.invalidRate : undefined}>
           <InputGroup prefix="€" suffix="/h">
             <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.rate)} {...register('rate')} />
           </InputGroup>
         </Field>
       </div>
-      {errors.rate ? (
-        <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-          {errorLabels.invalidRate}
-        </p>
-      ) : null}
       {formError ? (
         <p role="alert" data-testid="instructor-payout-rate-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
           {formError}

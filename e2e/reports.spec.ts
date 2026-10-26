@@ -1,5 +1,17 @@
+// This spec WRITES a GLOBAL `sched.*` AppSetting row (the `fleetUtilization`
+// test below) and runs in the `reports` Playwright project, serialized after
+// `booking-window` (playwright.config.ts) — story 15.8b, R-15.8b-f. Until then
+// it ran in the main `fullyParallel` project and left an 07:00-21:00 window
+// behind: the TD registered since 14.4, aggravated by 15.4 (every `moveBooking`
+// in the suite inherits that window, so the "today" fixtures of
+// `mobile-planning` fall outside it when the suite runs before ~07:20 or after
+// ~20:40 Rome). The `afterAll` below restores the same permissive window
+// `settings.spec.ts` restores. Running this file alone locally:
+// `npx playwright test reports.spec.ts --no-deps` (otherwise Playwright first
+// runs its `chromium`/`settings`/`booking-window` dependencies).
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 /**
  * Statistiche / reports (epic 12, story 12.10, AC 4). `stats.service.ts`
@@ -64,6 +76,8 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
   return { personId: person.id, firstName, lastName };
 }
 
@@ -76,6 +90,8 @@ async function createInstructorPerson(page: Page, tag: string): Promise<{ person
   const person = (await personResponse.json()) as { id: string };
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: { ratings: 'FI(A)' } });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'INSTRUCTORS');
   return { personId: person.id, firstName, lastName };
 }
 
@@ -104,11 +120,13 @@ type RegisterFlightParams = {
   instructorPersonId?: string;
   flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
   minutes: number;
+  /** Story 16.2 — the takeoff clock time (UTC, `HH:MM`); defaults to `10:00`, what every pre-existing call site used implicitly. The DAY deliberately stays "today": these KPIs are the CURRENT Rome month's, so only the HOUR may move to keep two flights on the same aircraft from overlapping. */
+  takeoffTimeUtc?: string;
 };
 
 /** Same `takeoffAt`/`landingAt` wire shape as `flight-log.spec.ts#registerFlight` — `flightDate` is TODAY (UTC, `T10:00Z`), so the flight always lands in the CURRENT Rome month (`getStats`'s default `ref`). Charges live under `flight.breakdown.*` (`flights.service.ts#toListItem`); `instructorAmountCents` is OMITTED (not `null`) when there is no instructor, normalized here to `0`. */
 async function registerFlight(page: Page, params: RegisterFlightParams): Promise<{ id: string; aircraftAmountCents: number; instructorAmountCents: number }> {
-  const takeoffAt = `${todayDateOnly()}T10:00:00.000Z`;
+  const takeoffAt = `${todayDateOnly()}T${params.takeoffTimeUtc ?? '10:00'}:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
     data: {
@@ -197,7 +215,24 @@ function formatMinutesHm(totalMinutes: number): string {
   return `${hours}:${String(minutes).padStart(2, '0')}`;
 }
 
+/** Same permissive baseline as `settings.spec.ts`/`booking-window.spec.ts`: a PUT has no unset, so restoring a maximally permissive window is the only way to neutralise the one the `fleetUtilization` test writes (story 15.8b, R-15.8b-f). */
+const PERMISSIVE_SCHEDULING = { openTime: '00:00', closeTime: '23:59', minSlotMinutes: 30, turnaroundMinutes: 0, maxAdvanceDays: 3650 };
+
 test.describe('Reports / Statistiche (story 12.10)', () => {
+  test.afterAll(async ({ browser }) => {
+    // Story 15.8b (R-15.8b-f): the `fleetUtilization` test needs `sched.*`
+    // CONFIGURED, and until this story nothing ever put it back — read back
+    // here, not assumed.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const put = await page.request.put('/api/v1/settings/scheduling', { data: PERMISSIVE_SCHEDULING });
+    expect(put.status()).toBe(200);
+    const readBack = await page.request.get('/api/v1/settings/scheduling');
+    expect(await readBack.json()).toMatchObject(PERMISSIVE_SCHEDULING);
+    await context.close();
+  });
+
   test('a real fixture (2 flights, 1 completed transit) moves the KPIs/mix by EXACTLY the right delta, and populates fleet/instructor/topPilot rows exactly (AC 1/3/4)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
@@ -210,8 +245,18 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
 
     // SCHOOL, 60 min: aircraft 15000c, instructor 4000c.
     const schoolFlight = await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, instructorPersonId: instructor.personId, flightType: 'SCHOOL', minutes: 60 });
-    // TOURISM, 30 min: aircraft 7500c, no instructor.
-    const tourismFlight = await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, flightType: 'TOURISM', minutes: 30 });
+    // TOURISM, 30 min: aircraft 7500c, no instructor. Story 16.2: takeoff at
+    // 12:00 — same aircraft and same DAY as the SCHOOL flight above (the KPIs
+    // asserted below are the current Rome month's, so the day must not move),
+    // but 10:00->10:30 would now overlap its 10:00->11:00 (409
+    // `FLIGHT_OVERLAP`).
+    const tourismFlight = await registerFlight(page, {
+      aircraftId: aircraft.id,
+      personId: pilot.personId,
+      flightType: 'TOURISM',
+      minutes: 30,
+      takeoffTimeUtc: '12:00',
+    });
     // 1 completed transit, landing fee 2500c.
     await createCompletedTransit(page, 2500);
 

@@ -517,3 +517,51 @@ export async function getExpiryTierCounts(actor: Actor): Promise<ExpiryTierCount
   return { expired, within7, within30, within60 };
 }
 
+
+/** One blocking document of one person, already reduced to whole days from "today" — the shape `pilotRowFlag` consumes. */
+export type BlockingExpiryItem = { typeName: string; daysUntil: number };
+
+/**
+ * The BLOCKING documents (`ExpiryType.blocksBooking`) of `personIds` that are
+ * already expired or due within {@link BLOCKING_FLAG_HORIZON_DAYS} days —
+ * story 15.5, ratifica R-15.5-c: the data behind the pilot row's flag chip.
+ *
+ * BATCHED over the ids of the current page (one query, `personId in (…)`),
+ * same N+1-avoidance rationale as `listPilotsPageData`'s own five readers it
+ * runs beside. Neither existing reader fitted: `listPersonExpiries` is for ONE
+ * person and `listAllExpiries` is a globally paginated dashboard list gated on
+ * `expiries.manage`.
+ *
+ * The horizon is the widest tier the chip can render (`tierOf` 0/1/2, i.e.
+ * expired or <=30 days) — filtering it in SQL keeps the payload proportional to
+ * what is actually shown, and `pilotRowFlag` re-applies the same boundaries on
+ * the values, so the two can never disagree about "31 days".
+ *
+ * Gate: `people.read`, the SAME permission the Pilots page requires — this is
+ * a column OF that list, and a helper whose gate is narrower than its page
+ * would silently blank the chip for a future role instead of failing loudly.
+ * People with no such document are ABSENT from the map (callers read `?? []`).
+ */
+const BLOCKING_FLAG_HORIZON_DAYS = 30;
+
+export async function listBlockingExpiriesByPerson(actor: Actor, personIds: string[], today: Date): Promise<Map<string, BlockingExpiryItem[]>> {
+  authorize(actor, 'people.read');
+
+  if (personIds.length === 0) {
+    return new Map();
+  }
+
+  const horizon = new Date(today.getTime() + BLOCKING_FLAG_HORIZON_DAYS * MS_PER_DAY);
+  const rows = await prisma.expiry.findMany({
+    where: { personId: { in: personIds }, expiresAt: { lte: horizon }, expiryType: { blocksBooking: true } },
+    select: { personId: true, expiresAt: true, expiryType: { select: { name: true } } },
+  });
+
+  const byPerson = new Map<string, BlockingExpiryItem[]>();
+  for (const row of rows) {
+    const list = byPerson.get(row.personId) ?? [];
+    list.push({ typeName: row.expiryType.name, daysUntil: daysUntilUtc(row.expiresAt, today) });
+    byPerson.set(row.personId, list);
+  }
+  return byPerson;
+}

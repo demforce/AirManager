@@ -34,7 +34,6 @@ import type { Page } from '@playwright/test';
  */
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -242,13 +241,18 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     // register (a PENDING one lives only in the PPR console) — so its row is
     // the one that renders the requester's email + phone.
     const { registration, email } = await createApprovedRequest(page);
-    await page.goto('/it/dashboard/movements');
+    // FIFO (createdAt asc): the fresh APPROVED fixture is the NEWEST row and
+    // lands on the LAST page once the backlog exceeds a page — the default
+    // landing made this red the moment a parallel spec (15.7's AC 9 fixtures)
+    // pushed the APPROVED bucket past 20. Same defensive navigation the
+    // "Registra arrivo" test below already uses.
+    await gotoMovementsLastPage(page, 'APPROVED');
     const row = movementsRows(page).filter({ hasText: registration });
     await expect(row.getByText(email)).toBeVisible();
     await expect(row.getByText('+39 333 0000000')).toBeVisible();
   });
 
-  test('admin sets the default landing fee via Impostazioni; staff completes an APPROVED request from the register with the PREFILLED default: the row turns COMPLETED with the formatted fee, and a matching cash movement lands in the "PPR" category (AC 1)', async ({
+  test('admin sets the default landing fee via Impostazioni; the same admin completes an APPROVED request from the register with the PREFILLED default: the row turns COMPLETED with the formatted fee, and a matching cash movement lands in the "PPR" category (AC 1)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -272,11 +276,16 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     await logout(page);
 
     // --- Staff: complete from the register, fee PREFILLED from the default ---
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await gotoMovementsLastPage(page, 'APPROVED');
-    await expect(page.getByText(created.registration)).toBeVisible();
-
+    // Scoped to the ROW, not page-level (story 15.7): the phone card prints
+    // the same registration and is in the DOM at every width (`display: none`
+    // above 640px), so a page-level `getByText` matches twice and violates
+    // strict mode. `movementsRows(page).filter({hasText})` is the idiom this
+    // file already uses at 245/278/286/466/507 — the assertion is rewritten to
+    // its correct value, not weakened.
     const row = movementsRows(page).filter({ hasText: created.registration });
+    await expect(row).toBeVisible();
     await row.getByTestId('ppr-register-complete-button').click();
     await expect(page.getByTestId('ppr-complete-fee-input')).toHaveValue('43,21');
     await page.getByTestId('ppr-complete-submit').click();
@@ -394,8 +403,11 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     const dayBefore = dayBeforeDateOnly(etaDateOnly);
 
     // --- Status + period match: visible ------------------------------------
+    // Row-scoped, not page-level: the phone card prints the same registration
+    // (story 15.7, blast radius 1) — same rewrite as the completion test above.
+    const createdRow = movementsRows(page).filter({ hasText: created.registration });
     await page.goto(`/it/dashboard/movements?status=APPROVED&from=${etaDateOnly}&to=${etaDateOnly}`);
-    await expect(page.getByText(created.registration)).toBeVisible();
+    await expect(createdRow).toBeVisible();
 
     // --- Status filter mismatch (REJECTED): not visible --------------------
     // Filter changes go through a CONTROLLED `<input>`/`<select>` (`value={filters.status}`)
@@ -407,7 +419,8 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     // under — same tolerance as the documented login flake).
     await page.getByTestId('ppr-register-filter-status').selectOption('REJECTED');
     await expect(page).toHaveURL(/status=REJECTED/, { timeout: 15_000 });
-    await expect(page.getByText(created.registration)).toHaveCount(0);
+    // "zero ROWS with those marks", which is what this assertion always meant.
+    await expect(createdRow).toHaveCount(0);
 
     // --- Period filter: `to` set to the day BEFORE the eta excludes it -----
     // Drives the real date input, the pre-12.4 assertion (restored by review
@@ -417,10 +430,10 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
     // not just the server-side exclusion. Same 15s URL tolerance as the
     // `selectOption` assertion above.
     await page.goto(`/it/dashboard/movements?status=APPROVED&from=${etaDateOnly}&to=${etaDateOnly}`);
-    await expect(page.getByText(created.registration)).toBeVisible();
+    await expect(createdRow).toBeVisible();
     await page.getByTestId('ppr-register-filter-to').fill(dayBefore);
     await expect(page).toHaveURL(new RegExp(`to=${dayBefore}`), { timeout: 15_000 });
-    await expect(page.getByText(created.registration)).toHaveCount(0);
+    await expect(createdRow).toHaveCount(0);
   });
 
   test('"Azzera filtri" is hidden on the page default (APPROVED, no period) and appears on ANY chosen filter, incl. "Tutti" (TD-5 AC 4)', async ({
@@ -472,7 +485,7 @@ test.describe('Voli in transito / movements register: closure, landing fee, filt
   test('"Registra arrivo" (epic 12, story 12.4, AC 3): a past eta is accepted (logging a just-landed arrival) and the row appears immediately as "al suolo" with an assigned pprNumber, no separate approval step', async ({
     page,
   }) => {
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.goto('/it/dashboard/movements');
 
     const suffix = uniqueSuffix();

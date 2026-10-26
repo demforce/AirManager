@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
@@ -80,6 +80,8 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   return { personId: person.id, firstName, lastName };
 }
@@ -262,17 +264,13 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     expect((await exportResponse.body()).subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 
-  test('/dashboard/settings redirects staff and pilot to /dashboard; PUT /api/v1/settings/airfield answers 403 for both (AC 1)', async ({ page }) => {
-    for (const email of [STAFF_EMAIL, PILOT_EMAIL]) {
-      await loginExpectingDashboard(page, email);
-      await page.goto('/it/dashboard/settings');
-      await expect(page).toHaveURL(/\/it\/dashboard$/);
+  test('/dashboard/settings redirects a pilot to /dashboard; PUT /api/v1/settings/airfield answers 403 (AC 1)', async ({ page }) => {
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await page.goto('/it/dashboard/settings');
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
 
-      const putResponse = await page.request.put('/api/v1/settings/airfield', { data: { name: 'Should not save' } });
-      expect(putResponse.status()).toBe(403);
-
-      await page.context().clearCookies();
-    }
+    const putResponse = await page.request.put('/api/v1/settings/airfield', { data: { name: 'Should not save' } });
+    expect(putResponse.status()).toBe(403);
   });
 
   test('own-access parity: a pilot exports their own account statement (200) but another person\'s (403), and the staff-only cash report/expiries/ppr-requests PDFs (403) (AC 3; story 13.6 AC 4)', async ({

@@ -223,9 +223,13 @@ button{ font: inherit; color: inherit; }
 .flight-dot.ifr{ background: var(--bad); }
 
 /* ---------- top bar ---------- */
+/* Review 15.10 MAJOR-3, "the shell bars" of the PO decision, plural: this one
+   is the bar the 641-900px band shows (the tablet the METAR rule just declared
+   a usage surface), and it is `sticky; top: 0` exactly like `.mobile-topbar`.
+   At inset 0 the padding stays 14px, so the desktop is unchanged. */
 .topbar{
   display: flex; align-items: center; gap: 12px;
-  padding: 14px 28px;
+  padding: calc(14px + env(safe-area-inset-top)) 28px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   position: sticky; top: 0; z-index: 4;
@@ -737,6 +741,47 @@ html[data-theme="dark"] .stat-tone-ok{ color: var(--ok); }
 html[data-theme="dark"] .stat-tone-bad{ color: var(--bad); }
 html[data-theme="dark"] .stat-tone-warn{ color: var(--warn); }
 
+/* ---------- flow-bar (story 15.8a, R-15.8a-i) ---------- */
+/* `.stat-tone-*`'s twin for GRAPHIC objects, and it lives here for that reason
+   (review 15.8a LOW-3 moved it out of the phone block it was written in: it is
+   a reusable contrast remedy valid at EVERY width, not a mobile rule, and the
+   next person looking for the medicine will look next to `.stat-tone-*`).
+   Measured: the two flow segments of "Per categoria" (`billing-console.tsx`)
+   were 2.47:1 (in) and 3.59:1 (out) in the LIGHT theme against their own sunken
+   track — the first under the 3:1 floor a graphic object has to meet (in dark
+   they were already 10.45 / 7.42). Mixing 30% of `--ink` into the token moves
+   the colour AWAY from the track in BOTH themes (the ink is near-black in
+   light, near-white in dark), the technique `.mobile-row-edge-*` established in
+   15.4 — same tokens, no new literal, no token changes value. Post-fix: 4.56 /
+   6.10 light, 12.36 / 9.87 dark.
+   Named for the SHAPE, not for the page, so story 15.8b's `.util-bar .seg`
+   (the same defect on the same two tokens) settles it here instead of taking a
+   second decision. ⚠️ Reuse is not literal, though: `.util-bar .seg.flown`
+   is (0,3,0) and beats a bare `.flow-bar-in` (0,1,0), so those bars need a
+   selector of equal weight (`.util-bar .seg.flow-bar-in`) or the `background`
+   dropped from `.seg.flown` — adding the class alone would change nothing.
+
+   Story 15.8b (R-15.8b-e) takes the SECOND option — `.util-bar .seg.flown`
+   is listed in the `.flow-bar-in` rule itself, so the fill of BOTH shapes is
+   decided on one line and `.util-bar .seg.flown` no longer carries a
+   `background` of its own — and adds the three remaining graphic tokens the
+   Statistiche paint bars and bands with. Measured in the LIGHT theme before
+   the fix (canvas->WCAG, background resolved by walking ancestors): the
+   `--ok` bar 2.47, the `--accent` bar of both `RankBars`' second metric 1.85
+   (an exemplar the story did not list), and the four "Composizione
+   movimenti" bands 2.73 / 2.04 / 4.85 / 3.61 — with their legend DOTS
+   carrying the identical four values (a second unlisted family). All five
+   tones get the same 70/30 ink mix so that a band strip stays ONE palette
+   instead of two darkened bands next to two untouched ones; `--info` and
+   `--ink-3` were already above the 3:1 floor and are mixed for that reason
+   only, never to reach it. No token changes value, no new literal. */
+.flow-bar-in,
+.util-bar .seg.flown{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
+.flow-bar-out{ background: color-mix(in oklch, var(--bad) 70%, var(--ink)); }
+.flow-bar-accent{ background: color-mix(in oklch, var(--accent) 70%, var(--ink)); }
+.flow-bar-info{ background: color-mix(in oklch, var(--info) 70%, var(--ink)); }
+.flow-bar-muted{ background: color-mix(in oklch, var(--ink-3) 70%, var(--ink)); }
+
 /* Story 13.9: block-level alert/confirmation box for the (auth) forms
    (login/forgot-password/set-password) — same soft-bg + colored-text pairs
    as .badge.* above (was duplicated as inline styles per call site, so the
@@ -749,6 +794,18 @@ html[data-theme="dark"] .stat-tone-warn{ color: var(--warn); }
 html[data-theme="dark"] .alert-box.bad{ color: oklch(0.85 0.12 25); }
 html[data-theme="dark"] .alert-box.ok{ color: oklch(0.88 0.1 155); }
 html[data-theme="dark"] .alert-box.info{ color: oklch(0.86 0.1 245); }
+
+/* Story AOG-1b: the grounding banner is the FIRST `.alert-box` in this app to
+   carry a link (to the bookings the count is about). Without this rule the
+   anchor inherits the global `a{ color: var(--info) }` on a `--bad-soft`/
+   `--ok-soft`/`--info-soft` tint — the exact 3.61:1 defect R-15.10-i measured
+   on the "Saldi negativi" links — so the remedy is the one this codebase has
+   now used three times (`.mobile-alert-row` 15.3, `a.mobile-row` 15.6,
+   `.billing-negative-row a` 15.10): inherit the box's OWN already-ratified ink
+   and give the link back the affordance the colour used to carry, the
+   underline. No new colour literal, no token changed. */
+.alert-box a{ color: inherit; text-decoration: underline; }
+.alert-box a:hover{ color: inherit; }
 
 /* ---------- expiry chips (story 13.2 — Ratings/Visita medica pickers) ---------- */
 .expiry-chip{
@@ -841,6 +898,19 @@ html[data-theme="dark"] .alert-box.info{ color: oklch(0.86 0.1 245); }
 .list-icon.amber{ background: var(--warn-soft); color: var(--accent-ink); border-color: transparent; }
 .list-icon.red{ background: var(--bad-soft); color: oklch(0.4 0.17 25); border-color: transparent; }
 .list-icon.green{ background: var(--ok-soft); color: oklch(0.35 0.1 155); border-color: transparent; }
+/* Dark theme: `.red` and `.green` colour their glyph with light-tuned literals
+   that have no dark override, so on the dark `--*-soft` fills they read
+   **1.35:1** and **1.24:1** — the glyph is simply not there. Measured
+   oklch->sRGB->WCAG, the 13.9 method (story 15.3: the red one was found in a
+   screenshot and fixed mobile-only; the green TWIN had never been measured by
+   anyone — the "il gemello va MISURATO" rule of CLAUDE.md). Swapping in the
+   dark-calibrated tokens, with no new literals, gives 4.96:1 and 7.00:1.
+   `.amber` needs nothing: `--accent-ink` already has a dark override (9.70:1).
+   PO ratification 2026-07-30 — fixed GLOBALLY rather than behind a mobile-only
+   selector, so the desktop `ScadenzeWidget`, which carries the same defect and
+   predates this epic, stops hiding its alert glyphs too. */
+html[data-theme="dark"] .list-icon.red{ color: var(--bad); }
+html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
 .list-title{ font-size: 13px; font-weight: 500; }
 .list-sub{ font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); margin-top: 1px;}
 
@@ -858,7 +928,8 @@ html[data-theme="dark"] .alert-box.info{ color: oklch(0.86 0.1 245); }
 }
 .util-bar .seg{ position: absolute; top: 0; bottom: 0; }
 .util-bar .seg.booked{ background: var(--info); }
-.util-bar .seg.flown{ background: var(--ok); }
+/* `.seg.flown`'s own fill lives in the `.flow-bar-in` rule above (story 15.8b,
+   R-15.8b-e): same shape, same defect, ONE decision — see the comment there. */
 .util-bar .seg.mx{ background: repeating-linear-gradient(135deg, var(--accent) 0 4px, transparent 4px 8px); opacity: 0.9;}
 .util-value{ font-family: var(--font-mono); font-size: 11.5px; text-align: right; color: var(--ink-2); }
 /* Story 13.10 review F5: all 3 call sites (`rank-bars.tsx` + 2 raw usages in
@@ -1036,21 +1107,46 @@ html[data-theme="dark"] .alert-box.info{ color: oklch(0.86 0.1 245); }
   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
   padding: 18px 20px; border-bottom: 1px solid var(--border);
 }
+/* `--ink-3`, not `--ink-4` (story 15.10, R-15.10-c — TD (h) of 15.6, still
+   open at 15.7): this sub is TEXT, and `--ink-4` is calibrated to a >=3:1
+   floor (ratifica 13.9 F6, for table headers and nav group labels), not to
+   4.5. Measured on `--panel` before the change: 3.66:1 light and — the half
+   the TD never named — 4.14:1 DARK, both under the floor for body text.
+   `--ink-3` is 4.85 / 5.72, the same tone 15.4, 15.6 and 15.8b each moved one
+   consumer to. This is DESKTOP text before it is mobile text: it shows on the
+   6 pages whose panels pass a non-empty `subtitle` (bookings x2, logbook,
+   instructors x2, movements, billing, ppr), at every width. */
 .so-sub{
-  font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-4);
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
   text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;
 }
 .so-title{ font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
 .so-body{ flex: 1; overflow: auto; padding: 18px 20px; }
+/* Review 15.10 MAJOR-3 (PO decision 2026-08-06): the safe-area inset the
+   `.so-actions` bar it REPLACED already carried. Story 15.10 turned this foot
+   into the primary action of the full-screen panel (R-15.10-f, 7 call-sites
+   before it, 11 now) and lit `viewport-fit=cover` in the same commit — so on a
+   phone with a home indicator the submit would have sat 12px from the PHYSICAL
+   edge, ~22px inside the system strip, where the sticky bar kept 12+34. Global
+   and not phone-scoped on purpose: an iPad in portrait (768px, home indicator,
+   34px) renders this same panel and would fall between the two media queries.
+   On a browser with no inset `env()` is 0, i.e. every value stays 12px — the
+   only verification this machine allows (Chromium reports all insets 0). */
 .so-foot{
   display: flex; align-items: center; gap: 8px;
-  padding: 12px 20px; border-top: 1px solid var(--border); background: var(--panel-2);
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border); background: var(--panel-2);
 }
 
 /* ---------- form ---------- */
 .form-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px 14px; }
 .fld{ display: flex; flex-direction: column; gap: 6px; }
 .fld.wide{ grid-column: 1 / -1; }
+/* Story 14.2: the inner label+control wrapper (`Field`'s own `<label>`) —
+   same stacking as `.fld` itself, split out so `.fld-error` (a SIBLING of
+   this label, not nested inside it) never joins the label's accessible
+   name. See `field.tsx`'s doc-comment. */
+.fld-label-group{ display: flex; flex-direction: column; gap: 6px; }
 .fld-label{
   font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
   text-transform: uppercase; letter-spacing: 0.08em;
@@ -1087,6 +1183,44 @@ textarea.input{ font-family: var(--font-ui); resize: vertical; }
 }
 .input-group .prefix{ border-right: 1px solid var(--border); }
 .input-group .suffix{ border-left: 1px solid var(--border); }
+
+/* Story 14.2, AC 1: field-level validation state — bordo rosso sul campo
+   INVALIDO invece della sola stringa generica in fondo al form (feedback
+   utente). A single attribute selector: every call site ALREADY threads
+   `aria-invalid` from react-hook-form's `errors` object (or an equivalent
+   local boolean) onto the real `.input`/`.input-group`, independently of
+   `Field`'s own `error` prop — this rule lights every one of them up with
+   zero further markup. Border contrast measured (lezione 13.9,
+   canvas/oklch round-trip): raw `--bad` vs `--panel`/`--panel-2`/`--bg`
+   is 3.75-3.97:1 in light, 6.2-7.1:1 in dark — both above the WCAG 1.4.11
+   non-text 3:1 floor. */
+.input[aria-invalid="true"],
+.input[aria-invalid="true"]:focus{
+  border-color: var(--bad);
+}
+.input-group:has(> .input[aria-invalid="true"]){ border-color: var(--bad); }
+
+/* `Field`'s own inline message (AC 1) — text contrast measured (same
+   lezione): the raw `--bad` token is only 3.75-3.97:1 as BODY TEXT on
+   --panel/--panel-2/--bg in light theme (below the 4.5:1 floor), so this
+   reuses the SAME "darker ink literal in light, raw token in dark"
+   technique already established by `.stat-tone-bad`/`.badge.bad` above
+   (measured 9.82:1 on white; the dark override reuses the already-passing
+   raw token, 6.2-7.1:1). */
+.fld-error{
+  font-size: 12px;
+  color: oklch(0.4 0.17 25);
+}
+html[data-theme="dark"] .fld-error{ color: var(--bad); }
+
+/* Story 14.3, AC 2: neutral informational message (same slot as
+   `.fld-error`, `Field`'s own `hint` prop) — muted `--ink-3`, already used
+   elsewhere in this exact form for secondary text (e.g. the "no aircraft
+   available" hint), so no new contrast case to measure. */
+.fld-hint{
+  font-size: 12px;
+  color: var(--ink-3);
+}
 
 .segmented{
   display: inline-flex; padding: 2px; border-radius: var(--radius-xs);
@@ -1148,13 +1282,6 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
 }
 .date-nav .iconbtn:hover{ background: var(--panel); color: var(--ink); }
 .date-nav .iconbtn svg{ width: 14px; height: 14px; }
-.date-nav .today-btn{
-  height: 26px; padding: 0 12px; font-size: 11px;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  background: transparent; border: 0; color: var(--ink-2);
-}
-.date-nav .today-btn:not(:disabled):hover{ background: var(--panel); color: var(--ink); }
-.date-nav .today-btn:disabled{ color: var(--ink-3); cursor: default; }
 
 .week-day.selected{ outline: 2px solid var(--accent); outline-offset: -2px; }
 
@@ -1284,13 +1411,19 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
    detail this ONE dropdown was implicitly, fragile-ly depending on instead of
    setting its own font like the rest of the design system does). Ported to
    these explicit, token-based classes so the dropdown's font is deterministic
-   and self-contained — verified via computed style to match `--font-ui`. */
+   and self-contained — verified via computed style to match `--font-ui`.
+   Story 14.1 (AC 1): `position`/`top`/`margin-top`/`width`/`z-index` moved
+   OFF this class and onto `search-combobox.tsx`'s own inline `style`
+   (`position: fixed`, portaled to `<body>`, placed via
+   `computeFixedPopoverAnchor` — the SAME below-by-default/flip-above
+   mechanism `CalendarPopover`'s popovers already use) — the old
+   `position: absolute; margin-top: 4px` here rendered ABOVE the field,
+   covering it, because an absolutely-positioned child of a `flex-direction:
+   column` container without `top`/`bottom` set falls back to its "static
+   position" per `justify-content` (`flex-start` here → the TOP of the
+   flex box, not "after the input"). */
 .combo-listbox{
-  position: absolute;
-  z-index: 20;
-  margin-top: 4px;
   max-height: 240px;
-  width: 100%;
   overflow: auto;
   border-radius: var(--radius-xs);
   border: 1px solid var(--border);
@@ -1471,7 +1604,17 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
 .ppr-ref{display:inline-block;margin:16px 0 22px;font-family:var(--font-mono);font-size:15px;font-weight:600;padding:8px 16px;border:1px dashed var(--border-strong);border-radius:var(--radius-sm);background:var(--bg-sunken)}
 .ppr-foot{margin-top:auto;border-top:1px solid var(--border);background:var(--panel)}
 .ppr-foot-in{max-width:1060px;margin:0 auto;padding:16px 24px;display:flex;justify-content:space-between;gap:12px;font-size:11.5px;color:var(--ink-3);font-family:var(--font-mono)}
-@media (max-width:820px){.ppr-grid{grid-template-columns:1fr}.ppr-aside{position:static}.ppr-hero h1{font-size:34px}.ppr-top-right{display:none}}
+/* Story 15.9 (R-15.9-g): `.ppr-top-right{display:none}` USED to be the fourth
+   declaration of this query. It hid the ONLY IT/EN switch of the public
+   showcase on every phone and every tablet (measured: the link had a 0x0 rect
+   at 320/375/390/641/800 and came back at 821), and the language it switches
+   is also the language of the receipt email (`ppr-form.tsx`'s `locale` in the
+   body). Its historical reason is gone: the prototype's `.ppr-top-right` held
+   three AFIS/ELEV/OPS stat blocks that did not fit a phone, and story 12.4
+   OMITTED all three — what the rule hid is one eight-character word. The
+   declaration is REMOVED rather than overridden, so `/ppr` keeps exactly ONE
+   breakpoint (820px) and no third threshold is introduced. */
+@media (max-width:820px){.ppr-grid{grid-template-columns:1fr}.ppr-aside{position:static}.ppr-hero h1{font-size:34px}}
 
 /* ---------- AirManager additions (story 12.1 review, finding F1) ----------
    Narrow-viewport topbar: the prototype has no <900px rules for the topbar, and
@@ -1481,11 +1624,12 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
 .crumbs{ min-width: 0; overflow: hidden; white-space: nowrap; }
 .crumbs .cur{ overflow: hidden; text-overflow: ellipsis; }
 .user-chip{ flex-shrink: 0; }
-@media (max-width: 640px){
-  .topbar{ padding: 14px 16px; }
-  .user-chip .user-chip-name{ display: none; }
-  .user-chip{ padding: 4px; }
-}
+/* The <=640px half of this fix (topbar padding + hidden `.user-chip-name`)
+   was removed by story 15.1: at that width `.topbar` itself is now
+   `display: none` (the mobile top bar takes over) and `.user-chip` /
+   `.user-chip-name` exist ONLY inside it (`top-bar.tsx`), so those three
+   declarations could no longer apply to anything. The two rules above stay:
+   they are unconditional and still shape the 641px+ topbar. */
 
 /* Story 13.10 (mobile pass): `.form-grid`'s 2-column layout (18 consumers —
    every SlideOver form, editor, and Settings card) doesn't collapse at
@@ -1556,6 +1700,20 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
   .chart-label:nth-last-child(even){ visibility: hidden; }
 }
 
+/* Story 15.8b (R-15.8b-e): the axis label is TEXT, so its floor is 4.5:1 —
+   and `--ink-4` measured 3.66:1 on `--panel` in the light theme (4.14 dark),
+   the "grafici" face of the long-standing `--ink-4`-as-body-text debt. The
+   remedy is the cheapest one the AC allows: REUSE a token already measured
+   above the floor rather than invent a literal or a token — `--ink-3` is the
+   same muted family one step up, and is exactly what `.bottom-sheet-sub`
+   already uses at 4.85/5.72. No token changes value, and `--ink-4`'s other
+   consumers (`.so-sub`, `.mobile-row-chev`, `.syl-num`, `.ppr-card-id`) are
+   untouched: this switches ONE class's consumer, it does not repaint a token.
+   The colour lives here, not inline in `bar-chart.tsx`/`line-chart.tsx`,
+   because an inline style wins over any class rule — the two components keep
+   every other inline declaration (size, family, alignment) they had. */
+.chart-label{ color: var(--ink-3); }
+
 /* Custom date field (user decision 2026-07-21): the browser's native
    calendar popup is replaced by `CalendarPopover` (`ui/date-input.tsx`,
    plus its date+time sibling `ui/datetime-input.tsx` — story TD-7) — the
@@ -1563,8 +1721,24 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
    affordance. Typing into the input still works. */
 .date-input{ position: relative; display: inline-flex; align-items: center; }
 .date-input.grow{ width: 100%; }
-.date-input input::-webkit-calendar-picker-indicator{ display: none; }
 .date-input input{ padding-right: 30px; }
+
+/* Story 14.1 (AC 2): the UA's native calendar/clock picker indicator is
+   hidden on EVERY date/time/datetime-local input app-wide, not just inside
+   `.date-input` (which already got its own custom `CalendarPopover` trigger
+   button) — a bare `type="time"` field (the 4 residual native ones:
+   scheduling-card.tsx's open/close time, flight-editor.tsx's takeoff/
+   landing time) has no custom picker of its own, so this rule simply
+   removes the native icon and leaves keyboard-only entry — the field still
+   reads/writes via the same `<input type="time">` value, just without a
+   second, non-functional-looking icon next to none. Was previously scoped
+   to `.date-input input` only; a plain type-selector covers every input
+   regardless of wrapper. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+  display: none;
+}
 .date-input-btn{
   position: absolute; right: 4px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -1589,4 +1763,2141 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
    spilling past the card. */
 @media (max-width: 640px){
   .filter-date-range{ flex-wrap: wrap; }
+}
+
+/* ---------- mobile shell (story 15.1, epic 15 R1/R2/R5) ----------
+   Bottom tab bar + compact top bar + the two shell sheets ("Altro", profile),
+   ported from the `AirOps Mobile` template. Rules of engagement (epic plan):
+   - the switch is CSS ONLY and lives at 640px — 641-900px keeps the 64px
+     rail of story 13.10 (ratifica R1), so nothing here touches the
+     `max-width: 900px` block above;
+   - every declaration is ADDITIVE and no existing token changes value; the
+     template's own literals give way to the app's tokens where the app has
+     one (radii, `--ink-4` — ratifica 13.9 F6);
+   - the mobile tree is `display: none` OUTSIDE the media query (so it is
+     genuinely absent from the accessibility tree above 640px) and the
+     desktop `.sidebar`/`.topbar` are `display: none` inside it: exactly one
+     `navigation` landmark named "Aree operative" exists at any width
+     (lesson 103-F1), and Playwright strict mode never sees a duplicate. */
+.mobile-topbar,
+.mobile-tabbar,
+.mobile-sheet{ display: none; }
+
+@keyframes sheet-up{ from{ opacity: 0; transform: translateY(28px); } to{ opacity: 1; transform: none; } }
+
+@media (max-width: 640px){
+  /* `.app`'s column track is declared on the CONTAINER: hiding the sidebar
+     alone would leave `.main` sitting in a 232px (or 64px) first column. */
+  .app{ grid-template-columns: 1fr; }
+  .sidebar{ display: none; }
+  .topbar{ display: none; }
+
+  /* Nothing interactive ends up under the fixed bar. Template value (100px),
+     and it holds by measurement: the bar is 67px with one-line labels
+     (admin) and 78px with the longest two-line one ("Le mie transazioni",
+     pilot/allievo), so >=22px of clearance either way, plus the same
+     safe-area inset the bar adds to its own padding. */
+  .main{ padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+  /* Toasts (z-index 200) stay above the bar — template reference: 92px. */
+  .toast-host{ bottom: calc(92px + env(safe-area-inset-bottom)); }
+
+  /* --- compact top bar ---
+     Review 15.10 MAJOR-3: `env(safe-area-inset-top)`, the other half of
+     `viewport-fit=cover`. This bar is `sticky; top: 0`, so in standalone mode
+     on a notched phone its content renders UNDER the status bar / notch
+     without it. Same non-regression as every other inset in this file: at
+     inset 0 the padding stays exactly 10px. */
+  .mobile-topbar{
+    display: flex; align-items: center; gap: 10px;
+    padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 4;
+  }
+  .mobile-topbar-titles{ flex: 1; min-width: 0; }
+  .mobile-topbar-title{
+    font-weight: 600; font-size: 14px; letter-spacing: -0.01em; line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mobile-topbar-sub{
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mobile-avatar-btn{
+    width: 32px; height: 32px; padding: 0;
+    display: grid; place-items: center;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 50%;
+    cursor: pointer; flex-shrink: 0;
+  }
+
+  /* --- bottom tab bar --- */
+  .mobile-tabbar{
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    background: color-mix(in oklch, var(--panel) 94%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--border);
+    padding: 6px 6px calc(12px + env(safe-area-inset-bottom));
+  }
+  /* `--ink-3`, not the template's `--ink-4` (story 15.10, R-15.10-c): the four
+     INACTIVE labels of the tab bar measured 3.50:1 light / 4.47:1 dark on all
+     14 pages of the epic — the most-looked-at text of the whole mobile UI, and
+     debt this epic created itself (15.1 ratified "the app's `--ink-4` values
+     win over the template", but nobody questioned the TOKEN). `--ink-3` is
+     4.85 / 5.72. The ACTIVE label keeps `--ink` (17.99 / 17.00) and the
+     geometry of the bar is untouched: only the colour changes. */
+  .mobile-tab{
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 6px 2px 2px;
+    min-height: 44px;
+    background: transparent; border: 0; cursor: pointer;
+    color: var(--ink-3); font-weight: 500; text-decoration: none;
+  }
+  .mobile-tab.active{ color: var(--ink); font-weight: 600; }
+  .mobile-tab svg{ width: 19px; height: 19px; }
+  /* The template's own tab labels are all one short word; the app's
+     `shell.nav.*` ones are not ("Le mie transazioni" — AC 2 keeps the
+     existing keys), so a label wraps to at most two lines instead of being
+     truncated. The inactive dots keep their slot (opacity, not display), so
+     every column stays the same height; only ONE dot is ever visible, so it
+     simply follows its own label. */
+  .mobile-tab-label{ font-size: 9.5px; line-height: 1.15; letter-spacing: 0.02em; text-align: center; }
+  .mobile-tab-dot{ width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0; }
+  .mobile-tab.active .mobile-tab-dot{ opacity: 1; }
+
+  /* --- shell sheets ("Altro" + profile) ---
+     z-index 40 sits above the page popovers (19/20/30 — a `.popover` can be
+     open while the tab bar is tapped, and it would otherwise paint over the
+     sheet) and below `SlideOver` (50/60) and `.toast-host` (200), which AC 6
+     requires to stay fully usable with the bar present. */
+  .mobile-sheet{ display: block; position: fixed; inset: 0; z-index: 40; }
+  .mobile-sheet-scrim{ position: absolute; inset: 0; background: oklch(0.1 0.01 250 / 0.4); }
+  .mobile-sheet-panel{
+    position: absolute; left: 0; right: 0; bottom: 0;
+    max-height: 80vh; overflow: auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 12px 16px calc(24px + env(safe-area-inset-bottom));
+    animation: sheet-up 240ms cubic-bezier(.2,.7,.2,1);
+  }
+  .mobile-sheet-grabber{ width: 36px; height: 4px; margin: 0 auto 14px; border-radius: 999px; background: var(--border-strong); }
+  .mobile-sheet-label{
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-4); padding: 0 2px 10px;
+  }
+  .mobile-sheet-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .mobile-sheet-item,
+  .mobile-sheet-row{
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    min-height: 44px; padding: 12px;
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-size: 12.5px; font-weight: 500; text-align: left; text-decoration: none;
+    cursor: pointer;
+  }
+  .mobile-sheet-item.active{ background: var(--panel-2); }
+  .mobile-sheet-item svg{ width: 16px; height: 16px; color: var(--ink-2); flex-shrink: 0; }
+  .mobile-sheet-rows{ display: flex; flex-direction: column; gap: 8px; }
+  .mobile-sheet-row{ justify-content: space-between; font-size: 13px; }
+  .mobile-sheet-row .mono{ font-size: 11px; color: var(--ink-3); }
+  .mobile-profile-id{ display: flex; align-items: center; gap: 12px; padding: 2px 2px 12px; }
+  .mobile-profile-name{ font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .mobile-profile-role{ font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .mobile-sheet-panel{ animation: none; }
+}
+
+/* ---------- mobile primitives (story 15.2, epic 15 R3/R4) ----------
+   Three surfaces the 15.3-15.9 stories reuse instead of reinventing:
+   (1) the row-detail `BottomSheet` layout (`ui/bottom-sheet.tsx`, template
+       lines 515-539) — it rides on `.mobile-sheet` above, so scrim, Escape,
+       focus and z-index 40 are not repeated here, only the header/rows/
+       actions layout is;
+   (2) the FULL-SCREEN mode of `SlideOver` — this IS `MobileFormPanel` of
+       ratifica R3: there is no such component file, because the epic's
+       architecture forbids a JS switch and rendering all 11 SlideOver
+       consumers twice would be the only alternative. One CSS mode of the
+       one component is the only shape that satisfies the constraint;
+   (3) the KPI strip (template lines 69-77).
+   Same rules of engagement as the 15.1 block above: everything additive
+   inside `@media (max-width: 640px)`, no existing token changes value, no
+   new colour literal (the decision buttons reuse `.btn.primary` and
+   `.btn.mini.bad`, dark calibration of 13.9 included). */
+
+/* The mobile PPR list is in the DOM at every width (the switch is CSS
+   only), so it must be `display: none` OUTSIDE the query too — otherwise
+   the desktop suite gets two matches for every registration on screen. */
+.ppr-queue-mobile{ display: none; }
+
+@media (max-width: 640px){
+  /* --- (1) row-detail bottom sheet --- */
+  .bottom-sheet-head{
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    padding: 2px 0 12px;
+  }
+  .bottom-sheet-headings{ min-width: 0; }
+  /* Story 15.6: `--ink-3`, was `--ink-4` — the SAME correction, on the same
+     grounds and with the same numbers, that 15.4 made on `.mobile-row-t2`.
+     The 13.9 calibration puts `--ink-4` at a >=3:1 floor, which is right for a
+     group label but not for TEXT: measured on `--panel`, this over-line is
+     3.66:1 (light) / 4.14 (dark), under the 4.5:1 AC 11 asks. `--ink-3`
+     measures 4.85 / 5.72. One declaration, colour only, and it lifts every
+     sheet of the epic (PPR, prenotazioni, piloti, istruttori, flotta, voli) —
+     the same reasoning 15.4 recorded for its own twin. */
+  .bottom-sheet-sub{
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .bottom-sheet-title{ font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin-top: 3px; }
+  .bottom-sheet-kv{
+    display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+    padding: 9px 0; border-top: 1px solid var(--border);
+  }
+  .bottom-sheet-k{
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-3); flex-shrink: 0;
+  }
+  .bottom-sheet-v{ font-size: 12.5px; font-weight: 500; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  /* A value that is a LIST rather than one fact (review 15.5 F2: recent
+     students, recent flights as CFI — the two sections the desktop's
+     `InstructorProfile` panel renders and the phone had no way to reach).
+     Stacked inside the value column, so the key/value baseline of the row
+     above still reads as one line. */
+  .mobile-sheet-list{ display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .mobile-sheet-list-item{ display: block; }
+  .bottom-sheet-actions{ display: flex; gap: 8px; padding-top: 14px; }
+  /* Sized here rather than by adding a modifier to `.btn`: the decision
+     buttons keep the COLOURS of their table-row twins (`.btn.mini.bad`) but
+     none of the table-row geometry — 44px touch targets, equal halves. Two
+     class names beat `.btn.mini`'s own two, and this block comes later. */
+  .bottom-sheet-actions .btn,
+  .bottom-sheet-close{
+    justify-content: center;
+    min-height: 44px; padding: 11px; font-size: 13px;
+    border-radius: var(--radius-sm);
+  }
+  .bottom-sheet-actions .btn{ flex: 1; }
+  .bottom-sheet-close{ width: 100%; margin-top: 10px; color: var(--ink-2); }
+  /* Second step of a decision started in the sheet (R-15.2-a). */
+  .bottom-sheet-step{ display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+
+  /* --- PPR queue: the mobile half of the double markup ---
+     Hooked to the page's OWN two classes, never to `.students` (shared by
+     13 consoles) nor to a generic `.only-mobile` utility. */
+  .ppr-queue-desktop{ display: none; }
+  .ppr-queue-mobile{ display: block; }
+  /* Ratifica R-15.2-b: the decision lives ONLY in the sheet, so the whole
+     card is ONE button — no nested interactive element to guard with
+     `stopPropagation`, and one honest 44px+ touch target. */
+  .ppr-card{
+    display: block; width: 100%;
+    padding: 11px 16px; min-height: 44px;
+    background: transparent; border: 0; border-top: 1px solid var(--border);
+    font: inherit; color: var(--ink); text-align: left; cursor: pointer;
+  }
+  .ppr-card:active{ background: var(--panel-2); }
+  .ppr-card-head{ display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  /* The card's inner nodes are `<span>`s (nothing but the card itself may be
+     a `<button>`, R-15.2-b), so each one has to be told to be a block. */
+  .ppr-card-main{ display: block; min-width: 0; }
+  .ppr-card-name{ display: block; font-size: 13px; font-weight: 600; }
+  .ppr-card-sub{
+    display: block;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ppr-card-side{ display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+  .ppr-card-id{ font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-4); }
+
+  /* --- (2) SlideOver, full-screen mode (R3) ---
+     `left: 0` + `width: 100%` beat the inherited `right: 0`, so the panel's
+     rect IS the viewport: no side scrim strip, no 30px of wasted width.
+     The header is already fixed by construction (the panel is a flex
+     column and only `.so-body` scrolls) — nothing to add for it. The panel
+     now rises from the bottom like every other mobile surface. */
+  .slideover-panel{
+    left: 0; width: 100%;
+    border-left: 0;
+    box-shadow: none;
+    transform: translateY(100%);
+  }
+  .slideover.open .slideover-panel{ transform: translateY(0); }
+  /* Primary action pinned to the bottom of the scrolling body.
+     `sticky`, NOT `fixed`: the panel's own `transform` traps descendant
+     `position: fixed` boxes (the reason the date pickers are portalled to
+     `document.body`, TD-7), so a `fixed` row here would be positioned
+     against the PANEL and only coincide with the viewport by accident.
+     Negative side margins make it span the body's padding box. */
+  /* A sticky box cannot leave its containing block, and that block is
+     `.so-body`'s CONTENT box — with the body's own 18px bottom padding in
+     place the row stops 18px short of the scrollport and form fields slide
+     through the gap underneath it (measured: row bottom 794 in an 812px
+     viewport). Zeroing the padding only for the bodies that actually have an
+     action row keeps every other panel's bottom breathing room intact;
+     `:has()` is already the idiom used by `.input-group` above. */
+  /* Review 15.5 F6: only when the action row is at the END of the body. The
+     bar is `sticky` inside the FORM it belongs to, so the body's bottom
+     padding can push it up only when that form is the body's LAST child
+     (`aircraft-editor`, `pilot-editor` NUOVO). In the two multi-form editors in
+     MODIFICA the bar sits mid-panel and the zeroed padding bought nothing —
+     it only left the last control of the panel flush against the bottom edge
+     (measured `bottomGap: 0`, 18px before this story). */
+  .so-body:has(> .so-actions:last-child),
+  .so-body:has(> :last-child .so-actions){ padding-bottom: 0; }
+  .so-actions{
+    position: sticky; bottom: 0;
+    margin-left: -20px; margin-right: -20px;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+  }
+  .so-actions .btn{ flex: 1; justify-content: center; min-height: 44px; }
+  /* Review 15.2 F5: the three panels that anchor their primary action with
+     `SlideOver`'s `footer` prop instead of an in-body row got none of the
+     44px the rest of the story adopts — `.btn` alone measures 35px there.
+     Same target, same breakpoint, desktop untouched. */
+  .so-foot .btn{ min-height: 44px; }
+
+  /* --- (3) KPI strip (template lines 69-77) ---
+     `flex: 1 0 auto` + `min-width` (NOT a fixed 146px basis): the template's
+     width is a MINIMUM here, because `.kpi` carries `overflow: hidden` and a
+     realistic long value ("12.480,50 €" — the class of defect 13.10 F1 was
+     built from) would be clipped inside a fixed-basis card. With an `auto`
+     basis the card grows to its content instead, and `flex-grow` still lets
+     2-4 KPIs fill the row exactly as the 2-column grid did. */
+  .kpi-row{
+    display: flex;
+    gap: 10px;
+    /* Full-bleed, as the template has it (`padding: 2px 16px 4px` on a strip
+       that runs edge to edge): the cards must reach the screen edge so the
+       NEXT one peeks and the row reads as scrollable — clipped at `.page`'s
+       own padding it looks like a two-card row with nothing beyond. The
+       negative margins are safe by inspection: all 9 `.kpi-row`s are direct
+       children of `.page` (7 files, checked), never nested in a `.card`
+       (whose `overflow: hidden` would clip them). `scroll-padding` keeps
+       snapping aligned with the first card, not with the bleed. */
+    margin-inline: -28px;
+    padding-inline: 28px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 28px;
+    scrollbar-width: none;
+  }
+  .kpi-row::-webkit-scrollbar{ display: none; }
+  /* `max-width` is the CEILING that the `auto` basis above needs (review 15.2
+     F2). With only a floor a card sizes itself on its content: the pilot
+     landing's "Abilitazioni" KPI, whose value is a joined list, measured
+     2276px — a 7.5-screenful strip — and 447px, already wider than the phone,
+     with a perfectly realistic 5 ratings. `100%` here IS the content column
+     (`.kpi-row`'s content box = viewport minus `.page`'s 28px padding, which
+     the full-bleed margins add straight back), so no card can be wider than
+     one screenful and the strip keeps its "one card per snap" rhythm. */
+  .kpi-row > *{ flex: 1 0 auto; min-width: 146px; max-width: 100%; scroll-snap-align: start; }
+  /* Under a ceiling the value has to WRAP instead of pushing the card wider,
+     and `anywhere` (not `break-word`) is the one that also shrinks the flex
+     item's min-content contribution — which is what was propagating the width
+     in the first place. The wrap is clamped to two lines so a single long
+     value cannot turn the strip into a wall (the strip exists to BUY vertical
+     budget); the clamp's own ellipsis is the affordance that says the value
+     continues. `line-height` comes off the base 1 because two 23px lines at
+     1 would have their glyphs touching — this is the first time a KPI value
+     is allowed to wrap at all. */
+  .kpi-value{
+    font-size: 23px;
+    line-height: 1.12;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  /* `-webkit-box` is not a flex container, so the `gap` that separated the
+     value from its unit ("3 / 5", "48,00 € /h") has to be restated. */
+  .kpi-value .unit{ margin-left: 8px; }
+}
+
+/* The full-screen panel's entrance is the only animation this story adds;
+   same treatment the 15.1 sheets got. Scoped to the phone breakpoint so the
+   desktop transition stays exactly as it is (AC 11). */
+@media (max-width: 640px) and (prefers-reduced-motion: reduce){
+  .slideover-panel{ transition: none; }
+}
+
+/* ---------- panoramica mobile (story 15.3, epic 15 R1/R3/R4) ----------
+   The phone faces of the home: KPI 2x2 where there are four KPIs, "In corso
+   ora", "Prenotazioni in attesa", "Avvisi", "Meteo campo", and the two links
+   to the desktop surfaces that are hidden here.
+
+   Same rules of engagement as the 15.1/15.2 blocks above: every declaration
+   additive inside `@media (max-width: 640px)`, no existing token changes
+   value, no new colour literal (the decision buttons reuse `.btn.primary` /
+   `.btn.mini.bad`; the alert tone squares reuse `.list-icon.red`/`.amber`,
+   calibrated for both themes in 13.9; the METAR category dot reuses
+   `.flight-dot.vfr|mvfr|ifr`, already defined for the sidebar card).
+
+   The switch hangs off classes this page OWNS — `.overview-mobile`,
+   `.landing-mobile` and `.home-desktop-surface` — never off `.card`, `.split`,
+   `.list` or `.list-item` (13 consoles share those). Precedent and reasoning:
+   `.ppr-queue-mobile` above.
+
+   Card CSS is NOT a rename of `.ppr-card*`: these rows carry a registration
+   chip, a left time column and a right badge that the PPR card has none of, so
+   generalizing those class names would have changed how the PPR queue renders
+   at 375px — the story's own precondition for the rename ("only if it costs
+   nothing") does not hold. The two families are siblings, deliberately. */
+
+/* Both mobile trees are in the DOM at every width (the switch is CSS only), so
+   they must be `display: none` OUTSIDE the query too — otherwise the desktop
+   suite finds two matches for every heading and empty state on the home. */
+.overview-mobile,
+.landing-mobile{ display: none; }
+
+/* The header actions used to be an inline `display:flex; gap:8px` on three
+   divs of this page. Same declarations, now a class, so the phone rule below
+   has something to hook onto: identical computed style above 640px. */
+.home-head-actions{ display: flex; gap: 8px; }
+
+@media (max-width: 640px){
+  .overview-mobile,
+  .landing-mobile{ display: flex; flex-direction: column; gap: 14px; }
+  /* The five desktop surfaces the cards above replace (calendario, tabella
+     prenotazioni, widget Scadenze + card Flotta, and the two landing lists). */
+  .home-desktop-surface{ display: none; }
+
+  /* --- header actions: full-width UNDER the sub-line (ratifica R-15.3-d) ---
+     `.page-head` already wraps at this width (13.10), but the actions still
+     shared the title's row whenever they fitted. `flex: 1 0 100%` forces them
+     onto their own full-width row; the PRIMARY action then takes a whole row of
+     its own (template 415), the secondary ones share the row above it. */
+  .home-head-actions{ flex: 1 0 100%; flex-wrap: wrap; }
+  /* DIRECT child, not descendant (review 15.3 F1): `DispatchFlightButton`
+     renders its trigger AND its `FlightEditor` SlideOver as siblings inside
+     this wrapper, so a descendant selector also caught the panel's own footer
+     buttons — measured, the full-screen panel's "Registra volo" went from 118px
+     to 191px stretched, on a surface this story declared untouchable. `>` keeps
+     the rule on the header's own buttons, whatever a child component mounts
+     underneath. */
+  .home-head-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .home-head-actions > .btn.primary{ flex-basis: 100%; }
+
+  /* --- KPI 2x2 (ratifica R-15.3-c, template 407-414 / 439-446) ---
+     Undoes, for the two faces that have exactly FOUR KPIs, the scroll strip
+     R-15.2-f applied to all nine `.kpi-row`s: in a strip the 3rd and 4th card
+     are only reachable after a swipe, and on those faces they are the numbers
+     the actor opened the app for (saldo, medico, ratings / dovuto, voli).
+     `min-width: 0` is mandatory here, not cosmetic: the strip's own
+     `min-width: 146px` floor would overflow a 2-column grid below ~360px. */
+  .kpi-row.kpi-row-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-inline: 0;
+    padding-inline: 0;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+  .kpi-row.kpi-row-grid > *{ min-width: 0; max-width: none; scroll-snap-align: none; }
+  /* Template's own value size for the grid variant: a half-width card is
+     narrower than a strip card, and 23px there wrapped even short values. */
+  .kpi-row.kpi-row-grid .kpi-value{ font-size: 19px; }
+
+  /* --- card chrome of the mobile lists (template 78-121) ---
+     `.card` still supplies panel/border/radius/overflow; only the head differs
+     from `.card-head` (no bottom rule, tighter padding, baseline-aligned count). */
+  .mobile-card-head{ display: flex; align-items: baseline; gap: 8px; padding: 12px 16px 10px; }
+  .mobile-card-title{ font-weight: 600; font-size: 13.5px; letter-spacing: -0.005em; }
+  .mobile-card-count{ font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+  .mobile-card-empty{ padding: 16px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--ink-3); }
+  .mobile-card-foot{ padding: 10px 16px; border-top: 1px solid var(--border); }
+  .mobile-card-foot .btn{ width: 100%; justify-content: center; min-height: 44px; }
+
+  /* --- one row = one trigger (R3 + the `.ppr-card` idiom of 15.2) ---
+     The whole row is ONE `<button>`: the decision lives in the sheet
+     (R-15.3-b), so there is no nested interactive element to guard with
+     `stopPropagation` and the touch target is the row itself. Its children are
+     `<span>`s, hence the explicit `display: block`s below. */
+  .mobile-row{
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    padding: 11px 16px;
+    min-height: 44px;
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--border);
+    font: inherit;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+  }
+  .mobile-row:active{ background: var(--panel-2); }
+  /* Istruttore only (template 447-456): the slot's times move to the left. */
+  .mobile-row-timed{ grid-template-columns: 46px 1fr auto; gap: 12px; }
+  .mobile-row-times{ display: block; }
+  .mobile-row-t1{ display: block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; }
+  /* Story 15.4: `--ink-3`, was `--ink-4`. The 13.9 calibration put `--ink-4` at
+     a >=3:1 floor, which is the right bar for a table header or a group label
+     but not for TEXT: the slot's END time measured 3.66:1 (light) / 4.14 (dark)
+     on `--panel`, under the 4.5:1 AC 12 asks for. `--ink-3` measures 4.85 /
+     5.72. One declaration, colour only, and it lifts BOTH consumers of this
+     class — the agenda of this story and the instructor landing's "La mia
+     giornata" of 15.3, whose end time had the same ratio. */
+  .mobile-row-t2{ display: block; font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); margin-top: 2px; }
+  .mobile-row-main{ display: block; min-width: 0; }
+  .mobile-row-title{ display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; }
+  /* Registration chip (template 82): mono, sunken, never shrinks. */
+  .mobile-row-tail{
+    flex-shrink: 0;
+    padding: 1px 6px;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+  }
+  .mobile-row-name{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Affordance of the decision queue's rows (see the comment in
+     `mobile-pending-bookings.tsx`). `--ink-4` is the 13.9-calibrated quiet ink,
+     >=3:1 on `--panel` in both themes. */
+  .mobile-row-chev{ display: grid; place-items: center; color: var(--ink-4); }
+  .mobile-row-chev svg{ width: 16px; height: 16px; }
+  .mobile-row-sub{
+    display: block;
+    margin-top: 3px;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* --- "Avvisi" feed (template 106-116) ---
+     Rows are `<a>`s (every voice leads to the page where it can be acted on),
+     so the anchor colour has to be reclaimed from the global `a{color: var(--info)}`. */
+  .mobile-alert-row{
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .mobile-alert-row:hover{ color: var(--ink); }
+  .mobile-alert-row:active{ background: var(--panel-2); }
+  .mobile-alert-row .list-icon{ width: 30px; height: 30px; border-radius: 9px; }
+  /* The dark-theme glyph fix that used to live here (scoped to this surface)
+     is now GLOBAL, next to `.list-icon` itself — PO ratification 2026-07-30,
+     and it covers the `.green` twin the scoped version had missed. */
+  .mobile-alert-main{ display: block; min-width: 0; }
+  .mobile-alert-title{ display: block; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-alert-sub{ display: block; margin-top: 1px; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+
+  /* --- "Meteo campo" (template 117-121) ---
+     `word-break: anywhere` (not the template's `break-word`) on the raw line:
+     a real METAR is one unbroken ~70-character token, and only `anywhere` also
+     shrinks the box's min-content contribution, which is what would otherwise
+     push the whole page wider than the screen (the class of defect 13.10 F1). */
+  .mobile-metar-card{ display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
+  .mobile-metar-head{ display: flex; justify-content: space-between; gap: 10px; }
+  .mobile-metar-label{
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .mobile-metar-station{ font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); }
+  .mobile-metar-main{ display: flex; align-items: baseline; gap: 10px; }
+  .mobile-metar-temp{ font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .mobile-metar-temp .unit{ font-size: 13px; font-weight: 500; color: var(--ink-3); }
+  .mobile-metar-cat{ display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+  .mobile-metar-raw{
+    padding: 8px;
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--ink-2);
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow-wrap: anywhere;
+  }
+
+  /* --- where the hidden desktop surfaces went (ratifica R-15.3-d) --- */
+  .mobile-shortcuts{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mobile-shortcuts .btn{ justify-content: center; min-height: 44px; }
+}
+
+/* ---------- pianificazione mobile (story 15.4, epic 15 R1/R3/R4) ----------
+   The phone faces of `/dashboard/bookings`: the agenda of "Voli di oggi"
+   (template 136-152) instead of the 1000px day timeline, a vertical list of
+   seven days instead of the 848px week grid, one card per booking instead of
+   the six-column table, and the two booking panels' primary action pinned to
+   the bottom of the full-screen panel.
+
+   Same rules of engagement as the 15.1/15.2/15.3 blocks above: every
+   declaration is additive inside `@media (max-width: 640px)`, no existing
+   token changes value, no new colour literal (the row edges reuse
+   `--ok`/`--accent`/`--info`/`--bad`, the ORA strip reuses
+   `--accent-soft`/`--accent`/`--accent-ink`, the chips reuse `.btn`/
+   `.btn.primary` — which IS the template's active pill, `--ink` on `--bg`).
+
+   The switch hangs off classes these two cards OWN — `.schedule-desktop-body`,
+   `.schedule-mobile`, `.bookings-desktop-body`, `.bookings-mobile` — never off
+   `.schedule`, `.week-grid` or `.students` (that last one is shared by 13
+   consoles). Precedent and reasoning: `.ppr-queue-mobile` (15.2),
+   `.home-desktop-surface` (15.3).
+
+   Rows deliberately reuse the `.mobile-row*` family of 15.3 rather than a new
+   one: this IS that row (left time column, registration chip, right badge),
+   plus a coloured left edge. Only the edge and the ORA separator are new. */
+
+/* Both mobile trees are in the DOM at every width (the switch is CSS only), so
+   they must be `display: none` OUTSIDE the query too — otherwise the desktop
+   suite finds two matches for every registration on this page. Same for the
+   agenda's count, which shares `.card-sub` with the desktop heading beside it. */
+.schedule-mobile,
+.bookings-mobile,
+.mobile-agenda-count{ display: none; }
+
+@media (max-width: 640px){
+  .schedule-desktop-body,
+  .bookings-desktop-body{ display: none; }
+  .schedule-mobile,
+  .bookings-mobile{ display: block; }
+  .mobile-agenda-count{ display: inline; }
+
+  /* --- tail / status chips (template 131-135) ---
+     One strip, two users: the aircraft filter of the agenda and the status
+     filter of the list. `> .btn` is a DIRECT child (lesson 15.3 F1): both
+     cards mount `SlideOver` panels and portalled popovers underneath, and a
+     descendant selector would restyle their buttons too. */
+  .mobile-chip-strip{
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .mobile-chip-strip::-webkit-scrollbar{ display: none; }
+  .mobile-chip-strip > .btn{
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  /* --- agenda: coloured left edge per phase (template's `edgeMap`) ---
+     `inset` box-shadow, exactly as the template draws it, so the edge costs no
+     layout and cannot shift the 46px/1fr/auto grid.
+
+     The raw tokens are the template's own choice and they do NOT hold up in
+     the LIGHT theme against a white `--panel`: measured 2.73 (`--ok`), 2.04
+     (`--accent`), 3.61 (`--info`), 3.96 (`--bad`) — two of them under the 3:1
+     floor AC 12 sets for a graphic object. Mixing 30% of `--ink` in fixes both
+     themes at once (the ink is near-black in light and near-white in dark, so
+     the mix always moves AWAY from the panel): measured 4.01-6.74 in light and
+     8.79-11.53 in dark. Same `color-mix` on tokens the design system already
+     uses for `.btn.mini.ok`'s border — no new colour literal. */
+  .mobile-row-edge-ok{ box-shadow: inset 3px 0 0 color-mix(in oklch, var(--ok) 70%, var(--ink)); }
+  .mobile-row-edge-accent{ box-shadow: inset 3px 0 0 color-mix(in oklch, var(--accent) 70%, var(--ink)); }
+  .mobile-row-edge-info{ box-shadow: inset 3px 0 0 color-mix(in oklch, var(--info) 70%, var(--ink)); }
+  .mobile-row-edge-bad{ box-shadow: inset 3px 0 0 color-mix(in oklch, var(--bad) 70%, var(--ink)); }
+
+  /* --- the ORA separator (template 139) ---
+     A strip between two rows, not a row: no touch target, no tab stop. */
+  .mobile-agenda-now{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 16px;
+    background: var(--accent-soft);
+    border-top: 1px solid var(--border);
+  }
+  /* `--accent-ink`, not the template's `--accent`: an amber dot on the amber
+     `--accent-soft` strip measured 1.76:1 in the light theme (7.23 in dark) —
+     the same "invisible twin" class of defect review 15.3 found on
+     `.list-icon.green`. `--accent-ink` is the colour the label beside it
+     already uses, so the marker reads as one object: 11.13:1 light, 9.74 dark. */
+  .mobile-agenda-now-dot{
+    width: 7px; height: 7px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--accent-ink);
+  }
+  .mobile-agenda-now-label{
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--accent-ink);
+  }
+
+  /* The week list's rows are anchors (each day leads to its own day view), so
+     the global `a{color: var(--info)}` has to be reclaimed — same as
+     `.mobile-alert-row` (15.3). */
+  a.mobile-row{ color: var(--ink); text-decoration: none; }
+  a.mobile-row:hover{ color: var(--ink); }
+
+  /* --- "Nuova prenotazione", full width under the head (ratifica R-15.4-f) ---
+     `.card-head` already wraps at this width (13.10); this gives the primary
+     action a row of its own, the same language ratifica R-15.3-d set for the
+     home. DIRECT child again: `ExportMenu` sits in this head too, and the two
+     `SlideOver` panels are mounted by the same card. */
+  .bookings-head > .btn.primary{
+    flex: 1 0 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  /* --- up to four decisions in one sheet (ratifica R-15.4-d) ---
+     `flex: 1` alone (15.2) never wraps: a `flex-basis: 0` item shrinks below
+     its own content instead, so four buttons squeezed onto one 195px line. A
+     half-width basis wraps the third and fourth onto their own row and leaves
+     the two-button sheets (PPR queue, pending queue) rendering exactly as
+     before — 50% + 8px gap is what `flex: 1` already produced for two. */
+  .bottom-sheet-actions{ flex-wrap: wrap; }
+  .bottom-sheet-actions .btn{ flex-basis: calc(50% - 4px); }
+}
+
+/* ---------- anagrafiche mobile (story 15.5, epic 15 R1/R3/R4) ----------
+   The phone faces of `/dashboard/fleet`, `/dashboard/pilots`,
+   `/dashboard/instructors` and the dossier `people/{id}`: a two-column card
+   grid with an hours bar instead of the one-column 4313px page (template
+   191-201), one row per person instead of the 1102px-wide table (232-268), and
+   the two multi-form editors' primary save pinned to the bottom of the panel
+   (ratifica R-15.5-f, closing the R-15.2-g debt).
+
+   Same rules of engagement as the 15.1/15.2/15.3/15.4 blocks above: every
+   declaration is additive inside `@media (max-width: 640px)`, no existing token
+   changes value, no new colour literal — the status pill is `Badge`, the flag
+   chip is `Badge.bad`/`Badge.warn`, the AOG card tint is the app's own
+   `.ac-card.aog` recipe (never the template's `color-mix`), and the hours bar
+   reuses `.meter-bar`/`.fill`, the design system's own progress bar, with the
+   SAME `color-mix(… var(--ink))` correction 15.4 measured for the agenda edges
+   (the raw `--ok`/`--bad` do not clear 3:1 on `--bg-sunken` in the light theme).
+
+   The switch hangs off classes these four pages OWN — `.fleet-desktop-body`/
+   `.fleet-mobile`, `.pilots-desktop-body`/`.pilots-mobile`,
+   `.instructors-desktop-body`/`.instructors-mobile`, `.person-expiries` — never
+   off `.fleet-grid`/`.ac-card` (shared with the Overview's fleet widget) nor
+   `.students` (shared by 13 consoles). Precedent and reasoning:
+   `.ppr-queue-mobile` (15.2), `.home-desktop-surface` (15.3),
+   `.bookings-mobile` (15.4).
+
+   Rows reuse the `.mobile-row*` family of 15.3/15.4 rather than a new one: this
+   IS that row, with a 30px avatar in front and TWO stacked values behind
+   instead of one badge. Only those two slots are new. */
+
+/* The three mobile trees are in the DOM at every width (the switch is CSS
+   only), so they must be `display: none` OUTSIDE the query too — otherwise the
+   desktop suite finds two matches for every registration and every name on
+   these pages. */
+.fleet-mobile,
+.pilots-mobile,
+.instructors-mobile{ display: none; }
+
+/* Same two widths the inline styles had (fleet 240, pilots 260), moved into
+   classes: an inline `width` cannot be overridden by a media query, and the
+   phone rule below needs the box to span its own row. Identical computed style
+   above 640px — measured pre/post at 1280/800/641px. */
+.registry-search{ width: 240px; }
+.registry-search.registry-search-lg{ width: 260px; }
+
+/* Same two declarations the scheda persona's bottom grid carried inline. */
+.person-bottom-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* Same four tracks the scheda persona's scadenze rows carried inline. */
+.person-expiries .student-row{ grid-template-columns: 1.4fr 120px 140px 1fr; }
+
+@media (max-width: 640px){
+  .fleet-desktop-body,
+  .pilots-desktop-body,
+  .instructors-desktop-body{ display: none; }
+  .fleet-mobile{ display: grid; }
+  .pilots-mobile,
+  .instructors-mobile{ display: block; }
+
+  /* --- the head of a registry card (ratifica R-15.5-g) ---
+     ONE node per control at every width (AD-3): the toggle, the search, the
+     export menu and the CTA keep their testids and their state, and only their
+     PLACEMENT changes here. `order` puts the search on its own full-width row
+     and the CTA on the last one, which is the language ratifiche R-15.3-d and
+     R-15.4-f already set for a primary action. Measured pre-fix, this head was
+     192px tall on the Flotta and 149px on the Piloti (64px at 1280px), all of
+     it before the first card.
+     DIRECT children only (lesson 15.3 F1): every one of these cards also mounts
+     `SlideOver` panels and portalled popovers, and a descendant selector would
+     stretch their buttons too. */
+  /* Review 15.5 F3, second pass with a measurable criterion (head <= the
+     pre-fix height at 375px, every target still >=44px, nothing lost): the
+     phone head takes the same padding the epic's own mobile heads use
+     (`.mobile-card-head`, 12px 16px) instead of the desktop's 14px 18px, and a
+     tighter column gap. That is 4px of height and 8px of width, and those 8px
+     are what let the chip and the export menu share ROW 1 at 375px in Italian
+     — the difference between three rows and four (measured: "Mostra
+     archiviati" 141px + "Esporta Excel" 137px + gap did not fit in 281px). */
+  .registry-head{ padding: 12px 16px; column-gap: 8px; }
+  .registry-head > .spacer{ display: none; }
+  /* The card's own sub-heading ("Flotta", "Anagrafica piloti", "Elenco
+     istruttori") costs a whole row here and says nothing the phone does not
+     already show twice — the page `<h1>` above it and the mobile top bar's own
+     title (15.1). Measured: keeping it made the head 220px, hiding it 176px
+     (pre-fix: 192px on the Flotta, 149px on the Piloti). It is a `div`, not a
+     heading, and no test reads it. (Those two numbers are the first pass's,
+     before the head's own padding was tightened below.) */
+  .registry-head > .card-title{ display: none; }
+  /* Row 1: chip + export. Row 2: the search, full width. Row 3: the CTA, the
+     last thing before the first card — the language ratifiche R-15.3-d/R-15.4-f
+     already set for a primary action.
+     Three rows is the FLOOR here: the search and the CTA are full-width by
+     ratifica R-15.5-g, and AC 3 puts a 44px floor under every control. Measured
+     at 375px after this pass: Flotta 175px (pre-fix 192), Istruttori 121px
+     (150), Piloti 175px (149) — the Piloti head cannot reach its own pre-fix
+     value, which was exactly three rows of 35px controls (28 + 35*3 + 8*2 =
+     149): the 44px targets alone cost 29px, more than the head's whole padding
+     and gap budget. Documented, not hidden. */
+  .registry-head > .btn{ order: 2; min-height: 44px; }
+  /* Review 15.5 F4: the export trigger is a GRANDCHILD (inside `ExportMenu`'s
+     own relative wrapper), so the direct-child rule above never reached it and
+     it stayed a 35px target against AC 3's 44px. Only the target: the menu
+     itself is story 15.8 (R-15.2-c). */
+  .registry-head > div:has(> .btn) > .btn{ min-height: 44px; }
+  /* The archived toggle in the chip language of `.mobile-chip-strip` (15.4):
+     same pill, same mono, same target. It stays the SAME button — a second node
+     inside a strip would be a second source of truth for one boolean.
+     `[aria-pressed]` is what makes it a TOGGLE and not just another button in
+     the head: `instructors-console.tsx`'s "Ciclo pagamenti" sits here too and
+     must keep reading as an action. */
+  .registry-head > .btn[aria-pressed]{
+    border-radius: 999px;
+    /* 10px, not the strip's own 14px (review 15.5 F3): those 8px are the last
+       ones needed to keep the chip and the export menu on the same row at
+       375px in Italian, and a pill this size still reads as a chip. */
+    padding: 5px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  /* The pressed state is the pill's own accent fill (`.btn.on`) plus
+     `aria-pressed`; the check glyph is 20px with its gap and, measured in
+     Italian at 375px, those 20px pushed the pair onto two rows the moment the
+     filter was switched ON (head 175 -> 227, a 52px jump under the reader's
+     thumb). The chips of 15.4 carry no glyph either — this is that language. */
+  .registry-head > .btn[aria-pressed] > svg{ display: none; }
+  /* `ExportMenu`'s own relative wrapper — mobile export is story 15.8 (R-15.2-c),
+     so it only changes place here, never behaviour. */
+  .registry-head > div:has(> .btn){ order: 3; }
+  /* The TAP TARGET is the input, not the box around it: `.search` centres its
+     children, so a 44px wrapper still left `fleet-search` 19px tall and a tap
+     on the padding focused nothing. The height moves onto the input and the
+     wrapper's vertical padding goes to zero, so the box stays ~46px. */
+  .registry-head > .registry-search{ order: 4; flex: 1 0 100%; width: auto; padding-top: 0; padding-bottom: 0; }
+  .registry-head > .registry-search .bare-input{ min-height: 44px; }
+  .registry-head > .btn.primary{ order: 5; flex: 1 0 100%; justify-content: center; }
+
+  /* --- pagination, in mobile language (ratifica R-15.5-j) ---
+     Same `?page=` contract and the same two links; only the target grows to the
+     44px AC 3 asks for (a `.btn` measures 35px). They sit inside the card, and
+     `.main`'s own 100px bottom padding (15.1) keeps them clear of the tab bar. */
+  .registry-pagination > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- Flotta: two equal columns inside the existing card (ratifica R-15.5-h) ---
+     `repeat(2, minmax(0, 1fr))`, NOT the template's literal `1fr 1fr`: `1fr` is
+     `minmax(auto, 1fr)`, so the model line's min-content widens the tracks —
+     measured on the desktop markup, `1fr 1fr` gives `285.28px + 275.83px` in a
+     317px content box and the second column is silently clipped by
+     `.card{overflow: hidden}`, with page overflow still reading 0. The `0`
+     minimum is the same idiom `.kpi{min-width: 0}` uses since 13.10 F1. */
+  .fleet-mobile{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 12px 16px 16px;
+  }
+  /* The empty state is a row of the grid, not a cell of it. */
+  .fleet-mobile > .mobile-card-empty{ grid-column: 1 / -1; padding: 4px 0 0; border-top: 0; }
+  .mobile-ac-card{
+    display: flex; flex-direction: column; gap: 6px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font: inherit;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+  }
+  /* The app's own AOG recipe (`.ac-card.aog`), not the template's own mix. */
+  .mobile-ac-card.aog{
+    background: color-mix(in oklch, var(--bad-soft) 70%, var(--panel));
+    border-color: color-mix(in oklch, var(--bad) 30%, var(--border));
+  }
+  .mobile-ac-card:active{ border-color: var(--border-strong); }
+  /* The registration owns its line, and the status pill the next one.
+     The template puts an 8px DOT beside the marks; the app shows a `Badge`
+     instead (it says strictly more, §a.5) and a `Badge` does NOT fit there:
+     measured on a 137.5px card, "Disponibile" left the marks 7px of visible
+     glyphs — the card's own primary identifier, ellipsised away. Two lines cost
+     ~18px per card and keep both readable at 320px. */
+  .mobile-ac-tail{
+    display: block;
+    font-family: var(--font-mono); font-weight: 600; font-size: 14px; letter-spacing: 0.03em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mobile-ac-status{ display: block; min-width: 0; }
+  /* The template's own chip scale (9.5px): at 320px the card is 84px wide and
+     `Badge`'s default 10.5px made "Disponibile" 91px — 9px of ellipsis on the
+     status word itself. */
+  .mobile-ac-status .badge{ font-size: 9.5px; padding: 1px 7px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The three declarations the template has on its own model line and the
+     desktop `.ac-model` has NOT: at 320px the card is 108px wide and a real
+     model ("Cessna 172 Skyhawk") overflowed it by 9px, measured. */
+  .mobile-ac-model{
+    display: block;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* `--ink-2`, not the `--ink-3` of the desktop `.ac-model`: this card's
+     background is `--panel-2`, and `--ink-3` measures 4.34:1 there in the light
+     theme — under the 4.5:1 AC 12 asks of TEXT. `--ink-2` measures 10.06:1.
+     (The desktop `.ac-card` carries the same 4.34:1 on the same two tokens: a
+     PRE-EXISTING defect this story reports and does not silently widen —
+     changing it would repaint the Panoramica's fleet widget too.) */
+  .mobile-ac-meter{
+    display: flex; flex-wrap: wrap; gap: 0 6px;
+    font-family: var(--font-mono); font-size: 10px; color: var(--ink-2);
+    min-width: 0;
+  }
+  .mobile-ac-meter > span{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* `margin-left: auto` instead of `justify-content: space-between`: at 320px
+     the card is 84px wide and "Tariffa" + "180,00 €/h" measure 95px together —
+     side by side BOTH ellipsised into nonsense. Wrapping puts the value on its
+     own line, still right-aligned, and costs 12px of card height only there. */
+  .mobile-ac-meter .v{ color: var(--ink); flex-shrink: 0; margin-left: auto; }
+  /* `.meter-bar`/`.fill` is the design system's own progress bar (`airops.css`
+     ~805, ported in 12.1 and until now unused): track `--bg-sunken`, fill
+     `--ok`, `.fill.bad` for the AOG variant — exactly the template's recipe.
+     Only the FILL COLOUR is corrected here, and only inside this card, with the
+     same `color-mix(… 70%, var(--ink))` 15.4 measured for the agenda edges: the
+     raw tokens do not clear the 3:1 an AC-12 graphic object needs against
+     `--bg-sunken` in the light theme. Descendant selector, but bounded by a
+     class this story owns whose subtree is `<span>`s only — no panel can be
+     reached through it. */
+  .mobile-ac-card .meter-bar .fill{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
+  .mobile-ac-card .meter-bar .fill.bad{ background: color-mix(in oklch, var(--bad) 70%, var(--ink)); }
+
+  /* --- Piloti / Istruttori: the person row (template 232-244 / 249-268) ---
+     `.mobile-row`'s own `1fr auto` becomes the template's `30px 1fr auto`. */
+  /* `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)` and the flag chip on row 2 would push its own track
+     wider than the row — measured with a real type name ("Tipo prenotazioni
+     1785793560243-v6kwjm", 38 chars) the chip ran past the card's right edge.
+     The `0` minimum is the same idiom `.kpi{min-width:0}` uses since 13.10 F1. */
+  .mobile-row-person{ grid-template-columns: 30px minmax(0, 1fr) auto; gap: 4px 12px; }
+  .mobile-row-avatar{ display: block; grid-row: 1; grid-column: 1; }
+  /* The template's 30px avatar; the primitive's own box is 24px (a topbar
+     size). Scoped to this slot, so no other `.avatar` in the app moves. */
+  .mobile-row-avatar .avatar{ width: 30px; height: 30px; font-size: 10px; }
+  .mobile-row-person > .mobile-row-main{ grid-row: 1; grid-column: 2; }
+  .mobile-row-side{ display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 0; grid-row: 1; grid-column: 3; }
+  .mobile-row-amount{ font-family: var(--font-mono); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .mobile-row-note{ font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+  /* The flag chip gets its OWN row rather than the template's slot under the
+     balance. Measured in that slot at 375px: a real blocking document
+     ("Visita medica classe 2 scaduto", 191px) pushed the right column to 193px
+     and left the NAME 38px — the row's own identifier, ellipsised away. On its
+     own row it has the full 245px and nothing else has to shrink. It is a
+     `Badge`, so 13.9's dark calibration comes with it; only the template's
+     smaller type is restated. */
+  /* Column 2 ONLY, never `2 / -1`: an item that SPANS tracks contributes its
+     max-content to the tracks it spans, so a spanning chip re-inflated the
+     `auto` column it was supposed to be independent of. Inside a single
+     `minmax(0, 1fr)` track its containing block is fixed by the name above it,
+     and `max-width: 100%` + ellipsis can finally do their job. */
+  .mobile-row-flag{
+    grid-row: 2; grid-column: 2;
+    display: block; min-width: 0;
+  }
+  /* `display: block`, not `.badge`'s own `inline-flex`: `text-overflow` has no
+     effect on the anonymous flex item a bare string becomes, so a long type name
+     was cut mid-word with no ellipsis to say so. The chip carries no dot here,
+     so nothing needs flex layout; `width: fit-content` keeps the pill hugging
+     its text instead of stretching to the whole track. */
+  .mobile-row-flag .badge{
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    font-size: 9.5px; padding: 1px 7px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* --- scheda persona: the dossier in one column (AC 12) ---
+     The two fixed tracks measured 151.5px each at 375px — two cards too narrow
+     to read. */
+  .person-bottom-grid{ grid-template-columns: 1fr; }
+  /* A free-text licence number or course label is one unbreakable token: at
+     320px it pushed its own box 14px wider than the card (measured). */
+  .person-profile-fact{ overflow-wrap: anywhere; }
+  /* Same class of defect on the "Dati anagrafici" rows: an email or a fiscal
+     code is one unbreakable token and `.info-row .v` has no wrap rule —
+     measured, three rows scrolled sideways inside their own box at 375px.
+     `anywhere` (not `break-word`) is the one that also shrinks the box's
+     min-content contribution, the 13.10 F1 lesson.
+     ANCHORED to the dossier's own card (review 15.5 F5): `.info-row` is shared
+     with the PUBLIC `/ppr` module, which belongs to story 15.9 — a descendant
+     selector reached its "aviosuperficie" block too (lesson 15.3 F1). */
+  .person-identity > .info-row > .v{ min-width: 0; overflow-wrap: anywhere; }
+  /* The scadenze table becomes a stacked row — the SAME four cells, re-placed,
+     never duplicated into a second tree (`person-detail.spec.ts:217` and
+     `expiry-registration.spec.ts` match this page's text page-level). */
+  .person-expiries .student-row.header{ display: none; }
+  .person-expiries .student-row{
+    grid-template-columns: 1fr auto;
+    gap: 4px 10px;
+    padding: 11px 16px;
+    align-items: start;
+  }
+  .person-expiries .student-row > :nth-child(1){ grid-column: 1; grid-row: 1; font-weight: 600; font-size: 13px; }
+  .person-expiries .student-row > :nth-child(2){ grid-column: 2; grid-row: 1; justify-self: end; }
+  .person-expiries .student-row > :nth-child(3){ grid-column: 2; grid-row: 2; justify-self: end; }
+  .person-expiries .student-row > :nth-child(4){ grid-column: 1; grid-row: 2; font-size: 12px; }
+  /* `.card-body`'s 18px side padding would double the row's own 16px. */
+  .person-expiries .card-body{ padding: 0; }
+  .person-expiries .card-body > .fld-label{ padding: 14px 16px; }
+}
+
+/* ---------- registro voli mobile (story 15.6, epic 15 R1-R4) ----------
+   The widest table of the app (measured 317/1344 at 375px: 1027px of it off
+   screen) becomes one card per flight, in the template's own language
+   (`AirOps Mobile` 289-296): registration chip + pilot, a mono sub-line
+   `data · dep→arr · tipo [· CFI]`, and duration over amount on the right.
+   Everything the desktop row shows or OPENS lives in the detail sheet
+   (R-15.6-c) — including the two decisions, whose gate is unchanged.
+
+   Additive inside `@media (max-width: 640px)`, no existing token changes
+   value, no new colour literal: the badges are `Badge`, the chips are
+   `.mobile-chip-strip` (15.4), the rows are `.mobile-row*` (15.3/15.4/15.5)
+   and the panels are `SlideOver`/`BottomSheet` in their existing mobile
+   modes. The three declarations OUTSIDE the query exist only because an
+   inline style cannot be overridden by a media query (the 15.5 lesson) and
+   because both trees are in the DOM at every width.
+
+   The switch hangs off classes this page OWNS — `.logbook-desktop-body`/
+   `.logbook-mobile`, `.logbook-head` — never off `.logbook`/`.lb-row`
+   (which would be a desktop change) nor off `.card-head` (13 consoles) nor
+   off `.filter-date-range` (shared with the contabilità, story 15.8). */
+
+/* The mobile tree is in the DOM at every width (the switch is CSS only), so
+   it must be `display: none` OUTSIDE the query too — otherwise the desktop
+   suite finds two matches for every registration on this page. Same for the
+   phone-only "Filtri" trigger. */
+.logbook-mobile,
+.logbook-head > .logbook-filters-trigger{ display: none; }
+
+/* The two declarations the date pair and the search box carried inline. An
+   inline `display`/`width` cannot be overridden by a media query, and the
+   phone head has to hide the first and stretch the second. Identical computed
+   style above 640px — measured pre/post at 1280/800/641px. */
+.logbook-filter-range{ display: flex; align-items: center; gap: 5px; }
+.logbook-search{ width: 190px; }
+
+@media (max-width: 640px){
+  .logbook-desktop-body{ display: none; }
+  .logbook-mobile{ display: block; }
+
+  /* --- the head of the registry card (ratifica R-15.6-e) ---
+     Measured pre-fix: 266px at 375px in both locales (309 with a filter
+     active, 351 at 320px), against 109px at 1280px — 68% of the screen before
+     the first flight. The 15.5 recipe applied literally (all seven controls
+     full-width at 44px) would have made it 382px, so this head keeps only what
+     is looked at (the person search) and what acts (Filtri, Esporta, Nuova
+     voce); periodo, velivolo and tipo move into the panel, stato onto the
+     chips. DIRECT children only (lesson 15.3 F1): this card also mounts two
+     `SlideOver` panels, a `.mini-modal` and portalled popovers, and a
+     descendant selector would restyle their buttons too. */
+  .logbook-head{ padding: 12px 16px; column-gap: 8px; }
+  .logbook-head > .spacer{ display: none; }
+  /* The card's own sub-heading ("Diario di volo") costs a whole row and says
+     nothing the phone does not already show twice — the page `<h1>` above it
+     and the mobile top bar's own title (15.1). Same decision as 15.5. */
+  .logbook-head > .card-title{ display: none; }
+  /* The five filters whose phone home is the panel. They stay in the DOM with
+     their testids and their desktop behaviour, one node each (AC 8). */
+  .logbook-head > .logbook-filter-inpanel{ display: none; }
+  /* Row 1: the search, full width. Row 2: Filtri + Esporta, half each. Row 3:
+     the CTA, the last thing before the first card — the language ratifiche
+     R-15.3-d/R-15.4-f/R-15.5-g already set for a primary action. */
+  .logbook-head > .logbook-search{ flex: 1 0 100%; width: auto; padding-top: 0; padding-bottom: 0; }
+  /* The TAP TARGET is the input, not the box around it: `.search` centres its
+     children, so a 44px wrapper still left `flight-filter-person` 18px tall
+     (measured) and a tap on the padding focused nothing. Same fix as 15.5. */
+  .logbook-head > .logbook-search .bare-input{ min-height: 44px; }
+  .logbook-head > .logbook-filters-trigger{ display: inline-flex; flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* `ExportMenu`'s own relative wrapper — its trigger is a GRANDCHILD, which
+     is why review 15.5 F4 had to reach it separately. Only the target grows;
+     the menu itself is story 15.8 (R-15.2-c). */
+  .logbook-head > div:has(> .btn){ flex: 1 1 0; }
+  .logbook-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+  .logbook-head > .btn.primary{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
+
+  /* --- the flight card (template 289-296) ---
+     `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, chip
+     + ellipsised name on the left, two stacked values on the right). Only the
+     placement of the badge row is new, so this is a MODIFIER, not a family.
+     `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)`, and a long pilot name would push its own track wider
+     than the card (the 13.10 F1 idiom, re-measured in 15.5). */
+  .mobile-row-flight{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  /* `.mobile-row-side` carries `grid-column: 3` for the three-track person row
+     of 15.5; here the right column is the second track. */
+  .mobile-row-flight > .mobile-row-side{ grid-column: 2; }
+  /* The status chip gets its OWN row, in column 1 only (never spanning: an
+     item that SPANS tracks contributes its max-content to all of them, the
+     defect 15.5 measured). In the right-hand slot a "Annullato" pill would eat
+     the pilot's name, which is the card's own identifier. */
+  .mobile-row-flight > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
+  /* Review 15.6 MINOR-2 — the dot, painted here too. `.mobile-row-flag .badge`
+     (15.5) is `display: block` so `text-overflow` can work on a bare string,
+     and inside a block the `.b-dot` span falls back to INLINE, where its 6x6
+     never applies: measured 0x13 on the card while the SAME `Badge` painted a
+     real 6x6 dot in the sheet and on the desktop row. The 15.5 rule stays as
+     it is — its own chips ask for no dot; only the flight card, whose two
+     anomaly chips DO (`tone="bad" dot` / `tone="warn" dot`), gets the inline
+     box back, with the 5px the base `.badge`'s own `gap` would have given it.
+     Ellipsis is untouched: the pill stays a block, the dot is just its first
+     inline child. */
+  .mobile-row-flight > .mobile-row-flag .badge .b-dot{ display: inline-block; vertical-align: middle; margin-right: 5px; }
+
+  /* --- the "Filtri" panel ---
+     `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed
+     header and the anchored action; the body only needs the editors' own
+     vertical rhythm, which `.form-grid` supplies on one column here. */
+  .logbook-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
+}
+
+/* ---------- scadenze + transiti mobile (story 15.7, epic 15 R1-R4) ----------
+   The last two operational registries that could only be read from a desk:
+   the Scadenze registry (868px of table inside 317px of screen, with a 262px
+   head above it — the first row started at 70% of the viewport) and the Voli
+   in transito register (800px of table, and a closure whose button needed
+   483px of horizontal scroll to reach and then opened its panel 483px to the
+   LEFT of the finger). Both become one card per row plus a detail sheet, in
+   the template's own language (`AirOps Mobile` 207-225 and 266-286), and so
+   does the self face "Le mie scadenze" — one of the FIVE tab-bar entries a
+   pilota/allievo/istruttore has.
+
+   Same rules of engagement as the 15.1-15.6 blocks above: every declaration
+   is additive inside `@media (max-width: 640px)`, no existing token changes
+   value, no new colour literal — the status pills are `Badge` (whose four
+   derived tones coincide 1:1 with the template's own `_badge`, script 563),
+   the chips are `.mobile-chip-strip` (15.4), the rows are `.mobile-row*`
+   (15.3/15.4/15.5/15.6) and the panels are `SlideOver`/`BottomSheet` in their
+   existing mobile modes. The declarations OUTSIDE the query exist only
+   because an inline style cannot be overridden by a media query (the 15.5
+   lesson) and because the mobile trees are in the DOM at every width.
+
+   The switch hangs off classes these pages OWN — `.scadenze-desktop-body`/
+   `.scadenze-mobile`, `.movements-desktop-body`/`.movements-mobile`,
+   `.my-expiries-desktop-body`/`.my-expiries-mobile`, `.scadenze-head`,
+   `.movements-head` — never off `.students`/`.student-row` (13 consoles), nor
+   `.card-head`, nor `.kpi-row`, nor `.mini-modal` (shared with the logbook's
+   storno), and above all never off `.segmented`: that class has SIX consumers
+   (pianificazione, panoramica, statistiche, the scadenze widget and the
+   primitive itself), so the finestra filter's phone form is NEW markup and
+   the desktop `.segmented` is hidden here through a class of this page
+   (`.scadenze-window-desktop`), which is not a rule on `.segmented` at all.
+   Same for `.date-input`, shared with contabilità and registro voli: the two
+   period filters are reached through `.movements-filter-inpanel`. */
+
+/* The three mobile trees are in the DOM at every width (the switch is CSS
+   only), so they must be `display: none` OUTSIDE the query too — otherwise
+   the desktop suite finds two matches for every registration and every person
+   name on these pages. Same for the two phone-only "Filtri" triggers. */
+.scadenze-mobile,
+.movements-mobile,
+.my-expiries-mobile,
+.scadenze-head > .scadenze-filters-trigger,
+.movements-head > .movements-filters-trigger{ display: none; }
+
+/* The declarations these six nodes carried inline. An inline `width`/
+   `display`/`grid-template-columns`/`max-width` cannot be overridden by a
+   media query, and the phone face has to stretch, hide or re-place each one.
+   Identical computed style above 640px — measured pre/post at 1280/800/641px. */
+.scadenze-search{ width: 190px; }
+.scadenze-kpi-row{ grid-template-columns: repeat(4, 1fr); }
+.movements-head-actions{ display: flex; gap: 8px; flex-wrap: wrap; }
+.ppr-complete-form{ display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; }
+.ppr-complete-field{ max-width: 200px; }
+.ppr-complete-actions{ display: flex; gap: 8px; }
+.membership-fee-actions{ display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.membership-fee-override-label{ display: flex; align-items: center; gap: 6px; margin-top: 10px; font-weight: 400; }
+
+@media (max-width: 640px){
+  .scadenze-desktop-body,
+  .movements-desktop-body,
+  .my-expiries-desktop-body{ display: none; }
+  .scadenze-mobile,
+  .movements-mobile,
+  .my-expiries-mobile{ display: block; }
+
+  /* --- the head of the Scadenze card (ratifica R-15.7-e) ---
+     Measured pre-fix: 262px at 375px in BOTH locales (304 at 320px), against
+     107px at 1280px — 70% of the screen before the first scadenza. The 15.5
+     recipe applied literally (all six controls full-width at 44px) would have
+     made it 330px, so this head keeps the search full-width and pairs the
+     four actions two per row, while the finestra moves onto a chip strip and
+     the tipo into the panel. DIRECT children only (lesson 15.3 F1): this card
+     also mounts a `SlideOver`, a `.mini-modal` and portalled popovers, and a
+     descendant selector would restyle their buttons too. */
+  .scadenze-head{ padding: 12px 16px; column-gap: 8px; }
+  .scadenze-head > .spacer{ display: none; }
+  /* The card's own sub-heading ("Registro scadenze") costs a whole row and
+     says nothing the phone does not already show twice — the page `<h1>` above
+     it and the mobile top bar's own title (15.1). Same decision as 15.5/15.6.
+     The COUNT beside it goes with it, measured: keeping it made the head
+     198.94px at 375px which, with the 64px chip strip, is 262.94 against a
+     261.5 pre-fix — 1.4px OVER the budget ratifica R-15.7-e was granted.
+     Without it: 175 + 64 = 239, the number ⟨Q5⟩'s own arithmetic predicted. */
+  .scadenze-head > .card-title,
+  .scadenze-head > .card-sub{ display: none; }
+  /* The finestra segmented and the tipo select: hidden through classes of
+     THIS page, never through a rule on `.segmented` (6 consumers) or on
+     `.input` (every form in the app). */
+  .scadenze-head > .scadenze-window-desktop,
+  .scadenze-head > .scadenze-filter-inpanel{ display: none; }
+  /* The TAP TARGET is the input, not the box around it: `.search` centres its
+     children, so a 44px wrapper still left `scadenze-filter-pilot` 18px tall
+     (measured) and a tap on the padding focused nothing. Same fix as 15.5/15.6. */
+  .scadenze-head > .scadenze-search{ flex: 1 0 100%; width: auto; padding-top: 0; padding-bottom: 0; }
+  .scadenze-head > .scadenze-search .bare-input{ min-height: 44px; }
+  .scadenze-head > .scadenze-filters-trigger{ display: inline-flex; }
+  /* Two per row: a `calc(50% - 4px)` BASIS, not `flex: 1 1 0` — with a zero
+     basis all four actions shrink onto ONE line instead of wrapping (the
+     defect 15.4 measured on the sheet's own action row). 50% + the head's own
+     8px column-gap is exactly one row. `ExportMenu`'s trigger is a GRANDCHILD
+     (inside its own relative wrapper), which is why it needs the second pair
+     of rules (review 15.5 F4). */
+  .scadenze-head > .btn,
+  .scadenze-head > div:has(> .btn){ flex: 1 1 calc(50% - 4px); }
+  .scadenze-head > .btn{ justify-content: center; min-height: 44px; }
+  .scadenze-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+  /* The two page actions carry a 16px glyph plus its 6px gap, and measured in
+     Italian at 375px that is exactly what pushed them over the 137.5px a
+     half-row gives them ("Quota associativa" 146.64px). The chips of 15.4
+     carry no glyph either, and 15.5 dropped the same one from its own head
+     chip for the same reason — this is that language. */
+  .scadenze-head > .btn > svg{ display: none; }
+  /* The reminders outcome is a toast on the phone (ratifica R-15.7-g): a
+     confirm-then-nothing on a telephone is how an operator ends up firing an
+     idempotent job twice. The `role="status"` paragraph stays for the desktop. */
+  .scadenze-reminders-feedback{ display: none; }
+
+  /* --- the head of the Voli in transito card (ratifica R-15.7-f) ---
+     Measured pre-fix: 143px at 375px in both locales (230 at 320px, 186 with
+     a filter active), against 68px at 1280px. The 15.5 recipe applied
+     literally (all five controls full-width at 44px) would have made it
+     276px, so stato moves onto a chip strip, periodo and "Azzera" into the
+     panel, and the head keeps only the two things that act. */
+  .movements-head{ padding: 12px 16px; column-gap: 8px; }
+  .movements-head > .spacer{ display: none; }
+  /* Both the title and the count go: the page `<h1>` and its own sub-line
+     ("N attualmente al suolo") already say what this card is, and the count
+     here is the CURRENT PAGE's row count, which the list itself shows. */
+  .movements-head > .card-title,
+  .movements-head > .card-sub{ display: none; }
+  /* Stato (now the chip strip), the two period filters and "Azzera filtri"
+     (now the panel's own footer button). They stay in the DOM with their
+     testids and their desktop behaviour, one node each. */
+  .movements-head > .movements-filter-status,
+  .movements-head > .movements-filter-inpanel{ display: none; }
+  /* One row: Filtri + Esporta, half each. */
+  .movements-head > .movements-filters-trigger{ display: inline-flex; flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .movements-head > div:has(> .btn){ flex: 1 1 0; }
+  .movements-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+  /* "Registra arrivo", full width under the page sub-line — the grammar
+     ratifiche R-15.3-d/R-15.4-f/R-15.5-g already set for a primary action, and
+     the last page CTA of the epic still measuring 127x35. DIRECT child:
+     `LogArrivalLaunchButton` renders its trigger AND its `ManualPprForm`
+     panel as siblings inside this wrapper (lesson 15.3 F1). */
+  .movements-head-actions{ flex: 1 0 100%; }
+  .movements-head-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- the two "Filtri" panels ---
+     `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed
+     header and the anchored action; the bodies only need the editors' own
+     vertical rhythm on one column. */
+  .scadenze-filter-panel,
+  .movements-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
+  /* Every control of a panel is a control of the head that moved into it
+     (R4), so AC 5/6's 44px floor follows it there: measured without these,
+     the tipo select was 36px and the two date fields 38.8px with a 24x24
+     calendar trigger — the smallest target of either page. Bounded by the two
+     panel classes this story owns; the `SlideOver` chassis is untouched. */
+  .scadenze-filter-panel .input,
+  .movements-filter-panel .input{ min-height: 44px; }
+  /* The 36px trigger this story anchored here is now the app-wide 44px floor
+     of story 15.10 (R-15.10-d): the rule that replaced it is at the end of
+     this file, and the value went 36 -> 44 on this panel. */
+
+  /* --- the transit card (template 207-225) ---
+     `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, an
+     identifier and an ellipsised line on the left, a pill on the right). Only
+     the tracks and the type slot are new, so this is a MODIFIER, not a family
+     — and `.ppr-card*` (15.2) is deliberately NOT reused: its rows have no
+     right-hand track, so a status pill as long as "In arrivo" would compete
+     with the marks instead of being protected by one (AD-3).
+     `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)` and a long requester name would push its own track
+     wider than the card (the 13.10 F1 idiom, re-measured in 15.5/15.6). */
+  .mobile-row-transit,
+  .mobile-row-expiry{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  /* `.mobile-row-side` carries `grid-column: 3` for the three-track person row
+     of 15.5; here the right column is the second track. */
+  .mobile-row-transit > .mobile-row-side,
+  .mobile-row-expiry > .mobile-row-side{ grid-column: 2; }
+  /* The pill never wraps and never shrinks: it is the word that changes what
+     the row MEANS, and the `auto` track is sized on it. The left track's
+     `minmax(0, …)` is what absorbs the difference. */
+  .mobile-row-transit > .mobile-row-side .badge,
+  .mobile-row-expiry > .mobile-row-side .badge{ white-space: nowrap; }
+  /* The template's own second slot on the title line (207-225): the aircraft
+     TYPE, mono, quieter and lighter than the marks beside it. It ellipsises
+     and the marks chip does not, so a long type never eats the identifier.
+     `--ink-3` on `--panel` measures 4.85:1 light / 5.72 dark (the pair 15.6
+     already established for `.mobile-row-sub`) — never the template's own
+     `--ink-4`, which is a >=3:1 floor meant for group labels, not for text. */
+  .mobile-row-model{
+    min-width: 0;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 400; color: var(--ink-3);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* "Le mie scadenze" only: the dormant "Proposta in attesa" chip gets its own
+     row in column 1 — never spanning (an item that SPANS tracks contributes
+     its max-content to all of them, the defect 15.5 measured), and never in
+     the right-hand slot, where it would eat the status pill. */
+  .mobile-row-expiry > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
+
+  /* --- the closure of a transit, inside the sheet (ratifica R-15.7-d) ---
+     The SAME `CompleteForm` the desktop row panel renders (AD-8) — only its
+     container changes, so the three inline styles it used to carry had to
+     become classes first. The two fields lose their 200px desktop cap and the
+     two buttons become equal 44px halves. Bounded by a class this story owns,
+     whose subtree is this one form. */
+  .mobile-complete-step > .ppr-complete-form{ padding: 0; }
+  .mobile-complete-step .ppr-complete-field{ max-width: none; }
+  /* The two fields of an operation with a REAL accounting effect: measured
+     36.8px (importo) and 36px (metodo) without this. */
+  .mobile-complete-step .input{ min-height: 44px; }
+  .mobile-complete-step .ppr-complete-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- "Quota associativa" as a full-screen panel (ratifica R-15.7-g) ---
+     Measured pre-fix at 375px: a 335x385 card with a 131x35 submit and a
+     13x13 checkbox, holding a typeahead over 338 people. It becomes the
+     epic's full-screen grammar WITHOUT a second tree: a second tree would
+     duplicate `membership-fee-panel`, `membership-fee-submit`, the
+     combobox's DOM `id` and its network path, all read PAGE-LEVEL by
+     `membership-fee.spec.ts`. Anchored to a class of THIS modal — never to
+     `.mini-modal`, which the registro voli's storno also uses. The
+     combobox's listbox is portalled to `<body>` and `position: fixed`
+     (story 14.1), so the card's own scroll cannot clip it. */
+  .membership-fee-modal{ padding: 0; place-items: stretch; }
+  .membership-fee-modal > .mini-modal-card{
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+  /* `margin-top: auto` inside the card's own flex column: the action row sits
+     at the BOTTOM of the panel, which is where R3 puts a primary action. */
+  .membership-fee-modal > .mini-modal-card > .membership-fee-actions{ margin-top: auto; }
+  /* The typeahead over 338 people and the amount: 36.8px each without this. */
+  .membership-fee-modal .input{ min-height: 44px; }
+  .membership-fee-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* A 13x13 checkbox is the smallest target on either page, and this one
+     decides whether a refusal from the server gets overridden. The TAP TARGET
+     is the label ROW, which wraps the input: enlarging the box alone left the
+     row at 343x20 (measured), i.e. the only control of this full-screen panel
+     still under the 44px floor its submit and its two fields already meet. The
+     floor goes on the row — the box can stay 20x20, since a click anywhere on
+     the row toggles it. Anchored to THIS modal's class: the desktop
+     `.mini-modal` is untouched (measured pre/post at 1280px — label 382x15.2,
+     checkbox 13x13, card 420x385.3, identical). */
+  .membership-fee-modal .membership-fee-override-label{ min-height: 44px; }
+  .membership-fee-override-label > input[type="checkbox"]{ width: 20px; height: 20px; flex-shrink: 0; }
+}
+
+/* ---------- contabilità mobile + export menu (story 15.8a, epic 15 R1-R4) ----------
+   The last accounting surface of the app, and the widest table left: 988px of
+   nine columns inside 317px of screen, under a 265.66px head, with the first
+   transaction row starting at y=1068 — 131% of a 812px viewport, the worst
+   opening measured in the whole epic. It becomes one card per transaction plus
+   a detail sheet, in the template's own language (`AirOps Mobile` 325-334),
+   with the three riquadri collapsed into a tappable KPI per riquadro
+   (R-15.8a-c) and the three writes — rettifica, storno, riclassifica — living
+   INSIDE the sheet as second steps (R-15.8a-g).
+
+   Same rules of engagement as the 15.1-15.7 blocks above: every declaration is
+   additive inside `@media (max-width: 640px)`, no existing token changes value,
+   no new colour literal — the pills are `Badge`, the chips are
+   `.mobile-chip-strip` (15.4), the rows are `.mobile-row*` (15.3-15.6), the
+   pagination is `.registry-pagination` (15.5) and the panels are `SlideOver`/
+   `BottomSheet` in their existing mobile modes.
+
+   The declarations OUTSIDE the query are the four this story declares: (i) the
+   `display: none` of the two mobile trees, which are in the DOM at every width;
+   (ii) `.billing-split`, the inline `1fr 1fr` of `billing-console.tsx` moved
+   into a class so the desktop stays measured-identical (R-15.8a-f); (iii) the
+   three other inline declarations that a media query could never have
+   overridden (`.billing-filter-range`, `.billing-search`,
+   `.billing-negative-list`, `.export-menu-panel`), the same move 15.5/15.6/15.7
+   each had to make; (iv) the `ExportMenu`'s own chassis. The graphic half of
+   R-15.8a-i is a defect of BOTH faces and is corrected at every width, so it
+   does not live in this block at all: `.flow-bar-in`/`.flow-bar-out` sit next
+   to their text twin `.stat-tone-*` (review 15.8a LOW-3).
+
+   The switch hangs off classes this page OWNS — `.billing-desktop-body`/
+   `.billing-mobile`, `.billing-head`, `.billing-kpi-row` — never off
+   `.students`/`.student-row` (13 consoles), nor `.card-head`, nor `.kpi-row`,
+   nor `.split` (4 more instances on `/dashboard/reports`, the story gemella's
+   own page), nor `.mini-modal` (shared with the registro voli's storno), nor
+   `.segmented` (6 consumers), nor `.date-input` (5 pages): the two period
+   fields are reached through `.billing-filter-inpanel` and the panel's own
+   class. */
+
+/* The two mobile trees are in the DOM at every width (the switch is CSS only),
+   so they must be `display: none` OUTSIDE the query too — otherwise the
+   desktop suite finds two matches for every description on this page. Same for
+   the phone-only "Filtri" trigger. */
+.billing-mobile,
+.billing-kpi-row,
+.billing-head > .billing-filters-trigger{ display: none; }
+
+/* R-15.8a-f. `.split`'s own base is `2fr 1fr`, so the inline `1fr 1fr` this
+   node carried could not simply be deleted: it moves here, OUTSIDE the query
+   (desktop measured identical at 488/488 @1280), and is neutralised inside it. */
+.billing-split{ grid-template-columns: 1fr 1fr; }
+
+/* The declarations three nodes carried inline. An inline `display`/`width`/
+   `max-height` cannot be overridden by a media query, and the phone face has
+   to hide the first, stretch the second and grow the third. Identical computed
+   style above 640px — measured pre/post at 641/800/1280. */
+.billing-filter-range{ display: flex; align-items: center; gap: 5px; }
+.billing-search{ width: 190px; }
+.billing-negative-list{ display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+
+/* --- ExportMenu: one node, two shapes (R-15.8a-h) ---
+   The menu is a `MobileSheet` at every width; `.mobile-sheet`'s own base rule
+   is `display: none` outside the query, so the desktop form has to be claimed
+   back here. Everything else the desktop popover needs comes from the
+   `.popover`/`.popover-scrim` classes the component still passes — the shadow,
+   the border, the radius, the z-index pair and the anchoring are NOT restated,
+   so there is no second source of truth and no new colour literal. Only the
+   two things the sheet chassis adds and the popover never had — the grabber —
+   and the width the trigger used to carry inline are declared. */
+.mobile-sheet.export-menu-sheet{ display: block; }
+.export-menu-sheet .mobile-sheet-grabber{ display: none; }
+.export-menu-panel{ min-width: 180px; }
+
+@media (max-width: 640px){
+  .billing-desktop-body{ display: none; }
+  .billing-mobile{ display: block; }
+
+  /* --- the three riquadri as a tappable KPI each (R-15.8a-c) ---
+     Measured pre-fix at 375px: the three stacked cards were 579.92px tall and
+     the first transaction row started at 1068.23 on a 812px screen. The strip
+     replaces them; the full detail of each riquadro is one tap away, in a
+     sheet, so nothing is lost (R4).
+     `1fr 1fr` with the FIRST cell spanning, not `repeat(3, 1fr)`: three money
+     values in 101px columns wrap to two clamped lines each on a real ledger
+     (`-1.216,22 €` needs ~99px at 15px mono), and the month's result is the
+     number this page is opened for — it gets the full width, liquidità and
+     acconti share the row below. No empty cell, and no swipe to reach the
+     third number (the defect ratifica R-15.3-c already corrected for the 2x2). */
+  .billing-panels{ display: none; }
+  .kpi-row.billing-kpi-row{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-inline: 0;
+    padding-inline: 0;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+  .billing-kpi-row > *{ min-width: 0; max-width: none; scroll-snap-align: none; }
+  .billing-kpi-row > *:first-child{ grid-column: 1 / -1; }
+  /* The KPI is a `<button>` now (it opens the riquadro's sheet), so it needs
+     the reset `.kpi` never had to carry: a button brings its own font, its own
+     centred text and its own `text-align`. */
+  .billing-kpi{
+    width: 100%;
+    min-height: 44px;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .billing-kpi:active{ background: var(--panel-2); }
+  /* Same 19px the 2x2 variant of 15.3 uses: a half-width card is narrower than
+     a strip card, and 23px there wrapped even short values. */
+  .billing-kpi-row .kpi-value{ font-size: 19px; }
+
+  /* --- the head of the registro card (R-15.8a-e) ---
+     Measured pre-fix: 265.66px at 375px AND at 390px in both locales (350.89 at
+     320px, 308.5 with a filter active, 393.73 at 320 with the secchiello chip),
+     against 109.23 at 1280px. The 15.5 recipe applied literally (all seven
+     controls full-width at 44px) would have made it ~416px, so this head keeps
+     only what is looked at (the pilot search) and what acts (Filtri, Esporta,
+     Nuova transazione); periodo and categoria move into the panel, tipo and il
+     secchiello onto the chips. DIRECT children only (lesson 15.3 F1): this card
+     also mounts a `SlideOver`, two `.mini-modal`s and portalled popovers, and a
+     descendant selector would restyle their buttons too. */
+  .billing-head{ padding: 12px 16px; column-gap: 8px; }
+  .billing-head > .spacer{ display: none; }
+  /* The card's own sub-heading ("Transazioni") and its count cost a whole row
+     and say nothing the phone does not already show twice — the page `<h1>`
+     above it, which carries the same count, and the mobile top bar's own title
+     (15.1). Same decision as 15.5/15.6/15.7. */
+  .billing-head > .card-title,
+  .billing-head > .card-sub{ display: none; }
+  /* Periodo, categoria and "Azzera filtri", whose phone home is the panel; the
+     tipo select and the secchiello chip, whose phone home is the chip strip.
+     They all stay in the DOM with their testids and their desktop behaviour,
+     one node each. */
+  .billing-head > .billing-filter-inpanel,
+  .billing-head > .billing-filter-booktype-desktop,
+  .billing-head > .billing-filter-chip-desktop{ display: none; }
+  /* R-15.8a-j: the three outcomes are toasts on the phone. The paragraphs are
+     the desktop's, and they must never grow the head this rule is shrinking. */
+  .billing-head > .billing-feedback{ display: none; }
+  /* Row 1: the search, full width. Row 2: Filtri + Esporta, half each. Row 3:
+     the CTA, the last thing before the chips — the grammar ratifiche
+     R-15.3-d/R-15.4-f/R-15.5-g already set for a primary action. */
+  .billing-head > .billing-search{ flex: 1 0 100%; width: auto; padding-top: 0; padding-bottom: 0; }
+  /* The TAP TARGET is the input, not the box around it: `.search` centres its
+     children, so a 44px wrapper still left `billing-filter-person` 18.13px tall
+     (measured) and a tap on the padding focused nothing. Same fix as 15.5-15.7. */
+  .billing-head > .billing-search .bare-input{ min-height: 44px; }
+  .billing-head > .billing-filters-trigger{ display: inline-flex; flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* `ExportMenu`'s own relative wrapper — its trigger is a GRANDCHILD, which is
+     why review 15.5 F4 had to reach it separately. */
+  .billing-head > div:has(> .btn){ flex: 1 1 0; }
+  .billing-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+  .billing-head > .btn.primary{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
+  /* The CTA carries a 16px glyph plus its 6px gap; the head's own budget is
+     tighter than the label needs at 320px. Same drop 15.5/15.7 made. */
+  .billing-head > .btn.primary > svg{ display: none; }
+
+  /* --- the transaction card (template 325-334) ---
+     `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, a
+     chip and an ellipsised line on the left, a value on the right). Only the
+     tracks and the flag's placement are new, so this is a MODIFIER, not a
+     family. `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)` and a long description would push its own track wider
+     than the card (the 13.10 F1 idiom, re-measured in 15.5/15.6/15.7). */
+  .mobile-row-transaction{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  /* `.mobile-row-side` carries `grid-column: 3` for the three-track person row
+     of 15.5; here the right column is the second track. */
+  .mobile-row-transaction > .mobile-row-side{ grid-column: 2; }
+  /* The status chip gets its OWN row, in column 1 only (never spanning: an item
+     that SPANS tracks contributes its max-content to all of them, the defect
+     15.5 measured). In the right-hand slot a "Stornato" pill would eat the
+     amount, which is the card's whole point. */
+  .mobile-row-transaction > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
+  /* Review 15.6 MINOR-2, the dot painted here too: `.mobile-row-flag .badge` is
+     `display: block` so `text-overflow` can work on a bare string, and inside a
+     block the `.b-dot` span falls back to INLINE, where its 6x6 never applies.
+     Both chips of this card carry a dot (`tone="bad" dot` / `tone="warn" dot`). */
+  .mobile-row-transaction > .mobile-row-flag .badge .b-dot{ display: inline-block; vertical-align: middle; margin-right: 5px; }
+  /* The amount never wraps and never shrinks: the `auto` track is sized on it
+     and the left track's `minmax(0, …)` absorbs the difference. */
+  .mobile-row-transaction > .mobile-row-side .mobile-row-amount{ white-space: nowrap; }
+
+  /* --- the "Filtri" panel ---
+     `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed header
+     and the anchored action; the body only needs the editors' own vertical
+     rhythm on one column. Every control of a panel is a control of the head
+     that moved into it (R4), so the 44px floor follows it there: measured
+     without these, the categoria select was 35px and the two date fields
+     38.84px with a 24x24 calendar trigger. Bounded by the panel class this
+     story owns; the `SlideOver` chassis and `.date-input` elsewhere are
+     untouched. */
+  .billing-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
+  .billing-filter-panel .input{ min-height: 44px; }
+  /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
+
+  /* --- the three writes, inside the sheet (R-15.8a-g) ---
+     The riclassifica becomes explicit: three method buttons and a confirm,
+     never a `<select>` that writes on change. Equal thirds, 44px, wrapping
+     rather than shrinking below the floor. */
+  .billing-method-choice{ display: flex; gap: 8px; flex-wrap: wrap; }
+  .billing-method-choice > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* The fields of operations with a real accounting effect: measured 34.84px
+     (importo), 36.84px (motivo della rettifica) without this. Anchored to a
+     class of THIS story, never to `.bottom-sheet-step` — that one is shared
+     with the registro voli's storno and the transiti's closure (15.6/15.7). */
+  .billing-sheet-step .input{ min-height: 44px; }
+
+  /* --- "Saldi negativi": the scroller stays, its rows grow ---
+     61 rows behind a 220px window, with 44px targets, shows four names; the
+     window grows and every link becomes a real target. The list keeps its own
+     scroller (it is a secondary card at the bottom of a long page), and the
+     sweep of AC 11 discriminates "clipped inside this scroller" from "covered
+     by the tab bar". */
+  .billing-negative-list{ max-height: 320px; }
+  .billing-negative-row{ align-items: center; min-height: 44px; }
+  /* The card's own "Vedi tutte le persone" link measured 137.14x15.94 — the
+     smallest target left on the page after the sweep, and the only one of this
+     card AC 6 had not named. Anchored to the card's own class. */
+  .billing-negative-card > .card-head > a{ display: inline-flex; align-items: center; min-height: 44px; }
+
+  /* --- "Nuova transazione": the six fields of the full-screen form (TD (k), AC 15 b) ---
+     R3 was already satisfied by `SlideOver`'s mobile mode (measured: 0,0
+     375x812, `.so-foot` anchored at the bottom, `transaction-submit` 161.39x44),
+     but the fields inside it were 34.84-38.84px with a 24x24 calendar trigger.
+     Anchored to the form's OWN class, inside the phone query, so the desktop is
+     untouched by construction — and re-measured at 1280 to prove it. The ✕ of
+     the `SlideOver` chassis (32x32) and the typeahead's own 36px options are
+     NOT touched here: they belong to a primitive with eleven consumers (TD (k),
+     declared, not closed). */
+  .transaction-form .input{ min-height: 44px; }
+  /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
+
+  /* R-15.8a-f, the other half: the two secondary cards stop being two 151.5px
+     columns with a horizontal scroller each. Stacking alone is not enough,
+     though: measured after it, "Per categoria" still had 259px of content in
+     226 at 320px (293 in 281 at 375px) and "Saldi negativi" 282 in 226 — the
+     three mono values and a free-text name do not fit one line on a phone. */
+  .billing-split{ grid-template-columns: 1fr; }
+  .billing-cat-line{ flex-wrap: wrap; }
+  .billing-cat-name{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A surname is one unbreakable token: it ellipsises rather than pushing the
+     row past the card (the 15.5 idiom) — and this link IS the target AC 6 asks
+     for at 44px: the ROW was already 44, but what a thumb hits is the `<a>`,
+     measured 18.13px with 13px of dead space above and below (review 15.8a
+     MINOR-1, 61 of them). The height comes from the line box, not from the
+     `display: inline-flex` idiom of the card head's own link two rules above:
+     as a flex item this link is already blockified, and making it a flex
+     CONTAINER would turn its text into an anonymous item, where `text-overflow`
+     does not apply — the ellipsis on this very selector would stop working. */
+  .billing-negative-row > a{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 44px; line-height: 44px; }
+
+  /* --- ExportMenu as a bottom sheet (R-15.8a-h) ---
+     Measured pre-fix at 375px: the popover sat at x = -29.09 on BOTH the
+     Contabilità and the Prenotazioni — 29px off screen to the left — and its
+     Italian entries were 53.69px tall on the Contabilità (34.84 elsewhere).
+     The sheet form comes from `.mobile-sheet*`, which is declared LATER in this
+     file than `.popover` and therefore already wins on every property both set;
+     only `top` (which `.popover` sets and the sheet does not) and the flex gap
+     have to be undone here, plus the grabber the desktop popover hides. */
+  .export-menu-sheet > .mobile-sheet-panel{ top: auto; gap: 0; }
+  .export-menu-sheet .mobile-sheet-grabber{ display: block; }
+  /* The entries: full-width and above the 44px floor, on every one of the nine
+     consumers — the guard is written on the REQUIREMENT (43.5), never on the
+     value obtained. */
+  .export-menu-panel .pop-row > .btn{ min-height: 44px; }
+}
+
+/* ---------- statistiche + impostazioni mobile (story 15.8b, epic 15 R1-R4) ----------
+   Two admin surfaces of opposite natures: `/dashboard/reports` writes nothing
+   and is 21.939px tall on a phone (measured, 145-aircraft fleet), while
+   `/dashboard/settings` writes through ~15 endpoints and carried 231 targets
+   under 44px — 201 of them 24.67px `.btn.mini`s sitting at x=503-637 in a
+   375px viewport, i.e. off the right edge and unreachable without scrolling a
+   table sideways (hit-test on their centre returned the tab bar, not the
+   button).
+
+   Everything below lives inside `@media (max-width: 640px)` except the two
+   kinds of declaration R1 allows out of it: the `display: none` of a mobile
+   tree (so the desktop never renders it) and the `.billing-split`-style layout
+   classes that only MOVE an inline style into the sheet. The switch is hung on
+   classes THIS story owns — never on `.card`, `.card-head`, `.students`,
+   `.kpi-row`, `.form-grid`, `.util-*`, `.split` and above all never on
+   `.segmented` (six consumers, two of them on this very page): a rule that
+   looked harmless here would repaint Pianificazione, Panoramica and Scadenze
+   (lesson 15.3 F1, reconfirmed 15.5 F5 and 15.7).
+
+   The contrast half of the story does NOT live here: `.flow-bar-*` and
+   `.chart-label` sit next to their own families further up, because a contrast
+   remedy is valid at every width and the next reader will look for it there
+   (review 15.8a LOW-3). */
+
+.expiry-types-mobile,
+.cash-categories-mobile,
+.ranked-cap-foot{ display: none; }
+
+@media (max-width: 640px){
+  /* --- Statistiche: the period toggle and the two metric toggles (AC 1) ---
+     Both are `.segmented`s, and `.segmented` is shared with four surfaces
+     outside this page, so the 44px floor is hung on two page-owned classes,
+     anchored with `>` so it can only ever reach a DIRECT child of the toggle
+     it names. Pre-fix both were 27.39px tall. The `.page-head` itself is left
+     alone: it already wraps at <=640 (13.10) and measured 104.83px in both
+     locales — the arithmetic is what matters, not the intention (lesson 15.6
+     R-15.6-e), and 44px links inside a 33.39px box is exactly the case where
+     a head grows if nothing else gives, so the padding of the box comes down
+     by the 2px it can afford. */
+  .reports-period > a,
+  .reports-rank-metrics > button{
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .reports-period{ padding: 0; flex: 1 1 100%; }
+  .reports-period > a{ flex: 1 1 0; }
+  .reports-rank-metrics{ padding: 0; }
+
+  /* --- the ranked lists (AC 3) ---
+     Three unrelated defects in one place, all measured at 375px: a `.util-row`
+     was a 64.5px three-line stack (label, bar, value each on their own line),
+     the two 145-row cards were 9.356 and 9.398px tall, and the fixed inline
+     `grid-template-columns` of all four call sites (`90px 1fr 80px`, ...) had
+     already been neutralised by 13.10 by turning the row into a flex column.
+     The row stays FLEX for that same reason — switching it back to `grid`
+     would revive those inline px tracks and re-clip the value (13.10's own
+     defect) — but wraps instead of stacking: label and value share the first
+     line, the bar takes the second. */
+  .ranked-rows > .util-row{ flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .ranked-rows > .util-row > :first-child{ flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ranked-rows > .util-row > .util-value{ flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
+  .ranked-rows > .util-row > .util-bar{ flex: 0 0 100%; order: 3; }
+
+  /* The cap itself (R-15.8b-b, pattern 13.4). CSS, not JS: every row is
+     rendered at every width — `reports.spec.ts` reads `reports-fleet-row-*`
+     and `reports-rank-*-row-*` page-level at 1280px, and AC 9 wants exactly
+     one node per testid at BOTH widths — and only the phone hides the rows
+     past the limit. `.ranked-row-overflow` is put on the rows by the callers
+     from the ONE constant in `src/lib/mobile-reports.ts`, so the limit is
+     never written twice. */
+  .ranked-rows-capped .ranked-row-overflow{ display: none; }
+  .ranked-cap-foot{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .ranked-cap-foot > .btn{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
+
+  /* --- Impostazioni: the form half of the seven cards (AC 4) ---
+     `.form-grid` was already one column here (13.10), so what was broken was
+     the SIZE of the controls: 13 inputs at 36.84px, 3 time/date fields at
+     38.84, 12 "Salva" at 34.84, one calendar trigger at 24. Anchored to a
+     class carried only by these seven cards. The nested calendar trigger
+     stays at 36x36 — the PO line since 15.7: a nested trigger lives INSIDE a
+     44px box (`airops.css`'s own `.movements-filter-panel` precedent), and
+     it is DECLARED in the sweep instead of being silently excluded (lesson
+     15.8a MINOR-1). */
+  .settings-card .input{ min-height: 44px; }
+  /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
+  .settings-card textarea.input{ min-height: 88px; }
+  /* "Salva"/"Aggiungi"/"Invia email di prova"/"Annulla": full-width and 44px.
+     A card save is the end of a column of fields — on a phone it is the whole
+     column's width (57.66px measured before), not a chip lost against the left
+     margin. The `:only-child` is what tells a SAVE ROW (one button in its own
+     div, the shape all five save actions share) from the sheet's action column
+     and the head's own action, which are laid out by their own rules. */
+  .settings-card .btn{ min-height: 44px; justify-content: center; }
+  .settings-card div:has(> .btn.primary:only-child) > .btn.primary{ width: 100%; }
+  .settings-card form > div:has(> .btn) > .btn{ flex: 1 1 0; }
+
+  /* The head: `.card-head` is shared by every card in the app, so the phone
+     rule is hung on `.settings-card >` and touches only its DIRECT children.
+     Pre-fix heads at 375/IT: 89.17 · 89.17 · 132.02 · 73.23 · 116.08 · 116.08
+     · 147.95. The head action ("Aggiungi", "Invia email di prova") goes to
+     44px, which alone would grow every head that has one, so the head's own
+     padding comes down and the action takes a full row of its own instead of
+     fighting the title for the same line. */
+  .settings-card > .card-head{ padding: 10px 16px; column-gap: 8px; row-gap: 6px; }
+  .settings-card > .card-head > .spacer{ display: none; }
+  .settings-card > .card-head > .btn{ flex: 1 0 100%; }
+  .settings-card > .card-head > .card-sub{ flex: 1 0 100%; }
+
+  /* --- the three CRUD tables become card lists (AC 5) ---
+     `.students` measured 317 visible against 694 of content: FOUR columns and
+     the whole action group lived past the right edge. The desktop body goes
+     away, the mobile tree arrives; both switches are hung on classes this
+     story owns, never on `.students`/`.student-row` (13 consoles). */
+  .expiry-types-desktop-body,
+  .cash-categories-desktop-body{ display: none; }
+  .expiry-types-mobile,
+  .cash-categories-mobile{ display: block; }
+
+  /* The card of one catalogue entry: ONE `<button>` with `<span>` children
+     (zero nested interactives, asserted), the name ellipsised, the status
+     badge on the right. The row primitive of 15.2/15.5 is reused as-is —
+     `.mobile-row` and its children already carry the 44px floor, the
+     `:active` tint and the two-column grid. */
+  .mobile-row-catalog{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .mobile-row-catalog > .mobile-row-main{ grid-column: 1; grid-row: 1; }
+  .mobile-row-catalog > .mobile-row-side{ grid-column: 2; grid-row: 1; }
+  .mobile-row-catalog > .mobile-row-side .badge{ white-space: nowrap; }
+
+  /* The sheet's action column: "Elimina" is a `secondStep` inside the same
+     sheet (R-15.8b-d), so no second overlay is ever stacked on it (AD-8) —
+     and the confirmation prose needs a line of its own. */
+  .catalog-sheet-step{ display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+  .catalog-sheet-step .input{ min-height: 44px; }
+
+  /* The checkbox row of the expiry-type form: `blocksBooking` is the manoeuvre
+     that feeds the 7.4/14.4 guards, and it was a 13px box in a 15px row. Same
+     idiom as `.membership-fee-override-label` (15.7): the `<label>` around it
+     is the real target and carries the 44px floor, the box itself is 24px —
+     the WCAG 2.2 minimum for a control that is not its own target (review
+     MINOR-2, PO decision 2026-08-05). The label's own `align-items` is NOT set
+     here: it comes from the inline `flex-start` of `ratings-card.tsx:588`,
+     which wins over any class rule (review LOW-1). */
+  .settings-card form label:has(> input[type="checkbox"]){ min-height: 44px; }
+  .settings-card form input[type="checkbox"]{ width: 24px; height: 24px; flex-shrink: 0; }
+}
+
+/* ---------- aree self + modulo pubblico mobile (story 15.9, epic 15 R1-R4) ----------
+   The two self-service surfaces every pilot, student and instructor has in the
+   first row of their own tab bar, plus the public showcase. Measured before
+   this block, at 375x812:
+
+   - "Le mie transazioni" (`account-section.tsx`, SHARED with the scheda
+     persona): the statement grid computes `104px 150px 0px 120px` — the
+     Descrizione track is literally ZERO — and the amount ends at x=481 inside
+     a 281px card body. The admin face adds two tracks and ends at 849.
+   - "I miei compensi": `.students` 281/640, the amount at 687.
+   - `/ppr`: 12 fields out of 12 under 44px (9 inputs at 36.84, 2
+     datetime-local at 38.84, the textarea is tall enough), two 24x24 calendar
+     triggers, a submit 64.59px tall only because its Italian label wraps.
+
+   Same rules of engagement as the 15.1-15.8b blocks above: every declaration
+   is additive inside `@media (max-width: 640px)`, no existing token changes
+   value, no new colour literal. The two exceptions R1 allows are used and
+   named: (i) the `display: none` of the two mobile trees, which are in the DOM
+   at every width; (ii) `.account-pagination`, an inline style moved into a
+   class so a media query can reach it at all (the move R-15.8a-f had to make).
+
+   `/ppr` lives OUTSIDE the shell and outside this threshold: its own
+   breakpoint is 820px and its rules are the two marked below, anchored to
+   `.ppr-*` — `/ppr` shares `.card`, `.input`, `.fld`, `.btn`, `.info-card`,
+   `.info-row` and `.date-input-btn` with the dashboard, and review 15.5 F5 is
+   the proof that an unanchored selector reaches it. The 47 targets under 43.5
+   inside `.cal-popover` (42 `.cal-cell` at 34.58, 2 `.iconbtn` at 24x24) are a
+   SHARED primitive with 11+ consumers and stay a declared TD for 15.10.
+
+   The switch hangs off classes these surfaces OWN — `.account-desktop-body`/
+   `.account-mobile`, `.compensation-desktop-body`/`.compensation-mobile`,
+   `.account-head` — never off `.students`/`.student-row` (13 consoles), nor
+   `.card-head`, nor `.kpi-row` alone. */
+
+/* Both mobile trees are in the DOM at every width (the switch is CSS only), so
+   they must be `display: none` OUTSIDE the query too — otherwise every desktop
+   guard that reads a movement or a payout page-level finds two matches. */
+.account-mobile,
+.compensation-mobile{ display: none; }
+
+/* AD-4: the statement pagination carried its geometry INLINE, where no media
+   query could reach it. Same values, same node, same two links — measured
+   identical at 641/800/1280. */
+.account-pagination{ display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px; }
+
+/* R-15.9-g, the other half of removing `display:none` above: the switch is a
+   real target at EVERY width. The declaration is unconditional because the
+   defect is (the link measured 45.72x15.94 even at 821px, where it WAS
+   visible), and its arithmetic price on the desktop header is declared in the
+   record: `.ppr-top-in` is a 14px-padded flex row whose tallest item was the
+   32px logo mark, so a 44px item makes the header 72px instead of 60px. */
+.ppr-top-right a{ display: inline-flex; align-items: center; min-height: 44px; }
+/* A configured airfield name is free text (the e2e chain writes a 38-character
+   one) and now shares a 320px header with the switch: the brand block is the
+   one that gives way, so the header can never push the page wider than the
+   viewport. Only the NAME is clamped — `.ppr-brand-sub` is a fixed i18n string
+   and keeps wrapping onto a second line exactly as before (measured: clamping
+   it too truncated "Autorizzazione Preventiva Obbligatoria" at 375px, which is
+   content this page loses for nothing). */
+.ppr-brand-block{ min-width: 0; }
+.ppr-brand-name{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 640px){
+  /* --- estratto conto: table out, cards in (AC 1/2, TD 14.6 F4) --- */
+  .account-desktop-body{ display: none; }
+  .account-mobile{ display: block; }
+
+  /* The head of the shared card: the three actions it can carry (Esporta,
+     Registra ricarica, Registra rettifica) share one row of a 281px card at
+     34.84px each. DIRECT children only (lesson 15.3 F1): this card also mounts
+     the two inline riquadri and the `ExportMenu`'s own popover/sheet, and a
+     descendant selector would restyle their buttons too. */
+  .account-head{ column-gap: 8px; }
+  .account-head > .spacer{ display: none; }
+  /* The card's own title keeps its row (it is the only thing naming this card
+     on the scheda persona), and the actions share the row below it — the
+     grammar R-15.3-d/R-15.5-g already set for a head with actions. */
+  .account-head > .card-title{ flex: 1 0 100%; }
+  .account-head > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* `ExportMenu`'s own relative wrapper — its trigger is a GRANDCHILD, which is
+     why review 15.5 F4 had to reach it separately. Anchored to THIS head: the
+     other nine consumers of the chassis keep their 34.84px trigger (TD (g),
+     declared, not closed here). */
+  .account-head > div:has(> .btn){ flex: 1 1 0; }
+  .account-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
+
+  /* The two inline riquadri (ratifica R-15.9-c: they stay riquadri, they do not
+     become panels) — one column, and every control above the floor. Measured
+     without these: the fields 34.84-36.84px, the calendar trigger 24x24, the
+     two submit buttons 34.84. Anchored to this card's own body classes. */
+  .account-topup-panel .input,
+  .account-adjust-panel .input{ min-height: 44px; }
+  /* 44, not the 36 the four previous stories settled for on their own
+     surfaces: this riquadro is one of the two ACTIONS ratifica R-15.9-c puts
+     at 44px, and a guard written on the requirement (43.5) does not accept a
+     36px exception it cannot name. Same `padding-right` arithmetic as the
+     public form below: `.date-input input`'s own 30px cleared a 24px icon. */
+  /* The 44x44 trigger and its 48px of clearance are now the app-wide floor
+     (story 15.10, R-15.10-d): same values, one rule, at the end of this file. */
+  .account-topup-panel form > div:last-child > .btn,
+  .account-adjust-panel form > div:last-child > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- the movement card (template 325-334) ---
+     `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, an
+     ellipsised block on the left and a value on the right). Only the tracks and
+     the badge's placement are new, so this is a MODIFIER, not a family.
+     `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
+     `minmax(auto, 1fr)` and a long description would push its own track wider
+     than the card (the 13.10 F1 idiom, re-measured in 15.5-15.8b). */
+  .mobile-row-movement{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .mobile-row-movement > .mobile-row-side{ grid-column: 2; }
+  /* The badge takes a row of its own, in column 1 only (never spanning: an item
+     that SPANS tracks contributes its max-content to all of them, the defect
+     15.5 measured). In the right-hand slot "Rettifica del movimento del
+     15/01/2026" would eat the amount, which is the card's whole point. */
+  .mobile-row-movement > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
+  /* The amount never wraps and never shrinks: the `auto` track is sized on it
+     and the left track's `minmax(0, …)` absorbs the difference. */
+  .mobile-row-movement > .mobile-row-side .mobile-row-amount{ white-space: nowrap; }
+
+  /* --- I miei compensi --- */
+  .compensation-desktop-body{ display: none; }
+  .compensation-mobile{ display: block; }
+  /* R-15.9-e: four KPIs in a 2x2 (the `.kpi-row-grid` variant of 15.3, reused
+     as-is) and the fifth across the full width. The order is the DOM's, which
+     already puts Maturato and Dovuto next to each other — so the ratifica 14.7
+     F4 pair shares a row on screen, not only in the markup. */
+  .compensation-kpi-row{ gap: 8px; }
+  .compensation-kpi-row > *:last-child{ grid-column: 1 / -1; }
+  /* The payout card is NOT a trigger (everything the desktop row shows is on
+     it, so there is nothing for a sheet to add): `.mobile-row`'s pointer
+     affordances would promise an interaction that does not exist. */
+  .mobile-row-payout{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; cursor: default; }
+  .mobile-row-payout:active{ background: transparent; }
+  .mobile-row-payout > .mobile-row-side{ grid-column: 2; }
+  .mobile-row-payout > .mobile-row-side .mobile-row-amount{ white-space: nowrap; }
+  /* The ONE card of this story with no sheet behind it: everything the desktop
+     row shows has to be readable HERE. `.mobile-row-sub`'s own `nowrap +
+     ellipsis` cut the method away (measured at 375px: 182px of track for 262px
+     of "Registrato il 06/08/2026, 09:30 · Bonifico"), and there was nowhere
+     else to read it — so this sub wraps instead of ellipsising. The movement
+     card keeps the ellipsis, because its sheet carries the full text. */
+  .mobile-row-payout > .mobile-row-main > .mobile-row-sub{ white-space: normal; overflow: visible; text-overflow: clip; }
+
+  /* --- the rettifica as a second step INSIDE the sheet (R-15.9-c) ---
+     Same fields as the riquadro, same endpoint, same 409 mapping — only the
+     container changes. Anchored to a class of THIS story, never to
+     `.bottom-sheet-step`, which is shared with the PPR queue's rejection, the
+     registro voli's storno and the Contabilità's three writes. */
+  .account-sheet-step .input{ min-height: 44px; }
+  .account-sheet-step form > div:last-child > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+
+  /* --- the public form (AC 6, R-15.9-f) ---
+     Anchored to `.ppr-form-grid`, which only `ppr-form.tsx` uses: `.input`,
+     `.fld` and `.date-input-btn` are app-wide, and an unanchored rule here
+     would resize every field of every dashboard page (and vice versa — that is
+     exactly what review 15.5 F5 caught going the other way). */
+  .ppr-form-grid .input{ min-height: 44px; }
+  /* The trigger goes to a full 44x44 (R-15.9-f), so the text needs more room
+     than `.date-input input`'s own 30px: at 24px the value was clear of the
+     icon by 6px, and the same clearance at 44px needs 48px. */
+  /* Same 44x44 + 48px, now the app-wide floor of story 15.10 (R-15.10-d):
+     this page's measurement must NOT move, and it does not — the global rule
+     lands on exactly the values this one set. */
+  /* Submit full width, the "campi obbligatori" note on its own line. The row
+     was `flex-wrap: nowrap` and 85.59px tall with a 101.64x64.59 button whose
+     height came from its label wrapping, not from a decision. */
+  .ppr-actions{ flex-wrap: wrap; }
+  .ppr-actions > .btn{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
+}
+
+/* ============================================================================
+   SWEEP FINALE MOBILE (story 15.10)
+   ============================================================================
+   The last story of epic 15 closes debts the previous nine MEASURED and wrote
+   down. Same rules of engagement: additive declarations, no existing token
+   changes value, no new colour literal. The exceptions R1 allows are used and
+   NAMED here, once:
+
+   (i)  the `.date-input` block below is deliberately GLOBAL at <=640px — it
+        REPLACES six anchored exceptions (four at 36px, two at 44px) that four
+        stories wrote one surface at a time. Ratifica R-15.10-d asked for one
+        rule instead of a seventh exception. Measured before: 24x24 on
+        logbook (1), movements (2), bookings (2) and /dashboard/ppr (2); 36x36
+        on billing and settings; 44x44 on the public /ppr, which this rule
+        reaches at exactly the value 15.9 gave it, so that page does not move;
+   (ii) the METAR band below is a `min-width`/`max-width` band, not a <=640
+        rule, because that IS the ratified requirement (R-15.10-k: the tablet
+        is a usage surface);
+   (iii)`.stat-tone-info` and the two contrast rules are NOT mobile rules: the
+        defects they close measure the same on the desktop (R-15.10-i). They
+        sit outside the query on purpose, next to the family they join.
+
+   Everything else here is anchored to a class the surface OWNS. */
+
+/* --- (1) `.stat-tone-info` — the fourth member of the tone family ---
+   `.stat-tone-*` had ok/bad/warn and no info, and two page-level defects
+   needed exactly that tone (R-15.10-i): `/dashboard/expiries`'s "Entro 60
+   giorni" KPI (`--info` inline, measured 3.61:1 on `--panel`, at 19px on the
+   phone where the floor is 4.5) and the "Giorni rimasti" column of the same
+   page on `--info-soft` rows (`--info` on `--info-soft` = 3.12:1 light —
+   latent today, since a tier-3 row simply happens not to exist in the DB).
+   NOT a new colour literal: `oklch(0.38 0.12 245)` is copied verbatim from
+   `.badge.info` and `.alert-box.info` above, both already ratified, and the
+   dark override reuses the raw token exactly like its three siblings.
+   Measured: light 9.78 on `--panel` / 8.46 on `--info-soft`; dark 7.73 on
+   `--panel` / 5.93 on `--info-soft`. */
+.stat-tone-info{ color: oklch(0.38 0.12 245); }
+html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
+
+/* --- (2) the 64 "Saldi negativi" links (R-15.10-i) ---
+   The row's amount was fixed by 15.8a (`.stat-tone-bad`, 9.82/6.61); the
+   NAME next to it is an anchor, and it still inherited the global
+   `a{ color: var(--info) }` — 3.61:1 in the light theme, on 64 rows, at 12.5px,
+   identically on the phone and at 1280. The remedy is the one the epic has
+   already used twice for anchors on a surface of its own (`.mobile-alert-row`
+   15.3, `a.mobile-row` 15.6): reclaim the ink and give the link its OTHER
+   affordance back — the underline the colour used to carry. Measured: 18.79
+   light / 15.74 dark. Anchored to the row class, so no other link moves; the
+   "Vedi tutti" link in the same card head already carries its own underline. */
+.billing-negative-row a{ color: var(--ink); text-decoration: underline; }
+.billing-negative-row a:hover{ color: var(--ink); }
+
+/* --- (3) METAR in the 641-900px band (R-15.10-k) ---
+   `.weather-card` is hidden from 900px down (the 64px rail, 13.10) and the
+   mobile card only existed at <=640, so on a tablet in portrait (768px) the
+   airfield weather existed NOWHERE. The recon read that gap off the two
+   `display` rules; the REAL reason the card is absent above 640 is its
+   container: `.overview-mobile`/`.landing-mobile` are `display: none` outside
+   the phone query, so a rule on `.mobile-metar-card` alone would have changed
+   nothing. Hence the container is opened in this band and every OTHER child of
+   the mobile tree stays hidden — the desktop surfaces are the ones on screen
+   here, and two trees showing at once is exactly what the epic forbids.
+   Direct child selector on purpose (`> :not(...)`, lesson 15.9 MINOR-2): a
+   descendant exclusion would hide the card's own children too. */
+@media (min-width: 641px) and (max-width: 900px){
+  .overview-mobile,
+  .landing-mobile{ display: flex; flex-direction: column; gap: 14px; }
+  .overview-mobile > :not(.mobile-metar-card),
+  .landing-mobile > :not(.mobile-metar-card){ display: none; }
+  .mobile-metar-card{ display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; }
+  .mobile-metar-head{ display: flex; justify-content: space-between; gap: 10px; }
+  .mobile-metar-label{
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .mobile-metar-station{ font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); }
+  .mobile-metar-main{ display: flex; align-items: baseline; gap: 10px; }
+  .mobile-metar-temp{ font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+  .mobile-metar-temp .unit{ font-size: 13px; font-weight: 500; color: var(--ink-3); }
+  .mobile-metar-cat{ display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+  .mobile-metar-raw{
+    padding: 8px;
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--ink-2);
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 640px){
+  /* --- (4) the calendar trigger, five faces and ONE rule (R-15.10-d) ---
+     `.date-input-btn` is 24x24 app-wide. Four stories raised it on their own
+     surface (36px on movements/billing/transaction/settings, 44px on the
+     account top-up and on the public /ppr form) and left the other five faces
+     at 24. Those six anchored rules are REMOVED above and replaced by this
+     pair. The input grows with it: the trigger is `position: absolute` inside
+     the field, so a 44px button inside a 38.84px input would stick out 2.6px
+     top and bottom — and a 38.84px input is itself under the 43.5 floor. The
+     48px of right padding is the same clearance 15.9 measured for a 44px icon
+     (30px cleared a 24px one by 6px). */
+  .date-input input{ min-height: 44px; padding-right: 48px; }
+  .date-input-btn{ width: 44px; height: 44px; }
+
+  /* --- (5) the ✕ of every SlideOver (R-15.10-d) ---
+     32x32 on all 17 usages, in both themes and at both widths (contrast was
+     never the problem: 9.99/9.47). Anchored to `.so-head` so the app's other
+     `.iconbtn`s — the calendar arrows below have their own rule — are not
+     swept along. `.so-head` keeps its `align-items: flex-start`, so the
+     header grows only if the title block is shorter than the button. */
+  .so-head .iconbtn{ width: 44px; height: 44px; }
+
+  /* --- (6) the typeahead options (R-15.10-d) ---
+     Measured 35.56px tall, 50 of them, inside a 240px listbox with its own
+     scroll. `min-height` + centring rather than more padding: the option's
+     text can wrap (a long registration plus a model), and padding would make
+     a wrapped option 60px tall. */
+  .combo-option{ min-height: 44px; display: flex; align-items: center; }
+
+  /* --- (7) `.cal-popover`: the FOUR non-cell targets (R-15.10-e) ---
+     The PO ratified option B: the two month arrows (24x24) and the two footer
+     buttons (34.84) go to 44; the 42 day cells stay 34.58 and are DECLARED —
+     7 columns x 44 = 308 > the popover's 280px, i.e. the one place in the epic
+     where the 44px floor fights the function (a month in seven columns inside
+     a popover that must fit a 320px screen). The width of the popover does not
+     change, by construction: nothing here is a grid column. The time input
+     (254x36.84) is the 43rd declared target — it is not one of the four the
+     ratifica names. */
+  .cal-head .iconbtn{ width: 44px; height: 44px; }
+  .cal-foot .btn{ min-height: 44px; }
+
+  /* --- (8) `/dashboard/ppr`, the 19 targets (R-15.10-j) ---
+     The one surface built BEFORE the primitives were complete. Everything
+     else about it is already right (the card is a `<button>` with zero
+     interactive children, the sheet is a named dialog with 44px controls, the
+     ExportMenu is a bottom sheet, `pageOverflow` is 0 at 320/375/390): what
+     was missing is the touch floor. Three anchors, all on classes these two
+     files own — never `.card-head`, `.form-grid` or `.btn`, which 13 consoles
+     share. `ManualPprForm` is mounted from BOTH `/dashboard/ppr` and
+     `/dashboard/movements` (log arrival), so this rule fixes 15 targets on two
+     surfaces at once. */
+  .ppr-head-actions > .btn{ min-height: 44px; }
+  .ppr-queue-head .input,
+  .ppr-queue-head .btn{ min-height: 44px; }
+  .manual-ppr-form .input{ min-height: 44px; }
+
+  /* --- (9) the self statement's redundant card title (R-15.10-h) ---
+     On the SELF face the page head already says "Le mie transazioni" and the
+     card title says "Estratto conto" 20px below it — the same thing twice, for
+     101.3px of head above the first movement. On the scheda persona the same
+     title is the section's ONLY name, so the rule is anchored to the modifier
+     the card sets when `showActor === false`. -20.3px, self face only. */
+  .account-head-self .card-title{ display: none; }
+
+  /* --- (10) the "Fuori servizio" submit (story AOG-1a, ratifica R-AOG-g) ---
+     `out-of-service-submit` is the ONE secondary section action this story
+     touches, and it touches it because the story ALSO pushes it further down
+     the panel (the Disponibilità section gains a date field above it). Measured
+     at 375x812 before this rule: 335 x 34.84, bottom edge at y 841 — 29px below
+     the fold. R-15.10-f deliberately left the secondary section actions
+     (tariffe, contaore, archivio) where they were and this rule does NOT
+     reopen that: it is anchored to THIS button's own testid, inside
+     `@media (max-width: 640px)`, so the desktop box stays identical to the
+     hundredth and no other action moves. Same `min-height: 44px` floor, and the
+     same "anchor on something this surface owns" discipline, as the nine rules
+     above. */
+  [data-testid="out-of-service-submit"]{ min-height: 44px; }
+
+  /* --- (11) the two controls of the double step (story AOG-1b, AC 3) ---
+     The armed state REPLACES the submit above with a Conferma/Annulla pair
+     (same idiom as the Archivio section). They are NEW controls on a surface
+     this story touches, so they take the same 44px floor rather than inheriting
+     the 34.84px the `.btn` base gives them — and rule (10) above is left
+     byte-identical instead of being widened, so story AOG-1a's own measure
+     still describes exactly what it measured. */
+  [data-testid="out-of-service-confirm"],
+  [data-testid="out-of-service-cancel"]{ min-height: 44px; }
 }

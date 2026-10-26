@@ -100,9 +100,12 @@ test.describe('Account statement (Story 3.2; "Estratto conto" section, Story 13.
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
     await page.getByRole('link', { name: 'Il mio conto' }).click();
-    // Story 13.3: lands on the scheda persona itself (the account link's
-    // `/account` suffix redirects there — R-13.3-b).
-    await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
+    // Story 14.6 (review F5): the pilot's own statement now lives on the
+    // self-service page; the KPI link points THERE instead of the staff-shaped
+    // scheda persona (which stays reachable from the "Profilo" CTA). Story
+    // 13.3's `/account` → scheda-persona redirect is unchanged and still
+    // covered by `people-management.spec.ts`.
+    await expect(page).toHaveURL(/\/it\/dashboard\/my-account$/);
 
     await expect(page.getByTestId('account-balance')).toHaveText(/€/);
     await expect(page.getByTestId('account-movement-row').first()).toBeVisible();

@@ -156,7 +156,7 @@ export async function createInstructorRate(
 
 /**
  * Lists an instructor's full rate history, most recent `validFrom` first (AC
- * 1). `people.read` (staff+admin) — WIDER than `createInstructorRate`'s
+ * 1). `people.read` (ADMIN-only) — WIDER than `createInstructorRate`'s
  * `settings.manage` (Dev Notes: instructor data lives under `people`, so the
  * same permission that reads a person's profile also reads their pricing —
  * a deliberately different split from 4.1's `aircraft.manage`, documented

@@ -25,7 +25,7 @@ function shortMonthLabel(yyyymm: string, locale: 'it' | 'en'): string {
 /**
  * Statistiche / reports (epic 12, story 12.10) — AirOps-native, port of
  * `docs/design-reference/airops/src/ReportsView.jsx`. `finance.manage` only
- * (ADMIN+STAFF, same perimeter as `/dashboard/billing`). The page itself
+ * (ADMIN-only, same perimeter as `/dashboard/billing`). The page itself
  * only ever requests the CURRENT period (`ref` defaults server-side) — the
  * `?ref=` history support lives in the API for now (ratifica utente 3), no
  * UI picker for it in this story.
@@ -98,6 +98,11 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
       metrics: { hours: t('rankPilots.metrics.hours'), spent: t('rankPilots.metrics.spent') },
       empty: t('rankPilots.empty'),
     },
+    // `t.raw` (not `t`): both carry ICU placeholders (`{shown}`/`{total}`,
+    // `{count}`) interpolated CLIENT-SIDE from the list's own length, so `t()`
+    // would try to resolve them here and throw `FORMATTING_ERROR` — the same
+    // reason `settings/page.tsx:231` reads `scheduling.hint` raw.
+    cap: { note: t.raw('mobile.capNote') as string, showAll: t.raw('mobile.showAll') as string },
   };
 
   return (
@@ -107,7 +112,11 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
           <h1>{t('title')}</h1>
           <div className="sub">{t('sub', { period: periodLabel })}</div>
         </div>
-        <div className="segmented" title={t('periodToggle.title')}>
+        {/* `.segmented` has SIX consumers app-wide (Pianificazione, Panoramica,
+            Scadenze, both `RankBars`, the primitive): the phone's 44px floor is
+            hung on this page-owned class, anchored with `>`, never on
+            `.segmented` itself (lesson 15.3 F1, reconfirmed 15.5 F5 / 15.7). */}
+        <div className="segmented reports-period" title={t('periodToggle.title')}>
           <Link
             href={{ pathname: '/dashboard/reports', query: { period: 'month' } }}
             locale={locale as AppLocale}

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { hasLocale, NextIntlClientProvider } from 'next-intl';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
@@ -20,6 +20,28 @@ const THEME_COOKIE = 'am-theme';
 export function generateStaticParams(): Array<{ locale: string }> {
   return routing.locales.map((locale) => ({ locale }));
 }
+
+/**
+ * Story 15.10 (ratifica R-15.10-l) — the missing half of the epic's safe-area
+ * work. Next's default viewport tag is `width=device-width, initial-scale=1`,
+ * with no `viewport-fit`, so the SIX `env(safe-area-inset-*)` that stories
+ * 15.1/15.2/15.9 wrote into `airops.css` (the tab bar's bottom padding, the
+ * toast host, the sheet and `.so-actions` bottoms, the self panels) all
+ * resolved to 0 and were inert: on a notched iPhone the tab bar would have sat
+ * UNDER the home indicator. `viewport-fit: 'cover'` is what makes those
+ * `env()` values real.
+ *
+ * LIMITATION, stated because it cannot be closed here: Chromium headless — the
+ * only browser on this machine and in CI — reports every inset as 0, so the
+ * only verifiable property is NON-REGRESSION: at inset 0 every measurement
+ * must stay identical to the centesimo (`calc(100px + 0)` is today's value).
+ * The behaviour on a real notch is unverified.
+ */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
 
 type LayoutProps = {
   children: React.ReactNode;

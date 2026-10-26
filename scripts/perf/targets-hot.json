@@ -1,0 +1,16 @@
+[
+  { "name": "api stats month", "path": "/api/v1/stats?period=month", "burst": true },
+  { "name": "api stats year", "path": "/api/v1/stats?period=year" },
+  { "name": "api transactions", "path": "/api/v1/transactions" },
+  { "name": "api negative balances", "path": "/api/v1/accounts/negative-balances" },
+  { "name": "api instructor compensation", "path": "/api/v1/instructor-compensation" },
+  { "name": "api bookings calendar week", "path": "/api/v1/bookings/calendar?from={WEEK_FROM}&to={WEEK_TO}" },
+  { "name": "pdf ppr", "path": "/api/v1/ppr-requests/pdf" },
+  { "name": "page overview", "path": "/it/dashboard", "burst": true },
+  { "name": "page bookings", "path": "/it/dashboard/bookings", "burst": true },
+  { "name": "page instructors", "path": "/it/dashboard/instructors" },
+  { "name": "page billing", "path": "/it/dashboard/billing", "burst": true },
+  { "name": "page reports", "path": "/it/dashboard/reports", "burst": true },
+  { "name": "page logbook", "path": "/it/dashboard/logbook" },
+  { "name": "page person", "path": "/it/dashboard/people/{PERSON}" }
+]

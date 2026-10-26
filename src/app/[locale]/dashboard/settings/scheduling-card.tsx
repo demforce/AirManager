@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Field, Input, InputGroup } from '@/components/ui/field';
+import { parseApiError } from '@/lib/api-field-errors';
 
 export type SchedulingCardLabels = {
   title: string;
@@ -17,6 +18,8 @@ export type SchedulingCardLabels = {
   save: string;
   saved: string;
   error: string;
+  /** Story 14.2, AC 3: `schedulingSettingsSchema`'s own `closeTime > openTime` refine 422s with `fieldErrors.closeTime` — this card has no client-side check for it (unlike the other cards' required-field checks), so it's a genuinely reachable field-shaped 422. */
+  invalidRange: string;
 };
 
 export type SchedulingCardProps = {
@@ -48,10 +51,12 @@ export function SchedulingCard({ initial, labels }: SchedulingCardProps) {
   const [maxAdvanceDays, setMaxAdvanceDays] = useState(String(initial.maxAdvanceDays ?? DEFAULTS.maxAdvanceDays));
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [closeTimeError, setCloseTimeError] = useState(false);
 
   async function save(): Promise<void> {
     setSaving(true);
     setFeedback(null);
+    setCloseTimeError(false);
 
     const response = await fetch('/api/v1/settings/scheduling', {
       method: 'PUT',
@@ -66,11 +71,21 @@ export function SchedulingCard({ initial, labels }: SchedulingCardProps) {
     });
 
     setSaving(false);
+
+    if (!response.ok && response.status === 422) {
+      const { fieldErrors } = await parseApiError(response);
+      if (fieldErrors.has('closeTime')) {
+        setCloseTimeError(true);
+        setFeedback(labels.error);
+        return;
+      }
+    }
+
     setFeedback(response.ok ? labels.saved : labels.error);
   }
 
   return (
-    <div className="card" data-testid="scheduling-settings-card">
+    <div className="card settings-card" data-testid="scheduling-settings-card">
       <div className="card-head">
         <div className="card-title">{labels.title}</div>
         <span className="card-sub">{labels.sub}</span>
@@ -80,8 +95,17 @@ export function SchedulingCard({ initial, labels }: SchedulingCardProps) {
           <Field label={labels.openTime}>
             <Input type="time" value={openTime} onChange={(event) => setOpenTime(event.target.value)} data-testid="scheduling-open-time-input" />
           </Field>
-          <Field label={labels.closeTime}>
-            <Input type="time" value={closeTime} onChange={(event) => setCloseTime(event.target.value)} data-testid="scheduling-close-time-input" />
+          <Field label={labels.closeTime} error={closeTimeError ? labels.invalidRange : undefined}>
+            <Input
+              type="time"
+              value={closeTime}
+              onChange={(event) => {
+                setCloseTime(event.target.value);
+                if (closeTimeError) setCloseTimeError(false);
+              }}
+              aria-invalid={closeTimeError}
+              data-testid="scheduling-close-time-input"
+            />
           </Field>
           <Field label={labels.minSlotMinutes}>
             <InputGroup suffix={labels.minutesSuffix}>

@@ -133,13 +133,21 @@ export type ListBookingsQuery = z.infer<typeof listBookingsQuerySchema>;
  * unless the booking was decided (approved/denied) at least once;
  * `decidedByUserId`/`closedAt`/`closedByUserId` stay DB-only, same
  * deliberate omission as `forcedByUserId`/`forceReason` above.
+ *
+ * `personName` is now `.nullable()` (story 14.5, ratifica R3): `null` is the
+ * masking signal for an actor without `bookings.read.names` viewing a
+ * booking that isn't their own — a real booking always has a person, so
+ * `null` is unambiguous ("Occupato", never "no person"). `instructorName`/
+ * `notes`/`denyReason` are ALSO forced to `null` on a masked entry (server-
+ * side, `bookings.service.ts#maskBookingNames`) — none of those NEVER reach
+ * the wire for a masked row, so this schema needs no separate boolean flag.
  */
 export const bookingItemSchema = z.object({
   id: z.string(),
   aircraftId: z.string(),
   aircraftRegistration: z.string(),
   personId: z.string(),
-  personName: z.string(),
+  personName: z.string().nullable(),
   instructorProfileId: z.string().nullable(),
   instructorName: z.string().nullable(),
   startsAt: z.iso.datetime(),

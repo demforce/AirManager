@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
+const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -244,27 +245,10 @@ test.describe('Session-authenticated trigger (Story 12.11, AC 3; ratifica utente
     expect(countAfterSecond).toBe(countAfterFirst);
   });
 
-  test('the session trigger is gated settings.manage — a STAFF actor (expiries.manage, not settings.manage) gets 403; the bearer cron endpoint stays untouched (still needs the secret, not a session)', async ({
+  test('the session trigger is gated settings.manage — a non-admin actor gets 403; the bearer cron endpoint stays untouched (still needs the secret, not a session)', async ({
     page,
   }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const staffPassword = 'StaffAlerts123!';
-    const staffEmail = uniqueEmail('staff-alerts');
-    const usersResponse = await page.request.post('/api/v1/users', { data: { email: staffEmail, roles: ['STAFF'] } });
-    expect(usersResponse.status()).toBe(201);
-    const inviteEmail = await waitForMailpitMessage(staffEmail, 'invitato');
-    const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(inviteEmail.Text);
-    if (!match) throw new Error('Invite email had no set-password link');
-    const setPasswordUrl = new URL(match[1]);
-    await page.goto(setPasswordUrl.pathname + setPasswordUrl.search);
-    await page.getByLabel('Nuova password').fill(staffPassword);
-    await page.getByLabel('Conferma password').fill(staffPassword);
-    await page.getByRole('button', { name: 'Imposta password' }).click();
-    await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
+    await loginExpectingDashboard(page, PILOT_EMAIL);
 
     // Ratifica utente 4: the "Invia promemoria" button is visible ONLY to ADMIN.
     await page.goto('/it/dashboard/expiries');

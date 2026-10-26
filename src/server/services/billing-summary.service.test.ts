@@ -15,6 +15,11 @@ import { ForbiddenError } from './errors';
  * mocked client.
  */
 
+// The `vi.importActual` below (F6) loads the REAL `transactions.service`,
+// whose import graph transitively reaches `@/lib/env`'s EAGER validation
+// (via `smtp-mail-sender`) — which throws in any shell where `.env` is not
+// exported (vitest does not load it). Mock it out like `settings.test.ts`.
+vi.mock('@/lib/env', () => ({ env: {} }));
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
     cashMovement: { aggregate: vi.fn(), count: vi.fn() },

@@ -14,6 +14,8 @@ type LoginFormLabels = {
   submit: string;
   submitting: string;
   errorGeneric: string;
+  /** Story 14.2, AC 1/2: reused for BOTH fields — the point is marking WHICH one, not distinguishing "empty" from "malformed email". */
+  requiredField: string;
 };
 
 type LoginFormProps = {
@@ -68,11 +70,11 @@ export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
   // would be a native GET putting the credentials in the URL.
   return (
     <form method="post" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Field label={labels.email}>
+      <Field label={labels.email} error={errors.email ? labels.requiredField : undefined}>
         <Input type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
       </Field>
 
-      <Field label={labels.password}>
+      <Field label={labels.password} error={errors.password ? labels.requiredField : undefined}>
         <Input type="password" autoComplete="current-password" aria-invalid={Boolean(errors.password)} {...register('password')} />
       </Field>
 

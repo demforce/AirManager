@@ -1,5 +1,7 @@
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import type { CashReportQuery, ListCashCategoriesQuery, ListCashMovementsQuery, ReclassifyCashMovementInput, RecordCashMovementInput } from '@/lib/schemas/cash';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError } from './errors';
@@ -92,7 +94,7 @@ export async function listCashCategories(actor: Actor, query: ListCashCategories
 /**
  * Creates a cash category (AC 1). `settings.manage` (admin) only — this is
  * finance configuration, deliberately stricter than day-to-day cash
- * operations (`finance.manage`, staff+admin).
+ * operations (`finance.manage`, ADMIN-only).
  */
 export async function createCashCategory(actor: Actor, input: { name: string }): Promise<CashCategoryListItem> {
   authorize(actor, 'settings.manage');
@@ -283,12 +285,6 @@ function toDateOnlyString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** `@db.Date` calendar-only "today" (server clock, UTC) — same helper as `accounts.service.ts#todayDateOnlyUtc`. */
-function todayDateOnlyUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
-
 function toMovementListItem(movement: SelectedCashMovement): CashMovementListItem {
   return {
     id: movement.id,
@@ -310,7 +306,7 @@ function toMovementListItem(movement: SelectedCashMovement): CashMovementListIte
  * (negative), append-only (AD-3: no update/delete API). This is NOT how the
  * automatic top-up twin is created (that stays `recordTopUp`'s job, story
  * 3.1, linked via `accountMovementId`) — this function always leaves
- * `accountMovementId`/`reversalOfId` `null`. `finance.manage` (staff+admin)
+ * `accountMovementId`/`reversalOfId` `null`. `finance.manage` (ADMIN-only)
  * — day-to-day cash operation, deliberately less restrictive than category
  * CRUD (`settings.manage`). The category must exist AND be active — same
  * `isActive` guard, and the same rationale, as `recordTopUp`'s lookup (Dev
@@ -370,9 +366,10 @@ export async function recordCashMovement(actor: Actor, input: RecordCashMovement
  *    create a linked `CashMovement`) — correcting those goes through the
  *    account rettifica (story 3.3) only, never the cash register directly
  *    (Dev Notes: otherwise conto and cassa diverge).
- * `effectiveDate` is always today (server clock, UTC calendar date) — same
- * choice as `recordAdjustment` (story 3.3): a storno is dated when it is
- * recorded, never backdated to the original's date. `paymentMethod` is
+ * `effectiveDate` is always today, the aviosuperficie's own Europe/Rome
+ * calendar date (story 16.1) — same choice as `recordAdjustment` (story
+ * 3.3): a storno is dated when it is recorded, never backdated to the
+ * original's date. `paymentMethod` is
  * INHERITED from the original (review Billing-1 F1) — the treasury balance
  * it affects is the original's own cash/bank pot.
  */
@@ -422,7 +419,7 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
         // while the treasury running balance never subtracted it back out).
         paymentMethod: original.paymentMethod,
         description: reason,
-        effectiveDate: todayDateOnlyUtc(),
+        effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
         actorUserId: actor.userId,
         reversalOfId: original.id,
       },
@@ -441,7 +438,7 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
  * Reclassifies an UNATTRIBUTED historical cash movement (story Billing-2,
  * AC 3) — assigns a `paymentMethod` to a movement backfilled/recorded as
  * `null` (pre-Billing-1 manual entries, or a PPR landing fee recorded
- * without one, D2). `finance.manage` (staff+admin) — same day-to-day gate as
+ * without one, D2). `finance.manage` (ADMIN-only) — same day-to-day gate as
  * `recordCashMovement`/`reverseCashMovement`, not the stricter
  * `settings.manage` category CRUD uses. Deliberately scoped to movements
  * CURRENTLY unattributed (`paymentMethod === null`): every automatic twin

@@ -2,9 +2,9 @@
 //
 // Deliberately SEPARATE from `prisma/seed.ts` (the e2e fixture base wired to
 // `prisma db seed`): this script populates a realistic aviosuperficie —
-// 1 admin + 10 members (staff, 2 instructors, 6 pilots, 1 student), 3 aircraft
-// with rate history, expiries, top-ups, ~24 registered flights, upcoming
-// bookings in every workflow state, and PPR traffic.
+// 2 admin (owner + operations) + 9 members (2 instructors, 6 pilots, 1
+// student), 3 aircraft with rate history, expiries, top-ups, ~24 registered
+// flights, upcoming bookings in every workflow state, and PPR traffic.
 //
 // Domain data goes through the REAL services (registerFlight, recordTopUp,
 // createBooking, ...) so every invariant holds (charges, hour meters, balances,
@@ -59,7 +59,7 @@ type DemoPerson = {
 };
 
 const DEMO_PEOPLE: DemoPerson[] = [
-  { firstName: 'Giulia', lastName: 'Ferraro', email: 'giulia.ferraro@libero.it', phone: '+39 338 214 7765', role: 'STAFF' },
+  { firstName: 'Giulia', lastName: 'Ferraro', email: 'giulia.ferraro@libero.it', phone: '+39 338 214 7765', role: 'ADMIN' },
   {
     firstName: 'Luca', lastName: 'Bianchi', email: 'luca.bianchi.fi@gmail.com', phone: '+39 347 660 1183',
     address: 'Via delle Colline 14, Pontedera (PI)', role: 'INSTRUCTOR',
@@ -200,7 +200,7 @@ const FLIGHTS: FlightPlan[] = [
   { email: 'marco.desantis@gmail.com', reg: 'I-B412', daysAgo: 41, takeoffHour: 9, durationMin: 80, destination: DESTINATIONS.LIQL },
   { email: 'davide.marchetti@gmail.com', reg: 'I-PDVB', daysAgo: 38, takeoffHour: 11, durationMin: 85, destination: DESTINATIONS.LIQL },
   { email: 'ale.greco77@gmail.com', reg: 'I-A661', daysAgo: 33, takeoffHour: 17, durationMin: 60 },
-  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 30, takeoffHour: 9, durationMin: 40, instructorEmail: 'luca.bianchi.fi@gmail.com', touchAndGo: 5 },
+  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 30, takeoffHour: 9, durationMin: 40, instructorEmail: 'luca.bianchi.fi@gmail.com', flightType: 'SCHOOL', touchAndGo: 5 },
   { email: 'francesca.romano@tiscali.it', reg: 'I-B412', daysAgo: 27, takeoffHour: 10, durationMin: 90, destination: DESTINATIONS.LIDP },
   { email: 'chiara.esposito88@gmail.com', reg: 'I-B412', daysAgo: 24, takeoffHour: 15, durationMin: 60, instructorEmail: 'luca.bianchi.fi@gmail.com' },
   { email: 'marco.desantis@gmail.com', reg: 'I-A661', daysAgo: 20, takeoffHour: 18, durationMin: 65 },
@@ -208,7 +208,7 @@ const FLIGHTS: FlightPlan[] = [
   { email: 'davide.marchetti@gmail.com', reg: 'I-B412', daysAgo: 16, takeoffHour: 16, durationMin: 70 },
   { email: 'francesca.romano@tiscali.it', reg: 'I-A661', daysAgo: 13, takeoffHour: 9, durationMin: 55 },
   { email: 'ale.greco77@gmail.com', reg: 'I-A661', daysAgo: 12, takeoffHour: 14, durationMin: 70, destination: DESTINATIONS.LILQ },
-  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 10, takeoffHour: 9, durationMin: 45, instructorEmail: 'paola.rinaldi@outlook.it', touchAndGo: 6 },
+  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 10, takeoffHour: 9, durationMin: 45, instructorEmail: 'paola.rinaldi@outlook.it', flightType: 'SCHOOL', touchAndGo: 6 },
   { email: 'marco.desantis@gmail.com', reg: 'I-B412', daysAgo: 9, takeoffHour: 11, durationMin: 50 },
   { email: 'chiara.esposito88@gmail.com', reg: 'I-A661', daysAgo: 8, takeoffHour: 10, durationMin: 85, destination: DESTINATIONS.LIQS },
   { email: 'francesca.romano@tiscali.it', reg: 'I-B412', daysAgo: 6, takeoffHour: 17, durationMin: 60 },

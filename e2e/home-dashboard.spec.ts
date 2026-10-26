@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 
 /**
  * Home dashboard per ruolo (story 12.12, AC 1/4/5/6/7). The home
- * (`/dashboard`) is now AirOps-native: admin/staff land on the AdminOverview
+ * (`/dashboard`) is now AirOps-native: admin lands on the AdminOverview
  * console (real KPIs + embedded Schedule/BookingsTable + Scadenze/Fleet
  * widgets), an istruttore lands on "la mia giornata" (own compensation KPIs,
  * no creation CTA — ratifica 3), a pilota/allievo land on the personal
@@ -13,7 +13,6 @@ import type { Page } from '@playwright/test';
  */
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const STUDENT_EMAIL = 'student@airmanager.local';
 const INSTRUCTOR_EMAIL = 'instructor@airmanager.local';
@@ -99,6 +98,24 @@ async function createPilotWithLogin(page: Page, password: string, tag: string): 
   return { personId: person.id, email };
 }
 
+/** Creates a fresh instructor person (active `InstructorProfile`) plus a login user (invite flow via Mailpit) — story 14.6 (D2/item 16). */
+async function createInstructorWithLogin(page: Page, password: string, tag: string): Promise<{ personId: string; email: string }> {
+  const suffix = uniqueSuffix();
+  const firstName = 'Istruttore';
+  const lastName = `${tag}-${suffix}`;
+  const personResponse = await page.request.post('/api/v1/people', { data: { firstName, lastName } });
+  expect(personResponse.status()).toBe(201);
+  const person = (await personResponse.json()) as { id: string };
+  const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: {} });
+  expect(profileResponse.status()).toBe(200);
+
+  const email = uniqueEmail('instructor-home');
+  const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['INSTRUCTOR'], personId: person.id } });
+  expect(userResponse.status()).toBe(201);
+  await setPasswordFromInvite(page, email, password);
+  return { personId: person.id, email };
+}
+
 /** Creates a fresh run-unique aircraft. */
 async function createAircraft(page: Page, tag: string): Promise<{ id: string; registration: string }> {
   const suffix = uniqueSuffix();
@@ -128,14 +145,6 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
     await expect(page.getByTestId('bookings-list-section')).toBeVisible();
     await expect(page.getByTestId('scadenze-widget')).toBeVisible();
     await expect(page.getByTestId('fleet-card-widget')).toBeVisible();
-  });
-
-  test('staff sees the SAME AdminOverview console as admin (both hold finance.manage)', async ({ page }) => {
-    await loginExpectingDashboard(page, STAFF_EMAIL);
-    await expect(page.getByRole('heading', { name: 'Panoramica operativa' })).toBeVisible();
-    for (const testId of ADMIN_OVERVIEW_KPI_TESTIDS) {
-      await expect(page.getByTestId(testId)).toBeVisible();
-    }
   });
 
   test('a pilot lands on the personal landing: greeting, 4 real KPIs, "Prenota volo" CTA visible (bookings.manage.own)', async ({ page }) => {
@@ -179,6 +188,39 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
     // flights.manage) — no dispatch/creation CTA anywhere on this landing.
     await expect(page.getByTestId('dispatch-flight-button')).toHaveCount(0);
     await expect(page.getByTestId('pilot-landing-book-cta')).toHaveCount(0);
+  });
+
+  test('an INSTRUCTOR-role actor whose InstructorProfile gets deactivated stops seeing InstructorLanding (story 14.6, D2/item 16 — role and active profile can diverge)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const password = 'DeactivatedInstructor123!';
+    const instructor = await createInstructorWithLogin(page, password, 'Deact');
+
+    // This test switches identities repeatedly — clear cookies before each
+    // re-login (same rationale as account-statement.spec.ts's own helper:
+    // an already-authenticated session bounces `/login` straight back to
+    // `/dashboard`, so `getByLabel('Email')` never appears).
+    await page.context().clearCookies();
+
+    // Before deactivation: the role AND the active profile agree — InstructorLanding.
+    await loginExpectingDashboard(page, instructor.email, password);
+    await expect(page.getByRole('heading', { name: /^Buongiorno, /u })).toBeVisible();
+    await expect(page.getByTestId('kpi-payout-rate')).toBeVisible();
+
+    // Admin deactivates the InstructorProfile — the INSTRUCTOR role itself is untouched.
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const deactivateResponse = await page.request.post(`/api/v1/people/${instructor.personId}/profiles/instructor/deactivate`);
+    expect(deactivateResponse.status()).toBe(200);
+
+    // After deactivation: same role, same session shape, but no active profile
+    // left — must NOT land on InstructorLanding anymore (role alone is not the gate).
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, password);
+    await expect(page.getByTestId('kpi-payout-rate')).toHaveCount(0);
+    await expect(page.getByTestId('instructor-landing-myday-empty')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: /^Buongiorno, /u })).toHaveCount(0);
   });
 });
 

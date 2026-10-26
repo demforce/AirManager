@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { APP_TIMEZONE } from './time';
 import { addMonthsClampUtc, parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from './date-only';
+import { todayDateOnlyUtcInZone } from './zoned-time';
 
 describe('date-only helpers (story 4.2 — shared by rates.service.ts/instructor-rates.service.ts)', () => {
   describe('parseDateOnlyUtc', () => {
@@ -33,6 +35,24 @@ describe('date-only helpers (story 4.2 — shared by rates.service.ts/instructor
       expect(result.getUTCMinutes()).toBe(0);
       expect(result.getUTCSeconds()).toBe(0);
       expect(result.getUTCMilliseconds()).toBe(0);
+    });
+
+    describe('deliberate divergence from zoned-time.ts#todayDateOnlyUtcInZone (story 16.1)', () => {
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      // Pins the exact bug ops-audit F1 / ledger-audit MAJOR-3 measured: at
+      // 00:30 Rome on the 1st, the UTC calendar is still on the 31st. The two
+      // helpers MUST disagree here — a future "cleanup" that unifies them
+      // would silently reintroduce the FLIGHT_DATE_IN_FUTURE / ledger bug
+      // this story fixes.
+      it('disagrees with todayDateOnlyUtcInZone at 00:30 Rome on the 1st (CEST)', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep
+        expect(toDateOnlyString(todayDateOnlyUtc())).toBe('2026-08-31');
+        expect(toDateOnlyString(todayDateOnlyUtcInZone(APP_TIMEZONE))).toBe('2026-09-01');
+      });
     });
   });
 

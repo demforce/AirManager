@@ -57,7 +57,7 @@ function sanitizeFlightStatus(value: string | undefined): FlightStatusDto | unde
  * (deleted by this story, hard, no redirect — ratifica utente 2). Same two
  * RBAC faces as before, decided by `flights.manage` (AD-5, `hasPermission`
  * here only decides what to RENDER — `listFlights` re-authorizes/re-scopes
- * regardless): staff/admin get the full manager (filters, "Nuova voce",
+ * regardless): an admin gets the full manager (filters, "Nuova voce",
  * Storna/Correggi); everyone else gets a read-only own-access registry
  * (period/tipo/stato only).
  *
@@ -84,6 +84,10 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     redirect({ href: '/dashboard', locale });
     return;
   }
+  // Story 14.4, AC 2 (ratifica R4) — `flights.forceExpiry` (ADMIN-only), the
+  // client-side mirror of the "Forza registrazione" gate (AD-5, `FlightEditor`'s
+  // own doc-comment for the real server-side check).
+  const canForceExpiry = hasPermission(actor, 'flights.forceExpiry');
 
   const dateFrom = sanitizeDateParam(sp.dateFrom);
   const dateTo = sanitizeDateParam(sp.dateTo);
@@ -104,8 +108,12 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   // Sequential (not `Promise.all`): concurrent `$transaction`s on the shared
   // driver-adapter Prisma client trigger a `pg` "client is already executing
   // a query" warning under load (5.1 Debug Log) — same order as the legacy page.
-  let aircraftOptions: { id: string; registration: string }[] = [];
-  let personOptions: { id: string; firstName: string; lastName: string }[] = [];
+  // Story AOG-1a, AC 12: same shape the editor's own `AircraftOption` declares.
+  let aircraftOptions: { id: string; registration: string; status: 'OPERATIONAL' | 'OUT_OF_SERVICE'; statusReason: string | null }[] = [];
+  // Story 14.3, AC 2: `profiles` (active-only, pilot/student) travels with
+  // the person picker's options so `FlightEditor` can force/lock Tipo volo
+  // to SCHOOL for a person with only an active student profile.
+  let personOptions: { id: string; firstName: string; lastName: string; profiles: { pilot: boolean; student: boolean } }[] = [];
   let instructorOptions: { id: string; firstName: string; lastName: string }[] = [];
   let aircraftFilterOptions: { id: string; registration: string; archived: boolean }[] = [];
 
@@ -116,13 +124,19 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
 
     aircraftOptions = aircraftResult.items
       .filter((aircraft) => aircraft.archivedAt === null)
-      .map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration }));
+      // Story AOG-1a, AC 12: `status`/`statusReason` travel so the picker can NAME a grounded aircraft (still selectable — the deroga exists).
+      .map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration, status: aircraft.status, statusReason: aircraft.statusReason }));
     aircraftFilterOptions = aircraftResult.items.map((aircraft) => ({
       id: aircraft.id,
       registration: aircraft.registration,
       archived: aircraft.archivedAt !== null,
     }));
-    personOptions = pilotStudentResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+    personOptions = pilotStudentResult.items.map((person) => ({
+      id: person.id,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      profiles: { pilot: person.profiles.pilot, student: person.profiles.student },
+    }));
     instructorOptions = instructorResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
   }
 
@@ -151,6 +165,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     cancelledAt: flight.cancelledAt ? flight.cancelledAt.toISOString() : null,
     takeoffAt: flight.takeoffAt ? flight.takeoffAt.toISOString() : null,
     landingAt: flight.landingAt ? flight.landingAt.toISOString() : null,
+    // Story 14.4, AC 2 — same ISO-serialize treatment as the other `Date` fields.
+    forcedAt: flight.forcedAt ? flight.forcedAt.toISOString() : null,
   }));
 
   const filters: LogbookFilters = {
@@ -179,6 +195,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   const pdfExportHref = buildPdfExportHref('/api/v1/flights/pdf', exportFilters, locale);
 
   const t = await getTranslations('LogbookPage');
+  // Story AOG-1a, AC 12 — only for `form.outOfServiceSuffix`, reused verbatim from the booking form.
+  const tBookings = await getTranslations('BookingsPage');
 
   return (
     <main className="page">
@@ -222,6 +240,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
       <LogbookConsole
         key={JSON.stringify({ page, ...exportFilters })}
         canManage={canManage}
+        canForceExpiry={canForceExpiry}
         items={items}
         totals={totals}
         page={page}
@@ -266,6 +285,10 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             correctedBy: t('table.correctedBy'),
             cancelAction: t('table.cancelAction'),
             correctAction: t('table.correctAction'),
+            forcedBadge: t('table.forcedBadge'),
+            // `t.raw`: the {reason} placeholder is filled CLIENT-side (same
+            // reasoning as `editor.fields.studentOnlyCorrectionHint` below).
+            forcedDetail: t.raw('table.forcedDetail'),
           },
           filters: {
             dateFrom: t('filters.dateFrom'),
@@ -295,6 +318,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             conflictError: t('editor.conflictError'),
             requiredField: t('editor.requiredField'),
             invalidHourMeter: t('editor.invalidHourMeter'),
+            invalidCycles: t('editor.invalidCycles'),
             fields: {
               aircraft: t('editor.fields.aircraft'),
               noAircraftAvailable: t('editor.fields.noAircraftAvailable'),
@@ -306,6 +330,11 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               flightType: t('editor.fields.flightType'),
               soloMode: t('editor.fields.soloMode'),
               soloModes: { dual: t('editor.fields.soloModes.dual'), solo: t('editor.fields.soloModes.solo') },
+              studentOnlyHint: t('editor.fields.studentOnlyHint'),
+              // `t.raw`: the {type} placeholder is filled CLIENT-side by the editor —
+              // plain `t()` fails ICU formatting and renders the key path instead
+              // (lezione fix post-epic-13, HANDOFF).
+              studentOnlyCorrectionHint: t.raw('editor.fields.studentOnlyCorrectionHint'),
               departure: t('editor.fields.departure'),
               arrival: t('editor.fields.arrival'),
               takeoffTime: t('editor.fields.takeoffTime'),
@@ -325,12 +354,28 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               NO_INSTRUCTOR_RATE: t('editor.errors.NO_INSTRUCTOR_RATE'),
               SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR: t('editor.errors.SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR'),
               SOLO_REQUIRES_SCHOOL: t('editor.errors.SOLO_REQUIRES_SCHOOL'),
+              STUDENT_FLIGHT_MUST_BE_SCHOOL: t('editor.errors.STUDENT_FLIGHT_MUST_BE_SCHOOL'),
               AIRCRAFT_ARCHIVED: t('editor.errors.AIRCRAFT_ARCHIVED'),
               PERSON_ARCHIVED: t('editor.errors.PERSON_ARCHIVED'),
               PERSON_NOT_PILOT_OR_STUDENT: t('editor.errors.PERSON_NOT_PILOT_OR_STUDENT'),
               INSTRUCTOR_NOT_FOUND: t('editor.errors.INSTRUCTOR_NOT_FOUND'),
               INSTRUCTOR_SAME_AS_PILOT: t('editor.errors.INSTRUCTOR_SAME_AS_PILOT'),
               FLIGHT_DATE_IN_FUTURE: t('editor.errors.FLIGHT_DATE_IN_FUTURE'),
+              // Story 16.2, AC 18 — `{date}`/`{from}`/`{to}` filled CLIENT-side (the conflicting flight's own instants), same reasoning.
+              FLIGHT_OVERLAP: t.raw('editor.errors.FLIGHT_OVERLAP'),
+              // Story AOG-1a, AC 11 — `{registration}`/`{reason}`/`{date}` filled CLIENT-side, same reasoning.
+              AIRCRAFT_OUT_OF_SERVICE: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE'),
+              AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL'),
+              // Review MAJOR-1 — appended to either template above when documents block the same request; `{documents}` filled CLIENT-side.
+              AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS'),
+              // `t.raw`: the {documents} placeholder is filled CLIENT-side
+              // (same reasoning as `fields.studentOnlyCorrectionHint` above).
+              FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
+              // Review F5/F6 — `{date}` filled CLIENT-side, same reasoning.
+              documentExpiredOn: t.raw('editor.errors.documentExpiredOn'),
+              documentMissing: t('editor.errors.documentMissing'),
+              documentRolePerson: t('editor.errors.documentRolePerson'),
+              documentRoleInstructor: t('editor.errors.documentRoleInstructor'),
               generic: t('editor.errors.generic'),
             },
             result: {
@@ -342,8 +387,43 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               instructorAmount: t('editor.result.instructorAmount'),
               total: t('editor.result.total'),
               newBalance: t('editor.result.newBalance'),
+              balanceAlert: t('editor.result.balanceAlert'),
+              // Review F11 — `{reason}` filled CLIENT-side, same reasoning.
+              forcedNotice: t.raw('editor.result.forcedNotice'),
             },
+            // Story AOG-1a, AC 12: the SAME key the booking form uses — one string, so the two forms can never drift apart on the same fact.
+            outOfServiceSuffix: tBookings.raw('form.outOfServiceSuffix') as string,
             picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
+            force: {
+              title: t('editor.force.title'),
+              description: t('editor.force.description'),
+              reasonLabel: t('editor.force.reasonLabel'),
+              submit: t('editor.force.submit'),
+              cancel: t('editor.force.cancel'),
+              requiredReason: t('editor.force.requiredReason'),
+              generic: t('editor.force.generic'),
+            },
+          },
+          mobile: {
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            back: t('mobile.back'),
+            route: t('mobile.route'),
+            instructor: t('mobile.instructor'),
+            takeoffs: t('mobile.takeoffs'),
+            landings: t('mobile.landings'),
+            times: t('mobile.times'),
+            hourMeter: t('mobile.hourMeter'),
+            notes: t('mobile.notes'),
+            lineage: t('mobile.lineage'),
+            correctionBadge: t('mobile.correctionBadge'),
+            statusAll: t('mobile.statusAll'),
+            filters: t('mobile.filters'),
+            // `t.raw`: the {count} placeholder is filled CLIENT-side (same
+            // reasoning as `table.forcedDetail` above).
+            filtersCount: t.raw('mobile.filtersCount'),
+            filtersTitle: t('mobile.filtersTitle'),
+            apply: t('mobile.apply'),
           },
           cancelModal: {
             title: t('cancelModal.title'),

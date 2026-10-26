@@ -30,13 +30,14 @@ export type InstructorProfileLabels = {
   noValue: string;
 };
 
-type InstructorDetail = {
+/** Exported for the phone sheet (review 15.5 F2), which shows the SAME three facts from the SAME read — one request, on open, never per list row. */
+export type InstructorDetail = {
   mtdMinutes: number;
   recentFlights: Array<{ id: string; flightDate: string; personFirstName: string; personLastName: string; minutes: number }>;
   recentStudents: Array<{ personId: string; firstName: string; lastName: string }>;
 };
 
-async function fetchDetail(personId: string): Promise<InstructorDetail | null> {
+export async function fetchDetail(personId: string): Promise<InstructorDetail | null> {
   const response = await fetch(`/api/v1/instructor-compensation?personId=${personId}`);
   if (!response.ok) return null;
   return (await response.json()) as InstructorDetail;

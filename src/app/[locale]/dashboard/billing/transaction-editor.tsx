@@ -11,12 +11,13 @@
  * rettifica as today, server-side, no `effectiveDate` input exists on that
  * model (Dev Notes/`accounts.service.ts`).
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { DateInput } from '@/components/ui/date-input';
 import { Field, Input, InputGroup, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents, parseCents } from '@/lib/money';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
@@ -95,9 +96,18 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
   const [categoryId, setCategoryId] = useState(categoryOptions[0]?.id ?? '');
   const [direction, setDirection] = useState<'in' | 'out'>('in');
   const [formError, setFormError] = useState<string | null>(null);
+  // Story 14.2 (AC 1/2): one boolean per REQUIRED field instead of a single
+  // combined `formError` string — each marks (and clears on correction) only
+  // ITS OWN field; `formError` stays for non-field API failures (conflict/
+  // generic/network) only.
+  const [amountError, setAmountError] = useState(false);
+  const [personError, setPersonError] = useState(false);
+  const [reasonError, setReasonError] = useState(false);
+  const [categoryError, setCategoryError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ResultState | null>(null);
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const personComboOptions = useMemo<SearchComboboxOption[]>(
     () => personOptions.map((person) => ({ id: person.id, label: personLabel(person) })),
@@ -115,6 +125,10 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     setCategoryId(categoryOptions[0]?.id ?? '');
     setDirection('in');
     setFormError(null);
+    setAmountError(false);
+    setPersonError(false);
+    setReasonError(false);
+    setCategoryError(false);
     setResult(null);
   }
 
@@ -132,20 +146,19 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     } catch {
       parsedAmount = null;
     }
-    if (parsedAmount === null || parsedAmount <= 0) {
-      setFormError(labels.invalidAmount);
-      return;
-    }
-    if ((kind === 'payment' || kind === 'adjustment') && personId.trim() === '') {
-      setFormError(labels.requiredField);
-      return;
-    }
-    if (kind === 'adjustment' && reason.trim() === '') {
-      setFormError(labels.requiredField);
-      return;
-    }
-    if (kind === 'cash' && categoryId.trim() === '') {
-      setFormError(labels.requiredField);
+    const nextAmountError = parsedAmount === null || parsedAmount <= 0;
+    const nextPersonError = (kind === 'payment' || kind === 'adjustment') && personId.trim() === '';
+    const nextReasonError = kind === 'adjustment' && reason.trim() === '';
+    const nextCategoryError = kind === 'cash' && categoryId.trim() === '';
+    setAmountError(nextAmountError);
+    setPersonError(nextPersonError);
+    setReasonError(nextReasonError);
+    setCategoryError(nextCategoryError);
+    // `parsedAmount === null` is redundant with `nextAmountError` (a `let`
+    // TS narrows on the checked VARIABLE, not on a derived boolean) — kept
+    // explicit so `parsedAmount` narrows to `number` below.
+    if (nextAmountError || nextPersonError || nextReasonError || nextCategoryError || parsedAmount === null) {
+      setTimeout(() => focusFirstInvalid(formRef.current), 0);
       return;
     }
 
@@ -221,7 +234,20 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
           )}
         </div>
       ) : (
-        <form id="transaction-form" data-testid="transaction-form" onSubmit={(event) => { event.preventDefault(); void submit(); }} noValidate>
+        // `.transaction-form` is the anchor story 15.8a's own CSS block uses to
+        // put the 44px floor under this form's six fields on a phone (AC 15 b):
+        // never `.form-grid` or `.input`, which every editor in the app shares.
+        <form
+          id="transaction-form"
+          className="transaction-form"
+          ref={formRef}
+          data-testid="transaction-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+          noValidate
+        >
           <div className="form-grid">
             <Field label={labels.kind}>
               <Select value={kind} onChange={(event) => setKind(event.target.value as Kind)} data-testid="transaction-kind">
@@ -237,18 +263,30 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
                   id="transaction-person"
                   label={labels.fields.pilot}
                   value={personId}
-                  onChange={setPersonId}
+                  onChange={(id) => {
+                    setPersonId(id);
+                    if (id.trim() !== '') setPersonError(false);
+                  }}
                   fetchOptions={searchPeople}
                   initialOptions={personComboOptions}
                   placeholder={labels.picker.placeholder}
                   emptyText={labels.picker.noResults}
+                  error={personError ? labels.requiredField : undefined}
                 />
               </div>
             ) : null}
 
             {kind === 'cash' ? (
-              <Field label={labels.fields.category}>
-                <Select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} data-testid="transaction-category">
+              <Field label={labels.fields.category} error={categoryError ? labels.requiredField : undefined}>
+                <Select
+                  value={categoryId}
+                  onChange={(event) => {
+                    setCategoryId(event.target.value);
+                    if (event.target.value.trim() !== '') setCategoryError(false);
+                  }}
+                  aria-invalid={categoryError}
+                  data-testid="transaction-category"
+                >
                   {categoryOptions.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
@@ -258,9 +296,20 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
               </Field>
             ) : null}
 
-            <Field label={labels.fields.amount}>
+            <Field label={labels.fields.amount} error={amountError ? labels.invalidAmount : undefined}>
               <InputGroup prefix="€">
-                <Input type="number" step="0.01" min="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} data-testid="transaction-amount" />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={amount}
+                  onChange={(event) => {
+                    setAmount(event.target.value);
+                    if (amountError) setAmountError(false);
+                  }}
+                  aria-invalid={amountError}
+                  data-testid="transaction-amount"
+                />
               </InputGroup>
             </Field>
 
@@ -294,8 +343,16 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
             )}
 
             {kind === 'adjustment' ? (
-              <Field label={labels.fields.reason} wide>
-                <Input value={reason} onChange={(event) => setReason(event.target.value)} data-testid="transaction-reason" />
+              <Field label={labels.fields.reason} wide error={reasonError ? labels.requiredField : undefined}>
+                <Input
+                  value={reason}
+                  onChange={(event) => {
+                    setReason(event.target.value);
+                    if (reasonError && event.target.value.trim() !== '') setReasonError(false);
+                  }}
+                  aria-invalid={reasonError}
+                  data-testid="transaction-reason"
+                />
               </Field>
             ) : (
               <Field label={labels.fields.description} wide>

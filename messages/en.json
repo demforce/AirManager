@@ -21,6 +21,8 @@
       "fleet": "Aircraft",
       "scadenze": "Expiries",
       "logbook": "Flight log",
+      "myAccount": "My transactions",
+      "myCompensation": "My payouts",
       "billing": "Billing",
       "reports": "Reports",
       "settings": "Settings"
@@ -35,6 +37,8 @@
       "fleet": "Aircraft",
       "scadenze": "Expiries",
       "logbook": "Flight log",
+      "myAccount": "My transactions",
+      "myCompensation": "My payouts",
       "billing": "Billing",
       "reports": "Reports",
       "settings": "Settings"
@@ -51,13 +55,17 @@
     "logout": "Log out",
     "roles": {
       "ADMIN": "Admin",
-      "STAFF": "Staff",
       "INSTRUCTOR": "Instructor",
       "PILOT": "Pilot",
       "STUDENT": "Student"
     },
     "weather": {
       "title": "Field weather"
+    },
+    "mobile": {
+      "more": "More",
+      "moreSheet": "More sections",
+      "profile": "Profile"
     }
   },
   "auth": {
@@ -70,7 +78,8 @@
       "submit": "Sign in",
       "submitting": "Signing in…",
       "errorGeneric": "Incorrect email or password.",
-      "forgotPassword": "Forgot your password?"
+      "forgotPassword": "Forgot your password?",
+      "requiredField": "Required field."
     },
     "setPassword": {
       "kicker": "Set password",
@@ -95,7 +104,8 @@
       "submit": "Send reset link",
       "submitting": "Sending…",
       "confirmation": "If that email address matches an active account, you'll receive an email shortly with instructions to reset your password.",
-      "backToLogin": "Back to sign in"
+      "backToLogin": "Back to sign in",
+      "requiredField": "Required field."
     }
   },
   "DashboardPage": {
@@ -115,6 +125,31 @@
         "pprPending": "PPR pending",
         "bookingsPending": "Bookings pending",
         "revenue": "Revenue this month"
+      },
+      "mobile": {
+        "inProgress": {
+          "title": "Happening now",
+          "count": "{count} in progress",
+          "empty": "No booking is in progress right now."
+        },
+        "pending": {
+          "title": "Bookings pending",
+          "count": "{count} to approve",
+          "seeAll": "+{count} · See all",
+          "empty": "No booking is waiting for approval."
+        },
+        "alerts": {
+          "title": "Alerts",
+          "empty": "No alerts: expiries, balances and PPR are all in order.",
+          "seeAll": "+{count} more · See all",
+          "seeAllAtLeast": "+{count} and more · See all",
+          "balanceSub": "Balance {amount}",
+          "pprSub": "Requests awaiting a decision"
+        },
+        "shortcuts": {
+          "schedule": "Scheduling",
+          "fleet": "Aircraft"
+        }
       }
     },
     "pilotLanding": {
@@ -184,12 +219,26 @@
         "available": "Available",
         "archived": "Archived"
       }
+    },
+    "mobile": {
+      "openDetail": "Open detail",
+      "close": "Close",
+      "bookingLabel": "Booking",
+      "metarTitle": "Field weather",
+      "detail": {
+        "aircraft": "Aircraft",
+        "pilot": "Pilot",
+        "instructor": "Instructor",
+        "startsAt": "Start",
+        "endsAt": "End",
+        "duration": "Duration",
+        "notes": "Notes"
+      }
     }
   },
   "PeoplePage": {
     "kicker": "Records",
     "title": "People",
-    "description": "The single source of truth for pilots, students, instructors and staff: create, edit and archive people.",
     "backToDashboard": "Back to dashboard",
     "newPerson": "New person",
     "searchPlaceholder": "Search by first name, last name or email…",
@@ -288,7 +337,7 @@
     "sub": "{total} on file · {suspended} suspended",
     "cardTitle": "Pilots directory",
     "searchPlaceholder": "Search by name or email…",
-    "includeArchivedLabel": "Show archived",
+    "includeArchivedLabel": "Archived only",
     "empty": "No pilots found.",
     "newPilot": "Add pilot",
     "pagination": {
@@ -315,6 +364,20 @@
       "topUp": "Top up",
       "suspend": "Suspend",
       "reactivate": "Reactivate"
+    },
+    "mobile": {
+      "openDetail": "Open detail",
+      "close": "Close",
+      "openProfile": "Open record",
+      "flagExpired": "{doc} expired",
+      "flagExpiring": "{doc} {days}d",
+      "confirmSuspend": "Suspend this person's access?",
+      "confirmReactivate": "Reactivate this person's access?",
+      "dismiss": "Cancel",
+      "sheet": {
+        "phone": "Phone",
+        "documents": "Documents"
+      }
     },
     "topUp": {
       "title": "Record top-up",
@@ -458,6 +521,12 @@
       "edit": "Edit",
       "pay": "Pay"
     },
+    "mobile": {
+      "openDetail": "Open detail",
+      "close": "Close",
+      "owedSuffix": "owed",
+      "openProfile": "Open record"
+    },
     "addInstructor": {
       "title": "Add instructor",
       "subtitle": "Activate the instructor profile on an existing person",
@@ -482,14 +551,14 @@
         "address": "Address",
         "fiscalCode": "Fiscal code",
         "save": "Save changes",
-        "loadError": "Could not load the identity data."
+        "loadError": "Could not load the identity data.",
+        "requiredField": "Required field."
       },
       "payoutRate": {
         "sectionTitle": "Payout rate (paid to the instructor)",
         "label": "Hourly rate",
         "noValue": "—",
-        "save": "Save",
-        "readOnlyHint": "Only an administrator can set the payout rate."
+        "save": "Save"
       },
       "ratings": {
         "sectionTitle": "Ratings",
@@ -535,7 +604,6 @@
       "invalidDate": "Enter a valid date.",
       "genericError": "Something went wrong. Please try again.",
       "conflictError": "A rate with this validFrom already exists, or this person has no active instructor profile.",
-      "readOnlyHint": "Only an administrator can add new instructor rates.",
       "historyTitle": "Rate history",
       "historyEmpty": "No rate recorded.",
       "historyValidFrom": "In effect from",
@@ -753,6 +821,40 @@
     "pdf": {
       "balance": "Final balance",
       "currentBalance": "Current account balance"
+    },
+    "mobile": {
+      "empty": "This account has no movements.",
+      "openDetail": "Open movement detail",
+      "close": "Close"
+    }
+  },
+  "MyAccountPage": {
+    "title": "My transactions",
+    "sub": "Top-ups, flight charges and adjustments on your account.",
+    "balanceLabel": "Current balance",
+    "noAccount": "No active account"
+  },
+  "MyCompensationPage": {
+    "title": "My payouts",
+    "sub": "Hours flown, this month's accrual and your payout history.",
+    "noProfile": "No active instructor profile.",
+    "kpi": {
+      "rate": "Hourly rate",
+      "hoursMtd": "Hours this month",
+      "grossMtd": "Accrued this month",
+      "owedMtd": "Owed this month",
+      "owedTotal": "Outstanding balance"
+    },
+    "table": {
+      "heading": "Payments received",
+      "empty": "No payments recorded.",
+      "date": "Date",
+      "period": "Period",
+      "method": "Method",
+      "amount": "Amount"
+    },
+    "mobile": {
+      "registeredOn": "Recorded on {date}"
     }
   },
   "FinancePage": {
@@ -877,6 +979,23 @@
       "available": "Available",
       "archived": "Archived"
     },
+    "mobile": {
+      "monthHours": "Hours this month",
+      "openDetail": "Open detail",
+      "close": "Close",
+      "edit": "Edit",
+      "noValue": "—",
+      "sheet": {
+        "status": "Status",
+        "aogReason": "AOG reason",
+        "rate": "Rate",
+        "seats": "Seats",
+        "fuel": "Fuel",
+        "hourMeter": "Hour meter",
+        "monthHours": "Hours this month",
+        "notes": "Notes"
+      }
+    },
     "pagination": {
       "prev": "Previous",
       "next": "Next"
@@ -916,8 +1035,28 @@
         "setOutOfService": "Out of service",
         "returnToService": "Return to service",
         "reason": "Reason",
+        "until": "Grounded until (inclusive)",
+        "untilHint": "Optional: the last day the aircraft stays grounded. Empty = return date not yet known.",
+        "untilValue": "grounded until {date} inclusive",
+        "untilUnknown": "return date not yet known",
         "confirm": "Confirm",
-        "confirmReturnToService": "Return this aircraft to service?"
+        "confirmReturnToService": "Return this aircraft to service?",
+        "confirmQuestionOne": "Confirm the grounding? 1 booking impacted",
+        "confirmQuestionMany": "Confirm the grounding? {count} bookings impacted",
+        "confirmQuestionUnknown": "Confirm the grounding? Count unavailable",
+        "impactPreviewNone": "No bookings impacted",
+        "impactPreviewOne": "You are about to impact 1 booking.",
+        "impactPreviewMany": "You are about to impact {count} bookings.",
+        "impactBannerOne": "Grounding recorded: 1 booking impacted.",
+        "impactBannerMany": "Grounding recorded: {count} bookings impacted.",
+        "impactRowOne": "1 booking inside the grounding",
+        "impactRowMany": "{count} bookings inside the grounding",
+        "impactSplit": "Pending (frozen): {pending} · Approved (to handle): {approved}",
+        "impactWindowUntil": "counted until {date} inclusive",
+        "impactWindowUndelimited": "return date not yet known: count not delimited",
+        "impactWindowOverdue": "grounding past the expected {date}: count not delimited",
+        "impactEstimate": "estimate",
+        "impactBookingsLink": "View bookings"
       },
       "rates": {
         "sectionTitle": "Rates",
@@ -1168,6 +1307,8 @@
       "correctedBy": "Corrected by a later flight",
       "cancelAction": "Cancel",
       "correctAction": "Edit",
+      "forcedBadge": "Override",
+      "forcedDetail": "Reason: {reason}",
       "empty": "No flights logged yet."
     },
     "filters": {
@@ -1207,6 +1348,7 @@
       "conflictError": "This flight has already been cancelled.",
       "requiredField": "Required field.",
       "invalidHourMeter": "The end reading must be greater than the start reading.",
+      "invalidCycles": "Takeoffs and landings must be at least 1.",
       "fields": {
         "aircraft": "Aircraft",
         "noAircraftAvailable": "No active aircraft available.",
@@ -1221,6 +1363,8 @@
           "dual": "Dual",
           "solo": "Solo"
         },
+        "studentOnlyHint": "Student without a pilot license: flight type is always School.",
+        "studentOnlyCorrectionHint": "This person currently has only a student profile. The flight is recorded as {type}: leaving it unchanged is always allowed; changing it (except to School) will be rejected by the server.",
         "departure": "Departure airport",
         "arrival": "Arrival airport",
         "takeoffTime": "Takeoff time",
@@ -1239,12 +1383,22 @@
         "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
         "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "A school flight requires an instructor.",
         "SOLO_REQUIRES_SCHOOL": "Dual/solo is only valid for school flights.",
+        "STUDENT_FLIGHT_MUST_BE_SCHOOL": "A student without a pilot license can only log school flights.",
         "AIRCRAFT_ARCHIVED": "The selected aircraft is archived.",
         "PERSON_ARCHIVED": "The selected person is archived.",
         "PERSON_NOT_PILOT_OR_STUDENT": "The person must have an active pilot or student profile.",
         "INSTRUCTOR_NOT_FOUND": "The selected instructor has no active instructor profile.",
         "INSTRUCTOR_SAME_AS_PILOT": "The instructor cannot be the same person as the pilot or student.",
         "FLIGHT_DATE_IN_FUTURE": "The flight date cannot be in the future.",
+        "FLIGHT_OVERLAP": "This aircraft already has a flight logged on {date} from {from} to {to}. Cancel or correct that flight, or change the times.",
+        "AIRCRAFT_OUT_OF_SERVICE": "Aircraft {registration} is out of service: {reason}.",
+        "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Aircraft {registration} is out of service: {reason}. Grounded until {date} inclusive.",
+        "AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS": "This flight is also blocked by these missing or expired documents: {documents}.",
+        "FLIGHT_BLOCKED_BY_EXPIRY": "Cannot log this flight: the following documents are missing or expired: {documents}.",
+        "documentExpiredOn": "expired on {date}",
+        "documentMissing": "missing",
+        "documentRolePerson": "pilot/student",
+        "documentRoleInstructor": "instructor",
         "generic": "Could not log the flight. Please try again."
       },
       "result": {
@@ -1255,8 +1409,38 @@
         "instructorRate": "Instructor rate",
         "instructorAmount": "Instructor cost",
         "total": "Total charged",
-        "newBalance": "New balance"
+        "newBalance": "New balance",
+        "balanceAlert": "Warning: the pilot's balance is negative (or has worsened past the configured threshold). The flight has been logged regardless.",
+        "forcedNotice": "Logged as an override — {reason}"
+      },
+      "force": {
+        "title": "Force registration",
+        "description": "Only an admin can still log this flight, with a reason. The override stays tracked.",
+        "reasonLabel": "Reason",
+        "submit": "Force registration",
+        "cancel": "Cancel",
+        "requiredReason": "A reason is required.",
+        "generic": "Could not force the registration. Please try again."
       }
+    },
+    "mobile": {
+      "openDetail": "Open flight detail",
+      "close": "Close",
+      "back": "Back",
+      "route": "Route",
+      "instructor": "Instructor",
+      "takeoffs": "Take-offs",
+      "landings": "Landings",
+      "times": "Times",
+      "hourMeter": "Hour meter",
+      "notes": "Notes",
+      "lineage": "History",
+      "correctionBadge": "Correction",
+      "statusAll": "All",
+      "filters": "Filters",
+      "filtersCount": "Filters ({count})",
+      "filtersTitle": "Logbook filters",
+      "apply": "Apply"
     },
     "cancelModal": {
       "title": "Cancel flight",
@@ -1336,7 +1520,7 @@
       },
       "reminders": {
         "button": "Send reminders",
-        "sent": "Reminders sent: {holders} to holders, {digests} to staff.",
+        "sent": "Reminders sent: {holders} to holders, {digests} to the admins.",
         "error": "Send failed. Please try again."
       },
       "membershipFee": {
@@ -1348,11 +1532,31 @@
         "amountHint": "Prefilled from Settings, editable.",
         "submit": "Charge and renew",
         "cancel": "Close",
-        "invalidAmount": "Select a pilot and a valid amount.",
+        "invalidAmount": "Enter a valid amount.",
         "success": "Charged. New balance: {balance} · expiry renewed to {expires}.",
         "genericError": "Could not complete the operation.",
         "insufficientBalance": "Insufficient balance: the account is at {balance}, charging {amount} would take it below zero. An admin can force the charge with the checkbox below.",
-        "overrideCheckbox": "Force charge (insufficient balance)"
+        "overrideCheckbox": "Force charge (insufficient balance)",
+        "requiredPilot": "Select a pilot."
+      },
+      "mobile": {
+        "openDetail": "Open expiry detail",
+        "close": "Close",
+        "notes": "Notes",
+        "scopeLabel": "Scope",
+        "scope": {
+          "PILOTS": "Pilots",
+          "STUDENTS": "Students",
+          "INSTRUCTORS": "Instructors",
+          "ALL": "All"
+        },
+        "openPerson": "Open person profile",
+        "filters": "Filters",
+        "filtersCount": "Filters ({count})",
+        "filtersTitle": "Registry filters",
+        "apply": "Apply",
+        "empty": "No expiry in this window.",
+        "noValue": "—"
       }
     },
     "own": {
@@ -1369,6 +1573,10 @@
           "expired": "Expired"
         },
         "pendingBadge": "Pending proposal"
+      },
+      "mobile": {
+        "openDetail": "Open expiry detail",
+        "close": "Close"
       }
     }
   },
@@ -1383,6 +1591,7 @@
   "BookingsPage": {
     "title": "Scheduling",
     "sub": "Aircraft timeline and bookings awaiting approval.",
+    "occupied": "Booked",
     "schedule": {
       "cardTitle": "Schedule",
       "cardTitleToday": "Today's schedule",
@@ -1396,7 +1605,22 @@
       "filtersInstructor": "Instructor",
       "aog": "AOG",
       "available": "Available",
-      "weekBookingsCount": "{count} bookings"
+      "weekBookingsCount": "{count} bookings",
+      "mobile": {
+        "agendaCount": "{count} movements",
+        "now": "NOW · {time}",
+        "aogTitle": "{registration} out of service",
+        "openDetail": "Open detail",
+        "close": "Close",
+        "today": "TODAY",
+        "time": "Time",
+        "reason": "Reason",
+        "phase": {
+          "inProgress": "in progress",
+          "completed": "completed",
+          "scheduled": "scheduled"
+        }
+      }
     },
     "form": {
       "title": "New booking",
@@ -1420,17 +1644,25 @@
       "invalidRange": "The end time must be after the start time.",
       "errors": {
         "AIRCRAFT_OUT_OF_SERVICE": "The aircraft is out of service: {reason}.",
+        "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "The aircraft is out of service: {reason}. Grounded until {date} inclusive.",
         "BOOKING_IN_PAST": "The start time must be in the future.",
         "PERSON_NOT_BOOKABLE": "This person has no active profile eligible for a booking.",
         "EXPIRED_DOCUMENTS": "Cannot create this booking: the following documents are expired: {documents}.",
+        "BOOKING_OUTSIDE_WINDOW": "This time falls outside the booking window ({window}).",
         "overlap": "The aircraft is already booked for an overlapping interval.",
+        "PERSON_BUSY": "This person already has an approved booking overlapping this interval.",
+        "INSTRUCTOR_BUSY": "The selected instructor already has an approved booking overlapping this interval.",
         "generic": "Could not create the booking. Please try again."
+      },
+      "schedulingWindow": {
+        "hours": "airfield open {open}–{close}",
+        "advance": "bookable up to {days} days ahead"
       },
       "success": "Booking created.",
       "successWithWarnings": "Booking created. Warning: the following documents are expired (non-blocking):",
       "force": {
         "title": "Force booking",
-        "description": "Only staff can still create this booking, with a reason. The override stays tracked.",
+        "description": "Only an admin can still create this booking, with a reason. The override stays tracked.",
         "reasonLabel": "Reason",
         "submit": "Force booking",
         "cancel": "Cancel",
@@ -1441,6 +1673,7 @@
     "list": {
       "cardTitle": "Bookings",
       "pendingSummary": "{pending} pending · {total} total",
+      "filteredSummary": "{total} total",
       "newButton": "New booking",
       "exportLabel": "Export",
       "exportXls": "Export XLS",
@@ -1491,6 +1724,7 @@
           "BOOKING_DENY_REASON_REQUIRED": "A reason is required to reject this booking.",
           "EXPIRED_DOCUMENTS": "Cannot complete this operation: the following documents are expired: {documents}.",
           "AIRCRAFT_OUT_OF_SERVICE": "The aircraft is out of service: {reason}.",
+          "BOOKING_NOT_STARTED": "This booking has not started yet: it can only be marked as flown or no-show after its start time.",
           "conflict": "The aircraft is already booked for that interval, or this booking is no longer valid. Reload the page and try again.",
           "generic": "The operation failed. Please try again."
         }
@@ -1502,6 +1736,12 @@
         "reasonRequired": "A reason is required.",
         "submit": "Send rejection",
         "cancel": "Cancel"
+      },
+      "mobile": {
+        "openDetail": "Open detail",
+        "close": "Close",
+        "statusAll": "All",
+        "denyReason": "Rejection reason"
       }
     },
     "calendar": {
@@ -1523,7 +1763,6 @@
   "UsersPage": {
     "roles": {
       "ADMIN": "Admin",
-      "STAFF": "Staff",
       "INSTRUCTOR": "Instructor",
       "PILOT": "Pilot",
       "STUDENT": "Student"
@@ -1640,6 +1879,15 @@
       "reasonRequired": "The reason is required.",
       "submit": "Confirm rejection",
       "cancel": "Cancel"
+    },
+    "mobile": {
+      "openDetail": "Open request detail",
+      "close": "Close",
+      "requestLabel": "Request",
+      "etd": "Departure (ETD)",
+      "notes": "Notes",
+      "rejectionReason": "Rejection reason",
+      "viewInMovements": "View in Transits"
     },
     "toast": {
       "approved": "Request approved: PPR number {pprNumber}.",
@@ -1786,6 +2034,24 @@
         "ETD_NOT_AFTER_ETA": "ETD must be after ETA.",
         "generic": "We could not complete the operation. Please try again."
       }
+    },
+    "mobile": {
+      "openDetail": "Open transit detail",
+      "close": "Close",
+      "back": "Back",
+      "pprNumber": "PPR number",
+      "email": "Email",
+      "phone": "Phone",
+      "personsOnBoard": "Persons on board",
+      "notes": "Notes",
+      "source": "Request source",
+      "sourcePublic": "Web form",
+      "rejectionReason": "Rejection reason",
+      "closedAt": "Closed at",
+      "filters": "Filters",
+      "filtersCount": "Filters ({count})",
+      "filtersTitle": "Register filters",
+      "apply": "Apply"
     }
   },
   "Export": {
@@ -1816,11 +2082,13 @@
       "save": "Save",
       "saved": "Settings saved.",
       "error": "Could not save. Please try again.",
+      "invalidEmail": "Enter a valid email address.",
       "form": {
         "nameLabel": "Airfield name",
         "save": "Save",
         "saved": "Settings saved.",
-        "error": "Could not save the settings. Please try again."
+        "error": "Could not save the settings. Please try again.",
+        "requiredField": "Required field."
       }
     },
     "scheduling": {
@@ -1836,7 +2104,8 @@
       "hint": "Aircraft can be booked between {open} and {close} local time, in {slot}-minute increments, up to {days} days in advance. Minimum slot duration and turnaround margin are advisory (they never block saving a booking).",
       "save": "Save",
       "saved": "Settings saved.",
-      "error": "Could not save. Please try again."
+      "error": "Could not save. Please try again.",
+      "invalidRange": "The closing time must be after the opening time."
     },
     "smtp": {
       "title": "Email (SMTP)",
@@ -1860,7 +2129,8 @@
       "passConfigured": "Password already configured",
       "save": "Save",
       "saved": "Settings saved.",
-      "error": "Could not save. Please try again."
+      "error": "Could not save. Please try again.",
+      "invalidHost": "Invalid host: it cannot be a private, local, or internal address."
     },
     "treasury": {
       "title": "Treasury",
@@ -1872,7 +2142,8 @@
       "save": "Save",
       "saved": "Settings saved.",
       "error": "Could not save. Please try again.",
-      "invalid": "Enter valid amounts and an opening date."
+      "invalidAmount": "Enter a valid amount.",
+      "requiredDate": "Required field."
     },
     "ratings": {
       "title": "Ratings",
@@ -1917,8 +2188,8 @@
         "scope": "Scope",
         "validity": "Validity",
         "validityHint": "Prefills the expiry at registration (today + months). Set 0 for ratings that never expire.",
-        "blocksBooking": "Blocks bookings",
-        "blocksBookingHint": "An expired document of this type prevents new bookings.",
+        "blocksBooking": "Blocks bookings and flights",
+        "blocksBookingHint": "An expired or missing document of this type prevents new bookings and logging/correcting flights.",
         "submitCreate": "Create",
         "submitSave": "Save",
         "cancel": "Cancel",
@@ -1935,7 +2206,14 @@
         "deleteInUseError": "This type is in use: deactivate it instead of deleting it.",
         "genericError": "Could not complete the operation."
       },
-      "hint": "Set validity to 0 for ratings that never expire (e.g. night rating). Expiries appear on the Expiries page."
+      "hint": "Set validity to 0 for ratings that never expire (e.g. night rating). Expiries appear on the Expiries page.",
+      "mobile": {
+        "openDetail": "Open detail",
+        "close": "Close",
+        "empty": "No type in this catalogue.",
+        "yes": "Yes",
+        "no": "No"
+      }
     },
     "medical": {
       "title": "Medical checks",
@@ -1980,8 +2258,8 @@
         "scope": "Scope",
         "validity": "Validity",
         "validityHint": "Prefills the expiry at registration (today + months). Set 0 for medical checks that never expire.",
-        "blocksBooking": "Blocks bookings",
-        "blocksBookingHint": "An expired document of this type prevents new bookings.",
+        "blocksBooking": "Blocks bookings and flights",
+        "blocksBookingHint": "An expired or missing document of this type prevents new bookings and logging/correcting flights.",
         "submitCreate": "Create",
         "submitSave": "Save",
         "cancel": "Cancel",
@@ -1998,7 +2276,14 @@
         "deleteInUseError": "This type is in use: deactivate it instead of deleting it.",
         "genericError": "Could not complete the operation."
       },
-      "hint": "Medical checks are separate from ratings: they have their own expiry date and are never free text. Expiries appear on the Expiries page."
+      "hint": "Medical checks are separate from ratings: they have their own expiry date and are never free text. Expiries appear on the Expiries page.",
+      "mobile": {
+        "openDetail": "Open detail",
+        "close": "Close",
+        "empty": "No medical in this catalogue.",
+        "yes": "Yes",
+        "no": "No"
+      }
     },
     "cashCategories": {
       "title": "Cash categories",
@@ -2044,6 +2329,12 @@
         "deleted": "Category deleted.",
         "deleteInUseError": "This category has recorded movements and cannot be deleted: deactivate it instead.",
         "genericError": "The operation failed. Try again."
+      },
+      "mobile": {
+        "openDetail": "Open detail",
+        "close": "Close",
+        "empty": "No category in this catalogue.",
+        "movementsCount": "{count} movements"
       }
     }
   },
@@ -2092,6 +2383,13 @@
     "bookingDenied": {
       "subject": "Booking denied: {aircraftRegistration}",
       "body": "Hello {firstName},\n\nYour booking for {aircraftRegistration} on {when} has been denied.\n\nReason: {reason}"
+    },
+    "aircraftGrounded": {
+      "subject": "Aircraft out of service: {aircraftRegistration}",
+      "body": "Hello {firstName},\n\nAircraft {aircraftRegistration}, which you have an approved booking for, has been taken out of service.\n\nReason: {reason}\nGrounded: {window}\nYour first affected booking: {when}\n\nThe booking has NOT been cancelled: please contact the airfield to agree how to proceed.",
+      "windowUntil": "until {date} inclusive",
+      "windowUnknown": "return date not yet known",
+      "windowOverdue": "past the expected {date}, return date not yet known"
     }
   },
   "BillingPage": {
@@ -2271,6 +2569,32 @@
         "placeholder": "Search...",
         "noResults": "No results."
       }
+    },
+    "mobile": {
+      "bookTypeAll": "All",
+      "unattributedChip": "Unattributed",
+      "filters": "Filters",
+      "filtersCount": "Filters ({count})",
+      "filtersTitle": "Ledger filters",
+      "apply": "Apply",
+      "close": "Close",
+      "back": "Back",
+      "openDetail": "Open detail",
+      "empty": "No entry matches these filters.",
+      "source": "Source",
+      "sourceAccount": "Pilot account",
+      "sourceCash": "Cash book",
+      "reference": "Reference",
+      "id": "Identifier",
+      "reclassify": "Assign method",
+      "reclassifyConfirm": "Confirm method",
+      "unattributedMethod": "Unattributed",
+      "kpiResult": "Result",
+      "kpiAvailable": "Available",
+      "kpiDeposits": "Deposits",
+      "openPanel": "Open detail",
+      "treasurySub": "Current balance",
+      "depositsSub": "Owed to pilots"
     }
   },
   "ReportsPage": {
@@ -2339,6 +2663,10 @@
         "spent": "Spent"
       },
       "empty": "No pilot flew in this period."
+    },
+    "mobile": {
+      "capNote": "First {shown} of {total}",
+      "showAll": "Show all ({count})"
     }
   },
   "ui": {

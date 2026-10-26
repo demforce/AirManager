@@ -179,7 +179,12 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     await nav.getByRole('link', { name: 'Scadenze', exact: true }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/expiries$/);
     await expect(page.getByRole('heading', { name: 'Le mie scadenze' })).toBeVisible();
-    await expect(page.getByText(type.name)).toBeVisible();
+    // Scoped to the desktop ROW, not page-level (story 15.7): "Le mie
+    // scadenze" now also renders a phone card per scadenza, present in the DOM
+    // at every width (`display: none` above 640px), so a page-level
+    // `getByText(type.name)` matches twice and violates strict mode. Same
+    // rewrite-to-the-correct-value as `movements.spec.ts`'s own five.
+    await expect(page.getByTestId('my-expiry-row').filter({ hasText: type.name })).toBeVisible();
 
     const forbiddenResponse = await page.request.get('/api/v1/expiries');
     expect(forbiddenResponse.status()).toBe(403);

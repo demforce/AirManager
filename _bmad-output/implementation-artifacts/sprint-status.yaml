@@ -18,10 +18,12 @@
 #
 # WORKFLOW NOTES:
 # ===============
-# - Model roles (user-approved config 2026-07-07, effective from story 4.4):
-#   stories = main session Fable 5 (effort xhigh); dev = ONE Sonnet 5
-#   subagent per story (effort xhigh, no ultracode fan-out); review =
-#   Opus 5 subagent (effort xhigh, the single adversarial layer;
+# - Model roles (user-approved config 2026-07-07, effective from story 4.4;
+#   amended 2026-07-29): stories = main session Fable 5 (effort xhigh);
+#   dev = ONE subagent per story — Opus 5 xhigh when the story writes UI
+#   code (user rule 2026-07-29, applies to fix-subagents on UI surfaces
+#   too; epic 15 mobile is all-UI), Sonnet 5 xhigh for pure backend;
+#   review = Opus 5 subagent (effort xhigh, the single adversarial layer;
 #   switched from Opus 4.8 by user decision 2026-07-25).
 #   (Story 4.3 dev ran on the earlier ultracode workflow config.)
 # - Story creation: main session (Fable 5 xhigh) via bmad-create-story
@@ -30,7 +32,8 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 
 generated: 2026-07-04 13:30
-last_updated: 2026-07-26 (EPIC 13 DONE, 11/11 — chiuse in questa sessione 13.7 Pianificazione, 13.8 Shell&misc, 13.9 Dark theme, 13.10 Mobile, 13.11 Ritiro stack legacy (Tailwind/Geist/TanStack RIMOSSI). Reviewer switchato a Opus 5 (decisione utente 2026-07-25). Ultima full suite: 259 passed CI=1 build prod exit 0. Restano post-epic: 2 findings security (v. action_items) + push/merge PR a carico utente. Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
+last_updated: >-
+  2026-09-27 (**17.1 DONE** — arbitro 537/537 sul container ri-tarato, shm 1gb; prossimo = 16.3). Storico — 2026-09-27 (**AOG-1b DONE** — arbitro 537 exit 0; 16.8 ready-for-dev con ratifiche chiuse; prossimo = 17.1 dallo stash). Storico — 2026-09-26 (**RIPRESA dopo lo stop del 2026-09-10 — 16.2 DONE**: review re-run SHIPPABLE-WITH-FIXES, fix 1a9552b, arbitro 533 exit 0; prossimo = AOG-1b fix cycle dallo stash, poi 17.1 dallo stash, poi 16.3..16.9; il PO ha chiesto di proseguire anche negli epic 17-18 in questa sessione). Storico — 2026-09-10 sera (**SESSIONE FERMATA A META' CICLO — v. HANDOFF «Stato al salvataggio»: 16.1 done; 16.2 in review con arbitro verde ma report NON prodotto; fix AOG-1b e dev 17.1 parziali in due git stash nominati; 16.3-16.9 e 17.1 ready-for-dev**. Storico — AUDIT 2026-09-10 → EPIC 16-18 CREATI — quattro report (ui-review 15+4+1+1 findings; ledger 0/6/6/7; ops 0/8/5/4 tutti riprodotti; perf-load con seed prisma/seed-load.ts 60k voli/105k movimenti/1500 velivoli/5000 persone in 3,2 min), piano epic in docs/superpowers/plans/2026-09-10-epics-16-18-audit.md, 23 story a backlog, ratifiche R-16-a..h tutte chiuse; AOG-1b resta in review col fix cycle PARCHEGGIATO (decisione 1 = frase dedicata; 2-5 aperte; report aog-1b-review-report.md committato) e va chiuso prima della 16.8. PROSSIMA = 16.1. Stato precedente — **BACKLOG POST-EPIC in corso: story AOG-1a DONE, 1/2 del ciclo AOG** — outOfServiceUntil additivo con semantica INCLUSIVA (Q1, contro la raccomandazione) scritta una volta nel doc-comment Prisma; guardia volo 422 con deroga sul modello 14.4 (un solo force per scadenze e AOG); i 3+1 422 AIRCRAFT_OUT_OF_SERVICE con data E, dopo il fix MAJOR-1 su decisione PO, coi DOCUMENTI bloccanti nominati (la garanzia never-partial della 14.4 difesa anche sul percorso AOG); picker volo col suffisso selezionabile; contatore Panoramica fleet-wide e COERENTE su sub+KPI+widget (fix MINOR-1); .nullish() sul round-trip (MINOR-2); 10 ratifiche PO pre-dev + 4 in review; review adversarial SHIPPABLE-WITH-FIXES (1 major + 2 minor + 4 low, report committato); arbitro finale 518 passed + 3 skipped AMBIENTALI (METAR upstream irraggiungibile, by contract) su 521 = 511 baseline + 10 della story, 0 failed, 0 flaky, exit 0; commit 414dd66 story / 405f68f feat / 7e444bf record / 0de2316 fix; TD nuovi in action_items: AD-9 ratificato + seconda faccia misurata del TD 15.5; in coda chiusa anche la voce stale del security scan epic-13 (F1/F2 chiusi da TD-6, verificato sul codice). **PROSSIMA: AOG-1b** (avviso X prenotazioni + email APPROVED — story file pronto, ratifiche gia' chiuse, baseline effettiva = chiusura 1a). PR #22 dev->main ancora APERTA (merge del PO). Storico — EPIC 15 COMPLETO: 10/10 story DONE — 15.10 sweep finale chiusa: a11y delle primitive (inert+trap+dialogo, il trap COMPRENDE i portali su decisione PO), inchiostro tab bar/.so-sub, bersagli mobile-only, R3 alla lettera col footer esistente su 3 editor + ManualPprForm, /dashboard/ppr 19->0, METAR <=900, viewport-fit=cover con safe-area bottom+top, quoting e2e.sh; review 3 major (guardia-fotografia che ha fermato la catena, trap vs portali, safe-area) + 2 minor + 4 low, 4 ratifiche PO in review; v. commento 15-10. La coda TD e' stata chiusa o dichiarata voce per voce (v. action_items: item 'TD POST-EPIC'). Prossimo: PR dev->main (PO), poi backlog post-epic (story AOG ratificata, 40 inline, security TD). Storico recente — 15.9: aree self + modulo PPR pubblico mobile — estratto conto a card+sheet su entrambe le facce col TD 14.6 F4 CHIUSO, compensi a card + KPI 2x2+1, /ppr risanato con lo switch lingua che torna visibile ovunque, filtro pprNumber + deep link coda->transiti (unico lavoro backend dell'epic, R-15.9-h contro la raccomandazione), review 0 major (2 minor + 5 low, 3 ratifiche PO in review); v. commento 15-9. Storico: 15.8 splittata in a/b, entrambe chiuse. 15.8b: statistiche coi controlli a 44px, cap per RANGO dopo il major di review, impostazioni risanate (230/231 target), CRUD ExpiryType provato fino al 422, reports.spec in catena = TD annoso del PUT scheduling CHIUSO; v. commento 15-8b. 15.8a: registro contabile a card con secondStep, KPI strip tappabile, ExportMenu a bottom sheet su 10 consumer, 7+2 contrasti chiusi; review 0 major; v. commento 15-8a. Storico: 15.1-15.7 DONE — shell, primitive, panoramica, pianificazione, anagrafiche, registro voli, scadenze+transiti. Prossima: 15.8 contabilita'+statistiche+impostazioni mobile. 15.7: tre superfici (admin, self, movimenti), chiusura transito con secondStep e verifica contabile dal vivo (race/replay/409), chip finestra/stato, quota a tutto schermo, export riparato; review 0 major, arbitro finale su stato committato v. commento 15-7. 15.6: lista a card con badge di anomalia (pallino dipinto su decisione PO), sheet con parita' informativa, chip di stato + pannello Filtri a navigazione unica (testata 239 vs 266), storno con secondStep, comportamenti 14.3/14.4 esercitati a 375px con ZERO righe in flight-editor; review 0 major (best dell'epic), arbitro 377/377; v. commento 15-6. 15.5: perimetro PIENO ratificato (Flotta 2 colonne con barra ore del mese, Piloti e Istruttori a riga con sheet, scheda persona a colonna singola, R-15.2-g chiuso con misure corrette); review con arbitro gia' verde, 2 major (aria-label con guardia cieca; sheet Istruttori senza il dettaglio desktop) + 5 minor, 7/7 fixati con discriminanza per stash+rebuild; v. commento 15-5 e Review Record. 15.4: agenda voli di oggi con chip marche e marcatore ORA, lista a card con sheet decisionale, `?status`, form a tutto schermo, CTA gated su profilo attivo; review Opus 5 SHIPPABLE-WITH-FIXES (4 major: fixture e2e time-dependent, ?status ripetuto 500, tetto 100 di getStats PAGINATO su decisione PO, seed pilot mutato da project parallelo; 2 minor), TD ratificato = finestra anche su updateBooking INCONDIZIONATA; un secondo rosso trovato dal primo arbitro post-fix (picker cappato vs catena serializzata su DB post-suite) chiuso in sessione; v. commento 15-4 e Review Record. 15.3: KPI 2x2, card "In corso ora", coda prenotazioni con decisione dentro lo sheet, feed Avvisi a 3 fonti, card METAR, landing per-ruolo riconciliate; 8 ratifiche PO chiuse prima del dispatch; review Opus 5 SHIPPABLE-WITH-FIXES (4 Medium + 4 Low, F1 = selettore discendente che sfondava nel pannello full-screen); arbitro finale 326/326, 0 flaky, exit 0, DB fresco. 4 TD nuovi in action_items. 15.2: BottomSheet + pannello form a tutto schermo + KPI strip, coda PPR come consumer di prova; arbitro finale 309/309 exit 0 su DB fresco. Storico 15.1 — tab bar per-ruolo, sheet Altro, topbar compatta con menu profilo; ratifica PO R-15.1-a sugli slot mobile. Arbitro finale exit 0: 302 passed + 1 flaky pre-esistente su 303, CI=1 build prod, DB fresco. Prossima: 15.2 primitive mobile (BottomSheet + MobileFormPanel + KPI strip, consumer di prova = coda PPR). Dettagli nei Review Record dei story file e in docs/handoffs/HANDOFF.md)
 project: AirManager
 project_key: AIRMGR
 tracking_system: file-system
@@ -201,7 +204,419 @@ development_status:
   billing-1-fondamenta: done
   billing-2-pagina: done
 
+  # Epic 14 — Feedback demo tour (punch-list utente 2026-07-28, 17 item -> 9 story + TD-8).
+  # Piano con ratifiche R1-R4 e decisioni D1-D3: docs/superpowers/plans/2026-07-28-epic-14-demo-feedback.md
+  # Ordine ESEGUITO: 14.1 -> 14.2 -> 14.8 -> 14.5 -> 14.6 -> 14.7 -> 14.3 -> 14.4 -> 14.9
+  # (TUTTE E 9 LE STORY DONE). Resta: TD-8 (indagine, decisione D3: misurare su build prod).
+  epic-14: done
+  # 14.1 chiusa 2026-07-28: review Opus 5 con 4 major di geometria (cap altezza,
+  # overlap residuo su viewport bassi, flip fuori viewport, listbox orfana su scroll),
+  # tutti fixati e rimisurati; invarianza CalendarPopover provata con stash/rebuild;
+  # F5 Firefox ratificato accept-and-document (l'utente usa Chrome). Arbitro 274/274.
+  14-1-controlli-form-typeahead-date: done
+  # 14.2 chiusa 2026-07-28: sweep ~30 file; review Opus 5 con 4 major (campi muti
+  # nella mappa 422, required plain-state al 2° submit, 4 form mancati, 422 PPR nel
+  # banner) — fix in DUE giri (subagent + chirurgico main: il "quarto form" era il
+  # modal Quota associativa). Arbitro finale 276+1 flaky login-class, exit 0.
+  14-2-validazione-form-per-campo: done
+  # 14.3 chiusa 2026-07-29: allievo-senza-brevetto -> solo SCHOOL (il vincolo
+  # istruttore e il PIC c'erano gia'). Review Opus 5: F1 CORRUZIONE DATI (la UI
+  # riscriveva il tipo di un volo storico in correzione e lo ri-addebitava) +
+  # F2 vicolo cieco. Ratifiche: correzione a tipo invariato sempre ammessa;
+  # licenza a vita + pilota abilitabile a voli scuola (currency/SEP). 299/299.
+  14-3-regole-voli-scuola: done
+  # 14.4 chiusa 2026-07-29: blocco FLIGHT_BLOCKED_BY_EXPIRY alla data del volo +
+  # override admin (permesso flights.forceExpiry) + avviso saldo in-app. Review
+  # Opus 5 NOT-SHIPPABLE: F1 BLOCKER (payload force stantio dalla CTA dashboard ->
+  # volo registrato al PILOTA SBAGLIATO) + F2/F3 major su claim del dev smentiti.
+  # 4 ratifiche PO: assenza documento blocca (R4 alla lettera), correzioni a dati
+  # invarianti esenti, forceReason solo a flights.manage, avviso saldo esteso dal
+  # PO a OGNI addebito (voli, rettifiche, quota). Fixture sweep su 13 spec e2e
+  # (helper condiviso e2e/helpers.ts). Arbitro finale 304/304, 0 flaky.
+  14-4-guardrail-registrazione-volo: done
+  # 14.5 chiusa 2026-07-29: masking server-side nel servizio (6 consumer coperti
+  # alla fonte) + permesso bookings.read.names. Review Opus 5: BYPASS REALE (F1) —
+  # instructorProfileId in chiaro + anagrafica istruttori nel payload di tutti +
+  # filtro-oracolo: nome istruttore in 3 click; chiuso su tutti e 3 i canali e
+  # riprodotto post-fix. Anche F2 (e2e verde solo per ordine di esecuzione).
+  14-5-privacy-prenotazioni: done
+  # 14.6 chiusa 2026-07-29: pagina self-service + percorso di lettura senza
+  # personId (IDOR-proof per costruzione) + profili attivi. Review Opus 5: zero
+  # major (isolamento tenuto sotto ogni vettore), 7 minor/nit fixati in sessione.
+  # Arbitro 289/289 (un run precedente aveva un fallimento REALE da fix F5).
+  14-6-area-personale-transazioni-profili: done
+  # 14.7 chiusa 2026-07-29: toggle Segmented + pagina self compensi. Review Opus 5:
+  # 4 major (gates rotti in shell pulita, importo invisibile su mobile, stato
+  # selezionato non annunciato, KPI che si autocontraddiceva) + 5 minor/nit.
+  # Ratifica PO: KPI lordo E netto affiancati. Suite 297/297.
+  14-7-istruttore-prenotazione-compensi: done
+  # 14.8 chiusa 2026-07-28: creazione con tariffe+contaore in un submit composito
+  # transazionale; review Opus 5: 1 major (dry-only scartato in silenzio) + 6 tra
+  # minor/nit, fix chirurgici in sessione. Arbitro 280/280, 0 flaky.
+  14-8-form-velivolo-unificato: done
+  # 14.9 chiusa 2026-07-29: STAFF rimosso da enum/rbac/seed/UI/i18n/OpenAPI, ADMIN unica
+  # figura amministrativa; ~15 test della classe "permesso largo senza quello stretto"
+  # senza piu' attore (8 unit + 6 e2e rimossi con ledger auditato dalla review). Review
+  # Opus 5 shippable-with-fixes: 5 major (migrazione ROLLBACK su DB pre-14.9 con la riga
+  # staff -> rimedio wipe DOCUMENTATO per ratifica R-14.9-a, R2 alla lettera; OpenAPI e
+  # 33 commenti che ancora dicevano staff; test-tautologia del force; 3 gate futuri
+  # annotati). 4 ratifiche PO. seed:demo riparato (era rotto dalla 14.3). Arbitro 298/298.
+  14-9-rimozione-ruolo-staff: done
+  # TD-8 chiusa 2026-07-29 (indagine, decisione D3 rispettata: MISURATO prima di diagnosticare).
+  # Build PROD (probe API autenticato, 10 campioni/op): crea persona p50 10ms, ricarica 13ms,
+  # prenotazione 16ms, REGISTRAZIONE VOLO (l'op piu' pesante) p50 29ms max 44ms; pagine SSR
+  # 55-580ms. In `next dev` le stesse API hanno application-code 16-64ms: i "secondi" osservati
+  # dall'utente nei log npm sono la riga di next dev per le PAGINE (es. GET /it/dashboard 2.3s,
+  # application-code 1294ms = overhead SSR dev-only) e la compilazione on-demand (next.js:
+  # 465-912ms sui primi hit). VERDETTO: nessun difetto nel codice applicativo, nessun fix.
+  # Evidenze complete nel commit docs(td-8) / HANDOFF.
+  td-8-indagine-lentezza-salvataggi: done
+
+  # Epic 15 — UI mobile AirOps (porting completo del template "AirOps Mobile", richiesta utente 2026-07-29).
+  # Piano con 5 ratifiche PO R1-R5 + architettura vincolante (componenti mobile dedicati,
+  # switch CSS ≤640px, tablet 641-900 tengono il rail): docs/superpowers/plans/2026-07-29-epic-15-mobile-ui.md
+  # Template design: progetto claude.ai/design dcd71b3a-dbcf-494e-a543-29325a5435de (DesignSync, solo main session).
+  # REGOLA MODELLO (utente 2026-07-29): dev e fix subagent su Opus 5 xhigh (epic tutto UI); review Opus 5 xhigh.
+  # Ordine vincolante 15.1 -> 15.2 -> 15.3; il resto segue il valore d'uso.
+  epic-15: in-progress
+  # 15.1 chiusa 2026-07-30. Dev Opus 5 (prima story UI con la regola modello
+  # nuova). Review Opus 5: il subagent ha eseguito il gate arbitro (302/302 su
+  # DB fresco, che CONFERMA la diagnosi del dev: i suoi 11 rossi erano
+  # saturazione del DB, non il diff) e 8 probe empiriche, poi è morto per
+  # session limit prima del report -> misure recuperate verbatim dal transcript,
+  # verifiche mancanti completate nella sessione principale (anch'essa Opus 5).
+  # F1 major MISURATO: gli slot mobile erano solo sulle 4 voci admin, quindi un
+  # istruttore-che-è-anche-pilota (6 voci) otteneva 2 sole tab con 4 sezioni
+  # sepolte. Ratifica PO R-15.1-a: colonne fisse confermate (lo scroll
+  # orizzontale, proposto dal PO, è stato scartato dopo istruttoria) e
+  # self-service davanti a Scadenze/Registro. F2/F3: due fix erano privi di
+  # copertura (il toast poteva sparire restando tutto verde). Arbitro finale
+  # exit 0, 302 passed + 1 flaky = TD 14.4(a) pre-esistente (stato globale
+  # ExpiryType nel project fullyParallel), attribuito con evidenza.
+  15-1-shell-mobile: done
+  # 15.2 creata 2026-07-30 da un teammate dedicato (story creation delegata per
+  # scelta utente; prima volta: il ciclo precedente la faceva la sessione
+  # principale). 6 ratifiche R-15.2-a..f chiuse PRIMA del dispatch: 4 dal PO
+  # (motivo del rifiuto come 2o passo nello stesso sheet; Approva/Nega SOLO
+  # nello sheet — divergenza deliberata dal template; pannello full-screen su
+  # tutti gli 11 SlideOver; KPI strip su tutte le 9 fasce) e 2 dalla sessione
+  # principale perché già decise dal piano epic (filtri/export restano a
+  # 15.4/15.8; una lista sola guidata dal filtro esistente).
+  # 15.2 chiusa 2026-07-30. Ciclo eseguito da QUATTRO teammate distinti (story ->
+  # dev -> review -> fix), tutti Opus 5, per scelta dell'utente. Review Opus 5
+  # SHIPPABLE-WITH-FIXES: 3 major misurati che nessun altro aveva visto — il focus
+  # che esce dal pannello nel passo del rifiuto (l'interazione centrale della
+  # story); una card KPI da 2276px sulla landing pilota, degradante gia' con 5
+  # abilitazioni realistiche; e una guardia CIECA per costruzione (proteggeva solo
+  # il limite inferiore della regola che il difetto violava dall'alto). Ha anche
+  # SMENTITO un'attribuzione del dev (lock anti-brute-force TD-6: il contatore
+  # conta solo i tentativi falliti, 3 nella finestra e 0 su admin). Ratifica PO
+  # R-15.2-g: barra fissa chiusa su aircraft-editor, rinviata a 15.5 per i due
+  # editor multi-form (v. action_items). Arbitro finale 309/309 exit 0.
+  15-2-primitive-mobile: done
+  # 15.3 chiusa 2026-07-30. 8 ratifiche PO (R-15.3-a..h) chiuse PRIMA del dispatch,
+  # in due giri di AskUserQuestion: fra queste R-15.3-b, che CONFERMA e non deroga
+  # R-15.2-b (Approva/Nega solo dentro lo sheet) e supera il bullet di piano
+  # "azioni inline" — le due code decisionali dell'app hanno UNA sola grammatica.
+  # R-15.3-a ha cambiato il titolo del template ("In volo ora" -> "In corso ora")
+  # perche' il dato "volo in aria" NON esiste nel dominio: il numero non deve mentire.
+  # Review Opus 5 SHIPPABLE-WITH-FIXES, 4 Medium + 4 Low, nessun blocker. Il Medium
+  # che conta e' F1: `.home-head-actions .btn` era un selettore DISCENDENTE e
+  # `DispatchFlightButton` monta trigger e pannello come FRATELLI, quindi la regola
+  # sfondava nel piede del SlideOver a tutto schermo (118px -> 191px stirati) — una
+  # superficie che la story dichiarava intoccabile, e che i 9 snapshot "desktop
+  # invariato" del dev non potevano vedere perche' misuravano solo il desktop
+  # (lezione 15.2 riconfermata: la regressione sta sul lato che la regola ha LIBERATO).
+  # F2: la mitigazione "riga stantia" era agganciata al 409 mentre lo scenario che
+  # documenta risponde 422. F4 risolto nella PRIMITIVA (uno sheet alla volta e' una
+  # proprieta' del pattern, non dei chiamanti: la 15.4 in avanti aggiunge coppie di
+  # proprietari). F8 (guardia d'ordine cieca) chiusa nel commit di chiusura, con
+  # discriminanza misurata. Ratifica PO in review: il fix del glifo dark diventa
+  # GLOBALE — e la misura ha trovato il GEMELLO che nessuno aveva controllato
+  # (`.list-icon.green` a 1.24:1, PEGGIO del rosso gia' trovato a 1.35:1).
+  # Arbitri, tutti su DB fresco ed exit 0: 320/320 sul commit di codice, 325 + 1 flaky
+  # pre-esistente sul commit di fix, **326/326 zero flaky** sullo stato committato.
+  15-3-panoramica-mobile: done
+  # 15.4 chiusa 2026-08-03. Ciclo a QUATTRO teammate (story 31/07 + dev Opus 5; review e fix
+  # Opus 5 il 3/08 dalla sessione di ripresa). 9 ratifiche R-15.4-a..i pre-dispatch + 4
+  # sopraggiunte in review. Review SHIPPABLE-WITH-FIXES ma gate ROSSO su DB fresco per cause
+  # della story: F1 fixture e2e su slot di OGGI a ora fissa UTC (rosse da mezzogiorno — il
+  # "10/10" del dev era l'ora del commit), F2 `?status` ripetuto -> HTTP 500 (searchParams
+  # e' string|string[], il tipo mentiva), F3 le fixture del nuovo spec sfondano il tetto 100
+  # di getStats (PO: chiuso PAGINANDO stats.service, non pulendo le fixture), F4 il test
+  # multi-attore disattivava il profilo del PILOTA DI SEED dal project fullyParallel (ora
+  # attore proprio via invito Mailpit). TD ratificato: assertWithinSchedulingWindow anche su
+  # updateBooking, PER TUTTI e INCONDIZIONATO (anche PATCH di sole note fuori finestra -> 422,
+  # ratifica esplicita). Il PRIMO arbitro post-fix ha trovato un SECONDO rosso della stessa
+  # classe: il banner test (catena serializzata = gira su DB post-suite) creava una persona
+  # `Booking-*` a rank 125 su 299 col picker cappato a 100 -> option assente; fix chirurgico
+  # in sessione (cognome `AAABooking-*`), discriminanza provata sullo STESSO DB saturo (4/4).
+  # Lezione: i test della catena serializzata devono sopravvivere ai tetti dei picker, non
+  # solo al DB fresco del run --no-deps. Dettagli nel Review Record dello story file.
+  15-4-pianificazione-mobile: done
+  # 15.5 chiusa 2026-08-04, ciclo a quattro teammate in un'unica sessione (story+dev+review+fix
+  # tutti Opus 5, ratifiche via AskUserQuestion a sessione presidiata). 10 ratifiche R-15.5-a..j
+  # pre-dispatch (R-15.5-a: perimetro PIENO a 4 superfici deciso dal PO contro la raccomandazione)
+  # + 3 sopraggiunte in review. La ricognizione del teammate story ha CORRETTO il TD R-15.2-g
+  # (il difetto vero era solo pilot-editor NUOVO, 906px sotto il fold; i numeri 2269/2072 erano
+  # azioni secondarie sotto il fold anche su desktop). Dev: 12 AC, 8 guardie provate rosse,
+  # --bad-ink inesistente scoperto (il saldo negativo sarebbe stato nero), full suite 351+1 flaky
+  # exit 0. Review Opus 5 SHIPPABLE-WITH-FIXES con arbitro GIA' verde: 2 major — F1 aria-label
+  # malformato su 115/121 velivoli con guardia CIECA (split consuma i separatori adiacenti);
+  # F2 sheet Istruttori che PERDEVA il dettaglio desktop (ore mese/allievi/voli CFI) — + 5 minor,
+  # fra cui le testate mobili PIU' ALTE del pre-fix (contro il beneficio della ratifica) e un
+  # selettore discendente che raggiungeva il /ppr pubblico (classe 15.3 F1). Fix: 7/7 con
+  # discriminanza per stash+rebuild (5 failed sul pre-fix); criterio testate centrato su Flotta
+  # (175<=192) e Istruttori (121<=150), IRRAGGIUNGIBILE su Piloti (175 vs 149: 3 controlli da
+  # 44px + padding = 175, accettato dal PO con la prova aritmetica). Dettagli nel Review Record.
+  15-5-anagrafiche-card-mobile: done
+  # 15.6 chiusa 2026-08-04, ciclo a quattro teammate (story+dev+review+fix, tutti Opus 5).
+  # 9 ratifiche R-15.6-a..i pre-dispatch (tutte le raccomandazioni: entrambe le facce
+  # admin+self in un albero, card template + Badge solo se anomalo, sheet per tutti,
+  # storno con secondStep+toast, testata = chip di stato + ricerca + pannello Filtri a
+  # navigazione unica, export 44px, tetto 100 subito, stessa card self, KPI strip al posto
+  # dei Totali) + 4 in review (pallino del badge DIPINTO anche sulla card — decisione di
+  # design del PO contro la raccomandazione del reviewer; debounce fixato subito; faccia
+  # personOptions del tetto 100 subita; copertura colmata). La ricognizione ha CORRETTO il
+  # piano (R3 gia' soddisfatta dal footer del FlightEditor: zero righe toccate nel form) e
+  # il dev ha corretto la story sull'Idempotency-Key (si rigenera a ogni risposta: contratto
+  # TD-2). Review SHIPPABLE-WITH-FIXES col punteggio migliore dell'epic: 0 major, 2 minor
+  # (debounce che chiudeva il pannello Filtri sotto il pollice — il fallimento che AD-4
+  # vietava, da un'altra porta; pallino del badge non dipinto con misura fantasma nel
+  # record), 5 low. Sequenza 14.4 F1 provata NON riproducibile, storni concorrenti sani,
+  # testata 239<=266 misurata dal reviewer a 3 larghezze x 2 locale. Fix 6/6 con guardie
+  # scritte PRIMA e provate rosse su build pre-fix REALE. Dettagli nel Review Record.
+  15-6-registro-voli-mobile: done
+  # 15.7 chiusa 2026-08-04, ciclo a quattro teammate (tutti Opus 5). 11 ratifiche R-15.7-a..k
+  # pre-dispatch (tutte le raccomandazioni: TRE superfici incluse "Le mie scadenze" che era in
+  # tab bar per 3 ruoli senza owner; chiusura transito con secondStep — prima era di fatto
+  # irraggiungibile da telefono: 483px di scroll e pannello fuori viewport; chip finestra/stato;
+  # quota associativa a tutto schermo; KPI 2x2 solo su Scadenze; export riparato: perdeva
+  # window/personQuery) + 4 in review (checkbox Forza addebito a 44px SUBITO con guardia onesta;
+  # voci ExportMenu -> TD 15.8; costo 609px della 2x2 confermato; toast doppio desktop tenuto e
+  # dichiarato). La ricognizione ha CORRETTO il brief (registry di sola lettura) e il dev ha
+  # trovato l'asimmetria del remount (movements ha il key, expiries no) che ha guidato le due
+  # semantiche delle chip (Link vs button). Review 0 major (secondo ciclo consecutivo): il cuore
+  # contabile ha retto race/replay/409 dal vivo con verifica psql; arbitro 404+1 flaky noto poi
+  # 405 pieni. Nuovo project serializzato mobile-membership-fee in coda alla catena (lo spec
+  # quota scrive un AppSetting globale). Dettagli nel Review Record.
+  15-7-scadenze-transiti-mobile: done
+  # 15.8 SPLITTATA in due story su decisione PO 2026-08-05 (Q1 delle 14 ratifiche: 3.849 righe,
+  # ~19 scritture, 53 test in 10 file di cui 4 in catena = 2,3x la 15.7, zero codice condiviso).
+  # 15.8a chiusa 2026-08-05, ciclo a quattro teammate (tutti Opus 5): registro contabile a card
+  # con sheet a parita' piena (rettifica/storno/riclassifica in secondStep, riclassifica
+  # ESPLICITA), riquadri da 580px a KPI strip tappabile (prima card -505px), testata 239 vs 266,
+  # ExportMenu ridisegnato a bottom sheet su 10 consumer (popover desktop identico al diff
+  # programmatico), 7+2 contrasti chiusi con fix additivi, secchiello con fixture di seed
+  # MARCATE (deviazione ratificata). Review 0 major (3 minor + 4 low): focus del secondStep
+  # coperto su 1 ramo su 3 (classe 15.2 F1), 61 link Saldi negativi a 18px con guardia che li
+  # escludeva in silenzio, dichiarazione TD (j) corretta (lo spec crea denaro nel parallelo).
+  # Le funzioni di dominio Billing-1/2 riusate e provate su tre facce (card = cella = xlsx).
+  # Dettagli nel Review Record.
+  15-8a-contabilita-exportmenu-mobile: done
+  # 15.8b: statistiche + impostazioni — parte DAL repo consegnato dalla 15.8a (ExportMenu nuovo,
+  # .flow-bar-* ricollocata, baseline da RIMISURARE). Include su decisione PO: TUTTO reports.spec
+  # in catena serializzata (chiusura del TD annoso del PUT scheduling globale) e i contrasti
+  # token-level dei grafici.
+  # 15.8b chiusa 2026-08-05, ciclo a quattro teammate (tutti Opus 5). Statistiche coi controlli
+  # a 44px senza toccare .segmented, liste ranked con cap dichiarato (documento Impostazioni da
+  # 21.939 a 3.726px, 230/231 target risanati), tre tabelle settings a card+sheet, CRUD
+  # ExpiryType dal telefono provato fino al 422 FLIGHT_BLOCKED_BY_EXPIRY (anche dal reviewer,
+  # con race di doppio DELETE), contrasti token-level dei grafici chiusi coi gemelli, e TUTTO
+  # reports.spec in catena serializzata (decisione PO Q13): il TD annoso del PUT scheduling
+  # globale e' CHIUSO — nessuno scrittore di sched.* resta in fullyParallel, ripristino
+  # verificato in psql, costo +43s isolato. Review: 1 MAJOR vero (il cap di Utilizzo flotta
+  # nascondeva per posizione DOM su lista ordinata per marche: 8 righe a 0:00 col volato
+  # nascosto — fixato per RANGO su decisione PO) + 2 minor + 4 low. Grafici identici al
+  # centesimo pre/post (AD-9). Dettagli nel Review Record.
+  15-8b-statistiche-impostazioni-mobile: done
+  # 15.9 chiusa 2026-08-06, ciclo a quattro teammate (tutti Opus 5). 10 ratifiche R-15.9-a..j
+  # pre-dispatch, DUE contro la raccomandazione: R-15.9-a tutto in UNA story (niente split — la
+  # review ha coperto 4 superfici, 4 attori, 5 stati degradati e il flusso pubblico in un ciclo
+  # solo) e R-15.9-h il link coda-PPR<->transiti col filtro server pprNumber SI FA QUI (unico
+  # lavoro backend dell'epic: schema+service+route+OpenAPI nello stesso commit, deep link in una
+  # direzione registrata dal PO). La ricognizione ha CORRETTO il piano ("le mie transazioni" E'
+  # my-account; il TD 14.6 F4 era PEGGIO del dichiarato: colonna Descrizione a 0px, importo 200px
+  # fuori; lo switch lingua di /ppr era NASCOSTO su ogni telefono e tablet da una query del
+  # prototipo il cui motivo non esisteva piu'). TD 14.6 F4 CHIUSO su entrambe le facce (albero
+  # mobile unico in AccountSection, esclusione dello sweep 15.5 RIMOSSA col test verde); compensi
+  # a card + KPI 2x2+1 (Maturato/Dovuto adiacenti, ratifica 14.7 F4); /ppr risanato chirurgico
+  # (12/12 campi a 44, switch lingua 45,72x44 ovunque, hero/aside/footer INVARIATI per
+  # attribuzione delle regole CSS); 4+2 contrasti chiusi sostituendo gli inline. Review 0 major
+  # (quarto ciclo su sei): 2 minor (2 inline residui su 5 nello stesso file; sweep /ppr cieco
+  # sugli antenati del honeypot -> :scope >) + 5 low, 3 ratifiche PO in review (MINOR-1 subito;
+  # deviazione feedback ratificata: toast SOLO dal percorso sheet; direzione unica del link).
+  # Lezione durevole: un'esclusione via querySelector esclude TUTTI gli antenati; e la medicina
+  # di classe va misurata sulla CASCATA reale (stat-tone-bad avrebbe perso da .fld-label: il
+  # grigio 4,85 sarebbe passato per un fix — usato .fld-error, stesso literal ratificato).
+  # Dettagli nel Review Record.
+  15-9-aree-self-pubblico-mobile: done
+  # 15.10 chiusa 2026-08-06, ciclo a quattro teammate (tutti Opus 5) — EPIC 15 COMPLETO (10/10).
+  # Sweep finale: censimento di 26 voci con misura (4 non piu' vere PROVATE, 3 difetti NUOVI mai
+  # visti — il piu' grave: SlideOver chiuso TABULABILE, 18 fermate sotto aria-hidden), 13 ratifiche
+  # R-15.10-a..m tutte sulla raccomandazione. Consegnato: inert da chiuso + dialogo completo su
+  # SlideOver e aria-modal+trap su MobileSheet (focus-trap.ts condiviso, ~30 superfici), inchiostro
+  # (.mobile-tab-label 3,50->4,64, .so-sub 3,66->4,85, censimento dei 19 consumatori di --ink-4),
+  # bersagli primitive mobile-only (x 44, typeahead 44, .date-input-btn UNA regola per sei eccezioni,
+  # .cal-popover i 4 non-cella), R3 alla lettera su 3 editor + ManualPprForm col footer ESISTENTE
+  # (lo slot nuovo ipotizzato dal TD non serviva), /dashboard/ppr 19->0 bersagli, contrasti di pagina
+  # (KPI expiries, 64 link, Giorni rimasti; nuovo .stat-tone-info col literal ratificato), METAR
+  # esteso a <=900 (tablet ratificato superficie d'uso), viewport-fit=cover con inset-0 invariato,
+  # quoting e2e.sh. Review SHIPPABLE-WITH-FIXES: 3 MAJOR (una guardia NUOVA della story era una
+  # fotografia di contenuto altrui e ha fermato 39 test di catena; il trap non teneva attraverso i
+  # popover portalati; .so-foot senza safe-area-bottom proprio mentre la story accendeva cover) +
+  # 2 minor + 4 low, 4 ratifiche PO in review (trap esteso ai portali; bottom+top; piede desktop
+  # ratificato; ManualPprForm prende il piede). Lezioni durevoli: il contesto modale va definito sul
+  # DOCUMENT e deve comprendere i portali (aria-owns per l'albero a11y); la guardia di un'invarianza
+  # non e' mai una fotografia del contenuto altrui; una famiglia di sweep puo' dipendere dall'ORDINE
+  # di popolamento del DB. Dettagli nel Review Record.
+  15-10-sweep-finale-mobile: done
+
+  # ===== AUDIT 2026-09-10 → EPIC 16-18 (piano: docs/superpowers/plans/2026-09-10-epics-16-18-audit.md;
+  # report: _bmad-output/planning-artifacts/audit-2026-09-10/). Ratifiche R-16-a..g chiuse il
+  # 2026-09-10 (AskUserQuestion + chat), inclusa R-16-h (data valuta futura rifiutata): nessuna ratifica pendente.
+  # Ordine: 16 (correttezza dominio) → 17 (scalabilità; 17.1 parallelizzabile) → 18 (mobile 2).
+  epic-16: in-progress
+  16-1-un-solo-calendario: done  # 2026-09-10 — review SHIPPABLE-WITH-FIXES (0 major), fix 6e8d8a9, arbitro 522+2 flaky = 524 exit 0; TD 16.1-a..e in action_items
+  16-2-guardie-registro-voli: done  # 2026-09-26 — feat 3138115, record bc64012, review re-run SHIPPABLE-WITH-FIXES (1 major: ramo Forza registrazione cieco sul 409 FLIGHT_OVERLAP; 1 minor: sorgente del flake TD 16.2-g; 2 low), fix 1a9552b (E8 + unit LOW-1, entrambi provati rossi sul pre-fix); arbitro finale 532+1 flaky = 533 exit 0 (flaky E3 = classe 16.2-g provata via SQL); TD 16.2-a..g in action_items
+  16-3-prenotazioni-persona-istruttore-approvazione: ready-for-dev  # story file 2026-09-10; dev Opus (3 client scelgono il 409 dallo status)
+  16-4-tipo-scadenza-disattivato: ready-for-dev  # story file 2026-09-10; dopo 16.1
+  16-5-compensi-istruttori-snapshot: ready-for-dev  # story file 2026-09-10; dev Opus; 3 domande PO in coda
+  16-6a-data-valuta-e-totali: ready-for-dev  # split 2026-09-10
+  16-6b-quota-rettifiche-catene: ready-for-dev  # split 2026-09-10
+  16-7-dati-sessioni-rate-limit: ready-for-dev  # story file 2026-09-10; dev Opus (bookings-table.tsx:244); stesso file della 16.3
+  16-8-archivio-velivolo-tutele-aog: ready-for-dev  # story file 4521c80 (2026-09-26), 18 AC, ratifiche Q-16.8-a (409 AIRCRAFT_ARCHIVED) e Q-16.8-b (riga Archiviato con prenotazioni visibili) chiuse; dev Opus
+  16-9-un-solo-calendario-client: ready-for-dev  # story file 2026-09-10; assorbe TD 16.1-b e 16.1-c; dev Opus
+  epic-16-retrospective: optional
+  epic-17: in-progress
+  17-1-fondamenta-misura-configurazione: done  # 2026-09-27 — feat a6e2a39 + record 24c9e2b (dev Sonnet dal parziale dello stash), review SHIPPABLE-WITH-FIXES (3 major: AC 9 non soddisfatto alla lettera → PO opzione A, AC emendato; 53100 riproducibile a 512mb → shm 1gb; render.mjs moltiplicava i long task), fix 405189a/141c444; container ricreato 2 volte dalla sessione principale (volume intatto); arbitro finale 537/537 exit 0
+  17-2-timeline-pianificazione-scala: backlog
+  17-3-saldi-negativi-aggregati: backlog
+  17-4-statistiche-ledger-mensile-sql: backlog
+  17-5-letture-senza-transazione-interattiva: backlog  # PERIMETRO ESTESO dalla 17.1 (decisione PO A, 2026-09-27): la $transaction interattiva di listAircraft (aircraft.service.ts:212), raggiunta ~15 volte per richiesta da listAllActiveAircraft (stats.service.ts:132-138), è la causa del residuo P2028 sul burst di stats?period=year (8/10 a pool 10, 7/10 a 20; page reports 8-10/10); 8 letture interattive + readOverview; decidere qui DATABASE_POOL_MAX col fattore 2x (due pool per processo) e il vincolo shm misurato (~20 MB per query parallela concorrente)
+  17-6-typeahead-server-cap-dichiarati: backlog
+  17-7-export-pdf-stream: backlog
+  17-8-alert-job-a-lotti: backlog
+  epic-17-retrospective: optional
+  epic-18: backlog
+  18-1-pavimento-mobile-unico: backlog
+  18-2-fold-liste: backlog
+  18-3-indietro-chiude-navigazione-risponde: backlog
+  18-4-filtri-pianificazione-mobile: backlog  # dopo 17.6
+  18-5-righe-tab-lessico: backlog
+  18-6-tema-di-sistema: backlog
+  18-7-desktop-colonne-sticky-fermo-panoramica: backlog  # D1 residuo dopo 17.2
+  epic-18-retrospective: optional
+
 action_items:
+  - epic: 16
+    action: "TD 16.1-a..e (story 16.1, review 2026-09-10). a) Dominio Scadenze e alert job ancora su «oggi» UTC: 6 call-site in src/server + dashboard/pilots/page.tsx:55 (listBlockingExpiriesByPerson) — RIPIEGATO NELLA 16.4 (fold-in già nel piano); include la cucitura membership (Roma) ↔ expiries (UTC): scarto max 1 giorno su un tipo blocksBooking:false, innocua. b) dashboard/page.tsx:295 (solo lookup tariffe) e dashboard/fleet/page.tsx:65 che è ANCHE un bordo di mese UTC (monthStart + finestra sumFlightMinutesByAircraft su flightDate Roma: alle 00:30 Roma del 1° la barra «Ore mese» somma il mese precedente intero) + etichette process-local billing/page.tsx:128 e reports/page.tsx:58-59 (Intl senza timeZone, server UTC in produzione per period-presets.ts:11): casa = story 16.9 (estesa dal solo client alle pagine server di visualizzazione) o 17.4 per il bordo di mese — da decidere alla creazione della 16.9. c) 7 copie client UTC di todayDateOnly() → DECISO: story 16.9. d) period-presets.ts#romeDateParts = quarta implementazione corretta delle parti di calendario Roma: consolidamento, non correttezza. e) Classe di flake latente: 6 helper todayDateOnly() UTC negli spec e2e contro aggregati di mese Roma."
+    owner: "epic 16 (16.4, 16.9) / 17.4"
+    status: open
+  - epic: 16
+    action: "TD 16.2-a..g (story 16.2, review 2026-09-26). a) Sovrapposizione per PERSONA sui voli (stesso pilota su due velivoli nello stesso istante): il lock sull'Aircraft non la serializza — decisione della 16.3 (suo AC 2). b) prisma/seed-load.ts:770 genera sovrapposizioni sullo stesso velivolo (createMany bypassa il service): deduplicare lì se l'epic 17 pretende l'invariante sul DB di carico. c) doc-comment schema.prisma:274-276 («ONLY via a tracked HourMeterAdjustment») contraddice le tre scritture reali del contaore. d) testo morto registry.ts:976 («Exactly one of minutes or the hourMeterStart/hourMeterEnd pair»), falso dalla 11.1. e) coppie di voli REGISTERED già sovrapposte nei dati esistenti: una correzione può ora legittimamente rispondere 409; l'annullo non è guardato e resta sempre possibile (verificato dalla review). f) DOMANDA PO APERTA: durata minima di volo oltre il minuto? (raccomandazione reviewer: no, sotto il minuto = 422 com'è oggi). g) igiene di suite (sorgente corretta dalla review MINOR-1): tipi ExpiryType globali scope ALL + blocksBooking creati da spec in parallelo — i 4 di bookings.spec.ts (7.4) ATTIVI per sempre, i 3 del describe 14.4 di flights.spec.ts attivi per la durata del loro test — rendono 422 la prima POST /flights di una persona scansionata prima della loro nascita (flaky E3 dell'arbitro 16.2, provato: tipo nato 34 ms dopo la persona). Rimedio = blocco per-persona su un tipo di seed (idioma dell'E8 16.2) o quei describe nella catena serializzata; la disattivazione a fine test NON chiude la finestra."
+    owner: "epic 16 (16.3 per a) / epic 17 (b) / backlog e2e hygiene (g)"
+    status: open
+  - epic: 17
+    action: "TD dalla 17.1 (2026-09-27). a) scripts/reset-db.sh e .claude/hooks/session-start.sh assumono un Postgres di SISTEMA (sudo -u postgres, service postgresql) mentre sulla macchina locale esiste solo il container del compose: npm run db:reset inutilizzabile, la ricetta vera vive in HANDOFF (DROP/createdb dentro il container). b) DATABASE_POOL_MAX resta 10: valore definitivo nella 17.5 (misure 10 vs 20 nel record; un next start apre fino a 2 x DATABASE_POOL_MAX connessioni, una per layer route/pagine). c) il residuo P2028 sul burst di stats?period=year / page reports → 17.5 (perimetro esteso, v. riga 17-5)."
+    owner: "strumenti di sessione (a) / 17.5 (b, c)"
+    status: open
+  - epic: 16
+    action: "TD dal ciclo AOG-1b (2026-09-27). a) FAN-OUT email in-request di sendAircraftGroundedEmails (decisione PO 5): nessun cap ora, invii fuori richiesta insieme agli alert → story 17.8. b) Banner AOG con link alla Pianificazione NON filtrato per velivolo (decisione PO 4, MINOR-2): si aggiorna quando la 17.2 porta il filtro via URL. c) IGIENE e2e su DB NON fresco (misurata dal fix-agent di 2ee2a1c, non tocca gli arbitri su DB fresco): il picker «Pilota o allievo» cappato a 100 persone (OPTIONS_PAGE_SIZE) rende rosso bookings.spec.ts:442 dopo più run; le scadenze non bloccanti accumulate sul pilota di seed (expiresAt ott-nov 2026) trasformano booking-form-success in booking-form-warning per le prenotazioni su FUTURE_DAY (bookings.spec.ts:383/:1058/:1129). d) pdf-exports.spec.ts usa ancora soonestFutureBookingSlot() (mitigazione, non garanzia) — stessa classe di pagina 1, non convertito."
+    owner: "17.8 (a) / 17.2 (b) / backlog e2e hygiene (c, d)"
+    status: open
+  - epic: 16
+    action: "TD DA AUDIT 2026-09-10 (fuori dagli epic 16-18, registrati qui): ops F11 storia dei documenti (Expiry = una riga per persona+tipo, il rinnovo sovrascrive: 'quando è scaduta la medica precedente' non è rispondibile — cambio di modello, non fix); ops F15/F17 (senza orario di apertura nessun limite alla durata di una prenotazione; nessuna prenotazione può attraversare la mezzanotte Roma — domanda 7 dell'ops-audit); ledger LOW 1-7 e MINOR-4/5 dichiarati nel report; ui M15/T1/A1 già dichiarati o ratificati; le 10 assunzioni del seed di carico (perf-load-report §1.2) da ratificare se il seed diventa fixture ufficiale; residui audit_*/I-AUD% nel DB e2e (script di pulizia in ops-audit §7) — reset prima della 16.1."
+    owner: "backlog post-epic 16-18"
+    status: open
+  - epic: 15
+    action: "STORY DEDICATA post-Epic-15 (decisione PO 2026-07-31, opzione 2 di 3): l'AOG di un velivolo non protegge ne' le prenotazioni gia' prese ne' la registrazione dei voli. FATTI MISURATI sul codice: `setOutOfService` (aircraft.service.ts:393-416) scrive SOLO la riga del velivolo (status + statusReason, con guardia atomica) e non tocca MAI la tabella Booking - nessun annullamento, nessuna email, nessun flag. I blocchi esistono in tre punti soli, tutti 422 AIRCRAFT_OUT_OF_SERVICE col motivo: creazione (bookings.service.ts:554), spostamento SU quel velivolo anche per admin (:903) e APPROVAZIONE di una PENDING (:1132, dentro transitionBooking, che rifa' i controlli di creazione). Ne esce un'asimmetria: una PENDING e' di fatto congelata e l'admin capisce perche', mentre una APPROVED sopravvive INTATTA e MUTA - il pilota si presenta al campo e trova il velivolo fermo, senza che l'app glielo abbia mai detto. L'unico segnale oggi e' visivo e solo desktop (il blocco AOG disegnato sulla riga della timeline, sopra le prenotazioni ancora in piedi). Inoltre flights.service.ts:496 carica il velivolo selezionando id/registration/archivedAt e NON LEGGE NEMMENO `status`: un volo su un velivolo fuori servizio si registra senza alcun ostacolo (le uniche 3 occorrenze di AIRCRAFT_OUT_OF_SERVICE in tutto il codice sono in bookings.service.ts). Storicamente coerente - il commento aircraft.service.ts:391 dice 'il vero blocco arriva con l'Epic 7', e l'Epic 7 ha coperto le prenotazioni, non i voli. REQUISITI FISSATI DAL PO, non ridiscutibili: (1) quando l'admin mette un velivolo in AOG, l'avviso che esistono X prenotazioni per quel velivolo deve essere SUBITO VISIVO - non un dato da andare a cercare; (2) guardia sulla REGISTRAZIONE DEL VOLO per un velivolo fuori servizio; (3) DATA DI RIENTRO PREVISTO sull'AOG ('AOG fino al ...', PO 2026-07-31) - e' il campo che rende azionabile il requisito (1): senza, 'X prenotazioni impattate' vale 'tutte quelle future, per sempre' e nessuno ci fa niente; con, il conteggio si spacca in 'prima del rientro previsto = da gestire' e 'dopo = probabilmente ok'. Risponde anche alla domanda che il pilota fa per seconda ('quando torna?'), oggi affidata al testo libero di statusReason quando qualcuno si ricorda di scriverla. DUE INVARIANTI DA RISPETTARE, decisi con la (3): [a] la data non rimette MAI il velivolo in servizio da sola - un aeromobile e' aeronavigabile quando lo dichiara una persona, non quando scade un timestamp; un rientro automatico farebbe ripassare i controlli a un velivolo ancora smontato. La data e' INFORMATIVA (avvisi, conteggi, messaggi), il rientro resta `returnToService` esplicito; [b] il campo e' OPZIONALE: un AOG non programmato in attesa di un pezzo non ha una data, e renderla obbligatoria produce date inventate - meglio 'rientro da definire' con il conteggio dichiarato non delimitato. Modello: `outOfServiceUntil DateTime?` con lo stesso ciclo di vita di `statusReason` (scritto col motivo, azzerato al rientro, regola nel service non a livello DB); l'app sa gia' confrontare una data col giorno del volo (7.4/14.4) e ha `date-only.ts`. Costo largo ma meccanico: `statusReason` affiora gia' in >=6 superfici (opzione del form prenotazione, aircraft-editor, timeline, card flotta, panoramica) e la data viaggia sugli stessi percorsi. Quasi gratis: il 422 porta gia' `details.reason` e puo' portare la data, trasformando 'fuori servizio' in 'rientro previsto il 12/08' - stessa medicina di R-15.4-g. DA RATIFICARE nella story: se la guardia sul volo sia un blocco secco o una deroga admin motivata sul modello di `flights.forceExpiry` (forceReason obbligatorio + tracciamento, precedente 14.4); quale finestra temporale conta per le X prenotazioni quando la data manca; se avvisare anche i piloti coinvolti (email) o solo l'admin - il PO ha detto 'admin', ma il caso che fa male e' il pilota che si presenta al campo. Materiale gia' pronto: `listOutOfServiceAircraft` (aircraft.service.ts:202-215) esiste gia'. NON assegnata alla 15.4: fuori dal suo perimetro ratificato, e la parte volo e' backend."
+    owner: "story dedicata post-Epic 15"
+    status: done  # 2026-09-27 — AOG-1a DONE 2026-08-07; AOG-1b DONE: fix cycle a1b2362/09c60e7 (decisioni PO 1-5) + b12feef/fedb868/3147683/09dd893 (decisione PO 6: Conferma ignora event.detail>1), arbitro finale 536+1 flaky = 537 exit 0 su 4521c80 (v. Review Record e «Arbitro finale» nello story file aog-1b)
+  - epic: 15
+    action: "TD AD-9 (story AOG-1a, ratifica PO 2026-08-07 in review): la data di rientro prevista NON e' modificabile su un velivolo gia' AOG — setOutOfService risponde 409 sulla guardia atomica, quindi per correggere outOfServiceUntil l'admin deve returnToService + nuovo AOG (perdendo lo storico del motivo). Workaround esistente e dichiarato. Decisione PO: registrato come TD con ciclo proprio (NON accorpato a AOG-1b, NON fixato nel giro di fix). Rimedio quando si fara': update parziale della sola data su velivolo gia' AOG, con la stessa semantica inclusiva del doc-comment Prisma."
+    owner: "post-AOG (decisione PO 2026-08-07)"
+    status: open
+  - epic: 15
+    action: "TD 15.5 SECONDA FACCIA MISURATA (review AOG-1a 2026-08-07, riprodotta con prova in DB anche dal fix-subagent): flights.spec.ts:602 flaky — 201 atteso / 422 ricevuto perche' un ExpiryType scope-ALL blocksBooking ('Tipo voli <timestamp>') creato 40 ms prima dal describe serial di flights.spec.ts:695-708 (serializzato solo contro se stesso) attraversa i test concorrenti degli altri describe dello stesso spec. Classe pre-esistente TD 15.5 (fixture globali sotto fullyParallel); verde al retry. Rimedio quando si fara': scope della fixture o serializzazione del describe che la crea."
+    owner: "TD pre-esistente, faccia nuova misurata"
+    status: open
+  - epic: 15
+    action: "TD (story 15.3, R-15.3-f: buco DICHIARATO fuori scope, non un difetto introdotto): nella fascia 641-900px il METAR non e' raggiungibile da nessuna parte. La `.weather-card` della sidebar e' nascosta da 13.10 in giu' da 900px, e la card mobile della 15.3 vive solo <=640px perche' R1 vincola l'epic a quella soglia. Su un tablet in verticale, quindi, il meteo campo non esiste. Decidere in 15.10: o si abbassa la soglia della card mobile, o si ripristina la weather-card nella fascia, o si accetta e si documenta."
+    owner: "story 15.10 (sweep finale)"
+    status: open
+  - epic: 15
+    action: "TD (emerso in 15.3, PRE-esistente e non causato li'): il picker Velivolo del registro voli e' un `<select>` seminato con `OPTIONS_PAGE_SIZE = 100` (logbook/page.tsx:32; stessa costante anche in dashboard/page.tsx, bookings/page.tsx, billing/page.tsx) — oltre 100 velivoli in anagrafica l'ultimo creato NON e' piu' selezionabile. Ha ucciso 4 e2e su DB saturo (flight-log:289, flight-reversal:161, flights:483, reports:206). Misura di questa sessione: UNA sola suite completa porta il DB a 104 velivoli, cioe' il run successivo sullo stesso DB parte gia' oltre il tetto. Il rimedio esiste GIA' in casa e non e' stato applicato a questo picker: il typeahead server-side della story TD-3, che il picker persone della STESSA pagina usa (guardato da typeahead-pickers.spec.ts:37). Su un'aviosuperficie reale il tetto e' lontano; per la suite e' un fucile carico. AGGIORNAMENTO review 15.4 (2026-08-03): la faccia STATS e' CHIUSA — getStats ora pagina listAircraft fino a total (stats.service#listAllActiveAircraft, decisione PO), reports:206 non e' piu' uccidibile dal tetto. La faccia PICKER resta APERTA e ha fatto una seconda vittima misurata: il picker PERSONE di bookings/page.tsx (listPeople 1x100, lastName asc) su DB post-suite (299 persone) non conteneva la fixture a rank 125 del banner test di booking-window — curato rinominando la fixture (`AAABooking-*`), ma il fucile resta carico per ogni nuovo test in catena serializzata. AGGIORNAMENTO 15.6 (2026-08-04): TERZA faccia misurata — `personOptions` del form volo (logbook): su DB >100 persone l'hint `studentOnlyCorrectionHint` della correzione 14.3 non compare oltre la pagina 1 del picker (l'INVARIANTE regge: il server rifiuta comunque; sparisce solo il suggerimento UX). PO 2026-08-04: si subisce — e' stato il rosso della prima full suite del dev, curato nello spec. Il rimedio strutturale resta una story propria."
+    owner: "backlog TD"
+    status: open
+  - epic: 15
+    action: "TD (story 15.8a, review + fix): (o) PATCH /cash-movements/{id} senza guardia di concorrenza — due PATCH concorrenti rispondono 200/200 last-write-wins (il replay sequenziale da' 409 corretto); pre-esistente server-side, osservato dalla review con attacco reale, nessun fix in story UI. (p) TD (j) riperimetrato: mobile-billing.spec.ts crea denaro nel project fullyParallel (4 ricariche = 56.000 cent su deposits.totalCents + ~28 movimenti/run) — aggravato IN POTENZA, causalita' del flake di billing.spec:296 non provata; il rimedio resta il TD (j) (serializzare o delta-assert)."
+    owner: "backlog TD (o) / TD (j) esistente (p)"
+    status: open
+  - epic: 15
+    action: "TD (story 15.7, dichiarati dal dev e dalla review): (k) il pulsante ✕ di chiusura di SlideOver e' 32px su mobile (primitiva condivisa da 11 consumer) e le opzioni del typeahead della quota sono 36px (stessa classe: target interni delle primitive sotto i 44px) -> sweep 15.10; (l) mobile-membership-fee.spec.ts scrive settings/membership-fee globale — mitigato col project serializzato dedicato in coda alla catena (ottavo), afterAll che ripristina 0 verificato in psql; (m) un bucket stato+giorno del registro transiti puo' superare la pagina da 20 (36 righe misurate) — l'helper gotoMovementsFor naviga per stato+giorno ma la fixture puo' stare oltre; (LOW-1 review) il back button ri-applica la finestra abbandonata sulla chip strip Scadenze — PRE-esistente, misurato identico sul .segmented desktop (le chip button ereditano lo stato locale che non remonta); (LOW-2 review) le VOCI del menu Esporta sono 35px su mobile — terza occorrenza della classe 15.5 F4, decisione PO: si chiude col redesign del menu in 15.8; (n, dal fix) scripts/e2e.sh start perde il quoting degli argomenti (-g \"AC 9\" -> bash: AC: comando non trovato, E2E_EXIT=127) — TD a una riga sullo script."
+    owner: "story 15.8 (voci export) / story 15.10 (il resto) / scripts (n)"
+    status: done  # (k) CHIUSO dalla 15.10 (x SlideOver e typeahead a 44 mobile-only); (LOW-2) chiuso dalla 15.8a; (n) CHIUSO dalla 15.10 (quoting a parametri posizionali, verificato con -g "pattern con spazi"); (l) resta la mitigazione in catena (invariata); (m) bucket transiti e (LOW-1) back-button -> item TD post-epic
+  - epic: 15
+    action: "TD (story 15.9, dichiarati dal dev e confermati/corretti dalla review): (m) la testata della card estratto conto sulla faccia self e' 101,3px (+37,46 vs desktop: prezzo dei 44px del trigger export su una card con un SOLO controllo — via d'uscita nel Dev Agent Record) -> sweep 15.10; 47 target sotto 43,5 dentro .cal-popover (42 .cal-cell a 34,58 + 2 .iconbtn 24x24, primitiva condivisa da 11+ consumer, MISURATI dalla 15.9 su /ppr) e .date-input-btn 24x24 su TUTTE le superfici fuori dal form pubblico (quarta faccia della classe: quattro story l'hanno curato solo in casa propria) -> 15.10; (n) 422-prima-di-403 sul param pprNumber: accodato alla voce TD 14.9 F11 (v. sopra). NOTA fixture: mobile-self-public.spec.ts lascia ~8 conti a saldo positivo (~1.034 EUR) per run nella Σ all-time di deposits.totalCents — billing.spec.ts:341 fotografa before/after nella stessa finestra e vede solo le scritture concorrenti, non i residui (motivazione CORRETTA dalla review LOW-3: la data passata NON protegge quell'asserzione)."
+    owner: "story 15.10 (sweep finale) / backlog TD (pprNumber con F11)"
+    status: done  # (m) CHIUSO dalla 15.10 (R-15.10-h: .card-title nascosta sulla faccia self via headingRepeatsPageHead, -28,3px; scheda persona intatta anche per il pilota sulla PROPRIA scheda); .cal-popover: i 4 non-cella CHIUSI, le 42 celle dichiarate (item TD post-epic); .date-input-btn CHIUSO (una regola per sei eccezioni); (n)/pprNumber resta accodato al TD 14.9 F11; la NOTA fixture su deposits.totalCents resta valida (v. item post-epic)
+  - epic: 15
+    action: "TD POST-EPIC (dichiarati alla chiusura dell'epic 15, story 15.10 — ognuno con la misura nel Review Record 15.10): 40 dichiarazioni inline var(--bad)/var(--ok) in 19 file di form (stati d'errore, 25 su className=fld-label: la lezione della cascata 15.9 va applicata a ciascuna — ciclo proprio); 42 celle .cal-popover a 34,58 (griglia densa per progetto: 7x44>280; i 4 non-cella sono stati chiusi) + .cal-popover senza semantica di dialogo; .search 188/190 (SOLO desktop, 2px); bucket stato+giorno del registro transiti oltre la pagina da 20 (TD m 15.7); back-button che ri-applica la finestra abbandonata sulle chip Scadenze (pre-esistente, identico sul .segmented desktop); color-scheme mai dichiarato (controlli nativi in tema scuro); toast host FUORI dal contesto modale del trap (0 focalizzabili, role=status — limite ARIA dichiarato per gli annunci a pannello aperto); aria-owns sui portali verificato nella meccanica ma NON con uno screen reader reale; safe-area left/right a zero occorrenze (landscape non verificabile sulla macchina); instructor-rates.spec.ts:76 flaky osservata UNA volta su codice non toccato (review 15.10); classe 'sweep dipende dal popolamento del DB' (spec che vogliono un DB popolato — flight-row-mobile, tabella scadenze — vs datetime-picker:127 che oltre le 100 persone fallisce per OPTIONS_PAGE_SIZE: rosso ambientale noto, verde su DB fresco); NOTA fixture 15.9: mobile-self-public lascia ~8 conti positivi/run nella somma all-time di deposits.totalCents (billing.spec.ts:341 vede solo le scritture concorrenti)."
+    owner: "backlog post-epic"
+    status: open
+  - epic: 15
+    action: "TD (dev 15.6, pre-esistenti scoperti misurando, non causati li'): (g) la ricerca `.search` a 190px ha 2px di scroll interno gia' sul desktop (cw188/sw190); (h) `.so-sub` della primitiva SlideOver e' `--ink-4` = 3.66:1 in tema chiaro, sotto il 4.5 del testo — la 15.6 ha EVITATO di usarlo sul pannello Filtri invece di estenderlo; il fix giusto e' token-level e tocca tutti i consumer desktop (classe della correzione 13.9). Da valutare nello sweep 15.10."
+    owner: "story 15.10 (sweep finale)"
+    status: done  # (h) CHIUSO dalla 15.10 (.so-sub -> --ink-3, 4,85/5,72, desktop dichiarato); (g) dichiarato post-epic (solo desktop, 2px — v. item TD post-epic)
+  - epic: 15
+    action: "TD (rilevato dalla review 15.3, fragilita' PRE-esistente): `home-dashboard.spec.ts:228` cerca la propria fixture dentro la finestra di 8 righe della card della home, ordinata per startsAt sulle ultime 48h — su DB popolato la fixture non ci sta. E' la stessa trappola 'fotografia + uguaglianza' (review Billing-2 F4) che il dev della 15.3 ha dovuto togliere dai propri due test, e che li' e' stata curata rileggendo il dato dall'API filtrata su una fixture run-unique. Applicare la stessa medicina. NB: nell'arbitro su DB fresco il test passa — la fragilita' e' latente, non attiva."
+    owner: "backlog TD"
+    status: open
+  - epic: 15
+    action: "TD (osservato nell'arbitro della 15.3, PRE-esistente): `billing.spec.ts:296` e' flaky sotto `fullyParallel` — `depositsTotalAfter - depositsTotalBefore` ha letto 5000 invece di 10000 (retry verde, exit 0). E' un delta-assert su un aggregato GLOBALE (totale Acconti): la mitigazione 'delta invece di fotografia' prescritta da CLAUDE.md NON basta quando l'aggregato e' globale e altre spec creano ricariche dentro la stessa finestra. Rimedio: spostarlo nel project serializzato `billing-global` (dove vive gia' il gemello della stessa classe) oppure filtrare l'aggregato sulla persona run-unique dello scenario. Non attribuibile alla 15.3: le sue spec non creano movimenti di denaro (verificato)."
+    owner: "backlog TD"
+    status: open
+  - epic: 15
+    action: "TD R-15.2-g CHIUSO dalla story 15.5 (ratifica PO R-15.5-f, opzione A). Correzione delle misure originali, rifatte a 375x812 sui pannelli reali: il difetto vero e UNICO era `pilot-editor` in modalita' NUOVO (un solo form, un solo submit, `bottom 926` in un viewport 812 con `elementFromPoint` = null); i numeri 2269/2072 del TD erano azioni SECONDARIE di sezione ('Crea e invia invito', 'Aggiungi tariffa'), che stanno sotto il fold anche sul desktop e anche in `aircraft-editor` (chiuso in 15.2 con la stessa asimmetria), mentre il salva PRIMARIO in MODIFICA era gia' sopra il fold (`pilot-identity-submit` bottom 573 reachable, `instructor-identity-submit` bottom 550 reachable). Fix: `.so-actions` sulla riga identita' di entrambi gli editor (+ su `pilot-editor` NUOVO), uniforme con `aircraft-editor`; desktop misurato invariato a 1280/800/641 (position static, border-top 0, background trasparente, `.so-body` padding-bottom 18px, submit 35px, pannello 520px). RISERVA ACCETTATA dal PO e da tracciare: `.so-actions` e' `position: sticky` dentro `.so-body`, quindi in MODIFICA la barra si sgancia scorrendo oltre la sezione identita'. La versione letterale di R3 ('azione primaria fissa per TUTTO il pannello') richiede lo slot `mobileFooter` sulla primitiva `SlideOver` (11 consumer) + la conversione di `aircraft-editor`: valutarla in 15.10."
+    owner: "story 15.10 (riserva sticky, se il PO vuole R3 alla lettera)"
+    status: done  # CHIUSO dalla 15.10 (R-15.10-f + review LOW-4): il PO ha voluto R3 alla lettera e la ricognizione ha PROVATO che lo slot mobileFooter ipotizzato non serviva — il prop footer esisteva gia' (7 call-site): submit primario nel .so-foot su aircraft/pilot/instructor-editor E ManualPprForm, hit:false->true misurato su tutti; piede desktop RATIFICATO (idioma dei call-site esistenti)
+  - epic: 15
+    action: "TD (misurato dalla story 15.5, PRE-esistente, e osservato due volte): il catalogo `ExpiryType` e' GLOBALE e le spec non lo ripuliscono - `bookings.spec.ts` (\"Tipo prenotazioni <ts>\") e `flights.spec.ts` (\"Tipo voli <ts>\") creano tipi con `blocksBooking = true` e li lasciano li'. Da quel momento OGNI persona nuova e' priva di quel documento e `POST /api/v1/flights` la rifiuta con 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`findMissingBlockingDocuments`, story 14.4: 'assente O scaduta'). Misurato su DB post-suite: 11 tipi bloccanti, 7 lasciati dalle due spec. Effetti osservati: (a) il fixture del volo della 15.5 (barra ore) e' passato dal verde al 422 fra il run mirato su DB fresco e la suite completa - chiuso usando l'override admin `force`/`forceReason`, deterministico qualunque sia il catalogo; (b) `flights.spec.ts:602` e' risultato FLAKY nel run finale della 15.5 con lo stesso 422 (verde al retry). Rimedio: le due spec cancellino il tipo che creano, oppure lo creino con `blocksBooking: false` dove il test non ha bisogno del blocco."
+    owner: "backlog TD (isolamento e2e)"
+    status: open
+  - epic: 15
+    action: "TD (ratifica PO R-15.5-i, sotto-decisione): `.ac-card` del DESKTOP resta un `<div onClick>` (`components/dashboard/fleet-card.tsx:80-85`) - misurato: `tagName DIV`, 0 figli interattivi, non focusabile, non operabile da tastiera. Difetto a11y PRE-esistente (story 12.5/12.12), non introdotto dalla 15.5: la sua card MOBILE e' un `<button>` vero. Convertirlo cambia il DOM desktop di un componente CONDIVISO col widget Flotta della Panoramica (`FleetCard`), quindi va fatto con la sua misura pre/post su entrambe le superfici - non di sfuggita dentro una story il cui mandato e' 'desktop invariato'."
+    owner: "backlog TD (a11y desktop)"
+    status: open
+  - epic: 15
+    action: "TD CHIUSO NEL CICLO DI FIX DELLA 15.5 (review F7: il numero non riproduce). Il TD affermava che `.ac-model`/`.meter-row` del desktop (`--ink-3` su `--panel-2` dentro `.ac-card`) misurassero 4.34:1 in tema chiaro, sotto la soglia 4.5 del testo. Rimisurato due volte con lo stesso metodo canvas->WCAG usato dalla story (colore calcolato + sfondo EFFETTIVO risolto risalendo gli antenati) su `/dashboard/fleet` a 1280px, build di produzione: **4.59:1 in chiaro e 5.36:1 in scuro** su entrambi i selettori, e il confronto diretto dei due token (`contrastPair(--ink-3, --panel-2)`) da' gli stessi numeri - cioe' SOPRA soglia. La review adversarial aveva misurato 4.59/5.36 in modo indipendente: due misure concordi contro il 4.34 originale. Non c'e' quindi nessun difetto di contrasto da portare in 15.10 su questi due selettori; resta valida e non toccata la scelta della card MOBILE di usare `--ink-2` (misurato 9.46 chiaro / 8.88 scuro), che era comunque il tono giusto per quella superficie."
+    owner: "story 15.5 (chiuso nel ciclo di fix)"
+    status: closed
+  - epic: 15
+    action: "TD (review 15.2, rilievo di EPIC non di story): l'app non dichiara `viewport-fit=cover` in nessun layout (grep a zero), quindi TUTTI gli `env(safe-area-inset-*)` introdotti dall'epic valgono 0 e sono inerti: tab bar e toast-host della 15.1, riga `.so-actions` della 15.2. Oggi innocui, ma la convenzione non fa nulla e una futura verifica su iPhone con notch la troverebbe non applicata. Decidere in 15.10 (sweep finale): o si aggiunge `viewport-fit=cover` al meta viewport e si verifica il layout su un device con inset reali, o si rimuovono gli `env()` come rumore. NON va deciso a occhio su Chromium headless, che ha inset 0."
+    owner: "story 15.10 (sweep finale)"
+    status: open
+  - epic: 14
+    action: "TD (review 14.9 F11, PRE-esistente): /api/v1/stats e /api/v1/cash-report rispondono 422 (validazione Zod della query) PRIMA del 403 a un attore non autorizzato, mentre tutti gli altri endpoint gated fanno 403 -> un attore senza permesso apprende la forma dei parametri. Uniformare l'ordine gate-prima-di-validazione (o ratificare la convenzione). Occorrenza nuova (review 15.9 LOW-4 / TD (n) del record): il param pprNumber di GET /ppr-requests replica la classe per coerenza col chassis apiRoute — si chiude insieme."
+    owner: "backlog TD"
+    status: open
+  - epic: 14
+    action: "TD (review 14.4, note residue): (a) il describe 'Blocking expiry guard-rail' di flights.spec.ts (e i test di bookings.spec.ts che creano ExpiryType bloccanti scope ALL) crea/disattiva STATO GLOBALE dentro il project fullyParallel -> TOCTOU raro con ensureValidSeedExpiries (mitigato a ~zero da e2e/helpers.ts, eliminabile solo spostandolo nella catena serializzata di playwright.config.ts); (b) RISOLTO dalla 15.8b (2026-08-05, decisione PO Q13): TUTTO reports.spec.ts e' migrato nella catena serializzata (9° project, fra booking-window e treasury-settings), il PUT scheduling RIPRISTINA (verificato in psql), nessuno scrittore di sched.* resta in fullyParallel — la time-dependency della suite e' chiusa per costruzione. Costo isolato +43s."
+    owner: "backlog TD"
+    status: open
+  - epic: 14
+    action: "TD (review 14.6 F2, PRE-esistente e sistemico): la CTA 'Nuova prenotazione' di /dashboard/bookings e' gated sul PERMESSO (ruolo) mentre createBooking richiede un PROFILO ATTIVO (bookings.service.ts:485) -> un pilota/istruttore con profilo disattivato clicca e prende 403. La landing pilota e' stata gia' allineata (14.6 F2); resta la pagina prenotazioni."
+    owner: "backlog TD"
+    status: open
+  - epic: 14
+    action: "TD (review 14.6 F4, EREDITATO): l'estratto conto (account-section.tsx, griglia 104px/150px/1fr/120px) non e' responsive sotto ~700px — a 390px la colonna Importo finisce fuori schermo, raggiungibile solo con scroll orizzontale senza affordance. Identico sulla scheda persona preesistente: fix da fare sul componente condiviso, non su una singola pagina."
+    owner: "backlog TD"
+    status: done  # CHIUSO dalla story 15.9 (R-15.9-b, ENTRAMBE le facce): albero mobile card+sheet dentro AccountSection; la misura reale era PEGGIO del TD (colonna 1fr a 0px a <=640, non 'fuori schermo'); guardia = l'esclusione dichiarata di mobile-registries.spec.ts:888 RIMOSSA col test verde, rossa a 25 nodi col difetto reiniettato
+  - epic: 14
+    action: "TD (review 14.8 F6, PRE-esistente): date-only.ts#parseDateOnlyUtc — Date.UTC mappa gli anni 0-99 su 1900+anno: validFrom '0001-01-01' passa z.iso.date() e finisce a DB come 1901-01-01 in silenzio (stesso comportamento su POST /aircraft/{id}/rates e tariffe istruttore). Fix quando si tocca date-only.ts: setUTCFullYear post-costruzione o rifiuto anni <1000 nello schema."
+    owner: "backlog TD"
+    status: open
   - epic: 13
     action: "F2 review 13.3 (feature-loss, follow-up ACCETTATO): registrando una scadenza dalla scheda persona/Piloti/Istruttori il campo 'Data scadenza' non si precompila più da ExpiryType.validityMonths (comodità che il vecchio ExpiriesPanel a pagina aveva; LiveExpiryEditor 13.2 non l'ha mai avuta). Fix = aggiungere il precompile all'add-row del LiveExpiryEditor condiviso (src/components/dashboard/expiry-editor.tsx) — beneficia tutti e 3 i consumer. Da riproporre all'utente per decidere se farlo (mini-story) o lasciarlo."
     owner: "post-13.3 (decisione utente)"
@@ -209,7 +624,7 @@ action_items:
   - epic: 13
     action: "Claude Security scan 2026-07-23 (scope src, rev c259205, verified): 2 findings auth PRE-esistenti da fixare DOPO l'Epic 13 (decisione utente 2026-07-24: in coda dietro il refactor/UI in corso). F1 (MEDIUM CWE-613): setPasswordWithToken (auth-tokens.service.ts:207) non revoca le sessioni JWT stateless -> attaccante con sessione sopravvive al reset password ~30gg; fix = tokenVersion/sessionsValidFrom su User, bump in transazione, check in applyActiveRecheck. F2 (LOW CWE-367): TOCTOU isLoginLocked/recordFailedLoginAttempt (authorize.ts:33) -> burst concorrente supera il cap 10/finestra; fix = check-and-count atomico. Report completo (gitignored): CLAUDE-SECURITY-20260723-073138/. Candidata a story 13.x dedicata o TD post-epic."
     owner: "post-Epic 13"
-    status: open
+    status: done  # chiuso dalla story TD-6 (2026-07-26, v. HANDOFF «Security findings post-epic: FATTI»): F1 = User.tokenVersion (schema.prisma) con bump in transazione e check in sessione; F2 = reserveLoginAttempt atomico (login-throttle.ts, usato da authorize.ts). Verificato sul codice 2026-08-07.
   - epic: 12
     action: "F5 review 12.11: registrare nel registry OpenAPI le 8 route nuove della 12.11 (settings/{club,scheduling,smtp,smtp/test-email,metar-station,membership-fee}, metar, expiry-alerts/trigger, people/{id}/membership-fee) — registry.test.ts usa arrayContaining e non lo segnala"
     owner: "story 12.13 (cleanup sweep)"

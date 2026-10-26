@@ -1,3 +1,5 @@
+import { parseDateOnlyUtc } from '@/lib/date-only';
+
 /**
  * Zoned calendar-day helpers (epic 7, story 7.2; FR-19) — SERVER-SIDE only.
  * Purpose: turn a calendar day/week expressed as Europe/Rome WALL-CLOCK
@@ -175,6 +177,23 @@ export function dateOnlyInZone(instant: Date, timeZone: string): string {
  */
 export function todayDateOnlyInZone(timeZone: string): string {
   return dateOnlyInZone(new Date(), timeZone);
+}
+
+/**
+ * "Oggi" come `Date` a mezzanotte UTC — la forma che Prisma lega a una
+ * colonna `@db.Date` (invariante [I-d]) — calcolato sul calendario
+ * WALL-CLOCK di `timeZone`, non su quello UTC.
+ *
+ * È il caso `instant = now` di {@link dateOnlyInZone}, legato in
+ * `@db.Date` da `parseDateOnlyUtc`. Da NON confondere con
+ * `date-only.ts#todayDateOnlyUtc`, che è "oggi" secondo il calendario
+ * UTC: i due divergono di un giorno fra le 00:00 di Roma e le 00:00 UTC
+ * (1h in CET, 2h in CEST), ed è esattamente quella divergenza che
+ * `FLIGHT_DATE_IN_FUTURE` e le cinque `effectiveDate` UTC hanno pagato
+ * (ops F1 / ledger MAJOR-3).
+ */
+export function todayDateOnlyUtcInZone(timeZone: string): Date {
+  return parseDateOnlyUtc(todayDateOnlyInZone(timeZone));
 }
 
 /**

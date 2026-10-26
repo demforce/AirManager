@@ -8,8 +8,6 @@ if (!SEED_PASSWORD) {
   throw new Error('e2e/expiry-registration.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
 
-const MAILPIT_API = 'http://localhost:8025/api/v1';
-
 /** Same login helper as the other e2e specs. */
 async function loginExpectingDashboard(page: Page, email: string, password: string = SEED_PASSWORD!): Promise<void> {
   await page.goto('/it/login');
@@ -31,10 +29,6 @@ function uniqueTypeName(prefix: string): string {
   return `${prefix} ${uniqueSuffix()}`;
 }
 
-function uniqueEmail(prefix: string): string {
-  return `${prefix}-${uniqueSuffix()}@airmanager.local`;
-}
-
 /** A day `days` from NOW (can be negative), `YYYY-MM-DD` UTC — dates stay relative to actual test-run time (Dev Notes: computed status depends on real "today"). Used for API payloads and `<input type="date">` values, which stay ISO (AC 1). */
 function addDaysUtc(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
@@ -54,54 +48,6 @@ function addMonthsUtc(dateOnly: string, months: number): string {
   const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
   const clampedDay = Math.min(day, daysInTargetMonth);
   return `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`;
-}
-
-type MailpitMessageSummary = { ID: string; Subject: string };
-type MailpitFullMessage = { Text: string; Subject: string };
-
-/** Same Mailpit-polling helper as `expiry-types.spec.ts`. */
-async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
-    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
-    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
-
-    if (found) {
-      const messageResponse = await fetch(`${MAILPIT_API}/message/${found.ID}`);
-      return (await messageResponse.json()) as MailpitFullMessage;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-
-  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
-}
-
-function extractSetPasswordUrl(emailText: string): URL {
-  const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(emailText);
-  if (!match) {
-    throw new Error(`Email body did not contain a /set-password link:\n${emailText}`);
-  }
-  return new URL(match[1]);
-}
-
-/** Creates a STAFF-only user (`expiries.manage` but never `settings.manage`) and returns credentials — same helper shape as `expiry-types.spec.ts`. */
-async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
-  const email = uniqueEmail('staff-exp-reg');
-  const response = await page.request.post('/api/v1/users', { data: { email, roles: ['STAFF'] } });
-  expect(response.status()).toBe(201);
-
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
-  const url = extractSetPasswordUrl(inviteEmail.Text);
-  await page.goto(url.pathname + url.search);
-  await page.getByLabel('Nuova password').fill(password);
-  await page.getByLabel('Conferma password').fill(password);
-  await page.getByRole('button', { name: 'Imposta password' }).click();
-  await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-  return email;
 }
 
 /** Creates a person via the admin API and activates an ACTIVE pilot profile (mirrors `instructor-rates.spec.ts#createInstructorPerson`). */
@@ -160,7 +106,7 @@ async function registerExpiryViaUi(page: Page, values: { typeId: string; expires
 }
 
 test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-driven since Story 13.3)', () => {
-  test('a staff actor registers scadenze via the PilotEditor UI with correct status badges, a duplicate/SCOPE_MISMATCH are rejected at the API; admin completes the 6.1 delete-constraint contract', async ({
+  test('an admin registers scadenze via the PilotEditor UI with correct status badges, a duplicate/SCOPE_MISMATCH are rejected at the API; admin completes the 6.1 delete-constraint contract', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -170,19 +116,11 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-dri
 
     // AC 1: register three scadenze (each its own run-unique, always-usable
     // type) with dates chosen to land in each of the three status bands —
-    // driven through the ACTUAL "Modifica" → Ratings chip UI, by a STAFF
-    // actor (created via the API, same pattern as `expiry-types.spec.ts`) —
-    // `expiries.manage` is granted to staff too (story 6.1).
+    // driven through the ACTUAL "Modifica" → Ratings chip UI.
     const okType = await createExpiryType(page);
     const expiringType = await createExpiryType(page);
     const expiredType = await createExpiryType(page);
     const instructorsType = await createExpiryType(page, 'INSTRUCTORS');
-
-    const staffPassword = 'StaffExpiryReg123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
 
     await page.goto(`/it/dashboard/people/${personId}`);
     await page.getByTestId('person-edit-button').click();

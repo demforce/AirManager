@@ -120,8 +120,8 @@ test.describe('Impostazioni — card Tesoreria (story Billing-2, AC 4/6)', () =>
     expect(bankAfter - bankBefore).toBe(8225);
   });
 
-  test('a staff (non-ADMIN) actor is redirected away from /dashboard/settings — the Tesoreria card is admin-only like every other settings.manage card', async ({ page }) => {
-    await loginExpectingDashboard(page, 'staff@airmanager.local');
+  test('a pilot (non-ADMIN) actor is redirected away from /dashboard/settings — the Tesoreria card is admin-only like every other settings.manage card', async ({ page }) => {
+    await loginExpectingDashboard(page, 'pilot@airmanager.local');
     await gotoSettingsAndWaitForHydration(page);
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });

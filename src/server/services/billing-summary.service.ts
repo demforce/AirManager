@@ -151,7 +151,7 @@ async function computeDeposits(): Promise<BillingSummaryDeposits> {
 /**
  * The three-book summary for `ref`'s Europe/Rome calendar month (default:
  * now) — see the module doc-comment for the full breakdown. `finance.manage`
- * (STAFF+ADMIN), same permission `stats.service.ts`/`getCashReport` already
+ * (ADMIN-only), same permission `stats.service.ts`/`getCashReport` already
  * require (review F8: `getBillingKpis`, retired by this story, is no longer
  * a real consumer to cite here).
  */

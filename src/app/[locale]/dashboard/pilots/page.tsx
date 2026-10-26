@@ -1,15 +1,17 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { todayDateOnlyUtc } from '@/lib/date-only';
 import { buildExportHref } from '@/lib/export-href';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { redirect } from '@/i18n/navigation';
+import { listBlockingExpiriesByPerson } from '@/server/services/expiries.service';
 import { listPilotsPageData } from '@/server/services/people.service';
 import { buildPilotEditorLabels, buildPilotEditorToastLabels } from './pilot-editor-labels';
 import { PilotsConsole, type PilotRow } from './pilots-console';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; q?: string; includeArchived?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; archivedOnly?: string }>;
 };
 
 const PAGE_SIZE = 20;
@@ -28,7 +30,7 @@ const PAGE_SIZE = 20;
  */
 export default async function PilotsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { page: pageParam, q, includeArchived: includeArchivedParam } = await searchParams;
+  const { page: pageParam, q, archivedOnly: archivedOnlyParam } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -42,9 +44,16 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
   }
 
   const page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
-  const includeArchived = includeArchivedParam === 'true';
+  const archivedOnly = archivedOnlyParam === 'true';
 
-  const result = await listPilotsPageData(actor, { page, pageSize: PAGE_SIZE, q, includeArchived });
+  const result = await listPilotsPageData(actor, { page, pageSize: PAGE_SIZE, q, includeArchived: false, archivedOnly });
+  // Story 15.5 (R-15.5-c): the phone row's flag. One batched query over the ids
+  // of THIS page, same rationale as `listPilotsPageData`'s own five readers.
+  const blockingDocumentsById = await listBlockingExpiriesByPerson(
+    actor,
+    result.items.map((item) => item.id),
+    todayDateOnlyUtc(),
+  );
 
   const t = await getTranslations('PilotsPage');
   const tExport = await getTranslations('Export');
@@ -57,7 +66,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
   const tUsers = await getTranslations('UsersPage');
   const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
 
-  const exportHref = buildExportHref('/api/v1/people', { q, includeArchived: includeArchived ? 'true' : undefined }, locale);
+  const exportHref = buildExportHref('/api/v1/people', { q, archivedOnly: archivedOnly ? 'true' : undefined }, locale);
 
   const items: PilotRow[] = result.items.map((item) => ({
     id: item.id,
@@ -84,17 +93,18 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
       </div>
 
       <PilotsConsole
-        key={JSON.stringify({ page, q: q ?? '', includeArchived })}
+        key={JSON.stringify({ page, q: q ?? '', archivedOnly })}
         items={items}
         page={page}
         totalPages={totalPages}
         initialQuery={q ?? ''}
-        initialIncludeArchived={includeArchived}
+        initialArchivedOnly={archivedOnly}
         canManagePeople={hasPermission(actor, 'people.manage')}
         canManageFinance={hasPermission(actor, 'finance.manage')}
         canManageUsers={hasPermission(actor, 'users.manage')}
         exportHref={exportHref}
         locale={locale as 'it' | 'en'}
+        blockingDocumentsById={Object.fromEntries(blockingDocumentsById)}
         labels={{
           cardTitle: t('cardTitle'),
           searchPlaceholder: t('searchPlaceholder'),
@@ -117,6 +127,28 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
           role: { pilot: tProfiles('profilesPanel.pilot.title'), student: tProfiles('profilesPanel.student.title'), instructor: tProfiles('profilesPanel.instructor.title') },
           status: { active: t('status.active'), suspended: t('status.suspended'), none: t('status.none') },
           actions: { edit: t('actions.edit'), topUp: t('actions.topUp'), suspend: t('actions.suspend'), reactivate: t('actions.reactivate') },
+          mobile: {
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            openProfile: t('mobile.openProfile'),
+            // `t.raw`: the `{doc}`/`{days}` placeholders are filled CLIENT-side
+            // (the document name only exists there), and `t()` would try to
+            // resolve them as ICU variables here and throw FORMATTING_ERROR.
+            flagExpired: t.raw('mobile.flagExpired') as string,
+            flagExpiring: t.raw('mobile.flagExpiring') as string,
+            confirmSuspend: t('mobile.confirmSuspend'),
+            confirmReactivate: t('mobile.confirmReactivate'),
+            dismiss: t('mobile.dismiss'),
+            sheet: {
+              email: t('table.email'),
+              phone: t('mobile.sheet.phone'),
+              balance: t('table.balance'),
+              lastFlight: t('table.lastFlight'),
+              profiles: t('table.role'),
+              access: t('table.status'),
+              documents: t('mobile.sheet.documents'),
+            },
+          },
           topUp: {
             title: t('topUp.title'),
             amount: t('topUp.amount'),

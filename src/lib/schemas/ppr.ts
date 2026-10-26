@@ -135,11 +135,29 @@ export type PprStatusDto = z.infer<typeof pprStatusSchema>;
  * `zonedMidnightUtc`/`addDaysDateOnly` pattern as story 7.2's calendar),
  * never compared as raw strings.
  */
+/**
+ * `PPR-<year>-NNNN` (story 15.9, R-15.9-h) — the exact shape
+ * `ppr.service.ts` issues (`PPR-${year}-${String(seq).padStart(4, '0')}`),
+ * with the sequence left open-ended upward so the 10.000th request of a year
+ * stays queryable instead of answering 422 on a number the system itself
+ * printed. A malformed value is a VALIDATION error (422), never a 500 and
+ * never a silently-ignored filter.
+ */
+export const pprNumberSchema = z.string().regex(/^PPR-\d{4}-\d{4,}$/);
+
 export const listPprRequestsQuerySchema = paginationQuerySchema
   .extend({
     status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED', 'ALL']).optional().default('PENDING'),
     from: z.iso.date().optional(),
     to: z.iso.date().optional(),
+    /**
+     * Exact-match filter on the assigned PPR number (story 15.9, AC 15) — the
+     * deep link from the approval queue to the transits register. Absent means
+     * "no number filter", exactly like `from`/`to`; the number is `null` while
+     * a request is PENDING and forever on a REJECTED one, so the UI only ever
+     * offers the link where a number exists.
+     */
+    pprNumber: pprNumberSchema.optional(),
     ...exportQuerySchema.shape,
   })
   .refine((value) => !value.from || !value.to || value.from <= value.to, {

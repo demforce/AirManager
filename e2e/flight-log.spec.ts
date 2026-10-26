@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -96,6 +97,8 @@ async function createPilotWithLogin(page: Page, password: string, tag: string): 
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   const email = uniqueEmail('pilot-flightlog');
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
@@ -126,6 +129,8 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   return { personId: person.id, firstName, lastName };
 }
@@ -155,6 +160,8 @@ type RegisterFlightParams = {
   flightDate: string;
   flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
   minutes: number;
+  /** Story 16.2 — the takeoff clock time (UTC, `HH:MM`), so two flights of the SAME test can share an aircraft and a day without overlapping (409 `FLIGHT_OVERLAP`). Defaults to `10:00`, the value every pre-existing call site used implicitly. */
+  takeoffTimeUtc?: string;
 };
 
 /**
@@ -166,7 +173,7 @@ type RegisterFlightParams = {
  * equals `params.flightDate`.
  */
 async function registerFlight(page: Page, params: RegisterFlightParams): Promise<{ id: string }> {
-  const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
+  const takeoffAt = `${params.flightDate}T${params.takeoffTimeUtc ?? '10:00'}:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
     data: {
@@ -206,8 +213,19 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     });
     const cancelResponse = await page.request.post(`/api/v1/flights/${toCancel.id}/cancel`, { data: { reason: 'Errore di prova' } });
     expect(cancelResponse.status()).toBe(200);
-    // Someone else's flight on the SAME aircraft — must NEVER show up in the pilot's own registry.
-    await registerFlight(page, { aircraftId: aircraft.id, personId: otherPerson.personId, flightDate: '2020-02-01', flightType: 'TOURISM', minutes: 40 });
+    // Someone else's flight on the SAME aircraft — must NEVER show up in the
+    // pilot's own registry. Story 16.2: the "same aircraft" IS the point of
+    // this case, so the AIRCRAFT stays and the takeoff moves to 12:00 —
+    // 10:00->10:40 would now overlap the pilot's own 10:00->10:30 flight
+    // above (409 `FLIGHT_OVERLAP`).
+    await registerFlight(page, {
+      aircraftId: aircraft.id,
+      personId: otherPerson.personId,
+      flightDate: '2020-02-01',
+      flightType: 'TOURISM',
+      minutes: 40,
+      takeoffTimeUtc: '12:00',
+    });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, 'PilotOwnView123!');
@@ -227,6 +245,13 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // Only staff filters (aircraft/persona) are absent; period/tipo/stato remain.
     await expect(page.getByTestId('flight-filter-aircraft')).toHaveCount(0);
     await expect(page.getByTestId('flight-filter-person')).toHaveCount(0);
+    // Story 15.6 (review LOW-1): the phone twins of these three names are NOT
+    // asserted here. They only exist while the detail sheet or the "Filtri"
+    // panel is OPEN, so a `toHaveCount(0)` on a page with both closed is green
+    // for an admin too — measured — and would claim a coverage it does not
+    // have. The real masking guard opens them: `mobile-logbook.spec.ts`, "a
+    // pilot gets the same card without any action" (sheet open ⇒ zero actions
+    // where the admin has two; panel open ⇒ no velivolo filter).
 
     // Exactly the pilot's own 2 flights (this pilot is brand new — nothing else could be theirs), never the other person's.
     const rows = page.getByTestId('flight-row');

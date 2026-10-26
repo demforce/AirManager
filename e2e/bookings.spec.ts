@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import ExcelJS from 'exceljs';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -281,7 +282,19 @@ async function registerExpiry(page: Page, personId: string, expiryTypeId: string
   expect(response.status()).toBe(201);
 }
 
-/** Far enough in the future to never collide with "today" no matter when this suite runs. */
+/**
+ * Far enough in the future to never collide with "today" no matter when this suite runs.
+ *
+ * Story 16.3: a PERSON (and an instructor) can hold only ONE approved booking
+ * per interval, on any aircraft (409 `PERSON_BUSY`/`INSTRUCTOR_BUSY`) — and a
+ * PENDING booking cannot even be created over a person's approved one. So a
+ * test that leaves an APPROVED booking behind on this fixed day books it for a
+ * run-unique person, NEVER for the seed pilot (`PILOT_EMAIL`): that identity is
+ * shared by every spec and never reset, and its leftover approved slot would
+ * collide with the next run of the same test, or with a parallel test booking
+ * the same band. Every seed-pilot booking in the suite ends PENDING,
+ * CANCELLED, DENIED or FLOWN (api-v1.spec.ts closes its own within the test).
+ */
 const FUTURE_DAY = '2031-03-10';
 
 /**
@@ -300,6 +313,31 @@ function runUniqueFutureDay(): string {
   const date = new Date(base + dayOffsetMs);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+}
+
+/**
+ * Yesterday 07:30Z-08:30Z (story 16.3, ops F9): Effettuato/Assente need a
+ * slot that has STARTED, and nobody can CREATE a booking in the past — staff
+ * moves a future one here instead (a move is exempt from `BOOKING_IN_PAST`
+ * for staff). Always less than 48 h ago, so the row stays in the list
+ * (`listFrom = now - 48h`), and inside every opening window the suite sets
+ * (07:00-21:00 Europe/Rome, both DST offsets).
+ */
+function yesterdaySlot(): { startsAt: string; endsAt: string } {
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  return { startsAt: `${yesterday}T07:30:00.000Z`, endsAt: `${yesterday}T08:30:00.000Z` };
+}
+
+/**
+ * Three days ago, 07:30Z-08:30Z (story 16.3): a started slot for API-only
+ * fixtures, deliberately OUTSIDE the 48 h window every list and the Overview
+ * card read — a booking closed there and left behind never crowds the
+ * soonest-first cards other specs assert on (`home-dashboard.spec.ts`), unlike
+ * `yesterdaySlot()`, which only the UI tests that must SEE the row use.
+ */
+function longPastSlot(): { startsAt: string; endsAt: string } {
+  const day = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+  return { startsAt: `${day}T07:30:00.000Z`, endsAt: `${day}T08:30:00.000Z` };
 }
 
 // Story 7.4: an expiry dated well before FUTURE_DAY — genuinely expired for
@@ -340,13 +378,80 @@ function soonestFutureSlot(): { startsAt: string; endsAt: string } {
   return { startsAt: toDatetimeLocal(start), endsAt: toDatetimeLocal(end) };
 }
 
+/**
+ * Walks the paginated "Prossime prenotazioni" list forward from page 1
+ * until a row matching `filterText` appears (review 12.3 F5): the list is
+ * sorted `startsAt asc` and, on a never-reset dev DB (plus story 12.3 F7's
+ * wider 48h-back window), a fixture booking's exact page number depends on
+ * how many OTHER bookings currently outrank it — never assumed to be page 1
+ * (review F2, story 14.5: `FUTURE_DAY`'s own accumulated volume across every
+ * run of this file makes that assumption fail deterministically once the
+ * pile crosses one page). Hoisted to module scope (was local to the
+ * "Booking approval workflow UI" describe below) so the "Booking privacy
+ * masking" describe can reuse it too — same reason, same fix.
+ */
+async function findBookingRow(page: Page, filterText: string | string[]): Promise<ReturnType<Page['getByTestId']>> {
+  const filterTexts = Array.isArray(filterText) ? filterText : [filterText];
+  const MAX_PAGES = 50;
+  // A direct `?page=N` navigation per attempt, not repeated `booking-page-next`
+  // clicks: clicking a `<Link>` through several client-side (SPA) navigations
+  // in a tight loop proved unreliable in this environment (the "next" link
+  // intermittently reported "not enabled" even with `aria-disabled="false"`,
+  // hanging until the test timeout) — a plain full navigation is the SAME
+  // reliable primitive `gotoBookingsAndWaitForHydration` already uses
+  // elsewhere in this file for the identical hydration-race reason. An
+  // out-of-range `?page` is clamped server-side (`page.tsx`), so this is
+  // always safe even past the real last page.
+  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
+    await page.goto(`/it/dashboard/bookings?page=${pageNumber}`);
+    await page.waitForLoadState('networkidle');
+    const row = filterTexts.reduce((locator, text) => locator.filter({ hasText: text }), page.getByTestId('booking-row'));
+    if ((await row.count()) > 0) return row;
+    const statusLocator = page.getByTestId('booking-pagination-status');
+    if ((await statusLocator.count()) === 0) break; // a single page has no pagination controls at all
+    const statusText = (await statusLocator.textContent()) ?? '';
+    const totalPages = Number.parseInt(statusText.split('/')[1]?.trim() ?? '1', 10);
+    if (pageNumber >= totalPages) break;
+  }
+  throw new Error(`Booking row matching "${filterText}" not found within ${MAX_PAGES} pages of /dashboard/bookings`);
+}
+
+/**
+ * Sums `booking-row` matches for `filterText` across EVERY page — the
+ * `toHaveCount(N)` counterpart of `findBookingRow` above (N>1 case, same
+ * pagination defect): a page-1-only count is meaningless once a heavily-
+ * reused fixture day's pile can straddle a page boundary between the very
+ * rows being counted.
+ */
+async function countBookingRowsAcrossPages(page: Page, filterText: string | string[]): Promise<number> {
+  const filterTexts = Array.isArray(filterText) ? filterText : [filterText];
+  const MAX_PAGES = 50;
+  let total = 0;
+  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
+    await page.goto(`/it/dashboard/bookings?page=${pageNumber}`);
+    await page.waitForLoadState('networkidle');
+    const row = filterTexts.reduce((locator, text) => locator.filter({ hasText: text }), page.getByTestId('booking-row'));
+    total += await row.count();
+    const statusLocator = page.getByTestId('booking-pagination-status');
+    if ((await statusLocator.count()) === 0) break; // a single page has no pagination controls at all
+    const statusText = (await statusLocator.textContent()) ?? '';
+    const totalPages = Number.parseInt(statusText.split('/')[1]?.trim() ?? '1', 10);
+    if (pageNumber >= totalPages) break;
+  }
+  return total;
+}
+
 test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
   test('pilot books via UI for a future interval; an overlap on an APPROVED booking shows 409 in the form; back-to-back (semi-open) succeeds', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    // Story 16.3: a run-unique pilot, never the seed one — this test leaves an
+    // APPROVED booking behind (see the note at `FUTURE_DAY`).
+    const pilotPassword = `PilotaPrenota${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
 
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
 
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
@@ -357,7 +462,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
 
     // Story 12.2, AC 4: only an APPROVED booking occupies a slot (a PENDING
@@ -377,7 +482,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(approveResponse.status()).toBe(200);
 
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const formAfterApproval = page.getByTestId('new-booking-form');
@@ -396,8 +501,11 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await formAfterApproval.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
-    const rows = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
-    await expect(rows).toHaveCount(2);
+    // Both rows share the run-unique aircraft — counted across EVERY page
+    // (never assumed page 1, same reason `findBookingRow` above walks pages):
+    // a heavily-reused fixture day's pile can straddle a page boundary
+    // between these two very rows.
+    expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
   });
 
   test('staff books for another (run-unique) pilot from the "Pilota o allievo" picker', async ({ page }) => {
@@ -415,7 +523,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    const row = await findBookingRow(page, aircraft.registration);
     // `personName` is "Nome Cognome" (Contesto's DTO spec) — firstName first, unlike the picker's "Cognome Nome" option labels above.
     await expect(row).toContainText(`${pilot.firstName} ${pilot.lastName}`);
   });
@@ -473,7 +581,9 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
     await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByRole('radio', { name: 'Per un allievo' }).click();
+    // Story 14.7, AC 1: the "per me"/"per un allievo" radio pair became one
+    // `Segmented` control — its options render as `<button>`s, not radios.
+    await form.getByRole('button', { name: 'Per un allievo' }).click();
     // Pre-existing bug uncovered by review 12.3 F1 (out of scope to fix in
     // product code here): `Field`'s implicit `<label>` wraps the `<select>`
     // as a DOM child, so the browser's computed accessible name concatenates
@@ -488,21 +598,50 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    const row = await findBookingRow(page, aircraft.registration);
     // `personName`/`instructorName` are "Nome Cognome" (Contesto's DTO spec) — firstName first.
     await expect(row).toContainText(`${student.firstName} ${student.lastName}`);
     await expect(row).toContainText(`${instructor.firstName} ${instructor.lastName}`);
   });
 
+  // Story 14.7, AC 1/6: the sibling test above only ever exercises SWITCHING
+  // the `Segmented` control to "Per un allievo" — this one proves the
+  // DEFAULT selected option ("Per me", `bookingTarget` state initializes to
+  // `'self'`) genuinely submits too, not just the switched-away state.
+  test('an instructor books for themselves (default "Per me") — 201, row shows only their own name', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const instructorPassword = 'IstruttoreBookingsSelf123!';
+    const instructor = await createInstructorWithLogin(page, instructorPassword);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, instructorPassword);
+
+    await gotoBookingsAndWaitForHydration(page);
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    await expect(form.getByRole('button', { name: 'Per me' })).toHaveClass('on');
+    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T17:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T18:00`);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+
+    await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    const row = await findBookingRow(page, aircraft.registration);
+    await expect(row).toContainText(`${instructor.firstName} ${instructor.lastName}`);
+  });
+
   // CONTRACT CHANGE (story 7.2, FR-19): the calendar view opened `bookings`
   // to every authenticated role via `self.read` — an allievo alone now SEES
-  // the "Prenotazioni" nav item and the calendar (with prenotante names,
-  // FR-19), same pattern as story 6.2 did for 6.1's nav test when
-  // `expiries` gained `self.read`. What does NOT change: no create form,
-  // and a direct `POST /api/v1/bookings` still answers 403 (the calendar's
-  // own `GET .../calendar` is `self.read`-gated, creation stays
-  // `bookings.manage.*`-gated).
-  test('an allievo alone sees "Prenotazioni" and the calendar with prenotante names, but no create form; a direct POST still gets 403', async ({
+  // the "Prenotazioni" nav item and the calendar, same pattern as story 6.2
+  // did for 6.1's nav test when `expiries` gained `self.read`. Story 14.5
+  // (ratifica R3) SUPERSEDES the original "with prenotante names" behavior
+  // this test used to assert — an allievo without `bookings.read.names` now
+  // sees "Occupato" (aircraft/time only) on someone else's booking, never
+  // the name. What does NOT change: no create form, and a direct `POST
+  // /api/v1/bookings` still answers 403 (the calendar's own `GET
+  // .../calendar` is `self.read`-gated, creation stays `bookings.manage.*`-gated).
+  test('an allievo alone sees "Prenotazioni" and the calendar with "Occupato" (never the pilot\'s name), but no create form; a direct POST still gets 403', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -517,9 +656,9 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const tomorrow = nextHref?.match(/date=(\d{4}-\d{2}-\d{2})/)?.[1];
     if (!tomorrow) throw new Error(`Could not extract tomorrow's date from calendar-next href: ${nextHref}`);
 
-    // A booking visible to EVERY authenticated role (FR-19) — the allievo
-    // must see the PILOT's name on the calendar despite having no booking
-    // permission at all.
+    // A booking visible to EVERY authenticated role (FR-19) — but story 14.5
+    // (ratifica R3) means the allievo below must NOT see the pilot's name on
+    // it, despite the block itself still being visible.
     const bookingResponse = await page.request.post('/api/v1/bookings', {
       data: {
         aircraftId: aircraft.id,
@@ -545,10 +684,24 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // Story 12.3, AC 2: the day view's aircraft columns became rows (the
     // prototype's horizontal timeline) — `calendar-aircraft-column`/
     // `calendar-block` renamed to `schedule-aircraft-row`/`schedule-block`.
+    // Story 14.5: the block is found by AIRCRAFT alone now (no name on it to
+    // filter by) — there is exactly one block on this run-unique aircraft row.
     const row = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
-    const block = row.getByTestId('schedule-block').filter({ hasText: pilot.lastName });
+    const block = row.getByTestId('schedule-block');
     await expect(block).toBeVisible();
-    await expect(block).toContainText(pilot.firstName);
+    await expect(block).toContainText('Occupato');
+    await expect(block).not.toContainText(pilot.lastName);
+    await expect(block).not.toContainText(pilot.firstName);
+
+    // The RAW API response (AC 1: "verifica sulla risposta API grezza, non
+    // sul render") — the name must never even reach the wire for this actor.
+    const calendarFrom = `${tomorrow}T00:00:00.000Z`;
+    const calendarTo = `${tomorrow}T23:59:59.000Z`;
+    const rawResponse = await page.request.get(`/api/v1/bookings/calendar?from=${calendarFrom}&to=${calendarTo}`);
+    expect(rawResponse.status()).toBe(200);
+    const rawBookings = (await rawResponse.json()) as Array<{ aircraftId: string; personName: string | null }>;
+    const rawBlock = rawBookings.find((item) => item.aircraftId === aircraft.id);
+    expect(rawBlock?.personName).toBeNull();
 
     // Story 12.3, AC 3: `NewBookingForm` (and `EditBookingForm`) are only
     // ever MOUNTED for an actor who could ever open one (`canCreate`) — an
@@ -761,41 +914,62 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn')).toBe(true);
   });
 
-  test('story 13.10 review F2: at 375px the week view is unreachable-day-free — `.week-grid` scrolls horizontally so the 7th day becomes reachable', async ({
-    page,
-  }) => {
+  /**
+   * Story 15.4 (ratifica R-15.4-a) REPLACES the 13.10 F2 assertion this test
+   * used to carry, and replaces it with a STRICTER one — never a weaker one
+   * (lesson 14.6).
+   *
+   * What 13.10 F2 could claim: `.week-grid` (848px of content in a 317px card)
+   * had gained a scroll container of its own, so the 7th day became reachable
+   * AFTER a horizontal wheel. That was the best available then: the grid was
+   * still a desktop layout squeezed onto a phone, and the test asserted
+   * `reachable() === false` BEFORE the scroll — i.e. it certified the defect.
+   *
+   * What this story makes true: at <=640px `.week-grid` is `display: none` and
+   * the week is a vertical list of seven day rows, so ALL SEVEN are reachable
+   * with `scrollLeft === 0` and no horizontal scroll anywhere. Deleting the
+   * mobile tree (or the `display:none` on the desktop grid) turns this red.
+   */
+  test('story 15.4 (was 13.10 F2): at 375px the week view is a vertical list — all 7 days reachable with NO horizontal scroll', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/it/dashboard/bookings?view=week');
 
-    const grid = page.locator('.week-grid');
-    const lastDay = page.getByTestId('schedule-week-day').last();
+    // The desktop grid is gone at this width, not merely scrollable.
+    await expect(page.locator('.week-grid')).toBeHidden();
+    const days = page.getByTestId('mobile-week-day');
+    await expect(days).toHaveCount(7);
 
-    // Pre-fix repro (F2): `.week-grid` had no scroll container of its own —
-    // day 7 was clipped by the ancestor `.card{overflow:hidden}`, outside
-    // both the viewport and the hit-testable area.
-    function reachable(el: HTMLElement): boolean {
-      const rect = el.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const atPoint = document.elementFromPoint(cx, cy);
-      return rect.left >= 0 && rect.right <= window.innerWidth && (atPoint === el || el.contains(atPoint));
+    // Reachability is asserted HORIZONTALLY: vertical scrolling is normal on a
+    // phone, a horizontal scroller is the defect R4 forbids. The row is brought
+    // into view with a PAGE-LEVEL vertical scroll — never `scrollIntoView`,
+    // which also scrolls the nearest horizontal container (`inline: 'nearest'`)
+    // and would silently drag a clipped `.week-grid` cell into view, making
+    // this guard blind exactly like the `.click()` auto-scroll of review 13.7
+    // F2 (measured: with the desktop grid restored by CSS injection, the
+    // `scrollIntoView` version reported all 7 reachable — the pre-fix state
+    // this test exists to reject).
+    for (let index = 0; index < 7; index += 1) {
+      const result = await days.nth(index).evaluate((el) => {
+        const absoluteTop = el.getBoundingClientRect().top + window.scrollY;
+        window.scrollTo(0, Math.max(0, absoluteTop - window.innerHeight / 2));
+        const rect = el.getBoundingClientRect();
+        const atPoint = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return {
+          insideHorizontally: rect.left >= 0 && rect.right <= window.innerWidth,
+          hit: atPoint === el || el.contains(atPoint),
+        };
+      });
+      expect(result, `day ${index + 1} of 7`).toEqual({ insideHorizontally: true, hit: true });
     }
-    expect(await lastDay.evaluate(reachable)).toBe(false);
-    expect(await grid.evaluate((el) => el.scrollLeft)).toBe(0);
 
-    // A real wheel scroll on the grid (not Playwright's own
-    // `scrollIntoViewIfNeeded`, which would mask a container that isn't
-    // actually scrollable).
-    const box = await grid.boundingBox();
-    if (!box) throw new Error('`.week-grid` not found');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.wheel(1000, 0);
-    await expect(async () => {
-      expect(await grid.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
-    }).toPass({ timeout: 2000 });
-    expect(await lastDay.evaluate(reachable)).toBe(true);
+    expect(await page.evaluate(() => document.scrollingElement!.scrollLeft)).toBe(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+    // Every row leads to that day's own DAY view (ratifica R-15.4-a): a row
+    // that kept `view=week` would navigate back to this very list.
+    const hrefs = await days.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href') ?? ''));
+    expect(hrefs.every((href) => href.startsWith('/dashboard/bookings') && !href.includes('view=week'))).toBe(true);
   });
 
   test('calendar mobile viewport (375x812, Task 4): day view is usable, no page-level horizontal overflow, primary action reachable', async ({
@@ -818,11 +992,17 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto(`/it/dashboard/bookings?date=${tomorrow}`);
 
-    // Story 12.3, AC 2: `calendar-aircraft-column`/`calendar-block` renamed
-    // to `schedule-aircraft-row`/`schedule-block` (day view is now rows, not columns).
-    const row = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
-    const block = row.getByTestId('schedule-block').filter({ hasText: pilot.lastName });
-    await expect(block).toBeVisible();
+    // Story 15.4 (ratifica R-15.4-a) rewrites what "usable day view" means at
+    // this width, at the SAME strength or higher. The old assertion
+    // ("`schedule-aircraft-row`/`schedule-block` are visible") certified a
+    // 1094px-wide grid inside a 317px card — 777px of hidden horizontal
+    // scroll, of which 160px was the registration column: the state R4
+    // forbids. The desktop timeline is now `display: none` here and the same
+    // booking is an agenda row instead, asserted on the same fixture.
+    await expect(page.locator('.schedule')).toBeHidden();
+    const agendaRow = page.getByTestId('mobile-agenda-row').filter({ hasText: pilot.lastName });
+    await expect(agendaRow).toHaveCount(1);
+    await expect(agendaRow).toContainText(aircraft.registration);
 
     // Pragmatic mobile-usability assert (Dev Notes): the body itself never scrolls horizontally — only the timeline's own `overflow-x-auto` wrapper does.
     const bodyFitsViewport = await page.evaluate(() => document.body.scrollWidth <= window.innerWidth);
@@ -835,7 +1015,10 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // ("minimalist-ui superseded") accepts that trade-off for visual
     // parity with the prototype, so the pixel-size assertion is dropped;
     // the primary action stays reachable at this viewport regardless.
-    await expect(page.getByTestId('new-booking-button')).toBeVisible();
+    // Story 15.4 (R-15.4-f): the CTA is now full width under the head.
+    const cta = page.getByTestId('new-booking-button');
+    await expect(cta).toBeVisible();
+    expect(await cta.evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
   });
 
   test('review 7.2 fixes: an extreme ?date falls back to today without a 500 (F1); a bottom-clamped short block pins INSIDE the grid (F2)', async ({
@@ -967,7 +1150,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // row-action click below (`pointer-events: none` only lifts on `.open`).
     await page.keyboard.press('Escape');
 
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
 
     // Modifica (story 12.3: renamed from "Sposta", same PATCH mechanics):
@@ -983,8 +1166,11 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // paragraph to a toast (`useToast`, the AirOps-native convention every
     // workflow action in `bookings-table.tsx` uses).
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione modificata.' })).toBeVisible();
+    // `aircraft` is run-unique to this test and had exactly one booking, now
+    // moved away — its absence holds on EVERY page (no findBookingRow needed,
+    // unlike the presence checks here), so a plain page-1 check is correct.
     await expect(page.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
-    const movedRow = page.getByTestId('booking-row').filter({ hasText: aircraft2.registration });
+    const movedRow = await findBookingRow(page, aircraft2.registration);
     await expect(movedRow).toBeVisible();
 
     // Cancella: two-step confirm.
@@ -1015,9 +1201,13 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
   test('an overlap on a move shows 409 in the Sposta form', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    // Story 16.3: a run-unique pilot, never the seed one — this test leaves an
+    // APPROVED booking behind (see the note at `FUTURE_DAY`).
+    const pilotPassword = `PilotaSposta${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
 
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
 
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
@@ -1034,8 +1224,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
-    const rows = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
-    await expect(rows).toHaveCount(2);
+    expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
 
     // Story 12.2, AC 4: only an APPROVED booking occupies a slot — approve
     // the FIRST (soonest startsAt, 02:00-03:00) booking so the move below
@@ -1053,14 +1242,18 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     expect(approveResponse.status()).toBe(200);
 
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
     await gotoBookingsAndWaitForHydration(page);
 
-    const rowsAfterApproval = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
-    await expect(rowsAfterApproval).toHaveCount(2);
+    expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
 
-    // The second (later, 05:00-06:00) booking is ordered second (startsAt asc) — move it into the first's slot (02:00-03:00, same aircraft, prefilled).
-    await rowsAfterApproval.nth(1).getByTestId('booking-move-action').click();
+    // The second (later, 05:00-06:00) booking is the one still "In attesa"
+    // (PENDING) after the approval above — disambiguated by its status
+    // badge, never by DOM ordinal (`.nth()`, which only works within a
+    // single page: the two rows can land on different pages of the
+    // paginated list, same reason `findBookingRow` walks pages).
+    const secondRow = await findBookingRow(page, [aircraft.registration, 'In attesa']);
+    await secondRow.getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
     await moveForm.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
     await moveForm.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T03:00`);
@@ -1234,7 +1427,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await page.goto(`/it/dashboard/bookings?view=week&date=${FUTURE_DAY}&page=2`);
 
     // Direction 1: every calendar link preserves the list's ?page=2.
-    for (const testId of ['calendar-prev', 'calendar-today', 'calendar-next', 'calendar-view-day', 'calendar-view-week']) {
+    // Story 14.1 (AC 3): 'calendar-today' (the "Oggi" nav link) was removed.
+    for (const testId of ['calendar-prev', 'calendar-next', 'calendar-view-day', 'calendar-view-week']) {
       const href = await page.getByTestId(testId).getAttribute('href');
       expect(href, `${testId} href should preserve page=2`).toMatch(/[?&]page=2(&|$)/);
     }
@@ -1301,7 +1495,10 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
 
     await expect(page.getByTestId('booking-form-warning')).toBeVisible();
     await expect(page.getByTestId('booking-form-warning')).toContainText(warningType.name);
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    // `soonestFutureSlot()` only beats nearly everything (its own doc-comment)
+    // — under concurrent load another equally-imminent fixture could still
+    // rank ahead of it, so this stays page-independent too.
+    const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
   });
 
@@ -1345,7 +1542,8 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
     await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    // Same `soonestFutureSlot()` caveat as the warning-document test above.
+    const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
 
     // The tracking (AC 2 "chi, quando") is exposed read-side on the item DTO
@@ -1443,7 +1641,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // row-action click below (`pointer-events: none` only lifts on `.open`).
     await page.keyboard.press('Escape');
 
-    const row = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    let row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
 
     // Same-day time-only move: never rechecked, succeeds even past the block.
@@ -1458,6 +1656,11 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // race between `onSuccess`'s `router.refresh()` and the next click.
     await expect(page.getByTestId('move-booking-form')).toHaveCount(0);
 
+    // Review 12.3 F5: the time-only move above changed `startsAt`, which can
+    // shift this row's rank (and so its page) in the globally-sorted list —
+    // re-locate it rather than reusing the pre-move `row` locator.
+    row = await findBookingRow(page, aircraft.registration);
+
     // Moving to the NEXT day: the document is expired relative to THAT day -> 422, naming it.
     await row.getByTestId('booking-move-action').click();
     moveForm = page.getByTestId('move-booking-form');
@@ -1470,47 +1673,17 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
 
 test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
   /**
-   * Walks the paginated "Prossime prenotazioni" list forward from page 1
-   * until a row matching `filterText` appears (review 12.3 F5): the list is
-   * sorted `startsAt asc` and, on a never-reset dev DB (plus story 12.3 F7's
-   * wider 48h-back window), a fixture booking's exact page number depends on
-   * how many OTHER bookings currently outrank it — never assumed to be page 1.
-   */
-  async function findBookingRow(page: Page, filterText: string | string[]): Promise<ReturnType<Page['getByTestId']>> {
-    const filterTexts = Array.isArray(filterText) ? filterText : [filterText];
-    const MAX_PAGES = 50;
-    // A direct `?page=N` navigation per attempt, not repeated `booking-page-next`
-    // clicks: clicking a `<Link>` through several client-side (SPA) navigations
-    // in a tight loop proved unreliable in this environment (the "next" link
-    // intermittently reported "not enabled" even with `aria-disabled="false"`,
-    // hanging until the test timeout) — a plain full navigation is the SAME
-    // reliable primitive `gotoBookingsAndWaitForHydration` already uses
-    // elsewhere in this file for the identical hydration-race reason. An
-    // out-of-range `?page` is clamped server-side (`page.tsx`), so this is
-    // always safe even past the real last page.
-    for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
-      await page.goto(`/it/dashboard/bookings?page=${pageNumber}`);
-      await page.waitForLoadState('networkidle');
-      const row = filterTexts.reduce((locator, text) => locator.filter({ hasText: text }), page.getByTestId('booking-row'));
-      if ((await row.count()) > 0) return row;
-      const statusLocator = page.getByTestId('booking-pagination-status');
-      if ((await statusLocator.count()) === 0) break; // a single page has no pagination controls at all
-      const statusText = (await statusLocator.textContent()) ?? '';
-      const totalPages = Number.parseInt(statusText.split('/')[1]?.trim() ?? '1', 10);
-      if (pageNumber >= totalPages) break;
-    }
-    throw new Error(`Booking row matching "${filterText}" not found within ${MAX_PAGES} pages of /dashboard/bookings`);
-  }
-
-  /**
    * Creates a run-unique aircraft plus a PENDING booking (own-path: a
    * freshly logged-in pilot creates it, story 12.2 AC 2 — `bookings.manage.own`
    * always starts PENDING), then logs back in as staff and lands on the
    * bookings page. Returns the aircraft (for a run-unique `booking-row`
-   * filter, same convention as every other test in this file) and the row
-   * locator itself.
+   * filter, same convention as every other test in this file), the booking id
+   * (story 16.3: the Effettuato/Assente test moves it into the past) and the
+   * row locator itself.
    */
-  async function setupPendingBookingAsStaff(page: Page): Promise<{ aircraft: { id: string; registration: string }; row: ReturnType<Page['getByTestId']> }> {
+  async function setupPendingBookingAsStaff(
+    page: Page,
+  ): Promise<{ aircraft: { id: string; registration: string }; bookingId: string; row: ReturnType<Page['getByTestId']> }> {
     // Review 12.3 F5: this helper can run TWICE in the same test (e.g. the
     // Effettuato/Assente test below) — without clearing cookies first, the
     // SECOND call's `loginExpectingDashboard(ADMIN_EMAIL)` hits `/it/login`
@@ -1529,12 +1702,19 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
       data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` },
     });
     expect(response.status()).toBe(201);
+    const { booking } = (await response.json()) as { booking: { id: string } };
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toContainText('In attesa');
-    return { aircraft, row };
+    return { aircraft, bookingId: booking.id, row };
+  }
+
+  /** Story 16.3 (ops F9): staff moves a booking to `yesterdaySlot()` — Effettuato/Assente are refused (422 `BOOKING_NOT_STARTED`) on a booking that has not started yet. */
+  async function moveIntoThePast(page: Page, bookingId: string): Promise<void> {
+    const response = await page.request.patch(`/api/v1/bookings/${bookingId}`, { data: yesterdaySlot() });
+    expect(response.status(), await response.text()).toBe(200);
   }
 
   test('staff approves a PENDING booking: badge changes, decisional actions gone, Effettuato/Assente/Annulla appear', async ({ page }) => {
@@ -1600,7 +1780,13 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     // (`router.refresh()` re-fetches the SAME `?page=N` the row was found
     // on, but the row's rank — and so its page — can shift meanwhile on a
     // dirty, concurrently-written-to dev DB, see the approve test's comment).
-    const { aircraft: flownAircraft, row: pendingFlownRow } = await setupPendingBookingAsStaff(page);
+    // Story 16.3 (ops F9): each booking is moved into the past BEFORE it is
+    // approved (a past booking stays approvable, R-16-b), because Effettuato/
+    // Assente need a slot that has started — then re-located, since the move
+    // changes its rank (and page) in the startsAt-ordered list.
+    const { aircraft: flownAircraft, bookingId: flownBookingId } = await setupPendingBookingAsStaff(page);
+    await moveIntoThePast(page, flownBookingId);
+    const pendingFlownRow = await findBookingRow(page, flownAircraft.registration);
     await pendingFlownRow.getByTestId('booking-approve-action').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione approvata.' })).toBeVisible();
 
@@ -1615,7 +1801,9 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     await expect(flownRow.getByTestId('booking-cancel-action')).toHaveCount(0);
     await expect(flownRow.getByTestId('booking-reopen-action')).toBeVisible();
 
-    const { aircraft: noShowAircraft, row: pendingNoShowRow } = await setupPendingBookingAsStaff(page);
+    const { aircraft: noShowAircraft, bookingId: noShowBookingId } = await setupPendingBookingAsStaff(page);
+    await moveIntoThePast(page, noShowBookingId);
+    const pendingNoShowRow = await findBookingRow(page, noShowAircraft.registration);
     await pendingNoShowRow.getByTestId('booking-approve-action').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione approvata.' })).toBeVisible();
 
@@ -1628,6 +1816,16 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     await expect(noShowRow).toContainText('Assente');
     await expect(noShowRow.getByTestId('booking-noshow-action')).toHaveCount(0);
     await expect(noShowRow.getByTestId('booking-reopen-action')).toBeVisible();
+
+    // Story 16.3 — cleanup, not an assertion: both bookings go back to their
+    // own FUTURE_DAY slot ("riapri", then a move), so no closed booking is left
+    // inside the 48 h window the Overview card lists soonest-first
+    // (`home-dashboard.spec.ts` asserts on its first page).
+    for (const bookingId of [flownBookingId, noShowBookingId]) {
+      expect((await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'PENDING' } })).status()).toBe(200);
+      const back = await page.request.patch(`/api/v1/bookings/${bookingId}`, { data: { startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` } });
+      expect(back.status(), await back.text()).toBe(200);
+    }
   });
 
   test('own-path pilot sees only Modifica/Annulla on their own PENDING booking, no decisional actions, and a PENDING row on another pilot\'s booking has no actions at all', async ({
@@ -1658,20 +1856,384 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
 
     // Still logged in as PILOT (own path): sees the shared list (FR-19,
     // `self.read`), with the "other pilot's" row present but action-less.
-    // Disambiguate rows by PERSON NAME, never by H:MM (CLAUDE.md lesson
-    // 11.2, epic 11: a substring time like "11:00" would also match
-    // "1:00" — the two rows here are distinguished by the two run-unique
-    // people involved instead). `findBookingRow` (review 12.3 F5): never
-    // assumes page 1 on a dirty, never-reset dev DB.
+    // Disambiguate the OWN row by its PERSON NAME, never by H:MM (CLAUDE.md
+    // lesson 11.2, epic 11: a substring time like "11:00" would also match
+    // "1:00"). `findBookingRow` (review 12.3 F5): never assumes page 1 on a
+    // dirty, never-reset dev DB.
     const ownRow = await findBookingRow(page, [aircraft.registration, me.person.lastName]);
     await expect(ownRow.getByTestId('booking-move-action')).toBeVisible();
     await expect(ownRow.getByTestId('booking-cancel-action')).toBeVisible();
     await expect(ownRow.getByTestId('booking-approve-action')).toHaveCount(0);
     await expect(ownRow.getByTestId('booking-reject-action')).toHaveCount(0);
 
-    const otherRow = await findBookingRow(page, [aircraft.registration, otherPilot.lastName]);
+    // Story 14.5 (ratifica R3): the OTHER row can no longer be disambiguated
+    // by `otherPilot.lastName` — a plain PILOT actor (no `bookings.read.names`)
+    // now sees "Occupato" instead, so that label is what disambiguates it
+    // (the own row above never reads "Occupato", only a masked one does).
+    const otherRow = await findBookingRow(page, [aircraft.registration, 'Occupato']);
+    await expect(otherRow).not.toContainText(otherPilot.lastName);
     await expect(otherRow.getByTestId('booking-move-action')).toHaveCount(0);
     await expect(otherRow.getByTestId('booking-cancel-action')).toHaveCount(0);
     await expect(otherRow.getByTestId('booking-approve-action')).toHaveCount(0);
+  });
+});
+
+test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () => {
+  test('pilot sees full data on their OWN booking (table AND schedule) and "Occupato" on someone else\'s; an instructor (bookings.read.names) still sees real names on a booking that is neither theirs', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftMine = await createAircraft(page);
+    const aircraftOther = await createAircraft(page);
+    const otherPilot = await createPilotPerson(page);
+    const instructorPassword = `IstruttorePrivacy${uniqueSuffix()}!`;
+    const instructor = await createInstructorWithLogin(page, instructorPassword);
+
+    // `FUTURE_DAY` (shared, deliberately far-future fixture — this file's own
+    // top-of-file constant), NOT "tomorrow": "tomorrow" is a heavily-contended
+    // shared bucket other specs' `EMBED_BOOKINGS_PAGE_SIZE`-capped Overview
+    // card relies on being small (review-discovered contention: this test's
+    // own two extra "tomorrow" bookings pushed a concurrent
+    // `home-dashboard.spec.ts` assertion off that 8-row page under
+    // `fullyParallel`) — `FUTURE_DAY` sorts far enough out that it never
+    // competes for anyone else's "soonest N" window, same reasoning as every
+    // other table-focused test in this file that already uses it.
+    const otherBookingResponse = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraftOther.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T04:00:00.000Z`, endsAt: `${FUTURE_DAY}T05:00:00.000Z` },
+    });
+    expect(otherBookingResponse.status()).toBe(201);
+
+    // The PILOT books their OWN slot (own-path -> PENDING), then admin
+    // approves it. Story 16.3: a run-unique pilot, never the seed one — the
+    // APPROVED booking stays behind (see the note at `FUTURE_DAY`).
+    const pilotPassword = `PilotaPrivacy${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
+    const me = await (await page.request.get('/api/v1/me')).json();
+    const ownBookingResponse = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraftMine.id, personId: me.person.id, startsAt: `${FUTURE_DAY}T06:00:00.000Z`, endsAt: `${FUTURE_DAY}T07:00:00.000Z` },
+    });
+    expect(ownBookingResponse.status()).toBe(201);
+    const { booking: ownBooking } = (await ownBookingResponse.json()) as { booking: { id: string } };
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const approveResponse = await page.request.post(`/api/v1/bookings/${ownBooking.id}/transition`, { data: { to: 'APPROVED' } });
+    expect(approveResponse.status()).toBe(200);
+
+    // --- Pilot: schedule (day view) ---------------------------------------
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
+    await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
+
+    const ownScheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraftMine.registration });
+    const ownBlock = ownScheduleRow.getByTestId('schedule-block');
+    await expect(ownBlock).toBeVisible();
+    await expect(ownBlock).toContainText(me.person.firstName);
+    await expect(ownBlock).not.toContainText('Occupato');
+
+    const otherScheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraftOther.registration });
+    const otherBlock = otherScheduleRow.getByTestId('schedule-block');
+    await expect(otherBlock).toBeVisible();
+    await expect(otherBlock).toContainText('Occupato');
+    await expect(otherBlock).not.toContainText(otherPilot.lastName);
+
+    // Review F1 — THE bypass: the instructor filter group must not even be
+    // IN THE DOM for a pilot (no `bookings.read.names`). `page.tsx` no
+    // longer fetches the instructor roster at all for this actor; without
+    // that anagrafica, `schedule.tsx` renders no filter group to leak it
+    // through (its own doc-comment) — previously the roster travelled in
+    // the RSC payload regardless of masking, letting a client-side filter
+    // join id -> surname against the masked blocks' `instructorProfileId`
+    // and de-anonymize every one of them.
+    await page.getByTestId('schedule-filter-toggle').click();
+    await expect(page.locator('[data-testid^="schedule-filter-instructor-"]')).toHaveCount(0);
+
+    // --- Pilot: table ("Prenotazioni") ------------------------------------
+    // Review F2: NEVER assume page 1 — `FUTURE_DAY`'s own accumulated volume
+    // across every run of this file (65+ measured by the reviewer) routinely
+    // pushes either row past `BOOKINGS_PAGE_SIZE`; `findBookingRow` (module
+    // scope, hoisted from "Booking approval workflow UI" for exactly this)
+    // walks pages until it finds the row, same as every other lookup in this
+    // file that touches the shared `FUTURE_DAY` pile.
+    const ownTableRow = await findBookingRow(page, [aircraftMine.registration, me.person.firstName]);
+    await expect(ownTableRow).toContainText(me.person.firstName);
+
+    const otherTableRow = await findBookingRow(page, [aircraftOther.registration, 'Occupato']);
+    await expect(otherTableRow).toContainText('Occupato');
+    await expect(otherTableRow).not.toContainText(otherPilot.lastName);
+
+    // --- Pilot: raw API response (AC 1 — "verifica sulla risposta API
+    // grezza, non solo sul render") + review F7: `GET /api/v1/bookings`
+    // itself, not just `/calendar` (the only endpoint the original test
+    // checked raw). Filtered by `aircraftId` (run-unique, review F2's own
+    // lesson) rather than a `FUTURE_DAY`-wide date range — guaranteed
+    // exactly ONE row regardless of how many OTHER bookings this shared
+    // dev DB has accumulated on that same far-future day. ------------------
+    const rawListResponse = await page.request.get(`/api/v1/bookings?aircraftId=${aircraftOther.id}`);
+    expect(rawListResponse.status()).toBe(200);
+    const rawBookings = (await rawListResponse.json()) as { items: Array<{ personName: string | null; instructorName: string | null }> };
+    expect(rawBookings.items).toHaveLength(1);
+    expect(rawBookings.items[0]?.personName).toBeNull();
+    expect(rawBookings.items[0]?.instructorName).toBeNull();
+
+    // --- Instructor: sees real names, on a booking that is NEITHER theirs
+    // nor their own (bookings.read.names, not ownership) ------------------
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, instructor.email, instructorPassword);
+    await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
+    const instructorScheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraftOther.registration });
+    await expect(instructorScheduleRow.getByTestId('schedule-block')).toContainText(otherPilot.firstName);
+  });
+
+  // Review F5: AC 6 ("il PDF del pilota senza nomi altrui") had no automated
+  // coverage at all — the unit suite already injects `personName: null`
+  // straight into `exportBookingsPdf`, which can never regress the masking
+  // itself. `?format=xlsx` (same shared `listBookings` masking, same
+  // "Occupato" fallback — `exports.service.ts#exportBookingsXlsx`) is far
+  // easier to assert cell-by-cell than a PDF buffer, same convention as
+  // `exports.spec.ts`'s own ExcelJS-based checks.
+  test('AC 6: a pilot\'s xlsx export shows "Occupato" instead of another pilot\'s surname', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const otherPilot = await createPilotPerson(page);
+
+    const bookingResponse = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T18:00:00.000Z`, endsAt: `${FUTURE_DAY}T19:00:00.000Z` },
+    });
+    expect(bookingResponse.status()).toBe(201);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+
+    // Filtered by the run-unique `aircraftId` (review F2's own lesson) —
+    // exactly one row regardless of the shared `FUTURE_DAY` pile's volume.
+    const xlsxResponse = await page.request.get(`/api/v1/bookings?format=xlsx&aircraftId=${aircraft.id}`);
+    expect(xlsxResponse.status()).toBe(200);
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load((await xlsxResponse.body()) as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+    const sheet = workbook.worksheets[0]!;
+    expect(sheet.rowCount).toBe(2); // header + the single masked row
+    const pilotCellValue = sheet.getRow(2).getCell(2).value;
+    expect(pilotCellValue).toBe('Occupato');
+    expect(String(pilotCellValue)).not.toContain(otherPilot.lastName);
+  });
+});
+
+test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16-a/R-16-b)', () => {
+  // Every subject below is run-unique — aircraft, pilots, instructor. The
+  // person/instructor overlap guard keys on the person across EVERY aircraft,
+  // so a shared identity (the seed pilot) would couple these tests to every
+  // other spec running under `fullyParallel`, and to their leftovers.
+
+  /** A run-unique instructor PERSON (no login) and its `InstructorProfile.id`, read back from the one admin write that returns it — an hourly rate, harmless on an instructor nobody else uses. */
+  async function createInstructorProfileId(page: Page): Promise<string> {
+    const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Istruttore', lastName: `Occupato-${uniqueSuffix()}` } });
+    expect(personResponse.status()).toBe(201);
+    const person = (await personResponse.json()) as { id: string };
+    const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: { ratings: 'FI(A)' } });
+    expect(profileResponse.status()).toBe(200);
+    const rateResponse = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, { data: { priceCentsPerHour: 3000, validFrom: '2020-01-01' } });
+    expect(rateResponse.status()).toBe(201);
+    return ((await rateResponse.json()) as { instructorProfileId: string }).instructorProfileId;
+  }
+
+  async function postBooking(page: Page, data: { aircraftId: string; personId: string; instructorProfileId?: string; startsAt: string; endsAt: string }) {
+    return page.request.post('/api/v1/bookings', { data });
+  }
+
+  // A day of its own, one week AFTER `FUTURE_DAY`: nothing here reads the
+  // paginated list, and a row inserted on a LATER day never shifts the rank
+  // (and the page) of the `FUTURE_DAY` rows other tests re-read after a
+  // `router.refresh()`. Fixed rather than `runUniqueFutureDay()`: those 2040+
+  // days fall beyond the `sched.maxAdvanceDays` (3650) the settings specs
+  // leave behind on a used DB. Every subject is run-unique, so reruns on the
+  // same day never collide.
+  const DAY = '2031-03-17';
+  const at = (hhmm: string): string => `${DAY}T${hhmm}:00.000Z`;
+
+  test('PERSON_BUSY: the same person already APPROVED elsewhere blocks a create and a move on ANY aircraft, naming the conflicting booking; touching intervals do not overlap; with the aircraft ALSO busy the aircraft 409 wins, unchanged', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftA = await createAircraft(page);
+    const aircraftB = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+
+    const first = await postBooking(page, { aircraftId: aircraftA.id, personId: pilot.personId, startsAt: at('09:00'), endsAt: at('10:00') });
+    expect(first.status()).toBe(201);
+    const { booking: approved } = (await first.json()) as { booking: { id: string; status: string } };
+    expect(approved.status).toBe('APPROVED');
+    const personBusy = {
+      code: 'PERSON_BUSY',
+      message: 'This person already has an approved booking for an overlapping interval.',
+      details: { bookingId: approved.id, startsAt: at('09:00'), endsAt: at('10:00') },
+    };
+
+    // A different, FREE aircraft over an overlapping interval.
+    const onOtherAircraft = await postBooking(page, { aircraftId: aircraftB.id, personId: pilot.personId, startsAt: at('09:30'), endsAt: at('10:30') });
+    expect(onOtherAircraft.status()).toBe(409);
+    expect(((await onOtherAircraft.json()) as { error: unknown }).error).toEqual(personBusy);
+
+    // Semi-open `[startsAt, endsAt)`: starting exactly when the first ends is no overlap.
+    const touching = await postBooking(page, { aircraftId: aircraftB.id, personId: pilot.personId, startsAt: at('10:00'), endsAt: at('11:00') });
+    expect(touching.status()).toBe(201);
+    const { booking: second } = (await touching.json()) as { booking: { id: string } };
+
+    // A MOVE onto the busy interval answers the same 409.
+    const move = await page.request.patch(`/api/v1/bookings/${second.id}`, { data: { startsAt: at('09:30'), endsAt: at('10:30') } });
+    expect(move.status()).toBe(409);
+    expect(((await move.json()) as { error: unknown }).error).toEqual(personBusy);
+
+    // The aircraft AND the person busy: the aircraft 409 comes first and is
+    // byte-identical to the pre-story one — no `details` (that booking could
+    // be anyone's, AD-3).
+    const both = await postBooking(page, { aircraftId: aircraftA.id, personId: pilot.personId, startsAt: at('09:30'), endsAt: at('10:30') });
+    expect(both.status()).toBe(409);
+    expect(((await both.json()) as { error: unknown }).error).toEqual({ code: 'CONFLICT', message: 'This aircraft is already booked for an overlapping interval.' });
+  });
+
+  test('two PARALLEL approvals of one person\'s overlapping PENDING bookings on two different aircraft yield exactly one 200 and one 409 PERSON_BUSY (the Person row lock, AC 5)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftA = await createAircraft(page);
+    const aircraftB = await createAircraft(page);
+    const pilotPassword = `PilotaOccupato${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
+    const bookingIds: string[] = [];
+    for (const aircraft of [aircraftA, aircraftB]) {
+      const response = await postBooking(page, { aircraftId: aircraft.id, personId: pilot.personId, startsAt: at('09:00'), endsAt: at('10:00') });
+      // Two PENDING bookings of one person over one interval coexist by
+      // design: only an APPROVED booking occupies a slot, on every subject.
+      expect(response.status()).toBe(201);
+      const { booking } = (await response.json()) as { booking: { id: string; status: string } };
+      expect(booking.status).toBe('PENDING');
+      bookingIds.push(booking.id);
+    }
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const responses = await Promise.all(bookingIds.map((id) => page.request.post(`/api/v1/bookings/${id}/transition`, { data: { to: 'APPROVED' } })));
+
+    expect(responses.map((response) => response.status()).sort()).toEqual([200, 409]);
+    const loser = responses.findIndex((response) => response.status() === 409);
+    const loserBody = (await responses[loser]!.json()) as { error: { code: string; details: { bookingId: string } } };
+    expect(loserBody.error.code).toBe('PERSON_BUSY');
+    expect(loserBody.error.details.bookingId).toBe(bookingIds[1 - loser]);
+  });
+
+  test('INSTRUCTOR_BUSY: the same instructor already APPROVED elsewhere blocks an APPROVAL, a create and a move on ANY aircraft, naming the conflicting booking; touching intervals do not overlap', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftA = await createAircraft(page);
+    const aircraftB = await createAircraft(page);
+    const aircraftC = await createAircraft(page);
+    const pilotA = await createPilotPerson(page);
+    const pilotB = await createPilotPerson(page);
+    const pilotC = await createPilotPerson(page);
+    const instructorProfileId = await createInstructorProfileId(page);
+
+    // A PENDING booking WITH this instructor, reached with staff calls only:
+    // staff-created bookings are born APPROVED, and "riapri" (FLOWN -> PENDING)
+    // is the one way back — FLOWN needs a started slot, so the booking takes
+    // a slot three days ago for the two hops and then returns to its own.
+    const pendingResponse = await postBooking(page, { aircraftId: aircraftB.id, personId: pilotB.personId, instructorProfileId, startsAt: at('09:30'), endsAt: at('10:30') });
+    expect(pendingResponse.status()).toBe(201);
+    const { booking: pending } = (await pendingResponse.json()) as { booking: { id: string } };
+    expect((await page.request.patch(`/api/v1/bookings/${pending.id}`, { data: longPastSlot() })).status()).toBe(200);
+    for (const to of ['FLOWN', 'PENDING'] as const) {
+      expect((await page.request.post(`/api/v1/bookings/${pending.id}/transition`, { data: { to } })).status()).toBe(200);
+    }
+    expect((await page.request.patch(`/api/v1/bookings/${pending.id}`, { data: { startsAt: at('09:30'), endsAt: at('10:30') } })).status()).toBe(200);
+
+    // The instructor's APPROVED booking on another aircraft — the PENDING one
+    // above does not stand in its way (only APPROVED occupies a slot).
+    const approvedResponse = await postBooking(page, { aircraftId: aircraftA.id, personId: pilotA.personId, instructorProfileId, startsAt: at('09:00'), endsAt: at('10:00') });
+    expect(approvedResponse.status()).toBe(201);
+    const { booking: approved } = (await approvedResponse.json()) as { booking: { id: string } };
+    const instructorBusy = {
+      code: 'INSTRUCTOR_BUSY',
+      message: 'This instructor already has an approved booking for an overlapping interval.',
+      details: { bookingId: approved.id, startsAt: at('09:00'), endsAt: at('10:00') },
+    };
+
+    // APPROVAL: the booking lock reads the instructor, the predicate sees them busy.
+    const approval = await page.request.post(`/api/v1/bookings/${pending.id}/transition`, { data: { to: 'APPROVED' } });
+    expect(approval.status()).toBe(409);
+    expect(((await approval.json()) as { error: unknown }).error).toEqual(instructorBusy);
+
+    // CREATE on a third, free aircraft, with a third person.
+    const create = await postBooking(page, { aircraftId: aircraftC.id, personId: pilotC.personId, instructorProfileId, startsAt: at('09:45'), endsAt: at('10:15') });
+    expect(create.status()).toBe(409);
+    expect(((await create.json()) as { error: unknown }).error).toEqual(instructorBusy);
+
+    // Touching the instructor's slot is no overlap; a MOVE into it is.
+    const touching = await postBooking(page, { aircraftId: aircraftC.id, personId: pilotC.personId, instructorProfileId, startsAt: at('10:00'), endsAt: at('11:00') });
+    expect(touching.status()).toBe(201);
+    const { booking: movable } = (await touching.json()) as { booking: { id: string } };
+    const move = await page.request.patch(`/api/v1/bookings/${movable.id}`, { data: { startsAt: at('09:45'), endsAt: at('10:45') } });
+    expect(move.status()).toBe(409);
+    expect(((await move.json()) as { error: unknown }).error).toEqual(instructorBusy);
+  });
+
+  test('Effettuato/Assente on a booking that has NOT STARTED answer 422 BOOKING_NOT_STARTED; once its slot has started the same transition works (ops F9, R-16-b)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+    const created = await postBooking(page, { aircraftId: aircraft.id, personId: pilot.personId, startsAt: at('09:00'), endsAt: at('10:00') });
+    expect(created.status()).toBe(201);
+    const { booking } = (await created.json()) as { booking: { id: string } };
+
+    for (const to of ['FLOWN', 'NO_SHOW'] as const) {
+      const response = await page.request.post(`/api/v1/bookings/${booking.id}/transition`, { data: { to } });
+      expect(response.status()).toBe(422);
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe('BOOKING_NOT_STARTED');
+    }
+
+    expect((await page.request.patch(`/api/v1/bookings/${booking.id}`, { data: longPastSlot() })).status()).toBe(200);
+    const flown = await page.request.post(`/api/v1/bookings/${booking.id}/transition`, { data: { to: 'FLOWN' } });
+    expect(flown.status()).toBe(200);
+    expect(((await flown.json()) as { status: string }).status).toBe('FLOWN');
+  });
+
+  test('the create form names the busy PERSON on a person-only conflict, and keeps the aircraft message when the aircraft is busy too (AD-7)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftA = await createAircraft(page);
+    const aircraftB = await createAircraft(page);
+    // Alphabetically early, so the staff picker renders it whatever the DB holds (see `createPilotPerson`).
+    const pilot = await createPilotPerson(page, '0Pilota');
+
+    // 06:30-12:00Z: wide enough that the form's LOCAL 09:00-10:00 below
+    // overlaps it in UTC (CI) and in Europe/Rome (this machine) alike, in
+    // either DST offset of the run-unique day.
+    const approved = await postBooking(page, { aircraftId: aircraftA.id, personId: pilot.personId, startsAt: at('06:30'), endsAt: at('12:00') });
+    expect(approved.status()).toBe(201);
+
+    await gotoBookingsAndWaitForHydration(page);
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    await form.getByLabel('Velivolo').selectOption({ label: aircraftA.registration });
+    await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await form.getByLabel('Inizio').fill(`${DAY}T09:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${DAY}T10:00`);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+    // Same aircraft AND same person: the aircraft message, as before the story.
+    await expect(page.getByTestId('booking-form-error')).toContainText('Il velivolo è già prenotato');
+
+    await form.getByLabel('Velivolo').selectOption({ label: aircraftB.registration });
+    await form.getByRole('button', { name: 'Prenota' }).click();
+    // A free aircraft: the PERSON is what is busy, and the form says so.
+    const error = page.getByTestId('booking-form-error');
+    await expect(error).toContainText('Questa persona ha già una prenotazione approvata che si sovrappone a questo intervallo.');
+    await expect(error).not.toContainText('velivolo');
   });
 });

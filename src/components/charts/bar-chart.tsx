@@ -68,7 +68,10 @@ export function BarChart({ data, labels, height = 180, color = 'var(--ink)' }: B
       </svg>
       <div aria-hidden="true" style={{ display: 'grid', gridTemplateColumns: `repeat(${data.length}, 1fr)`, padding: `0 ${padPercent}%` }}>
         {labels.map((label, i) => (
-          <span key={i} className="chart-label" style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--ink-4)', textAlign: 'center', whiteSpace: 'nowrap' }}>
+          // Story 15.8b (R-15.8b-e): the label COLOUR moved to `.chart-label`
+          // in `airops.css` (an inline style would beat the class rule) — it
+          // was `--ink-4`, 3.66:1 on `--panel`, under the 4.5:1 text floor.
+          <span key={i} className="chart-label" style={{ fontSize: 9, fontFamily: 'var(--font-mono)', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {label}
           </span>
         ))}

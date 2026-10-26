@@ -59,6 +59,7 @@ Vedi `CLAUDE.md` per le convenzioni di progetto e `_bmad-output/planning-artifac
 | `npm run typecheck` | Type-check TypeScript (`tsc --noEmit`) |
 | `npm run test` | Unit test (Vitest) |
 | `npm run test:e2e` | End-to-end test (Playwright); richiede l'app raggiungibile (viene avviata automaticamente in dev) |
+| `npm run seed:load` | Popola un DB dedicato con migliaia di righe per i test di carico — mai in CI. Vedi `docs/operations/load-testing.md`. |
 
 ## Note
 

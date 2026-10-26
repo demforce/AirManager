@@ -71,6 +71,9 @@ jobs:
           - 8025:8025
     env:
       DATABASE_URL: postgresql://airmanager:airmanager@localhost:5432/airmanager?schema=public
+      # Story 17.1 — documents the env contract only; equals the code
+      # default (src/lib/env.ts), so CI behaviour is unchanged.
+      DATABASE_POOL_MAX: 10
       AUTH_SECRET: ci-e2e-secret-not-used-anywhere-0123456789
       # Specs and seed both read this from env (see .env.example); dummy value.
       SEED_ADMIN_PASSWORD: ChangeMe123!

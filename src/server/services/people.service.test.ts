@@ -134,11 +134,7 @@ const userCreate = userCreateMock as unknown as { mockResolvedValue: (v: PersonF
 const expiryTypeFindMany = expiryTypeFindManyMock as unknown as { mockResolvedValue: (v: PersonFixture[]) => void };
 const expiryCreate = expiryCreateMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
-}
-
-/** `people.manage` AND `users.manage` (STAFF only has the former) — needed for the composite create's `access` block. */
+/** Story 14.9: the only role left with `people.manage` — also holds `users.manage`, so the composite create's `access` block (below) never sees the two permissions apart. */
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
@@ -260,7 +256,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     it('returns the AD-8 paginated shape', async () => {
       transaction.mockResolvedValue([[SELECTED_PERSON], 1]);
 
-      const result = await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+      const result = await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
       expect(result).toEqual({
         items: [
@@ -296,7 +292,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         1,
       ]);
 
-      const result = await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+      const result = await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
       expect(result.items[0]?.profiles).toEqual({ pilot: true, student: false, instructor: false });
     });
@@ -310,7 +306,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+      await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
       // Story TD-3: `where` is now an `AND` array of the conditions that
       // apply (combinable `q`/`profile`, see `people.service.ts`) — assert
@@ -323,17 +319,28 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: true });
+      await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: true });
 
       const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND?: Record<string, unknown>[] } };
       expect(findManyCall.where.AND ?? []).not.toContainEqual({ archivedAt: null });
+    });
+
+    it('returns ONLY archived persons when archivedOnly is true (feedback utente 2026-07-28, toggle pagina Piloti)', async () => {
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
+
+      await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false, archivedOnly: true });
+
+      const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
+      expect(findManyCall.where.AND).toContainEqual({ archivedAt: { not: null } });
+      expect(findManyCall.where.AND).not.toContainEqual({ archivedAt: null });
     });
 
     it('searches first name, last name and email case-insensitively (AC 1)', async () => {
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'maria' });
+      await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'maria' });
 
       const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
       expect(findManyCall.where.AND).toContainEqual({
@@ -349,7 +356,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'zz', profile: 'pilot-or-student' });
+      await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false, q: 'zz', profile: 'pilot-or-student' });
 
       const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
       expect(findManyCall.where.AND).toContainEqual({
@@ -368,7 +375,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, profile: 'pilot-or-student' });
+      await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false, profile: 'pilot-or-student' });
 
       const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
       expect(findManyCall.where.AND).toContainEqual({
@@ -380,7 +387,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: false, profile: 'instructor' });
+      await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false, profile: 'instructor' });
 
       const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND: Record<string, unknown>[] } };
       expect(findManyCall.where.AND).toContainEqual({ instructorProfile: { deactivatedAt: null } });
@@ -390,7 +397,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
-      await listPeople(staffActor(), { page: 1, pageSize: 20, includeArchived: true });
+      await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: true });
 
       const findManyCall = findManyMock.mock.calls[0]?.[0] as { where: { AND?: Record<string, unknown>[] } };
       expect(findManyCall.where).toEqual({});
@@ -400,12 +407,12 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
   describe('getPerson', () => {
     it('throws NotFoundError for a missing id', async () => {
       personFindUnique.mockResolvedValue(null);
-      await expect(getPerson(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      await expect(getPerson(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
     });
 
     it('returns the mapped person', async () => {
       personFindUnique.mockResolvedValue(SELECTED_PERSON);
-      const result = await getPerson(staffActor(), 'person_1');
+      const result = await getPerson(adminActor(), 'person_1');
       expect(result.id).toBe('person_1');
       expect(result.pilotProfile).toBeNull();
       expect(result.studentProfile).toBeNull();
@@ -423,7 +430,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         instructorProfile: null,
       });
 
-      const result = await getPerson(staffActor(), 'person_1');
+      const result = await getPerson(adminActor(), 'person_1');
 
       expect(result.pilotProfile).toEqual({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
       // `courseStartDate` is a calendar date on the wire — `YYYY-MM-DD`, never a datetime.
@@ -477,7 +484,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindFirst.mockResolvedValue(null); // no existing conflict
       personCreate.mockResolvedValue(SELECTED_PERSON);
 
-      const result = await createPerson(staffActor(), input);
+      const result = await createPerson(adminActor(), input);
 
       expect(createMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -490,7 +497,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     it('throws ConflictError when the email is already taken', async () => {
       personFindFirst.mockResolvedValue({ id: 'other_person' });
 
-      await expect(createPerson(staffActor(), input)).rejects.toThrow(ConflictError);
+      await expect(createPerson(adminActor(), input)).rejects.toThrow(ConflictError);
       expect(createMock).not.toHaveBeenCalled();
     });
 
@@ -498,14 +505,14 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindFirst.mockResolvedValue({ id: 'other_person' });
 
       await expect(
-        createPerson(staffActor(), { ...input, email: null, fiscalCode: 'BNCMRA80A01L219K' }),
+        createPerson(adminActor(), { ...input, email: null, fiscalCode: 'BNCMRA80A01L219K' }),
       ).rejects.toThrow(ConflictError);
     });
 
     it('never conflicts when email and fiscalCode are both omitted', async () => {
       personCreate.mockResolvedValue({ ...SELECTED_PERSON, email: null, fiscalCode: null });
 
-      await createPerson(staffActor(), { firstName: 'X', lastName: 'Y', email: null, phone: null, address: null, fiscalCode: null });
+      await createPerson(adminActor(), { firstName: 'X', lastName: 'Y', email: null, phone: null, address: null, fiscalCode: null });
 
       expect(findFirstMock).not.toHaveBeenCalled();
     });
@@ -514,7 +521,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindFirst.mockResolvedValue(null);
       createMock.mockRejectedValue(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
 
-      await expect(createPerson(staffActor(), input)).rejects.toThrow(ConflictError);
+      await expect(createPerson(adminActor(), input)).rejects.toThrow(ConflictError);
     });
   });
 
@@ -525,7 +532,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindFirst.mockResolvedValue(null);
       personCreate.mockResolvedValue(SELECTED_PERSON);
 
-      await createPerson(staffActor(), input);
+      await createPerson(adminActor(), input);
 
       expect(expiryTypeFindManyMock).not.toHaveBeenCalled();
       expect(userFindUniqueMock).not.toHaveBeenCalled();
@@ -575,15 +582,6 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expect(result.profiles).toEqual({ pilot: true, student: true, instructor: true });
     });
 
-    it('access without users.manage → 403, before any read/write (the block is never silently dropped)', async () => {
-      await expect(
-        createPerson(staffActor(), { ...input, access: { email: 'maria@airmanager.local', roles: ['PILOT'] } }),
-      ).rejects.toThrow(ForbiddenError);
-
-      expect(findFirstMock).not.toHaveBeenCalled();
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
     it('access.email already taken by another user → ConflictError, before the transaction opens', async () => {
       personFindFirst.mockResolvedValue(null);
       userFindUnique.mockResolvedValue({ id: 'existing_user' });
@@ -600,7 +598,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expiryTypeFindMany.mockResolvedValue([]); // nothing matches
 
       await expect(
-        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_ghost', expiresAt: '2027-01-01' }] }),
+        createPerson(adminActor(), { ...input, expiries: [{ expiryTypeId: 'et_ghost', expiresAt: '2027-01-01' }] }),
       ).rejects.toThrow(ValidationError);
 
       expect(transactionMock).not.toHaveBeenCalled();
@@ -611,7 +609,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expiryTypeFindMany.mockResolvedValue([{ id: 'et_1', scope: 'ALL', isActive: false }]);
 
       await expect(
-        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2027-01-01' }] }),
+        createPerson(adminActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2027-01-01' }] }),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -620,7 +618,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expiryTypeFindMany.mockResolvedValue([{ id: 'et_pilot', scope: 'PILOTS', isActive: true }]);
 
       await expect(
-        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_pilot', expiresAt: '2027-01-01' }] }),
+        createPerson(adminActor(), { ...input, expiries: [{ expiryTypeId: 'et_pilot', expiresAt: '2027-01-01' }] }),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -631,7 +629,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expiryCreateMock.mockRejectedValue(new Error('db unavailable'));
 
       await expect(
-        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2027-01-01' }] }),
+        createPerson(adminActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2027-01-01' }] }),
       ).rejects.toThrow('db unavailable');
 
       expect(sendInviteEmailMock).not.toHaveBeenCalled();
@@ -644,7 +642,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expiryCreate.mockResolvedValue({ id: 'expiry_past' });
 
       await expect(
-        createPerson(staffActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2020-01-01' }] }),
+        createPerson(adminActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2020-01-01' }] }),
       ).resolves.toBeDefined();
 
       expect(expiryCreateMock).toHaveBeenCalledWith(
@@ -659,14 +657,14 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
   describe('updatePerson', () => {
     it('throws NotFoundError for a missing person', async () => {
       personFindUnique.mockResolvedValue(null);
-      await expect(updatePerson(staffActor(), 'missing', { firstName: 'X' })).rejects.toThrow(NotFoundError);
+      await expect(updatePerson(adminActor(), 'missing', { firstName: 'X' })).rejects.toThrow(NotFoundError);
     });
 
     it('updates only the provided fields', async () => {
       personFindUnique.mockResolvedValue(SELECTED_PERSON);
       personUpdate.mockResolvedValue({ ...SELECTED_PERSON, phone: '+39 333 7654321' });
 
-      const result = await updatePerson(staffActor(), 'person_1', { phone: '+39 333 7654321' });
+      const result = await updatePerson(adminActor(), 'person_1', { phone: '+39 333 7654321' });
 
       expect(updateMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'person_1' }, data: { phone: '+39 333 7654321' } }),
@@ -678,7 +676,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindUnique.mockResolvedValue(SELECTED_PERSON);
       personUpdate.mockResolvedValue({ ...SELECTED_PERSON, email: null });
 
-      await updatePerson(staffActor(), 'person_1', { email: null });
+      await updatePerson(adminActor(), 'person_1', { email: null });
 
       expect(findFirstMock).not.toHaveBeenCalled();
       expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { email: null } }));
@@ -689,7 +687,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindFirst.mockResolvedValue({ id: 'someone_else' });
 
       await expect(
-        updatePerson(staffActor(), 'person_1', { email: 'taken@airmanager.local' }),
+        updatePerson(adminActor(), 'person_1', { email: 'taken@airmanager.local' }),
       ).rejects.toThrow(ConflictError);
     });
   });
@@ -697,19 +695,19 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
   describe('archivePerson', () => {
     it('throws NotFoundError for a missing person', async () => {
       personFindUnique.mockResolvedValue(null);
-      await expect(archivePerson(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      await expect(archivePerson(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
     });
 
     it('throws ConflictError when already archived', async () => {
       personFindUnique.mockResolvedValue({ ...SELECTED_PERSON, archivedAt: new Date('2026-02-01T00:00:00.000Z') });
-      await expect(archivePerson(staffActor(), 'person_1')).rejects.toThrow(ConflictError);
+      await expect(archivePerson(adminActor(), 'person_1')).rejects.toThrow(ConflictError);
     });
 
     it('sets archivedAt (AC 2)', async () => {
       personFindUnique.mockResolvedValue(SELECTED_PERSON);
       personUpdate.mockResolvedValue({ ...SELECTED_PERSON, archivedAt: new Date('2026-02-01T00:00:00.000Z') });
 
-      const result = await archivePerson(staffActor(), 'person_1');
+      const result = await archivePerson(adminActor(), 'person_1');
 
       expect(updateMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'person_1' }, data: { archivedAt: expect.any(Date) } }),
@@ -721,19 +719,19 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
   describe('unarchivePerson', () => {
     it('throws NotFoundError for a missing person', async () => {
       personFindUnique.mockResolvedValue(null);
-      await expect(unarchivePerson(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      await expect(unarchivePerson(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
     });
 
     it('throws ConflictError when not archived', async () => {
       personFindUnique.mockResolvedValue(SELECTED_PERSON);
-      await expect(unarchivePerson(staffActor(), 'person_1')).rejects.toThrow(ConflictError);
+      await expect(unarchivePerson(adminActor(), 'person_1')).rejects.toThrow(ConflictError);
     });
 
     it('clears archivedAt', async () => {
       personFindUnique.mockResolvedValue({ ...SELECTED_PERSON, archivedAt: new Date('2026-02-01T00:00:00.000Z') });
       personUpdate.mockResolvedValue({ ...SELECTED_PERSON, archivedAt: null });
 
-      const result = await unarchivePerson(staffActor(), 'person_1');
+      const result = await unarchivePerson(adminActor(), 'person_1');
 
       expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { archivedAt: null } }));
       expect(result.archivedAt).toBeNull();
@@ -745,7 +743,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindUnique.mockResolvedValue(null);
 
       await expect(
-        upsertProfile(staffActor(), 'missing', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' }),
+        upsertProfile(adminActor(), 'missing', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' }),
       ).rejects.toThrow(NotFoundError);
       expect(pilotProfileUpsertMock).not.toHaveBeenCalled();
     });
@@ -754,7 +752,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindUnique.mockResolvedValue({ id: 'person_1' });
       pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
 
-      const result = await upsertProfile(staffActor(), 'person_1', 'pilot', {
+      const result = await upsertProfile(adminActor(), 'person_1', 'pilot', {
         licenseNumber: 'IT-PPL-1',
         licenseType: 'PPL(A)',
       });
@@ -777,7 +775,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         deactivatedAt: null,
       });
 
-      const result = await upsertProfile(staffActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' });
+      const result = await upsertProfile(adminActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' });
 
       expect(studentProfileUpsertMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -793,7 +791,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindUnique.mockResolvedValue({ id: 'person_1' });
       instructorProfileUpsert.mockResolvedValue({ deactivatedAt: null });
 
-      const result = await upsertProfile(staffActor(), 'person_1', 'instructor', {});
+      const result = await upsertProfile(adminActor(), 'person_1', 'instructor', {});
 
       expect(instructorProfileUpsertMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -810,7 +808,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         personFindUnique.mockResolvedValue({ id: 'person_1' });
         pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
 
-        await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
+        await upsertProfile(adminActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
 
         expect(accountUpsertMock).toHaveBeenCalledWith(
           expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' } }),
@@ -821,7 +819,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         personFindUnique.mockResolvedValue({ id: 'person_1' });
         studentProfileUpsert.mockResolvedValue({ courseStartDate: new Date('2026-03-01'), deactivatedAt: null });
 
-        await upsertProfile(staffActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' });
+        await upsertProfile(adminActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' });
 
         expect(accountUpsertMock).toHaveBeenCalledWith(
           expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' } }),
@@ -832,7 +830,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         personFindUnique.mockResolvedValue({ id: 'person_1' });
         instructorProfileUpsert.mockResolvedValue({ deactivatedAt: null });
 
-        await upsertProfile(staffActor(), 'person_1', 'instructor', {});
+        await upsertProfile(adminActor(), 'person_1', 'instructor', {});
 
         expect(accountUpsertMock).not.toHaveBeenCalled();
       });
@@ -842,8 +840,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
         accountUpsert.mockResolvedValue({ id: 'account_1' });
 
-        await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
-        await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
+        await upsertProfile(adminActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
+        await upsertProfile(adminActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' });
 
         // Both calls are themselves upserts (create-if-missing / no-op
         // update) — the unique `personId` constraint is what actually
@@ -866,7 +864,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     it('throws NotFoundError for a missing person', async () => {
       personFindUnique.mockResolvedValue(null);
 
-      await expect(deactivateProfile(staffActor(), 'missing', 'student')).rejects.toThrow(NotFoundError);
+      await expect(deactivateProfile(adminActor(), 'missing', 'student')).rejects.toThrow(NotFoundError);
       expect(studentProfileUpdateManyMock).not.toHaveBeenCalled();
     });
 
@@ -874,7 +872,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindUnique.mockResolvedValue({ id: 'person_1' });
       studentProfileUpdateMany.mockResolvedValue({ count: 1 });
 
-      await deactivateProfile(staffActor(), 'person_1', 'student');
+      await deactivateProfile(adminActor(), 'person_1', 'student');
 
       // The `deactivatedAt: null` guard in the where is what makes concurrent
       // deactivations safe — exactly one of them can match the row.
@@ -890,14 +888,14 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       personFindUnique.mockResolvedValue({ id: 'person_1' });
       instructorProfileUpdateMany.mockResolvedValue({ count: 0 });
 
-      await expect(deactivateProfile(staffActor(), 'person_1', 'instructor')).rejects.toThrow(ConflictError);
+      await expect(deactivateProfile(adminActor(), 'person_1', 'instructor')).rejects.toThrow(ConflictError);
     });
 
     it('throws ConflictError when the profile is already deactivated (guarded update matches no row)', async () => {
       personFindUnique.mockResolvedValue({ id: 'person_1' });
       pilotProfileUpdateMany.mockResolvedValue({ count: 0 });
 
-      await expect(deactivateProfile(staffActor(), 'person_1', 'pilot')).rejects.toThrow(ConflictError);
+      await expect(deactivateProfile(adminActor(), 'person_1', 'pilot')).rejects.toThrow(ConflictError);
     });
   });
 
@@ -907,8 +905,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       studentProfileUpdateMany.mockResolvedValue({ count: 1 });
       pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-9', licenseType: 'PPL(A)', deactivatedAt: null });
 
-      await deactivateProfile(staffActor(), 'person_1', 'student');
-      await upsertProfile(staffActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-9', licenseType: 'PPL(A)' });
+      await deactivateProfile(adminActor(), 'person_1', 'student');
+      await upsertProfile(adminActor(), 'person_1', 'pilot', { licenseNumber: 'IT-PPL-9', licenseType: 'PPL(A)' });
 
       // Both operations address the same Person.id, and the transition never
       // creates/updates/deletes a Person row — the id (and its history/future
@@ -947,7 +945,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       ]);
       userCount.mockResolvedValue(0);
 
-      const result = await listPilotsPageData(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+      const result = await listPilotsPageData(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
       expect(result.items).toEqual([
         expect.objectContaining({
@@ -994,7 +992,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       countMock.mockResolvedValue(42);
       userCount.mockResolvedValue(3);
 
-      const result = await listPilotsPageData(staffActor(), { page: 1, pageSize: 20, q: 'Alfa', includeArchived: false });
+      const result = await listPilotsPageData(adminActor(), { page: 1, pageSize: 20, q: 'Alfa', includeArchived: false });
 
       expect(result.totalCount).toBe(42);
       expect(result.suspendedCount).toBe(3);
@@ -1007,7 +1005,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       countMock.mockResolvedValue(0);
       userCount.mockResolvedValue(0);
 
-      const result = await listPilotsPageData(staffActor(), { page: 1, pageSize: 20, includeArchived: false });
+      const result = await listPilotsPageData(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
       expect(result.items).toEqual([]);
       expect(accountFindManyMock).not.toHaveBeenCalled();

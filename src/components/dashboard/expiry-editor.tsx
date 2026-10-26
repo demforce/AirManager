@@ -206,6 +206,7 @@ export function LiveExpiryEditor({ personId, kind, profiles, locale, labels }: L
                   <DateInput
                     inline
                     aria-label={labels.dateLabel}
+                    aria-invalid={Boolean(editError)}
                     value={editDate}
                     onChange={(event) => setEditDate(event.target.value)}
                     data-testid={`expiry-edit-date-${item.expiryTypeId}`}
@@ -224,7 +225,7 @@ export function LiveExpiryEditor({ personId, kind, profiles, locale, labels }: L
                     {labels.cancel}
                   </button>
                   {editError ? (
-                    <p role="alert" className="fld-label" style={{ color: 'var(--bad)' }}>
+                    <p role="alert" className="fld-error">
                       {editError}
                     </p>
                   ) : null}
@@ -294,7 +295,14 @@ export function LiveExpiryEditor({ personId, kind, profiles, locale, labels }: L
 
       {addingTypeId ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }} data-testid="expiry-add-form">
-          <DateInput inline aria-label={labels.dateLabel} value={addDate} onChange={(event) => setAddDate(event.target.value)} data-testid="expiry-add-date" />
+          <DateInput
+            inline
+            aria-label={labels.dateLabel}
+            aria-invalid={Boolean(addError)}
+            value={addDate}
+            onChange={(event) => setAddDate(event.target.value)}
+            data-testid="expiry-add-date"
+          />
           <button type="button" className="btn mini primary" disabled={pending} onClick={() => void handleConfirmAdd()} data-testid="expiry-add-confirm">
             {labels.addAction}
           </button>
@@ -312,7 +320,7 @@ export function LiveExpiryEditor({ personId, kind, profiles, locale, labels }: L
         </div>
       ) : null}
       {addError ? (
-        <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 6 }}>
+        <p role="alert" className="fld-error" style={{ marginTop: 6 }}>
           {addError}
         </p>
       ) : null}

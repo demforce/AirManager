@@ -42,7 +42,7 @@ const MAX_LANDING_FEE_CENTS = 2_147_483_647;
 
 /**
  * Reads the admin-configured PPR approval-email operating instructions
- * (AC 1). Gated `ppr.manage` (AD-5) — not `settings.manage`: staff sees
+ * (AC 1). Gated `ppr.manage` (AD-5) — not `settings.manage`: an admin sees
  * these in the queue (read-only) even though only an admin can edit them
  * (`setPprOperatingInstructions` below). Absent key(s) read as `''`, never
  * `null` (Contesto) — a fresh install has no instructions configured yet,
@@ -114,7 +114,7 @@ function parseStoredLandingFeeCents(value: string): number | null {
  * Reads the admin-configured default PPR landing fee, in integer euro cents
  * (AD-2) — story 8.3, AC 1. Gated `ppr.manage`, not `settings.manage`: the
  * completion panel prefills its fee input with this default for every actor
- * who can complete a PPR (staff), even though only an admin can change the
+ * who can complete a PPR (an admin), even though only an admin can change the
  * default itself (`setPprLandingFeeDefaultCents` below) — same read/write
  * asymmetry as `getPprOperatingInstructions`. Absent key -> `0` (Contesto:
  * a fresh install charges nothing until an admin configures a fee). A
@@ -168,7 +168,7 @@ export async function setPprLandingFeeDefaultCents(actor: Actor, cents: number):
  * name shown in every exported PDF's header (name-only since story 13.8,
  * AC 4). Deliberately NO permission gate (unlike every other getter in this
  * module): the header must render for whichever role is exporting a report
- * (pilot, instructor, staff, admin alike), and the branding itself is not
+ * (pilot, instructor, admin alike), and the branding itself is not
  * sensitive data. The route's own `apiRoute` (`auth: 'required'` default)
  * is the only guard — an authenticated session, nothing more. An absent
  * `AppSetting` row reads as the fresh-install default: name `'AirManager'`.
@@ -262,7 +262,7 @@ function parseStoredInt(value: string | undefined): number | null {
 /**
  * Reads the scheduling-window settings (AC 1/4). No permission gate: needed
  * by ANY actor creating a booking (including a plain pilot self-booking),
- * not just staff — same reasoning as {@link getAirfieldIcao}. Read through
+ * not just an admin — same reasoning as {@link getAirfieldIcao}. Read through
  * the top-level `prisma` client even when called from INSIDE
  * `bookings.service.ts#transitionBooking`'s own `$transaction` — the exact
  * same "sibling read via plain `prisma`, not `tx`" precedent that function's
@@ -445,8 +445,8 @@ const MEMBERSHIP_ANNUAL_FEE_CENTS_KEY = 'membership.annualFeeCents';
 /**
  * Reads the default annual membership-fee amount, in integer euro cents
  * (ratifica utente 1) — precompiles the "Quota associativa" action's amount
- * field (`chargeMembershipFee`'s caller). Gated `finance.manage` (STAFF+
- * ADMIN): the SAME actors who can trigger the charge itself need to see the
+ * field (`chargeMembershipFee`'s caller). Gated `finance.manage` (ADMIN-only):
+ * the SAME actors who can trigger the charge itself need to see the
  * default; `settings.manage` (ADMIN-only) is reserved for CHANGING it
  * (`setMembershipFeeCents` below), same read/write asymmetry as
  * `getPprLandingFeeDefaultCents`. Absent key -> `0` (Contesto: a fresh
@@ -551,7 +551,7 @@ function parseStoredOpeningDate(value: string | undefined): string | null {
 /**
  * Reads the treasury opening balances with NO `Actor` at all (Billing-1, AC
  * 3) — internal use only, for `billing-summary.service.ts#getBillingSummary`
- * (itself gated `finance.manage`, STAFF+ADMIN) to read without ALSO needing
+ * (itself gated `finance.manage`, ADMIN-only) to read without ALSO needing
  * `settings.manage`. Same "unguarded internal reader alongside a
  * permission-gated actor-facing pair" precedent as
  * `getSmtpSettingsForMailer` vs `getSmtpSettings` above. Parsing is robust

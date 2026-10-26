@@ -31,7 +31,6 @@ import type { Page } from '@playwright/test';
 const MAILPIT_API = 'http://localhost:8025/api/v1';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
@@ -125,18 +124,55 @@ const UI_QUEUE_PAGE_SIZE = 20;
 /**
  * The dev DB is never reset between e2e runs (module doc-comment) and the
  * queue is FIFO (`createdAt asc`), so a request just created via
- * `createPendingRequest` is always the NEWEST PENDING row — it lands on the
- * LAST page, not necessarily page 1, once the accumulated backlog exceeds
+ * `createPendingRequest` is always the NEWEST row of its status — it lands on
+ * the LAST page, not necessarily page 1, once the accumulated backlog exceeds
  * `QUEUE_PAGE_SIZE` (`page.tsx`). The console's own status filter default
  * (PENDING) matches the API's default, so no `?status` is needed on this
  * URL for the PENDING case.
  */
-async function gotoQueueLastPage(page: Page): Promise<void> {
-  const response = await page.request.get(`/api/v1/ppr-requests?status=PENDING&pageSize=${UI_QUEUE_PAGE_SIZE}`);
+async function gotoQueueLastPage(page: Page, status: 'PENDING' | 'REJECTED' = 'PENDING'): Promise<void> {
+  const response = await page.request.get(`/api/v1/ppr-requests?status=${status}&pageSize=${UI_QUEUE_PAGE_SIZE}`);
   expect(response.status()).toBe(200);
   const body = (await response.json()) as { total: number };
   const lastPage = Math.max(1, Math.ceil(body.total / UI_QUEUE_PAGE_SIZE));
-  await page.goto(`/it/dashboard/ppr?page=${lastPage}`);
+  const statusQuery = status === 'PENDING' ? '' : `&status=${status}`;
+  await page.goto(`/it/dashboard/ppr?page=${lastPage}${statusQuery}`);
+}
+
+/**
+ * Story 15.2: the console now renders BOTH trees (desktop table + <=640px
+ * card list) and the inactive one is only `display: none` — it is still in
+ * the DOM, and `getByText` does NOT filter by visibility, so a page-level
+ * `getByText(registration)` matches twice and trips strict mode even at a
+ * desktop viewport. Scoping to the desktop subtree costs nothing in strength:
+ * the assertions below still demand VISIBILITY (which a `display:none` tree
+ * could never satisfy) and the disappearance checks stay page-wide on
+ * purpose, so a row that vanished from one tree only would still fail.
+ */
+function desktopQueue(page: Page) {
+  return page.locator('.ppr-queue-desktop');
+}
+
+const MOBILE_VIEWPORT = { width: 375, height: 812 } as const;
+
+/**
+ * Reaches an element by keyboard only (AC 3: the card trigger must be part of
+ * the tab order, not just clickable). `focus()` would prove nothing — it can
+ * focus an element the user could never Tab to.
+ */
+async function tabUntilFocused(page: Page, testId: string, labelIncludes: string, maxPresses = 150): Promise<void> {
+  for (let index = 0; index < maxPresses; index += 1) {
+    await page.keyboard.press('Tab');
+    const reached = await page.evaluate(
+      ({ id, text }) => {
+        const active = document.activeElement as HTMLElement | null;
+        return active?.dataset['testid'] === id && (active.getAttribute('aria-label') ?? '').includes(text);
+      },
+      { id: testId, text: labelIncludes },
+    );
+    if (reached) return;
+  }
+  throw new Error(`[data-testid="${testId}"] with aria-label containing "${labelIncludes}" was not reachable within ${maxPresses} Tab presses`);
 }
 
 type MailpitMessageSummary = { ID: string; Subject: string };
@@ -202,14 +238,14 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     // gone with the widget-grid dashboard — staff lands on the AdminOverview
     // console, whose "PPR in attesa" KPI is a real count over the SAME
     // pending queue (never zero here: this run's own request is PENDING).
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pprKpiValue = page.getByTestId('kpi-ppr-pending').locator('.kpi-value');
     await expect(pprKpiValue).toBeVisible();
     expect(Number(await pprKpiValue.innerText())).toBeGreaterThanOrEqual(1);
 
     // --- Staff: open the console, see the run-unique request (AC 1) ------
     await gotoQueueLastPage(page);
-    await expect(page.getByText(created.registration)).toBeVisible();
+    await expect(desktopQueue(page).getByText(created.registration)).toBeVisible();
     // Story 13.6, AC 1: the duplicate operating-instructions editor is GONE
     // from the console entirely (for every actor, not just non-settings.manage staff).
     await expect(page.getByTestId('ppr-instructions-editor')).toHaveCount(0);
@@ -235,9 +271,9 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     const created = await createPendingRequest(page, { firstName: 'John', locale: 'en' });
     const reason = `Documentazione mancante (verifica e2e ${uniqueSuffix()}).`;
 
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await gotoQueueLastPage(page);
-    await expect(page.getByText(created.registration)).toBeVisible();
+    await expect(desktopQueue(page).getByText(created.registration)).toBeVisible();
 
     const row = page.getByTestId('ppr-row').filter({ hasText: created.registration });
     await row.getByTestId('ppr-reject-button').click();
@@ -248,7 +284,7 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     // --- Empty submit: inline error, no call (the row must still be there) ---
     await page.getByTestId('ppr-reject-submit').click();
     await expect(page.getByText('Il motivo è obbligatorio.')).toBeVisible();
-    await expect(page.getByText(created.registration)).toBeVisible();
+    await expect(desktopQueue(page).getByText(created.registration)).toBeVisible();
 
     // --- Real reason: succeeds ------------------------------------------
     await page.getByTestId('ppr-reject-reason').fill(reason);
@@ -296,10 +332,10 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 
-  test('"PPR manuale" (epic 12, story 12.4, AC 1): staff enters a manual request with an email — it appears PENDING in the console, badge-free ("da modulo web" is only for public-form rows), and NO receipt email is ever sent', async ({
+  test('"PPR manuale" (epic 12, story 12.4, AC 1): an admin enters a manual request with an email — it appears PENDING in the console, badge-free ("da modulo web" is only for public-form rows), and NO receipt email is ever sent', async ({
     page,
   }) => {
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.goto('/it/dashboard/ppr');
 
     const suffix = uniqueSuffix();
@@ -335,6 +371,174 @@ test.describe('PPR console (Story 8.2, AC 1/2, FR-23/FR-41; rebuilt epic 12 stor
     await expect(row.getByTestId('ppr-from-public-badge')).toHaveCount(0);
 
     await expectNoMailpitMessage(email);
+  });
+
+  /**
+   * Story 15.2 — the two tests below DECIDE a request, so they live here, in
+   * this file's serial describe, and not in the geometry-only
+   * `mobile-primitives.spec.ts`: the PENDING queue's page boundaries are
+   * mutable global state shared across files (module doc-comment above,
+   * lesson 12.11 F1). Viewport per-test (pattern 13.10), no new project.
+   */
+  test('story 15.2 (AC 2): the console renders BOTH trees and exactly one is displayed — the card list at 375px, the table at 1280px, and the desktop assertions stay unique', async ({
+    page,
+  }) => {
+    const created = await createPendingRequest(page, { firstName: 'Doppio' });
+
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize(MOBILE_VIEWPORT);
+    await gotoQueueLastPage(page);
+
+    await expect(page.locator('.ppr-queue-desktop')).toHaveCSS('display', 'none');
+    await expect(page.locator('.ppr-queue-mobile')).toHaveCSS('display', 'block');
+    await expect(page.getByTestId('ppr-row-mobile').filter({ hasText: created.registration })).toBeVisible();
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(page.locator('.ppr-queue-mobile')).toHaveCSS('display', 'none');
+    await expect(page.locator('.ppr-queue-desktop')).not.toHaveCSS('display', 'none');
+    await expect(page.getByTestId('ppr-row').filter({ hasText: created.registration })).toBeVisible();
+    // The desktop testids never gained a twin: one `ppr-row` per request, and
+    // the mobile card carries the `-mobile` suffix instead (epic convention).
+    await expect(page.getByTestId('ppr-row').filter({ hasText: created.registration })).toHaveCount(1);
+    await expect(desktopQueue(page).getByText(created.registration)).toBeVisible();
+  });
+
+  test('story 15.2 (R3, R-15.2-b): at 375px the card list replaces the table, the card opens the detail sheet FROM THE KEYBOARD with fields the desktop never shows, and Approva decides from inside the sheet', async ({
+    page,
+  }) => {
+    const created = await createPendingRequest(page, { firstName: 'Mobile' });
+
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize(MOBILE_VIEWPORT);
+    await gotoQueueLastPage(page);
+
+    // AC 2 — one tree displayed, the other genuinely `display: none`.
+    await expect(page.locator('.ppr-queue-desktop')).toHaveCSS('display', 'none');
+    await expect(page.locator('.ppr-queue-mobile')).toHaveCSS('display', 'block');
+
+    const card = page.getByTestId('ppr-row-mobile').filter({ hasText: created.registration });
+    await expect(card).toBeVisible();
+    // R-15.2-b: the decision is NOT on the card — so the whole card is ONE
+    // button with nothing interactive nested inside it (no `button` in
+    // `button`, no `<a>` in `<button>`), and a >=44px touch target.
+    expect(await card.evaluate((el) => el.querySelectorAll('button, a, input, select, textarea, [tabindex]').length)).toBe(0);
+    expect(await card.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+
+    await tabUntilFocused(page, 'ppr-row-mobile', created.registration);
+    await page.keyboard.press('Enter');
+
+    const sheet = page.getByTestId('mobile-ppr-sheet');
+    await expect(sheet).toBeVisible();
+    // AC 4 — informational parity: the requester and the contact the desktop
+    // row shows, PLUS origin and destination, which the desktop table has no
+    // column for at all (asserted below, not assumed).
+    await expect(sheet.getByText(`${created.firstName} ${created.lastName}`)).toBeVisible();
+    await expect(sheet.getByText(created.email)).toBeVisible();
+    await expect(sheet.getByText('LIRN Napoli')).toBeVisible();
+    await expect(sheet.getByText('LIRU Urbe')).toBeVisible();
+    await expect(desktopQueue(page).getByText('LIRN Napoli')).toHaveCount(0);
+
+    // AC 8 — with the 15.1 tab bar mounted, the sheet (z 40) covers it.
+    const barCoveredBySheet = await page.evaluate(() => {
+      const bar = document.querySelector('.mobile-tabbar');
+      if (!bar) return null;
+      const rect = bar.getBoundingClientRect();
+      const atPoint = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return atPoint ? atPoint.closest('.mobile-sheet') !== null : null;
+    });
+    expect(barCoveredBySheet).toBe(true);
+
+    await sheet.getByTestId('ppr-approve-button-mobile').click();
+
+    const toast = page.getByTestId('toast').filter({ hasText: /PPR-\d{4}-\d{4}/ });
+    await expect(toast).toBeVisible();
+    // The toast (z 200) stays clear of the tab bar even with a decision just
+    // taken from a sheet (`.toast-host` is `pointer-events: none`, so this is
+    // a geometry check, not a hit-test).
+    const toastAboveBar = await page.evaluate(() => {
+      const bar = document.querySelector('.mobile-tabbar');
+      const host = document.querySelector('.toast-host');
+      if (!bar || !host) return null;
+      return host.getBoundingClientRect().bottom <= bar.getBoundingClientRect().top;
+    });
+    expect(toastAboveBar).toBe(true);
+
+    await expect(sheet).toHaveCount(0);
+    await expect(page.getByText(created.registration)).toHaveCount(0);
+  });
+
+  test('story 15.2 (R-15.2-a): at 375px "Nega" opens the reason step INSIDE THE SAME sheet — no second overlay, empty submit costs zero network calls, "Annulla" returns to the detail, and the rejected request keeps its reason in the sheet', async ({
+    page,
+  }) => {
+    const created = await createPendingRequest(page, { firstName: 'Nega' });
+    const reason = `Motivo e2e mobile ${uniqueSuffix()}`;
+
+    let rejectCalls = 0;
+    await page.route('**/api/v1/ppr-requests/*/reject', async (route) => {
+      rejectCalls += 1;
+      await route.continue();
+    });
+
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.setViewportSize(MOBILE_VIEWPORT);
+    await gotoQueueLastPage(page);
+
+    const sheet = page.getByTestId('mobile-ppr-sheet');
+    await page.getByTestId('ppr-row-mobile').filter({ hasText: created.registration }).click();
+    await expect(sheet).toBeVisible();
+
+    /**
+     * Review 15.2 F1 — AC 4 in letters: "the focus stays inside the panel".
+     * Swapping the sheet's body destroys the button that was just pressed, so
+     * without an explicit hand-off `document.activeElement` falls back to
+     * `body` and the dialog context is lost for assistive technology, even
+     * though the `role="dialog"` node itself survives (measured on BOTH
+     * transitions before the fix).
+     */
+    const focusIsInsidePanel = () =>
+      page.evaluate(() => {
+        const panel = document.querySelector('.mobile-sheet-panel');
+        return Boolean(panel && document.activeElement && panel.contains(document.activeElement));
+      });
+
+    const beforeStep = await sheet.elementHandle();
+    await sheet.getByTestId('ppr-reject-button-mobile').click();
+    await expect(sheet.getByTestId('ppr-reject-reason-mobile')).toBeVisible();
+    expect(await focusIsInsidePanel()).toBe(true);
+
+    // R-15.2-a, the load-bearing assertion: SAME DOM node, different body.
+    const afterStep = await sheet.elementHandle();
+    expect(await beforeStep!.evaluate((node, other) => node === other, afterStep)).toBe(true);
+    // ...and nothing was stacked on top of it (the desktop `.mini-modal`).
+    await expect(page.locator('.mini-modal')).toHaveCount(0);
+    await expect(sheet.getByTestId('ppr-approve-button-mobile')).toHaveCount(0);
+
+    // Empty submit: inline error, and PROVABLY no request left the browser.
+    await sheet.getByTestId('ppr-reject-submit-mobile').click();
+    await expect(sheet.getByTestId('ppr-reject-error-mobile')).toBeVisible();
+    expect(rejectCalls).toBe(0);
+
+    // "Annulla" is a step back, not a dismissal: the detail is intact.
+    await sheet.getByTestId('ppr-reject-cancel-mobile').click();
+    await expect(sheet.getByTestId('ppr-approve-button-mobile')).toBeVisible();
+    await expect(sheet.getByText('LIRN Napoli')).toBeVisible();
+    expect(await focusIsInsidePanel()).toBe(true);
+
+    await sheet.getByTestId('ppr-reject-button-mobile').click();
+    await sheet.getByTestId('ppr-reject-reason-mobile').fill(reason);
+    await sheet.getByTestId('ppr-reject-submit-mobile').click();
+
+    await expect(page.getByTestId('toast').filter({ hasText: 'Richiesta rifiutata.' })).toBeVisible();
+    expect(rejectCalls).toBe(1);
+    await expect(page.getByText(created.registration)).toHaveCount(0);
+
+    // The decided request: reason carried into the sheet, no actions offered
+    // (D13 — the domain has no reopen path).
+    await gotoQueueLastPage(page, 'REJECTED');
+    await page.getByTestId('ppr-row-mobile').filter({ hasText: created.registration }).click();
+    await expect(sheet.getByText(reason)).toBeVisible();
+    await expect(sheet.getByTestId('ppr-approve-button-mobile')).toHaveCount(0);
+    await expect(sheet.getByTestId('ppr-reject-button-mobile')).toHaveCount(0);
   });
 });
 

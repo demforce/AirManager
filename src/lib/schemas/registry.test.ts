@@ -148,6 +148,11 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(createBookingResponse?.properties).toHaveProperty('warnings');
   });
 
+  it('documents the optional composite rate block on CreateAircraftRequest (story 14.8, review F3)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    expect(schemas?.['CreateAircraftRequest']?.properties).toHaveProperty('rate');
+  });
+
   it('documents blocksBooking on the ExpiryType schema (story 7.4)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
     expect(schemas?.['ExpiryType']?.properties).toHaveProperty('blocksBooking');

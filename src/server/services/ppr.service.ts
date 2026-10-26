@@ -336,6 +336,11 @@ export async function listPprRequests(actor: Actor, query: ListPprRequestsQuery)
   const where: Prisma.PprRequestWhereInput = {
     ...(query.status === 'ALL' ? {} : { status: query.status }),
     ...(Object.keys(etaFilter).length > 0 ? { eta: etaFilter } : {}),
+    // Story 15.9 (R-15.9-h): exact match on the issued number — the deep link
+    // from the approval queue to the transits register. The value reaching
+    // here is already `PPR-<year>-NNNN`-shaped (`pprNumberSchema`), and an
+    // unknown-but-well-formed number legitimately returns an empty page.
+    ...(query.pprNumber ? { pprNumber: query.pprNumber } : {}),
   };
 
   // Interactive transaction (story TD-1, AC 3 pattern) — see

@@ -1,8 +1,11 @@
-import { addMonthsClampUtc, todayDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
+import { addMonthsClampUtc, toDateOnlyString } from '@/lib/date-only';
 import { MEMBERSHIP_FEE_TYPE_NAME } from '@/lib/expiry-scope';
 import type { ChargeMembershipFeeInput } from '@/lib/schemas/membership';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { hasNegativeBalanceAlert } from './accounts.service';
 import { NotFoundError, ValidationError } from './errors';
 
 /** Upserted by NAME (not seeded via migration, Contesto) — also added to `prisma/seed.ts` so a fresh install's catalogue already lists it. `MEMBERSHIP_FEE_TYPE_NAME` lives in `@/lib/expiry-scope` (single source of truth, story 13.2 F3) so the create-form/inline-editor chip pickers can exclude it by the SAME name without importing this server-only service. */
@@ -12,6 +15,16 @@ export type ChargeMembershipFeeResult = {
   balanceCents: number;
   expiryId: string;
   expiresAt: string;
+  /**
+   * Story 14.4 review F7 (ratifica R-14.4-d) — same in-app "saldo in rosso"
+   * signal as every other debit-creating surface
+   * (`accounts.service.ts#hasNegativeBalanceAlert`). This writer already
+   * REFUSES a charge that would take the balance below zero unless an ADMIN
+   * `override`s it (this file's own doc-comment), so in practice this is
+   * only ever `true` on an overridden charge — never the email (this surface
+   * sends none, UNCHANGED).
+   */
+  balanceAlert: boolean;
 };
 
 /**
@@ -51,15 +64,16 @@ export type ChargeMembershipFeeResult = {
  * run in the SAME transaction, skipped on a first-ever charge (no `Expiry`
  * row existed yet, so no `SentAlert` could either).
  *
- * Gated `finance.manage` (STAFF+ADMIN) — a day-to-day staff action, not
+ * Gated `finance.manage` (ADMIN-only) — a day-to-day operational action, not
  * `settings.manage` (reserved for changing the DEFAULT fee amount itself,
  * `setMembershipFeeCents`).
  *
  * **Insufficient-balance guard (PO decision 2026-07-17, review F3)**: an
  * addebito that would take the balance BELOW zero is refused (`422
  * MEMBERSHIP_FEE_INSUFFICIENT_BALANCE`) unless `input.override` is set,
- * which requires `settings.manage` (ADMIN-only — a STAFF actor passing
- * `override: true` gets a plain 403, same proxy-permission pattern as the
+ * which requires `settings.manage` — a permission distinct from `finance.manage`
+ * (story 14.9: both are ADMIN-only today, but the gate stays on this specific
+ * permission, not a role literal, same proxy-permission pattern as the
  * "Invia promemoria" trigger, ratifica utente 4). Landing EXACTLY on zero is
  * allowed. The balance is read with a `SELECT ... FOR UPDATE` lock on the
  * `Account` row (same pattern as `recordAdjustment`, `accounts.service.ts`,
@@ -75,7 +89,7 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
     throw new NotFoundError('Person not found.');
   }
 
-  const today = todayDateOnlyUtc();
+  const today = todayDateOnlyUtcInZone(APP_TIMEZONE);
   const paymentYear = today.getUTCFullYear();
 
   const result = await prisma.$transaction(async (tx) => {
@@ -95,6 +109,13 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
     // Landing EXACTLY on zero is allowed.
     if (balanceBeforeCents - input.amountCents < 0) {
       if (input.override) {
+        // Review 14.9 F5: since 14.9, `finance.manage` is ADMIN-only, and
+        // ADMIN always also holds `settings.manage` — no role can pass the
+        // guard at the top of this function and fail this one, so this
+        // branch is structurally unreachable today. Kept for a future role
+        // holding `finance.manage` without `settings.manage`; coverage for
+        // it is no longer expressible (an adjacent test can only reach the
+        // OUTER `finance.manage` gate).
         authorize(actor, 'settings.manage');
       } else {
         throw new ValidationError(
@@ -150,12 +171,14 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
     }
 
     const aggregate = await tx.accountMovement.aggregate({ where: { accountId: account.id }, _sum: { amountCents: true } });
+    const balanceAfterCents = aggregate._sum.amountCents ?? 0;
 
-    return { balanceCents: aggregate._sum.amountCents ?? 0, expiryId: expiry.id, expiresAt: expiry.expiresAt };
+    return { balanceCents: balanceAfterCents, expiryId: expiry.id, expiresAt: expiry.expiresAt, balanceAlert: hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents) };
   });
 
   return {
     balanceCents: result.balanceCents,
+    balanceAlert: result.balanceAlert,
     expiryId: result.expiryId,
     expiresAt: toDateOnlyString(result.expiresAt),
   };

@@ -962,6 +962,39 @@ describe('exportBookingsPdf (story 13.7, AC 2)', () => {
     expect(props.columns.find((c) => c.header === 'Stato')!.value(row)).toBe('Approvato');
   });
 
+  it('a masked personName (story 14.5, ratifica R3: listBookings already nulled it for a pilot/student actor viewing someone else\'s booking) renders "Occupato", never a blank cell', async () => {
+    listBookingsMock.mockResolvedValue({
+      total: 1,
+      page: 1,
+      pageSize: PDF_EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'booking_1',
+          aircraftId: 'ac_1',
+          aircraftRegistration: 'I-ABCD',
+          personId: 'someone_else',
+          personName: null,
+          instructorProfileId: null,
+          instructorName: null,
+          startsAt: new Date('2026-07-01T09:00:00Z'),
+          endsAt: new Date('2026-07-01T10:00:00Z'),
+          notes: null,
+          status: 'APPROVED',
+          cancelledAt: null,
+          forcedAt: null,
+          denyReason: null,
+          decidedAt: null,
+          createdAt: new Date('2026-06-30T09:00:00Z'),
+        },
+      ],
+    } as never);
+
+    await exportBookingsPdf(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
+
+    const row = lastPdfProps().rows[0];
+    expect(lastPdfProps().columns.find((c) => c.header === 'Pilota')!.value(row)).toBe('Occupato');
+  });
+
   it('open-ended subtitle (PO decision, review F7): from-only — the real UI case, since the booking list has no `to` filter — reads "Dal <date>"/"From <date>"', async () => {
     listBookingsMock.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
 

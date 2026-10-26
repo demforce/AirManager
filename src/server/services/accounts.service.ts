@@ -2,6 +2,8 @@ import type { AccountMovementType, Prisma, PaymentMethod } from '@/generated/pri
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { AppLocale } from '@/i18n/routing';
 import type { RecordAdjustmentInput, RecordTopUpInput } from '@/lib/schemas/accounts';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildNegativeBalanceAlertEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -181,7 +183,7 @@ async function buildOverview(account: { id: string; createdAt: Date }): Promise<
 
 /**
  * Records a prepaid-account top-up (story 3.1, AC 2/3). Write access:
- * `finance.manage` (staff/admin) — never "own" (a pilot cannot top up their
+ * `finance.manage` (ADMIN-only) — never "own" (a pilot cannot top up their
  * own account). In ONE transaction: get-or-create the `Account` (idempotent
  * upsert on `personId` — same 1-to-0/1 guarantee `upsertProfile` relies on,
  * AD-11), create the immutable `AccountMovement` (TOP_UP, signed positive
@@ -279,7 +281,7 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
  * `actorEmail` is a display-only join over `actorUserId` (same enrichment
  * pattern as `listHourMeterAdjustments`, story 2.5) but, unlike that list,
  * it is conditional: only present when the caller has `people.read` (AC
- * 2's "dettaglio operativo" for staff) — a titolare reading their own
+ * 2's "dettaglio operativo" for an admin) — a titolare reading their own
  * statement never sees who registered a movement (Dev Notes, AD-5: the
  * service is the guardian of the data, not just the UI).
  */
@@ -400,6 +402,47 @@ export async function listAccountMovements(
   );
 }
 
+// --- Story 14.6: self-service ("Le mie transazioni") ------------------------
+
+/**
+ * Self-service account overview (story 14.6, AC 2) — the ONLY personId ever
+ * read is `actor.personId`. Unlike {@link getAccountOverview}, there is no
+ * personId parameter a caller could substitute: nothing "travels" for an
+ * IDOR probe to override, by construction, not by a check. `self.read` is
+ * granted to every role (same rationale as `me.service.ts#getMe`), so this
+ * never actually 403s a logged-in user; an actor with no linked person
+ * (AC 5 — e.g. an admin-managed login unlinked from any `Person`,
+ * `users.service.ts#updateUser`) gets the same empty shape a person who
+ * never activated a pilot/student profile gets from `getAccountOverview`,
+ * never a query.
+ */
+export async function getOwnAccountOverview(actor: Actor): Promise<AccountOverview> {
+  authorize(actor, 'self.read');
+  if (actor.personId === null) {
+    return { account: null, balanceCents: 0, recentMovements: [] };
+  }
+  return getAccountOverview(actor, actor.personId);
+}
+
+/**
+ * Self-service account statement (story 14.6, AC 2/3) — same "personId
+ * never travels" guarantee as {@link getOwnAccountOverview}. `includeActor`
+ * inside `listAccountMovements` is driven by `people.read`, which a
+ * PILOT/STUDENT actor never holds, so the rows this returns never carry
+ * `actorEmail` — the pilota-centric perspective the page wants (AC 3), not
+ * the staff "registrato da" column, with no separate flag to keep in sync.
+ */
+export async function listOwnAccountMovements(
+  actor: Actor,
+  query: PaginationQuery & { from?: string; to?: string },
+): Promise<AccountStatementResult> {
+  authorize(actor, 'self.read');
+  if (actor.personId === null) {
+    return paginate([], 0, query);
+  }
+  return listAccountMovements(actor, actor.personId, query);
+}
+
 // --- Story 3.3: motivated adjustments and negative-balance band alerts ----
 
 /**
@@ -433,6 +476,25 @@ export function balanceBand(balanceCents: number, thresholdCents: number): Balan
  */
 export function bandWorsened(before: BalanceBand, after: BalanceBand): boolean {
   return BAND_ORDER[after] > BAND_ORDER[before];
+}
+
+/**
+ * Story 14.4 review F7 (ratifica R-14.4-d, PO verbatim: "l'avviso scatta sia
+ * se il conto è già in rosso sia se l'importo da addebitare porterà il conto
+ * in rosso... per QUALSIASI addebito non solo per i voli") — the ONE shared
+ * condition for the in-app "saldo in rosso" banner shown to the OPERATOR on
+ * every surface that can debit a person's account: `true` when the balance
+ * was ALREADY negative before the write OR ends up negative after it.
+ * Deliberately NOT `bandWorsened` (that stays the email's own, UNCHANGED
+ * band-transition gate, story 5.1/3.3): a debit on a balance already at
+ * -150,00 € never "worsens the band" (still `negative`, same as before) yet
+ * the operator staring at the result still needs to see red. Every writer
+ * below computes `balanceBeforeCents`/`balanceAfterCents` for its OWN
+ * purposes already (the email's before/after read) — this is never a second,
+ * independent balance read.
+ */
+export function hasNegativeBalanceAlert(balanceBeforeCents: number, balanceAfterCents: number): boolean {
+  return balanceBeforeCents < 0 || balanceAfterCents < 0;
 }
 
 /**
@@ -512,8 +574,9 @@ export async function sendNegativeBalanceAlert(
  *
  * No `effectiveDate` in the input (Task 2's signature is deliberately just
  * `amountCents`/`reason`/`originalMovementId`) — a rettifica always values
- * as of today, the server clock's UTC calendar date (no time-of-day, same
- * `@db.Date` convention as every other ledger date).
+ * as of today, the aviosuperficie's own Europe/Rome calendar date (story
+ * 16.1; no time-of-day, same `@db.Date` convention as every other ledger
+ * date).
  *
  * No automatic `CashMovement` (Dev Notes: cash-side stornos are story 3.4).
  *
@@ -525,7 +588,7 @@ export async function sendNegativeBalanceAlert(
  * commits (Dev Notes: SMTP failures must never hold the lock nor invalidate
  * the movement).
  */
-export async function recordAdjustment(actor: Actor, personId: string, input: RecordAdjustmentInput): Promise<AccountOverview> {
+export async function recordAdjustment(actor: Actor, personId: string, input: RecordAdjustmentInput): Promise<AccountOverview & { balanceAlert: boolean }> {
   authorize(actor, 'finance.manage');
 
   const person = await prisma.person.findUnique({
@@ -588,7 +651,7 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
           type: 'ADJUSTMENT',
           amountCents: input.amountCents,
           description: reason,
-          effectiveDate: todayDateOnlyUtc(),
+          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
           actorUserId: actor.userId,
           reversalOfId: originalMovementId,
         },
@@ -634,13 +697,12 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
     void sendNegativeBalanceAlert(personId, person, overview.balanceCents);
   }
 
-  return overview;
-}
-
-/** `@db.Date` calendar-only "today" (server clock, UTC) — a rettifica always values as of today (Dev Notes: no `effectiveDate` input). */
-function todayDateOnlyUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  // Story 14.4 review F7 (ratifica R-14.4-d) — the in-app signal, deliberately
+  // NOT the same condition as the email above (this function's own doc-comment
+  // on `hasNegativeBalanceAlert`): fires for BOTH directions of a rettifica
+  // (this endpoint's `amountCents` is signed) whenever the account IS or
+  // BECOMES red, even when the band itself doesn't worsen.
+  return { ...overview, balanceAlert: hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents) };
 }
 
 export type NegativeBalanceItem = {

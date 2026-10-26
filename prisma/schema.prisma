@@ -23,7 +23,6 @@ model AppSetting {
 /// enum only exists so `User.roles` can be populated at login time.
 enum Role {
   ADMIN
-  STAFF
   INSTRUCTOR
   PILOT
   STUDENT
@@ -293,6 +292,24 @@ model Aircraft {
   /// Mandatory while `status == OUT_OF_SERVICE`; reset to `null` on return to
   /// service (enforced in `aircraft.service.ts`, not at the DB level).
   statusReason     String?
+  /// Expected end of the grounding (story AOG-1a, requirement P3), calendar-only.
+  /// THE SINGLE SOURCE OF THIS FIELD'S SEMANTICS — service, i18n and the
+  /// `AIRCRAFT_OUT_OF_SERVICE` 422 messages all cite this comment, none of them
+  /// re-interprets it:
+  /// (i) SEMANTICS (ratifica R-AOG-a, PO 2026-08-07): the LAST day the aircraft
+  ///     is GROUNDED, INCLUSIVE — the grounding window is `[now, end of the
+  ///     `outOfServiceUntil` day]`, so a booking/flight ON that day is still
+  ///     inside the fermo. UI label: "Fermo fino al {data} compreso".
+  /// (ii) INFORMATIVE (invariant [a]): it NEVER returns the aircraft to service
+  ///     by itself — no job, no cron, no `where` that filters out an "expired"
+  ///     grounding. Only an explicit `returnToService` does, and every guard
+  ///     (bookings, flights) keeps reading `status` alone.
+  /// (iii) SAME LIFE-CYCLE AS `statusReason`: written together with it by
+  ///     `setOutOfService`, reset to `null` by `returnToService` — enforced in
+  ///     `aircraft.service.ts`, not at the DB level.
+  /// (iv) OPTIONAL (invariant [b]): `null` means "return date not yet known" and
+  ///     is a legitimate state, not a missing value to be filled in.
+  outOfServiceUntil DateTime?     @db.Date
   /// Number of seats (story 12.5, AC 1) — anagrafica only, optional (not
   /// every legacy row has it on record).
   seats            Int?
@@ -464,6 +481,8 @@ model User {
   bookingsCancelled                   Booking[]                     @relation("BookingCancelledBy")
   /// Bookings this user FORCED past a blocking expired document (epic 7, story 7.4, AC 2) — `Booking.forcedByUserId`.
   bookingsForced                      Booking[]                     @relation("BookingForcedBy")
+  /// Flights this user FORCED past a blocking expired document (epic 14, story 14.4, AC 2) — `Flight.forcedByUserId`.
+  flightsForced                       Flight[]                      @relation("FlightForcedBy")
   /// Bookings this user APPROVED or DENIED (epic 12, story 12.2, AC 3) — `Booking.decidedByUserId`.
   bookingsDecided                     Booking[]                     @relation("BookingDecidedBy")
   /// Bookings this user marked FLOWN or NO_SHOW (epic 12, story 12.2, AC 3) — `Booking.closedByUserId`.
@@ -950,7 +969,7 @@ model Flight {
   instructorProfile   InstructorProfile? @relation(fields: [instructorProfileId], references: [id])
 
   /// Calendar-only date of the flight (`@db.Date`) — never in the future
-  /// (enforced in the service against the server-clock UTC "today").
+  /// (enforced in the service against the Europe/Rome calendar "today", story 16.1).
   flightDate     DateTime     @db.Date
   flightType     FlightType
   /// Dual/solo distinction on `SCHOOL` flights (story 9.4) — only
@@ -1035,6 +1054,19 @@ model Flight {
   actorUserId String
   actorUser   User   @relation(fields: [actorUserId], references: [id])
 
+  /// Admin force-bypass tracking for a blocking expired document at
+  /// registration/correction time (story 14.4, AC 2; ratifica R4) — set
+  /// TOGETHER, exactly once, ONLY when `resolveFlightInput` actually
+  /// bypassed a blocking expired document (`flights.forceExpiry` + `force:
+  /// true` + `forceReason`); `null` on every normal flight, INCLUDING a
+  /// `force: true` request that had nothing to bypass — same "scavalcato un
+  /// blocco, non spuntata una checkbox" convention as `Booking.forcedAt`
+  /// (story 7.4).
+  forcedAt       DateTime?
+  forcedByUserId String?
+  forcedByUser   User?     @relation("FlightForcedBy", fields: [forcedByUserId], references: [id])
+  forceReason    String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1069,13 +1101,26 @@ model Flight {
 /// the same aircraft where one ends exactly when the other starts are NOT
 /// overlapping — `startsAt`/`endsAt` are full instants (`DateTime`
 /// timestamptz), the first datetime fields in this codebase (wire format
-/// ISO 8601 UTC, AD-8). The concurrency guard against a double booking on
-/// the same aircraft (AC 2) is a `FOR UPDATE` lock on the `Aircraft` row
-/// inside `prisma.$transaction` (`bookings.service.ts#createBooking`, the
-/// exact pattern of `flights.service.ts#registerFlight`) — deliberately NOT
-/// a Postgres exclusion constraint (`btree_gist`): the lock already makes
-/// the pre-check-overlap + insert airtight, and story 7.3 reuses the same
-/// discipline (multi-aircraft lock) for a booking MOVE.
+/// ISO 8601 UTC, AD-8). The overlap invariant has THREE subjects since
+/// story 16.3 (ops F2): the aircraft, the person (`personId`) and the
+/// instructor (`instructorProfileId`) — none of them may hold two APPROVED
+/// bookings over overlapping intervals (409 `CONFLICT` / `PERSON_BUSY` /
+/// `INSTRUCTOR_BUSY`, `bookings.service.ts#findBookingConflict`). The
+/// concurrency guard is a row lock per subject inside `prisma.$transaction`,
+/// in one global order on every write path — `Aircraft` `FOR UPDATE` (the
+/// exact pattern of `flights.service.ts#registerFlight`; story 7.3 locks N of
+/// them `ORDER BY id` for a MOVE) → `Person` → `InstructorProfile`, the last
+/// two `FOR NO KEY UPDATE` so that no foreign-key check elsewhere ever waits
+/// on them (`bookings.service.ts#lockBookingPeople`) — which makes the
+/// pre-check-overlap + write airtight.
+/// Deliberately NOT a Postgres exclusion constraint (`btree_gist`), a choice
+/// first made with one subject and RE-EVALUATED with three in story 16.3:
+/// it would take three partial constraints on `status = 'APPROVED'` (raw
+/// migration + extension) that the load DB already violates (18 person + 11
+/// instructor pairs measured), its `23P01` would have to be told apart by
+/// constraint NAME to pick the 409 code, and it would not remove the
+/// `Aircraft` lock, which also guards the aircraft's STATE read. If the DB is
+/// ever to become the arbiter, this is where to reopen the question.
 ///
 /// **Soft-cancel, never delete** (story 7.3, same `FlightStatus` pattern as
 /// `Flight`): cancelling flips `status` to `CANCELLED`
@@ -1178,12 +1223,17 @@ model Booking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// Backs both the overlap scan (`aircraftId` + range on `startsAt`) and
-  /// the calendar view (story 7.2). No separate `@@index([status])`:
-  /// every query already filters on `aircraftId`/`startsAt` (this index) or
-  /// scans the whole (small) active set — `status` alone would not narrow
-  /// either access path enough to earn its own index (doc-comment per
-  /// story 7.3's Task 1, deliberately omitted).
+  /// Backs both the AIRCRAFT overlap scan (`aircraftId` + range on
+  /// `startsAt`) and the calendar view (story 7.2). The PERSON and
+  /// INSTRUCTOR overlap scans (story 16.3) are served by the two plain
+  /// indexes below — measured on the 40 000-booking load DB: a bitmap index
+  /// scan on `Booking_personId_idx`, 0.17 ms, at most 25 bookings per person
+  /// and 31 per instructor — so neither needed a composite index. No
+  /// separate `@@index([status])`: every query already filters on
+  /// `aircraftId`/`startsAt`, `personId` or `instructorProfileId`, or scans
+  /// the whole (small) active set — `status` alone would not narrow any
+  /// access path enough to earn its own index (doc-comment per story 7.3's
+  /// Task 1, deliberately omitted).
   @@index([aircraftId, startsAt])
   @@index([personId])
   @@index([instructorProfileId])
@@ -1298,12 +1348,19 @@ model ExpiryType {
   isActive       Boolean        @default(true)
   /// Whether an EXPIRED `Expiry` of this type blocks a NEW booking (epic 7,
   /// story 7.4; FR-21 `[ASSUMPTION]`: medica/licenza block, ratings only
-  /// warn). Default `false` (a new/custom type never blocks until an admin
-  /// opts it in, `settings.manage`, `types-manager.tsx`'s checkbox) — the
-  /// migration backfills `true` on the 4 standard blocking types by exact
-  /// seed name (`prisma/migrations/20260709120000_add_booking_expiry_block`).
-  /// Consumed ONLY by `bookings.service.ts#createBooking` — see that
-  /// function's doc-comment for the flight-day comparison and force/warning
+  /// warn) AND a NEW flight registration/correction (epic 14, story 14.4,
+  /// AC 1; ratifica R4) — the SAME flag gates both, deliberately not
+  /// renamed/split (story 14.4's own AC 1 left the rename optional; the
+  /// field's semantics — "an expired document of this type blocks the
+  /// operation" — already generalize without one). Default `false` (a
+  /// new/custom type never blocks until an admin opts it in, `settings.manage`,
+  /// `types-manager.tsx`'s checkbox) — the migration backfills `true` on the
+  /// 4 standard blocking types by exact seed name
+  /// (`prisma/migrations/20260709120000_add_booking_expiry_block`). Consumed
+  /// by `bookings.service.ts#findBlockingExpiredDocuments` — shared by
+  /// `createBooking`/`updateBooking` (bookings) and, since story 14.4,
+  /// `flights.service.ts#resolveFlightInput` (flights) — see those
+  /// functions' doc-comments for the flight-day comparison and force/warning
   /// semantics.
   blocksBooking  Boolean        @default(false)
   /// Validity window in months, used to PRECOMPILE `Expiry.expiresAt` at
@@ -1603,8 +1660,9 @@ model PprRequest {
   firstName String
   lastName  String
   /// NULLABLE (epic 12, story 12.4, AC 1) — the public form still REQUIRES
-  /// it (Zod, `createPprRequestSchema`), so this is only ever `null` for a
-  /// STAFF-entered manual request that gave a phone but no email
+  /// it (Zod, `createPprRequestSchema`), so this is only ever `null` for an
+  /// ADMIN-entered manual request (`ppr.manage`, ADMIN-only since story
+  /// 14.9) that gave a phone but no email
   /// (`createManualPprRequestSchema`'s "at least one contact" refine). Every
   /// email-sending path (receipt/approval/rejection, `ppr.service.ts`) skips
   /// silently when this is `null`.

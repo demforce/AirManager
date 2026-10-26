@@ -52,6 +52,12 @@ export const listPeopleQuerySchema = paginationQuerySchema.extend({
   // schema is ever reused off a JSON body) turns the flag on; anything else,
   // including an explicit `"false"` or an absent param, is `false`.
   includeArchived: z.preprocess((value) => value === 'true' || value === true, z.boolean()).default(false),
+  // Feedback utente 2026-07-28 (pagina Piloti): the archived toggle shows
+  // ONLY archived persons, not actives+archived mixed. `archivedOnly` wins
+  // over `includeArchived` (which stays as-is for the picker callers) and is
+  // OPTIONAL (absent = false) so the existing literal call sites keep
+  // typechecking (`ListPeopleQuery` is the z.infer OUTPUT type).
+  archivedOnly: z.preprocess((value) => (value === undefined ? undefined : value === 'true' || value === true), z.boolean().optional()),
   // Story TD-3 (AC 3) — additive, optional profile filter for the flight
   // form's typeahead pickers: `pilot-or-student` narrows to an ACTIVE pilot
   // or student profile (the "Pilota o allievo" picker's domain rule),

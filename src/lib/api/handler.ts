@@ -57,7 +57,12 @@ export function domainErrorResponse(error: DomainError): NextResponse {
     // instead of leaking a domain code at the wrong status.
     return internalErrorResponse(error);
   }
-  const details = error instanceof ValidationError ? error.details : undefined;
+  // Story 16.2 (AD-3): `ConflictError` carries `details` with the SAME shape
+  // as `ValidationError` (`errors.ts`) and, until this story, the layer here
+  // silently dropped it — a 409 could not name the row it conflicted with.
+  // Deliberately keyed on the ERROR CLASS, not on any one code, so every
+  // future `ConflictError` that populates `details` is on the wire for free.
+  const details = error instanceof ValidationError || error instanceof ConflictError ? error.details : undefined;
   return NextResponse.json(errorEnvelope(error.code, error.message, details), { status });
 }
 

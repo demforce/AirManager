@@ -31,7 +31,7 @@ function sanitizeStatus(value: string | undefined): QueueStatus {
  * beyond the static prototype, which shows every status in one unfiltered
  * table), Approve/Reject actions rendered ONLY on `PENDING` rows — no
  * "Riapri" (D13: the domain has no reopen-a-decided-PPR path,
- * `PPR_ALREADY_DECIDED`). Gated `ppr.manage` (staff + admin) — the redirect
+ * `PPR_ALREADY_DECIDED`). Gated `ppr.manage` (ADMIN-only) — the redirect
  * here only hides navigation (AD-5, every service call re-checks its own
  * permission). Story 13.6, AC 1: the operating-instructions/landing-fee
  * editor that used to live in this console (duplicating Impostazioni's own
@@ -99,7 +99,11 @@ export default async function PprConsolePage({ params, searchParams }: PageProps
           <h1>{t('title')}</h1>
           <div className="sub">{t('sub', { pending: pendingCount, approved: approvedCount, rejected: rejectedCount })}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {/* `ppr-head-actions`: same declarations as the inline style it
+            replaces (measured identical above 640px), now a class so the 44px
+            touch floor of story 15.10 has something of this page's OWN to hang
+            off — never `.page-head`, shared by 13 pages. */}
+        <div className="ppr-head-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <a className="btn" href={`/${locale}/ppr`} target="_blank" rel="noopener noreferrer" data-testid="ppr-public-form-link">
             {t('header.publicForm')}
           </a>
@@ -191,6 +195,30 @@ export default async function PprConsolePage({ params, searchParams }: PageProps
           },
           empty: t('empty'),
           exportMenu: { label: t('export.label'), xlsLabel: tExport('button'), pdfLabel: tExport('buttonPdf') },
+          // Story 15.2 — the <=640px card list + detail sheet. `detail` reuses
+          // the manual-form field labels: same nouns, already bilingual, no
+          // second set of translations to keep in sync.
+          mobile: {
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            viewInMovements: t('mobile.viewInMovements'),
+            requestLabel: t('mobile.requestLabel'),
+            detail: {
+              requester: t('table.requester'),
+              email: t('manualForm.email'),
+              phone: t('manualForm.phone'),
+              origin: t('manualForm.origin'),
+              destination: t('manualForm.destination'),
+              eta: t('manualForm.eta'),
+              // NOT `manualForm.etd`/`manualForm.notes`: those carry a
+              // "(facoltativo)"/"(facoltative)" suffix, which is a FORM
+              // concept — meaningless as the key of a read-only detail line.
+              etd: t('mobile.etd'),
+              personsOnBoard: t('manualForm.personsOnBoard'),
+              notes: t('mobile.notes'),
+              rejectionReason: t('mobile.rejectionReason'),
+            },
+          },
         }}
       />
 

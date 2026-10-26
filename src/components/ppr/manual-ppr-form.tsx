@@ -33,6 +33,7 @@ import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input } from '@/components/ui/field';
 import { SlideOver } from '@/components/ui/slide-over';
 import type { AppLocale } from '@/i18n/routing';
+import { parseApiError } from '@/lib/api-field-errors';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import type { PprRequestItemDto } from '@/lib/schemas/ppr';
 import { Icon } from '@/components/ui/icons';
@@ -107,17 +108,28 @@ const BLANK_VALUES: FormValues = {
   notes: '',
 };
 
-/** Same shape as the public `ppr-form.tsx#pprFormSchema` (custom message codes resolved by `fieldErrorLabel` below), plus `contactRequired` — the "at least one of email/phone" rule the server also enforces (`createManualPprRequestSchema`'s `.refine`), checked here client-side FIRST so a bare empty submit never even reaches the network. */
+/**
+ * Same shape as the public `ppr-form.tsx#pprFormSchema` (custom message
+ * codes resolved by `fieldErrorLabel` below), plus `contactRequired` — the
+ * "at least one of email/phone" rule the server also enforces
+ * (`createManualPprRequestSchema`'s `.refine`), checked here client-side
+ * FIRST so a bare empty submit never even reaches the network.
+ *
+ * Review F4: the `.max()` bounds mirror `createManualPprRequestSchema`
+ * (`lib/schemas/ppr.ts`) — same gap/fix as the public form's own schema. A
+ * violation falls through to `fieldErrorLabel`'s generic `requiredField`
+ * fallback (no dedicated "too long" message).
+ */
 const manualPprFormSchema = z
   .object({
-    firstName: z.string(),
-    lastName: z.string(),
+    firstName: z.string().max(100),
+    lastName: z.string().max(100),
     email: z.string(),
-    phone: z.string(),
-    aircraftRegistration: z.string(),
-    aircraftType: z.string(),
-    origin: z.string(),
-    destination: z.string(),
+    phone: z.string().max(30),
+    aircraftRegistration: z.string().max(20),
+    aircraftType: z.string().max(100),
+    origin: z.string().max(100),
+    destination: z.string().max(100),
     eta: z.string(),
     etd: z.string(),
     personsOnBoard: z.string(),
@@ -160,8 +172,6 @@ const manualPprFormSchema = z
     }
   });
 
-type ApiErrorBody = { error?: { code?: string } };
-
 export function ManualPprForm({ open, onClose, approveImmediately, locale, labels, onSuccess }: ManualPprFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
@@ -170,6 +180,7 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
     register,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(manualPprFormSchema), defaultValues: BLANK_VALUES });
 
@@ -222,8 +233,35 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
     regenerateIdempotencyKey();
 
     if (!response.ok) {
-      const errorBody = (await response.json().catch(() => null)) as ApiErrorBody | null;
-      const code = errorBody?.error?.code;
+      const { code, fieldErrors } = await parseApiError(response);
+      if (fieldErrors.size > 0) {
+        // Review F4: a field-shaped 422 marks the matching Field instead of
+        // only the generic banner below (`fieldErrorLabel`'s own fallback
+        // translates it) — same "mapped only where a marker actually
+        // renders" rule as review F1 (every field here except `notes` has a
+        // visible `.fld-error` slot).
+        const known: Array<keyof FormValues> = [
+          'firstName',
+          'lastName',
+          'email',
+          'phone',
+          'aircraftRegistration',
+          'aircraftType',
+          'origin',
+          'destination',
+          'eta',
+          'etd',
+          'personsOnBoard',
+        ];
+        let mapped = false;
+        for (const field of known) {
+          if (fieldErrors.has(field)) {
+            setError(field, { type: 'server', message: 'requiredField' });
+            mapped = true;
+          }
+        }
+        if (mapped) return;
+      }
       if (code === 'ETA_IN_PAST') {
         setFormError(labels.errors.ETA_IN_PAST);
       } else if (code === 'ETD_NOT_AFTER_ETA') {
@@ -239,64 +277,88 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
     onSuccess(created);
   }
 
+  /* Review 15.10 LOW-4 (PO decision 2026-08-06): the same medicine R-15.10-f
+     gave the three multi-form editors, on the form that ratifica shares with
+     them. The primary action moves from the in-body `.so-actions` bar to
+     `SlideOver`'s `footer` (`.so-foot`, OUTSIDE the scrolling `.so-body`) and
+     reaches this form through `form="manual-ppr-form"`. Measured at 375px on
+     BOTH surfaces that mount it, at `scrollTop 0`: the sticky bar sat at
+     743-812 and COVERED the ETA calendar trigger (756.73-800.73,
+     `elementFromPoint` = `manual-ppr-submit`) — a 44px target that was not
+     hit-testable at first sight, which is defect R3 itself. The desktop foot
+     is the ratified one (review MINOR-1): the same grammar the other ten
+     call-sites of `footer` already use. */
+  const footer = (
+    <>
+      <div style={{ flex: 1 }} />
+      <button type="button" className="btn" onClick={handleClose}>
+        {labels.cancel}
+      </button>
+      <button type="submit" form="manual-ppr-form" disabled={isSubmitting} className="btn primary" data-testid="manual-ppr-submit">
+        <Icon.check /> {labels.submit}
+      </button>
+    </>
+  );
+
   return (
-    <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel}>
-      <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="manual-ppr-form">
+    <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel} footer={footer}>
+      {/* `manual-ppr-form` (class, not just the testid): the 44px touch floor
+          of story 15.10 (R-15.10-j) has to reach the 12 fields of THIS form on
+          both surfaces that mount it — `/dashboard/ppr` and the "Registra
+          arrivo" of `/dashboard/movements` — without reaching `.form-grid` or
+          `.input`, which every dashboard form shares. The `id` is what the
+          footer submit binds to (`form="manual-ppr-form"`). */}
+      <form
+        id="manual-ppr-form"
+        className="manual-ppr-form"
+        onSubmit={(event) => void handleSubmit(onSubmit)(event)}
+        noValidate
+        data-testid="manual-ppr-form"
+      >
         <div className="form-grid">
-          <Field label={labels.firstName}>
-            <Input autoComplete="given-name" aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
+          <Field label={labels.firstName} error={fieldErrorLabel(errors.firstName) ?? undefined}>
+            <Input autoComplete="given-name" maxLength={100} aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
           </Field>
-          {fieldErrorLabel(errors.firstName) ? <p className="fld-label">{fieldErrorLabel(errors.firstName)}</p> : null}
 
-          <Field label={labels.lastName}>
-            <Input autoComplete="family-name" aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
+          <Field label={labels.lastName} error={fieldErrorLabel(errors.lastName) ?? undefined}>
+            <Input autoComplete="family-name" maxLength={100} aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
           </Field>
-          {fieldErrorLabel(errors.lastName) ? <p className="fld-label">{fieldErrorLabel(errors.lastName)}</p> : null}
 
-          <Field label={labels.email}>
+          <Field label={labels.email} error={fieldErrorLabel(errors.email) ?? undefined}>
             <Input type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
           </Field>
-          {fieldErrorLabel(errors.email) ? <p className="fld-label">{fieldErrorLabel(errors.email)}</p> : null}
 
-          <Field label={labels.phone}>
-            <Input type="tel" autoComplete="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
+          <Field label={labels.phone} error={fieldErrorLabel(errors.phone) ?? undefined}>
+            <Input type="tel" autoComplete="tel" maxLength={30} aria-invalid={Boolean(errors.phone)} {...register('phone')} />
           </Field>
-          {fieldErrorLabel(errors.phone) ? <p className="fld-label">{fieldErrorLabel(errors.phone)}</p> : null}
 
-          <Field label={labels.aircraftRegistration}>
-            <Input aria-invalid={Boolean(errors.aircraftRegistration)} {...register('aircraftRegistration')} style={{ textTransform: 'uppercase' }} />
+          <Field label={labels.aircraftRegistration} error={fieldErrorLabel(errors.aircraftRegistration) ?? undefined}>
+            <Input aria-invalid={Boolean(errors.aircraftRegistration)} maxLength={20} {...register('aircraftRegistration')} style={{ textTransform: 'uppercase' }} />
           </Field>
-          {fieldErrorLabel(errors.aircraftRegistration) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftRegistration)}</p> : null}
 
-          <Field label={labels.aircraftType}>
-            <Input aria-invalid={Boolean(errors.aircraftType)} {...register('aircraftType')} />
+          <Field label={labels.aircraftType} error={fieldErrorLabel(errors.aircraftType) ?? undefined}>
+            <Input maxLength={100} aria-invalid={Boolean(errors.aircraftType)} {...register('aircraftType')} />
           </Field>
-          {fieldErrorLabel(errors.aircraftType) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftType)}</p> : null}
 
-          <Field label={labels.origin}>
-            <Input aria-invalid={Boolean(errors.origin)} {...register('origin')} />
+          <Field label={labels.origin} error={fieldErrorLabel(errors.origin) ?? undefined}>
+            <Input maxLength={100} aria-invalid={Boolean(errors.origin)} {...register('origin')} />
           </Field>
-          {fieldErrorLabel(errors.origin) ? <p className="fld-label">{fieldErrorLabel(errors.origin)}</p> : null}
 
-          <Field label={labels.destination}>
-            <Input aria-invalid={Boolean(errors.destination)} {...register('destination')} />
+          <Field label={labels.destination} error={fieldErrorLabel(errors.destination) ?? undefined}>
+            <Input maxLength={100} aria-invalid={Boolean(errors.destination)} {...register('destination')} />
           </Field>
-          {fieldErrorLabel(errors.destination) ? <p className="fld-label">{fieldErrorLabel(errors.destination)}</p> : null}
 
-          <Field label={labels.eta}>
+          <Field label={labels.eta} error={fieldErrorLabel(errors.eta) ?? undefined}>
             <DateTimeInput aria-invalid={Boolean(errors.eta)} {...register('eta')} />
           </Field>
-          {fieldErrorLabel(errors.eta) ? <p className="fld-label">{fieldErrorLabel(errors.eta)}</p> : null}
 
-          <Field label={labels.etd}>
+          <Field label={labels.etd} error={fieldErrorLabel(errors.etd) ?? undefined}>
             <DateTimeInput aria-invalid={Boolean(errors.etd)} {...register('etd')} />
           </Field>
-          {fieldErrorLabel(errors.etd) ? <p className="fld-label">{fieldErrorLabel(errors.etd)}</p> : null}
 
-          <Field label={labels.personsOnBoard}>
+          <Field label={labels.personsOnBoard} error={fieldErrorLabel(errors.personsOnBoard) ?? undefined}>
             <Input type="number" min={1} max={99} step={1} aria-invalid={Boolean(errors.personsOnBoard)} {...register('personsOnBoard')} />
           </Field>
-          {fieldErrorLabel(errors.personsOnBoard) ? <p className="fld-label">{fieldErrorLabel(errors.personsOnBoard)}</p> : null}
 
           <Field label={labels.notes} wide>
             <Input maxLength={1000} {...register('notes')} />
@@ -309,14 +371,6 @@ export function ManualPprForm({ open, onClose, approveImmediately, locale, label
           </p>
         ) : null}
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-          <button type="button" className="btn" onClick={handleClose}>
-            {labels.cancel}
-          </button>
-          <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="manual-ppr-submit">
-            <Icon.check /> {labels.submit}
-          </button>
-        </div>
       </form>
     </SlideOver>
   );

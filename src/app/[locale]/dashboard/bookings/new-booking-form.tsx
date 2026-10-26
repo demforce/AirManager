@@ -2,13 +2,16 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
+import { useLocale } from 'next-intl';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
 import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
+import { Segmented } from '@/components/ui/segmented';
 import { SlideOver } from '@/components/ui/slide-over';
+import { formatDateOnly } from '@/lib/time';
 
 export type NewBookingFormMode = 'staff' | 'instructor' | 'pilot';
 
@@ -50,10 +53,18 @@ export type NewBookingFormLabels = {
   errors: {
     /** `{reason}` placeholder, client-filled. */
     AIRCRAFT_OUT_OF_SERVICE: string;
+    /** Story AOG-1a, AC 7 — used only when `details.outOfServiceUntil` is present: the same sentence plus the INCLUSIVE fermo clause (`{date}`). The plain key above stays byte-identical for a grounding with no date (invariant [b]). */
+    AIRCRAFT_OUT_OF_SERVICE_UNTIL: string;
     BOOKING_IN_PAST: string;
     PERSON_NOT_BOOKABLE: string;
     /** `{documents}` placeholder, client-filled with the comma-joined blocking document type names (story 7.4, AC 1) — same `t.raw` pattern as `outOfServiceSuffix`. */
     EXPIRED_DOCUMENTS: string;
+    /** Story 15.4 (ratifica R-15.4-g): already interpolated server-side with the airfield's own window — the settings live on the page, not in this component. */
+    BOOKING_OUTSIDE_WINDOW: string;
+    /** Story 16.3 (ops F2): the booked PERSON already has an approved booking over the interval, on any aircraft. */
+    PERSON_BUSY: string;
+    /** Story 16.3 (ops F2): the indicated INSTRUCTOR already has an approved booking over the interval, on any aircraft. */
+    INSTRUCTOR_BUSY: string;
     overlap: string;
     generic: string;
   };
@@ -156,7 +167,12 @@ function buildFormSchema(mode: NewBookingFormMode, bookingTarget: 'self' | 'stud
 
 /** Story 7.4: `details` also carries `documents` on an `EXPIRED_DOCUMENTS` 422 (`{ typeName, expiresAt }[]`, `bookings.service.ts#createBooking`'s doc-comment). */
 type ApiErrorBody = {
-  error?: { code?: string; message?: string; details?: { reason?: string; documents?: Array<{ typeName: string; expiresAt: string }> } };
+  error?: {
+    code?: string;
+    message?: string;
+    /** Story AOG-1a — `outOfServiceUntil` is additive on the SAME `AIRCRAFT_OUT_OF_SERVICE` details all four guards now share (`aircraft-status.ts#outOfServiceDetails`). */
+    details?: { reason?: string; outOfServiceUntil?: string | null; documents?: Array<{ typeName: string; expiresAt: string }> };
+  };
 };
 
 /** `POST /api/v1/bookings`'s success envelope (story 7.4, AC 1) — `{ booking, warnings }`, replacing the bare item this route answered before this story. */
@@ -198,6 +214,9 @@ export function NewBookingForm({
   labels,
 }: NewBookingFormProps) {
   const router = useRouter();
+  // Story AOG-1a, AC 7(e) — the fermo date in the out-of-service 422 goes through the app's own date formatter, in the reader's own locale.
+  const displayLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
+
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [warnings, setWarnings] = useState<Array<{ typeName: string; expiresAt: string }>>([]);
@@ -291,19 +310,37 @@ export function NewBookingForm({
     });
 
     if (!response.ok) {
-      // 409 (overlap) is never conflated with a 422 domain code (Dev Notes).
-      if (response.status === 409) {
-        setFormError(labels.errors.overlap);
-        return;
-      }
       const errorBody = (await response.json().catch(() => null)) as ApiErrorBody | null;
       const code = errorBody?.error?.code;
+      // 409 (overlap) is never conflated with a 422 domain code (Dev Notes).
+      // Story 16.3: the body is read FIRST, because a 409 is no longer always
+      // about the aircraft — a busy person/instructor says so; every other 409
+      // keeps the aircraft message.
+      if (response.status === 409) {
+        setFormError(code === 'PERSON_BUSY' || code === 'INSTRUCTOR_BUSY' ? labels.errors[code] : labels.errors.overlap);
+        return;
+      }
       if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
-        setFormError(labels.errors.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', errorBody?.error?.details?.reason ?? ''));
+        // Story AOG-1a, AC 7 (precedente R-15.4-g: a 422 must SAY the
+        // constraint it hit). With a date on file the message adds the fermo
+        // clause in the INCLUSIVE wording R-AOG-a fixed; WITHOUT one it is
+        // byte-identical to what it has always been — an absent return date is
+        // a legitimate state (invariant [b]), not a blank to announce.
+        const until = errorBody?.error?.details?.outOfServiceUntil ?? null;
+        const template = until === null ? labels.errors.AIRCRAFT_OUT_OF_SERVICE : labels.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL;
+        setFormError(
+          template.replace('{reason}', errorBody?.error?.details?.reason ?? '').replace('{date}', until === null ? '' : formatDateOnly(until, displayLocale)),
+        );
       } else if (code === 'BOOKING_IN_PAST') {
         setFormError(labels.errors.BOOKING_IN_PAST);
       } else if (code === 'PERSON_NOT_BOOKABLE') {
         setFormError(labels.errors.PERSON_NOT_BOOKABLE);
+      } else if (code === 'BOOKING_OUTSIDE_WINDOW') {
+        // Ratifica R-15.4-g: this used to fall through to the generic
+        // "Riprova", which is the one thing that cannot work — the slot is
+        // outside the airfield's window and retrying it fails again. The
+        // message now states the window (interpolated server-side).
+        setFormError(labels.errors.BOOKING_OUTSIDE_WINDOW);
       } else if (code === 'EXPIRED_DOCUMENTS') {
         // Story 7.4, AC 1/2: the message lists the blocking document names
         // (from `details.documents`, never the server's English-only
@@ -375,7 +412,7 @@ export function NewBookingForm({
       <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="new-booking-form">
         <div className="form-grid">
           {mode === 'staff' ? (
-            <Field label={labels.person} wide>
+            <Field label={labels.person} wide error={fieldErrorLabel(errors.personId) ?? undefined}>
               <Select aria-invalid={Boolean(errors.personId)} {...register('personId')}>
                 <option value="">{labels.selectPlaceholder}</option>
                 {personOptions.map((person) => (
@@ -387,9 +424,8 @@ export function NewBookingForm({
             </Field>
           ) : null}
           {mode === 'staff' && personOptions.length === 0 ? <p className="fld-label">{labels.noPersonAvailable}</p> : null}
-          {mode === 'staff' && fieldErrorLabel(errors.personId) ? <p className="fld-label">{fieldErrorLabel(errors.personId)}</p> : null}
 
-          <Field label={labels.aircraft}>
+          <Field label={labels.aircraft} error={fieldErrorLabel(errors.aircraftId) ?? undefined}>
             <Select aria-invalid={Boolean(errors.aircraftId)} {...register('aircraftId')}>
               <option value="">{labels.selectPlaceholder}</option>
               {aircraftOptions.map((aircraft) => (
@@ -401,7 +437,6 @@ export function NewBookingForm({
               ))}
             </Select>
           </Field>
-          {fieldErrorLabel(errors.aircraftId) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftId)}</p> : null}
 
           {mode === 'staff' ? (
             <Field label={labels.instructorOptional}>
@@ -416,24 +451,52 @@ export function NewBookingForm({
             </Field>
           ) : null}
 
+          {/* Story 14.7, AC 1: one binary AirOps `Segmented` control instead of
+              two radios — same component `aircraft-editor.tsx`'s `based`
+              toggle already uses, chosen over a checkbox/switch because the
+              choice is a named PAIR of mutually-exclusive options ("per me" /
+              "per un allievo"), exactly what `Segmented` is for; a bare
+              toggle would need its own on/off-to-label mapping for no
+              benefit. `bookingTarget`'s semantics (state, schema, the student
+              field's conditional render+validation) are UNCHANGED — only the
+              markup driving it.
+
+              NOT wrapped in `Field` (unlike `BasedSegmented`'s usage):
+              `Field`'s implicit `<label>` associates with the FIRST
+              labelable descendant only (native HTML behaviour) — verified
+              interactively that this makes Chromium compute that first
+              button's accessible name as the label text PLUS the OTHER
+              button's text, with the button's OWN text silently dropped
+              (e.g. "Per me" -> "Prenota Per un allievo"), while the second
+              button keeps a clean name. Same `role="group"`/`aria-label`
+              pattern `schedule.tsx`'s view toggle already uses instead: the
+              GROUP gets the accessible name, each button keeps its own
+              clean one — reused here via `Segmented`'s new `ariaLabel` prop
+              rather than hand-rolling the group markup again. Visual layout
+              is identical to `Field`'s (same `fld`/`fld-label-group`/
+              `fld-label`/`fld-ctrl` classes), just without the label
+              wrapper. */}
           {mode === 'instructor' ? (
-            <fieldset className="fld wide">
-              <legend className="fld-label">{labels.bookingTarget}</legend>
-              <div style={{ display: 'flex', gap: 20, marginTop: 8 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="radio" name="booking-target" checked={bookingTarget === 'self'} onChange={() => setBookingTarget('self')} />
-                  {labels.bookForMe}
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="radio" name="booking-target" checked={bookingTarget === 'student'} onChange={() => setBookingTarget('student')} />
-                  {labels.bookForStudent}
-                </label>
+            <div className="fld wide">
+              <div className="fld-label-group">
+                <span className="fld-label">{labels.bookingTarget}</span>
+                <span className="fld-ctrl">
+                  <Segmented
+                    ariaLabel={labels.bookingTarget}
+                    options={[
+                      { value: 'self', label: labels.bookForMe },
+                      { value: 'student', label: labels.bookForStudent },
+                    ]}
+                    value={bookingTarget}
+                    onChange={setBookingTarget}
+                  />
+                </span>
               </div>
-            </fieldset>
+            </div>
           ) : null}
 
           {mode === 'instructor' && bookingTarget === 'student' ? (
-            <Field label={labels.student}>
+            <Field label={labels.student} error={fieldErrorLabel(errors.studentId) ?? undefined}>
               <Select aria-invalid={Boolean(errors.studentId)} {...register('studentId')}>
                 <option value="">{labels.selectPlaceholder}</option>
                 {studentOptions.map((student) => (
@@ -445,17 +508,14 @@ export function NewBookingForm({
             </Field>
           ) : null}
           {mode === 'instructor' && bookingTarget === 'student' && studentOptions.length === 0 ? <p className="fld-label">{labels.noStudentAvailable}</p> : null}
-          {mode === 'instructor' && bookingTarget === 'student' && fieldErrorLabel(errors.studentId) ? <p className="fld-label">{fieldErrorLabel(errors.studentId)}</p> : null}
 
-          <Field label={labels.startsAt}>
+          <Field label={labels.startsAt} error={fieldErrorLabel(errors.startsAt) ?? undefined}>
             <DateTimeInput aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />
           </Field>
-          {fieldErrorLabel(errors.startsAt) ? <p className="fld-label">{fieldErrorLabel(errors.startsAt)}</p> : null}
 
-          <Field label={labels.endsAt}>
+          <Field label={labels.endsAt} error={fieldErrorLabel(errors.endsAt) ?? undefined}>
             <DateTimeInput aria-invalid={Boolean(errors.endsAt)} {...register('endsAt')} />
           </Field>
-          {fieldErrorLabel(errors.endsAt) ? <p className="fld-label">{fieldErrorLabel(errors.endsAt)}</p> : null}
 
           <Field label={labels.notes} wide>
             <Input maxLength={500} {...register('notes')} />
@@ -497,7 +557,7 @@ export function NewBookingForm({
               />
             </div>
             {forceError ? (
-              <p role="alert" data-testid="force-booking-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 6 }}>
+              <p role="alert" data-testid="force-booking-error" className="fld-error" style={{ marginTop: 6 }}>
                 {forceError}
               </p>
             ) : null}
@@ -541,7 +601,14 @@ export function NewBookingForm({
           </div>
         ) : null}
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+        {/* Story 15.4 (R3, AD-6): `so-actions` is the hook the <=640px
+            full-screen mode uses to pin the PRIMARY action to the bottom of
+            the panel (`airops.css`, inside `@media (max-width: 640px)` — inert
+            on the desktop, where this row keeps its exact geometry). It goes
+            on THIS row only: the "Forza prenotazione" row above keeps
+            scrolling with its own amber section, because two stacked sticky
+            bars are the defect review 15.2 F3 deferred to story 15.5. */}
+        <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
           <button type="button" className="btn" onClick={handleClose}>
             {labels.force.cancel}
           </button>

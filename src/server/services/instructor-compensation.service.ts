@@ -1,9 +1,10 @@
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { RecordInstructorPayoutInput } from '@/lib/schemas/instructor-compensation';
 import { APP_TIMEZONE } from '@/lib/time';
-import { todayDateOnlyInZone } from '@/lib/zoned-time';
+import { todayDateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { getOwnInstructorProfileId } from './bookings.service';
 import { ConflictError, NotFoundError } from './errors';
 
 /** The seeded cash category (`prisma/seed.ts`/`seed-demo.ts`) the payout's money twin is recorded under (story Billing-1, AC 4) — resolved BY NAME before the transaction opens, same "fails loudly by design" contract as `accounts.service.ts#recordTopUp`'s "Ricariche". */
@@ -162,11 +163,16 @@ async function sumPayoutsByProfile(instructorProfileIds: string[], bounds: Varia
   return map;
 }
 
+/** `round(minutes/60 * payoutRateCents)`, or `null` when there is no rate to accrue against — the GROSS accrual for a period, shared by `computeOwed` (net = gross - paid) and the self-service "maturato" KPI (story 14.7, review F4: same formula, no new definition). */
+function computeGrossCents(minutes: number, payoutRateCents: number | null): number | null {
+  if (payoutRateCents === null) return null;
+  return Math.round((minutes / 60) * payoutRateCents);
+}
+
 /** `owed = round(minutes/60 * payoutRateCents) - paidCents`, or `null` when there is no rate to owe against (AC 2). */
 function computeOwed(minutes: number, payoutRateCents: number | null, paidCents: number): number | null {
-  if (payoutRateCents === null) return null;
-  const gross = Math.round((minutes / 60) * payoutRateCents);
-  return gross - paidCents;
+  const gross = computeGrossCents(minutes, payoutRateCents);
+  return gross === null ? null : gross - paidCents;
 }
 
 /** Computes the mtd/ytd/total minutes+owed rows for a given instructor platea — 6 batched queries total, regardless of platea size. Shared by the summary and the detail (single-instructor platea). */
@@ -203,7 +209,7 @@ async function computeSummaryRows(instructors: InstructorRow[]): Promise<Instruc
   });
 }
 
-/** `GET /api/v1/instructor-compensation` (no `personId`) — the full roster's compensation summary. `finance.manage` (staff+admin). */
+/** `GET /api/v1/instructor-compensation` (no `personId`) — the full roster's compensation summary. `finance.manage` (ADMIN-only). */
 export async function getCompensationSummary(actor: Actor): Promise<InstructorCompensationSummaryItem[]> {
   authorize(actor, 'finance.manage');
   const instructors = await listActiveInstructors();
@@ -244,6 +250,113 @@ export async function getOwnCompensationSummary(actor: Actor): Promise<OwnCompen
   return { payoutRateCents: row!.payoutRateCents, mtdMinutes: row!.mtdMinutes, owedMtdCents: row!.owedMtdCents };
 }
 
+/** A single received payout, as the self-service "I miei compensi" page's history table shows it (story 14.7, AC 2). */
+export type OwnPayoutHistoryItem = {
+  id: string;
+  amountCents: number;
+  periodStart: string;
+  periodEnd: string;
+  method: 'CASH' | 'BANK_TRANSFER' | 'POS';
+  createdAt: Date;
+};
+
+/** The self-service "I miei compensi" page's full read (story 14.7, AC 2). */
+export type OwnCompensationOverview = {
+  payoutRateCents: number | null;
+  mtdMinutes: number;
+  /** GROSS accrual this month (`round(mtdMinutes/60 * payoutRateCents)`, "Maturato nel mese" — ratifica PO, review F4): a value DERIVED from the same rate/minutes already computed, not a new calculation. */
+  mtdGrossCents: number | null;
+  /** NET owed this month (accrual minus payouts already made this month, "Dovuto nel mese") — same number the staff-facing roster card already shows for this instructor. */
+  mtdOwedCents: number | null;
+  /** All-time residual owed ("saldo residuo dovuto", AC 2) — same `owedTotalCents` the staff roster row already computes. */
+  totalOwedCents: number | null;
+  /** Newest first — every individual payout ever recorded against this instructor, capped (AC 2 is a history view, not an export — same cap convention as the rate history, `instructor-rates.service.ts`). */
+  payouts: OwnPayoutHistoryItem[];
+};
+
+/** History rows fetched for the self-service page (review F8) — a reasonable cap for a read-only recap, not a paginated/exportable ledger. */
+const OWN_PAYOUT_HISTORY_LIMIT = 50;
+
+/**
+ * Resolves the person + payout rate behind an ACTIVE instructor profile id
+ * (review F5/F7): the self-service read already knows its OWN
+ * `instructorProfileId` (`getOwnInstructorProfileId`) and has no reason to
+ * re-check `Person.archivedAt` — an instructor's payout history is about the
+ * PROFILE, not the person's current archival/employment status, the same
+ * convention `getInstructorCompensationDetail`'s `resolveActiveInstructorRow`
+ * already follows (it does not check `archivedAt` either). This also removes
+ * the `listActiveInstructors(actor.personId ?? undefined)` call this
+ * function used to make — there is no longer an `undefined` fallback to
+ * reason about.
+ */
+async function resolveInstructorRowByProfileId(instructorProfileId: string): Promise<InstructorRow | null> {
+  const profile = await prisma.instructorProfile.findUnique({
+    where: { id: instructorProfileId },
+    select: { id: true, payoutRateCents: true, person: { select: { id: true, firstName: true, lastName: true } } },
+  });
+  if (!profile) return null;
+  return {
+    personId: profile.person.id,
+    firstName: profile.person.firstName,
+    lastName: profile.person.lastName,
+    instructorProfileId: profile.id,
+    payoutRateCents: profile.payoutRateCents,
+  };
+}
+
+/**
+ * `getOwnCompensationOverview` (story 14.7, AC 2/3) — the self-service "I
+ * miei compensi" page's single read: current-period accrual (`mtdMinutes`/
+ * `mtdOwedCents`) plus the all-time residual (`totalOwedCents`), computed by
+ * the SAME `computeSummaryRows` math the staff-facing `getCompensationSummary`
+ * / `getOwnCompensationSummary` already use (AC 5: no new calculation), plus
+ * the individual payout history. Gated on `self.read`; resolves the actor's
+ * OWN instructor profile via `getOwnInstructorProfileId`
+ * (`bookings.service.ts` — reused verbatim, the exact function the "Nuova
+ * prenotazione" toggle and the Overview landing already rely on for the same
+ * "actor's own ACTIVE profile, never a client-supplied id" contract): there
+ * is no personId/instructorProfileId parameter on this function for a client
+ * to override (AC 3 — IDOR impossible by construction, not by a check). A
+ * deactivated/absent profile returns `null` (AC 4) — never a 403, never
+ * fabricated data, same convention as `getOwnCompensationSummary`. The
+ * staff-facing `getCompensationSummary`/`recordPayout` are UNTOUCHED by this
+ * addition (AC 5).
+ */
+export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompensationOverview | null> {
+  authorize(actor, 'self.read');
+  const instructorProfileId = await getOwnInstructorProfileId(actor);
+  if (!instructorProfileId) return null;
+
+  const instructor = await resolveInstructorRowByProfileId(instructorProfileId);
+  if (!instructor) return null;
+
+  const [[row], payouts] = await Promise.all([
+    computeSummaryRows([instructor]),
+    prisma.instructorPayout.findMany({
+      where: { instructorProfileId },
+      orderBy: [{ createdAt: 'desc' }],
+      take: OWN_PAYOUT_HISTORY_LIMIT,
+      select: { id: true, amountCents: true, periodStart: true, periodEnd: true, method: true, createdAt: true },
+    }),
+  ]);
+
+  return {
+    payoutRateCents: row!.payoutRateCents,
+    mtdMinutes: row!.mtdMinutes,
+    mtdGrossCents: computeGrossCents(row!.mtdMinutes, row!.payoutRateCents),
+    mtdOwedCents: row!.owedMtdCents,
+    totalOwedCents: row!.owedTotalCents,
+    payouts: payouts.map((payout) => ({
+      id: payout.id,
+      amountCents: payout.amountCents,
+      periodStart: toDateOnlyString(payout.periodStart),
+      periodEnd: toDateOnlyString(payout.periodEnd),
+      method: payout.method,
+      createdAt: payout.createdAt,
+    })),
+  };
+}
+
 /** Resolves ONE active instructor by `Person.id` for the detail read (unknown person OR no/deactivated profile -> 404, no enumeration concern since `finance.manage` already sees every person). */
 async function resolveActiveInstructorRow(personId: string): Promise<InstructorRow> {
   const person = await prisma.person.findUnique({
@@ -273,7 +386,7 @@ async function resolveActiveInstructorRow(personId: string): Promise<InstructorR
  * the 5 most recent SCHOOL flights this instructor flew as CFI and the
  * distinct students among them (derived from the SAME 5 flights, never a
  * separate query — same as the prototype's own `[...new Set(...)]`).
- * `finance.manage` (staff+admin) — same permission as the summary; the
+ * `finance.manage` (ADMIN-only) — same permission as the summary; the
  * `personId` resolution keeps the door open for a future own-access variant
  * (Dev Notes) without any extra work now.
  */
@@ -366,7 +479,7 @@ export async function recordPayout(actor: Actor, input: RecordInstructorPayoutIn
     );
   }
 
-  const effectiveDate = parseDateOnlyUtc(todayDateOnlyInZone(APP_TIMEZONE));
+  const effectiveDate = todayDateOnlyUtcInZone(APP_TIMEZONE);
 
   const payout = await prisma.$transaction(async (tx) => {
     const created = await tx.instructorPayout.create({

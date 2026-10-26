@@ -15,7 +15,7 @@ import { MovementsTable, type MovementRowDto, type MovementsFilters } from './mo
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; status?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ page?: string; status?: string; from?: string; to?: string; pprNumber?: string }>;
 };
 
 const MOVEMENTS_PAGE_SIZE = 20;
@@ -33,6 +33,18 @@ function sanitizeDateParam(value: string | undefined): string | undefined {
 
 function sanitizeStatus(value: string | undefined): MovementsStatus {
   return value && (MOVEMENTS_STATUSES as readonly string[]).includes(value) ? (value as MovementsStatus) : 'APPROVED';
+}
+
+/**
+ * Story 15.9 (AC 15): the register is the destination of the approval queue's
+ * "Vedi in Transiti" deep link. Same hand-edited-URL defence as
+ * `sanitizeDateParam` above — a malformed `?pprNumber=` is DROPPED here (the
+ * page then shows its normal, unfiltered register) rather than forwarded to
+ * `listPprRequestsQuerySchema`, which would answer 422 on a page render. The
+ * API keeps the strict validation for its own callers.
+ */
+function sanitizePprNumber(value: string | undefined): string | undefined {
+  return value && /^PPR-\d{4}-\d{4,}$/.test(value) ? value : undefined;
 }
 
 /** Upper bound on how many currently-open (never-closed) APPROVED rows the KPI scan below reads at once (Dev Notes: a realistic airfield has well under this many simultaneously in flight; exceeding it undercounts the "al suolo ora"/"in arrivo oggi" KPIs rather than crashing — a documented, accepted degradation, not a hard cap on the register itself). */
@@ -86,7 +98,8 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
   const tomorrow = addDaysDateOnly(today, 1);
   const monthRange = currentMonthRange(now);
 
-  const listQuery = { pageSize: MOVEMENTS_PAGE_SIZE, status, from, to };
+  const pprNumber = sanitizePprNumber(sp.pprNumber);
+  const listQuery = { pageSize: MOVEMENTS_PAGE_SIZE, status, from, to, ...(pprNumber ? { pprNumber } : {}) };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   const results = await Promise.all([
     listPprRequests(actor, { ...listQuery, page }),
@@ -125,6 +138,10 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
     ...(status !== 'APPROVED' ? { status } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
+    // Kept on the pagination links so a deep-linked register stays filtered
+    // while paging (story 15.9). The filters form does not carry it: changing
+    // a filter by hand is how the number filter is cleared.
+    ...(pprNumber ? { pprNumber } : {}),
   };
 
   function pageHref(targetPage: number) {
@@ -151,7 +168,13 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
           <h1>{t('title')}</h1>
           <div className="sub">{t('sub', { onGround: onGroundCount })}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {/* Story 15.7 (ratifica R-15.7-f): the two declarations this wrapper
+            carried inline, now a class — an inline `display` cannot be
+            overridden by a media query, and this is the LAST page CTA of the
+            epic still measuring 127x35 because `.home-head-actions > .btn`
+            (R-15.3-d) could not reach a class-less div. Identical computed
+            style above 640px, measured. */}
+        <div className="movements-head-actions">
           <LogArrivalLaunchButton
             locale={locale as AppLocale}
             buttonLabel={t('header.logArrival')}
@@ -285,11 +308,35 @@ export default async function MovementsPage({ params, searchParams }: PageProps)
             genericError: t('toast.genericError'),
           },
           empty: t('empty'),
+          mobile: {
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            back: t('mobile.back'),
+            pprNumber: t('mobile.pprNumber'),
+            email: t('mobile.email'),
+            phone: t('mobile.phone'),
+            personsOnBoard: t('mobile.personsOnBoard'),
+            notes: t('mobile.notes'),
+            source: t('mobile.source'),
+            sourcePublic: t('mobile.sourcePublic'),
+            rejectionReason: t('mobile.rejectionReason'),
+            closedAt: t('mobile.closedAt'),
+            filters: t('mobile.filters'),
+            // `t.raw`: `{count}` is interpolated CLIENT-SIDE (the number of
+            // active panel filters), same rationale as `card.subTemplate`.
+            filtersCount: t.raw('mobile.filtersCount') as string,
+            filtersTitle: t('mobile.filtersTitle'),
+            apply: t('mobile.apply'),
+          },
         }}
       />
 
+      {/* `registry-pagination` (15.5): the two links keep the same `?page=`
+          contract and only their TARGET grows to 44px on a phone. This nav
+          lives OUTSIDE `MovementsTable`, so a rule anchored to the card would
+          never have reached it. */}
       {totalPages > 1 ? (
-        <nav style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }} data-testid="movements-pagination">
+        <nav className="registry-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }} data-testid="movements-pagination">
           <Link href={pageHref(page - 1)} locale={locale as AppLocale} aria-disabled={page <= 1} className="btn">
             &larr;
           </Link>

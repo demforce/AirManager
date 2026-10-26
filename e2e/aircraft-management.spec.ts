@@ -101,6 +101,38 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
     await expect(page.getByTestId('identity-form-error')).toHaveText('Esiste già un velivolo con queste marche.');
   });
 
+  test('empty required fields on submit mark EACH field individually (aria-invalid + inline message), not just a bottom banner (story 14.2, AC 1/2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/fleet');
+    await page.getByTestId('fleet-new-button').click();
+    const form = page.getByTestId('identity-form');
+
+    // Every required field left blank — submit immediately.
+    await page.getByTestId('identity-submit').click();
+
+    const registrationInput = form.getByLabel('Marche');
+    const typeInput = form.getByLabel('Tipo');
+    const modelInput = form.getByLabel('Modello');
+
+    await expect(registrationInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(typeInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(modelInput).toHaveAttribute('aria-invalid', 'true');
+    // One message PER field, right next to it — not a single generic banner.
+    await expect(form.getByText('Campo obbligatorio.')).toHaveCount(3);
+    // The old single-banner pattern is gone for this case: no `identity-form-error` node at all.
+    await expect(page.getByTestId('identity-form-error')).toHaveCount(0);
+    // react-hook-form's own `shouldFocusError` focuses the FIRST invalid field.
+    await expect(registrationInput).toBeFocused();
+
+    // Fixing it clears THAT field's error while the others stay marked.
+    await registrationInput.fill(uniqueAircraft('FIX').registration);
+    await expect(registrationInput).toHaveAttribute('aria-invalid', 'false');
+    await expect(typeInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(form.getByText('Campo obbligatorio.')).toHaveCount(2);
+  });
+
   test('archiving an aircraft removes it from the default list and shows it with the archived filter; restoring brings it back (AC 2)', async ({
     page,
   }) => {

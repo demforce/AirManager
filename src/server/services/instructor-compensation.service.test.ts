@@ -14,18 +14,43 @@ vi.mock('@/server/db/prisma', () => ({
   prisma: {
     person: { findUnique: vi.fn(), findMany: vi.fn() },
     flight: { groupBy: vi.fn(), findMany: vi.fn() },
-    instructorPayout: { groupBy: vi.fn(), create: vi.fn() },
-    instructorProfile: { update: vi.fn() },
+    // `findUnique` (story 14.7): `getOwnInstructorProfileId` (`bookings.service.ts`,
+    // reused here — see `getOwnCompensationOverview`) reads it via the SAME
+    // mocked `prisma` module (vitest's module registry is per-test-file).
+    instructorPayout: { groupBy: vi.fn(), create: vi.fn(), findMany: vi.fn() },
+    instructorProfile: { update: vi.fn(), findUnique: vi.fn() },
     cashCategory: { findUnique: vi.fn() },
     cashMovement: { create: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
 
+// Review F1: `getOwnInstructorProfileId` is imported from `bookings.service.ts`,
+// which imports `@/server/adapters/mail` (for its own notification flow) ->
+// `smtp-mail-sender.ts` -> `@/lib/env`'s EAGER Zod validation. Same mock as
+// `bookings.service.test.ts:45-47` — without it, this file only passes in a
+// shell with `.env` exported (the env vars happen to already be set), never in
+// a clean shell (the class closed for `billing-summary` by commit `3c6add9`).
+vi.mock('@/server/adapters/mail', () => ({
+  getMailSender: vi.fn(() => ({ send: vi.fn() })),
+}));
+
+// Same chain, one hop further: `bookings.service.ts` also imports
+// `./app-settings.service` (its own scheduling-window check), which imports
+// `@/server/crypto/secret-box` -> `@/lib/env` too. Same sibling-service mock
+// convention as `bookings.service.test.ts` — this test never exercises the
+// scheduling window, so a bare stub is enough.
+vi.mock('./app-settings.service', () => ({ getSchedulingSettings: vi.fn() }));
+
 const { prisma } = await import('@/server/db/prisma');
-const { getCompensationSummary, getInstructorCompensationDetail, getOwnCompensationSummary, recordPayout, setPayoutRate } = await import(
-  './instructor-compensation.service'
-);
+const {
+  getCompensationSummary,
+  getInstructorCompensationDetail,
+  getOwnCompensationOverview,
+  getOwnCompensationSummary,
+  recordPayout,
+  setPayoutRate,
+} = await import('./instructor-compensation.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
@@ -34,7 +59,9 @@ const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const payoutGroupByMock = vi.mocked(prisma.instructorPayout.groupBy);
 const payoutCreateMock = vi.mocked(prisma.instructorPayout.create);
+const payoutFindManyMock = vi.mocked(prisma.instructorPayout.findMany);
 const profileUpdateMock = vi.mocked(prisma.instructorProfile.update);
+const profileFindUniqueMock = vi.mocked(prisma.instructorProfile.findUnique);
 const cashCategoryFindUniqueMock = vi.mocked(prisma.cashCategory.findUnique);
 const cashMovementCreateMock = vi.mocked(prisma.cashMovement.create);
 const transactionMock = vi.mocked(prisma.$transaction);
@@ -50,7 +77,9 @@ const flightGroupBy = flightGroupByMock as unknown as { mockResolvedValue: (v: F
 const flightFindMany = flightFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const payoutGroupBy = payoutGroupByMock as unknown as { mockResolvedValue: (v: Fixture[]) => void; mockImplementation: (fn: ImplFn) => void };
 const payoutCreate = payoutCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const payoutFindMany = payoutFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const profileUpdate = profileUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const profileFindUnique = profileFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const cashMovementCreate = cashMovementCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 
@@ -62,10 +91,6 @@ function mockTransaction(): void {
 
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
-}
-
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
 }
 
 function pilotActor(): Actor {
@@ -97,7 +122,9 @@ describe('instructor-compensation.service (story 12.7)', () => {
     flightFindManyMock.mockReset();
     payoutGroupByMock.mockReset();
     payoutCreateMock.mockReset();
+    payoutFindManyMock.mockReset();
     profileUpdateMock.mockReset();
+    profileFindUniqueMock.mockReset();
     cashCategoryFindUniqueMock.mockReset();
     cashMovementCreateMock.mockReset();
     transactionMock.mockReset();
@@ -116,9 +143,9 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
 
-    it('recordPayout rejects a staff actor (needs payouts.manage, ADMIN-only)', async () => {
+    it('recordPayout rejects a non-admin actor (needs payouts.manage, ADMIN-only)', async () => {
       await expect(
-        recordPayout(staffActor(), {
+        recordPayout(pilotActor(), {
           instructorPersonId: 'person_ines',
           amountCents: 10000,
           periodStart: '2026-07-01',
@@ -130,8 +157,8 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
 
-    it('setPayoutRate rejects a staff actor (needs payouts.manage, ADMIN-only)', async () => {
-      await expect(setPayoutRate(staffActor(), 'person_ines', 3000)).rejects.toThrow(ForbiddenError);
+    it('setPayoutRate rejects a non-admin actor (needs payouts.manage, ADMIN-only)', async () => {
+      await expect(setPayoutRate(pilotActor(), 'person_ines', 3000)).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
   });
@@ -178,12 +205,117 @@ describe('instructor-compensation.service (story 12.7)', () => {
     });
   });
 
+  describe('getOwnCompensationOverview (story 14.7, AC 2/3/6 — self-service, no personId/instructorProfileId parameter)', () => {
+    it('rejects an actor without self.read (defensive — every real Role has self.read)', async () => {
+      await expect(getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: [] })).rejects.toThrow(ForbiddenError);
+      expect(profileFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('returns null for an actor with no linked person — never queries the profile or the payouts', async () => {
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: null, roles: ['INSTRUCTOR'] });
+      expect(result).toBeNull();
+      expect(profileFindUniqueMock).not.toHaveBeenCalled();
+      expect(payoutFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it("returns null when the actor's own InstructorProfile is DEACTIVATED (AC 4 — never fabricates data)", async () => {
+      profileFindUnique.mockResolvedValue({ id: 'profile_ines', deactivatedAt: new Date('2026-01-01') });
+
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).toBeNull();
+      expect(payoutFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('returns null when the actor has no InstructorProfile at all', async () => {
+      profileFindUnique.mockResolvedValue(null);
+
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).toBeNull();
+      expect(payoutFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it("resolves the actor's OWN active profile (getOwnInstructorProfileId) and returns accrual (gross + net) + payout history, scoped to that profile only", async () => {
+      // ONE `instructorProfile.findUnique` fixture serves BOTH callers within
+      // `getOwnCompensationOverview`: `getOwnInstructorProfileId` (needs
+      // `id`/`deactivatedAt`) and `resolveInstructorRowByProfileId` (review
+      // F5/F7 — needs `payoutRateCents`/`person`, and deliberately does NOT
+      // check `Person.archivedAt`).
+      profileFindUnique.mockResolvedValue({
+        id: 'profile_ines',
+        deactivatedAt: null,
+        payoutRateCents: 3000,
+        person: { id: 'person_ines', firstName: 'Ines', lastName: 'Volpi' },
+      });
+      flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 130 } }]);
+      payoutGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { amountCents: 2000 } }]);
+      payoutFindMany.mockResolvedValue([
+        {
+          id: 'payout_1',
+          amountCents: 2000,
+          periodStart: parseDateOnlyUtc('2026-07-01'),
+          periodEnd: parseDateOnlyUtc('2026-07-15'),
+          method: 'CASH',
+          createdAt: new Date('2026-07-16T10:00:00.000Z'),
+        },
+      ]);
+
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).toEqual({
+        payoutRateCents: 3000,
+        mtdMinutes: 130,
+        mtdGrossCents: 6500, // round(130/60 * 3000) — review F4: gross, ore x tariffa
+        mtdOwedCents: 4500, // gross - 2000 already paid
+        totalOwedCents: 4500,
+        payouts: [
+          {
+            id: 'payout_1',
+            amountCents: 2000,
+            periodStart: '2026-07-01',
+            periodEnd: '2026-07-15',
+            method: 'CASH',
+            createdAt: new Date('2026-07-16T10:00:00.000Z'),
+          },
+        ],
+      });
+
+      // The payout query is scoped to the profile `getOwnInstructorProfileId`
+      // resolved from the ACTOR — never a client-supplied id (AC 3).
+      const [payoutArgs] = payoutFindManyMock.mock.calls[0] as [{ where: { instructorProfileId?: string } }];
+      expect(payoutArgs.where.instructorProfileId).toBe('profile_ines');
+    });
+
+    it('resolves directly from the instructor profile, never through listActiveInstructors (review F5/F7 — an ARCHIVED person with an active profile still gets their own history, no archivedAt filter to disagree with the sidebar)', async () => {
+      profileFindUnique.mockResolvedValue({
+        id: 'profile_ines',
+        deactivatedAt: null,
+        payoutRateCents: 3000,
+        person: { id: 'person_ines', firstName: 'Ines', lastName: 'Volpi' },
+      });
+      stubZeroAggregates();
+      payoutFindMany.mockResolvedValue([]);
+
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result).not.toBeNull();
+      // `listActiveInstructors` (the `Person.archivedAt`-filtering path used by
+      // the staff-facing reads) is never reached from this function.
+      expect(personFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('never accepts a second (personId/instructorProfileId) argument — there is no parameter to pass one through', () => {
+      expect(getOwnCompensationOverview).toHaveLength(1);
+    });
+  });
+
   describe('getCompensationSummary — minutes/owed computation (AC 2)', () => {
     it('returns 0 hours and null owed for an instructor with no flights and no payout rate', async () => {
       personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', payoutRateCents: null } })]);
       stubZeroAggregates();
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       expect(row?.payoutRateCents).toBeNull();
       expect(row?.totalMinutes).toBe(0);
@@ -197,7 +329,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 130 } }]); // same for every call (mtd/ytd/total) in this fixture
       payoutGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { amountCents: 2000 } }]);
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       // 130 min / 60 * 3000 = 6500.0 (round -> 6500) - 2000 already paid = 4500
       expect(row?.totalMinutes).toBe(130);
@@ -210,7 +342,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 25 } }]);
       payoutGroupBy.mockResolvedValue([]);
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       expect(row?.owedTotalCents).toBe(1875);
     });
@@ -220,7 +352,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       flightGroupBy.mockResolvedValue([]);
       payoutGroupBy.mockResolvedValue([]);
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       expect(row?.mtdMinutes).toBe(0);
       expect(row?.owedMtdCents).toBe(0);
@@ -230,7 +362,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       personFindMany.mockResolvedValue([instructorPersonRow()]);
       stubZeroAggregates();
 
-      await getCompensationSummary(staffActor());
+      await getCompensationSummary(adminActor());
 
       for (const call of flightGroupByMock.mock.calls) {
         const args = call[0] as { by: string[]; where: Record<string, unknown> };
@@ -250,7 +382,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       personFindMany.mockResolvedValue([instructorPersonRow()]);
       stubZeroAggregates();
 
-      await getCompensationSummary(staffActor());
+      await getCompensationSummary(adminActor());
 
       const today = todayDateOnlyInZone(APP_TIMEZONE);
       expect(today).toBe('2027-01-01');
@@ -285,7 +417,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
         return [];
       });
 
-      const [row] = await getCompensationSummary(staffActor());
+      const [row] = await getCompensationSummary(adminActor());
 
       expect(row?.owedMtdCents).toBe(0 - 3000);
       expect(row?.owedTotalCents).toBe(0 - 5000);
@@ -297,12 +429,12 @@ describe('instructor-compensation.service (story 12.7)', () => {
   describe('getInstructorCompensationDetail (AC 3, AC 7)', () => {
     it('404s on an unknown person', async () => {
       personFindUnique.mockResolvedValue(null);
-      await expect(getInstructorCompensationDetail(staffActor(), 'unknown')).rejects.toThrow(NotFoundError);
+      await expect(getInstructorCompensationDetail(adminActor(), 'unknown')).rejects.toThrow(NotFoundError);
     });
 
     it('404s on a person with no active instructor profile', async () => {
       personFindUnique.mockResolvedValue({ id: 'person_x', firstName: 'X', lastName: 'Y', instructorProfile: null });
-      await expect(getInstructorCompensationDetail(staffActor(), 'person_x')).rejects.toThrow(NotFoundError);
+      await expect(getInstructorCompensationDetail(adminActor(), 'person_x')).rejects.toThrow(NotFoundError);
     });
 
     it('returns recentFlights (max 5, SCHOOL, non-cancelled) and DISTINCT recentStudents derived from them', async () => {
@@ -320,7 +452,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
         { id: 'flight_3', flightDate: new Date('2026-07-08T00:00:00.000Z'), minutes: 30, personId: 'student_b', person: { firstName: 'Bruno', lastName: 'Barone' } },
       ]);
 
-      const detail = await getInstructorCompensationDetail(staffActor(), 'person_ines');
+      const detail = await getInstructorCompensationDetail(adminActor(), 'person_ines');
 
       expect(detail.recentFlights).toHaveLength(3);
       expect(detail.recentStudents).toEqual([
@@ -371,6 +503,11 @@ describe('instructor-compensation.service (story 12.7)', () => {
     });
 
     it('creates the payout row AND its cash movement gemello (negative uscita, same method, linked via instructorPayoutId) inside ONE transaction', async () => {
+      // Review LOW-2: recordPayout is one of AD-2's 7 "today" call-sites — assert
+      // the Rome VALUE under a fake clock, not just the Date shape, so a
+      // regression to the UTC calendar would be caught here.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 Rome (CEST), 2026-09-01
       personFindUnique.mockResolvedValue({ instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
       cashCategoryFindUnique.mockResolvedValue({ id: 'cat_compensi' });
       payoutCreate.mockResolvedValue({
@@ -404,7 +541,9 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(movementArgs.data['paymentMethod']).toBe('CASH'); // input.method
       expect(movementArgs.data['instructorPayoutId']).toBe('payout_1');
       expect(movementArgs.data['actorUserId']).toBe('admin_1');
-      expect(movementArgs.data['effectiveDate']).toBeInstanceOf(Date);
+      expect(movementArgs.data['effectiveDate']).toEqual(parseDateOnlyUtc('2026-09-01'));
+
+      vi.useRealTimers();
     });
   });
 

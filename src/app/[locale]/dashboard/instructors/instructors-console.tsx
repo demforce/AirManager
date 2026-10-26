@@ -13,23 +13,28 @@
  * `fleet-console.tsx`: every row-affecting action lives in the card, the
  * page-head is title+KPIs only).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Avatar } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Field, Input, Select } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
-import { useRouter } from '@/i18n/navigation';
+import { Link, useRouter } from '@/i18n/navigation';
+import type { AppLocale } from '@/i18n/routing';
+import { avatarColorFor, initialsOf } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
-import { formatMinutes } from '@/lib/time';
+import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import type { PersonListItemDto } from '@/lib/schemas/people';
 import { InstructorEditor, type InstructorEditorLabels } from './instructor-editor';
-import { InstructorProfile, type InstructorProfileLabels } from './instructor-profile';
+import { InstructorProfile, fetchDetail, type InstructorDetail, type InstructorProfileLabels } from './instructor-profile';
 
 export type InstructorRow = {
   personId: string;
@@ -48,6 +53,8 @@ export type InstructorsConsoleLabels = {
   exportLabel: string;
   table: { name: string; rate: string; hours: string; owed: string; actions: string; noValue: string };
   actions: { edit: string; pay: string };
+  /** Story 15.5 — the phone face only (row + detail sheet). */
+  mobile: { openDetail: string; close: string; owedSuffix: string; openProfile: string };
   addInstructor: {
     title: string;
     subtitle: string;
@@ -84,13 +91,12 @@ type InstructorsConsoleProps = {
   items: InstructorRow[];
   canManagePeople: boolean;
   canManagePayouts: boolean;
-  canManageSettings: boolean;
   exportHref?: string;
   locale: 'it' | 'en';
   labels: InstructorsConsoleLabels;
 };
 
-export function InstructorsConsole({ items, canManagePeople, canManagePayouts, canManageSettings, exportHref, locale, labels }: InstructorsConsoleProps) {
+export function InstructorsConsole({ items, canManagePeople, canManagePayouts, exportHref, locale, labels }: InstructorsConsoleProps) {
   const router = useRouter();
   const toast = useToast();
   const [editorTarget, setEditorTarget] = useState<InstructorRow | null>(null);
@@ -98,13 +104,20 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
   const [payTarget, setPayTarget] = useState<InstructorRow | null>(null);
   const [addInstructorOpen, setAddInstructorOpen] = useState(false);
   const [paymentCycleOpen, setPaymentCycleOpen] = useState(false);
+  const [sheetId, setSheetId] = useState<string | null>(null);
+
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => setSheetId(null), []);
+  const sheetInstructor = items.find((item) => item.personId === sheetId) ?? null;
 
   const cols = 'minmax(160px,1.8fr) 120px 110px 130px minmax(160px,1.2fr)';
 
   return (
     <>
       <div className="card">
-        <div className="card-head">
+        {/* ONE head at every width (AD-3) — this page has no search and no
+            pagination, so only the CTA changes shape at <=640px. */}
+        <div className="card-head registry-head">
           <div className="card-title">{labels.cardTitle}</div>
           <div className="spacer" />
           {canManagePayouts ? (
@@ -121,11 +134,11 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
         </div>
 
         {items.length === 0 ? (
-          <p className="card-body" data-testid="instructors-empty">
+          <p className="card-body instructors-desktop-body" data-testid="instructors-empty">
             {labels.empty}
           </p>
         ) : (
-          <div className="students">
+          <div className="students instructors-desktop-body">
             <div className="student-row header" style={{ gridTemplateColumns: cols }}>
               <div>{labels.table.name}</div>
               <div>{labels.table.rate}</div>
@@ -164,6 +177,51 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
             ))}
           </div>
         )}
+
+        {/* --- the phone face of the same roster (template 249-268) -----------
+            Same row family as the Piloti list: avatar, name + sub, and on the
+            right the two numbers this page is opened for. The desktop's own
+            read-only `InstructorProfile` panel is absorbed by the sheet — that
+            IS what R3 prescribes for a row detail. */}
+        <div className="instructors-mobile" data-testid="mobile-instructors-list">
+          {items.length === 0 ? (
+            <p className="mobile-card-empty" data-testid="mobile-instructors-empty">
+              {labels.empty}
+            </p>
+          ) : (
+            items.map((instructor) => {
+              const name = `${instructor.lastName} ${instructor.firstName}`;
+              return (
+                <button
+                  key={instructor.personId}
+                  type="button"
+                  className="mobile-row mobile-row-person"
+                  aria-label={`${labels.mobile.openDetail}: ${name}`}
+                  onClick={() => setSheetId(instructor.personId)}
+                  data-testid={`mobile-instructor-row-${instructor.personId}`}
+                >
+                  <span className="mobile-row-avatar">
+                    <Avatar as="span" init={initialsOf(instructor.firstName, instructor.lastName)} color={avatarColorFor(instructor.personId)} />
+                  </span>
+                  <span className="mobile-row-main">
+                    <span className="mobile-row-title">
+                      <span className="mobile-row-name">{name}</span>
+                    </span>
+                    <span className="mobile-row-sub">
+                      {instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`}
+                    </span>
+                  </span>
+                  <span className="mobile-row-side">
+                    <span className="mobile-row-amount">{formatMinutes(instructor.totalMinutes)}</span>
+                    <span className="mobile-row-note">
+                      {instructor.owedTotalCents === null ? labels.table.noValue : `${formatCents(instructor.owedTotalCents, locale)} ${labels.mobile.owedSuffix}`}
+                    </span>
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
 
       <InstructorEditor
@@ -174,8 +232,6 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
         onClose={() => setEditorTarget(null)}
         onMutated={() => router.refresh()}
         canManagePeople={canManagePeople}
-        canManagePayouts={canManagePayouts}
-        canManageSettings={canManageSettings}
         locale={locale}
         labels={labels.editor}
         toast={toast}
@@ -219,7 +275,139 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
         labels={labels.addInstructor}
         successMessage={labels.toast.instructorAdded}
       />
+
+      {/* Rendered conditionally (AD-7): `mobile-instructor-sheet` is ONE node. */}
+      {sheetInstructor ? (
+        <InstructorSheet
+          instructor={sheetInstructor}
+          onClose={closeSheet}
+          onEdit={(instructor) => {
+            closeSheet();
+            setEditorTarget(instructor);
+          }}
+          onPay={(instructor) => {
+            closeSheet();
+            setPayTarget(instructor);
+          }}
+          canManagePayouts={canManagePayouts}
+          locale={locale}
+          labels={labels}
+        />
+      ) : null}
     </>
+  );
+}
+
+type InstructorSheetProps = {
+  instructor: InstructorRow;
+  onClose: () => void;
+  onEdit: (instructor: InstructorRow) => void;
+  onPay: (instructor: InstructorRow) => void;
+  canManagePayouts: boolean;
+  locale: 'it' | 'en';
+  labels: InstructorsConsoleLabels;
+};
+
+/**
+ * The phone detail of one instructor (review 15.5 F2). The desktop opens TWO
+ * panels from a roster row — the editor and the read-only `InstructorProfile`
+ * — and at <=640px `instructor-name-{id}` lives in a `display: none` tree, so
+ * everything the profile panel says has to be HERE: hours this month, recent
+ * students and recent flights as CFI, plus the entry to the person's record
+ * the pilots sheet already offers (`pilot-open-profile-mobile`).
+ *
+ * The three extra facts come from the SAME read the desktop panel uses
+ * (`GET /api/v1/instructor-compensation?personId=`, `fetchDetail`) and are
+ * fetched ON OPEN, one request for the row the user tapped — the roster list
+ * itself is untouched, so no N+1 is introduced on a page that renders every
+ * instructor at once.
+ */
+function InstructorSheet({ instructor, onClose, onEdit, onPay, canManagePayouts, locale, labels }: InstructorSheetProps) {
+  const [detail, setDetail] = useState<InstructorDetail | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchDetail(instructor.personId).then((result) => {
+      if (!cancelled) setDetail(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [instructor.personId]);
+
+  const rows: BottomSheetRow[] = [
+    { k: labels.table.rate, v: instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h` },
+    { k: labels.table.hours, v: formatMinutes(instructor.totalMinutes) },
+    { k: labels.profile.kpi.hoursMtd, v: detail === null ? '…' : formatMinutes(detail.mtdMinutes) },
+    { k: labels.table.owed, v: instructor.owedTotalCents === null ? labels.table.noValue : formatCents(instructor.owedTotalCents, locale) },
+    {
+      k: labels.profile.recentStudents.sectionTitle,
+      v:
+        detail === null ? (
+          '…'
+        ) : detail.recentStudents.length === 0 ? (
+          labels.profile.recentStudents.empty
+        ) : (
+          <span className="mobile-sheet-list">
+            {detail.recentStudents.map((student) => (
+              <span className="mobile-sheet-list-item" key={student.personId} data-testid="instructor-profile-student-chip-mobile">
+                {student.lastName} {student.firstName}
+              </span>
+            ))}
+          </span>
+        ),
+    },
+    {
+      k: labels.profile.recentFlights.sectionTitle,
+      v:
+        detail === null ? (
+          '…'
+        ) : detail.recentFlights.length === 0 ? (
+          labels.profile.recentFlights.empty
+        ) : (
+          <span className="mobile-sheet-list">
+            {detail.recentFlights.map((flight) => (
+              <span className="mobile-sheet-list-item" key={flight.id} data-testid="instructor-profile-flight-row-mobile">
+                {formatDateOnly(flight.flightDate, locale)} · {flight.personLastName} {flight.personFirstName} · {formatMinutes(flight.minutes)}
+              </span>
+            ))}
+          </span>
+        ),
+    },
+  ];
+
+  return (
+    <BottomSheet
+      open
+      onClose={onClose}
+      testId="mobile-instructor-sheet"
+      sub={labels.cardTitle}
+      title={`${instructor.lastName} ${instructor.firstName}`}
+      badge={<Badge>{instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`}</Badge>}
+      rows={rows}
+      closeLabel={labels.mobile.close}
+      actions={
+        <>
+          <button type="button" className="btn primary" onClick={() => onEdit(instructor)} data-testid="instructor-edit-mobile">
+            {labels.actions.edit}
+          </button>
+          {canManagePayouts ? (
+            <button type="button" className="btn mini ok" onClick={() => onPay(instructor)} data-testid="instructor-pay-mobile">
+              {labels.actions.pay}
+            </button>
+          ) : null}
+          <Link
+            href={`/dashboard/people/${instructor.personId}`}
+            locale={locale as AppLocale}
+            className="btn"
+            onClick={onClose}
+            data-testid="instructor-open-profile-mobile"
+          >
+            {labels.mobile.openProfile}
+          </Link>
+        </>
+      }
+    />
   );
 }
 
@@ -331,7 +519,7 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
       {instructor ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-pay-form">
           <div className="form-grid">
-            <Field label={labels.amount}>
+            <Field label={labels.amount} error={errors.amount ? labels.requiredField : undefined}>
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.amount)} {...register('amount')} />
             </Field>
             <Field label={labels.method}>
@@ -341,10 +529,10 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
                 <option value="POS">{labels.methods.pos}</option>
               </Select>
             </Field>
-            <Field label={labels.periodStart}>
+            <Field label={labels.periodStart} error={errors.periodStart ? labels.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.periodStart)} {...register('periodStart')} />
             </Field>
-            <Field label={labels.periodEnd}>
+            <Field label={labels.periodEnd} error={errors.periodEnd ? labels.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.periodEnd)} {...register('periodEnd')} />
             </Field>
             <Field label={labels.notes} wide>

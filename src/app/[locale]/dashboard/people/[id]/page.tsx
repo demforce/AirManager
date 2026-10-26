@@ -222,6 +222,7 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
     // fail on the missing ICU value server-side.
     adjustmentBadge: { ofDate: tAccount.raw('adjustmentBadge.ofDate') as string, linked: tAccount('adjustmentBadge.linked') },
     reversalBadge: { ofDate: tAccount.raw('reversalBadge.ofDate') as string, linked: tAccount('reversalBadge.linked') },
+    mobile: { empty: tAccount('mobile.empty'), openDetail: tAccount('mobile.openDetail'), close: tAccount('mobile.close') },
     topUp: {
       action: t('accountPanel.topUp.action'),
       title: t('accountPanel.topUp.title'),
@@ -277,7 +278,12 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
             {person.archivedAt ? <Badge dot>{t('personalData.archivedBadge')}</Badge> : null}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        {/* Story 15.5 (AC 12): the same class the home's header actions use
+            (R-15.3-d) — identical `display:flex; gap:8px` above 640px, full-width
+            rows under it. Its rule is `> .btn`, a DIRECT child, so it cannot
+            reach the `SlideOver` that `EditPersonButton` mounts as its sibling
+            (review 15.3 F1). */}
+        <div className="home-head-actions">
           {canManagePeople ? (
             <EditPersonButton
               person={personRow}
@@ -298,7 +304,10 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
         <div className="card-head">
           <h2 className="card-title">{t('personalData.heading')}</h2>
         </div>
-        <div className="card-body">
+        {/* `person-identity` is the anchor of the phone wrap rule (review 15.5
+            F5): `.info-row` is shared with the PUBLIC `/ppr` module (story
+            15.9), so the selector must not be a descendant one. */}
+        <div className="card-body person-identity">
           {personalDataRows.map((row) => (
             <div className="info-row" key={row.label}>
               <span className="k">{row.label}</span>
@@ -337,7 +346,14 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
         </div>
       </div>
 
-      <div className="card">
+      {/* Story 15.5 (AC 12): the four-column table becomes a stacked row at
+          <=640px through `.person-expiries` — a CSS restyle of the SAME nodes,
+          not a second mobile tree. A duplicate would put every type name, date
+          and status twice in the DOM, and `person-detail.spec.ts:217` /
+          `expiry-registration.spec.ts` match this page's text page-level. The
+          per-row `gridTemplateColumns` moved off the inline style for the same
+          reason `.registry-search` did: a media query cannot override one. */}
+      <div className="card person-expiries">
         <div className="card-head">
           <h2 className="card-title">{tExpiries('heading')}</h2>
         </div>
@@ -348,14 +364,14 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
             </p>
           ) : (
             <div className="students">
-              <div className="student-row header" style={{ gridTemplateColumns: '1.4fr 120px 140px 1fr' }}>
+              <div className="student-row header">
                 <div>{tExpiries('table.type')}</div>
                 <div>{tExpiries('table.expiresAt')}</div>
                 <div>{tExpiries('table.statusHeader')}</div>
                 <div>{tExpiries('table.notes')}</div>
               </div>
               {expiries.map((expiry) => (
-                <div key={expiry.id} className="student-row" data-testid="person-expiry-row" style={{ gridTemplateColumns: '1.4fr 120px 140px 1fr' }}>
+                <div key={expiry.id} className="student-row" data-testid="person-expiry-row">
                   <div>{expiry.typeName}</div>
                   <div className="mono">{formatDateOnly(expiry.expiresAt, displayLocale)}</div>
                   <div>
@@ -390,8 +406,11 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
 
       {/* Story 2.3, AC 1: structural placeholders — epics 4-7 replace the
           content, never this layout. Story 11.2 turns "recentFlights" into
-          the real panel below (still the SAME grid cell, same heading). */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          the real panel below (still the SAME grid cell, same heading).
+          Story 15.5 (AC 12): the two fixed tracks became a class so the phone
+          gets ONE column — at 375px they measured 151.5px each, i.e. two cards
+          too narrow to read anything in. */}
+      <div className="person-bottom-grid">
         {showRecentFlights ? (
           <div className="card" data-testid="recent-flights-panel">
             <div className="card-head">
@@ -499,7 +518,7 @@ function ProfileSummaryCard({
         </Badge>
       </div>
       {fact ? (
-        <p className="fld-label" style={{ textTransform: 'none', marginTop: 8 }}>
+        <p className="fld-label person-profile-fact" style={{ textTransform: 'none', marginTop: 8 }}>
           {fact}
         </p>
       ) : null}

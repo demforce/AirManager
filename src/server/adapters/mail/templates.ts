@@ -1,7 +1,7 @@
 import { createTranslator } from 'next-intl';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
-import { formatDateTime } from '@/lib/time';
+import { formatDateOnly, formatDateTime } from '@/lib/time';
 
 /**
  * Loads a locale's message catalogue directly (not via `next-intl/server`'s
@@ -26,6 +26,7 @@ export type PprReceiptEmailContent = { subject: string; text: string };
 export type PprApprovalEmailContent = { subject: string; text: string };
 export type PprRejectionEmailContent = { subject: string; text: string };
 export type BookingDeniedEmailContent = { subject: string; text: string };
+export type AircraftGroundedEmailContent = { subject: string; text: string };
 
 /**
  * One row of the staff digest (story 6.3, tri-state hardened story TD-1 AC
@@ -339,6 +340,58 @@ export async function buildBookingDeniedEmail(
       aircraftRegistration: params.aircraftRegistration,
       when,
       reason: params.reason,
+    }),
+  };
+}
+
+/**
+ * Builds the aircraft-grounded email (story AOG-1b, ratifica R-AOG-i) — sent
+ * best-effort AFTER `aircraft.service.ts#setOutOfService`'s transaction
+ * commits, same fire-and-forget/no-throw rule as every other outcome email in
+ * this module, and modelled on {@link buildBookingDeniedEmail}.
+ *
+ * It goes to the holders of the impacted APPROVED bookings, and only to them:
+ * a PENDING booking is already frozen by the 422 an approval would hit, so its
+ * holder learns it through the app; an APPROVED one survives the grounding
+ * INTACT and MUTE — which is the pilot who otherwise shows up at the field to
+ * a dismantled aircraft. The body says so explicitly: the booking is NOT
+ * cancelled (decisione PO 2026-07-31, option 2 of 3 — the AOG counts and warns,
+ * it never decides for the admin).
+ *
+ * The fermo window is stated in one of THREE named sentences, chosen on
+ * `effectiveUntil` — the bound `aog-impact.ts#computeAogImpact` actually
+ * counted over — and never re-derived from `outOfServiceUntil` (review
+ * MAJOR-1): a live bound gives `windowUntil`, no date at all gives
+ * `windowUnknown` (invariant [b] is a legitimate state, never an empty spot),
+ * and a date whose day has already passed gives `windowOverdue`, which names
+ * that date as the EXPECTED one instead of pretending the fermo ended there.
+ * The third case is the one that was lying: the recipient of an overrun fermo
+ * was told "fino al {ieri} compreso" while being warned about a booking weeks
+ * later. Dates are rendered with the same `formatDateOnly` the UI uses, in the
+ * RECIPIENT's locale.
+ */
+export async function buildAircraftGroundedEmail(
+  locale: AppLocale,
+  params: { firstName: string; aircraftRegistration: string; startsAt: Date; reason: string; outOfServiceUntil: string | null; effectiveUntil: string | null },
+): Promise<AircraftGroundedEmailContent> {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.aircraftGrounded' });
+  const when = formatDateTime(params.startsAt, locale);
+  const window =
+    params.effectiveUntil !== null
+      ? t('windowUntil', { date: formatDateOnly(params.effectiveUntil, locale) })
+      : params.outOfServiceUntil === null
+        ? t('windowUnknown')
+        : t('windowOverdue', { date: formatDateOnly(params.outOfServiceUntil, locale) });
+
+  return {
+    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
+    text: t('body', {
+      firstName: params.firstName,
+      aircraftRegistration: params.aircraftRegistration,
+      when,
+      reason: params.reason,
+      window,
     }),
   };
 }

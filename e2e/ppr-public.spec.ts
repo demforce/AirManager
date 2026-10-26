@@ -277,6 +277,68 @@ test.describe('Public PPR form (Story 8.1)', () => {
     }
   });
 
+  test('empty submit marks EACH required field inline (aria-invalid + message), never just a bottom banner, and never reaches the network (story 14.2, AC 1/2)', async ({
+    browser,
+  }) => {
+    const { page, close } = await newPprContext(browser);
+    try {
+      await page.goto('/it/ppr');
+      // Same hydration-race hardening as `bookings.spec.ts#gotoBookingsAndWaitForHydration`/
+      // `settings.spec.ts#gotoSettingsAndWaitForHydration`: a click landing
+      // BEFORE React attaches the form's `onSubmit` listener falls through to
+      // the native, un-prevented submit (a real GET navigation), which is
+      // exactly what happened here without this wait (every field then
+      // "disappears" — the page had navigated away).
+      await page.waitForLoadState('networkidle');
+
+      let requestSent = false;
+      page.on('request', (req) => {
+        if (req.url().includes('/api/v1/ppr-requests') && req.method() === 'POST') requestSent = true;
+      });
+
+      await page.getByRole('button', { name: LABELS.it.submit }).click();
+
+      const firstNameInput = page.getByLabel(LABELS.it.firstName, { exact: true });
+      const lastNameInput = page.getByLabel(LABELS.it.lastName, { exact: true });
+      await expect(firstNameInput).toHaveAttribute('aria-invalid', 'true');
+      await expect(lastNameInput).toHaveAttribute('aria-invalid', 'true');
+      // One message per field, visible right next to it.
+      await expect(page.getByText('Campo obbligatorio.').first()).toBeVisible();
+      const requiredCount = await page.getByText('Campo obbligatorio.').count();
+      // firstName/lastName/phone/aircraftRegistration/aircraftType/origin/destination/personsOnBoard, PLUS
+      // email (blank -> its OWN 'requiredField' branch, not 'invalidEmail' — see `pprFormSchema`'s superRefine).
+      expect(requiredCount).toBeGreaterThanOrEqual(6);
+      // The client-side validation blocked the submit — no POST ever fired.
+      expect(requestSent).toBe(false);
+
+      // Review F6: the assertions above alone would pass identically on the
+      // pre-story baseline too (RHF already set `aria-invalid`, and SOME
+      // "Campo obbligatorio." text existed on the page as the old bottom
+      // banner — matched by the page-wide `getByText` above regardless of
+      // WHERE it renders). Pin the message to the `.fld` block that actually
+      // CONTAINS the firstName input (AC 1's own contract: `.fld-error`
+      // SIBLING of the label, not a banner elsewhere) and assert it is
+      // visually distinct from the field's own label — the pre-story single
+      // banner has neither.
+      const firstNameField = page.locator('.fld', { has: firstNameInput });
+      const firstNameError = firstNameField.locator('.fld-error');
+      await expect(firstNameError).toHaveClass(/fld-error/);
+      await expect(firstNameError).toHaveText('Campo obbligatorio.');
+      const [errorColor, labelColor] = await Promise.all([
+        firstNameError.evaluate((el) => getComputedStyle(el).color),
+        firstNameField.locator('.fld-label').first().evaluate((el) => getComputedStyle(el).color),
+      ]);
+      expect(errorColor).not.toBe(labelColor);
+
+      // Fixing ONE field clears just that field's error.
+      await firstNameInput.fill('Marco');
+      await expect(firstNameInput).toHaveAttribute('aria-invalid', 'false');
+      await expect(lastNameInput).toHaveAttribute('aria-invalid', 'true');
+    } finally {
+      await close();
+    }
+  });
+
   test('rate limit: 6 direct POSTs from the same fake IP, the 6th answers 429 RATE_LIMITED (AC 2)', async ({ request }) => {
     const ip = uniqueFakeIp();
     let lastStatus = 0;

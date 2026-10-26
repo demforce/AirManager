@@ -1,13 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Badge } from '@/components/ui/badge';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { Field, Input } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
+import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
+import { cashCategorySheetSub, cashCategorySubLine } from '@/lib/mobile-settings';
 
 export type CashCategoryRow = {
   id: string;
@@ -38,6 +41,8 @@ export type CashCategoriesCardLabels = {
     genericError: string;
   };
   feedback: { created: string; renamed: string; deactivated: string; reactivated: string; deleted: string; deleteInUseError: string; genericError: string };
+  /** Phone face (story 15.8b, R-15.8b-d). `movementsCount` carries a `{count}` placeholder interpolated client-side ⇒ pass it with `t.raw`. */
+  mobile: { openDetail: string; close: string; empty: string; movementsCount: string };
 };
 
 type CashCategoriesCardProps = {
@@ -62,10 +67,37 @@ const COLS = '1fr 110px 130px 220px';
  */
 export function CashCategoriesCard({ categories, labels }: CashCategoriesCardProps) {
   const router = useRouter();
+  const toast = useToast();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [feedback, setFeedback] = useState<{ text: string; isError: boolean } | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  // Phone face (story 15.8b): same shape as the two `RatingsCard` catalogues
+  // above — a row sheet whose delete confirmation is a `secondStep` inside it.
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const [sheetStep, setSheetStep] = useState<'detail' | 'delete'>('detail');
+  const sheetDeleteButtonRef = useRef<HTMLButtonElement>(null);
+  const sheetConfirmButtonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  /** Set only by the sheet's "Rinomina" — the desktop never scrolls (the 15.8a `preventScroll` lesson). */
+  const revealPanelRef = useRef(false);
+
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => {
+    setSheetId(null);
+    setSheetStep('detail');
+  }, []);
+
+  useEffect(() => {
+    if (sheetStep === 'delete') sheetConfirmButtonRef.current?.focus();
+    else sheetDeleteButtonRef.current?.focus();
+  }, [sheetStep]);
+
+  useEffect(() => {
+    if (panel === null || !revealPanelRef.current) return;
+    revealPanelRef.current = false;
+    panelRef.current?.scrollIntoView({ block: 'center' });
+  }, [panel]);
 
   function handleSuccess(message: string): void {
     setPanel(null);
@@ -73,37 +105,74 @@ export function CashCategoriesCard({ categories, labels }: CashCategoriesCardPro
     router.refresh();
   }
 
-  async function handleLifecycleAction(category: CashCategoryRow, action: 'deactivate' | 'reactivate'): Promise<void> {
+  // --- the network, shared by the two faces (AD-7) — see `ratings-card.tsx`
+  // for the same split: one request, one contract, two announcement channels.
+  async function requestLifecycleAction(category: CashCategoryRow, action: 'deactivate' | 'reactivate'): Promise<boolean> {
     setPendingActionId(category.id);
     const response = await fetch(`/api/v1/cash-categories/${category.id}/${action}`, { method: 'POST' });
     setPendingActionId(null);
-    setFeedback(
-      response.ok
-        ? { text: action === 'deactivate' ? labels.feedback.deactivated : labels.feedback.reactivated, isError: false }
-        : { text: labels.feedback.genericError, isError: true },
-    );
     router.refresh();
+    return response.ok;
   }
 
-  async function handleDelete(category: CashCategoryRow): Promise<void> {
+  async function requestDelete(category: CashCategoryRow): Promise<'ok' | 'in-use' | 'error'> {
     setPendingActionId(category.id);
     const response = await fetch(`/api/v1/cash-categories/${category.id}`, { method: 'DELETE' });
     setPendingActionId(null);
-    setConfirmingDeleteId(null);
-    if (response.ok) {
-      setFeedback({ text: labels.feedback.deleted, isError: false });
-    } else if (response.status === 409) {
-      // A category with recorded movements is not deletable (AC 1 of story
-      // 3.4) — the service already refused, this only explains why.
-      setFeedback({ text: labels.feedback.deleteInUseError, isError: true });
-    } else {
-      setFeedback({ text: labels.feedback.genericError, isError: true });
-    }
     router.refresh();
+    if (response.ok) return 'ok';
+    // A category with recorded movements is not deletable (AC 1 of story 3.4)
+    // — the service already refused, this only explains why.
+    return response.status === 409 ? 'in-use' : 'error';
+  }
+
+  function lifecycleMessage(action: 'deactivate' | 'reactivate', ok: boolean): { text: string; isError: boolean } {
+    if (!ok) return { text: labels.feedback.genericError, isError: true };
+    return { text: action === 'deactivate' ? labels.feedback.deactivated : labels.feedback.reactivated, isError: false };
+  }
+
+  function deleteMessage(outcome: 'ok' | 'in-use' | 'error'): { text: string; isError: boolean } {
+    if (outcome === 'ok') return { text: labels.feedback.deleted, isError: false };
+    if (outcome === 'in-use') return { text: labels.feedback.deleteInUseError, isError: true };
+    return { text: labels.feedback.genericError, isError: true };
+  }
+
+  async function handleLifecycleAction(category: CashCategoryRow, action: 'deactivate' | 'reactivate'): Promise<void> {
+    setFeedback(lifecycleMessage(action, await requestLifecycleAction(category, action)));
+  }
+
+  async function handleDelete(category: CashCategoryRow): Promise<void> {
+    const outcome = await requestDelete(category);
+    setConfirmingDeleteId(null);
+    setFeedback(deleteMessage(outcome));
+  }
+
+  async function handleSheetLifecycleAction(category: CashCategoryRow, action: 'deactivate' | 'reactivate'): Promise<void> {
+    const message = lifecycleMessage(action, await requestLifecycleAction(category, action));
+    toast.show(message.text, message.isError ? 'bad' : 'ok');
+  }
+
+  async function handleSheetDelete(category: CashCategoryRow): Promise<void> {
+    const message = deleteMessage(await requestDelete(category));
+    toast.show(message.text, message.isError ? 'bad' : 'ok');
+    closeSheet();
+  }
+
+  const sheetRow = categories.find((category) => category.id === sheetId) ?? null;
+
+  function movementsLabel(category: CashCategoryRow): string {
+    return labels.mobile.movementsCount.replace('{count}', String(category.movementCount));
+  }
+
+  function sheetRows(category: CashCategoryRow): BottomSheetRow[] {
+    return [
+      { k: labels.table.movements, v: String(category.movementCount) },
+      { k: labels.table.status, v: category.isActive ? labels.status.active : labels.status.inactive },
+    ];
   }
 
   return (
-    <div className="card" data-testid="cash-categories-settings-card">
+    <div className="card settings-card" data-testid="cash-categories-settings-card">
       <div className="card-head">
         <div className="card-title">{labels.title}</div>
         <span className="card-sub">{labels.sub}</span>
@@ -120,7 +189,7 @@ export function CashCategoriesCard({ categories, labels }: CashCategoriesCardPro
       ) : null}
 
       {panel ? (
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
+        <div ref={panelRef} style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
           <CashCategoryForm
             // Remount on target change (create <-> rename A <-> rename B) —
             // react-hook-form reads defaultValues only at mount (review 2.4 F1).
@@ -133,7 +202,7 @@ export function CashCategoriesCard({ categories, labels }: CashCategoriesCardPro
         </div>
       ) : null}
 
-      <div className="students">
+      <div className="students cash-categories-desktop-body">
         <div className="student-row header" style={{ gridTemplateColumns: COLS }}>
           <div>{labels.table.name}</div>
           <div>{labels.table.movements}</div>
@@ -194,6 +263,126 @@ export function CashCategoriesCard({ categories, labels }: CashCategoriesCardPro
           ))
         )}
       </div>
+
+      {/* --- the phone face of this catalogue (story 15.8b, R-15.8b-d) ------
+          Same shape as the two expiry-type catalogues above. The one rule that
+          differs is domain, not layout: on a SYSTEM category ("Ricariche",
+          "Compensi istruttori", "PPR") the "Elimina" action stays ABSENT — not
+          disabled — exactly as on the desktop row (`cash.service.ts:52`). */}
+      <div className="cash-categories-mobile" data-testid="mobile-cash-category-list">
+        {categories.length === 0 ? (
+          <p className="mobile-card-empty" data-testid="mobile-cash-category-empty">
+            {labels.mobile.empty}
+          </p>
+        ) : (
+          categories.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className="mobile-row mobile-row-catalog"
+              aria-label={`${labels.mobile.openDetail}: ${category.name}`}
+              onClick={() => {
+                setSheetStep('detail');
+                setSheetId(category.id);
+              }}
+              data-testid="cash-category-row-mobile"
+            >
+              <span className="mobile-row-main">
+                <span className="mobile-row-title">
+                  <span className="mobile-row-name">{category.name}</span>
+                </span>
+                <span className="mobile-row-sub">
+                  {cashCategorySubLine({
+                    movementsLabel: movementsLabel(category),
+                    systemLabel: category.isSystem ? labels.systemBadge : null,
+                  })}
+                </span>
+              </span>
+              <span className="mobile-row-side">
+                <Badge tone={category.isActive ? 'ok' : ''} dot>
+                  {category.isActive ? labels.status.active : labels.status.inactive}
+                </Badge>
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+
+      {sheetRow ? (
+        <BottomSheet
+          open
+          onClose={closeSheet}
+          testId="mobile-cash-category-sheet"
+          sub={cashCategorySheetSub({ catalogLabel: labels.title, systemLabel: sheetRow.isSystem ? labels.systemBadge : null })}
+          title={sheetRow.name}
+          badge={
+            <Badge tone={sheetRow.isActive ? 'ok' : ''} dot>
+              {sheetRow.isActive ? labels.status.active : labels.status.inactive}
+            </Badge>
+          }
+          rows={sheetRows(sheetRow)}
+          closeLabel={labels.mobile.close}
+          actions={
+            <>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  revealPanelRef.current = true;
+                  setPanel({ mode: 'rename', category: sheetRow });
+                  closeSheet();
+                }}
+                data-testid="cash-category-rename-button-mobile"
+              >
+                {labels.actions.rename}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={pendingActionId === sheetRow.id}
+                onClick={() => void handleSheetLifecycleAction(sheetRow, sheetRow.isActive ? 'deactivate' : 'reactivate')}
+                data-testid="cash-category-toggle-button-mobile"
+              >
+                {sheetRow.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+              </button>
+              {sheetRow.isSystem ? null : (
+                <button
+                  type="button"
+                  className="btn mini bad"
+                  ref={sheetDeleteButtonRef}
+                  disabled={pendingActionId === sheetRow.id}
+                  onClick={() => setSheetStep('delete')}
+                  data-testid="cash-category-delete-button-mobile"
+                >
+                  {labels.actions.delete}
+                </button>
+              )}
+            </>
+          }
+          secondStep={
+            sheetStep === 'delete' ? (
+              <div className="catalog-sheet-step">
+                <p className="fld-hint">{labels.actions.confirmDelete}</p>
+                <div className="bottom-sheet-actions">
+                  <button
+                    type="button"
+                    className="btn mini bad"
+                    ref={sheetConfirmButtonRef}
+                    disabled={pendingActionId === sheetRow.id}
+                    onClick={() => void handleSheetDelete(sheetRow)}
+                    data-testid="cash-category-delete-confirm-mobile"
+                  >
+                    {labels.actions.confirmYes}
+                  </button>
+                  <button type="button" className="btn" onClick={() => setSheetStep('detail')} data-testid="cash-category-delete-cancel-mobile">
+                    {labels.actions.confirmCancel}
+                  </button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
+      ) : null}
     </div>
   );
 }
@@ -245,12 +434,11 @@ function CashCategoryForm({ category, labels, onCancel, onSuccess }: CashCategor
         {category ? labels.renameTitle : labels.createTitle}
       </div>
       <div className="form-grid">
-        <Field label={labels.name} wide>
+        <Field label={labels.name} wide error={errors.name ? labels.requiredField : undefined}>
           <Input maxLength={100} aria-invalid={Boolean(errors.name)} data-testid="cash-category-name-input" {...register('name')} />
         </Field>
       </div>
 
-      {errors.name ? <p style={{ marginTop: 6, fontSize: 12, color: 'var(--bad)' }}>{labels.requiredField}</p> : null}
       {formError ? (
         <p role="alert" data-testid="cash-category-form-error" style={{ marginTop: 8, fontSize: 12.5, color: 'var(--bad)' }}>
           {formError}

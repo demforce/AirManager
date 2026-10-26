@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -105,7 +106,7 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     await expect(page.getByTestId('toast').filter({ hasText: 'archiviata' })).toBeVisible();
     await page.getByRole('button', { name: 'Chiudi' }).first().click();
 
-    // The default (includeArchived=false) list drops the row as soon as the
+    // The default (non-archived) list drops the row as soon as the
     // archive call resolves and `router.refresh()` re-fetches.
     await expect(row).toHaveCount(0);
 
@@ -113,18 +114,21 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(person.lastName)}`);
     await expect(rowFor(page, person.lastName)).toHaveCount(0);
 
-    // With the archived filter (AC 3, story 13.2: a toggle button, not a checkbox).
+    // With the archived filter (AC 3, story 13.2: a toggle button, not a
+    // checkbox; feedback utente 2026-07-28: the toggle shows ONLY archived
+    // persons — actives are NOT mixed in).
     await page.getByTestId('pilots-toggle-archived').click();
     const archivedRow = rowFor(page, person.lastName);
     await expect(archivedRow).toBeVisible();
 
-    // Restoring: the row stays visible under "Mostra archiviati" (unarchived
-    // persons are always included, the filter only adds archived ones).
+    // Restoring from the archived-only view: the row LEAVES this view (it is
+    // no longer archived) and is back in the default list.
     await archivedRow.getByRole('button', { name: 'Modifica' }).click();
     await page.getByTestId('pilot-archive-toggle').click();
     await page.getByTestId('pilot-archive-confirm').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'ripristinata' })).toBeVisible();
     await page.getByRole('button', { name: 'Chiudi' }).first().click();
+    await expect(rowFor(page, person.lastName)).toHaveCount(0);
 
     await page.getByTestId('pilots-toggle-archived').click();
     await expect(rowFor(page, person.lastName)).toBeVisible();
@@ -153,6 +157,8 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
       data: { licenseNumber: `IT-PPL-${Date.now()}`, licenseType: 'PPL(A)' },
     });
     expect(pilotProfileResponse.status()).toBe(200);
+    // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+    await ensureValidSeedExpiries(page, personId, 'PILOTS');
 
     // A UNIQUE aircraft (never reuse seed I-ABCD — avoids rate-collision with
     // parallel specs), created directly via the API (same shape as

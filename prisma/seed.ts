@@ -11,7 +11,6 @@ const prisma = new PrismaClient({ adapter });
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const INSTRUCTOR_EMAIL = 'instructor@airmanager.local';
 const STUDENT_EMAIL = 'student@airmanager.local';
 
@@ -66,37 +65,9 @@ async function seedPilotUser(passwordHash: string): Promise<void> {
 }
 
 /**
- * Story 8.2: a STAFF test user — needed so the e2e suite can exercise
- * `ppr.manage` through a REAL staff role, not an ADMIN-who-has-everything
- * (Contesto). Same idempotent upsert pattern, same seed password, as
- * `seedPilotUser`; useful to the whole epic, not just this story.
- */
-async function seedStaffUser(passwordHash: string): Promise<void> {
-  await prisma.user.upsert({
-    where: { email: STAFF_EMAIL },
-    update: { passwordHash, isActive: true, roles: ['STAFF'] },
-    create: {
-      email: STAFF_EMAIL,
-      passwordHash,
-      isActive: true,
-      roles: ['STAFF'],
-      person: {
-        create: {
-          firstName: 'Staff',
-          lastName: 'AirManager',
-          email: STAFF_EMAIL,
-        },
-      },
-    },
-  });
-
-  console.log(`Seed: demo staff user ready (${STAFF_EMAIL}).`);
-}
-
-/**
  * Story 9.1 (AC 5): an INSTRUCTOR test user with an active `InstructorProfile`
  * so `/dashboard/instructors` and the e2e suite have a real instructor to
- * log in as. Same idempotent upsert pattern as `seedStaffUser`.
+ * log in as. Same idempotent upsert pattern as `seedPilotUser`.
  */
 async function seedInstructorUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
@@ -123,7 +94,7 @@ async function seedInstructorUser(passwordHash: string): Promise<void> {
 /**
  * Story 9.1 (AC 5): a STUDENT test user with an active `StudentProfile`
  * (`courseStartDate` valorizzata) — the demo allievo assignable to the demo
- * instructor. Same idempotent upsert pattern as `seedStaffUser`.
+ * instructor. Same idempotent upsert pattern as `seedPilotUser`.
  */
 async function seedStudentUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
@@ -285,33 +256,56 @@ async function seedCashCategories(): Promise<void> {
  * description instead (find-or-skip), same rationale every other seed
  * function's `upsert` serves.
  */
-const UNATTRIBUTED_SEED_DESCRIPTION = 'Movimento storico pre-Billing-1 (seed)';
+/**
+ * TWO of them, one per CONSUMER (story 15.8a): the fixture is consumed by a
+ * real write and there is no way to restore it, so a single row cannot serve
+ * two specs. `billing-global.spec.ts` (last project of the serialized chain)
+ * reclassifies the first through the desktop inline `<select>`;
+ * `mobile-billing.spec.ts` reclassifies the second through the phone sheet's
+ * explicit choose-then-confirm step. Each guards on ITS OWN marker and skips
+ * when a previous run against the same dirty DB already consumed it — the
+ * trade-off review Billing-2 F4/F5 already accepted.
+ *
+ * Both are dated in 2019, outside every spec's isolation window, and neither
+ * is reachable through any HTTP writer: since Billing-1 AC2 (+ review F8/D2 on
+ * `completePprRequest`) every live path REQUIRES a `paymentMethod`, which is
+ * why an e2e cannot create its own.
+ */
+const UNATTRIBUTED_SEED_ROWS: readonly { description: string; amountCents: number; effectiveDate: string }[] = [
+  { description: 'Movimento storico pre-Billing-1 (seed)', amountCents: 500, effectiveDate: '2019-06-15' },
+  { description: 'Movimento storico pre-Billing-1 mobile (seed)', amountCents: 700, effectiveDate: '2019-06-16' },
+];
 
 async function seedUnattributedHistoricalMovement(): Promise<void> {
-  const existing = await prisma.cashMovement.findFirst({ where: { description: UNATTRIBUTED_SEED_DESCRIPTION }, select: { id: true } });
-  if (existing) {
-    return;
-  }
-
   const category = await prisma.cashCategory.findUnique({ where: { name: 'Altro' }, select: { id: true } });
   const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL }, select: { id: true } });
   if (!category || !admin) {
-    console.warn('Seed: "Altro" category or admin user not found — skipping the unattributed historical movement.');
+    console.warn('Seed: "Altro" category or admin user not found — skipping the unattributed historical movements.');
     return;
   }
 
-  await prisma.cashMovement.create({
-    data: {
-      categoryId: category.id,
-      amountCents: 500,
-      paymentMethod: null,
-      description: UNATTRIBUTED_SEED_DESCRIPTION,
-      effectiveDate: new Date('2019-06-15'),
-      actorUserId: admin.id,
-    },
-  });
+  let created = 0;
+  for (const row of UNATTRIBUTED_SEED_ROWS) {
+    const existing = await prisma.cashMovement.findFirst({ where: { description: row.description }, select: { id: true } });
+    if (existing) {
+      continue;
+    }
+    await prisma.cashMovement.create({
+      data: {
+        categoryId: category.id,
+        amountCents: row.amountCents,
+        paymentMethod: null,
+        description: row.description,
+        effectiveDate: new Date(row.effectiveDate),
+        actorUserId: admin.id,
+      },
+    });
+    created += 1;
+  }
 
-  console.log('Seed: 1 unattributed historical cash movement ready (story Billing-2, AC 3 secchiello).');
+  if (created > 0) {
+    console.log(`Seed: ${created} unattributed historical cash movement(s) ready (story Billing-2 AC 3 secchiello; story 15.8a phone twin).`);
+  }
 }
 
 /**
@@ -403,7 +397,6 @@ async function main() {
 
   await seedAdminUser(passwordHash);
   await seedPilotUser(passwordHash);
-  await seedStaffUser(passwordHash);
   await seedInstructorUser(passwordHash);
   await seedStudentUser(passwordHash);
   await seedPilotProfile();

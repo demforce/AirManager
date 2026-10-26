@@ -6,7 +6,7 @@ import { exportTransactionsXlsx } from '@/server/services/exports.service';
 import { listTransactions, recordTransaction } from '@/server/services/transactions.service';
 
 /**
- * Thin routes (AD-1): `finance.manage` (staff+admin) — real authorization
+ * Thin routes (AD-1): `finance.manage` (ADMIN-only) — real authorization
  * stays in `transactions.service.ts` (AD-5). `POST` mandates
  * `Idempotency-Key` (AC 4), same pattern as `POST /api/v1/instructor-payouts`
  * (story 12.7) — a money-mutating discriminated-union write, not opt-in like

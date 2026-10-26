@@ -21,6 +21,8 @@
       "fleet": "Aeromobili",
       "scadenze": "Scadenze",
       "logbook": "Registro voli",
+      "myAccount": "Le mie transazioni",
+      "myCompensation": "I miei compensi",
       "billing": "Contabilità",
       "reports": "Statistiche",
       "settings": "Impostazioni"
@@ -35,6 +37,8 @@
       "fleet": "Aeromobili",
       "scadenze": "Scadenze",
       "logbook": "Registro voli",
+      "myAccount": "Le mie transazioni",
+      "myCompensation": "I miei compensi",
       "billing": "Contabilità",
       "reports": "Statistiche",
       "settings": "Impostazioni"
@@ -51,13 +55,17 @@
     "logout": "Esci",
     "roles": {
       "ADMIN": "Admin",
-      "STAFF": "Staff",
       "INSTRUCTOR": "Istruttore",
       "PILOT": "Pilota",
       "STUDENT": "Allievo"
     },
     "weather": {
       "title": "Meteo campo"
+    },
+    "mobile": {
+      "more": "Altro",
+      "moreSheet": "Altre sezioni",
+      "profile": "Profilo"
     }
   },
   "auth": {
@@ -70,7 +78,8 @@
       "submit": "Accedi",
       "submitting": "Accesso in corso…",
       "errorGeneric": "Email o password non corretti.",
-      "forgotPassword": "Password dimenticata?"
+      "forgotPassword": "Password dimenticata?",
+      "requiredField": "Campo obbligatorio."
     },
     "setPassword": {
       "kicker": "Imposta password",
@@ -95,7 +104,8 @@
       "submit": "Invia link di reset",
       "submitting": "Invio in corso…",
       "confirmation": "Se l'indirizzo email corrisponde a un account attivo, riceverai a breve un'email con le istruzioni per reimpostare la password.",
-      "backToLogin": "Torna al login"
+      "backToLogin": "Torna al login",
+      "requiredField": "Campo obbligatorio."
     }
   },
   "DashboardPage": {
@@ -115,6 +125,31 @@
         "pprPending": "PPR in attesa",
         "bookingsPending": "Prenotazioni in attesa",
         "revenue": "Ricavi del mese"
+      },
+      "mobile": {
+        "inProgress": {
+          "title": "In corso ora",
+          "count": "{count} in corso",
+          "empty": "Nessuna prenotazione in corso adesso."
+        },
+        "pending": {
+          "title": "Prenotazioni in attesa",
+          "count": "{count} da approvare",
+          "seeAll": "+{count} · Vedi tutte",
+          "empty": "Nessuna prenotazione da approvare."
+        },
+        "alerts": {
+          "title": "Avvisi",
+          "empty": "Nessun avviso: scadenze, saldi e PPR sono in regola.",
+          "seeAll": "+{count} altri · Vedi tutte",
+          "seeAllAtLeast": "+{count} e oltre · Vedi tutte",
+          "balanceSub": "Saldo {amount}",
+          "pprSub": "Richieste in attesa di risposta"
+        },
+        "shortcuts": {
+          "schedule": "Pianificazione",
+          "fleet": "Aeromobili"
+        }
       }
     },
     "pilotLanding": {
@@ -184,12 +219,26 @@
         "available": "Disponibile",
         "archived": "Archiviato"
       }
+    },
+    "mobile": {
+      "openDetail": "Apri dettaglio",
+      "close": "Chiudi",
+      "bookingLabel": "Prenotazione",
+      "metarTitle": "Meteo campo",
+      "detail": {
+        "aircraft": "Aeromobile",
+        "pilot": "Pilota",
+        "instructor": "Istruttore",
+        "startsAt": "Inizio",
+        "endsAt": "Fine",
+        "duration": "Durata",
+        "notes": "Note"
+      }
     }
   },
   "PeoplePage": {
     "kicker": "Anagrafiche",
     "title": "Persone",
-    "description": "Anagrafica unica di piloti, allievi, istruttori e staff: crea, modifica e archivia le persone.",
     "backToDashboard": "Torna alla dashboard",
     "newPerson": "Nuova persona",
     "searchPlaceholder": "Cerca per nome, cognome o email…",
@@ -288,7 +337,7 @@
     "sub": "{total} in archivio · {suspended} sospesi",
     "cardTitle": "Anagrafica piloti",
     "searchPlaceholder": "Cerca per nome o email…",
-    "includeArchivedLabel": "Mostra archiviati",
+    "includeArchivedLabel": "Solo archiviati",
     "empty": "Nessun pilota trovato.",
     "newPilot": "Aggiungi pilota",
     "pagination": {
@@ -315,6 +364,20 @@
       "topUp": "Registra",
       "suspend": "Sospendi",
       "reactivate": "Riattiva"
+    },
+    "mobile": {
+      "openDetail": "Apri dettaglio",
+      "close": "Chiudi",
+      "openProfile": "Vai alla scheda",
+      "flagExpired": "{doc} scaduto",
+      "flagExpiring": "{doc} {days}gg",
+      "confirmSuspend": "Sospendere l'accesso di questa persona?",
+      "confirmReactivate": "Riattivare l'accesso di questa persona?",
+      "dismiss": "Annulla",
+      "sheet": {
+        "phone": "Telefono",
+        "documents": "Documenti"
+      }
     },
     "topUp": {
       "title": "Registra ricarica",
@@ -458,6 +521,12 @@
       "edit": "Modifica",
       "pay": "Paga"
     },
+    "mobile": {
+      "openDetail": "Apri dettaglio",
+      "close": "Chiudi",
+      "owedSuffix": "dovuti",
+      "openProfile": "Vai alla scheda"
+    },
     "addInstructor": {
       "title": "Aggiungi istruttore",
       "subtitle": "Attiva il profilo istruttore su una persona esistente",
@@ -482,14 +551,14 @@
         "address": "Indirizzo",
         "fiscalCode": "Codice fiscale",
         "save": "Salva modifiche",
-        "loadError": "Impossibile caricare i dati anagrafici."
+        "loadError": "Impossibile caricare i dati anagrafici.",
+        "requiredField": "Campo obbligatorio."
       },
       "payoutRate": {
         "sectionTitle": "Tariffa payout (pagata all'istruttore)",
         "label": "Tariffa oraria",
         "noValue": "—",
-        "save": "Salva",
-        "readOnlyHint": "Solo un amministratore può impostare la tariffa payout."
+        "save": "Salva"
       },
       "ratings": {
         "sectionTitle": "Ratings",
@@ -535,7 +604,6 @@
       "invalidDate": "Inserisci una data valida.",
       "genericError": "Si è verificato un errore. Riprova.",
       "conflictError": "Esiste già una tariffa con questa data di decorrenza, oppure la persona non ha un profilo istruttore attivo.",
-      "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe istruttore.",
       "historyTitle": "Storico tariffe",
       "historyEmpty": "Nessuna tariffa registrata.",
       "historyValidFrom": "In vigore da",
@@ -753,6 +821,40 @@
     "pdf": {
       "balance": "Saldo finale",
       "currentBalance": "Saldo attuale del conto"
+    },
+    "mobile": {
+      "empty": "Nessun movimento in questo conto.",
+      "openDetail": "Apri dettaglio movimento",
+      "close": "Chiudi"
+    }
+  },
+  "MyAccountPage": {
+    "title": "Le mie transazioni",
+    "sub": "Ricariche, addebiti voli e rettifiche sul tuo conto.",
+    "balanceLabel": "Saldo attuale",
+    "noAccount": "Nessun conto attivo"
+  },
+  "MyCompensationPage": {
+    "title": "I miei compensi",
+    "sub": "Ore volate, maturato del mese e storico dei pagamenti ricevuti.",
+    "noProfile": "Nessun profilo istruttore attivo.",
+    "kpi": {
+      "rate": "Tariffa oraria",
+      "hoursMtd": "Ore nel mese",
+      "grossMtd": "Maturato nel mese",
+      "owedMtd": "Dovuto nel mese",
+      "owedTotal": "Residuo dovuto"
+    },
+    "table": {
+      "heading": "Pagamenti ricevuti",
+      "empty": "Nessun pagamento registrato.",
+      "date": "Data",
+      "period": "Periodo",
+      "method": "Metodo",
+      "amount": "Importo"
+    },
+    "mobile": {
+      "registeredOn": "Registrato il {date}"
     }
   },
   "FinancePage": {
@@ -877,6 +979,23 @@
       "available": "Disponibile",
       "archived": "Archiviato"
     },
+    "mobile": {
+      "monthHours": "Ore mese",
+      "openDetail": "Apri dettaglio",
+      "close": "Chiudi",
+      "edit": "Modifica",
+      "noValue": "—",
+      "sheet": {
+        "status": "Stato",
+        "aogReason": "Motivo AOG",
+        "rate": "Tariffa",
+        "seats": "Posti",
+        "fuel": "Carburante",
+        "hourMeter": "Contaore",
+        "monthHours": "Ore mese",
+        "notes": "Note"
+      }
+    },
     "pagination": {
       "prev": "Precedente",
       "next": "Successivo"
@@ -916,8 +1035,28 @@
         "setOutOfService": "Fuori servizio",
         "returnToService": "Rientro in servizio",
         "reason": "Motivo",
+        "until": "Fermo fino al (compreso)",
+        "untilHint": "Facoltativo: l'ultimo giorno di fermo. Vuoto = rientro da definire.",
+        "untilValue": "fermo fino al {date} compreso",
+        "untilUnknown": "rientro da definire",
         "confirm": "Conferma",
-        "confirmReturnToService": "Rimettere in servizio questo velivolo?"
+        "confirmReturnToService": "Rimettere in servizio questo velivolo?",
+        "confirmQuestionOne": "Confermi il fermo? 1 prenotazione impattata",
+        "confirmQuestionMany": "Confermi il fermo? {count} prenotazioni impattate",
+        "confirmQuestionUnknown": "Confermi il fermo? Conteggio non disponibile",
+        "impactPreviewNone": "Nessuna prenotazione impattata",
+        "impactPreviewOne": "Stai per impattare 1 prenotazione.",
+        "impactPreviewMany": "Stai per impattare {count} prenotazioni.",
+        "impactBannerOne": "Fermo registrato: 1 prenotazione impattata.",
+        "impactBannerMany": "Fermo registrato: {count} prenotazioni impattate.",
+        "impactRowOne": "1 prenotazione nel fermo",
+        "impactRowMany": "{count} prenotazioni nel fermo",
+        "impactSplit": "In attesa (congelate): {pending} · Approvate (da gestire): {approved}",
+        "impactWindowUntil": "conteggio fino al {date} compreso",
+        "impactWindowUndelimited": "rientro da definire: conteggio non delimitato",
+        "impactWindowOverdue": "fermo oltre il {date} previsto: conteggio non delimitato",
+        "impactEstimate": "stima",
+        "impactBookingsLink": "Vedi le prenotazioni"
       },
       "rates": {
         "sectionTitle": "Tariffe",
@@ -1168,6 +1307,8 @@
       "correctedBy": "Corretto da un volo successivo",
       "cancelAction": "Annulla",
       "correctAction": "Modifica",
+      "forcedBadge": "Deroga",
+      "forcedDetail": "Motivo: {reason}",
       "empty": "Nessun volo registrato."
     },
     "filters": {
@@ -1207,6 +1348,7 @@
       "conflictError": "Questo volo è già stato annullato.",
       "requiredField": "Campo obbligatorio.",
       "invalidHourMeter": "Il contaore finale deve essere maggiore dell'iniziale.",
+      "invalidCycles": "Decolli e atterraggi devono essere almeno 1.",
       "fields": {
         "aircraft": "Velivolo",
         "noAircraftAvailable": "Nessun velivolo attivo disponibile.",
@@ -1221,6 +1363,8 @@
           "dual": "Doppio comando",
           "solo": "Solista"
         },
+        "studentOnlyHint": "Allievo senza brevetto: il tipo volo è sempre Scuola.",
+        "studentOnlyCorrectionHint": "Questa persona ha oggi solo il profilo allievo. Il volo è registrato come {type}: lasciarlo invariato è sempre ammesso; cambiarlo (tranne che verso Scuola) verrà rifiutato dal server.",
         "departure": "Aeroporto di partenza",
         "arrival": "Aeroporto di arrivo",
         "takeoffTime": "Ora decollo",
@@ -1239,12 +1383,22 @@
         "NO_INSTRUCTOR_RATE": "Nessuna tariffa oraria è in vigore per questo istruttore alla data del volo.",
         "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "Un volo scuola richiede un istruttore.",
         "SOLO_REQUIRES_SCHOOL": "Doppio comando/solista è valido solo per i voli scuola.",
+        "STUDENT_FLIGHT_MUST_BE_SCHOOL": "Un allievo senza brevetto può registrare solo voli scuola.",
         "AIRCRAFT_ARCHIVED": "Il velivolo selezionato è archiviato.",
         "PERSON_ARCHIVED": "La persona selezionata è archiviata.",
         "PERSON_NOT_PILOT_OR_STUDENT": "La persona deve avere un profilo pilota o allievo attivo.",
         "INSTRUCTOR_NOT_FOUND": "L'istruttore selezionato non ha un profilo istruttore attivo.",
         "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
         "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
+        "FLIGHT_OVERLAP": "Questo velivolo ha già un volo registrato il {date} dalle {from} alle {to}. Annulla o correggi quel volo, oppure cambia gli orari.",
+        "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo {registration} è fuori servizio: {reason}.",
+        "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Il velivolo {registration} è fuori servizio: {reason}. Fermo fino al {date} compreso.",
+        "AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS": "Inoltre, la registrazione è bloccata da questi documenti mancanti o scaduti: {documents}.",
+        "FLIGHT_BLOCKED_BY_EXPIRY": "Impossibile registrare il volo: risultano mancanti o scaduti i seguenti documenti: {documents}.",
+        "documentExpiredOn": "scaduto il {date}",
+        "documentMissing": "mancante",
+        "documentRolePerson": "pilota/allievo",
+        "documentRoleInstructor": "istruttore",
         "generic": "Impossibile registrare il volo. Riprova."
       },
       "result": {
@@ -1255,8 +1409,38 @@
         "instructorRate": "Tariffa istruttore",
         "instructorAmount": "Costo istruttore",
         "total": "Totale addebitato",
-        "newBalance": "Nuovo saldo"
+        "newBalance": "Nuovo saldo",
+        "balanceAlert": "Attenzione: il saldo del pilota risulta negativo (o è peggiorato oltre la soglia configurata). Il volo è comunque stato registrato.",
+        "forcedNotice": "Registrato in deroga — {reason}"
+      },
+      "force": {
+        "title": "Forza registrazione",
+        "description": "Solo un admin può registrare comunque questo volo, indicando un motivo. La forzatura resta tracciata.",
+        "reasonLabel": "Motivo",
+        "submit": "Forza registrazione",
+        "cancel": "Annulla",
+        "requiredReason": "Il motivo è obbligatorio.",
+        "generic": "Impossibile forzare la registrazione. Riprova."
       }
+    },
+    "mobile": {
+      "openDetail": "Apri dettaglio volo",
+      "close": "Chiudi",
+      "back": "Indietro",
+      "route": "Tratta",
+      "instructor": "Istruttore",
+      "takeoffs": "Decolli",
+      "landings": "Atterraggi",
+      "times": "Orari",
+      "hourMeter": "Contaore",
+      "notes": "Note",
+      "lineage": "Storico",
+      "correctionBadge": "Correzione",
+      "statusAll": "Tutti",
+      "filters": "Filtri",
+      "filtersCount": "Filtri ({count})",
+      "filtersTitle": "Filtri del registro",
+      "apply": "Applica"
     },
     "cancelModal": {
       "title": "Annulla volo",
@@ -1336,7 +1520,7 @@
       },
       "reminders": {
         "button": "Invia promemoria",
-        "sent": "Promemoria inviati: {holders} ai titolari, {digests} allo staff.",
+        "sent": "Promemoria inviati: {holders} ai titolari, {digests} agli amministratori.",
         "error": "Invio non riuscito. Riprova."
       },
       "membershipFee": {
@@ -1348,11 +1532,31 @@
         "amountHint": "Precompilato dalle Impostazioni, modificabile.",
         "submit": "Addebita e rinnova",
         "cancel": "Chiudi",
-        "invalidAmount": "Seleziona un pilota e un importo valido.",
+        "invalidAmount": "Inserisci un importo valido.",
         "success": "Addebitato. Nuovo saldo: {balance} · scadenza rinnovata al {expires}.",
         "genericError": "Operazione non riuscita. Riprova.",
         "insufficientBalance": "Saldo insufficiente: il conto è a {balance}, l'addebito di {amount} lo porterebbe sotto zero. Un admin può forzare l'addebito con la casella qui sotto.",
-        "overrideCheckbox": "Forza addebito (saldo insufficiente)"
+        "overrideCheckbox": "Forza addebito (saldo insufficiente)",
+        "requiredPilot": "Seleziona un pilota."
+      },
+      "mobile": {
+        "openDetail": "Apri dettaglio scadenza",
+        "close": "Chiudi",
+        "notes": "Note",
+        "scopeLabel": "Ambito",
+        "scope": {
+          "PILOTS": "Piloti",
+          "STUDENTS": "Allievi",
+          "INSTRUCTORS": "Istruttori",
+          "ALL": "Tutti"
+        },
+        "openPerson": "Apri scheda persona",
+        "filters": "Filtri",
+        "filtersCount": "Filtri ({count})",
+        "filtersTitle": "Filtri del registro",
+        "apply": "Applica",
+        "empty": "Nessuna scadenza in questa finestra.",
+        "noValue": "—"
       }
     },
     "own": {
@@ -1369,6 +1573,10 @@
           "expired": "Scaduta"
         },
         "pendingBadge": "Proposta in attesa"
+      },
+      "mobile": {
+        "openDetail": "Apri dettaglio scadenza",
+        "close": "Chiudi"
       }
     }
   },
@@ -1383,6 +1591,7 @@
   "BookingsPage": {
     "title": "Pianificazione",
     "sub": "Timeline aeromobili e prenotazioni in attesa di approvazione.",
+    "occupied": "Occupato",
     "schedule": {
       "cardTitle": "Programma",
       "cardTitleToday": "Programma di oggi",
@@ -1396,7 +1605,22 @@
       "filtersInstructor": "Istruttore",
       "aog": "AOG",
       "available": "Disponibile",
-      "weekBookingsCount": "{count} prenotazioni"
+      "weekBookingsCount": "{count} prenotazioni",
+      "mobile": {
+        "agendaCount": "{count} movimenti",
+        "now": "ORA · {time}",
+        "aogTitle": "{registration} fuori servizio",
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "today": "OGGI",
+        "time": "Orario",
+        "reason": "Motivo",
+        "phase": {
+          "inProgress": "in corso",
+          "completed": "completato",
+          "scheduled": "in programma"
+        }
+      }
     },
     "form": {
       "title": "Nuova prenotazione",
@@ -1420,17 +1644,25 @@
       "invalidRange": "L'orario di fine deve essere successivo a quello di inizio.",
       "errors": {
         "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
+        "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Il velivolo è fuori servizio: {reason}. Fermo fino al {date} compreso.",
         "BOOKING_IN_PAST": "L'orario di inizio deve essere nel futuro.",
         "PERSON_NOT_BOOKABLE": "Questa persona non ha un profilo attivo idoneo alla prenotazione.",
         "EXPIRED_DOCUMENTS": "Impossibile creare la prenotazione: risultano scaduti i seguenti documenti: {documents}.",
+        "BOOKING_OUTSIDE_WINDOW": "Orario fuori dalla finestra di prenotazione ({window}).",
         "overlap": "Il velivolo è già prenotato per un intervallo che si sovrappone a questo.",
+        "PERSON_BUSY": "Questa persona ha già una prenotazione approvata che si sovrappone a questo intervallo.",
+        "INSTRUCTOR_BUSY": "L'istruttore indicato ha già una prenotazione approvata che si sovrappone a questo intervallo.",
         "generic": "Impossibile creare la prenotazione. Riprova."
+      },
+      "schedulingWindow": {
+        "hours": "campo aperto {open}–{close}",
+        "advance": "prenotabile fino a {days} giorni in anticipo"
       },
       "success": "Prenotazione creata.",
       "successWithWarnings": "Prenotazione creata. Attenzione: i seguenti documenti risultano scaduti (non bloccanti):",
       "force": {
         "title": "Forza prenotazione",
-        "description": "Solo lo staff può creare comunque questa prenotazione, indicando un motivo. La forzatura resta tracciata.",
+        "description": "Solo un amministratore può creare comunque questa prenotazione, indicando un motivo. La forzatura resta tracciata.",
         "reasonLabel": "Motivo",
         "submit": "Forza prenotazione",
         "cancel": "Annulla",
@@ -1441,6 +1673,7 @@
     "list": {
       "cardTitle": "Prenotazioni",
       "pendingSummary": "{pending} in attesa · {total} totali",
+      "filteredSummary": "{total} totali",
       "newButton": "Nuova prenotazione",
       "exportLabel": "Esporta",
       "exportXls": "Esporta XLS",
@@ -1491,6 +1724,7 @@
           "BOOKING_DENY_REASON_REQUIRED": "Il motivo del rifiuto è obbligatorio.",
           "EXPIRED_DOCUMENTS": "Impossibile completare l'operazione: risultano scaduti i seguenti documenti: {documents}.",
           "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
+          "BOOKING_NOT_STARTED": "La prenotazione non è ancora iniziata: può essere segnata come effettuata o assente solo dopo l'orario di inizio.",
           "conflict": "Il velivolo è già prenotato per questo intervallo, oppure la prenotazione non è più valida. Ricarica la pagina e riprova.",
           "generic": "Operazione non riuscita. Riprova."
         }
@@ -1502,6 +1736,12 @@
         "reasonRequired": "Il motivo è obbligatorio.",
         "submit": "Invia rifiuto",
         "cancel": "Annulla"
+      },
+      "mobile": {
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "statusAll": "Tutte",
+        "denyReason": "Motivo del rifiuto"
       }
     },
     "calendar": {
@@ -1523,7 +1763,6 @@
   "UsersPage": {
     "roles": {
       "ADMIN": "Admin",
-      "STAFF": "Staff",
       "INSTRUCTOR": "Istruttore",
       "PILOT": "Pilota",
       "STUDENT": "Allievo"
@@ -1640,6 +1879,15 @@
       "reasonRequired": "Il motivo è obbligatorio.",
       "submit": "Conferma rifiuto",
       "cancel": "Annulla"
+    },
+    "mobile": {
+      "openDetail": "Apri dettaglio richiesta",
+      "close": "Chiudi",
+      "requestLabel": "Richiesta",
+      "etd": "Partenza (ETD)",
+      "notes": "Note",
+      "rejectionReason": "Motivo del rifiuto",
+      "viewInMovements": "Vedi in Transiti"
     },
     "toast": {
       "approved": "Richiesta approvata: numero PPR {pprNumber}.",
@@ -1786,6 +2034,24 @@
         "ETD_NOT_AFTER_ETA": "L'ETD deve essere successivo all'ETA.",
         "generic": "Non è stato possibile completare l'operazione. Riprova."
       }
+    },
+    "mobile": {
+      "openDetail": "Apri dettaglio transito",
+      "close": "Chiudi",
+      "back": "Indietro",
+      "pprNumber": "Numero PPR",
+      "email": "Email",
+      "phone": "Telefono",
+      "personsOnBoard": "Persone a bordo",
+      "notes": "Note",
+      "source": "Origine richiesta",
+      "sourcePublic": "Modulo web",
+      "rejectionReason": "Motivo rifiuto",
+      "closedAt": "Chiusura",
+      "filters": "Filtri",
+      "filtersCount": "Filtri ({count})",
+      "filtersTitle": "Filtri del registro",
+      "apply": "Applica"
     }
   },
   "Export": {
@@ -1816,11 +2082,13 @@
       "save": "Salva",
       "saved": "Impostazioni salvate.",
       "error": "Non è stato possibile salvare. Riprova.",
+      "invalidEmail": "Inserisci un indirizzo email valido.",
       "form": {
         "nameLabel": "Nome aviosuperficie",
         "save": "Salva",
         "saved": "Impostazioni salvate.",
-        "error": "Non è stato possibile salvare le impostazioni. Riprova."
+        "error": "Non è stato possibile salvare le impostazioni. Riprova.",
+        "requiredField": "Campo obbligatorio."
       }
     },
     "scheduling": {
@@ -1836,7 +2104,8 @@
       "hint": "Gli aeromobili possono essere prenotati tra le {open} e le {close} locali, in incrementi di {slot} minuti, fino a {days} giorni in anticipo. Durata minima slot e margine di turnaround sono indicativi (non impediscono il salvataggio di una prenotazione).",
       "save": "Salva",
       "saved": "Impostazioni salvate.",
-      "error": "Non è stato possibile salvare. Riprova."
+      "error": "Non è stato possibile salvare. Riprova.",
+      "invalidRange": "L'orario di chiusura deve essere dopo quello di apertura."
     },
     "smtp": {
       "title": "Email (SMTP)",
@@ -1860,7 +2129,8 @@
       "passConfigured": "Password già configurata",
       "save": "Salva",
       "saved": "Impostazioni salvate.",
-      "error": "Non è stato possibile salvare. Riprova."
+      "error": "Non è stato possibile salvare. Riprova.",
+      "invalidHost": "Host non valido: non può essere un indirizzo privato, locale o interno."
     },
     "treasury": {
       "title": "Tesoreria",
@@ -1872,7 +2142,8 @@
       "save": "Salva",
       "saved": "Impostazioni salvate.",
       "error": "Non è stato possibile salvare. Riprova.",
-      "invalid": "Inserisci importi validi e una data di apertura."
+      "invalidAmount": "Inserisci un importo valido.",
+      "requiredDate": "Campo obbligatorio."
     },
     "ratings": {
       "title": "Ratings",
@@ -1917,8 +2188,8 @@
         "scope": "Ambito",
         "validity": "Validità",
         "validityHint": "Precompila la scadenza alla registrazione (oggi + mesi). Imposta 0 per le Ratings che non scadono mai.",
-        "blocksBooking": "Blocca prenotazioni",
-        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta, impedisce nuove prenotazioni.",
+        "blocksBooking": "Blocca prenotazioni e voli",
+        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta o assente, impedisce nuove prenotazioni e la registrazione/correzione di voli.",
         "submitCreate": "Crea",
         "submitSave": "Salva",
         "cancel": "Annulla",
@@ -1935,7 +2206,14 @@
         "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
         "genericError": "Non è stato possibile completare l'operazione."
       },
-      "hint": "Imposta la validità a 0 per le Ratings che non scadono mai (es. Ratings notturna). Le scadenze compaiono nella pagina Scadenze."
+      "hint": "Imposta la validità a 0 per le Ratings che non scadono mai (es. Ratings notturna). Le scadenze compaiono nella pagina Scadenze.",
+      "mobile": {
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "empty": "Nessun tipo in questo catalogo.",
+        "yes": "Sì",
+        "no": "No"
+      }
     },
     "medical": {
       "title": "Visite mediche",
@@ -1980,8 +2258,8 @@
         "scope": "Ambito",
         "validity": "Validità",
         "validityHint": "Precompila la scadenza alla registrazione (oggi + mesi). Imposta 0 per le visite che non scadono mai.",
-        "blocksBooking": "Blocca prenotazioni",
-        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta, impedisce nuove prenotazioni.",
+        "blocksBooking": "Blocca prenotazioni e voli",
+        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta o assente, impedisce nuove prenotazioni e la registrazione/correzione di voli.",
         "submitCreate": "Crea",
         "submitSave": "Salva",
         "cancel": "Annulla",
@@ -1998,7 +2276,14 @@
         "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
         "genericError": "Non è stato possibile completare l'operazione."
       },
-      "hint": "Le visite mediche sono separate dai Ratings: hanno una propria scadenza e non sono mai testo libero. Le scadenze compaiono nella pagina Scadenze."
+      "hint": "Le visite mediche sono separate dai Ratings: hanno una propria scadenza e non sono mai testo libero. Le scadenze compaiono nella pagina Scadenze.",
+      "mobile": {
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "empty": "Nessuna visita in questo catalogo.",
+        "yes": "Sì",
+        "no": "No"
+      }
     },
     "cashCategories": {
       "title": "Categorie di cassa",
@@ -2044,6 +2329,12 @@
         "deleted": "Categoria eliminata.",
         "deleteInUseError": "La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.",
         "genericError": "Operazione non riuscita. Riprova."
+      },
+      "mobile": {
+        "openDetail": "Apri dettaglio",
+        "close": "Chiudi",
+        "empty": "Nessuna categoria in questo catalogo.",
+        "movementsCount": "{count} movimenti"
       }
     }
   },
@@ -2092,6 +2383,13 @@
     "bookingDenied": {
       "subject": "Prenotazione rifiutata: {aircraftRegistration}",
       "body": "Ciao {firstName},\n\nLa tua prenotazione per {aircraftRegistration} del {when} è stata rifiutata.\n\nMotivo: {reason}"
+    },
+    "aircraftGrounded": {
+      "subject": "Velivolo fuori servizio: {aircraftRegistration}",
+      "body": "Ciao {firstName},\n\nIl velivolo {aircraftRegistration}, su cui hai una prenotazione approvata, è stato messo fuori servizio.\n\nMotivo: {reason}\nFermo: {window}\nLa tua prima prenotazione interessata: {when}\n\nLa prenotazione NON è stata annullata: contatta l'aviosuperficie per concordare come procedere.",
+      "windowUntil": "fino al {date} compreso",
+      "windowUnknown": "rientro da definire",
+      "windowOverdue": "oltre il {date} previsto, rientro da definire"
     }
   },
   "BillingPage": {
@@ -2271,6 +2569,32 @@
         "placeholder": "Cerca...",
         "noResults": "Nessun risultato."
       }
+    },
+    "mobile": {
+      "bookTypeAll": "Tutti",
+      "unattributedChip": "Non attribuiti",
+      "filters": "Filtri",
+      "filtersCount": "Filtri ({count})",
+      "filtersTitle": "Filtri del registro",
+      "apply": "Applica",
+      "close": "Chiudi",
+      "back": "Indietro",
+      "openDetail": "Apri dettaglio",
+      "empty": "Nessun movimento con questi filtri.",
+      "source": "Origine",
+      "sourceAccount": "Conto pilota",
+      "sourceCash": "Cassa",
+      "reference": "Riferimento",
+      "id": "Identificativo",
+      "reclassify": "Assegna metodo",
+      "reclassifyConfirm": "Conferma metodo",
+      "unattributedMethod": "Non attribuito",
+      "kpiResult": "Risultato",
+      "kpiAvailable": "Disponibile",
+      "kpiDeposits": "Acconti",
+      "openPanel": "Apri dettaglio",
+      "treasurySub": "Saldo corrente",
+      "depositsSub": "Debito verso i piloti"
     }
   },
   "ReportsPage": {
@@ -2339,6 +2663,10 @@
         "spent": "Spesa"
       },
       "empty": "Nessun pilota con voli nel periodo."
+    },
+    "mobile": {
+      "capNote": "Prime {shown} di {total}",
+      "showAll": "Mostra tutte ({count})"
     }
   },
   "ui": {

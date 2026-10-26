@@ -8,7 +8,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
+const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -92,8 +92,8 @@ test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 
     await page.close();
   });
 
-  test('redirects a non-ADMIN (staff) actor away from /dashboard/settings', async ({ page }) => {
-    await loginExpectingDashboard(page, STAFF_EMAIL);
+  test('redirects a non-ADMIN (pilot) actor away from /dashboard/settings', async ({ page }) => {
+    await loginExpectingDashboard(page, PILOT_EMAIL);
     await gotoSettingsAndWaitForHydration(page);
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
@@ -128,6 +128,23 @@ test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 
     expect((await feeResponse.json()).landingFeeCents).toBe(1250);
     expect((await instructionsResponse.json()).it).toBe('Presentarsi in torre.');
     expect((await membershipResponse.json()).annualFeeCents).toBe(6000);
+  });
+
+  test('Club card: a malformed contact email 422s and marks THAT field inline, not just the card-wide banner (story 14.2, AC 1/3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await gotoSettingsAndWaitForHydration(page);
+
+    const emailInput = page.getByTestId('club-contact-email-input');
+    await emailInput.fill('not-an-email');
+
+    const [clubResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/api/v1/settings/club') && r.request().method() === 'PUT'),
+      page.getByTestId('club-settings-save').click(),
+    ]);
+    expect(clubResponse.status()).toBe(422);
+
+    await expect(emailInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByText('Inserisci un indirizzo email valido.')).toBeVisible();
   });
 
   test('Scheduling card: openTime/closeTime/minSlotMinutes/turnaroundMinutes/maxAdvanceDays round-trip', async ({ page }) => {

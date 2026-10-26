@@ -9,6 +9,7 @@ import { getMailSender } from '@/server/adapters/mail';
 import { buildBookingDeniedEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { outOfServiceDetails } from './aircraft-status';
 import { getSchedulingSettings } from './app-settings.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
@@ -19,7 +20,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  *
  * **Creation matrix** (AD-5: `authorize()` first, then own-checks against
  * `actor.personId` in the service — never in the UI):
- * - `bookings.manage.any` (staff/admin): `personId` = anyone; an optional
+ * - `bookings.manage.any` (ADMIN-only): `personId` = anyone; an optional
  *   `instructorProfileId` may reference ANY active instructor.
  * - `bookings.manage.own` with `personId === actor.personId` (a pilot or an
  *   instructor booking for themself): allowed only if the actor's own
@@ -46,26 +47,48 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  * expiry-based block 422 `EXPIRED_DOCUMENTS`/force bypass (story 7.4, AC 1/2)
  * → `startsAt` in the past 422 `BOOKING_IN_PAST` → scheduling-window 422
  * `BOOKING_OUTSIDE_WINDOW` (story 12.11, AC 4) → [transaction: aircraft
- * lock + 404/409/422 `AIRCRAFT_OUT_OF_SERVICE` → overlap pre-check 409 →
- * create]. Person/
- * instructor resolution runs OUTSIDE the transaction (Dev Notes: it never
- * participates in the overlap invariant, so it needs no lock) — the
- * aircraft is resolved and validated INSIDE the transaction, on the SAME
- * locked row the overlap pre-check reads, because both are governed by the
- * same invariant (AC 2) and a single `SELECT ... FOR UPDATE` serves both
- * purposes with one fetch (no TOCTOU).
+ * lock + 404/409/422 `AIRCRAFT_OUT_OF_SERVICE` → person/instructor locks →
+ * overlap pre-check 409 (`CONFLICT` aircraft → `PERSON_BUSY` →
+ * `INSTRUCTOR_BUSY`, story 16.3) → create]. Person/instructor RESOLUTION
+ * (404/409/422) runs OUTSIDE the transaction: it keeps the error order above
+ * (a state 422 before a conflict 409) and the 403-before-target-query rule,
+ * and it reads nothing the overlap invariant depends on. What the invariant
+ * DOES depend on — that no other booking of the same person/instructor gets
+ * approved in between — is guarded by their row LOCKS, taken inside the
+ * transaction (story 16.3, below). The aircraft is resolved and validated
+ * INSIDE the transaction, on the SAME locked row the overlap pre-check reads
+ * — a single `SELECT ... FOR UPDATE` serves both purposes with one fetch (no
+ * TOCTOU).
  *
- * **Concurrency (AC 2)**: the lock is `SELECT ... FOR UPDATE` on the
- * `Aircraft` row inside `prisma.$transaction`, the EXACT pattern of
- * `flights.service.ts#registerFlight` (its module doc-comment/~766-788) —
- * it is deliberately the FIRST statement in the transaction. Locking the
- * aircraft serializes every concurrent `createBooking` call targeting the
- * SAME aircraft, so the overlap pre-check (`booking.findFirst`) immediately
- * followed by `booking.create`, both inside the same locked transaction, is
- * airtight against two concurrent requests both seeing "no overlap" and
- * both inserting. No Postgres exclusion constraint (`btree_gist`) is used —
- * a deliberate choice (Contesto): the lock alone is sufficient, and story
- * 7.3 reuses the same discipline for booking moves.
+ * **Concurrency (AC 2; three subjects since story 16.3)**: the overlap
+ * invariant has three subjects — the aircraft, the person, the instructor
+ * (`findBookingConflict`, the ONE implementation of the three predicates) —
+ * and each is serialized by a row lock inside `prisma.$transaction`, the
+ * pattern of `flights.service.ts#registerFlight` (`SELECT ... FOR UPDATE` on
+ * the aircraft, `FOR NO KEY UPDATE` on the two people — see
+ * `lockBookingPeople`). The `Aircraft` lock is the FIRST statement of
+ * `createBooking`/`updateBooking` (`transitionBooking` locks its `Booking`
+ * row before it): it serializes the writers of the SAME aircraft. The `Person` lock and, when
+ * the booking has one, the `InstructorProfile` lock (`lockBookingPeople`)
+ * serialize the writers of the same person/instructor on DIFFERENT aircraft,
+ * which the aircraft lock alone never did (ops F2): without them the person
+ * predicate would be a check-then-write. The global lock order is the same on
+ * all three paths — `Booking` (transition only) → `Aircraft` (one row, or N
+ * `ORDER BY id`) → `Person` → `InstructorProfile` — and each transaction locks
+ * at most ONE person and ONE instructor (both immutable on a booking), so two
+ * booking writers can never wait on each other in a cycle; no other service
+ * locks `Person`/`InstructorProfile` rows (census in the story 16.3 file).
+ * The pre-check immediately followed by the write, inside the same locked
+ * transaction, is therefore airtight against two concurrent requests both
+ * seeing "no overlap". No Postgres exclusion constraint (`btree_gist`) —
+ * deliberate, re-evaluated with three subjects in story 16.3 (see `Booking`'s
+ * Prisma doc-comment): it would need three partial constraints the load DB
+ * already violates, would surface as one SQL error code to be told apart by
+ * constraint NAME, and would not remove the aircraft lock, which also guards
+ * the aircraft's STATE read. The person re-checks of an approval (archived,
+ * profile) stay check-then-act, exactly like the expiry block and the
+ * scheduling window: the locks close the OVERLAP race, nothing more (TD
+ * 16.3-d).
  *
  * **Soft-cancel and edit tracking (story 7.3, AC 1/2)**: see `Booking`'s
  * Prisma doc-comment for the `status`/`cancelledAt`/`cancelledByUserId`/
@@ -102,7 +125,8 @@ export type BookingListItem = {
   aircraftId: string;
   aircraftRegistration: string;
   personId: string;
-  personName: string;
+  /** `null` on a masked (non-own, no `bookings.read.names`) entry — see `maskBookingNames`'s doc-comment (story 14.5). */
+  personName: string | null;
   instructorProfileId: string | null;
   instructorName: string | null;
   startsAt: Date;
@@ -180,6 +204,46 @@ function toListItem(booking: SelectedBooking): BookingListItem {
   };
 }
 
+/**
+ * Masks the personal identifiers on a booking that is NOT the actor's own
+ * (story 14.5, ratifica R3: pilots/students see "Occupato" — aircraft and
+ * time stay visible — on someone else's booking; admin/instructor,
+ * `bookings.read.names`, see everyone's name unmasked). "Own" (review F4,
+ * aligned with `assertOwnAccessAndTiming`'s own definition — the same shape
+ * used by update/cancel) is `booking.personId === actor.personId` OR
+ * `booking.instructorProfileId === ownInstructorProfileId` (the actor's own
+ * ACTIVE `InstructorProfile`, resolved ONCE per request by the caller via
+ * `getOwnInstructorProfileId` — never per row): today every role that can
+ * hold an `InstructorProfile` (INSTRUCTOR) also holds `bookings.read.names`,
+ * so this second branch is latent, not reachable — but the 14.9 role
+ * removal (or any future RBAC change) would otherwise let an instructor
+ * without the read permission see their OWN lesson mis-rendered as
+ * "Occupato" while still being allowed to edit/cancel it via the unmasked
+ * DTO update/cancel return — closing it now costs one query.
+ *
+ * `personName: null` is the client's ONLY masking signal (Contesto AC 1: "+
+ * flag/shape") — a real booking never has a null person, so the client
+ * renders "Occupato" purely off that, no separate boolean to keep in sync.
+ * `instructorProfileId`/`instructorName`/`notes`/`denyReason` are masked TOO,
+ * not just the two name fields (AC 4: "valuta note/tipo e motiva"; review
+ * F1: `instructorProfileId` was the actual bypass — a client-side instructor
+ * filter matched it against an unmasked roster to de-anonymize every masked
+ * block) — all are either free text (or, for `instructorName`, a second
+ * identity) that could reference a person, or a raw id joinable against an
+ * anagrafica, so leaving any of them on the wire would defeat the point of
+ * nulling `personName`; nulling `instructorName`/`instructorProfileId`
+ * unconditionally also means a masked dual-instruction booking renders
+ * IDENTICALLY to a masked solo one — no layout tell (AC 4's other
+ * requirement). `status`/`cancelledAt`/etc. are left untouched — none of
+ * them name a person, and hiding them would be an unrequested behavior
+ * change (AC 5: admin/instructor/own bookings stay pixel-identical).
+ */
+function maskBookingNames(actor: Actor, canReadNames: boolean, ownInstructorProfileId: string | null, booking: BookingListItem): BookingListItem {
+  const isOwn = booking.personId === actor.personId || (booking.instructorProfileId !== null && booking.instructorProfileId === ownInstructorProfileId);
+  if (canReadNames || isOwn) return booking;
+  return { ...booking, personName: null, instructorProfileId: null, instructorName: null, notes: null, denyReason: null };
+}
+
 type TargetPerson = {
   id: string;
   archivedAt: Date | null;
@@ -200,13 +264,175 @@ function isActiveInstructor(person: TargetPerson): boolean {
   return person.instructorProfile !== null && person.instructorProfile.deactivatedAt === null;
 }
 
+/** The `select` both paths load the booking's target person with (story 16.3, AD-4): `createBooking` for every actor, `transitionBooking` on approval — one shape, two loads. */
+const BOOKABLE_PERSON_SELECT = {
+  id: true,
+  archivedAt: true,
+  pilotProfile: { select: { deactivatedAt: true } },
+  studentProfile: { select: { deactivatedAt: true } },
+  instructorProfile: { select: { deactivatedAt: true } },
+} as const;
+
+/**
+ * The archived-person 409, shared by `createBooking` (every actor's path) and
+ * the approval re-check (story 16.3, ops F4). Deliberately NOT folded into
+ * {@link assertPersonHasActiveFlyingProfile}: on `createBooking` this 409
+ * precedes all THREE profile gates (staff 422, own-self 403, cross-person
+ * 422), so bundling the two would turn the own-self answer into a 403.
+ */
+function assertPersonNotArchived(person: TargetPerson): void {
+  if (person.archivedAt !== null) {
+    throw new ConflictError('Cannot book an aircraft for an archived person.');
+  }
+}
+
+/** The staff gate "at least one ACTIVE flying profile" — `createBooking`'s `bookings.manage.any` branch, reused verbatim by the approval re-check (story 16.3, ops F4; approving is staff-only too). */
+function assertPersonHasActiveFlyingProfile(person: TargetPerson): void {
+  if (!isActivePilot(person) && !isActiveStudent(person) && !isActiveInstructor(person)) {
+    throw new ValidationError('Person must have an active pilot, student or instructor profile to be booked.', undefined, 'PERSON_NOT_BOOKABLE');
+  }
+}
+
+/** The indicated instructor's 404/409 — staff `createBooking` and the approval re-check (story 16.3, ops F4) — returning the id `createBooking` writes. */
+async function assertActiveInstructorProfile(client: Prisma.TransactionClient, instructorProfileId: string): Promise<string> {
+  const instructorProfile = await client.instructorProfile.findUnique({
+    where: { id: instructorProfileId },
+    select: { id: true, deactivatedAt: true },
+  });
+  if (!instructorProfile) {
+    throw new NotFoundError('Instructor profile not found.');
+  }
+  if (instructorProfile.deactivatedAt !== null) {
+    throw new ConflictError('This instructor profile is deactivated.');
+  }
+  return instructorProfile.id;
+}
+
+// --- The overlap invariant on its three subjects (story 16.3, ops F2) -------
+
+/**
+ * Row locks on the booking's PERSON and, when it has one, its INSTRUCTOR
+ * (story 16.3, AD-2) — taken by the three write paths inside their
+ * transaction, AFTER their `Aircraft` lock(s) and BEFORE
+ * {@link findBookingConflict}. The `Aircraft` lock serializes only the writers
+ * of the SAME aircraft: two approvals of the same person on two DIFFERENT
+ * aircraft would serialize on nothing, and the person predicate alone would be
+ * a check-then-write (ops F2, "serve un secondo lock"). The rows exist by
+ * construction (FKs on `Booking`), so there is no 404 to raise: the result is
+ * never read, the effect IS the lock — same idiom as the `Account` lock of
+ * `accounts.service.ts#recordAdjustment`.
+ *
+ * `FOR NO KEY UPDATE`, not `FOR UPDATE` (decision of the main session,
+ * 2026-09-27): it conflicts with itself, so two booking writers on the same
+ * person/instructor still serialize, but NOT with the `FOR KEY SHARE` every
+ * foreign-key check takes on its parent row. So an insert elsewhere that
+ * references the same person (a flight, an expiry, an account movement) is
+ * never blocked by a booking transaction — and no lock cycle can form with a
+ * transaction whose FK checks visit `InstructorProfile` before `Person`
+ * (today none does, but that order is decided by trigger OIDs, not by code).
+ */
+async function lockBookingPeople(tx: Prisma.TransactionClient, personId: string, instructorProfileId: string | null): Promise<void> {
+  await tx.$queryRaw`SELECT "id" FROM "Person" WHERE "id" = ${personId} FOR NO KEY UPDATE`;
+  if (instructorProfileId) {
+    await tx.$queryRaw`SELECT "id" FROM "InstructorProfile" WHERE "id" = ${instructorProfileId} FOR NO KEY UPDATE`;
+  }
+}
+
+/** The occupied subject behind an overlap 409 (story 16.3, AD-1). */
+type BookingConflict =
+  | { subject: 'AIRCRAFT'; booking: { id: string } }
+  | { subject: 'PERSON' | 'INSTRUCTOR'; booking: { id: string; startsAt: Date; endsAt: Date } };
+
+/**
+ * The ONLY implementation of the three overlap predicates (story 16.3, ops
+ * F2), called by the three write paths (`createBooking`, `updateBooking`,
+ * `transitionBooking` -> APPROVED) inside their transaction and after their
+ * locks, never copied: the three subjects share the semi-open
+ * `[startsAt, endsAt)` semantics and the `status: 'APPROVED'` filter (story
+ * 12.2: only an APPROVED booking occupies a slot — two PENDING ones coexist on
+ * any subject, the conflict surfaces at approval).
+ *
+ * Three `findFirst`s in sequence, not one `OR`: the precedence
+ * AIRCRAFT -> PERSON -> INSTRUCTOR is code, not a classification of whichever
+ * row an `OR` returned. The aircraft goes FIRST because it is the answer the
+ * three paths gave before this story and the one the UI and the e2e read (a
+ * request that is ALSO person-busy keeps answering "aircraft already booked"),
+ * and its `where`/`select` are the pre-story ones verbatim. The instructor
+ * predicate does not run for a booking without one. Each extra predicate is an
+ * index scan (`Booking_personId_idx`/`Booking_instructorProfileId_idx`, story
+ * file: 0.17 ms on the 40 000-booking load DB) — no new index.
+ *
+ * NOT covered, declared (TD 16.3-a): the same human as the `personId` of one
+ * booking and the instructor of another — the two predicates key on different
+ * columns.
+ */
+async function findBookingConflict(
+  tx: Prisma.TransactionClient,
+  args: { aircraftId: string; personId: string; instructorProfileId: string | null; startsAt: Date; endsAt: Date; excludeBookingId?: string },
+): Promise<BookingConflict | null> {
+  const excludeSelf = args.excludeBookingId === undefined ? {} : { id: { not: args.excludeBookingId } };
+  const overlapping = { status: 'APPROVED' as const, startsAt: { lt: args.endsAt }, endsAt: { gt: args.startsAt } };
+
+  const aircraftConflict = await tx.booking.findFirst({
+    where: { aircraftId: args.aircraftId, ...excludeSelf, ...overlapping },
+    select: { id: true },
+  });
+  if (aircraftConflict) {
+    return { subject: 'AIRCRAFT', booking: aircraftConflict };
+  }
+
+  // The earliest conflicting booking is the one `details` names (same rule as
+  // `flights.service.ts#assertNoOverlappingFlight`, story 16.2).
+  const personConflict = await tx.booking.findFirst({
+    where: { personId: args.personId, ...excludeSelf, ...overlapping },
+    orderBy: { startsAt: 'asc' },
+    select: { id: true, startsAt: true, endsAt: true },
+  });
+  if (personConflict) {
+    return { subject: 'PERSON', booking: personConflict };
+  }
+
+  if (!args.instructorProfileId) {
+    return null;
+  }
+  const instructorConflict = await tx.booking.findFirst({
+    where: { instructorProfileId: args.instructorProfileId, ...excludeSelf, ...overlapping },
+    orderBy: { startsAt: 'asc' },
+    select: { id: true, startsAt: true, endsAt: true },
+  });
+  return instructorConflict ? { subject: 'INSTRUCTOR', booking: instructorConflict } : null;
+}
+
+/**
+ * The 409 for a {@link findBookingConflict} hit (story 16.3, AD-3). The
+ * aircraft one is the pre-story error byte for byte — code `CONFLICT`, same
+ * message, and NO `details`: that booking belongs to someone ELSE, and putting
+ * its interval on the wire would be the correlation channel the story 14.5
+ * masking exists to close. `PERSON_BUSY`/`INSTRUCTOR_BUSY` name the
+ * conflicting booking, which by construction of their predicate belongs to the
+ * very person/instructor the request names — nothing new about a third party.
+ * The instants are ISO 8601 UTC written by hand (story 16.2's discipline: the
+ * wire format is written down, not inferred).
+ */
+function bookingConflictError(conflict: BookingConflict): ConflictError {
+  if (conflict.subject === 'AIRCRAFT') {
+    return new ConflictError('This aircraft is already booked for an overlapping interval.');
+  }
+  const details = { bookingId: conflict.booking.id, startsAt: conflict.booking.startsAt.toISOString(), endsAt: conflict.booking.endsAt.toISOString() };
+  return conflict.subject === 'PERSON'
+    ? new ConflictError('This person already has an approved booking for an overlapping interval.', details, 'PERSON_BUSY')
+    : new ConflictError('This instructor already has an approved booking for an overlapping interval.', details, 'INSTRUCTOR_BUSY');
+}
+
+
 /** One non-blocking expired document surfaced by a successful `createBooking` (story 7.4, AC 1) — see the function's own doc-comment. */
 export type BookingExpiryWarning = { typeName: string; expiresAt: string };
 
 /** `createBooking`'s return shape (story 7.4, AC 1/2) — REPLACES the bare `BookingListItem` this function returned before this story (see its doc-comment). */
 export type CreateBookingResult = { booking: BookingListItem; warnings: BookingExpiryWarning[] };
 
-type ExpiredDocument = { typeName: string; expiresAt: string };
+/** A single expired document surfaced by {@link findBlockingExpiredDocuments} — exported (story 14.4) so `flights.service.ts` can share its return shape without redeclaring it. */
+export type ExpiredDocument = { typeName: string; expiresAt: string };
 
 /**
  * `personId`'s REGISTERED expiries, partitioned against `flightDateOnly`
@@ -219,8 +445,15 @@ type ExpiredDocument = { typeName: string; expiresAt: string };
  * with `blockingDocuments` — `createBooking`'s `force` bypass vs
  * `updateBooking`'s unconditional 422 — is each caller's own concern; this
  * helper never throws.
+ *
+ * Exported (story 14.4, AC 1; ratifica R4) — `flights.service.ts#resolveFlightInput`
+ * reuses this EXACT function (called once for the pilot/student, once more
+ * for the instructor when present) rather than reimplementing the
+ * `ExpiryType.blocksBooking` scan a second time. The flight side only ever
+ * consumes `blockingDocuments` (flights have no `warnings` concept, AC 1/2
+ * of that story).
  */
-async function findBlockingExpiredDocuments(
+export async function findBlockingExpiredDocuments(
   personId: string,
   flightDateOnly: string,
 ): Promise<{ blockingDocuments: ExpiredDocument[]; warnings: BookingExpiryWarning[] }> {
@@ -391,52 +624,31 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
   // BEFORE any further query (persona, let alone scadenze) — own-path
   // booking never bypasses a block.
   if (input.force && !canManageAny) {
-    throw new ForbiddenError('Only staff can force a blocked booking.');
+    throw new ForbiddenError('Only an admin can force a blocked booking.');
   }
 
-  // Target person (404/409/422) — outside the transaction (Dev Notes: it
-  // never participates in the overlap invariant, so it needs no lock). For
-  // the own-self path `input.personId === actor.personId`, so this IS the
-  // actor's own row — the same query also carries the self-eligibility check.
+  // Target person (404/409/422) — resolved and validated OUTSIDE the
+  // transaction, so the error order stays the one the module doc-comment
+  // lists (and the 403-before-target-query rule above holds). The person's
+  // part in the overlap invariant is its row LOCK, taken inside the
+  // transaction below (story 16.3, AD-2). For the own-self path
+  // `input.personId === actor.personId`, so this IS the actor's own row — the
+  // same query also carries the self-eligibility check.
   const person = await prisma.person.findUnique({
     where: { id: input.personId },
-    select: {
-      id: true,
-      archivedAt: true,
-      pilotProfile: { select: { deactivatedAt: true } },
-      studentProfile: { select: { deactivatedAt: true } },
-      instructorProfile: { select: { deactivatedAt: true } },
-    },
+    select: BOOKABLE_PERSON_SELECT,
   });
   if (!person) {
     throw new NotFoundError('Person not found.');
   }
-  if (person.archivedAt !== null) {
-    throw new ConflictError('Cannot book an aircraft for an archived person.');
-  }
+  assertPersonNotArchived(person);
 
   if (canManageAny) {
-    // Staff/admin: any active pilot, student or instructor is bookable.
-    if (!isActivePilot(person) && !isActiveStudent(person) && !isActiveInstructor(person)) {
-      throw new ValidationError(
-        'Person must have an active pilot, student or instructor profile to be booked.',
-        undefined,
-        'PERSON_NOT_BOOKABLE',
-      );
-    }
+    // ADMIN-only (`bookings.manage.any`): any active pilot, student or instructor is bookable.
+    assertPersonHasActiveFlyingProfile(person);
 
     if (input.instructorProfileId) {
-      const instructorProfile = await prisma.instructorProfile.findUnique({
-        where: { id: input.instructorProfileId },
-        select: { id: true, deactivatedAt: true },
-      });
-      if (!instructorProfile) {
-        throw new NotFoundError('Instructor profile not found.');
-      }
-      if (instructorProfile.deactivatedAt !== null) {
-        throw new ConflictError('This instructor profile is deactivated.');
-      }
-      resolvedInstructorProfileId = instructorProfile.id;
+      resolvedInstructorProfileId = await assertActiveInstructorProfile(prisma, input.instructorProfileId);
     }
   } else if (isSelf) {
     // Own-self path (Contesto): a 403, not the staff/cross-path's 422 —
@@ -493,8 +705,8 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
     // doc-comment), same raw-query pattern as
     // `flights.service.ts#registerFlight`. One fetch serves both the
     // aircraft-state validation below and the overlap invariant (AC 2).
-    const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; archivedAt: Date | null }>>`
-      SELECT "id", "status", "statusReason", "archivedAt" FROM "Aircraft" WHERE "id" = ${input.aircraftId} FOR UPDATE`;
+    const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; outOfServiceUntil: Date | null; archivedAt: Date | null }>>`
+      SELECT "id", "status", "statusReason", "outOfServiceUntil", "archivedAt" FROM "Aircraft" WHERE "id" = ${input.aircraftId} FOR UPDATE`;
     const aircraft = lockedAircraft[0];
     if (!aircraft) {
       throw new NotFoundError('Aircraft not found.');
@@ -503,21 +715,23 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
       throw new ConflictError('Aircraft is archived.');
     }
     if (aircraft.status === 'OUT_OF_SERVICE') {
-      throw new ValidationError(`Aircraft is out of service: ${aircraft.statusReason}.`, { reason: aircraft.statusReason }, 'AIRCRAFT_OUT_OF_SERVICE');
+      throw new ValidationError(`Aircraft is out of service: ${aircraft.statusReason}.`, outOfServiceDetails(aircraft), 'AIRCRAFT_OUT_OF_SERVICE');
     }
 
-    // Overlap pre-check (AC 2): semi-open `[startsAt, endsAt)` — two
-    // bookings that merely touch at the boundary (one's `endsAt` equals the
-    // other's `startsAt`) do NOT overlap (Dev Notes). `status: 'APPROVED'`
-    // (story 12.2): only an APPROVED booking occupies a slot — a CANCELLED
-    // one freed its slot, and two PENDING bookings may legitimately coexist
-    // on the same interval (the conflict surfaces at approval time).
-    const overlapping = await tx.booking.findFirst({
-      where: { aircraftId: input.aircraftId, status: 'APPROVED', startsAt: { lt: endsAt }, endsAt: { gt: startsAt } },
-      select: { id: true },
+    // Overlap pre-check (AC 2) on the aircraft, the person and the instructor
+    // (story 16.3): semi-open `[startsAt, endsAt)` — two bookings that merely
+    // touch at the boundary do NOT overlap — and only an APPROVED booking
+    // occupies a slot (story 12.2), see `findBookingConflict`.
+    await lockBookingPeople(tx, input.personId, resolvedInstructorProfileId);
+    const conflict = await findBookingConflict(tx, {
+      aircraftId: input.aircraftId,
+      personId: input.personId,
+      instructorProfileId: resolvedInstructorProfileId,
+      startsAt,
+      endsAt,
     });
-    if (overlapping) {
-      throw new ConflictError('This aircraft is already booked for an overlapping interval.');
+    if (conflict) {
+      throw bookingConflictError(conflict);
     }
 
     return tx.booking.create({
@@ -530,7 +744,7 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
         notes: input.notes ?? null,
         actorUserId: actor.userId,
         // Story 12.2, AC 2: the service ALWAYS stamps status explicitly,
-        // never the column default — staff/admin (`bookings.manage.any`)
+        // never the column default — ADMIN-only (`bookings.manage.any`)
         // bookings start APPROVED, everyone else's start PENDING.
         status: canManageAny ? 'APPROVED' : 'PENDING',
         // Story 7.4, AC 2: stamped ONLY when a real block was bypassed
@@ -549,10 +763,18 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
  * `self.read` (every role holds it, Dev Notes: "qualunque autenticato").
  * Filters `from`/`to` use the SAME semi-open semantics as the overlap check
  * (`endsAt > from`, `startsAt < to`); `aircraftId`/`personId` are exact
- * matches. Ordered `startsAt asc, id asc` (soonest-first, deterministic
- * tie-break). The DTO includes the booking-holder and instructor NAMES
- * (Dev Notes: no privacy requirement in the PRD, an aeroclub is transparent
- * about who has the aircraft when) and `notes`.
+ * matches — EXCEPT `personId` for an actor without `bookings.read.names`
+ * (review F3), who may only ever filter by their OWN `personId` (403
+ * otherwise, checked before any query) — same guard shape as
+ * `flights.service.ts#authorizeFlightsQuery`: masked names alone would still
+ * let such an actor enumerate "every booking of person X" via this filter,
+ * a linkability channel the masking itself does nothing to close. Ordered
+ * `startsAt asc, id asc` (soonest-first, deterministic tie-break). The DTO
+ * includes the booking-holder and instructor NAMES and `notes` — but MASKED
+ * (story 14.5, ratifica R3, superseding the original "an aeroclub is
+ * transparent about who has the aircraft when" call) on every entry that
+ * isn't the actor's own, unless the actor holds `bookings.read.names`
+ * (`maskBookingNames`'s own doc-comment has the full rationale/shape).
  *
  * `status` (story 12.2, AC 4): defaults to `APPROVED` only — today's "vivi"
  * bookings, same set the legacy UI has always shown (was `ACTIVE`) — an
@@ -561,6 +783,16 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
  */
 export async function listBookings(actor: Actor, query: ListBookingsQuery): Promise<PaginatedResult<BookingListItem>> {
   authorize(actor, 'self.read');
+  const canReadNames = hasPermission(actor, 'bookings.read.names');
+
+  if (!canReadNames && query.personId && query.personId !== actor.personId) {
+    throw new ForbiddenError('Actor may only filter their own bookings.');
+  }
+
+  // Review F4 — resolved ONCE per request (never per row), only when it can
+  // actually matter: an actor who already reads every name has no masking
+  // decision left to make. See `maskBookingNames`'s doc-comment.
+  const ownInstructorProfileId = canReadNames ? null : await getOwnInstructorProfileId(actor);
 
   const where = {
     status: query.status ? { in: query.status } : ('APPROVED' as const),
@@ -580,7 +812,11 @@ export async function listBookings(actor: Actor, query: ListBookingsQuery): Prom
     prisma.booking.count({ where }),
   ]);
 
-  return paginate(items.map(toListItem), total, query);
+  return paginate(
+    items.map((item) => maskBookingNames(actor, canReadNames, ownInstructorProfileId, toListItem(item))),
+    total,
+    query,
+  );
 }
 
 /** The calendar's own maximum span (story 7.2, Task 2) — a calendar renders a week at most, so a wider range is always a client error, never a legitimate page. */
@@ -610,9 +846,17 @@ const MAX_CALENDAR_RANGE_MS = 8 * 24 * 60 * 60 * 1000;
  * window with 1000 bookings across every aircraft is already an
  * operationally absurd volume; this only guards against a pathological DB
  * state turning a calendar render into an unbounded response.
+ *
+ * Same masking as `listBookings` (story 14.5, ratifica R3): every entry that
+ * isn't the actor's own is run through `maskBookingNames` too — the
+ * timeline (`schedule.tsx`'s day/week blocks) is fed straight from this
+ * function, so it would otherwise leak names right past the list's own
+ * masking. No `personId` filter on this endpoint (Contesto/F3), so the
+ * linkability guard `listBookings` needs does not apply here.
  */
 export async function listCalendarBookings(actor: Actor, query: CalendarBookingsQuery): Promise<BookingListItem[]> {
   authorize(actor, 'self.read');
+  const canReadNames = hasPermission(actor, 'bookings.read.names');
 
   const from = new Date(query.from);
   const to = new Date(query.to);
@@ -624,6 +868,9 @@ export async function listCalendarBookings(actor: Actor, query: CalendarBookings
     throw new ValidationError('The calendar range cannot exceed 8 days.', undefined, 'RANGE_TOO_WIDE');
   }
 
+  // Review F4 — same "once per request" rationale as `listBookings`.
+  const ownInstructorProfileId = canReadNames ? null : await getOwnInstructorProfileId(actor);
+
   const bookings = await prisma.booking.findMany({
     select: BOOKING_SELECT,
     // `status: 'APPROVED'` (story 12.2, AC 4): unlike `listBookings`, the
@@ -634,7 +881,7 @@ export async function listCalendarBookings(actor: Actor, query: CalendarBookings
     take: 1000,
   });
 
-  return bookings.map(toListItem);
+  return bookings.map((booking) => maskBookingNames(actor, canReadNames, ownInstructorProfileId, toListItem(booking)));
 }
 
 // --- Booking edit/cancel (story 7.3, AC 1/2) --------------------------------
@@ -669,7 +916,7 @@ type EditableBooking = {
  * person, OR its `instructorProfileId` matches the actor's own ACTIVE
  * `InstructorProfile` (an instructor manages the school bookings they are
  * involved in — the allievo never holds `bookings.manage.own` at all, story
- * 7.1). `bookings.manage.any` (staff/admin) skips BOTH checks entirely — no
+ * 7.1). `bookings.manage.any` (ADMIN-only) skips BOTH checks entirely — no
  * ownership gate AND, deliberately, NO temporal constraint ("lo staff può
  * sempre" — the asymmetry with the own-path below is intentional).
  *
@@ -713,6 +960,18 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * (`bookings.manage.any`) is exempt from BOTH (deliberate asymmetry with
  * `createBooking`'s own rules, Contesto: staff can correct an in-progress
  * booking, e.g. shorten it).
+ *
+ * **Re-checks the scheduling window (story 15.4 review, PO decision
+ * 2026-08-03)**: the resulting interval must satisfy
+ * `assertWithinSchedulingWindow` — 422 `BOOKING_OUTSIDE_WINDOW` — exactly like
+ * a create, staff INCLUDED (the deliberate staff exemptions above are about
+ * TIME having passed, not about the airfield being open). Until this story the
+ * window ran on create and on `PENDING -> APPROVED` only, so a booking could be
+ * MOVED to 03:00 against a 14:00-18:00 window and answer 200 (measured), and
+ * the "Sposta" panel's own `BOOKING_OUTSIDE_WINDOW` branch (ratifica R-15.4-g)
+ * was unreachable code. Checked on the MERGED interval, like every other rule
+ * here, so a notes-only PATCH of a booking already outside the CURRENT window
+ * is refused too — the same answer the create path gives for that interval.
  *
  * **Re-evaluates expiries on a DAY change only (story 7.4 loophole closed by
  * TD-5, AC 5)**: moving this booking to a DIFFERENT flight day reruns the
@@ -802,14 +1061,21 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     }
   }
 
+  // Story 15.4 review (PO decision, 2026-08-03): the scheduling window is
+  // re-checked HERE too — see this function's own doc-comment. Same position
+  // in the sequence as `createBooking`'s (after the expiry block, outside the
+  // transaction), so the two paths report the same code first on the same
+  // input, and on the MERGED interval like every other rule above.
+  await assertWithinSchedulingWindow(nextStartsAt, nextEndsAt);
+
   const updated = await prisma.$transaction(async (tx) => {
     // ALL Aircraft ids first, ONE query, ORDER BY id FOR UPDATE — same
     // multi-lock pattern as `flights.service.ts#correctFlight` (module
     // doc-comment above): the destination aircraft, plus the CURRENT one if
     // different (a 1-element set covers the common "same aircraft" edit).
     const aircraftIds = Array.from(new Set([existing.aircraftId, nextAircraftId]));
-    const lockedAircraftRows = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; archivedAt: Date | null }>>`
-      SELECT "id", "status", "statusReason", "archivedAt" FROM "Aircraft" WHERE "id" IN (${Prisma.join(aircraftIds)}) ORDER BY "id" FOR UPDATE`;
+    const lockedAircraftRows = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; outOfServiceUntil: Date | null; archivedAt: Date | null }>>`
+      SELECT "id", "status", "statusReason", "outOfServiceUntil", "archivedAt" FROM "Aircraft" WHERE "id" IN (${Prisma.join(aircraftIds)}) ORDER BY "id" FOR UPDATE`;
 
     const destinationAircraft = lockedAircraftRows.find((row) => row.id === nextAircraftId);
     if (!destinationAircraft) {
@@ -821,27 +1087,26 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     if (destinationAircraft.status === 'OUT_OF_SERVICE') {
       throw new ValidationError(
         `Aircraft is out of service: ${destinationAircraft.statusReason}.`,
-        { reason: destinationAircraft.statusReason },
+        outOfServiceDetails(destinationAircraft),
         'AIRCRAFT_OUT_OF_SERVICE',
       );
     }
 
-    // Overlap pre-check (AC 2, same semi-open semantics as `createBooking`):
-    // excludes THIS booking (it is moving, not colliding with itself) and
-    // filters `status: 'APPROVED'` (story 12.2) — only an APPROVED booking
-    // occupies a slot, same rationale as `createBooking`'s own pre-check.
-    const overlapping = await tx.booking.findFirst({
-      where: {
-        aircraftId: nextAircraftId,
-        id: { not: bookingId },
-        status: 'APPROVED',
-        startsAt: { lt: nextEndsAt },
-        endsAt: { gt: nextStartsAt },
-      },
-      select: { id: true },
+    // Overlap pre-check (AC 2, same semantics as `createBooking`'s, on the
+    // same three subjects — story 16.3): excludes THIS booking (it is moving,
+    // not colliding with itself). The person and instructor are the booking's
+    // own — immutable on a PATCH.
+    await lockBookingPeople(tx, existing.personId, existing.instructorProfileId);
+    const conflict = await findBookingConflict(tx, {
+      aircraftId: nextAircraftId,
+      personId: existing.personId,
+      instructorProfileId: existing.instructorProfileId,
+      startsAt: nextStartsAt,
+      endsAt: nextEndsAt,
+      excludeBookingId: bookingId,
     });
-    if (overlapping) {
-      throw new ConflictError('This aircraft is already booked for an overlapping interval.');
+    if (conflict) {
+      throw bookingConflictError(conflict);
     }
 
     // The atomic guard+write (module doc-comment above): folds the "still
@@ -970,7 +1235,7 @@ function transitionUpdateData(to: TransitionTarget, actorUserId: string, reason:
   }
 }
 
-type LockedBookingRow = { id: string; status: BookingStatus; personId: string; aircraftId: string; startsAt: Date; endsAt: Date };
+type LockedBookingRow = { id: string; status: BookingStatus; personId: string; instructorProfileId: string | null; aircraftId: string; startsAt: Date; endsAt: Date };
 
 /**
  * Moves a booking through the approval workflow (AC 3) — `bookings.manage.any`
@@ -981,13 +1246,29 @@ type LockedBookingRow = { id: string; status: BookingStatus; personId: string; a
  * SAME booking serializes rather than double-applying.
  *
  * `PENDING -> APPROVED` re-runs `createBooking`'s own checks against the
- * CURRENT booking — the expiry-based block on the flight day
- * (`findBlockingExpiredDocuments`, no `force` bypass here, unlike create),
- * the scheduling-window check (story 12.11, AC 4, `assertWithinSchedulingWindow`),
- * the `Aircraft` row locked `FOR UPDATE` and validated (archived/
- * out-of-service), and the overlap pre-check against every OTHER `APPROVED`
- * booking on the same aircraft — an approval is, in effect, "would this
- * booking still be creatable today".
+ * CURRENT booking, in `createBooking`'s own order and with its own codes —
+ * the booking's person (409 archived, 422 `PERSON_NOT_BOOKABLE` without an
+ * active flying profile) and instructor (409 deactivated), story 16.3 / ops
+ * F4; the expiry-based block on the flight day (`findBlockingExpiredDocuments`,
+ * no `force` bypass here, unlike create); the scheduling-window check (story
+ * 12.11, AC 4, `assertWithinSchedulingWindow`); the `Aircraft` row locked
+ * `FOR UPDATE` and validated (archived/out-of-service); the `Person`/
+ * `InstructorProfile` locks; and the overlap pre-check on the aircraft, the
+ * person and the instructor against every OTHER `APPROVED` booking
+ * (`findBookingConflict`). An approval is, in effect, "would this booking
+ * still be creatable today" — with ONE exception, ratified (R-16-b): a booking
+ * that has ALREADY STARTED, or is entirely in the past, can still be approved
+ * (no `BOOKING_IN_PAST` here), because staff regularize bookings after the
+ * fact.
+ *
+ * `APPROVED -> FLOWN|NO_SHOW` is the mirror image of that exception, and has
+ * the opposite answer (ratifica R-16-b, ops F9): a booking whose slot has not
+ * STARTED yet (`startsAt > now`, read under the row lock) cannot be closed —
+ * 422 `BOOKING_NOT_STARTED`. The bound is the START, not the end, on purpose:
+ * a slot in progress can already be closed (the early return is the normal
+ * case), and waiting for the full hour would be a rule nobody asked for. Two
+ * instants compared, so no time zone is involved. "Riapri" is never guarded:
+ * reopening a wrong closure must stay possible.
  *
  * `PENDING -> DENIED` requires a `reason` (422 `BOOKING_DENY_REASON_REQUIRED`
  * otherwise, checked BEFORE the transaction even opens) and fires a
@@ -1012,7 +1293,7 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
 
   const updated = await prisma.$transaction(async (tx) => {
     const lockedRows = await tx.$queryRaw<LockedBookingRow[]>`
-      SELECT "id", "status", "personId", "aircraftId", "startsAt", "endsAt" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
+      SELECT "id", "status", "personId", "instructorProfileId", "aircraftId", "startsAt", "endsAt" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
     const existing = lockedRows[0];
     if (!existing) {
       throw new NotFoundError('Booking not found.');
@@ -1021,8 +1302,22 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
       throw new ValidationError(`Cannot transition a booking from ${existing.status} to ${to}.`, undefined, 'BOOKING_TRANSITION_INVALID');
     }
 
+    // Story 16.3 (ops F9, ratifica R-16-b): a booking is closed as flown or
+    // no-show only once its slot has STARTED — this function's doc-comment.
+    if ((to === 'FLOWN' || to === 'NO_SHOW') && existing.startsAt.getTime() > Date.now()) {
+      throw new ValidationError('This booking has not started yet and cannot be closed.', undefined, 'BOOKING_NOT_STARTED');
+    }
+
     if (to === 'APPROVED') {
-      // Re-run createBooking's own checks (this function's doc-comment).
+      // Re-run createBooking's own checks (this function's doc-comment), in
+      // createBooking's own order: WHO is booked first (story 16.3, ops F4).
+      const person = await tx.person.findUniqueOrThrow({ where: { id: existing.personId }, select: BOOKABLE_PERSON_SELECT });
+      assertPersonNotArchived(person);
+      assertPersonHasActiveFlyingProfile(person);
+      if (existing.instructorProfileId) {
+        await assertActiveInstructorProfile(tx, existing.instructorProfileId);
+      }
+
       const flightDateOnly = dateOnlyInZone(existing.startsAt, APP_TIMEZONE);
       const { blockingDocuments } = await findBlockingExpiredDocuments(existing.personId, flightDateOnly);
       if (blockingDocuments.length > 0) {
@@ -1034,12 +1329,13 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
       }
 
       // Story 12.11, AC 4: same scheduling-window check `createBooking` runs
-      // at creation — an approval is "would this booking still be creatable
-      // today".
+      // at creation — "would this booking still be creatable today", minus
+      // the one ratified exception (R-16-b, this function's doc-comment): no
+      // `BOOKING_IN_PAST` here.
       await assertWithinSchedulingWindow(existing.startsAt, existing.endsAt);
 
-      const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; archivedAt: Date | null }>>`
-        SELECT "id", "status", "statusReason", "archivedAt" FROM "Aircraft" WHERE "id" = ${existing.aircraftId} FOR UPDATE`;
+      const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; outOfServiceUntil: Date | null; archivedAt: Date | null }>>`
+        SELECT "id", "status", "statusReason", "outOfServiceUntil", "archivedAt" FROM "Aircraft" WHERE "id" = ${existing.aircraftId} FOR UPDATE`;
       const aircraft = lockedAircraft[0];
       if (!aircraft) {
         throw new NotFoundError('Aircraft not found.');
@@ -1050,23 +1346,22 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
       if (aircraft.status === 'OUT_OF_SERVICE') {
         throw new ValidationError(
           `Aircraft is out of service: ${aircraft.statusReason}.`,
-          { reason: aircraft.statusReason },
+          outOfServiceDetails(aircraft),
           'AIRCRAFT_OUT_OF_SERVICE',
         );
       }
 
-      const overlapping = await tx.booking.findFirst({
-        where: {
-          aircraftId: existing.aircraftId,
-          id: { not: bookingId },
-          status: 'APPROVED',
-          startsAt: { lt: existing.endsAt },
-          endsAt: { gt: existing.startsAt },
-        },
-        select: { id: true },
+      await lockBookingPeople(tx, existing.personId, existing.instructorProfileId);
+      const conflict = await findBookingConflict(tx, {
+        aircraftId: existing.aircraftId,
+        personId: existing.personId,
+        instructorProfileId: existing.instructorProfileId,
+        startsAt: existing.startsAt,
+        endsAt: existing.endsAt,
+        excludeBookingId: bookingId,
       });
-      if (overlapping) {
-        throw new ConflictError('This aircraft is already booked for an overlapping interval.');
+      if (conflict) {
+        throw bookingConflictError(conflict);
       }
     }
 

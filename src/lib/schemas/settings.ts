@@ -29,7 +29,8 @@ export type AirfieldBrandingDto = z.infer<typeof airfieldBrandingSchema>;
 
 export const clubIdentitySchema = z.object({
   icao: z.string().trim().toUpperCase().max(10),
-  contactEmail: z.string().trim().toLowerCase().pipe(z.email()),
+  /** `''` = not configured — the factory default `getAirfieldContactEmail` returns; rejecting it made the club card unsavable on a fresh install (the card always sends every field). */
+  contactEmail: z.string().trim().toLowerCase().pipe(z.union([z.literal(''), z.email()])),
 });
 
 export type ClubIdentityDto = z.infer<typeof clubIdentitySchema>;

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Field, Input } from '@/components/ui/field';
+import { parseApiError } from '@/lib/api-field-errors';
 import { parseCents } from '@/lib/money';
 import { SettingsForm, type SettingsFormLabels } from './settings-form';
 
@@ -23,6 +24,8 @@ export type ClubCardLabels = {
   save: string;
   saved: string;
   error: string;
+  /** Story 14.2, AC 3: `settings/club`'s own 422 `fieldErrors.contactEmail` (a malformed, non-empty address — `clubIdentitySchema` accepts `''`) marks THIS field instead of only the card-wide banner. */
+  invalidEmail: string;
 };
 
 export type ClubCardProps = {
@@ -59,10 +62,12 @@ export function ClubCard({ branding, icao, contactEmail, metarStation, landingFe
   const [membershipFee, setMembershipFee] = useState(() => (membershipFeeCents / 100).toFixed(2));
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [contactEmailError, setContactEmailError] = useState(false);
 
   async function save(): Promise<void> {
     setSaving(true);
     setFeedback(null);
+    setContactEmailError(false);
 
     let landingFeeCentsParsed: number | null;
     let membershipFeeCentsParsed: number | null;
@@ -82,7 +87,7 @@ export function ClubCard({ branding, icao, contactEmail, metarStation, landingFe
       return;
     }
 
-    const responses = await Promise.all([
+    const [clubResponse, ...otherResponses] = await Promise.all([
       fetch('/api/v1/settings/club', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -111,11 +116,27 @@ export function ClubCard({ branding, icao, contactEmail, metarStation, landingFe
     ]);
 
     setSaving(false);
-    setFeedback(responses.every((response) => response.ok) ? labels.saved : labels.error);
+
+    // Story 14.2, AC 3: the club PUT's OWN 422 (a malformed contactEmail —
+    // the ONLY field this card's schema can reject that isn't already
+    // caught client-side above) marks that field specifically. Reads
+    // `clubResponse`'s body exactly once (a `Response` body is drained on
+    // the first read) — the "every response ok" check below only reads
+    // `.ok`, never the body again.
+    if (!clubResponse.ok && clubResponse.status === 422) {
+      const { fieldErrors } = await parseApiError(clubResponse);
+      if (fieldErrors.has('contactEmail')) {
+        setContactEmailError(true);
+        setFeedback(labels.error);
+        return;
+      }
+    }
+
+    setFeedback([clubResponse, ...otherResponses].every((response) => response.ok) ? labels.saved : labels.error);
   }
 
   return (
-    <div className="card" data-testid="club-settings-card">
+    <div className="card settings-card" data-testid="club-settings-card">
       <div className="card-head">
         <div className="card-title">{labels.title}</div>
         <span className="card-sub">{labels.sub}</span>
@@ -131,8 +152,17 @@ export function ClubCard({ branding, icao, contactEmail, metarStation, landingFe
             <Field label={labels.icao}>
               <Input value={icaoValue} maxLength={10} onChange={(event) => setIcaoValue(event.target.value.toUpperCase())} data-testid="club-icao-input" />
             </Field>
-            <Field label={labels.contactEmail}>
-              <Input type="email" value={contactEmailValue} onChange={(event) => setContactEmailValue(event.target.value)} data-testid="club-contact-email-input" />
+            <Field label={labels.contactEmail} error={contactEmailError ? labels.invalidEmail : undefined}>
+              <Input
+                type="email"
+                value={contactEmailValue}
+                onChange={(event) => {
+                  setContactEmailValue(event.target.value);
+                  if (contactEmailError) setContactEmailError(false);
+                }}
+                aria-invalid={contactEmailError}
+                data-testid="club-contact-email-input"
+              />
             </Field>
             <Field label={labels.metarStation}>
               <Input

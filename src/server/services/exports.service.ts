@@ -283,7 +283,12 @@ export async function exportBookingsXlsx(actor: Actor, query: ListBookingsQuery)
 
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
     { header: t('list.table.aircraft'), value: (row) => row.aircraftRegistration },
-    { header: t('list.table.pilot'), value: (row) => row.personName },
+    // `row.personName` is `null` on a masked row (story 14.5, ratifica R3:
+    // `listBookings` already masked it for this `actor` — the export never
+    // re-derives or bypasses that) — same "Occupato" fallback the UI table
+    // shows, so an exported spreadsheet never regresses to a blank cell that
+    // reads as a data-quality bug.
+    { header: t('list.table.pilot'), value: (row) => row.personName ?? t('occupied') },
     // `list.table.instructor` (story 12.3, AC 3): the UI table itself only
     // shows the instructor name as a sub-line under the pilot's, with no
     // dedicated column header — this key exists solely for this export's own
@@ -760,7 +765,11 @@ export async function exportBookingsPdf(actor: Actor, query: ListBookingsQuery):
 
   const columns: PdfColumn<(typeof result.items)[number]>[] = [
     { header: t('list.table.aircraft'), value: (row) => row.aircraftRegistration },
-    { header: t('list.table.pilot'), value: (row) => row.personName },
+    // Story 14.5, ratifica R3: same "Occupato" fallback as the xlsx export
+    // above — `listBookings` already masked `row.personName` to `null` for
+    // this `actor` on a non-own row (a pilot exporting the PDF must never
+    // find another pilot's name on the printout).
+    { header: t('list.table.pilot'), value: (row) => row.personName ?? t('occupied') },
     { header: t('list.table.instructor'), value: (row) => row.instructorName ?? '' },
     { header: t('list.table.startsAt'), value: (row) => formatDateTime(row.startsAt, locale) },
     { header: t('list.table.endsAt'), value: (row) => formatDateTime(row.endsAt, locale) },

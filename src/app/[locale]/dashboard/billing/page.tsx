@@ -37,7 +37,7 @@ function sanitizeDateParam(value: string | undefined): string | undefined {
  * Contabilità (epic 12, story 12.9; reworked story Billing-2) — AirOps-
  * native, port of `docs/design-reference/airops/src/BillingView.jsx`,
  * replacing the legacy `/dashboard/finance` + `/dashboard/finance/report`
- * (deleted by story 12.9). `finance.manage` only (ADMIN+STAFF) — no
+ * (deleted by story 12.9). `finance.manage` only (ADMIN-only, story 14.9) — no
  * own-access face, unlike logbook/bookings (the titolare's own estratto
  * conto stays on `people/[id]/account`, untouched — AC 7).
  *
@@ -168,6 +168,15 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             inRed: t('panels.deposits.inRed'),
             detailLink: t('panels.deposits.detailLink'),
           },
+        }}
+        mobileLabels={{
+          kpiResult: t('mobile.kpiResult'),
+          kpiAvailable: t('mobile.kpiAvailable'),
+          kpiDeposits: t('mobile.kpiDeposits'),
+          openPanel: t('mobile.openPanel'),
+          treasurySub: t('mobile.treasurySub'),
+          depositsSub: t('mobile.depositsSub'),
+          close: t('mobile.close'),
         }}
       />
 
@@ -313,6 +322,27 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             genericError: t('newTransactionForm.genericError'),
             result: { title: t('newTransactionForm.result.title'), newBalance: t('newTransactionForm.result.newBalance'), close: t('newTransactionForm.result.close') },
             picker: { placeholder: t('newTransactionForm.picker.placeholder'), noResults: t('newTransactionForm.picker.noResults') },
+          },
+          mobile: {
+            bookTypeAll: t('mobile.bookTypeAll'),
+            unattributedChip: t('filters.unattributedChip'),
+            filters: t('mobile.filters'),
+            // Placeholder filled client-side (the count is client state) — `t.raw`, per the convention.
+            filtersCount: t.raw('mobile.filtersCount') as string,
+            filtersTitle: t('mobile.filtersTitle'),
+            apply: t('mobile.apply'),
+            close: t('mobile.close'),
+            back: t('mobile.back'),
+            openDetail: t('mobile.openDetail'),
+            empty: t('mobile.empty'),
+            source: t('mobile.source'),
+            sourceAccount: t('mobile.sourceAccount'),
+            sourceCash: t('mobile.sourceCash'),
+            reference: t('mobile.reference'),
+            id: t('mobile.id'),
+            reclassify: t('mobile.reclassify'),
+            reclassifyConfirm: t('mobile.reclassifyConfirm'),
+            unattributedMethod: t('mobile.unattributedMethod'),
           },
         }}
       />

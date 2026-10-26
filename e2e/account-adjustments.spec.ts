@@ -82,6 +82,11 @@ async function submitAdjustment(page: Page, amount: string, reason: string): Pro
   await page.getByLabel('Motivo').fill(reason);
   await page.getByRole('button', { name: 'Conferma rettifica' }).click();
   await expect(page.getByTestId('adjustment-feedback')).toHaveText('Rettifica registrata.');
+  // Story 15.9 / review MINOR-1: the green arrives from `.stat-tone-ok`, not
+  // from an inline `var(--ok)` (2.73:1 in the light theme). The inline colour
+  // is GONE, not merely overridden — an inline style beats any class rule.
+  await expect(page.getByTestId('adjustment-feedback')).toHaveClass(/stat-tone-ok/);
+  await expect(page.getByTestId('adjustment-feedback')).not.toHaveAttribute('style');
 }
 
 test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () => {
