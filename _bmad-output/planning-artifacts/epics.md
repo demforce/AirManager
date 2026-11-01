@@ -21,35 +21,35 @@ Questo documento fornisce la scomposizione completa in epics e stories di AirMan
 - FR-4: CRUD Persone (anagrafica unica, archiviazione non distruttiva)
 - FR-5: Profili multipli Pilota/Allievo/Istruttore su una Persona
 - FR-6: Scheda dettaglio persona (profili, scadenze, saldo, pacchetti, voli, prenotazioni)
-- FR-7: CRUD Velivoli (marche univoche, tipo, contaore iniziale)
+- FR-7: CRUD Velivoli (marche univoche, tipo) — *contaore rimosso, CR 2026-11-01*
 - FR-8: Stato operativo velivolo (operativo/fuori servizio, blocco prenotazioni)
-- FR-9: Contaore progressivo aggiornato dai voli, rettifiche motivate
-- FR-10: Tariffe velivolo storicizzate (validFrom, tariffa in vigore per data)
-- FR-11: Tariffe istruttore storicizzate
+- ~~FR-9: Contaore progressivo aggiornato dai voli, rettifiche motivate~~ — *eliminato, CR 2026-11-01 (R-19-b)*
+- FR-10: Tariffe velivolo con prezzo allievo e prezzo pilota, applicato dal profilo della persona; validFrom ≥ oggi; storico non mostrato — *CR 2026-11-01*
+- FR-11: Tariffe istruttore con validFrom ≥ oggi; storico non mostrato — *CR 2026-11-01*
 - FR-12: Definizione pacchetti ore (ore, prezzo scontato, velivoli idonei, scadenza opzionale)
 - FR-13: Vendita e consumo pacchetti (più vecchio prima, eccedenza a tariffa piena, solo velivolo)
 - FR-14: Registrazione volo — solo staff/admin
 - FR-15: Calcolo costo (centesimi, pro-rata minuti) e addebito automatico con scomposizione
-- FR-16: Correzione/annullamento volo con storno tracciato (nessuna chiusura mese)
+- FR-16: Annullamento = cancellazione del volo e del suo addebito; modifica = aggiornamento in place con ricalcolo dell'addebito — *CR 2026-11-01 (R-19-c)*
 - FR-17: Registro voli con filtri; il pilota vede solo i propri
 - FR-18: Creazione prenotazione (pilota per sé, istruttore con allievo, staff per tutti; no sovrapposizioni)
 - FR-19: Vista calendario giorno/settimana per velivolo
 - FR-20: Modifica/cancellazione prenotazione (prenotante fino all'inizio; staff sempre)
-- FR-21: Blocco prenotazione per medica/licenza scadute (staff può forzare, tracciato)
-- FR-22: Form PPR pubblico bilingue con anti-spam ed email di ricevuta
-- FR-23: Coda PPR staff: approva (numero PPR + email) / rifiuta (motivo + email)
-- FR-24: Chiusura PPR: completato (tassa atterraggio configurabile → cassa) / annullato; registro esportabile
+- FR-21: Voli e prenotazioni controllano scadenze, currency, saldo e quota associativa; l'admin riceve un avviso e può procedere consapevolmente; piloti e istruttori non derogano — *CR 2026-11-01*
+- ~~FR-22: Form PPR pubblico bilingue con anti-spam ed email di ricevuta~~ — *eliminato, CR 2026-11-01*
+- ~~FR-23: Coda PPR staff: approva (numero PPR + email) / rifiuta (motivo + email)~~ — *eliminato, CR 2026-11-01*
+- ~~FR-24: Chiusura PPR: completato (tassa atterraggio configurabile → cassa) / annullato; registro esportabile~~ — *eliminato, CR 2026-11-01*
 - FR-25: Ricariche conto (contanti/bonifico/POS) con movimento cassa automatico
-- FR-26: Estratto conto (titolare i propri; staff tutti; export PDF/Excel)
+- FR-26: Estratto conto (titolare i propri; staff tutti; export PDF/Excel) + filtro per periodo, saldo iniziale e progressivo, ordinamento per data valuta — *CR 2026-11-01*
 - FR-27: Saldo negativo consentito con evidenza e alert email (soglia configurabile)
 - FR-28: Rettifiche motivate e tracciate
-- FR-29: Movimenti di cassa manuali + automatici (ricariche, pacchetti, PPR)
+- FR-29: Movimenti di cassa manuali + automatici (ricariche) — *CR 2026-11-01*
 - FR-30: Categorie di entrata/uscita gestite dall'admin
 - FR-31: Report finanziario per periodo con totali per categoria, export PDF/Excel
 - FR-32: Assegnazione allievi a istruttori
 - FR-33: Annotazioni di avanzamento didattico (istruttore scrive, allievo legge)
 - FR-34: Riepilogo ore allievo (dc/solo) e ore istruttore per periodo, esportabile
-- FR-35: Tipi di scadenza standard precaricati + tipi custom (admin)
+- FR-35: Tipi di scadenza (ratings con ambito; visite mediche senza ambito, ne basta una valida; la licenza non è una scadenza; quota associativa a sé) — *CR 2026-11-01*
 - FR-36: Registrazione scadenze per persona (staff; titolare propone, staff valida)
 - FR-37: Alert email automatici a 60/30/7/0 giorni, one-shot per soglia
 - FR-38: Dashboard scadenze con stato colore, filtri, export
@@ -60,10 +60,14 @@ Questo documento fornisce la scomposizione completa in epics e stories di AirMan
 - FR-43: Campi logbook sul volo — aeroporto di partenza/arrivo, orario di decollo/atterraggio, n. decolli/atterraggi; durata DERIVATA (atterraggio−decollo); obbligatori per i voli nuovi (change request 2026-07-10)
 - FR-44: Registro voli in formato logbook con PIC derivato; export Excel/PDF aggiornati coi nuovi campi (change request 2026-07-10)
 - FR-45: Date in formato italiano (DD/MM/YYYY) su tutte le superfici UI; accesso diretto ai voli di una persona dalla sua scheda (change request 2026-07-10)
+- FR-46: Currency — current con almeno X voli negli ultimi Y giorni (X e Y configurabili dall'admin); non current = niente voli solisti finché non si torna current volando con un istruttore (CR 2026-11-01)
+- FR-47: Volo senza addebito, solo admin (CR 2026-11-01)
+- FR-48: Ogni form ha un solo Salva in fondo; le azioni con effetti propri restano separate (CR 2026-11-01)
+- FR-49: Profili pilota e allievo mutuamente esclusivi (CR 2026-11-01)
 
 ### NonFunctional Requirements
 
-- NFR-1: UI, email e form PPR bilingui IT/EN (next-intl)
+- NFR-1: UI ed email bilingui IT/EN (next-intl) — *form PPR rimosso, CR 2026-11-01*
 - NFR-2: API-first — nessuna funzionalità solo-UI (AD-1)
 - NFR-3: GDPR — dati medici minimizzati (solo classe+scadenza), accesso per ruolo, HTTPS
 - NFR-4: Movimenti finanziari immutabili, correzioni solo per storno (AD-3)
@@ -105,6 +109,7 @@ Nessun documento UX formale. Vincoli UI vincolanti per i dev agent: skill `minim
 | FR-32, FR-33, FR-34 | Epic 9 | Scuola volo (export riepiloghi in Epic 10) |
 | FR-39, FR-40, FR-41 | Epic 10 | Export completi + dashboard per ruolo |
 | FR-43, FR-44, FR-45 | Epic 11 | Registro voli logbook (change request post-MVP 2026-07-10) |
+| FR-46, FR-47, FR-48, FR-49 (+ modifiche a FR-7/10/11/16/21/26/29/35, eliminazione FR-9/22/23/24) | Epic 19 | Change request PO 2026-11-01 |
 
 NFR trasversali: NFR-1/2/5/8 vincolano ogni story con UI/API; NFR-3 Epic 1/2/6; NFR-4 Epic 3/5; NFR-6 ogni lista; NFR-7 ogni story con email; NFR-9 nella Definition of Done di ogni story.
 
@@ -155,6 +160,11 @@ Il volo registra aeroporti e orari reali con durata derivata; il registro divent
 **FRs covered:** FR-43, FR-44, FR-45
 
 **Dipendenze tra epics:** 1 → 2 → 3 → 4 → 5; 6 dopo 2; 7 dopo 6 e 2; 8 dopo 3; 9 dopo 5; 10 per ultimo. Ogni epic consegna valore completo senza richiedere epic futuri.
+
+
+### Epic 19: Semplificazione e regole operative (change request PO 2026-11-01)
+
+Via PPR/transiti, codice fiscale, campi velivolo e contaore; tariffe allievo/pilota dal profilo; volo senza addebito e cancellazione definitiva; currency, quota associativa, visite mediche universali; avviso con deroga admin su voli e prenotazioni; Salva unico; estratto conto a periodo; revisione dell'italiano. Epic 8 (PPR) **rimosso** da questo epic (story 19.1). Dettaglio: `sprint-change-proposal-2026-11-01.md`.
 
 ## Epic 1: Fondazione e accesso
 
@@ -895,3 +905,21 @@ So that il sistema parli la lingua del campo volo (FR-44, FR-45).
 **Given** l'export Excel e PDF del registro voli
 **When** lo scarico
 **Then** contiene le nuove colonne logbook (partenza, arrivo, decollo, atterraggio, decolli, atterraggi, PIC) con date DD/MM/YYYY e orari HH:MM Europe/Rome, intestazioni localizzate IT/EN
+
+## Epic 19: Semplificazione e regole operative (change request PO 2026-11-01)
+
+Fonte vincolante: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md` (ratifiche R-19-a..p, assunzioni A1-A20). Tutte le story hanno UI (dev e review Opus 5 xhigh). Ordine: 19.1 → 19.12.
+
+- **19.1** Rimozione del dominio PPR (Richieste PPR, Voli in transito, form pubblico, tassa e istruzioni PPR) — FR-22/23/24 eliminati
+- **19.2** Via codice fiscale, campi velivolo (posti, carburante, note, basato), contaore e note/contatori del volo — FR-7, FR-9
+- **19.3** Tariffe allievo/pilota dal profilo, profili esclusivi, decorrenza ≥ oggi, editor velivolo a Salva unico — FR-10, FR-11, FR-48, FR-49
+- **19.4** Editor pilota e istruttore a Salva unico, tariffa istruttore senza storico — FR-11, FR-48
+- **19.5** Form volo: due tipi (Turismo, Scuola), dropdown uniformi, bottone doppio comando/solista
+- **19.6** Volo senza addebito e cancellazione definitiva (modifica in place) — FR-16, FR-47
+- **19.7** Scadenze: licenza rimossa, visite mediche senza ambito, quota associativa a sé (12 mesi), currency — FR-35, FR-46
+- **19.8** Impostazioni a Salva unico (sezioni quota e currency, liste in bozza fino al Salva) — FR-48
+- **19.9** Avviso con deroga admin sulla registrazione voli (scadenze, currency, saldo, quota) — FR-21
+- **19.10** Avviso con deroga admin sulle prenotazioni + stessa persona in due ruoli — FR-21
+- **19.11** Estratto conto a periodo con saldo progressivo — FR-26
+- **19.12** Revisione completa dell'italiano
+

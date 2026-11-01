@@ -1,4 +1,13 @@
-# HANDOFF — AirManager (aggiornato: 2026-09-27 — **RIPRESA dopo lo stop del 2026-09-10**: 16.1, 16.2, AOG-1b, 17.1 DONE; 16.8 ready-for-dev; prossimo 16.3, poi 16.4…16.9 e 16.8; il PO ha chiesto di proseguire ANCHE negli epic 17-18 in questa sessione; PR #22 `dev` → `main` ancora APERTA)
+# HANDOFF — AirManager (aggiornato: 2026-11-01 — **CHANGE REQUEST PO APPROVATA → EPIC 19** (12 story, sprint-change-proposal-2026-11-01.md); 16.3 in fix cycle; poi 19.1…19.12, poi 16.5…16.9 riperimetrate, 17, 18; PR #22 `dev` → `main` ancora APERTA)
+
+## EPIC 19 — Change request PO 2026-11-01 (APPROVATA, in coda dopo la 16.3)
+
+- **Fonte vincolante**: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md` — 15 richieste PO, 16 ratifiche R-19-a..p (AskUserQuestion 2026-11-01), assunzioni A1-A20 ratificate con l'approvazione. PRD (change record in coda a `prd.md`), `epics.md` (FR + Epic 19) e `ARCHITECTURE-SPINE.md` (emendamenti AD-3 per il FLIGHT_CHARGE, AD-4 per le tariffe allievo/pilota) aggiornati nello stesso commit.
+- **Decisioni che cambiano il dominio** (da non «ripristinare» credendole sviste): DB di test → migrazioni distruttive senza preservare dati (R-19-a); contaore eliminato del tutto (R-19-b); annullare un volo = cancellare volo + addebito, modifica in place (R-19-c, eccezione AD-3); prezzo velivolo dal PROFILO e profili pilota/allievo ESCLUSIVI (R-19-e); tariffe con «In vigore da» ≥ oggi riscrivibili (R-19-f); deroga = elenco + conferma, NIENTE motivazione NIENTE badge, solo admin (R-19-h); currency = almeno X voli negli ultimi Y giorni, configurabili, anche per gli allievi (R-19-i); basta UNA visita medica valida di qualsiasi classe (R-19-j); quota 12 mesi per tutti, visibile in Scadenze (R-19-k); piloti/allievi non prenotano mai con istruttore (R-19-l); Salva unico anche per le liste delle Impostazioni (R-19-m).
+- **Riperimetrazioni**: 16.4 superseded (→ 19.9/19.10); 16.5 dopo 19.6; 16.6a senza la parte annullati; 16.6b senza R-16-g; 16.7 senza rate limit PPR; 16.3 PO-1 → 19.10.
+- **Stato 16.3 al momento della CR**: review SHIPPABLE-WITH-FIXES (report `16-3-review-report.md`), fix cycle affidato a un subagent Opus (MAJOR-1 ramo Forza, MAJOR-2 lock `Booking` primo statement di `updateBooking`, LOW-1 api-v1.spec try/finally); arbitro full-suite della sessione principale dopo il fix.
+- **Ambiente di questa sessione**: DB `airmanager` resettato il 2026-11-01 (mandato di sessione del PO); il dev server demo su 0.0.0.0:3000 è stato FERMATO per gli e2e (il PO non lo raggiungeva: firewalld blocca :3000, serve `sudo firewall-cmd --add-port=3000/tcp` lato utente) — da riavviare con `npm run seed:demo` a fine lavoro.
+
 
 ## EPIC 16–18 — Dall'audit del 2026-09-10 (IN CORSO)
 

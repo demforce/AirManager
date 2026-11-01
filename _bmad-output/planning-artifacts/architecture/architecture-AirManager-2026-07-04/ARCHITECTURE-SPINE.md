@@ -48,11 +48,13 @@ graph TD
 - **Binds:** FR-15, FR-16, FR-25, FR-28, FR-29, NFR-4
 - **Prevents:** due moduli che "correggono" i saldi in modi diversi (update in place vs delete vs riga negativa).
 - **Rule:** `AccountMovement` e `CashMovement` non si aggiornano né cancellano mai. Ogni correzione crea un movimento di **storno** (`reversalOfId` → movimento originale) ed eventualmente un nuovo movimento corretto. Il saldo è sempre `SUM(amountCents)` — mai un campo saldo mantenuto a mano.
+- **Emendamento CR 2026-11-01 (R-19-c):** eccezione per il `FLIGHT_CHARGE` — l'addebito di un volo vive e muore col volo: si cancella quando il volo viene cancellato e si ricalcola quando il volo viene modificato (aggiornamento in place, niente catene di correzione). Tutti gli altri movimenti restano append-only con storno; il saldo resta `SUM(amountCents)`.
 
 ### AD-4 — Tariffe storicizzate + snapshot sul volo
 - **Binds:** FR-10, FR-11, FR-15
 - **Prevents:** ricalcoli retroattivi che cambiano addebiti storici quando cambia una tariffa.
 - **Rule:** `AircraftRate`/`InstructorRate` hanno `validFrom`; la tariffa in vigore per una data è quella con il massimo `validFrom <= flightDate`. Alla registrazione il Volo salva lo **snapshot** della scomposizione (minuti, rate applicato, minuti scalati da pacchetto, importi) dentro i movimenti generati. Lo storico si legge dagli snapshot, mai ricalcolando.
+- **Emendamento CR 2026-11-01 (R-19-e/f):** `AircraftRate` porta due prezzi (allievo, pilota); si applica quello del profilo della persona (pilota XOR allievo) e viene congelato sul volo. Le nuove tariffe (velivolo e istruttore) hanno `validFrom ≥ oggi` (Europe/Rome) e una riga con `validFrom ≥ oggi` si può riscrivere; lo storico resta nel DB ma non è mostrato in UI.
 
 ### AD-5 — RBAC nel service layer
 - **Binds:** all (FR-2 in particolare), NFR-3
@@ -219,7 +221,7 @@ Ambienti: `development` (docker-compose: postgres + mailpit), `test` (DB Postgre
 | Tariffe e pacchetti (FR-10..13) | `services/rates`, `services/packages` | AD-2, AD-4, AD-6 |
 | Voli (FR-14..17) | `services/flights` | AD-2, AD-3, AD-4, AD-6 |
 | Prenotazioni (FR-18..21) | `services/bookings` | AD-5 (blocchi per scadenze via `services/expiries`) |
-| PPR (FR-22..24) | `services/ppr`, `app/[locale]/ppr` | AD-7, AD-8, AD-9 (email) |
+| ~~PPR (FR-22..24)~~ | rimosso (CR 2026-11-01, story 19.1) | — |
 | Finanze piloti (FR-25..28) | `services/accounts` | AD-2, AD-3 |
 | Finanze aviosuperficie (FR-29..31) | `services/cash` | AD-2, AD-3 |
 | Scuola volo (FR-32..34) | `services/school` | AD-11 |
@@ -232,6 +234,6 @@ Ambienti: `development` (docker-compose: postgres + mailpit), `test` (DB Postgre
 
 - **Hosting di produzione** (VPS Docker vs Vercel + Postgres gestito): non blocca lo sviluppo; il seed produce Dockerfile + docker-compose. Rivisitare prima del go-live.
 - **Provider email di produzione** (Resend / SES / SMTP dell'aviosuperficie): dietro `MailSender` (AD — interfaccia stabile); dev usa Mailpit. Decidere al go-live.
-- **Rate limiting infrastrutturale**: per l'MVP basta il rate limit applicativo sul form PPR; una soluzione globale (reverse proxy) è del deployment.
+- **Rate limiting infrastrutturale**: il form PPR (unico rate limit applicativo) è stato rimosso con la CR 2026-11-01; una soluzione globale (reverse proxy) è del deployment.
 - **Strategia migrazioni in produzione** (prisma migrate deploy in CI): dettaglio della pipeline, si fissa quando esiste la pipeline.
 - **Schema dettagliato dei campi**: l'ERD fissa entità e relazioni; i campi vivono in `schema.prisma` (il codice è l'owner) nel rispetto di AD-2/AD-4/AD-11.
