@@ -516,7 +516,7 @@ development_status:
   19-3-tariffe-allievo-pilota-editor-velivolo: ready-for-dev  # story file 2026-11-01 (33 AC, baseline 72e7e1b); Q-a nessun prezzo sulle card, Q-b A, Q-c allievo esclusivo anche con istruttore, Q-d riga variazione programmata; dev Opus DOPO 19.2
   19-4-editor-pilota-istruttore-salva-unico: ready-for-dev  # story file 2026-11-01 (29 AC, baseline 72e7e1b); Q-a compenso precompilato, Q-b riga tariffa programmata; dev Opus DOPO 19.3 (segnaposto 19.3 da risolvere al T0)
   19-5-form-volo-tipi-dropdown-toggle: ready-for-dev  # story file 2026-11-01 (29 AC, baseline 3876e72), nessuna domanda PO (8 scelte su delega §0.3: Toggle «Volo solista» acceso = solista, SearchCombobox con lista statica, Escape del popup non chiude il pannello); dev Opus DOPO 19.4
-  19-6-volo-senza-addebito-cancellazione-definitiva: backlog
+  19-6-volo-senza-addebito-cancellazione-definitiva: ready-for-dev  # story file 2026-11-01 (37 AC, baseline 3876e72); Q-19.6-a = B (tariffe obbligatorie anche senza addebito, contro la raccomandazione); PUT/DELETE /flights/{id}; dev Opus DOPO 19.5
   19-7-scadenze-licenza-mediche-quota-currency: backlog
   19-8-impostazioni-salva-unico: backlog
   19-9-avviso-deroga-voli: backlog

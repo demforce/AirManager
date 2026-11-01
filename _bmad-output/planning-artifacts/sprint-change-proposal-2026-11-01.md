@@ -305,4 +305,4 @@ AD-6 — Consumo pacchetti: già storico dalla 12.13; le PackageConsumption resi
 | Q-19.3-c | 19.3/19.4 | **Il profilo allievo esclude sia il pilota sia l'istruttore** (estende R-19-e e FR-49). |
 | Q-19.3-d / Q-19.4-b | 19.3/19.4 | Una riga sotto i campi tariffa con la sola prossima variazione programmata. |
 | Q-19.4-a | 19.4 | Il compenso istruttore resta precompilato (non ha decorrenza; vuoto = nessun compenso). |
-
+| Q-19.6-a | 19.6 | Il volo senza addebito **richiede comunque le tariffe** (velivolo e, se c'è, istruttore): congelate sul volo come informazione, importi e addebito a 0. |
