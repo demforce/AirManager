@@ -534,11 +534,12 @@ export async function returnToService(actor: Actor, id: string): Promise<Aircraf
  * since the fleet page's `today` is a UTC date and would drop the flights
  * registered between 00:00 and 02:00 Rome time.
  *
- * BATCHED over the ids of the CURRENT PAGE, exactly like the two readers the
- * fleet page already calls beside it (`getEffectiveRates`,
- * `listReservedAircraftIds`) — never one query per card, and never the whole
- * fleet: the bar compares the 20 cards on screen, and `hoursBarPercent`'s
- * doc-comment says so. The alternative considered (and rejected in Q2) was
+ * BATCHED over the ids the caller passes — never one query per card. The
+ * fleet page passes the ids of the CURRENT PAGE, exactly like the two readers
+ * it already calls beside it (`getEffectiveRates`, `listReservedAircraftIds`):
+ * the bar compares the 20 cards on screen, and `hoursBarPercent`'s doc-comment
+ * says so. The aircraft Excel export (`exports.service.ts`) passes every row
+ * it exports, i.e. up to the export cap — still one query. The alternative considered (and rejected in Q2) was
  * `getStats`, a `finance.manage` service that fires 10+ queries and paginates
  * the entire fleet to expose one field.
  *
