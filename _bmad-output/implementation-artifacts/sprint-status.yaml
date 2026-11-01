@@ -515,7 +515,7 @@ development_status:
   19-2-via-codice-fiscale-campi-velivolo-contaore: ready-for-dev  # story file 2026-11-01 (26 AC, baseline 5ca0be6), dev Opus DOPO il commit della 19.1; D-1..D-3 accettate dalla sessione principale
   19-3-tariffe-allievo-pilota-editor-velivolo: ready-for-dev  # story file 2026-11-01 (33 AC, baseline 72e7e1b); Q-a nessun prezzo sulle card, Q-b A, Q-c allievo esclusivo anche con istruttore, Q-d riga variazione programmata; dev Opus DOPO 19.2
   19-4-editor-pilota-istruttore-salva-unico: ready-for-dev  # story file 2026-11-01 (29 AC, baseline 72e7e1b); Q-a compenso precompilato, Q-b riga tariffa programmata; dev Opus DOPO 19.3 (segnaposto 19.3 da risolvere al T0)
-  19-5-form-volo-tipi-dropdown-toggle: backlog
+  19-5-form-volo-tipi-dropdown-toggle: ready-for-dev  # story file 2026-11-01 (29 AC, baseline 3876e72), nessuna domanda PO (8 scelte su delega §0.3: Toggle «Volo solista» acceso = solista, SearchCombobox con lista statica, Escape del popup non chiude il pannello); dev Opus DOPO 19.4
   19-6-volo-senza-addebito-cancellazione-definitiva: backlog
   19-7-scadenze-licenza-mediche-quota-currency: backlog
   19-8-impostazioni-salva-unico: backlog
