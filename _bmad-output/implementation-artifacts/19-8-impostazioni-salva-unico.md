@@ -8,7 +8,7 @@ Status: **ready-for-dev** — 2026-11-01. **Nessuna domanda PO aperta**: le scel
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`a7e960e`** (i file delle Impostazioni sono identici a `869c9cf`). Il dev della 19.8 parte **DOPO il commit di 19.1…19.7**:
 > - **19.1** (committata, `08eb558`) ha già tolto tassa e istruzioni PPR dalla card Club (oggi 3 PUT, non 5) e la serie PPR delle impostazioni: nulla di PPR deve ricomparire.
-> - **19.7** (`19-7-scadenze-licenza-mediche-quota-currency.md`, scritta in parallelo a questa) consegna il **backend** di currency, quota e visite mediche senza ambito. **Contratti concordati col writer della 19.7 il 2026-11-01** (da riverificare sul codice committato al T0: la review della 19.7 può rinominarli; ogni differenza si annota nel Dev Agent Record §A — cambia il nome, non il disegno):
+> - **19.7** (`19-7a-scadenze-modello-regole-quota-currency.md`, scritta in parallelo a questa) consegna il **backend** di currency, quota e visite mediche senza ambito. **Contratti concordati col writer della 19.7 il 2026-11-01** (da riverificare sul codice committato al T0: la review della 19.7 può rinominarli; ogni differenza si annota nel Dev Agent Record §A — cambia il nome, non il disegno):
 >
 > | Contratto 19.7 | Forma | Uso qui |
 > |---|---|---|

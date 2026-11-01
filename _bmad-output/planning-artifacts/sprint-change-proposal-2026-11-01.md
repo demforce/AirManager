@@ -306,3 +306,8 @@ AD-6 — Consumo pacchetti: già storico dalla 12.13; le PackageConsumption resi
 | Q-19.3-d / Q-19.4-b | 19.3/19.4 | Una riga sotto i campi tariffa con la sola prossima variazione programmata. |
 | Q-19.4-a | 19.4 | Il compenso istruttore resta precompilato (non ha decorrenza; vuoto = nessun compenso). |
 | Q-19.6-a | 19.6 | Il volo senza addebito **richiede comunque le tariffe** (velivolo e, se c'è, istruttore): congelate sul volo come informazione, importi e addebito a 0. |
+| Q-19.7-a | 19.7 | Le righe currency compaiono **mescolate ai documenti** nella pagina Scadenze, contatori inclusi (contro la raccomandazione). |
+| Q-19.7-b | 19.7 | Chi non ha mai pagato la quota compare come «Mancante» (una riga per persona tenuta alla quota). |
+| Q-19.7-c | 19.7 | Anche chi non ha **nessuna** visita medica registrata compare come «Mancante» (conta come scaduta). |
+| Split | 19.7 | La 19.7 è divisa in **19.7a** (modello, regole, quota, currency) e **19.7b** (registro Scadenze unificato) — decisione della sessione principale per dimensione. |
+
