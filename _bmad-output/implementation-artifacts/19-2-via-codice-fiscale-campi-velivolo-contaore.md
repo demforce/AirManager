@@ -4,7 +4,7 @@ baseline_commit: 5ca0be6
 
 # Story 19.2: Via codice fiscale, campi velivolo, contaore e note volo
 
-Status: **ready-for-dev** — 2026-11-01. **Nessuna domanda PO aperta** (v. §0.3: le tre scelte di interpretazione sono prese su delega, ognuna ricondotta a una ratifica già chiusa). **Modello dev: Opus 5 xhigh (UI)** — la story scrive codice UI su sei superfici (editor pilota, editor istruttore, scheda persona, editor velivolo + sheet flotta mobile, form volo, sheet registro voli mobile) oltre a schema, migrazione, service, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-2-via-codice-fiscale-campi-velivolo-contaore`.
+Status: **review** — 2026-11-01, dev completato (Opus 5.5): gates verdi, e2e dei 32 spec toccati 307/307, delta atteso per l'arbitro 492 → 489 (v. Dev Agent Record §F). Storico — ready-for-dev 2026-11-01. **Nessuna domanda PO aperta** (v. §0.3: le tre scelte di interpretazione sono prese su delega, ognuna ricondotta a una ratifica già chiusa). **Modello dev: Opus 5 xhigh (UI)** — la story scrive codice UI su sei superfici (editor pilota, editor istruttore, scheda persona, editor velivolo + sheet flotta mobile, form volo, sheet registro voli mobile) oltre a schema, migrazione, service, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-2-via-codice-fiscale-campi-velivolo-contaore`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`5ca0be6`** (HEAD al 2026-11-01). Il dev della 19.2 parte **DOPO il commit della 19.1** (rimozione del dominio PPR, scritta in parallelo da un altro writer), che tocca **gli stessi file** in punti diversi: `prisma/schema.prisma` (modelli PPR + FK `CashMovement.pprRequestId`) e una **sua** migrazione, `prisma/seed*.ts`, `messages/*.json`, `src/lib/schemas/registry.ts` + `registry.test.ts`, `src/server/services/exports.service.ts`, `src/app/[locale]/dashboard/page.tsx` (KPI/avvisi PPR), `src/styles/airops.css` (blocco `.info-row` condiviso col `/ppr` pubblico — lo stesso commento di `:2745` che qui perde «fiscal code») e molti spec e2e. Effetto atteso: **solo slittamento di righe**. Prima di scrivere una riga: `git log --oneline -5`, rieseguire i **censimenti di §3** (sono comandi, non elenchi da fidarsi) e correggere le righe di questo file dove sono slittate. Anche il fix cycle della 16.3 (agent `fix-16-3`) può atterrare prima: tocca `bookings.service.ts` ed e2e `bookings`/`api-v1` — stesso effetto.
 >
@@ -311,23 +311,32 @@ Mirati da far girare prima della consegna: `aircraft-management`, `aircraft-rate
 - Precedenti: `13-4-flotta-toggle-storici-owner.md` (drop campo velivolo + sweep), `14-9-rimozione-ruolo-staff.md` (catena migrazioni su DB gemello), `16-2-guardie-registro-voli.md` (lock e `FLIGHT_OVERLAP`), `15-5-*`/`15-6-*` (sheet flotta e registro mobili, R-15.5-b, R-15.6-b).
 - `CLAUDE.md` (convenzioni e2e, gates, env eager, manutenzione del file); `docs/handoffs/HANDOFF.md` (ambiente, reset DB, arbitro).
 
+### TD della 19.2 (dev, 2026-11-01)
+
+| TD | Descrizione |
+|---|---|
+| **TD 19.2-a** | `airmanager_load` resta indietro di due migrazioni (19.1 + 19.2, AD-1) e `seed-load.ts` ha un'estrazione PRNG in meno per velivolo (il contaore iniziale): a parità di `LOAD_SCALE` un nuovo seed **non** riproduce byte per byte il dataset misurato nell'epic 17. Da considerare quando l'epic 17 rimigra/riseme il DB di misura. |
+| **TD 19.2-b** | (processo) I grep «zero residui» delle story di rimozione andrebbero scritti con l'allowlist dei test di assenza che la story stessa chiede (o con `--exclude` sui file di test che li ospitano): AC 22 della 19.2 chiedeva 0 righe insieme ad AC 2/4/7/10/12/18/24, che per costruzione nominano i campi rimossi (§G-1). |
+| **TD 19.2-c** | Copy nuove «Ore di volo» / «Ore totali» / «Flight hours» / «Total hours» (4 chiavi): revisione nella 19.12, come previsto da §3.8. |
+| **TD 19.2-d** | (preesistente, segnalato non toccato) `ESLint` warning `'ExpiredDocument' is defined but never used` in `flights.service.ts:19`, `'_minutes'` in `mobile-logbook.spec.ts:160`, `'createExpiryType'` in `mobile-settings.spec.ts:232`; e la chiave orfana `PeoplePage.form.*` (testo aggiornato, non cancellata, §6). |
+
 ---
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento** (AC tutti): `git log --oneline -5` (la 19.1 deve essere committata), `scripts/e2e.sh status`, `:3000` libero; rieseguire i comandi di §3.6 e i grep di AC 22 sul HEAD e annotare nel record gli scostamenti di riga rispetto a questo file.
-- [ ] **T1 — Schema e migrazione** (AC 1, 5, 9, 18, 20): `schema.prisma` (campi, modello, relazioni, doc-comment §3.1); migrazione AD-1; verifica su DB gemello (deploy da zero, `migrate diff` vuoto, psql); `npx prisma generate`.
-- [ ] **T2 — Server** (AC 2, 3, 11, 12, 13, 15): `people.service.ts` (AD-2); `aircraft.service.ts` (campi, via rettifiche, firma nullable di `sumFlightMinutesByAircraft`); `flights.service.ts` (AD-3: lock su `"id"`, via contaore e note, core senza update `Aircraft`, doc-comment); `exports.service.ts` (colonna «Ore totali»); doc-comment di §3.2; cancellare la route `hour-meter-adjustments`.
-- [ ] **T3 — Zod e OpenAPI** (AC 2, 6, 10, 11, 12, 24): `people.ts`, `aircraft.ts`, `flights.ts`, `registry.ts` (path, register, descrizioni `:465`, `:976`, `:1006`, `:1065`), `registry.test.ts`.
-- [ ] **T4 — UI persona** (AC 4): editor pilota (modifica + nuovo), editor istruttore, scheda persona, pagine/label; griglia senza buchi.
-- [ ] **T5 — UI velivolo** (AC 7, 8, 14, 15, 17): `aircraft-editor.tsx` (AD-4, AD-5), `fleet-console.tsx` (AD-5, AD-6), `fleet/page.tsx`, `fleet-card.tsx`, `dashboard/page.tsx` (mapper); commenti `segmented.tsx`/`new-booking-form.tsx`/`airops.css`.
-- [ ] **T6 — UI volo** (AC 12, 18): `flight-editor.tsx`, `logbook-console.tsx`, `logbook/page.tsx`, label del `FlightEditor` in `dashboard/page.tsx`.
-- [ ] **T7 — i18n** (AC 3, 23): §3.8 su entrambi i file; parità misurata.
-- [ ] **T8 — Seed** (AC 21): `seed.ts`, `seed-demo.ts`, `seed-load.ts`; `db seed` + `seed:demo` su DB fresco; `seed-load.ts` solo typecheck.
-- [ ] **T9 — Unit** (AC 3, 12, 13, 15, 19): §3.7 + prove nuove di §4.1; prova di discriminanza del lock (§4.3) con sha256.
-- [ ] **T10 — e2e** (AC 4, 7, 8, 10, 11, 13, 16, 18, 19): §3.6; asserzioni nuove di §4.2; eventuale aggiornamento delle righe `^=` citate in `CLAUDE.md`.
-- [ ] **T11 — Documenti** (§7): riga `ARCHITECTURE-SPINE.md:220`.
-- [ ] **T12 — Verifica** (AC 22, 24, 25, 26): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato (righe effettive, conteggi test prima/dopo, delta e2e per l'arbitro).
+- [x] **T0 — Riallineamento** (AC tutti): `git log --oneline -5` (la 19.1 deve essere committata), `scripts/e2e.sh status`, `:3000` libero; rieseguire i comandi di §3.6 e i grep di AC 22 sul HEAD e annotare nel record gli scostamenti di riga rispetto a questo file.
+- [x] **T1 — Schema e migrazione** (AC 1, 5, 9, 18, 20): `schema.prisma` (campi, modello, relazioni, doc-comment §3.1); migrazione AD-1; verifica su DB gemello (deploy da zero, `migrate diff` vuoto, psql); `npx prisma generate`.
+- [x] **T2 — Server** (AC 2, 3, 11, 12, 13, 15): `people.service.ts` (AD-2); `aircraft.service.ts` (campi, via rettifiche, firma nullable di `sumFlightMinutesByAircraft`); `flights.service.ts` (AD-3: lock su `"id"`, via contaore e note, core senza update `Aircraft`, doc-comment); `exports.service.ts` (colonna «Ore totali»); doc-comment di §3.2; cancellare la route `hour-meter-adjustments`.
+- [x] **T3 — Zod e OpenAPI** (AC 2, 6, 10, 11, 12, 24): `people.ts`, `aircraft.ts`, `flights.ts`, `registry.ts` (path, register, descrizioni `:465`, `:976`, `:1006`, `:1065`), `registry.test.ts`.
+- [x] **T4 — UI persona** (AC 4): editor pilota (modifica + nuovo), editor istruttore, scheda persona, pagine/label; griglia senza buchi.
+- [x] **T5 — UI velivolo** (AC 7, 8, 14, 15, 17): `aircraft-editor.tsx` (AD-4, AD-5), `fleet-console.tsx` (AD-5, AD-6), `fleet/page.tsx`, `fleet-card.tsx`, `dashboard/page.tsx` (mapper); commenti `segmented.tsx`/`new-booking-form.tsx`/`airops.css`.
+- [x] **T6 — UI volo** (AC 12, 18): `flight-editor.tsx`, `logbook-console.tsx`, `logbook/page.tsx`, label del `FlightEditor` in `dashboard/page.tsx`.
+- [x] **T7 — i18n** (AC 3, 23): §3.8 su entrambi i file; parità misurata.
+- [x] **T8 — Seed** (AC 21): `seed.ts`, `seed-demo.ts`, `seed-load.ts`; `db seed` + `seed:demo` su DB fresco; `seed-load.ts` solo typecheck.
+- [x] **T9 — Unit** (AC 3, 12, 13, 15, 19): §3.7 + prove nuove di §4.1; prova di discriminanza del lock (§4.3) con sha256.
+- [x] **T10 — e2e** (AC 4, 7, 8, 10, 11, 13, 16, 18, 19): §3.6; asserzioni nuove di §4.2; eventuale aggiornamento delle righe `^=` citate in `CLAUDE.md`.
+- [x] **T11 — Documenti** (§7): riga `ARCHITECTURE-SPINE.md:220`.
+- [x] **T12 — Verifica** (AC 22, 24, 25, 26): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato (righe effettive, conteggi test prima/dopo, delta e2e per l'arbitro).
 
 ---
 
@@ -335,26 +344,170 @@ Mirati da far girare prima della consegna: `aircraft-management`, `aircraft-rate
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), dev subagent `dev-19-2` (team `session-466ec438`), 2026-11-01. Skill caricate: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` (letta: «Design read» = rimozione dentro il design system AirOps esistente, nessun linguaggio visivo nuovo; la skill dichiara fuori scope i dashboard, se ne è applicata solo la coerenza e lo zero em-dash nelle copy nuove), `ui-ux-pro-max` (query sulla griglia dei form: nessuna indicazione oltre «label visibile per ogni campo»).
+
 ### §A — Riallineamento sul HEAD (T0)
+
+- HEAD alla partenza `a7e960e` (19.1 committata: `08eb558` + fix `d10c76a` + record). Durante il dev altre sessioni hanno committato solo documenti (`2acbf6e`, `7235f4b`: story file 19.8) e lasciato file non tracciati/modificati (`19-7-…md`, `19-8-…md`): non toccati, non committati. `:3000` libero, `scripts/e2e.sh status` = ultimo run chiuso `E2E_EXIT=0`.
+- Censimenti di §3 rieseguiti su `a7e960e`: grep G1 di AC 22 = **694** righe (src/e2e/messages/prisma); `hourMeterMinutes` negli e2e = **41 righe in 29 spec** (identico al file story); `flights.service.ts` **non** spostato dalla 19.1 (lock a `:1275`, `:1500`, `:1639`; `decreaseHourMeterForReversal` a `:1046`, il suo doc da `:1013`); `schema.prisma` spostato dalla 19.1 (campi `Flight` `:1006-1016` invece di `:1020-1033`; `HourMeterAdjustment` invariato a `:407-428`); `registry.ts` path contaore `:1128-1155` invece di `:1150-1176`, descrizioni `:443`, `:954`, `:984`, `:1043` invece di `:465`, `:976`, `:1006`, `:1065`; `airops.css` commento «fiscal code» a `:2610` (non `:2745`) e «contaore» a `:3613` (non `:3886`). i18n post-19.1: **1760** chiavi per file (non 1989). Migrazione precedente: `20261101193941_remove_ppr_domain` → la nuova è `20261101223000_…`.
+- Selettori `^=` citati in `CLAUDE.md` (`aircraft-management:46`, `aircraft-rates:39`, `aircraft-status-hours:39`): **righe invariate** dopo le modifiche (le modifiche agli spec stanno sotto, l'header di `aircraft-status-hours` riscritto a parità di righe) → `CLAUDE.md` non va toccato. Nessun altro fatto di `CLAUDE.md` reso falso dalla story.
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Esito | Prova |
+|---|---|---|
+| 1 | ✅ | `schema.prisma` senza `fiscalCode` e doc ripuliti; psql sul gemello: `Person` senza colonna, `Person_fiscalCode_key` 0 righe in `pg_indexes` (§C) |
+| 2 | ✅ | Zod `people.ts` senza il campo (strip: unit `people.test.ts` «removed anagrafica field»); OpenAPI `Person`/`PersonDetail`/`CreatePersonRequest`/`UpdatePersonRequest` senza la proprietà (`registry.test.ts`); summary PATCH = «Update a person (name, contact details)»; e2e `api-v1` POST/PATCH con la chiave → 201/200, la chiave assente da POST/PATCH/GET |
+| 3 | ✅ | `assertUnique(email, excludeId)`: `if (!email) return;` → `findFirst({ where: { email, …excludeId } })`; i tre `ConflictError` = «A person with this email already exists.»; unit discriminanti: `findFirst` chiamato con `{ where: { email }, select }` (create) e `{ where: { email, id: { not } } }` (update), mai senza email; i18n `conflictEmail`/`PeoplePage.form.conflictError` = «Esiste già una persona con questa email.» / «A person with this email already exists.» |
+| 4 | ✅ | Campo via da editor pilota (nuovo + modifica), istruttore, riga via dalla scheda persona; e2e: count 0 con `exact: true` in `people-management` (nuovo, istruttore dopo il caricamento) e `person-detail` (modifica) + righe della scheda asserite esatte `['Nome','Cognome','Email','Telefono','Indirizzo']`; griglia: Email e Telefono affiancati (Email non più `wide`), Indirizzo a tutta riga — nessun buco (screenshot §H) |
+| 5-6 | ✅ | schema, DTO, Zod, OpenAPI senza i 4 campi (`registry.test.ts`); summary PATCH aircraft = «Update an aircraft (registration, type, model)»; e2e `api-v1` POST/PATCH con le chiavi → 201/200, assenti da POST/PATCH/GET |
+| 7 | ✅ | `IdentitySection` = Marche, Tipo, Modello (+ Tariffe del create); orfani via (`BasedSegmented`, `KNOWN_FUEL_TYPES`, `seatsField`/`hourMeterField`/`currentFuelType`/`extraFuelOption`, import `Select`/`Segmented`, `known` ridotta); e2e `aircraft-management`: count 0 per Posti/Carburante/Basato/Note/«Contaore iniziale (minuti)» in creazione e per i primi quattro in modifica |
+| 8 | ✅ | sheet flotta: sub = `aircraft.type`, righe esatte `['Stato','Motivo AOG','Tariffa','Ore totali','Ore mese']` (e2e `mobile-registries`, mappa k→v), nome accessibile `Ultraleggero 3 assi — I-… · P92` + `expectWellFormedSheetName` invariato |
+| 9 | ✅ | schema senza `hourMeterMinutes`, `HourMeterAdjustment`, relazioni, `hourMeterStart`/`hourMeterEnd`; doc-comment ripuntati (`AircraftRate.actorUserId` ospita ora la ragione «not `personId`», gli altri puntano lì; `PackageType` → `Flight.minutes`) |
+| 10 | ✅ | cartella route cancellata; OpenAPI senza path/schemi (assert di assenza in `registry.test.ts`, voce tolta dall'elenco); e2e `api-v1`: GET e POST `…/hour-meter-adjustments` → 404 |
+| 11 | ✅ | `createAircraftSchema` = registration/type/model/rate; schemi rettifica e tipi via; unit: `createAircraftSchema.parse({...input, …5 chiavi})` = `input`; e2e: i payload `POST /aircraft` dei 29 spec ora mandano solo marche/tipo/modello → 201 |
+| 12 | ✅ | `HOUR_METER_INVALID` sparito (service, label, i18n, registry); nessun `tx.aircraft.update`/`hourMeterAdjustment` in `flights.service.ts`; unit: `aircraftUpdateMock` **not called** in register, cancel, correct; strip register+correct (unit schema + e2e `flights` nuovo test) |
+| 13 | ✅ | `SELECT "id" … FOR UPDATE` nei tre percorsi (multi-riga `IN … ORDER BY "id"` in `correctFlight`, `Set` con lo stesso controllo di esistenza); unit dei lock con asserzioni **invariate** verdi; prova rossa §D; e2e E1/E3/E4 (`flights.spec`) verdi |
+| 14 | ✅ | `HourMeterSection` & co. via; sezione «Ore di volo» con `aircraft-total-hours` (`.fld-label`, nessun CSS nuovo); e2e: velivolo nuovo `Ore totali: 0:00` |
+| 15 | ✅ | `sumFlightMinutesByAircraft(actor, ids, null, null)` (unit: `where` senza `flightDate`; caso finestra invariato); una chiamata batch in `fleet/page.tsx` (stesso `Promise.all`) e una in `exportAircraftXlsx` (unit: chiamata 1 volta con tutti gli id); e2e: sheet `1:00` sul velivolo volato, export `2:00` (90'+30'), editor `1:20`/`1:00`/`0:00` dopo l'annullamento |
+| 16 | ✅ | `flights.spec` → `Ore totali: 1:20`; `flight-reversal` → `1:00` poi `0:00`; `aircraft-management` → `0:00`; `exports` header `Total hours` + valore `2:00` |
+| 17 | ✅ | `FleetCardItem` senza i 5 campi; mapper di `fleet/page.tsx` e `dashboard/page.tsx` ridotti; nessuna superficie nuova |
+| 18 | ✅ | `Flight.notes` via; form volo senza i 3 campi (e2e count 0 in nuovo e correzione); sheet registro voli: `rows['Contaore']`/`rows['Note']` `undefined` |
+| 19 | ✅ | e2e «correzione solo-cicli» (`Atterraggi` con `exact: true`, chiude il popup; + `landings === 2` sul corretto), E5 keepSlot con `landings: 2`; unit U8/LOW-1 su `landings: 2`, F4 rinominato «unchanged-identity correction» |
+| 20 | ✅ | §C |
+| 21 | ✅ | seed su DB fresco verdi (§C); `seed-load.ts` solo typecheck (incluso da `tsconfig`), dedupe dei `takeoffAt` mantenuta con la motivazione riscritta |
+| 22 | ⚠️ | codice di produzione, messaggi, seed, schema: **0** (salvo le due eccezioni ammesse); le righe residue sono SOLO asserzioni di assenza imposte da AC 2/4/7/10/12/18/24 — deviazione §G-1, elenco §E |
+| 23 | ✅ | §E |
+| 24 | ✅ | e2e `api-v1`: `openapi.json` servito senza i token; unit `registry.test.ts` |
+| 25 | ✅ | §I |
+| 26 | ✅ | §H |
+
 ### §C — Migrazione: catena, `migrate diff`, psql
+
+DB gemello `am_shadow192` (mai `airmanager` con un arbitro vivo; `airmanager_load` non toccato).
+
+1. Gemello migrato fino a `20261101193941_remove_ppr_domain` e popolato con `prisma db seed` + `seed:demo` (client ancora alla baseline) + dati sui campi rimossi: 1 `HourMeterAdjustment`, 1 volo con contatori e nota (9 voli con nota dal demo), 1 persona col CF, 4 velivoli con posti/carburante/note. Prima: `HMA|1`, `flights|24|1|9`, `persons|14|1`, `aircraft|4|4|4|4|421745`, `movements|37|46950`.
+2. SQL generato con `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` sul gemello (Prisma 7: `--from-migrations` richiede `shadowDatabaseUrl` nel config, v. §G-5) e scritto con l'intestazione di story/ratifica. `migrate deploy` → applicata.
+3. Dopo: `HMA regclass|NULL`, `flights|24`, `persons|14`, `aircraft|4`, `movements|37|46950` (**identici**), `fiscal idx|0`, nessuna delle 9 colonne in `information_schema.columns`; `\d "Person"`/`"Aircraft"`/`"Flight"` senza le colonne, `\dt "HourMeterAdjustment"` → `Did not find any relation`.
+4. `migrate diff` dal gemello migrato allo schema → `-- This is an empty migration.`
+5. Catena da zero su gemello ricreato: `49 migrations found … All migrations have been successfully applied.`; `migrate diff` → `-- This is an empty migration.`; poi `prisma db seed` e `npm run seed:demo` **verdi** (Σ minuti REGISTERED per velivolo: I-A661 545, I-B412 735, I-PDVB 290, I-ABCD 0).
+6. `npx prisma generate` dopo lo schema. DB e2e `airmanager` ricreato col comando di reset autorizzato dal PO (drop/create/`migrate deploy`/`db seed`) prima degli e2e. Gemello eliminato a fine lavoro.
 
 ### §D — Discriminanza (lock, «Ore totali») con sha256
 
-### §E — Grep di AC 22 e parità i18n (verbatim)
+- **Lock**: in `registerFlight` il `$queryRaw … FOR UPDATE` sostituito da `const lockedAircraft = [{ id: resolved.aircraft.id }]` → `flights.service.test.ts` «locks the Aircraft row (FOR UPDATE) inside the transaction» **× rosso** (1 failed); ripristino da copia, sha256 prima/dopo `f98de9c623c990594040219b68af49d71c3b071b494953295a57d828c6cbb2db` = identico.
+- **`REGISTERED`**: tolto `status: 'REGISTERED'` dal `where` di `sumFlightMinutesByAircraft` → «sums REGISTERED minutes only…» e «with both bounds null sums ALL the registered minutes…» **× rossi** (2 failed); ripristino, sha256 `573fd9e0a61795029f18271e58d43134d5f836d6e0d134f6df9d34111682f533` prima = dopo.
+
+### §E — Grep di AC 22 e parità i18n (verbatim, sul tree finale)
+
+- G1 `hour.?meter|contaore|HOUR_METER` — produzione/messaggi/seed/schema: **0**. Righe residue (tutte asserzioni di assenza): `src/lib/schemas/registry.test.ts` 157, 160, 166, 176, 182-185; `src/server/services/aircraft.service.test.ts` 350-351; `src/server/services/flights.service.test.ts` 2701-2708; `e2e/flights.spec.ts` 236, 619, 1228, 1232; `e2e/aircraft-management.spec.ts` 64; `e2e/api-v1.spec.ts` 324, 328, 334, 347, 349, 364; `e2e/mobile-logbook.spec.ts` 535.
+- G2 `fiscal` — produzione/messaggi/seed/schema: **0**. Residue: `src/lib/schemas/people.test.ts` 81-84; `src/lib/schemas/registry.test.ts` 150, 153; `e2e/people-management.spec.ts` 55, 425; `e2e/api-v1.spec.ts` 353, 356, 360, 364; `e2e/person-detail.spec.ts` 210.
+- G3 `seats|fuelType|…` — produzione: solo `src/lib/mobile-reports.ts:62` (eccezione ammessa). Residue: `registry.test.ts` 157, 160; `aircraft.service.test.ts` 350-351; `e2e/api-v1.spec.ts` 328, 334, 338, 364.
+- G4 `-w notes` sui file elencati: solo `logbook-console.tsx:784` (il commento «lineage (correction/cancellation notes)», eccezione ammessa; spostato da `:790`).
+- G5: **0**.
+- i18n: `it` **1760 → 1720**, `en` **1760 → 1720** (−44 +4); parità `diff <(jq …it) <(jq …en)` → vuoto (`PARITY_OK`); le 44 chiavi di §3.8 assenti da entrambi, le 4 nuove presenti, i 2 testi cambiati. Il round-trip JSON (`indent=2`, `ensure_ascii=False`) è byte-identico sull'originale, quindi il diff è solo sulle chiavi toccate.
 
 ### §F — Delta test (unit ed e2e, prima/dopo)
 
+- **Unit**: `a7e960e` **1783** (worktree temporaneo, client rigenerato) → **1769** (−14). Per file: `people.test.ts` 8→9, `registry.test.ts` 30→34, `aircraft.service.test.ts` 72→62, `exports.service.test.ts` 29→30, `flights.service.test.ts` 180→170; `people.service.test.ts` 65→65 (−1 «fiscal code already taken», +1 forma del `where`).
+- **e2e**: `playwright test --list` → **489 test in 61 file** (era **492** all'ultimo arbitro): **−5** cancellati (`aircraft-status-hours`: rettifica+storico, storico «ultimi 5»; `flights`: coppia non valida, coppia incompleta, E7 clamp) e **+2** nuovi (`api-v1` «Removed fields — API contract»; `flights` «register and correct drop …»). **Delta atteso per l'arbitro: 492 → 489.** Nessuno spec nuovo nella catena serializzata.
+
 ### §G — Deviazioni motivate
+
+1. **AC 22 «0 righe»** non è raggiungibile insieme ai test di assenza che la story stessa chiede (AC 2, 4, 7, 10, 12, 18, 24 e §4.1-b): un test che prova la rimozione deve nominare il campo. Produzione, messaggi, seed e schema sono a zero; le righe residue sono solo quelle asserzioni (elenco §E), con commenti e titoli riformulati per non aggiungerne altre. Proposta di processo in TD 19.2-b.
+2. `assertUnique(email, excludeId)` prende ora lo scalare invece dell'oggetto `{ email, fiscalCode }` (un solo campo rimasto): stessa semantica di AD-2.
+3. Griglia dei form persona (AC 4, scelta del dev): Email e Telefono affiancati, Indirizzo a tutta riga, nei tre form (pilota nuovo/modifica, istruttore). Prima c'erano DUE buchi (accanto a Telefono e accanto al CF): la griglia CSS non riempie a ritroso.
+4. `seed-load.ts`: tolta l'estrazione PRNG del contaore iniziale (una per velivolo) → a parità di `LOAD_SCALE` il dataset non è più byte-identico a quello misurato nell'epic 17 (TD 19.2-a). Il commento sulla cancellazione è riscritto con la ragione reale che resta (correzione datata dopo l'ultimo volo del velivolo → mai sovrapposta).
+5. `migrate diff --from-migrations` in Prisma 7 vuole `shadowDatabaseUrl` nel `prisma.config.ts`: usata la forma `--from-config-datasource` su un gemello migrato da zero, equivalente come prova di zero drift, senza toccare il config.
+6. `registry.test.ts`: il DTO volo non è registrato come componente a sé; l'assenza è asserita sull'item di `FlightList` (con un controllo positivo su `takeoffs` per non essere cieca).
+7. Coperture in più, piccole: l'unit «decrementa il contaore» di `cancelFlight` è riconvertito in «non scrive mai la riga Aircraft» (prova di AC 12) invece di essere cancellato; unit nuovo su `exportAircraftXlsx`; in `mobile-registries` il test della barra ore apre anche lo sheet e legge `Ore totali` `1:00` sul velivolo volato.
+8. Ambiente: un `git stash` di controllo è fallito (path symlink delle skill non tracciate) e il successivo `git stash pop` ha applicato uno stash vecchio di un'altra sessione (`stash@{0}`, epic 12) con conflitti su 14 file mai toccati dalla story; verificato che «ours» = `HEAD` e «theirs» = lo stash ancora conservato, i 14 file sono stati riportati a `HEAD`; `stash@{0}` intatto. Nessun effetto sul lavoro della story.
+9. Ambiente (indice condiviso): la cancellazione di `src/app/api/v1/aircraft/[id]/hour-meter-adjustments/route.ts`, messa in stage con `git rm` a inizio lavoro, è finita nel commit `2acbf6e` di un'altra sessione (`docs(19.8): story file …`), che ha committato l'intero indice. Lo stato netto dopo `b0d142c` (`feat(19.2)`) è quello voluto; fra `2acbf6e` e `b0d142c` `dev` aveva la route cancellata col resto del contaore ancora in piedi (nessun push). Commit della story fatti con pathspec esplicito, senza stage anticipato.
 
 ### §H — Verifica UI (screenshot)
 
+Script throwaway `playwright-core` (Chromium `chromium-1228`, `localhost`, mai committato) contro il server di produzione, fixture run-unique (velivolo con 2 voli da 1:35 + 0:50, persona pilota+istruttore con email/telefono/indirizzo). Screenshot in `scratchpad/shots/` (sessione del dev): `pilot-editor-new-{1280,375}`, `pilot-editor-edit-{1280,375}`, `instructor-editor-{1280,375}`, `person-detail-{1280,375}`, `aircraft-editor-new-{1280,375}`, `aircraft-editor-edit-{1280,375}`, `fleet-sheet-375`, `flight-form-new-{1280,375}`, `flight-form-correct-{1280,375}`, `logbook-sheet-375`. Esiti verbatim:
+
+- overflow orizzontale: `scrollWidth == clientWidth` su **tutti** i 20 scatti (1280 e 375);
+- editor persona: Nome|Cognome, Email|Telefono, Indirizzo a tutta riga — nessun buco (1280); colonna singola a 375;
+- `aircraft-total-hours (1280): Ore totali: 2:25` (95' + 50'); stessa cifra nello sheet;
+- `fleet sheet name: Ultraleggero 3 assi — I-SH334142 · Tecnam P92 Echo`; `fleet sheet rows: ["StatoDisponibile","Tariffa130,00 €/h","Ore totali2:25","Ore mese0:00"]`;
+- `logbook sheet keys: ["Data","Tratta","Pilota","Istruttore","PIC","Aereo","Tipo","Ore","Orari","Decolli","Atterraggi","Costo","Deroga"]` (niente «Contaore»/«Note»);
+- `.so-foot` presente (editor velivolo in modifica a 375, form correzione a 375); form volo: ultima riga Decolli|Atterraggi, nessun campo rimosso (count 0 con `exact: true` per i tre label, anche in correzione a 375);
+- editor velivolo nuovo: Marche, Tipo, Modello + blocco Tariffe; in modifica la sezione «Ore di volo» fra Tariffe e Archivio, una riga `.fld-label`, nessun CSS nuovo.
+
 ### §I — Gate ed esiti verbatim
+
+```
+> airmanager@0.1.0 gates
+> bash scripts/gates.sh
+
+PASS  lint (19s)
+PASS  typecheck (4s)
+PASS  test (7s) — Tests  1769 passed (1769)
+PASS  build (31s)
+```
+
+e2e mirati (server di produzione unico, `E2E_REUSE_SERVER=1`, DB `airmanager` appena ricreato):
+
+```
+# Run 1 — project chromium, i 27 spec toccati della suite principale
+scripts/e2e.sh start e2e/aircraft-management.spec.ts e2e/aircraft-out-of-service-until.spec.ts e2e/aircraft-rates.spec.ts e2e/aircraft-status-hours.spec.ts e2e/aog-impact-email.spec.ts e2e/api-v1.spec.ts e2e/billing.spec.ts e2e/bookings.spec.ts e2e/datetime-picker.spec.ts e2e/exports.spec.ts e2e/flight-log.spec.ts e2e/flight-reversal.spec.ts e2e/flights.spec.ts e2e/home-dashboard.spec.ts e2e/instructor-compensation.spec.ts e2e/mobile-logbook.spec.ts e2e/mobile-overview.spec.ts e2e/mobile-planning.spec.ts e2e/mobile-registries.spec.ts e2e/mobile-reports.spec.ts e2e/mobile-self-public.spec.ts e2e/my-account.spec.ts e2e/my-compensation.spec.ts e2e/pdf-exports.spec.ts e2e/people-management.spec.ts e2e/person-detail.spec.ts e2e/typeahead-pickers.spec.ts --project=chromium
+Running 284 tests using 2 workers
+  284 passed (7.3m)
+E2E_EXIT=0
+
+# Run 2 — i 5 spec toccati della catena serializzata, --no-deps --workers=1
+scripts/e2e.sh start e2e/booking-window.spec.ts e2e/reports.spec.ts e2e/mobile-overview-overflow.spec.ts e2e/mobile-settings.spec.ts e2e/aog-overview-count.spec.ts --no-deps --workers=1
+Running 23 tests using 1 worker
+  23 passed (1.1m)
+E2E_EXIT=0
+```
+
+Tutti i 32 spec toccati dalla story: **307/307**, 0 flaky, 0 retry. La suite completa (arbitro, attesi **489**) resta alla sessione principale.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created (story writer, 2026-11-01, ricognizione su `5ca0be6`).
+- Dev 2026-11-01 (Opus 5.5): story implementata per intero su `a7e960e`; migrazione unica `20261101223000_remove_fiscal_code_aircraft_fields_hour_meter`; lock `Aircraft` conservato nei tre percorsi con la ragione riscritta (serializza `FLIGHT_OVERLAP`, apre l'ordine `Aircraft → Account`); «Ore totali» = una funzione (`sumFlightMinutesByAircraft` con limiti `null`), tre superfici; gates verdi, delta e2e atteso 492 → 489.
 
 ### File List
+
+Nuovi:
+- `prisma/migrations/20261101223000_remove_fiscal_code_aircraft_fields_hour_meter/migration.sql`
+
+Cancellati:
+- `src/app/api/v1/aircraft/[id]/hour-meter-adjustments/route.ts` (atterrata in `2acbf6e`, v. §G-9)
+
+Modificati — schema, seed, messaggi, documenti:
+- `prisma/schema.prisma`, `prisma/seed.ts`, `prisma/seed-demo.ts`, `prisma/seed-load.ts`
+- `messages/it.json`, `messages/en.json`
+- `_bmad-output/planning-artifacts/architecture/architecture-AirManager-2026-07-04/ARCHITECTURE-SPINE.md`
+- `_bmad-output/implementation-artifacts/19-2-via-codice-fiscale-campi-velivolo-contaore.md`, `_bmad-output/implementation-artifacts/sprint-status.yaml` (commit `docs`)
+
+Modificati — server, schemi, API:
+- `src/server/services/people.service.ts`, `aircraft.service.ts`, `flights.service.ts`, `exports.service.ts`, `accounts.service.ts`, `errors.ts`
+- `src/lib/schemas/people.ts`, `aircraft.ts`, `flights.ts`, `accounts.ts`, `registry.ts`; `src/lib/time.ts`
+- `src/app/api/v1/aircraft/[id]/rates/route.ts`
+
+Modificati — UI:
+- `src/app/[locale]/dashboard/pilots/pilot-editor.tsx`, `pilot-editor-labels.ts`, `pilots-console.tsx`, `page.tsx`
+- `src/app/[locale]/dashboard/instructors/instructor-editor.tsx`, `page.tsx`
+- `src/app/[locale]/dashboard/people/[id]/page.tsx`
+- `src/app/[locale]/dashboard/fleet/aircraft-editor.tsx`, `fleet-console.tsx`, `page.tsx`
+- `src/app/[locale]/dashboard/logbook/flight-editor.tsx`, `logbook-console.tsx`, `page.tsx`
+- `src/app/[locale]/dashboard/page.tsx`, `src/app/[locale]/dashboard/bookings/new-booking-form.tsx` (commento)
+- `src/components/dashboard/fleet-card.tsx`, `src/components/ui/segmented.tsx` (commento), `src/styles/airops.css` (solo commenti)
+
+Modificati — unit:
+- `src/lib/schemas/registry.test.ts`, `src/lib/schemas/people.test.ts`, `src/lib/api/handler.test.ts`
+- `src/server/services/people.service.test.ts`, `aircraft.service.test.ts`, `flights.service.test.ts`, `flights-expiry-boundary.integration.test.ts`, `exports.service.test.ts`, `accounts.service.test.ts` (commento)
+
+Modificati — e2e (32):
+- `aircraft-management`, `aircraft-out-of-service-until`, `aircraft-rates`, `aircraft-status-hours`, `aog-impact-email`, `aog-overview-count`, `api-v1`, `billing`, `booking-window`, `bookings`, `datetime-picker`, `exports`, `flight-log`, `flight-reversal`, `flights`, `home-dashboard`, `instructor-compensation`, `mobile-logbook`, `mobile-overview-overflow`, `mobile-overview`, `mobile-planning`, `mobile-registries`, `mobile-reports`, `mobile-self-public`, `mobile-settings`, `my-account`, `my-compensation`, `pdf-exports`, `people-management`, `person-detail`, `reports`, `typeahead-pickers` (tutti `e2e/<nome>.spec.ts`)
+
+### Change Log
+
+| Data | Modifica |
+|---|---|
+| 2026-11-01 | Dev (Opus 5.5): `feat(19.2)` = `b0d142c`. Story implementata — drop CF, campi velivolo, contaore (+ tabella e API), note volo; lock `Aircraft` conservato su `"id"`; «Ore totali» = Σ voli REGISTERED in sheet/export/editor; gates verdi; e2e toccati 307/307; Status → review. |

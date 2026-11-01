@@ -217,7 +217,7 @@ Ambienti: `development` (docker-compose: postgres + mailpit), `test` (DB Postgre
 | --- | --- | --- |
 | Auth, utenti, ruoli (FR-1..3) | `server/auth`, `services/people` | AD-5, AD-10 |
 | Anagrafiche persone (FR-4..6) | `services/people` | AD-11 |
-| Velivoli (FR-7..9) | `services/aircraft` | AD-2 (contaore in minuti) |
+| Velivoli (FR-7, FR-8; FR-9 eliminato, story 19.2) | `services/aircraft` | AD-2 |
 | Tariffe e pacchetti (FR-10..13) | `services/rates`, `services/packages` | AD-2, AD-4, AD-6 |
 | Voli (FR-14..17) | `services/flights` | AD-2, AD-3, AD-4, AD-6 |
 | Prenotazioni (FR-18..21) | `services/bookings` | AD-5 (blocchi per scadenze via `services/expiries`) |
