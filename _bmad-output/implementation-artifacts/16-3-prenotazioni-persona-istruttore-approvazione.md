@@ -4,7 +4,7 @@ baseline_commit: 738d399
 
 # Story 16.3: Una persona in un posto solo — sovrapposizioni per persona e istruttore, ri-verifica in approvazione, guardia temporale sulle transizioni
 
-Status: **review** — 2026-09-27 (dev su `325b7e5`, commit `4a1ae4d` + `24d4072`; era ready-for-dev dal 2026-09-10). **Modello dev**: **Opus 5 xhigh** — la story **scrive codice UI**, e non per scelta: i tre punti in cui il client oggi tratta *ogni* 409 come «il velivolo è già prenotato» sono precisamente ciò che i due codici nuovi rendono **falso** (`new-booking-form.tsx:310`, `edit-booking-form.tsx:168`, `booking-transition.ts:100` — v. AD-7 con le righe esatte). Non c'è layout, non c'è CSS, non c'è componente nuovo: è **branching su codice d'errore + 6 stringhe i18n**, ma la regola utente 2026-07-29 («Opus 5 xhigh se la story scrive codice UI») **non ha una soglia** e questa story la attraversa. Review: **Opus 5 xhigh adversarial**, come sempre.
+Status: **review** — 2026-09-27 (dev su `325b7e5`, commit `4a1ae4d` + `24d4072`; era ready-for-dev dal 2026-09-10). Review adversarial 2026-09-27 **SHIPPABLE-WITH-FIXES**, fix 2026-11-01 `411b73c` (v. Review Record in fondo): l'arbitro finale su DB fresco e la chiusura restano alla sessione principale. **Modello dev**: **Opus 5 xhigh** — la story **scrive codice UI**, e non per scelta: i tre punti in cui il client oggi tratta *ogni* 409 come «il velivolo è già prenotato» sono precisamente ciò che i due codici nuovi rendono **falso** (`new-booking-form.tsx:310`, `edit-booking-form.tsx:168`, `booking-transition.ts:100` — v. AD-7 con le righe esatte). Non c'è layout, non c'è CSS, non c'è componente nuovo: è **branching su codice d'errore + 6 stringhe i18n**, ma la regola utente 2026-07-29 («Opus 5 xhigh se la story scrive codice UI») **non ha una soglia** e questa story la attraversa. Review: **Opus 5 xhigh adversarial**, come sempre.
 
 > ⚠️ **Baseline**: `738d399`. Ogni `file:riga` di questo file è **misurato su questo HEAD**. Vantaggio verificato: `git diff b7b8d13..HEAD -- src/server/services/bookings.service.ts src/server/services/errors.ts` è **vuoto**, quindi **tutte** le righe citate dall'ops-audit (misurate su `b7b8d13`) valgono ancora **invariate** — `:566`, `:936`, `:1161`, `:1038-1051`, `:1127-1176` sono confermate una per una in §3. Se il dev parte da un HEAD più avanzato, rilegge le righe citate e **corregge questo file** dove sono slittate.
 >
@@ -126,18 +126,20 @@ async function findBookingConflict(
 
 > 🔁 **EMENDAMENTO — `FOR NO KEY UPDATE` invece di `FOR UPDATE` — decisione tecnica della sessione principale, 2026-09-27** (commit `24d4072`), sui **soli due lock nuovi** (`Person`, `InstructorProfile`); il lock `Aircraft` resta `FOR UPDATE` e il predicato velivolo byte-identico. **Motivazione**: il censimento di questa AD-2 contava solo i `FOR UPDATE` espliciti; ogni `INSERT` in una tabella con FK verso `Person`/`InstructorProfile` prende però `FOR KEY SHARE` sulla riga padre, che **confligge con `FOR UPDATE`** (non con `FOR NO KEY UPDATE`). `FOR NO KEY UPDATE` confligge con se stesso — gli scrittori di prenotazioni della stessa persona/istruttore restano serializzati — ma **non blocca mai un controllo FK** (un volo, una scadenza, un movimento che referenzia la stessa persona), ed elimina per costruzione la classe di deadlock «lock esplicito vs trigger RI» invece di affidarla all'ordine dei trigger (deciso dagli OID, non dal codice). Prove nel Dev Agent Record §A/§B AC 5/§D: probe SQL a due sessioni, unit con la SQL esatta (G16), corsa e2e verde 10/10 e rossa senza il lock (21/24 `[200, 200]`).
 
+> 🔁 **EMENDAMENTO 2 — lock `Booking` anche in `updateBooking` — decisione tecnica della sessione principale, review 16.3 MAJOR-2** (commit `411b73c`, 2026-11-01). Il censimento qui sotto contava i lock espliciti e, col primo emendamento, i `FOR KEY SHARE` dei trigger FK, ma **non** il lock di riga **implicito** dell'`updateMany` guardato con cui `updateBooking` chiude la transazione: preso **dopo** il lock `Aircraft`, formava un ciclo con `transitionBooking` → APPROVED sulla **stessa** prenotazione (`Booking` → `Aircraft` là, `Aircraft` → `Booking` qui) → `40P01`, 500 a uno dei due (sonda D1 della review: 40/40 su HEAD `c06aa29`, 20/20 sulla build pre-story: difetto **preesistente**, ma qui sotto era scritto il contrario come proprietà dimostrata). **Fix**: `SELECT "id" FROM "Booking" WHERE "id" = $1 FOR UPDATE` come **primo** statement della transazione di `updateBooking`, prima del lock multi-velivolo. L'ordine e i punti 1-3 qui sotto sono corretti in place (marcati «emendamento 2»); prove nel Review Record.
+
 **Decisione: opzione A — `SELECT … FOR UPDATE` sulla riga `Person` e, quando presente, sulla riga `InstructorProfile`, dentro la stessa transazione, DOPO il lock (o i lock) `Aircraft` e PRIMA dei tre predicati.**
 
 L'ordine globale dei lock, **identico nei tre call-site**, diventa:
 
 ```
-Booking (solo transitionBooking, :1118)  ->  Aircraft (1 riga, o N ORDER BY id)  ->  Person  ->  InstructorProfile
+Booking (la riga scritta: transitionBooking e, dall'emendamento 2, updateBooking; createBooking non ha ancora una riga)  ->  Aircraft (1 riga, o N ORDER BY id)  ->  Person  ->  InstructorProfile
 ```
 
 **Perché è libero da deadlock, per censimento e non per fiducia:**
-1. ogni transazione blocca **al massimo una** riga `Person` e **al massimo una** `InstructorProfile` (`personId`/`instructorProfileId` sono **immutabili** su una prenotazione, `lib/schemas/bookings.ts` li strippa dal PATCH) → non serve nessun `ORDER BY` su questi due, a differenza del set multi-velivolo di `updateBooking`;
-2. l'ordine **fra tabelle** è fisso e uguale nei tre percorsi → nessun ciclo possibile fra due transazioni di prenotazione;
-3. **censimento completo dei `FOR UPDATE` in `src/server`** (§3.3): oggi si bloccano soltanto `Aircraft`, `Account`, `Booking`, `PprRequest`. **Nessuna** transazione blocca `Person` o `InstructorProfile`, e l'unica altra famiglia multi-lock è `flights.service.ts` con l'ordine `Aircraft -> Account`, **disgiunto** da `Person`/`InstructorProfile`. Non esiste un ordine contrario da cui costruire un ciclo. `archivePerson` (`people.service.ts:588-601`) è un `update` singolo **senza transazione**: prende il lock di riga per la durata di una istruzione e non ne chiede altri.
+1. ogni transazione blocca **al massimo una** riga `Person` e **al massimo una** `InstructorProfile` (`personId`/`instructorProfileId` sono **immutabili** su una prenotazione, `lib/schemas/bookings.ts` li strippa dal PATCH) → non serve nessun `ORDER BY` su questi due, a differenza del set multi-velivolo di `updateBooking`. *Emendamento 2*: e **al massimo una** riga `Booking`, la propria (la creazione inserisce una riga che nessun altro può ancora tenere; l'`updateMany` guardato che chiude spostamento e transizione cade sulla riga già tenuta);
+2. l'ordine **fra tabelle** è fisso e uguale nei tre percorsi → nessun ciclo possibile fra due transazioni di prenotazione. *Emendamento 2*: vero solo contando **anche** il lock implicito dell'`updateMany` su `Booking`, che `updateBooking` prendeva per **ultimo** (è il ciclo della review MAJOR-2); dopo il fix `Booking` è il primo lock di spostamento e transizione. `cancelBooking` prende un solo lock, la riga del suo `updateMany`, e non può chiudere un ciclo;
+3. **censimento completo dei `FOR UPDATE` in `src/server`** (§3.3): oggi si bloccano soltanto `Aircraft`, `Account`, `Booking`, `PprRequest`. **Nessuna** transazione blocca `Person` o `InstructorProfile`, e l'unica altra famiglia multi-lock è `flights.service.ts` con l'ordine `Aircraft -> Account`, **disgiunto** da `Person`/`InstructorProfile`. Non esiste un ordine contrario da cui costruire un ciclo. `archivePerson` (`people.service.ts:588-601`) è un `update` singolo **senza transazione**: prende il lock di riga per la durata di una istruzione e non ne chiede altri. *Emendamento 2*: solo `bookings.service.ts` scrive righe `Booking` (`grep` di `booking.update*`/`"Booking"` in `src/server`: 3 punti, tutti lì) e **nessuna** tabella referenzia `Booking` per FK (`prisma/schema.prisma`), quindi il suo `FOR UPDATE` non blocca nessun controllo FK.
 
 **Il lock è una `$queryRaw` nuda, il cui risultato non si legge:**
 
@@ -752,7 +754,7 @@ Esito: **nessuno spec lascia una prenotazione APPROVED del pilota o dell'istrutt
 | percorso | prima | dopo, senza istruttore | dopo, con istruttore |
 |---|---|---|---|
 | `createBooking` | 1 `$queryRaw` (Aircraft) · 1 `findFirst` | 2 (Aircraft, Person) · 2 | 3 (+InstructorProfile) · 3 |
-| `updateBooking` | 1 (Aircraft IN) · 1 | 2 · 2 | 3 · 3 |
+| `updateBooking` | 1 (Aircraft IN) · 1 | 2 · 2 → **3 · 2** dopo il fix MAJOR-2 (+`Booking` per primo) | 3 · 3 → **4 · 3** |
 | `transitionBooking` → APPROVED | 2 (Booking, Aircraft) · 1 | 3 · 2 (+1 `person.findUniqueOrThrow`) | 4 · 3 (+1 `instructorProfile.findUnique`) |
 | FLOWN / NO_SHOW / DENIED / riapri | 1 (Booking) · 0 | invariato | invariato |
 | conflitto velivolo trovato | — | 1 `findFirst` (gli altri due non partono) | idem |
@@ -858,5 +860,72 @@ Suite completa, `CI=1 scripts/e2e.sh start` (build propria, nessun server mio at
 
 ### Change Log
 
+- 2026-11-01 — `411b73c` fix(16.3): review MAJOR-1 (forzatura → 409 persona/istruttore nel banner, pannello chiuso), MAJOR-2 (lock `Booking` primo statement di `updateBooking`, decisione tecnica della sessione principale; claim corretti in doc-comment, `schema.prisma`, AD-2 «emendamento 2», OpenAPI), LOW-1 (`api-v1` annulla la prenotazione del pilota del seed se non arriva a FLOWN); story file: AD-2 emendamento 2, §F, Review Record.
 - 2026-09-27 — `24d4072` fix(16.3): lock `FOR NO KEY UPDATE` su `Person`/`InstructorProfile` (decisione tecnica della sessione principale); record: emendamento AD-2/AC 5, censimento dell'intera suite, TD 16.3-e/f, corsa residua dichiarata.
 - 2026-09-27 — `4a1ae4d` feat(16.3): implementazione, test, fixture e2e (commit d'implementazione emendato due volte, solo e2e: `4d3277c` → `bc8480d` §G #9 → `4a1ae4d` §G #10); story file: derive corrette in place, Dev Agent Record, Status → review.
+
+## Review Record — 16.3
+
+**Reviewer**: subagent Opus 5.5 xhigh adversarial (unico layer adversarial), 2026-09-27, su HEAD `c06aa29`. Report completo: `16-3-review-report.md` (committato con questo record). **Fix**: fix-subagent Opus 5.5 (la story tocca UI), 2026-11-01, commit `411b73c`; la forma dei fix MAJOR-1/MAJOR-2 è decisione tecnica della sessione principale (MAJOR-2: il fix «preferito» del report, non l'alternativa minima).
+
+### Verdetto
+
+**SHIPPABLE-WITH-FIXES** → i tre finding nel perimetro corretti. **0 blocker, 2 major, 1 low**, più una decisione PO (PO-1) fuori dal perimetro del fix. Il cuore server (tre predicati, precedenza, `details`, lock `FOR NO KEY UPDATE`, F4, R-16-b, F9, UI code-aware) era già verificato sul vivo dal reviewer: 151 raffiche con sempre esattamente un vincitore, 0 coppie APPROVED sovrapposte. Arbitro del reviewer su `c06aa29`, DB fresco: **539 passed + 3 flaky = 542, exit 0** (flaky non attribuibili, provati nel report).
+
+### Findings e come sono stati corretti
+
+| # | Sev | Sostanza | Fix (`411b73c`) | Guardia e prova |
+|---|---|---|---|---|
+| MAJOR-1 | major | Il ramo «Forza prenotazione» rispondeva a 409 `PERSON_BUSY`/`INSTRUCTOR_BUSY` con «Impossibile forzare la prenotazione. Riprova.» e lasciava il banner stantio dei documenti scaduti. Vicolo cieco **deterministico**: il blocco scadenze precede il predicato, quindi con un documento bloccante il 409 arriva SOLO dalla forzatura, che R-16-a non fa mai derogare (quarto ramo 409 non censito da AD-7) | `onForceSubmit` legge il corpo: su 409 `PERSON_BUSY`/`INSTRUCTOR_BUSY` → `labels.errors[code]`, ogni altro 409 → `labels.errors.overlap`, nel banner principale (`setFormError`) + `resetForceState()` (la sezione si chiude: forzare non può più servire); `labels.force.generic` solo per il resto. La mappa 409 → messaggio è un helper locale (`conflictMessage`) condiviso col ramo primario, così i due rami non possono più divergere | e2e nuovo `bookings.spec.ts` «"Forza prenotazione" on a busy PERSON …» (persona run-unique APPROVED su A, tipo bloccante run-unique registrato scaduto DOPO, form su B → 422 → forza). **ROSSO sul pre-fix**, 3/3 tentativi a `:2271`: `Received string: "Impossibile creare la prenotazione: risultano scaduti i seguenti documenti: Tipo prenotazioni …"`; **verde** sul fix al primo tentativo |
+| MAJOR-2 | major | Deadlock `40P01` → 500 fra `PATCH /bookings/{id}` e `transition {APPROVED}` sulla **stessa** prenotazione (preesistente), con la story che dichiarava il contrario come proprietà dimostrata: il censimento aveva omesso il lock di riga **implicito** dell'`updateMany` guardato, preso da `updateBooking` dopo `Aircraft` | `SELECT "id" FROM "Booking" WHERE "id" = $1 FOR UPDATE` come **primo** statement della transazione di `updateBooking`: ordine `Booking → Aircraft → Person → InstructorProfile` davvero globale. Claim corretti: doc-comment di modulo (con il censimento esteso: un solo `Booking` per transazione, `cancelBooking` a lock singolo, nessuna FK verso `Booking`), doc-comment di `updateBooking` (anche «every CANCELLED row» → «counts only APPROVED rows»), `schema.prisma` (solo `///`: 0 righe non-commento cambiate), AD-2 «emendamento 2» + §F, descrizione OpenAPI di `PATCH /bookings/{id}` (lock `Booking`; «excludes … every CANCELLED row» stantio dalla 12.2 → «counts only APPROVED bookings») | Unit: nuovo «locks THIS booking row FIRST …» (SQL **esatta** del lock, valore legato, `invocationCallOrder` lock `Booking` < lock `Aircraft` < `updateMany`) + «`move`: … AD-2 global order» ora atteso `['Booking','Aircraft','Person','InstructorProfile']`; altri due unit solo con l'indice di chiamata spostato di uno (nessuna asserzione indebolita). **ROSSI sul pre-fix**: service sostituito con `git show HEAD:…` → `Tests 4 failed \| 275 passed (279)`; ripristino sha256 `2f2c3616…` prima e dopo; fix → `283 passed (283)` (service + `booking-transition.test.ts`). **Sonda D1** sotto |
+| LOW-1 | low | `api-v1.spec.ts:148` lasciava il pilota del seed APPROVED sullo slot fisso del giorno se falliva fra approvazione e FLOWN → retry e rerun del giorno rossi per costruzione (409 `PERSON_BUSY`) | `try/finally` dopo il login staff: se la prenotazione non è arrivata a FLOWN viene annullata (`POST …/cancel`). Commento a `FUTURE_DAY` (`bookings.spec.ts`) ora vero su tutti i percorsi | Fallimento **iniettato** temporaneamente subito dopo l'approvazione (`expect(approved.status).toBe('INJECTED')`): **3/3 tentativi falliscono alla riga iniettata `:193`** (cioè i retry superano lo spostamento sullo stesso slot: 0 occorrenze di `PERSON_BUSY` nel log); SQL: pilota del seed **3 CANCELLED** su `2026-10-29 07:30Z`, **0 APPROVED**. Spec ripristinato byte-identico (sha256 `4b6ea7c0…` prima e dopo) |
+
+### Sonda D1 (MAJOR-2) — verbatim, build di produzione
+
+Script throwaway `scratchpad/fix163/d1.mjs` (mai nel repo): per ogni iterazione velivolo/i e pilota run-unique, prenotazione PENDING ottenuta con sole chiamate staff (crea APPROVED → sposta nel passato → FLOWN → riapri → riporta allo slot), poi `Promise.all` di `transition {APPROVED}` e `PATCH` della stessa `X` (stesso velivolo: orario spostato; altro velivolo: `aircraftId` nuovo).
+
+Pre-fix (HEAD `6bf1488` = codice di `c06aa29`, build `juopephr4zr_fbIn0gIXi`), N=20 per variante:
+```
+"D1 approve(X) | move(X same aircraft)":      { "200 | 500:INTERNAL_ERROR [slow>900ms]": 13, "500:INTERNAL_ERROR | 200 [slow>900ms]": 7 }
+"D1b approve(X) | move(X to other aircraft)": { "200 | 500:INTERNAL_ERROR [slow>900ms]": 12, "500:INTERNAL_ERROR | 200 [slow>900ms]": 8 }
+slowest single response: 1125ms   ·   docker compose logs postgres: 40 × "deadlock detected"
+```
+Post-fix (build `HjJ2ZW92AM7NJMy9sQwMd`), N=30 per variante:
+```
+"D1 approve(X) | move(X same aircraft)":      { "200 | 409:CONFLICT": 30 }
+"D1b approve(X) | move(X to other aircraft)": { "200 | 409:CONFLICT": 30 }
+slowest single response: 41ms   ·   0 × "deadlock detected", 0 × 40P01/Unhandled nel log del server
+```
+Senza jitter vince sempre l'approvazione (il PATCH fa più lavoro prima di aprire la transazione). Per esercitare anche l'ordine inverso (lo spostamento prende per primo `Booking X`), approvazione ritardata di un caso fra 0 e 30 ms, N=20 per variante:
+```
+"D1 approve(X) | move(X same aircraft)":      { "200 | 200": 15, "200 | 409:CONFLICT": 5 }
+"D1b approve(X) | move(X to other aircraft)": { "200 | 200": 20 }
+slowest single response: 89ms   ·   0 × "deadlock detected", 0 × 40P01/Unhandled
+```
+**Totale post-fix: 0/100 risposte 500, entrambi gli ordini osservati.** Dopo tutte le sonde, SQL sull'intero DB: coppie APPROVED sovrapposte per velivolo **0**, per persona **0**.
+
+### Gate ed e2e mirati
+
+- `npm run gates` (dopo i fix): `PASS lint (38s) · PASS typecheck (4s) · PASS test (16s) — Tests 1923 passed (1923) · PASS build (53s)` (1922 + 1 unit nuovo). Un primo giro aveva `FAIL typecheck` su `.next/dev/types/validator.ts(424,8)`: artefatto **generato da `next dev`**, scritto alle 15:51 di oggi, prima dell'inizio di questo ciclo, da un processo non più vivo, e troncato (`dler>` alla riga 424: due scrittori concorrenti). Non è sorgente, è gitignored: **spostato** (non cancellato) in `scratchpad/fix163/stale-dev-validator.ts`, `tsc --noEmit` → exit 0. Un `next dev` futuro lo rigenera.
+- Env eager: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` di `bookings.service.test.ts` + `booking-transition.test.ts` → `283 passed (283)`.
+- e2e mirati sulla build fixata (`E2E_REUSE_SERVER=1 scripts/e2e.sh start`):
+  - `-g "One person in one place|Booking expiry block|Booking approval workflow — API"` (bookings + api-v1) → **`14 passed (22.3s)`, `E2E_EXIT=0`**.
+  - `bookings + api-v1 + mobile-overview + mobile-planning --project chromium` (l'insieme che pilota PATCH e transition) → **`70 passed · 1 failed (3.2m)`, `E2E_EXIT=1`**. Il fallito è `bookings.spec.ts:512` («staff books … from the "Pilota o allievo" picker»), 3/3 tentativi con `locator.selectOption … did not find some options`: il picker rende solo i primi `OPTIONS_PAGE_SIZE` = 100 per cognome, e la sonda D1 ha creato **140** piloti `D1-…` che ordinano prima di `Pilota-…` (SQL: **162** persone attive con `lastName < 'Pilota'`). **Inquinamento del DB da parte della sonda, non del fix** (quel test crea dal form, non passa da PATCH né da transition). Sparisce col reset prima dell'arbitro.
+- **Arbitro full-suite: NON lanciato** (istruzione della sessione principale: lo fa lei dopo questo ciclo).
+
+### Decisioni PO
+
+**PO-1** (lo stesso essere umano APPROVED come istruttore su un velivolo e come pilota su un altro, nello stesso slot) **non è nel perimetro di questo fix**: resta **TD 16.3-a**, la decisione la prende il PO a parte. Raccomandazione del reviewer: opzione **B** in una story successiva (estendere i due predicati via `InstructorProfile.personId`, lock su entrambe le righe `Person` `ORDER BY id`).
+
+### Residuo e note per la sessione principale
+
+- **Stessa classe di MAJOR-1, preesistente e fuori dal perimetro deciso**: anche i **422** che `createBooking` controlla DOPO il blocco scadenze (`BOOKING_IN_PAST`, `BOOKING_OUTSIDE_WINDOW`, `AIRCRAFT_OUT_OF_SERVICE`) sono raggiungibili SOLO dalla forzatura quando la persona ha un documento bloccante, e rispondono ancora «Impossibile forzare la prenotazione. Riprova.» (`labels.force.generic`). Preesistenti (7.4/12.11/AOG-1a), non toccati: la decisione della sessione principale limitava il fix ai 409. Candidato TD **16.3-g**.
+- Dopo il fix, il perdente di D1 riceve `409 CONFLICT` con messaggio «This booking has already been cancelled.» anche quando il cambio concorrente era un'**approvazione**: è il messaggio preesistente del guard `updateMany` (solo log, AD-8); la UI di «Sposta» mostra il suo `labels.errors.conflict` («…oppure la prenotazione non è più valida. Ricarica la pagina e riprova.»), che resta vero. Nessuna azione.
+- Il titolo dell'unit `the overlap pre-check excludes THIS booking and every CANCELLED row` ha la stessa formulazione stantia della descrizione OpenAPI (il test asserisce `status: 'APPROVED'`): non toccato (modifica chirurgica), segnalato.
+
+### Stato della macchina alla consegna
+
+- Server avviati da me: pre-fix (npm `37765` / next-server `37780`) e fix (npm `42986` / next-server `43002`), entrambi fermati per PID/gruppo; `:3000` libero. Nessun run e2e in corso (`scripts/e2e.sh status` → `DONE`).
+- `.next` = build del fix (`HjJ2ZW92AM7NJMy9sQwMd`, da `npm run gates`).
+- **DB `airmanager` SPORCO, va resettato prima dell'arbitro**: `Person` 220, `Booking` 246, `Aircraft` 311 (210 `I-D1…` della sonda), `AppSetting` 0; fixture della sonda (140 piloti `Sonda D1-…`, 140 prenotazioni: 125 APPROVED, 15 PENDING rimaste dalle vittime 500 del pre-fix) e degli e2e mirati; pilota del seed: 3 CANCELLED + 1 FLOWN su `2026-10-29 07:30Z`, 1 DENIED, **0 APPROVED**. Non resettato da me, per istruzione.
+- `airmanager_load` mai toccato. `prisma/seed-demo.ts` e le cartelle untracked dell'utente non toccate.
