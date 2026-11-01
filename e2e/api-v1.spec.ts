@@ -172,22 +172,35 @@ test.describe('Booking approval workflow — API (Story 12.2)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
-    // Story 16.3 (ops F9): FLOWN needs a slot that has STARTED — staff moves
-    // the booking into the past first, so the approval below also proves,
-    // end to end, that a past booking stays approvable (ratifica R-16-b).
-    const moveResponse = await page.request.patch(`/api/v1/bookings/${bookingId}`, { data: longPastInterval() });
-    expect(moveResponse.status(), await moveResponse.text()).toBe(200);
+    // Review 16.3 LOW-1: the seed pilot is shared by the whole suite and the
+    // slot below is the same for every run of the day — a failure between the
+    // approval and FLOWN would leave them APPROVED there, and the retry's move
+    // onto that slot would answer 409 PERSON_BUSY by construction. Whatever
+    // fails below, a booking that did not reach FLOWN is cancelled.
+    let reachedFlown = false;
+    try {
+      // Story 16.3 (ops F9): FLOWN needs a slot that has STARTED — staff moves
+      // the booking into the past first, so the approval below also proves,
+      // end to end, that a past booking stays approvable (ratifica R-16-b).
+      const moveResponse = await page.request.patch(`/api/v1/bookings/${bookingId}`, { data: longPastInterval() });
+      expect(moveResponse.status(), await moveResponse.text()).toBe(200);
 
-    const approveResponse = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'APPROVED' } });
-    expect(approveResponse.status()).toBe(200);
-    const approved = (await approveResponse.json()) as { status: string; decidedAt: string | null };
-    expect(approved.status).toBe('APPROVED');
-    expect(approved.decidedAt).not.toBeNull();
+      const approveResponse = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'APPROVED' } });
+      expect(approveResponse.status()).toBe(200);
+      const approved = (await approveResponse.json()) as { status: string; decidedAt: string | null };
+      expect(approved.status).toBe('APPROVED');
+      expect(approved.decidedAt).not.toBeNull();
 
-    const flownResponse = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'FLOWN' } });
-    expect(flownResponse.status()).toBe(200);
-    const flown = (await flownResponse.json()) as { status: string };
-    expect(flown.status).toBe('FLOWN');
+      const flownResponse = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'FLOWN' } });
+      expect(flownResponse.status()).toBe(200);
+      const flown = (await flownResponse.json()) as { status: string };
+      expect(flown.status).toBe('FLOWN');
+      reachedFlown = true;
+    } finally {
+      if (!reachedFlown) {
+        await page.request.post(`/api/v1/bookings/${bookingId}/cancel`);
+      }
+    }
   });
 
   test('staff denies a PENDING booking with a reason — the pilot receives the denial email (AC 5)', async ({ page }) => {

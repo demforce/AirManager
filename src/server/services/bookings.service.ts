@@ -67,17 +67,26 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  * pattern of `flights.service.ts#registerFlight` (`SELECT ... FOR UPDATE` on
  * the aircraft, `FOR NO KEY UPDATE` on the two people — see
  * `lockBookingPeople`). The `Aircraft` lock is the FIRST statement of
- * `createBooking`/`updateBooking` (`transitionBooking` locks its `Booking`
- * row before it): it serializes the writers of the SAME aircraft. The `Person` lock and, when
+ * `createBooking`; `updateBooking` and `transitionBooking` lock the `Booking`
+ * row they write before it. The aircraft lock serializes the writers of the SAME aircraft. The `Person` lock and, when
  * the booking has one, the `InstructorProfile` lock (`lockBookingPeople`)
  * serialize the writers of the same person/instructor on DIFFERENT aircraft,
  * which the aircraft lock alone never did (ops F2): without them the person
  * predicate would be a check-then-write. The global lock order is the same on
- * all three paths — `Booking` (transition only) → `Aircraft` (one row, or N
- * `ORDER BY id`) → `Person` → `InstructorProfile` — and each transaction locks
- * at most ONE person and ONE instructor (both immutable on a booking), so two
- * booking writers can never wait on each other in a cycle; no other service
- * locks `Person`/`InstructorProfile` rows (census in the story 16.3 file).
+ * all three paths — `Booking` (move and transition: the ONE row they write) →
+ * `Aircraft` (one row, or N `ORDER BY id`) → `Person` → `InstructorProfile`.
+ * Each transaction locks at most ONE booking (a create inserts a row nobody
+ * else can hold yet), ONE person and ONE instructor (both immutable on a
+ * booking); the guarded `updateMany` that ends a move or a transition locks
+ * the booking row it already holds; `cancelBooking` takes a single lock (its
+ * `updateMany`'s row), which cannot close a cycle. So two booking writers can
+ * never wait on each other in a cycle; no other service locks `Booking`/
+ * `Person`/`InstructorProfile` rows, and no table references `Booking` by
+ * foreign key, so its `FOR UPDATE` blocks no FK check (census in the story
+ * 16.3 file). The implicit row lock of that guarded `updateMany` is what the
+ * first census missed (review 16.3 MAJOR-2): `updateBooking` took it AFTER
+ * the aircraft, and deadlocked against an approval of the same booking
+ * (40P01, a 500).
  * The pre-check immediately followed by the write, inside the same locked
  * transaction, is therefore airtight against two concurrent requests both
  * seeing "no overlap". No Postgres exclusion constraint (`btree_gist`) —
@@ -987,7 +996,11 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * ordinary same-day corrections).
  *
  * **Concurrency (same discipline as `createBooking`, AC 2)**: inside
- * `prisma.$transaction`, ALL involved `Aircraft` rows — the destination and,
+ * `prisma.$transaction`, THIS booking's row is locked `FOR UPDATE` first
+ * (review 16.3 MAJOR-2: the same first statement as `transitionBooking`, so a
+ * move and an approval of the same booking serialize on it instead of
+ * deadlocking — module doc-comment); then ALL involved `Aircraft` rows — the
+ * destination and,
  * if different, the CURRENT one — are locked in ONE
  * `WHERE id IN (...) ORDER BY id FOR UPDATE` query (the exact multi-lock
  * pattern of `flights.service.ts#correctFlight`, anti-deadlock against two
@@ -997,7 +1010,8 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * `AIRCRAFT_OUT_OF_SERVICE`, even for staff) — the booking is LEAVING the
  * current aircraft, not landing on it, so that aircraft's own state is
  * irrelevant to this write. The overlap pre-check excludes this booking
- * itself (`id: { not: bookingId }`) and every CANCELLED row.
+ * itself (`id: { not: bookingId }`) and counts only APPROVED rows (story
+ * 12.2, `findBookingConflict`).
  *
  * The final write is ONE atomic `updateMany({ where: { id, status: existing.status },
  * ... })` — folding the "still in the same status just read" guard INTO the
@@ -1069,7 +1083,15 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
   await assertWithinSchedulingWindow(nextStartsAt, nextEndsAt);
 
   const updated = await prisma.$transaction(async (tx) => {
-    // ALL Aircraft ids first, ONE query, ORDER BY id FOR UPDATE — same
+    // Row lock on THIS booking FIRST (review 16.3 MAJOR-2) — the same first
+    // statement as `transitionBooking`. The guarded `updateMany` below locks
+    // this row anyway; taken there, AFTER the aircraft, it formed a cycle with
+    // an approval of the same booking (`Booking` -> `Aircraft` there,
+    // `Aircraft` -> `Booking` here): 40P01, a 500 to one of the two. The
+    // result is never read, the effect IS the lock.
+    await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
+
+    // ALL Aircraft ids next, ONE query, ORDER BY id FOR UPDATE — same
     // multi-lock pattern as `flights.service.ts#correctFlight` (module
     // doc-comment above): the destination aircraft, plus the CURRENT one if
     // different (a 1-element set covers the common "same aircraft" edit).

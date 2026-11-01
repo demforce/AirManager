@@ -266,6 +266,11 @@ export function NewBookingForm({
     onClose();
   }
 
+  /** A 409 names what is busy (story 16.3): the person or the instructor by their own code, the aircraft for every other 409 — shared by the primary and the force path. */
+  function conflictMessage(code: string | undefined): string {
+    return code === 'PERSON_BUSY' || code === 'INSTRUCTOR_BUSY' ? labels.errors[code] : labels.errors.overlap;
+  }
+
   /** Clears every force-related state — used both on a successful bypass and on "Annulla" (Task 4: "annulla che torna al form pulito dallo stato force"). */
   function resetForceState(): void {
     setBlockedDocuments(null);
@@ -317,7 +322,7 @@ export function NewBookingForm({
       // about the aircraft — a busy person/instructor says so; every other 409
       // keeps the aircraft message.
       if (response.status === 409) {
-        setFormError(code === 'PERSON_BUSY' || code === 'INSTRUCTOR_BUSY' ? labels.errors[code] : labels.errors.overlap);
+        setFormError(conflictMessage(code));
         return;
       }
       if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
@@ -390,9 +395,20 @@ export function NewBookingForm({
     setForceSubmitting(false);
 
     if (!response.ok) {
-      // A concurrent change (e.g. the slot got taken, or the reason was
-      // rejected as too long) — the generic message is enough here, the
-      // primary error path above already covers every other domain code.
+      // Review 16.3 MAJOR-1: a 409 is NOT a transient failure here. The
+      // expiry block runs before the overlap check, so when the person has a
+      // blocking document the primary path above never sees an overlap — it
+      // surfaces only HERE, and `force` bypasses the expiry block, never the
+      // overlap (R-16-a): "Riprova" is the one thing that cannot work. The
+      // overlap replaces the expiry message in the main banner, and the force
+      // section closes because forcing can no longer help.
+      if (response.status === 409) {
+        const errorBody = (await response.json().catch(() => null)) as ApiErrorBody | null;
+        setFormError(conflictMessage(errorBody?.error?.code));
+        resetForceState();
+        return;
+      }
+      // Anything else (e.g. the reason rejected as too long) — the generic message is enough here.
       setForceError(labels.force.generic);
       return;
     }

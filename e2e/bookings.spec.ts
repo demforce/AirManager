@@ -293,7 +293,8 @@ async function registerExpiry(page: Page, personId: string, expiryTypeId: string
  * shared by every spec and never reset, and its leftover approved slot would
  * collide with the next run of the same test, or with a parallel test booking
  * the same band. Every seed-pilot booking in the suite ends PENDING,
- * CANCELLED, DENIED or FLOWN (api-v1.spec.ts closes its own within the test).
+ * CANCELLED, DENIED or FLOWN (api-v1.spec.ts closes its own within the test,
+ * and cancels it if the test fails before FLOWN).
  */
 const FUTURE_DAY = '2031-03-10';
 
@@ -2235,5 +2236,40 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
     const error = page.getByTestId('booking-form-error');
     await expect(error).toContainText('Questa persona ha già una prenotazione approvata che si sovrappone a questo intervallo.');
     await expect(error).not.toContainText('velivolo');
+  });
+
+  test('"Forza prenotazione" on a busy PERSON names the overlap in the main banner and closes the force section — the blocking document hid it from the first submit, and forcing never bypasses it (review 16.3 MAJOR-1)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraftA = await createAircraft(page);
+    const aircraftB = await createAircraft(page);
+    const pilot = await createPilotPerson(page, '0Pilota');
+    // Booked BEFORE the blocking document is on file, so this create is not
+    // blocked itself. Same wide UTC band as the test above.
+    const approved = await postBooking(page, { aircraftId: aircraftA.id, personId: pilot.personId, startsAt: at('06:30'), endsAt: at('12:00') });
+    expect(approved.status()).toBe(201);
+    const blockingType = await createExpiryTypeForBooking(page, true);
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_EXPIRES_AT);
+
+    await gotoBookingsAndWaitForHydration(page);
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    await form.getByLabel('Velivolo').selectOption({ label: aircraftB.registration });
+    await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await form.getByLabel('Inizio').fill(`${DAY}T09:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${DAY}T10:00`);
+    await form.getByRole('button', { name: 'Prenota' }).click();
+    // The expiry 422 is checked before the overlap: the busy person is not visible yet.
+    const error = page.getByTestId('booking-form-error');
+    await expect(error).toContainText(blockingType.name);
+
+    const forceSection = page.getByTestId('force-booking-section');
+    await forceSection.getByTestId('force-booking-reason').fill('Autorizzato dal direttore');
+    await forceSection.getByTestId('force-booking-submit').click();
+
+    await expect(error).toContainText('Questa persona ha già una prenotazione approvata che si sovrappone a questo intervallo.');
+    await expect(error).not.toContainText(blockingType.name);
+    await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
   });
 });

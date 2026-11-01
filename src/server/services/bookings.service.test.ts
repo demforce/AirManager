@@ -1225,19 +1225,33 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
 
     await updateBooking(adminActor(), 'booking_1', { aircraftId: 'aircraft_2' });
 
-    // Story 16.3 (AD-2): TWO `$queryRaw` now — every Aircraft row in the ONE
-    // ordered query below, then the booking's Person row (no instructor on
-    // this booking, so no third lock), `FOR NO KEY UPDATE` (lead decision
+    // Story 16.3 (AD-2) + review MAJOR-2: THREE `$queryRaw` now — this
+    // booking's own row (next test), every Aircraft row in the ONE ordered
+    // query below, then the booking's Person row (no instructor on this
+    // booking, so no fourth lock), `FOR NO KEY UPDATE` (lead decision
     // 2026-09-27: never blocks a foreign-key check on that person).
-    expect(queryRawMock).toHaveBeenCalledTimes(2);
-    const [strings, joined] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray, { values: string[] }];
+    expect(queryRawMock).toHaveBeenCalledTimes(3);
+    const [strings, joined] = queryRawMock.mock.calls[1] as unknown as [TemplateStringsArray, { values: string[] }];
     expect(strings.join('?')).toContain('FOR UPDATE');
     expect(strings.join('?')).toContain('IN');
     expect(strings.join('?')).toContain('ORDER BY');
     expect(joined.values.slice().sort()).toEqual(['aircraft_1', 'aircraft_2']);
-    const [personStrings, personId] = queryRawMock.mock.calls[1] as unknown as [TemplateStringsArray, string];
+    const [personStrings, personId] = queryRawMock.mock.calls[2] as unknown as [TemplateStringsArray, string];
     expect(personStrings.join('?')).toBe('SELECT "id" FROM "Person" WHERE "id" = ? FOR NO KEY UPDATE');
     expect(personId).toBe('person_pilot');
+  });
+
+  it('locks THIS booking row FIRST — before the Aircraft lock and the guarded updateMany, the order transitionBooking uses — so a move and an approval of the same booking serialize instead of deadlocking (review 16.3 MAJOR-2)', async () => {
+    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+
+    await updateBooking(adminActor(), 'booking_1', { notes: 'x' });
+
+    const [bookingStrings, bookingId] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray, string];
+    expect(bookingStrings.join('?')).toBe('SELECT "id" FROM "Booking" WHERE "id" = ? FOR UPDATE');
+    expect(bookingId).toBe('booking_1');
+    const [bookingLock, aircraftLock] = queryRawMock.mock.invocationCallOrder;
+    expect(bookingLock).toBeLessThan(aircraftLock!);
+    expect(aircraftLock).toBeLessThan(bookingUpdateManyMock.mock.invocationCallOrder[0]!);
   });
 
   it('a same-aircraft edit locks only ONE id (the 1-element set collapses, same as createBooking)', async () => {
@@ -1245,7 +1259,7 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
 
     await updateBooking(adminActor(), 'booking_1', { notes: 'x' });
 
-    const [, joined] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray, { values: string[] }];
+    const [, joined] = queryRawMock.mock.calls[1] as unknown as [TemplateStringsArray, { values: string[] }];
     expect(joined.values).toEqual(['aircraft_1']);
   });
 
@@ -1904,7 +1918,9 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
 
       const sqls = rawSqls();
       const lockedTables = sqls.map((sql) => /FROM "(\w+)"/.exec(sql)?.[1]);
-      expect(lockedTables).toEqual(path === 'approve' ? ['Booking', 'Aircraft', 'Person', 'InstructorProfile'] : ['Aircraft', 'Person', 'InstructorProfile']);
+      // A move and an approval lock the booking they write FIRST (review 16.3
+      // MAJOR-2); a create has no booking row yet.
+      expect(lockedTables).toEqual(path === 'create' ? ['Aircraft', 'Person', 'InstructorProfile'] : ['Booking', 'Aircraft', 'Person', 'InstructorProfile']);
       const personLock = lockedTables.indexOf('Person');
       // The pre-existing Booking/Aircraft locks stay FOR UPDATE; the two new
       // ones are FOR NO KEY UPDATE (lead decision 2026-09-27, `lockBookingPeople`).

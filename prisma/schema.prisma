@@ -1107,7 +1107,9 @@ model Flight {
 /// bookings over overlapping intervals (409 `CONFLICT` / `PERSON_BUSY` /
 /// `INSTRUCTOR_BUSY`, `bookings.service.ts#findBookingConflict`). The
 /// concurrency guard is a row lock per subject inside `prisma.$transaction`,
-/// in one global order on every write path — `Aircraft` `FOR UPDATE` (the
+/// in one global order on every write path — the `Booking` row being written
+/// `FOR UPDATE` (a move or a transition; review 16.3 MAJOR-2) → `Aircraft`
+/// `FOR UPDATE` (the
 /// exact pattern of `flights.service.ts#registerFlight`; story 7.3 locks N of
 /// them `ORDER BY id` for a MOVE) → `Person` → `InstructorProfile`, the last
 /// two `FOR NO KEY UPDATE` so that no foreign-key check elsewhere ever waits
