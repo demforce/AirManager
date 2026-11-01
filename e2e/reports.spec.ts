@@ -90,7 +90,7 @@ async function createInstructorPerson(page: Page, tag: string): Promise<{ person
 async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
   const registration = uniqueRegistration('RP');
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };

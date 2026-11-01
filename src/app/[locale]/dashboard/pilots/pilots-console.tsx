@@ -49,7 +49,6 @@ export type PilotRow = {
   email: string | null;
   phone: string | null;
   address: string | null;
-  fiscalCode: string | null;
   archivedAt: string | null;
   profiles: { pilot: boolean; student: boolean; instructor: boolean };
   balanceCents: number;

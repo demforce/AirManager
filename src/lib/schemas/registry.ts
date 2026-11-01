@@ -18,10 +18,7 @@ import {
   aogBookingImpactSchema,
   createAircraftRateSchema,
   createAircraftSchema,
-  createHourMeterAdjustmentSchema,
-  hourMeterAdjustmentListResponseSchema,
   listAircraftQuerySchema,
-  listHourMeterAdjustmentsQuerySchema,
   outOfServiceImpactQuerySchema,
   setOutOfServiceResponseSchema,
   setOutOfServiceSchema,
@@ -254,8 +251,6 @@ registry.register('UpdateAircraftRequest', updateAircraftSchema);
 registry.register('SetOutOfServiceRequest', setOutOfServiceSchema);
 registry.register('AogBookingImpact', aogBookingImpactSchema);
 registry.register('SetOutOfServiceResponse', setOutOfServiceResponseSchema);
-registry.register('CreateHourMeterAdjustmentRequest', createHourMeterAdjustmentSchema);
-registry.register('HourMeterAdjustmentList', hourMeterAdjustmentListResponseSchema);
 registry.register('AircraftRate', aircraftRateItemSchema);
 registry.register('AircraftRateList', aircraftRateListResponseSchema);
 registry.register('CreateAircraftRateRequest', createAircraftRateSchema);
@@ -440,7 +435,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'patch',
   path: '/api/v1/people/{id}',
-  summary: 'Update a person (name, contact details, fiscal code)',
+  summary: 'Update a person (name, contact details)',
   tags: ['People'],
   security,
   request: { params: personIdParams, body: { content: jsonContent(updatePersonSchema), required: true } },
@@ -951,7 +946,7 @@ registry.registerPath({
   path: '/api/v1/flights',
   summary: 'Register a flight and its automatic charge (FR-9/FR-14/FR-15)',
   description:
-    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`), the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block), and advances `Aircraft.hourMeterMinutes` by the flight\'s minutes. Exactly one of `minutes` or the `hourMeterStart`/`hourMeterEnd` pair must be given. `isSolo` (story 9.4) is only meaningful on a `SCHOOL` flight (dual/false vs solo/true — a solo still carries and bills the instructor, the student is PIC) and defaults to `false`. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid hour-meter pair, a SCHOOL flight without an instructor, `isSolo` on a non-SCHOOL flight, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Story 14.4 (ratifica R4): a blocking expired document (`ExpiryType.blocksBooking`) on the pilot/student OR the instructor, valid at `flightDate`, answers 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents`) — bypassable ONLY with `force: true` + a mandatory `forceReason`, and only by an actor holding `flights.forceExpiry` (ADMIN, 403 otherwise). Story AOG-1a (P2, ratifica R-AOG-c): a grounded aircraft answers 422 `AIRCRAFT_OUT_OF_SERVICE` (`details.reason`/`outOfServiceUntil`, plus `details.documents` in the same shape when that same request is ALSO blocked by a document — review MAJOR-1: the ONE `force` covers both blocks, so both are reported before it is given), checked right after `AIRCRAFT_ARCHIVED` and therefore BEFORE the flight-date guard; a correction that KEEPS the same aircraft is exempt. Story 16.2 (F3): a `REGISTERED` flight on the SAME aircraft whose `[takeoffAt, landingAt)` interval OVERLAPS the requested one answers **409 `FLIGHT_OVERLAP`**, with `details.flightId`/`details.takeoffAt`/`details.landingAt` (ISO 8601 UTC) naming the earliest conflicting flight. The interval is SEMI-OPEN, exactly like a `Booking`\'s: two flights that merely touch (`landingAt` of one equal to `takeoffAt` of the other) do NOT overlap. Only `REGISTERED` flights occupy an interval — a `CANCELLED` one frees it. The check runs INSIDE the transaction, under the same `Aircraft` `FOR UPDATE` lock as the contaore, so two concurrent identical requests answer exactly one 201 and one 409. It is NOT derogable by `force`/`forceReason` (unlike `FLIGHT_BLOCKED_BY_EXPIRY`/`AIRCRAFT_OUT_OF_SERVICE`): the way out is to cancel or correct the flight the 409 names. This is the server-side second line of defence behind the opt-in `Idempotency-Key`: the same request sent twice WITHOUT the header gets 201 then 409 (one flight, one charge, one contaore advance), while WITH the header the second call replays the first response (`Idempotency-Replayed: true`, contract unchanged). Story 16.2 (F14) also tightens two declared bounds: `takeoffs`/`landings` are `[1, 500]` (a `0` is a 422 at the Zod boundary — the schema has always documented "at least one of each"), and a flight shorter than ONE minute answers 422 `FLIGHT_TIMES_INVALID` instead of being rounded up to a 1-minute flight (the 1440-minute ceiling answers with that same code, as before). The response\'s `balanceAlert` flags a worsened balance band (story 3.3/14.4) without blocking the registration. Requires `flights.manage` (FR-14: only an admin registers a flight). Accepts the opt-in `Idempotency-Key` header (story TD-2) — NOT `/flights/{id}/cancel`/`/correct`, already protected by `reversalOfId`.',
+    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`) and the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block). `minutes` and `flightDate` are derived from `takeoffAt`/`landingAt` (story 11.1). `isSolo` (story 9.4) is only meaningful on a `SCHOOL` flight (dual/false vs solo/true — a solo still carries and bills the instructor, the student is PIC) and defaults to `false`. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid takeoff/landing pair, a SCHOOL flight without an instructor, `isSolo` on a non-SCHOOL flight, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Story 14.4 (ratifica R4): a blocking expired document (`ExpiryType.blocksBooking`) on the pilot/student OR the instructor, valid at `flightDate`, answers 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents`) — bypassable ONLY with `force: true` + a mandatory `forceReason`, and only by an actor holding `flights.forceExpiry` (ADMIN, 403 otherwise). Story AOG-1a (P2, ratifica R-AOG-c): a grounded aircraft answers 422 `AIRCRAFT_OUT_OF_SERVICE` (`details.reason`/`outOfServiceUntil`, plus `details.documents` in the same shape when that same request is ALSO blocked by a document — review MAJOR-1: the ONE `force` covers both blocks, so both are reported before it is given), checked right after `AIRCRAFT_ARCHIVED` and therefore BEFORE the flight-date guard; a correction that KEEPS the same aircraft is exempt. Story 16.2 (F3): a `REGISTERED` flight on the SAME aircraft whose `[takeoffAt, landingAt)` interval OVERLAPS the requested one answers **409 `FLIGHT_OVERLAP`**, with `details.flightId`/`details.takeoffAt`/`details.landingAt` (ISO 8601 UTC) naming the earliest conflicting flight. The interval is SEMI-OPEN, exactly like a `Booking`\'s: two flights that merely touch (`landingAt` of one equal to `takeoffAt` of the other) do NOT overlap. Only `REGISTERED` flights occupy an interval — a `CANCELLED` one frees it. The check runs INSIDE the transaction, under an `Aircraft` `FOR UPDATE` lock, so two concurrent identical requests answer exactly one 201 and one 409. It is NOT derogable by `force`/`forceReason` (unlike `FLIGHT_BLOCKED_BY_EXPIRY`/`AIRCRAFT_OUT_OF_SERVICE`): the way out is to cancel or correct the flight the 409 names. This is the server-side second line of defence behind the opt-in `Idempotency-Key`: the same request sent twice WITHOUT the header gets 201 then 409 (one flight, one charge), while WITH the header the second call replays the first response (`Idempotency-Replayed: true`, contract unchanged). Story 16.2 (F14) also tightens two declared bounds: `takeoffs`/`landings` are `[1, 500]` (a `0` is a 422 at the Zod boundary — the schema has always documented "at least one of each"), and a flight shorter than ONE minute answers 422 `FLIGHT_TIMES_INVALID` instead of being rounded up to a 1-minute flight (the 1440-minute ceiling answers with that same code, as before). The response\'s `balanceAlert` flags a worsened balance band (story 3.3/14.4) without blocking the registration. Requires `flights.manage` (FR-14: only an admin registers a flight). Accepts the opt-in `Idempotency-Key` header (story TD-2) — NOT `/flights/{id}/cancel`/`/correct`, already protected by `reversalOfId`.',
   tags: ['Flights'],
   security,
   request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(registerFlightSchema), required: true } },
@@ -966,7 +961,7 @@ registry.registerPath({
   path: '/api/v1/flights/{id}/cancel',
   summary: 'Cancel (storno) a registered flight (FR-16)',
   description:
-    'Story 5.3, AC 1/3/4 — in one transaction: the flight becomes CANCELLED (cancelledAt/cancelReason set), an opposite-signed FLIGHT_CHARGE_REVERSAL movement is created (linked via reversalOfId to the original FLIGHT_CHARGE), package minutes become available again (via a status-filtered SUM, no PackageConsumption row is touched), and the aircraft hour meter is reduced by the flight\'s minutes (clamped at 0). Always allowed, even if the person/aircraft is now archived. Already-cancelled -> 409. Requires `flights.manage`.',
+    'Story 5.3, AC 1/3/4 — in one transaction: the flight becomes CANCELLED (cancelledAt/cancelReason set), an opposite-signed FLIGHT_CHARGE_REVERSAL movement is created (linked via reversalOfId to the original FLIGHT_CHARGE), and package minutes become available again (via a status-filtered SUM, no PackageConsumption row is touched). Always allowed, even if the person/aircraft is now archived. Already-cancelled -> 409. Requires `flights.manage`.',
   tags: ['Flights'],
   security,
   request: { params: flightIdParams, body: { content: jsonContent(cancelFlightSchema), required: true } },
@@ -981,7 +976,7 @@ registry.registerPath({
   path: '/api/v1/flights/{id}/correct',
   summary: 'Correct a registered flight: storno + new registration (FR-16)',
   description:
-    'Story 5.3, AC 2/3/4 — in one transaction: storno of the original flight (identical to /cancel) followed immediately by a brand-new registration with the given data, re-validated from scratch (the same 404/422 guards as POST /flights apply to the NEW data) — linked via Flight.correctionOfId. If the new registration fails, the whole transaction (storno included) rolls back. Already-cancelled -> 409. Story 16.2: the overlap guard of `POST /api/v1/flights` applies to the CORRECTED data too, on the corrected data\'s aircraft (a correction that MOVES the flight onto another airframe is checked THERE) — 409 `FLIGHT_OVERLAP` with the same `details` shape, before the storno, so nothing at all is written. The flight being corrected is EXCLUDED from the check, so a correction that keeps its own slot (changed notes, cycles or hour-meter readings) is never a conflict with itself; `force` does not derogate it. The tightened `takeoffs`/`landings` `[1, 500]` and one-minute minimum duration apply here as well. Requires `flights.manage`.',
+    'Story 5.3, AC 2/3/4 — in one transaction: storno of the original flight (identical to /cancel) followed immediately by a brand-new registration with the given data, re-validated from scratch (the same 404/422 guards as POST /flights apply to the NEW data) — linked via Flight.correctionOfId. If the new registration fails, the whole transaction (storno included) rolls back. Already-cancelled -> 409. Story 16.2: the overlap guard of `POST /api/v1/flights` applies to the CORRECTED data too, on the corrected data\'s aircraft (a correction that MOVES the flight onto another airframe is checked THERE) — 409 `FLIGHT_OVERLAP` with the same `details` shape, before the storno, so nothing at all is written. The flight being corrected is EXCLUDED from the check, so a correction that keeps its own slot (changed cycles or airfields) is never a conflict with itself; `force` does not derogate it. The tightened `takeoffs`/`landings` `[1, 500]` and one-minute minimum duration apply here as well. Requires `flights.manage`.',
   tags: ['Flights'],
   security,
   request: { params: flightIdParams, body: { content: jsonContent(correctFlightSchema), required: true } },
@@ -1040,7 +1035,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'patch',
   path: '/api/v1/aircraft/{id}',
-  summary: 'Update an aircraft (registration, type, model, hour meter, notes)',
+  summary: 'Update an aircraft (registration, type, model)',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams, body: { content: jsonContent(updateAircraftSchema), required: true } },
@@ -1122,36 +1117,6 @@ registry.registerPath({
   responses: {
     200: { description: 'The aircraft, now operational.', content: jsonContent(aircraftListItemSchema) },
     ...errorResponses(401, 403, 404, 409),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/v1/aircraft/{id}/hour-meter-adjustments',
-  summary: "List an aircraft's hour-meter adjustment history (paginated, most recent first)",
-  tags: ['Aircraft'],
-  security,
-  request: { params: aircraftIdParams, query: listHourMeterAdjustmentsQuerySchema },
-  responses: {
-    200: { description: 'A page of hour-meter adjustments.', content: jsonContent(hourMeterAdjustmentListResponseSchema) },
-    ...errorResponses(401, 403, 404, 422),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/v1/aircraft/{id}/hour-meter-adjustments',
-  summary: 'Record a tracked hour-meter (contaore) rectification',
-  description: 'Append-only (AD-3 spirit, story 2.5, AC 2) — creates the adjustment and updates Aircraft.hourMeterMinutes in one transaction. A negative delta is allowed.',
-  tags: ['Aircraft'],
-  security,
-  request: {
-    params: aircraftIdParams,
-    body: { content: jsonContent(createHourMeterAdjustmentSchema), required: true },
-  },
-  responses: {
-    200: { description: 'The aircraft, with the updated hour meter.', content: jsonContent(aircraftListItemSchema) },
-    ...errorResponses(401, 403, 404, 422),
   },
 });
 

@@ -6,7 +6,7 @@ import { z } from './zod-with-openapi';
 /**
  * Base anagrafica fields, shared by the create/edit person forms and
  * `POST`/`PATCH /api/v1/people` (Consistency Conventions: "Uno schema Zod
- * per input/output per endpoint"). `email`/`phone`/`address`/`fiscalCode`
+ * per input/output per endpoint"). `email`/`phone`/`address`
  * are all optional — the story only requires `firstName`/`lastName`;
  * everything else may be filled in later (e.g. via the profile story 2.2).
  * `createPersonSchema` itself (the one-step composite, story 13.1, AC 5) is
@@ -19,7 +19,6 @@ export const createPersonBaseSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()).nullish(),
   phone: z.string().trim().min(1).nullish(),
   address: z.string().trim().min(1).nullish(),
-  fiscalCode: z.string().trim().toUpperCase().min(1).nullish(),
 });
 
 /**
@@ -33,7 +32,6 @@ export const updatePersonSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()).nullish(),
   phone: z.string().trim().min(1).nullish(),
   address: z.string().trim().min(1).nullish(),
-  fiscalCode: z.string().trim().toUpperCase().min(1).nullish(),
 });
 
 export type UpdatePersonInput = z.infer<typeof updatePersonSchema>;
@@ -97,7 +95,6 @@ export const personListItemSchema = z.object({
   email: z.string().nullable(),
   phone: z.string().nullable(),
   address: z.string().nullable(),
-  fiscalCode: z.string().nullable(),
   archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   profiles: profileFlagsSchema,

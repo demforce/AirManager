@@ -30,7 +30,7 @@ async function createAircraft(page: Page): Promise<{ id: string; registration: s
   const suffix = uniqueSuffix();
   const registration = `I-BW${suffix}`.toUpperCase().slice(0, 20);
   const response = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 50 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(response.status()).toBe(201);
   const aircraft = (await response.json()) as { id: string };

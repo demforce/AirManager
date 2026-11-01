@@ -15,7 +15,7 @@ import { formatMinutes } from '@/lib/time';
 // re-verification of `listPeople`/`listFlights`/etc.'s own already-tested
 // query logic.
 vi.mock('./people.service', () => ({ listPeople: vi.fn(), getPerson: vi.fn() }));
-vi.mock('./aircraft.service', () => ({ listAircraft: vi.fn() }));
+vi.mock('./aircraft.service', () => ({ listAircraft: vi.fn(), sumFlightMinutesByAircraft: vi.fn() }));
 vi.mock('./flights.service', () => ({ listFlights: vi.fn() }));
 vi.mock('./bookings.service', () => ({ listBookings: vi.fn() }));
 vi.mock('./accounts.service', () => ({ listAccountMovements: vi.fn(), getAccountOverview: vi.fn() }));
@@ -32,6 +32,7 @@ vi.mock('@/server/adapters/pdf/document', () => ({ renderReportPdf: vi.fn().mock
 vi.mock('./app-settings.service', () => ({ getAirfieldBranding: vi.fn() }));
 
 const { listPeople, getPerson } = await import('./people.service');
+const { listAircraft, sumFlightMinutesByAircraft } = await import('./aircraft.service');
 const { listFlights } = await import('./flights.service');
 const { listBookings } = await import('./bookings.service');
 const { listCashMovements, getCashReport } = await import('./cash.service');
@@ -47,6 +48,7 @@ const {
   assertWithinExportCap,
   assertWithinPdfExportCap,
   exportPeopleXlsx,
+  exportAircraftXlsx,
   exportFlightsXlsx,
   exportCashMovementsXlsx,
   exportExpiriesXlsx,
@@ -60,6 +62,8 @@ const {
 } = await import('./exports.service');
 
 const listPeopleMock = vi.mocked(listPeople);
+const listAircraftMock = vi.mocked(listAircraft);
+const sumFlightMinutesByAircraftMock = vi.mocked(sumFlightMinutesByAircraft);
 const listFlightsMock = vi.mocked(listFlights);
 const listBookingsMock = vi.mocked(listBookings);
 const listCashMovementsMock = vi.mocked(listCashMovements);
@@ -90,6 +94,8 @@ function lastPdfProps() {
 
 beforeEach(() => {
   listPeopleMock.mockReset();
+  listAircraftMock.mockReset();
+  sumFlightMinutesByAircraftMock.mockReset();
   listFlightsMock.mockReset();
   listBookingsMock.mockReset();
   listCashMovementsMock.mockReset();
@@ -136,6 +142,40 @@ describe('exportPeopleXlsx (T2 — argument parity with the list service)', () =
   });
 });
 
+describe('exportAircraftXlsx (story 19.2, R-19-b — "Ore totali" = the sum of the registered flights)', () => {
+  it('asks the aggregate ONCE for every exported id with no window, and prints each total as H:MM where the old column was', async () => {
+    const aircraftRow = {
+      type: 'Ultraleggero',
+      model: 'Tecnam P92',
+      status: 'OPERATIONAL' as const,
+      statusReason: null,
+      outOfServiceUntil: null,
+      archivedAt: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    listAircraftMock.mockResolvedValue({
+      total: 2,
+      page: 1,
+      pageSize: EXPORT_MAX_ROWS,
+      items: [
+        { ...aircraftRow, id: 'ac_1', registration: 'I-ABCD' },
+        { ...aircraftRow, id: 'ac_2', registration: 'I-EFGH' },
+      ],
+    });
+    // `ac_2` never flew: absent from the map, read as 0.
+    sumFlightMinutesByAircraftMock.mockResolvedValue(new Map([['ac_1', 120]]));
+
+    const result = await exportAircraftXlsx(ACTOR, { page: 1, pageSize: 20, includeArchived: false, locale: 'en' });
+
+    expect(sumFlightMinutesByAircraftMock).toHaveBeenCalledTimes(1);
+    expect(sumFlightMinutesByAircraftMock).toHaveBeenCalledWith(ACTOR, ['ac_1', 'ac_2'], null, null);
+    const sheet = await readSheet(result.buffer);
+    expect(sheet.getRow(1).getCell(4).value).toBe('Total hours');
+    expect(sheet.getRow(2).getCell(4).value).toBe(formatMinutes(120));
+    expect(sheet.getRow(3).getCell(4).value).toBe(formatMinutes(0));
+  });
+});
+
 describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook column mapping)', () => {
   it('formats duration as H:MM, amount as a numeric euro cell, the type column with the solo suffix, and the separate partenza/arrivo/orari/decolli/PIC columns', async () => {
     listFlightsMock.mockResolvedValue({
@@ -155,10 +195,7 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           landingAt: new Date('2026-07-10T10:35:00Z'),
           minutes: 95,
           takeoffs: 2,
-          hourMeterStart: null,
-          hourMeterEnd: null,
           landings: 3,
-          notes: null,
           aircraft: { id: 'ac_1', registration: 'I-ABCD' },
           person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
           instructor: null,
@@ -215,10 +252,7 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           landingAt: null,
           minutes: 30,
           takeoffs: 1,
-          hourMeterStart: null,
-          hourMeterEnd: null,
           landings: 1,
-          notes: null,
           aircraft: { id: 'ac_1', registration: 'I-ABCD' },
           person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
           instructor: null,
@@ -266,10 +300,7 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           landingAt: new Date('2026-07-03T09:40:00Z'),
           minutes: 40,
           takeoffs: 1,
-          hourMeterStart: null,
-          hourMeterEnd: null,
           landings: 1,
-          notes: null,
           aircraft: { id: 'ac_1', registration: 'I-ABCD' },
           person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
           instructor: { personId: 'i_1', firstName: 'Anna', lastName: 'Bianchi' },

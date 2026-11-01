@@ -468,8 +468,7 @@ export function NewBookingForm({
           ) : null}
 
           {/* Story 14.7, AC 1: one binary AirOps `Segmented` control instead of
-              two radios — same component `aircraft-editor.tsx`'s `based`
-              toggle already uses, chosen over a checkbox/switch because the
+              two radios, chosen over a checkbox/switch because the
               choice is a named PAIR of mutually-exclusive options ("per me" /
               "per un allievo"), exactly what `Segmented` is for; a bare
               toggle would need its own on/off-to-label mapping for no
@@ -477,7 +476,7 @@ export function NewBookingForm({
               field's conditional render+validation) are UNCHANGED — only the
               markup driving it.
 
-              NOT wrapped in `Field` (unlike `BasedSegmented`'s usage):
+              NOT wrapped in `Field`:
               `Field`'s implicit `<label>` associates with the FIRST
               labelable descendant only (native HTML behaviour) — verified
               interactively that this makes Chromium compute that first

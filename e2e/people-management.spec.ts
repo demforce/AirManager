@@ -51,6 +51,8 @@ async function createPilot(page: Page, person: { firstName: string; lastName: st
   await page.goto('/it/dashboard/pilots');
   await page.getByTestId('pilots-new-button').click();
   const form = page.getByTestId('pilot-identity-form');
+  // Story 19.2 (AC 4): the removed field is absent from the new-person form.
+  await expect(form.getByLabel('Codice fiscale', { exact: true })).toHaveCount(0);
   await form.getByLabel('Nome', { exact: true }).fill(person.firstName);
   await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
   await form.getByLabel('Email', { exact: true }).fill(person.email);
@@ -165,7 +167,7 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     // `flight-log.spec.ts`'s `createAircraftWithRate`).
     const registration = `I-PRF${Date.now()}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase().slice(0, 20);
     const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-      data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+      data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
     });
     expect(aircraftResponse.status()).toBe(201);
     const { id: aircraftId } = (await aircraftResponse.json()) as { id: string };
@@ -416,6 +418,11 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
 
     await page.goto('/it/dashboard/instructors');
     await page.getByTestId(`instructor-edit-${personId}`).click();
+    // Story 19.2 (AC 4): the loaded anagrafica (asserted first, so the count
+    // below is not read against the loading placeholder) lacks the removed field.
+    const identityForm = page.getByTestId('instructor-identity-form');
+    await expect(identityForm.getByLabel('Nome', { exact: true })).toHaveValue(person.firstName);
+    await expect(identityForm.getByLabel('Codice fiscale', { exact: true })).toHaveCount(0);
 
     await page.getByTestId(`expiry-chip-${ratingTypeId}`).click();
     await page.getByTestId('expiry-add-date').fill('2099-05-01');

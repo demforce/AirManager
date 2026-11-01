@@ -4,9 +4,7 @@ import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagi
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type {
   CreateAircraftInput,
-  CreateHourMeterAdjustmentInput,
   ListAircraftQuery,
-  ListHourMeterAdjustmentsQuery,
   OutOfServiceImpactQuery,
   SetOutOfServiceInput,
   UpdateAircraftInput,
@@ -24,18 +22,10 @@ export type AircraftListItem = {
   registration: string;
   type: string;
   model: string;
-  hourMeterMinutes: number;
-  notes: string | null;
   status: AircraftStatus;
   statusReason: string | null;
   /** `YYYY-MM-DD` — last day the aircraft is GROUNDED, inclusive (story AOG-1a, ratifica R-AOG-a). Semantics/life-cycle/invariants: `schema.prisma`, `Aircraft.outOfServiceUntil` (the single source; never re-interpreted here). `null` = "return date not yet known". Calendar-only on the wire, same convention every other `@db.Date` DTO field in this repo follows (`AircraftRateListItem.validFrom`, `ExpiryListItem.expiresAt`). */
   outOfServiceUntil: string | null;
-  /** Number of seats (story 12.5, AC 1) — anagrafica only, optional. */
-  seats: number | null;
-  /** Free-text fuel type (story 12.5, AC 1). */
-  fuelType: string | null;
-  /** Based at the field vs. a visiting/guest airframe (story 12.5, AC 1). */
-  based: boolean;
   archivedAt: Date | null;
   createdAt: Date;
 };
@@ -61,14 +51,9 @@ const AIRCRAFT_SELECT = {
   registration: true,
   type: true,
   model: true,
-  hourMeterMinutes: true,
-  notes: true,
   status: true,
   statusReason: true,
   outOfServiceUntil: true,
-  seats: true,
-  fuelType: true,
-  based: true,
   archivedAt: true,
   createdAt: true,
 } as const;
@@ -82,71 +67,11 @@ function toListItem(aircraft: SelectedAircraft): AircraftListItem {
     registration: aircraft.registration,
     type: aircraft.type,
     model: aircraft.model,
-    hourMeterMinutes: aircraft.hourMeterMinutes,
-    notes: aircraft.notes,
     status: aircraft.status,
     statusReason: aircraft.statusReason,
     outOfServiceUntil: aircraft.outOfServiceUntil === null ? null : toDateOnlyString(aircraft.outOfServiceUntil),
-    seats: aircraft.seats,
-    fuelType: aircraft.fuelType,
-    based: aircraft.based,
     archivedAt: aircraft.archivedAt,
     createdAt: aircraft.createdAt,
-  };
-}
-
-/**
- * One entry of the hour-meter adjustment history (AC 2: "chi, quando, delta,
- * motivo"). `actorEmail` is a small display-only enrichment over the stored
- * `actorUserId` (joined via the existing `HourMeterAdjustment.actorUser`
- * relation) — a raw cuid is not a usable "chi" in the UI history list.
- */
-export type HourMeterAdjustmentListItem = {
-  id: string;
-  aircraftId: string;
-  actorUserId: string;
-  actorEmail: string;
-  previousMinutes: number;
-  newMinutes: number;
-  reason: string;
-  createdAt: Date;
-};
-
-/** AD-8 paginated shape for the adjustment history. */
-export type HourMeterAdjustmentListResult = PaginatedResult<HourMeterAdjustmentListItem>;
-
-const HOUR_METER_ADJUSTMENT_SELECT = {
-  id: true,
-  aircraftId: true,
-  actorUserId: true,
-  actorUser: { select: { email: true } },
-  previousMinutes: true,
-  newMinutes: true,
-  reason: true,
-  createdAt: true,
-} as const;
-
-type SelectedHourMeterAdjustment = {
-  id: string;
-  aircraftId: string;
-  actorUserId: string;
-  actorUser: { email: string };
-  previousMinutes: number;
-  newMinutes: number;
-  reason: string;
-  createdAt: Date;
-};
-
-function toAdjustmentListItem(adjustment: SelectedHourMeterAdjustment): HourMeterAdjustmentListItem {
-  return {
-    id: adjustment.id,
-    aircraftId: adjustment.aircraftId,
-    actorUserId: adjustment.actorUserId,
-    actorEmail: adjustment.actorUser.email,
-    previousMinutes: adjustment.previousMinutes,
-    newMinutes: adjustment.newMinutes,
-    reason: adjustment.reason,
-    createdAt: adjustment.createdAt,
   };
 }
 
@@ -286,13 +211,6 @@ export async function createAircraft(actor: Actor, input: CreateAircraftInput): 
     registration: input.registration,
     type: input.type,
     model: input.model,
-    hourMeterMinutes: input.hourMeterMinutes,
-    notes: input.notes ?? null,
-    seats: input.seats ?? null,
-    fuelType: input.fuelType ?? null,
-    // Omitted (`undefined`) falls back to the Prisma/DB default
-    // (`true`, story 12.5 AC 1) rather than forcing a value here.
-    based: input.based,
   };
 
   const rate = input.rate;
@@ -318,13 +236,7 @@ export async function createAircraft(actor: Actor, input: CreateAircraftInput): 
   return toListItem(aircraft);
 }
 
-/**
- * Partial update: registration, type, model, notes, seats, fuelType,
- * based (story 12.5, AC 1, all additive). Archiving is separate (AC 2), and
- * so is the hour meter (story 2.5, AC 2): `hourMeterMinutes` is deliberately
- * absent from `UpdateAircraftInput` — it only changes via `adjustHourMeter`'s
- * tracked transaction, never this generic patch.
- */
+/** Partial update: registration, type, model. Archiving is separate (AC 2). */
 export async function updateAircraft(actor: Actor, id: string, patch: UpdateAircraftInput): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
 
@@ -345,10 +257,6 @@ export async function updateAircraft(actor: Actor, id: string, patch: UpdateAirc
         ...(patch.registration !== undefined && { registration: patch.registration }),
         ...(patch.type !== undefined && { type: patch.type }),
         ...(patch.model !== undefined && { model: patch.model }),
-        ...(patch.notes !== undefined && { notes: patch.notes }),
-        ...(patch.seats !== undefined && { seats: patch.seats }),
-        ...(patch.fuelType !== undefined && { fuelType: patch.fuelType }),
-        ...(patch.based !== undefined && { based: patch.based }),
       },
       select: AIRCRAFT_SELECT,
     });
@@ -617,98 +525,14 @@ export async function returnToService(actor: Actor, id: string): Promise<Aircraf
 }
 
 /**
- * Corrects the hour meter (contaore) with a tracked, mandatory-reason
- * rectification (story 2.5, AC 2; AD-3's spirit). Both the audit row and the
- * `Aircraft.hourMeterMinutes` update happen inside one Prisma transaction —
- * the project's first multi-statement `$transaction` — so the two writes
- * can never be observed out of sync (an adjustment recorded without the
- * aircraft actually changing, or vice versa). `previousMinutes` is read with
- * a `SELECT ... FOR UPDATE` row lock: under the default READ COMMITTED
- * isolation a plain read would let two concurrent adjustments both observe
- * the same "previous" value and record a stale audit "before" (review 2.5
- * F1) — the lock serializes them, so the second reads the first's committed
- * result. A negative delta (`newMinutes < previousMinutes`) is allowed —
- * Dev Notes: a correction can go either direction, this is not a monotonic
- * counter.
- */
-export async function adjustHourMeter(
-  actor: Actor,
-  id: string,
-  input: CreateHourMeterAdjustmentInput,
-): Promise<AircraftListItem> {
-  authorize(actor, 'aircraft.manage');
-
-  const aircraft = await prisma.$transaction(async (tx) => {
-    // Row-locked read (FOR UPDATE): a concurrent adjustment's transaction
-    // blocks here until this one commits, so its `previousMinutes` is never
-    // stale (review 2.5 F1). Raw SQL because Prisma has no select-for-update.
-    const locked = await tx.$queryRaw<Array<{ hourMeterMinutes: number }>>`
-      SELECT "hourMeterMinutes" FROM "Aircraft" WHERE "id" = ${id} FOR UPDATE`;
-    const existing = locked[0];
-    if (!existing) {
-      throw new NotFoundError('Aircraft not found.');
-    }
-
-    await tx.hourMeterAdjustment.create({
-      data: {
-        aircraftId: id,
-        actorUserId: actor.userId,
-        previousMinutes: existing.hourMeterMinutes,
-        newMinutes: input.newMinutes,
-        reason: input.reason,
-      },
-    });
-
-    return tx.aircraft.update({
-      where: { id },
-      data: { hourMeterMinutes: input.newMinutes },
-      select: AIRCRAFT_SELECT,
-    });
-  });
-
-  return toListItem(aircraft);
-}
-
-/**
- * Lists an aircraft's hour-meter adjustment history (story 2.5, AC 2),
- * paginated and most-recent-first — append-only, so there is no
- * update/delete counterpart. `aircraft.manage` guards it, same as every
- * other aircraft operation.
- */
-export async function listHourMeterAdjustments(
-  actor: Actor,
-  aircraftId: string,
-  query: ListHourMeterAdjustmentsQuery,
-): Promise<HourMeterAdjustmentListResult> {
-  authorize(actor, 'aircraft.manage');
-
-  const existing = await prisma.aircraft.findUnique({ where: { id: aircraftId }, select: { id: true } });
-  if (!existing) {
-    throw new NotFoundError('Aircraft not found.');
-  }
-
-  const where = { aircraftId };
-  // Interactive transaction (story TD-1, AC 3) — see
-  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
-  // `pg` DeprecationWarning rationale.
-  const [items, total] = await prisma.$transaction(async (tx) => {
-    const items = await tx.hourMeterAdjustment.findMany({
-      where,
-      select: HOUR_METER_ADJUSTMENT_SELECT,
-      orderBy: [{ createdAt: 'desc' }],
-      ...paginationOffset(query),
-    });
-    const total = await tx.hourMeterAdjustment.count({ where });
-    return [items, total] as const;
-  });
-
-  return paginate(items.map(toAdjustmentListItem), total, query);
-}
-
-/**
  * Flown minutes per aircraft over `[from, to]` (both `@db.Date` UTC-midnight
- * bounds, inclusive), for the subset of `aircraftIds` that flew — story 15.5,
- * ratifica R-15.5-b: the number behind the fleet card's hours bar.
+ * bounds, inclusive; `null` = no bound on that side), for the subset of
+ * `aircraftIds` that flew — story 15.5, ratifica R-15.5-b: the number behind
+ * the fleet card's hours bar. With both bounds `null` it is the aircraft's
+ * total hours (story 19.2, R-19-b: the hours of an aircraft, wherever shown,
+ * are the sum of its registered flights) — no upper bound rather than "today",
+ * since the fleet page's `today` is a UTC date and would drop the flights
+ * registered between 00:00 and 02:00 Rome time.
  *
  * BATCHED over the ids of the CURRENT PAGE, exactly like the two readers the
  * fleet page already calls beside it (`getEffectiveRates`,
@@ -724,11 +548,16 @@ export async function listHourMeterAdjustments(
  * the map — callers read `?? 0`, so an empty bar and a missing key mean the
  * same thing.
  *
- * Gated on `aircraft.manage`, the SAME permission its only caller (the fleet
- * page) requires, so the helper's gate can never drift from the page that
- * reaches it.
+ * Gated on `aircraft.manage`, the SAME permission its callers (the fleet page,
+ * the aircraft export) require, so the helper's gate can never drift from the
+ * pages that reach it.
  */
-export async function sumFlightMinutesByAircraft(actor: Actor, aircraftIds: string[], from: Date, to: Date): Promise<Map<string, number>> {
+export async function sumFlightMinutesByAircraft(
+  actor: Actor,
+  aircraftIds: string[],
+  from: Date | null,
+  to: Date | null,
+): Promise<Map<string, number>> {
   authorize(actor, 'aircraft.manage');
 
   if (aircraftIds.length === 0) {
@@ -737,7 +566,13 @@ export async function sumFlightMinutesByAircraft(actor: Actor, aircraftIds: stri
 
   const groups = await prisma.flight.groupBy({
     by: ['aircraftId'],
-    where: { aircraftId: { in: aircraftIds }, status: 'REGISTERED', flightDate: { gte: from, lte: to } },
+    where: {
+      aircraftId: { in: aircraftIds },
+      status: 'REGISTERED',
+      ...((from !== null || to !== null) && {
+        flightDate: { ...(from !== null && { gte: from }), ...(to !== null && { lte: to }) },
+      }),
+    },
     _sum: { minutes: true },
   });
   return new Map(groups.map((group) => [group.aircraftId, group._sum.minutes ?? 0]));

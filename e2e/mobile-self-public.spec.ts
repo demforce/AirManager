@@ -137,7 +137,7 @@ const FLIGHT_DATE = '2020-01-01';
 async function createReversedFlightCharge(page: Page, personId: string): Promise<void> {
   const suffix = uniqueSuffix();
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration: `I-BG${suffix}`.toUpperCase().slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Badge Test', hourMeterMinutes: 500 },
+    data: { registration: `I-BG${suffix}`.toUpperCase().slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Badge Test' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };

@@ -63,7 +63,7 @@ function uniqueSuffix(): string {
 async function createAircraft(page: Page, tag: string): Promise<{ id: string; registration: string }> {
   const registration = `I-M${tag}${uniqueSuffix()}`.slice(0, 20);
   const response = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Mobile 15.3', hourMeterMinutes: 60 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Mobile 15.3' },
   });
   expect(response.status()).toBe(201);
   return { id: ((await response.json()) as { id: string }).id, registration };

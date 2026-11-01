@@ -108,7 +108,7 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     // `createAircraftWithRate`).
     const aircraftRegistration = `I-TA${suffix}`.toUpperCase().slice(0, 20);
     const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-      data: { registration: aircraftRegistration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+      data: { registration: aircraftRegistration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
     });
     expect(aircraftResponse.status()).toBe(201);
     const aircraft = (await aircraftResponse.json()) as { id: string; registration: string };

@@ -22,13 +22,8 @@ export type FleetCardItem = {
   registration: string;
   type: string;
   model: string;
-  hourMeterMinutes: number;
-  notes: string | null;
   status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
   statusReason: string | null;
-  seats: number | null;
-  fuelType: string | null;
-  based: boolean;
   /** ISO string or `null` — active. */
   archivedAt: string | null;
   /** The wet hourly rate in effect TODAY (batched `getEffectiveRates`), or `null` if none is on file. */

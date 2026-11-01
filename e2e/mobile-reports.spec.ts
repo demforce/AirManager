@@ -212,7 +212,7 @@ const CONTRAST_PROBE = `
 async function createAircraft(page: Page, tag: string): Promise<{ id: string; registration: string }> {
   const registration = `I-${tag}${uniqueSuffix().replace(/[^A-Za-z0-9]/g, '').slice(-5).toUpperCase()}`;
   const response = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Mobile Reports', hourMeterMinutes: 10 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Mobile Reports' },
   });
   expect(response.status()).toBe(201);
   return { id: ((await response.json()) as { id: string }).id, registration };

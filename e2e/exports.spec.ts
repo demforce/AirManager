@@ -36,7 +36,7 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
   const registration = `I-EX${suffix}`.toUpperCase().slice(0, 20);
 
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
@@ -168,6 +168,14 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     expect(rows.every((row) => row.getCell(12).value === 1)).toBe(true); // atterraggi (default)
     // PIC: TOURISM (non-SCHOOL) -> the flight's own person (story 11.2's derivation, AC 4's shared helper).
     expect(rows.every((row) => row.getCell(13).value === `${pilot.lastName} ${pilot.firstName}`)).toBe(true);
+
+    // Story 19.2 (R-19-b): the aircraft export's "Ore totali" is the sum of these two flights (90' + 30').
+    const aircraftXlsx = await page.request.get(`/api/v1/aircraft?format=xlsx&locale=it&q=${aircraft.registration}`);
+    expect(aircraftXlsx.status()).toBe(200);
+    const aircraftSheet = (await loadWorkbook(await aircraftXlsx.body())).worksheets[0]!;
+    expect(aircraftSheet.getRow(1).getCell(4).value).toBe('Ore totali');
+    expect(aircraftSheet.getRow(2).getCell(1).value).toBe(aircraft.registration);
+    expect(aircraftSheet.getRow(2).getCell(4).value).toBe('2:00');
   });
 
   test('locale=en renders English column headers on the same export (AC 2)', async ({ page }) => {
@@ -179,7 +187,7 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
 
     const workbook = await loadWorkbook(await xlsxResponse.body());
     const sheet = workbook.worksheets[0]!;
-    expect(sheet.getRow(1).values).toEqual([undefined, 'Registration', 'Type', 'Model', 'Hour meter', 'Status', 'Operational status']);
+    expect(sheet.getRow(1).values).toEqual([undefined, 'Registration', 'Type', 'Model', 'Total hours', 'Status', 'Operational status']);
     expect(sheet.getRow(2).getCell(1).value).toBe(aircraft.registration);
   });
 

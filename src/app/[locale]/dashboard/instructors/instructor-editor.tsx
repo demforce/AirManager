@@ -48,7 +48,6 @@ export type InstructorEditorLabels = {
     email: string;
     phone: string;
     address: string;
-    fiscalCode: string;
     save: string;
     loadError: string;
     /** Story 14.2, AC 1/4: this section had NO required-field feedback at all (not even `aria-invalid`) — its own `updatePersonSchema` RHF errors were silently dropped. */
@@ -202,7 +201,7 @@ export function InstructorEditor({
 
 // --- Anagrafica (PATCH people, `people.manage`) -----------------------------
 
-type PersonIdentity = { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null; fiscalCode: string | null };
+type PersonIdentity = { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null };
 
 async function fetchPersonIdentity(personId: string): Promise<PersonIdentity | null> {
   const response = await fetch(`/api/v1/people/${personId}`);
@@ -280,7 +279,7 @@ function IdentitySection({
         // `pilots/pilot-editor.tsx#IdentitySection`'s own `updatePersonSchema`
         // form) — same field-shaped 422 handling, reusing `labels.requiredField`.
         const { fieldErrors } = await parseApiError(response);
-        const known: Array<keyof UpdatePersonInput> = ['firstName', 'lastName', 'email', 'phone', 'address', 'fiscalCode'];
+        const known: Array<keyof UpdatePersonInput> = ['firstName', 'lastName', 'email', 'phone', 'address'];
         let mapped = false;
         for (const field of known) {
           if (fieldErrors.has(field)) {
@@ -333,7 +332,7 @@ function IdentitySection({
         <Field label={labels.lastName} error={errors.lastName ? labels.requiredField : undefined}>
           <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
         </Field>
-        <Field label={labels.email} wide error={errors.email ? labels.requiredField : undefined}>
+        <Field label={labels.email} error={errors.email ? labels.requiredField : undefined}>
           <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
         <Field label={labels.phone} error={errors.phone ? labels.requiredField : undefined}>
@@ -341,9 +340,6 @@ function IdentitySection({
         </Field>
         <Field label={labels.address} wide error={errors.address ? labels.requiredField : undefined}>
           <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
-        </Field>
-        <Field label={labels.fiscalCode} error={errors.fiscalCode ? labels.requiredField : undefined}>
-          <Input aria-invalid={Boolean(errors.fiscalCode)} {...register('fiscalCode')} />
         </Field>
       </div>
       {formError ? (

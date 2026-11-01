@@ -7,7 +7,7 @@
 // flights and upcoming bookings in every workflow state.
 //
 // Domain data goes through the REAL services (registerFlight, recordTopUp,
-// createBooking, ...) so every invariant holds (charges, hour meters,
+// createBooking, ...) so every invariant holds (charges, flight hours,
 // balances); only catalogue/anagrafica rows are raw creates, mirroring
 // `prisma/seed.ts`'s own idiom.
 //
@@ -129,20 +129,14 @@ const STANDARD_EXPIRY_TYPES: Array<{
 const AIRCRAFT = [
   {
     registration: 'I-B412', type: 'Ultraleggero 3 assi', model: 'Tecnam P92 Echo Super',
-    hourMeterMinutes: 1847 * 60 + 30, seats: 2, fuelType: 'Mogas',
-    notes: 'Revisione 100h eseguita a giugno; prossima prevista a 1900h.',
     rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 12500 }, { validFrom: '2026-01-01', priceCentsPerHour: 13200, dryHourlyRateCents: 10500 }],
   },
   {
     registration: 'I-A661', type: 'Ultraleggero 3 assi', model: 'Tecnam P2002 Sierra',
-    hourMeterMinutes: 932 * 60 + 10, seats: 2, fuelType: 'Mogas',
-    notes: 'Radio nuova (COMM2) installata a maggio.',
     rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 13000 }, { validFrom: '2026-01-01', priceCentsPerHour: 13800, dryHourlyRateCents: 11000 }],
   },
   {
     registration: 'I-PDVB', type: 'Aereo certificato', model: 'Piper PA-28-161 Warrior II',
-    hourMeterMinutes: 4210 * 60 + 45, seats: 4, fuelType: 'AVGAS 100LL',
-    notes: 'Di proprietà di un socio, in gestione al club con accordo di esercenza.',
     rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 17900 }, { validFrom: '2026-01-01', priceCentsPerHour: 18900, dryHourlyRateCents: 15200 }],
   },
 ];
@@ -188,7 +182,7 @@ type FlightPlan = {
   touchAndGo?: number; // takeoffs/landings count
 };
 
-// Chronological (oldest first) so hour meters and balances evolve sensibly.
+// Chronological (oldest first) so balances evolve sensibly.
 const FLIGHTS: FlightPlan[] = [
   { email: 'stefano.colombo61@libero.it', reg: 'I-A661', daysAgo: 70, takeoffHour: 10, durationMin: 50 },
   { email: 'marco.desantis@gmail.com', reg: 'I-B412', daysAgo: 62, takeoffHour: 9, durationMin: 55, touchAndGo: 4 },
@@ -432,7 +426,7 @@ async function main(): Promise<void> {
   }
   console.log(`Seed: ${TOP_UPS.length} top-ups recorded.`);
 
-  // Flights (through the service: charges, hour meters, balances all real).
+  // Flights (through the service: charges and balances all real).
   for (const f of FLIGHTS) {
     const takeoffAt = daysFromNow(-f.daysAgo, f.takeoffHour);
     const landingAt = new Date(takeoffAt.getTime() + f.durationMin * 60_000);
@@ -448,7 +442,6 @@ async function main(): Promise<void> {
       isSolo: false,
       takeoffs: f.touchAndGo ?? 1,
       landings: f.touchAndGo ?? 1,
-      notes: f.destination ? 'Andata e ritorno in giornata.' : null,
     });
   }
   console.log(`Seed: ${FLIGHTS.length} flights registered.`);

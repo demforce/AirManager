@@ -28,7 +28,7 @@ export type AccountMovementTypeDto = z.infer<typeof accountMovementTypeSchema>;
  * `amountCents` is a SIGNED integer (AD-2) but a top-up is always positive —
  * `.positive()` rejects zero/negative at the boundary, capped at the
  * Postgres INTEGER max so an absurd value fails as a clean 422 instead of a
- * driver overflow (same defense-in-depth as `createAircraftSchema.hourMeterMinutes`,
+ * driver overflow (same defense-in-depth as `createAircraftRateSchema.priceCentsPerHour`,
  * review 2.4 F2). The UI converts euros to cents only at submit time
  * (Dev Notes) — this schema only ever sees the integer cents wire value.
  * `effectiveDate` is a calendar date only (`YYYY-MM-DD`), same
@@ -112,7 +112,7 @@ export type AccountOverviewWithAlertDto = z.infer<typeof accountOverviewWithAler
 
 /**
  * `GET /api/v1/people/{id}/account/movements` query (story 3.2) — the shared
- * pagination shape (story 1.5), same reuse as `listHourMeterAdjustmentsQuerySchema`,
+ * pagination shape (story 1.5), same reuse as `listAircraftQuerySchema`,
  * plus the `?format=xlsx` export params (story 10.1, AC 1).
  */
 export const listAccountMovementsQuerySchema = paginationQuerySchema.extend({ ...exportQuerySchema.shape });

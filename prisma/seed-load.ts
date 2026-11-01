@@ -12,7 +12,7 @@
 // rows that would take far too long (each one opens its own transaction and
 // does several round trips). Instead it reproduces the invariants those
 // services enforce with direct, batched `createMany` inserts: aircraft/
-// instructor hourly-rate snapshots on every flight, hour-meter advances,
+// instructor hourly-rate snapshots on every flight,
 // FLIGHT_CHARGE amounts (`round(rate * minutes / 60)`), booking non-overlap
 // for APPROVED bookings only, etc. — see
 // the per-phase comments below for exactly which invariant each phase
@@ -179,17 +179,17 @@ const CITIES = ['Pisa', 'Firenze', 'Lucca', 'Livorno', 'Siena', 'Pistoia', 'Prat
 const STREET_TYPES = ['Via', 'Via', 'Via', 'Piazza', 'Viale', 'Corso'];
 const STREET_NAMES = ['Roma', 'Garibaldi', 'Dante', 'della Repubblica', 'delle Colline', 'Verdi', 'Manzoni', 'IV Novembre', 'dei Mille', 'San Martino'];
 
-const AIRCRAFT_MODELS: Array<{ type: string; model: string; seats: number; fuelType: string; priceBandCents: [number, number] }> = [
-  { type: 'Ultraleggero 3 assi', model: 'Tecnam P92 Eaglet', seats: 2, fuelType: 'Mogas', priceBandCents: [11000, 13500] },
-  { type: 'Ultraleggero 3 assi', model: 'Tecnam P2008 JC', seats: 2, fuelType: 'Mogas', priceBandCents: [11500, 14000] },
-  { type: 'Ultraleggero 3 assi', model: 'Tecnam P2002 Sierra', seats: 2, fuelType: 'Mogas', priceBandCents: [11800, 14200] },
-  { type: 'Ultraleggero 3 assi', model: 'Pipistrel Virus SW', seats: 2, fuelType: 'Mogas', priceBandCents: [12000, 14500] },
-  { type: 'Ultraleggero 3 assi', model: 'Pipistrel Sinus', seats: 2, fuelType: 'Mogas', priceBandCents: [11500, 13800] },
-  { type: 'Aereo certificato', model: 'Cessna 172 Skyhawk', seats: 4, fuelType: 'AVGAS 100LL', priceBandCents: [16000, 20000] },
-  { type: 'Aereo certificato', model: 'Piper PA-28 Warrior II', seats: 4, fuelType: 'AVGAS 100LL', priceBandCents: [15500, 19500] },
-  { type: 'Aereo certificato', model: 'Robin DR400', seats: 4, fuelType: 'AVGAS 100LL', priceBandCents: [17000, 21000] },
-  { type: 'Aereo certificato', model: 'Aquila A210', seats: 2, fuelType: 'AVGAS 100LL', priceBandCents: [16500, 20500] },
-  { type: 'Aereo certificato', model: 'Diamond DA40', seats: 4, fuelType: 'AVGAS 100LL', priceBandCents: [19000, 24000] },
+const AIRCRAFT_MODELS: Array<{ type: string; model: string; priceBandCents: [number, number] }> = [
+  { type: 'Ultraleggero 3 assi', model: 'Tecnam P92 Eaglet', priceBandCents: [11000, 13500] },
+  { type: 'Ultraleggero 3 assi', model: 'Tecnam P2008 JC', priceBandCents: [11500, 14000] },
+  { type: 'Ultraleggero 3 assi', model: 'Tecnam P2002 Sierra', priceBandCents: [11800, 14200] },
+  { type: 'Ultraleggero 3 assi', model: 'Pipistrel Virus SW', priceBandCents: [12000, 14500] },
+  { type: 'Ultraleggero 3 assi', model: 'Pipistrel Sinus', priceBandCents: [11500, 13800] },
+  { type: 'Aereo certificato', model: 'Cessna 172 Skyhawk', priceBandCents: [16000, 20000] },
+  { type: 'Aereo certificato', model: 'Piper PA-28 Warrior II', priceBandCents: [15500, 19500] },
+  { type: 'Aereo certificato', model: 'Robin DR400', priceBandCents: [17000, 21000] },
+  { type: 'Aereo certificato', model: 'Aquila A210', priceBandCents: [16500, 20500] },
+  { type: 'Aereo certificato', model: 'Diamond DA40', priceBandCents: [19000, 24000] },
 ];
 const OOS_REASONS = [
   'Revisione 100h in corso.',
@@ -446,7 +446,6 @@ async function main(): Promise<void> {
     archivedAt: Date | null;
     isOutOfService: boolean;
     rates: Array<{ validFrom: Date; priceCentsPerHour: number }>;
-    meterMinutes: number; // mutable running hour-meter, advanced in Phase 3
     lastFlightDate: Date | null; // mutable, tracked in Phase 3 for correction ordering
   };
 
@@ -467,9 +466,6 @@ async function main(): Promise<void> {
     registration: string;
     type: string;
     model: string;
-    hourMeterMinutes: number;
-    seats: number;
-    fuelType: string;
     status: AircraftStatus;
     statusReason: string | null;
     outOfServiceUntil: Date | null;
@@ -484,7 +480,6 @@ async function main(): Promise<void> {
     const isOutOfService = chance(0.05);
     const archivedAt = isArchived ? addDays(HISTORY_START, randInt(HISTORY_DAYS - 400, HISTORY_DAYS)) : null;
     const outOfServiceUntil = isOutOfService && chance(0.5) ? addDays(TODAY, randInt(3, 45)) : null;
-    const initialMeterMinutes = randInt(200, 3000) * 60;
 
     const aircraftId = id();
     aircraftRows.push({
@@ -492,9 +487,6 @@ async function main(): Promise<void> {
       registration,
       type: spec.type,
       model: spec.model,
-      hourMeterMinutes: initialMeterMinutes,
-      seats: spec.seats,
-      fuelType: spec.fuelType,
       status: isOutOfService ? 'OUT_OF_SERVICE' : 'OPERATIONAL',
       statusReason: isOutOfService ? choice(OOS_REASONS) : null,
       outOfServiceUntil,
@@ -520,7 +512,7 @@ async function main(): Promise<void> {
       priceCents = Math.round(priceCents * randFloat(1.03, 1.09));
     }
 
-    aircraftRecords.push({ id: aircraftId, registration, archivedAt, isOutOfService, rates, meterMinutes: initialMeterMinutes, lastFlightDate: null });
+    aircraftRecords.push({ id: aircraftId, registration, archivedAt, isOutOfService, rates, lastFlightDate: null });
   }
 
   await batchInsert('Aircraft', (batch) => prisma.aircraft.createMany({ data: batch }), aircraftRows);
@@ -530,7 +522,7 @@ async function main(): Promise<void> {
   console.log(`Phase 2 done: ${aircraftRows.length} aircraft, ${aircraftRateRows.length} rate rows.`);
 
   // ===========================================================================
-  // PHASE 3 — Flights, hour-meter advance, FLIGHT_CHARGE (+ reversals/corrections)
+  // PHASE 3 — Flights, FLIGHT_CHARGE (+ reversals/corrections)
   // ===========================================================================
   console.log('\nPhase 3: flights...');
 
@@ -575,8 +567,6 @@ async function main(): Promise<void> {
     takeoffAt: Date;
     landingAt: Date;
     minutes: number;
-    hourMeterStart: number;
-    hourMeterEnd: number;
     takeoffs: number;
     landings: number;
     aircraftRateCentsPerHour: number;
@@ -602,13 +592,12 @@ async function main(): Promise<void> {
     const count = perAircraftCount[ai]!;
     if (count === 0) continue;
 
-    // Generate this aircraft's flight instants, sorted chronologically —
-    // meter advances strictly in this order (see module doc: monotonicity by construction).
+    // Generate this aircraft's flight instants, sorted chronologically.
     // An aircraft cannot take off twice at the exact same instant — dedupe
     // per-aircraft takeoffAt (without this, an occasional (day, hour, minute)
-    // collision produces a tied pair whose relative order then depends on
-    // whatever tiebreak a reader sorts by, which can disagree with this
-    // loop's own meter-assignment order and read back as non-monotonic).
+    // collision produces two flights of the same aircraft taking off together,
+    // the most blatant case of what the registry's `FLIGHT_OVERLAP` guard,
+    // story 16.2, rejects; partial overlaps are NOT prevented here).
     const usedTakeoffMs = new Set<number>();
     const instants = Array.from({ length: count }, () => {
       const day = sampleFlightDate();
@@ -648,9 +637,6 @@ async function main(): Promise<void> {
 
       const minutes = instant.durationMin;
       const landingAt = new Date(instant.takeoffAt.getTime() + minutes * 60_000);
-      const hourMeterStart = aircraft.meterMinutes;
-      const hourMeterEnd = hourMeterStart + minutes;
-      aircraft.meterMinutes = hourMeterEnd;
       aircraft.lastFlightDate = flightDate;
 
       const aircraftRateCentsPerHour = effectiveRate(aircraft.rates, flightDate);
@@ -677,8 +663,6 @@ async function main(): Promise<void> {
         takeoffAt: instant.takeoffAt,
         landingAt,
         minutes,
-        hourMeterStart,
-        hourMeterEnd,
         takeoffs: touchAndGo,
         landings: touchAndGo,
         aircraftRateCentsPerHour,
@@ -691,15 +675,9 @@ async function main(): Promise<void> {
   }
 
   // --- Cancellations (~2%) + a small corrected share (~40% of those) --------
-  // Deliberate load-seed simplification (documented for the ratifying session):
-  // the REAL `cancelFlight` service rolls the aircraft's hour meter back by the
-  // cancelled flight's minutes. Doing that here would make the meter sequence
-  // depend on cancellation choice, and — since corrections are dated to stay
-  // ordered after everything else already generated for their aircraft — could
-  // reintroduce a monotonicity violation. This seed keeps the meter
-  // strictly forward-only regardless of cancellation, trading a small,
-  // flagged deviation from `cancelFlight`'s exact semantics for a dataset that
-  // is unambiguously monotonic when ordered by flightDate.
+  // A correction is dated AFTER everything already generated for its aircraft
+  // (`lastFlightDate`), so it can never overlap another flight of the same
+  // aircraft.
   const cancelCandidates = shuffled(flightRows.map((_, i) => i)).slice(0, Math.round(flightRows.length * 0.02));
   const cancelledSet = new Set(cancelCandidates);
   const correctionFlightRows: FlightRow[] = [];
@@ -721,9 +699,6 @@ async function main(): Promise<void> {
       const newMinutes = Math.max(15, Math.round(original.minutes * randFloat(0.85, 1.15)));
       const takeoffAt = atUtcTime(forcedDay, randInt(8, 18), choice([0, 15, 30, 45]));
       const landingAt = new Date(takeoffAt.getTime() + newMinutes * 60_000);
-      const hourMeterStart = aircraft.meterMinutes;
-      const hourMeterEnd = hourMeterStart + newMinutes;
-      aircraft.meterMinutes = hourMeterEnd;
       aircraft.lastFlightDate = forcedDay;
 
       const aircraftRateCentsPerHour = effectiveRate(aircraft.rates, forcedDay);
@@ -748,8 +723,6 @@ async function main(): Promise<void> {
         takeoffAt,
         landingAt,
         minutes: newMinutes,
-        hourMeterStart,
-        hourMeterEnd,
         takeoffs: 1,
         landings: 1,
         aircraftRateCentsPerHour,
@@ -783,8 +756,6 @@ async function main(): Promise<void> {
           takeoffAt: f.takeoffAt,
           landingAt: f.landingAt,
           minutes: f.minutes,
-          hourMeterStart: f.hourMeterStart,
-          hourMeterEnd: f.hourMeterEnd,
           takeoffs: f.takeoffs,
           landings: f.landings,
           aircraftRateCentsPerHour: f.aircraftRateCentsPerHour,
@@ -850,15 +821,8 @@ async function main(): Promise<void> {
 
   await batchInsert('AccountMovement (FLIGHT_CHARGE/_REVERSAL)', (batch) => prisma.accountMovement.createMany({ data: batch }), movementRows);
 
-  // --- Persist the simulated final hour-meter per aircraft --------------------
-  const meterUpdates = aircraftRecords.filter((a) => a.meterMinutes !== aircraftRows.find((r) => r.id === a.id)!.hourMeterMinutes);
-  for (let i = 0; i < meterUpdates.length; i += 50) {
-    const chunk = meterUpdates.slice(i, i + 50);
-    await Promise.all(chunk.map((a) => prisma.aircraft.update({ where: { id: a.id }, data: { hourMeterMinutes: a.meterMinutes } })));
-  }
-
   console.log(
-    `Phase 3 done: ${allFlightRows.length} flights (${flightRows.length} primary + ${correctionFlightRows.length} corrections, ${cancelledSet.size} cancelled), ${movementRows.length} flight-related account movements, ${meterUpdates.length} aircraft meters updated.`,
+    `Phase 3 done: ${allFlightRows.length} flights (${flightRows.length} primary + ${correctionFlightRows.length} corrections, ${cancelledSet.size} cancelled), ${movementRows.length} flight-related account movements.`,
   );
 
   // ===========================================================================

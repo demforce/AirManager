@@ -34,7 +34,7 @@ export class NotFoundError extends DomainError {
  * 422. `code` defaults to the generic `VALIDATION_ERROR` (every existing
  * caller keeps that behavior unchanged) but a domain guard can pass a
  * stable SCREAMING_SNAKE code instead (story 5.1, AC 3) so a 422 caused by
- * e.g. an invalid hour-meter reading is distinguishable, on the wire, from
+ * e.g. an invalid takeoff/landing pair is distinguishable, on the wire, from
  * one caused by a missing rate — `flights.service.ts#registerFlight` is the
  * first caller to do so.
  */

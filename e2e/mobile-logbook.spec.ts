@@ -95,7 +95,7 @@ type Aircraft = { id: string; registration: string };
 async function createAircraftWithRate(page: Page, tag: string): Promise<Aircraft> {
   const registration = `I-L6${tag}`.slice(0, 20);
   const created = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Logbook 15.6', hourMeterMinutes: 60, seats: 2 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Logbook 15.6' },
   });
   expect(created.status(), await created.text()).toBe(201);
   const { id } = (await created.json()) as { id: string };
@@ -150,9 +150,6 @@ type FlightOverrides = {
   arrivalAirfield?: string;
   takeoffs?: number;
   landings?: number;
-  hourMeterStart?: number;
-  hourMeterEnd?: number;
-  notes?: string;
   minutes?: number;
 };
 
@@ -499,9 +496,6 @@ test.describe('Registro voli mobile — sheet di dettaglio (story 15.6, AC 2/3)'
       instructorPersonId: instructor.id,
       takeoffs: 4,
       landings: 4,
-      hourMeterStart: 1200,
-      hourMeterEnd: 1295,
-      notes: 'Circuiti e riattaccate',
     });
 
     await page.setViewportSize(PHONE);
@@ -535,10 +529,11 @@ test.describe('Registro voli mobile — sheet di dettaglio (story 15.6, AC 2/3)'
     expect(rows['Decolli']).toBe('4');
     expect(rows['Atterraggi']).toBe('4');
     expect(rows['Costo']).toBeTruthy();
-    // ...and the three the desktop table has no room for (ratifica R-15.6-b).
+    // ...and what the desktop table has no room for (ratifica R-15.6-b).
     expect(rows['Orari']).toMatch(/^\d{2}:\d{2} – \d{2}:\d{2}$/);
-    expect(rows['Contaore']).toBe('1200 – 1295');
-    expect(rows['Note']).toBe('Circuiti e riattaccate');
+    // Story 19.2: these two rows no longer exist, on any face.
+    expect(rows['Contaore']).toBeUndefined();
+    expect(rows['Note']).toBeUndefined();
     // The admin sees the motivo of the override; the row is forced by fixture.
     expect(rows['Deroga']).toBe('Fixture e2e 15.6');
 

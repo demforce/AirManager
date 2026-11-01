@@ -132,10 +132,7 @@ const CREATED_FLIGHT_ROW = {
   landingAt: new Date('2020-01-15T11:20:00.000Z'),
   minutes: 80,
   takeoffs: 1,
-  hourMeterStart: null,
-  hourMeterEnd: null,
   landings: 1,
-  notes: null,
   aircraftRateCentsPerHour: 15000,
   aircraftAmountCents: 20000,
   instructorRateCentsPerHour: null,
@@ -202,7 +199,7 @@ describe('flights.service — AC 6 boundary, through the REAL findBlockingExpire
     getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
     getAccountOverviewMock.mockResolvedValue({ account: { id: 'account_1', createdAt: new Date('2026-01-01T00:00:00.000Z') }, balanceCents: -20000, recentMovements: [] });
     getNegativeBalanceThresholdCentsMock.mockResolvedValue(-999_999_999);
-    queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+    queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     // Review F5's own predicate is orthogonal to this file's concern (the
     // EXPIRED boundary) — disabled here so every case below exercises ONLY
     // `findBlockingExpiredDocuments`'s real date math.

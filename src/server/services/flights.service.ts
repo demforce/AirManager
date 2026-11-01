@@ -60,35 +60,28 @@ import { getEffectiveRate } from './rates.service';
  * `FLIGHT_CHARGE.amountCents` negated, NEVER recalculated — AD-4, same
  * `reversalOfId`-linking pattern as `accounts.service.ts#recordAdjustment`)
  * plus `Flight.status -> CANCELLED` (`cancelledAt`/`cancelReason` set
- * together) plus the aircraft's contaore reduced by the flight's minutes
- * (`Math.max(0, current - minutes)` — the clamp is deliberate: a manual
- * `HourMeterAdjustment` that already lowered the contaore below this
- * flight's minutes must never BLOCK a cancellation, the audit trail already
- * lives in the flight + any rectifications). Story 16.2 (F13) leaves that
- * clamp exactly where it was and stops it LOSING information: both stornos
- * now go through `decreaseHourMeterForReversal`, which — only when the clamp
- * actually bites — writes the `HourMeterAdjustment` recording the minutes it
- * could not subtract. Cancelling stays always lecito: there is no 422 on any
- * contaore path.
+ * together). Nothing is written on the `Aircraft` row: since story 19.2
+ * (R-19-b) an aircraft's hours are the sum of its `REGISTERED` flights, so
+ * the status change alone takes the cancelled minutes out of the total.
  *
  * **No duplicate, no overlap (story 16.2, F3)**: `registerFlight` and
  * `correctFlight` both call `assertNoOverlappingFlight` INSIDE their
- * transaction, right under the `Aircraft` `FOR UPDATE` lock they take for
- * the contaore anyway — 409 `FLIGHT_OVERLAP`, with the conflicting flight's
- * id and instants in `details`, not derogable by `force`. See that
- * function's own doc-comment for the semi-open interval semantics (the
- * bookings' own), why only `REGISTERED` occupies an interval, and why
- * `correctFlight` must exclude the flight it is replacing.
+ * transaction, right under the `Aircraft` `FOR UPDATE` lock they open it
+ * with (the lock that serializes this guard, and the first step of the
+ * `Aircraft -> Account` order below) — 409 `FLIGHT_OVERLAP`, with the
+ * conflicting flight's id and instants in `details`, not derogable by
+ * `force`. See that function's own doc-comment for the semi-open interval
+ * semantics (the bookings' own), why only `REGISTERED` occupies an interval,
+ * and why `correctFlight` must exclude the flight it is replacing.
  *
  * **`registerFlightCore` (the mandatory refactor, Task 2)**: `registerFlight`
  * (story 5.1) and `correctFlight` (story 5.3) both end in the exact
- * same in-transaction work — `Flight.create`, the `FLIGHT_CHARGE` movement,
- * the contaore advance — so that logic lives in
- * ONE place, `registerFlightCore`, which ASSUMES every lock it needs is
- * ALREADY held by its caller and takes none itself. `registerFlight` opens
- * its own transaction, takes the same two locks as before (Aircraft, then
- * Account — UNCHANGED, story 5.1's tests still pass unmodified), and
- * calls the core once. `correctFlight` does the storno FIRST (inside its own
+ * same in-transaction work — `Flight.create`, the `FLIGHT_CHARGE`
+ * movement — so that logic lives in ONE place, `registerFlightCore`, which
+ * ASSUMES every lock it needs is ALREADY held by its caller and takes none
+ * itself. `registerFlight` opens its own transaction, takes the same two
+ * locks as before (Aircraft, then Account — UNCHANGED, story 5.1's tests
+ * still pass unmodified), and calls the core once. `correctFlight` does the storno FIRST (inside its own
  * transaction) and calls the SAME core immediately after, so the "new"
  * flight is registered against data the storno has already refunded.
  *
@@ -152,11 +145,8 @@ export type FlightListItem = {
   minutes: number;
   /** Story 11.1 — NOT NULL DEFAULT 1. */
   takeoffs: number;
-  hourMeterStart: number | null;
-  hourMeterEnd: number | null;
   /** Story 11.1 — NOT NULL DEFAULT 1 (backfilled from historical NULL). */
   landings: number;
-  notes: string | null;
   aircraft: { id: string; registration: string };
   person: { id: string; firstName: string; lastName: string };
   /** `null` <=> no instructor on this flight. `personId` (not the profile id — AD-11/consistency with the API's own `instructorPersonId`). */
@@ -208,10 +198,7 @@ const FLIGHT_SELECT = {
   landingAt: true,
   minutes: true,
   takeoffs: true,
-  hourMeterStart: true,
-  hourMeterEnd: true,
   landings: true,
-  notes: true,
   aircraftRateCentsPerHour: true,
   aircraftAmountCents: true,
   instructorRateCentsPerHour: true,
@@ -246,10 +233,7 @@ type SelectedFlight = {
   landingAt: Date | null;
   minutes: number;
   takeoffs: number;
-  hourMeterStart: number | null;
-  hourMeterEnd: number | null;
   landings: number;
-  notes: string | null;
   aircraftRateCentsPerHour: number;
   aircraftAmountCents: number;
   instructorRateCentsPerHour: number | null;
@@ -295,10 +279,7 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean, includeF
     landingAt: flight.landingAt,
     minutes: flight.minutes,
     takeoffs: flight.takeoffs,
-    hourMeterStart: flight.hourMeterStart,
-    hourMeterEnd: flight.hourMeterEnd,
     landings: flight.landings,
-    notes: flight.notes,
     aircraft: flight.aircraft,
     person: flight.person,
     instructor: flight.instructorProfile
@@ -369,8 +350,6 @@ type ResolvedFlightInput = {
   landingAt: Date;
   flightDate: Date;
   minutes: number;
-  hourMeterStart: number | null;
-  hourMeterEnd: number | null;
   aircraftRateCentsPerHour: number;
   instructorRateCentsPerHour: number | null;
   /** Already rounded on the FULL duration. */
@@ -506,7 +485,7 @@ function deriveFlightDate(takeoffAtIso: string): Date {
  * R-14.3-a's flightType exemption. `original` is only ever supplied by
  * `correctFlight` (its own recorded identity); a brand-new `registerFlight`
  * call never passes it, so it is always fully checked. Without this, a
- * notes/hour-meter-only correction of a HISTORICAL flight becomes a permanent
+ * cycles-only correction of a HISTORICAL flight becomes a permanent
  * dead end (422, no legitimate bypass) the moment a document expires AFTER the
  * flight was flown, and forces the ADMIN force-override path to stamp a fake
  * "Deroga" on a flight that was never an operational override.
@@ -560,9 +539,7 @@ function isIdentityUnchanged(
  * Europe/Rome calendar day now, story 16.1 — comparing a Roma date against a
  * UTC "today" rejected a flight that had already landed in the 00:00-02:00
  * Roma window) -> `FLIGHT_DATE_IN_FUTURE` (unchanged code/check, now applied to
- * the derived date); `hourMeterStart`/`hourMeterEnd` (informational only
- * since story 11.1, NEVER the duration source) validated as a
- * self-consistent pair when either is given -> `HOUR_METER_INVALID`;
+ * the derived date);
  * `SCHOOL` without an instructor -> `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`;
  * instructor === pilot/student -> `INSTRUCTOR_SAME_AS_PILOT`; instructor
  * person unknown OR without an active `InstructorProfile` ->
@@ -602,7 +579,7 @@ function isIdentityUnchanged(
  * R-14.4-b)**: when `original` is supplied (`correctFlight` only) and the
  * NEW `personId`/`instructorPersonId`/`flightDate` are IDENTICAL to the
  * flight's own recorded ones, the ENTIRE expiry guard above is skipped — a
- * notes/hour-meter/times-only correction of a historical flight is never
+ * cycles/times-only correction of a historical flight is never
  * blocked (nor does it need a "Deroga" stamp) by a document that expired, or
  * was only ever required, AFTER the flight was flown. Same
  * "correcting-is-not-registering-anew" principle as `originalFlightType`'s
@@ -677,12 +654,12 @@ async function resolveFlightInput(
   // correction that MOVES the flight onto a different aircraft (that aircraft
   // is a new registration for it); NEVER a correction that keeps the same
   // aircraft — same "correcting is not registering anew" principle as
-  // R-14.4-b/R-14.3-a, because blocking a notes-only correction of a
+  // R-14.4-b/R-14.3-a, because blocking a cycles-only correction of a
   // HISTORICAL flight just because its aircraft is grounded TODAY is a
   // permanent dead end. `cancelFlight` never comes through here at all.
   //
   // AD-5, declared: `Aircraft` has NO grounding START date (`updatedAt` changes
-  // on every write, including `adjustHourMeter`), so this guard can only see
+  // on every write to the row), so this guard can only see
   // the CURRENT state, never "was it grounded on the flight date". That is
   // precisely why the deroga below exists — the aircraft that comes back with
   // a hard landing is grounded immediately, and the flight that caused it must
@@ -783,25 +760,6 @@ async function resolveFlightInput(
   const flightDate = deriveFlightDate(input.takeoffAt);
   if (flightDate.getTime() > todayDateOnlyUtcInZone(APP_TIMEZONE).getTime()) {
     throw new ValidationError('Flight date cannot be in the future.', undefined, 'FLIGHT_DATE_IN_FUTURE');
-  }
-
-  // `hourMeterStart`/`hourMeterEnd` (story 11.1): informational only —
-  // NEVER the source of `minutes` anymore, just validated as a
-  // self-consistent pair when either is given (a legitimate reading may
-  // diverge from `minutes`: engine time vs block time).
-  let hourMeterStart: number | null = null;
-  let hourMeterEnd: number | null = null;
-  const hasHourMeterStart = input.hourMeterStart !== undefined;
-  const hasHourMeterEnd = input.hourMeterEnd !== undefined;
-  if (hasHourMeterStart || hasHourMeterEnd) {
-    if (!hasHourMeterStart || !hasHourMeterEnd) {
-      throw new ValidationError('hourMeterStart and hourMeterEnd must both be provided together.', undefined, 'HOUR_METER_INVALID');
-    }
-    hourMeterStart = input.hourMeterStart!;
-    hourMeterEnd = input.hourMeterEnd!;
-    if (hourMeterEnd <= hourMeterStart) {
-      throw new ValidationError('hourMeterEnd must be strictly after hourMeterStart.', undefined, 'HOUR_METER_INVALID');
-    }
   }
 
   if (input.flightType === 'SCHOOL' && !input.instructorPersonId) {
@@ -914,8 +872,6 @@ async function resolveFlightInput(
     landingAt,
     flightDate,
     minutes,
-    hourMeterStart,
-    hourMeterEnd,
     aircraftRateCentsPerHour: aircraftRate.priceCentsPerHour,
     instructorRateCentsPerHour: instructorRate?.priceCentsPerHour ?? null,
     instructorAmountCents,
@@ -929,12 +885,11 @@ async function resolveFlightInput(
  * implementations. Until this story the registry had NO second line of
  * defence at all: request idempotency (TD-2) is opt-in on a header, so a
  * double click or a reload after a timeout registered the SAME flight twice,
- * charged it twice and advanced the contaore twice (measured: 6000 -> 6060
- * -> 6120 minutes for 60 minutes flown).
+ * charged it twice and counted its minutes twice in the aircraft's hours.
  *
  * ASSUMES the caller already holds the `FOR UPDATE` lock on
- * `params.aircraftId` and calls this INSIDE that transaction: that lock —
- * taken for the contaore anyway — is what serializes two concurrent
+ * `params.aircraftId` and calls this INSIDE that transaction: that lock is
+ * what serializes two concurrent
  * registrations on the same airframe, so the read below can never miss a
  * flight that a racing transaction is about to commit. This is exactly where
  * `createBooking`/`approveBooking` put their own three overlap predicates
@@ -950,7 +905,7 @@ async function resolveFlightInput(
  * guard independent of WHEN `correctFlight` writes its storno.
  * `excludeFlightId` is load-bearing there, not decorative: the guard runs
  * BEFORE that storno, so the original is still `REGISTERED` and every
- * conservative correction (notes, cycles, hour-meter readings) would answer
+ * conservative correction (cycles, airfields) would answer
  * 409 without it.
  *
  * `orderBy takeoffAt asc` makes the flight NAMED in `details` deterministic
@@ -1011,80 +966,10 @@ async function assertNoOverlappingFlight(
   );
 }
 
-/**
- * The contaore going DOWN on a storno (story 16.2, F13; AD-6) — the ONE
- * implementation shared by `cancelFlight` and `correctFlight`, returning the
- * new value.
- *
- * The clamp at 0 is UNCHANGED and stays deliberate (module doc-comment: a
- * manual `HourMeterAdjustment` that already lowered the contaore below this
- * flight's minutes must never BLOCK a cancellation — cancelling is always
- * lecito, so a 422 here was never an option). What changes is that the clamp
- * no longer swallows information: when it BITES, the minutes that could not
- * be subtracted get their `HourMeterAdjustment` row, which is what [I-3]
- * ("the contaore changes only WITH a trace") demands. Measured before this
- * story: 25 minutes evaporated with no record anywhere.
- *
- * Writes the row ONLY when the clamp actually bites — when it does not, the
- * behavior is byte-identical to before (no row, no cost). The row records the
- * CLAMP (`current -> 0`), never the final value a following re-registration
- * leaves behind: in `correctFlight` the rectification of the storno and the
- * ordinary `+=` of the new flight are two distinct events, and merging them
- * into one row would narrate an event that never happened.
- *
- * `HourMeterAdjustment` has no FK to `Flight` (`schema.prisma`) — adding one
- * would be a migration nobody asked for — so the link lives in the text, and
- * that is why the text carries the flight id. `reason` is generated Italian
- * and VISIBLE to the operator in the aircraft's hour-meter history
- * (`aircraft-editor.tsx`), exactly like the generated movement descriptions
- * this service already writes ("Volo {marche} {data} — {H:MM}", "Storno volo
- * {marche} {data} — {motivo}"): no server-side i18n is introduced for an
- * audit line. `actorUserId` is whoever performed the storno (the column is
- * NOT NULL). The row is created in the SAME transaction as the storno, so it
- * rolls back with it — same shape as `aircraft.service.ts#adjustHourMeter`.
- */
-async function decreaseHourMeterForReversal(
-  tx: Prisma.TransactionClient,
-  params: {
-    aircraftId: string;
-    currentMinutes: number;
-    flightMinutes: number;
-    actorUserId: string;
-    flight: { id: string; registration: string; flightDate: Date };
-  },
-): Promise<number> {
-  const newMinutes = Math.max(0, params.currentMinutes - params.flightMinutes);
-  if (params.currentMinutes - params.flightMinutes < 0) {
-    const unsubtractableMinutes = params.flightMinutes - params.currentMinutes;
-    await tx.hourMeterAdjustment.create({
-      data: {
-        aircraftId: params.aircraftId,
-        actorUserId: params.actorUserId,
-        previousMinutes: params.currentMinutes,
-        newMinutes,
-        reason:
-          `Storno volo ${params.flight.registration} ${toDateOnlyString(params.flight.flightDate)} ` +
-          `(id ${params.flight.id}): ${unsubtractableMinutes} minuti non sottraibili dal contaore.`,
-      },
-    });
-  }
-  await tx.aircraft.update({ where: { id: params.aircraftId }, data: { hourMeterMinutes: newMinutes } });
-  return newMinutes;
-}
-
 type RegisterFlightCoreInput = {
   actorUserId: string;
   aircraftId: string;
   aircraftRegistration: string;
-  /**
-   * The aircraft's `hourMeterMinutes` value THIS FUNCTION should increment
-   * from — the caller already holds the `FOR UPDATE` lock and supplies the
-   * current value; `correctFlight` passes the ALREADY-DECREMENTED value when
-   * the correction keeps the same aircraft as the flight it storno'd, so the
-   * net effect is exactly `current - oldMinutes + newMinutes` (never a stale
-   * pre-storno read).
-   */
-  aircraftHourMeterMinutes: number;
   accountId: string;
   personId: string;
   instructorProfileId: string | null;
@@ -1099,11 +984,8 @@ type RegisterFlightCoreInput = {
   /** Story 9.4 — dual/solo distinction, already validated by `resolveFlightInput` against `flightType`. */
   isSolo: boolean;
   minutes: number;
-  hourMeterStart: number | null;
-  hourMeterEnd: number | null;
   takeoffs: number;
   landings: number;
-  notes: string | null;
   aircraftRateCentsPerHour: number;
   instructorRateCentsPerHour: number | null;
   instructorAmountCents: number | null;
@@ -1124,7 +1006,7 @@ type RegisterFlightCoreResult = {
  * extracted (story 5.3, Task 2 — the mandatory refactor) so `registerFlight`
  * (a brand-new flight, its own transaction) and `correctFlight` (a storno
  * immediately followed by a brand-new flight, SAME transaction) run ONE
- * implementation of the charge/contaore logic instead of two copies that
+ * implementation of the charge logic instead of two copies that
  * could drift. ASSUMES every lock its own writes need is ALREADY held by the
  * caller (the `Aircraft` row behind `aircraftId`, the `Account` row behind
  * `accountId`) — it takes none of its own; that is exactly what lets
@@ -1138,11 +1020,8 @@ type RegisterFlightCoreResult = {
  *    it returns is the TRUE pre-correction one.
  * 2. Writes, in order: `Flight.create` (full AD-4 snapshot, including
  *    `correctionOfId`), the `FLIGHT_CHARGE` `AccountMovement`
- *    (`amountCents: -(total)`, linked via `flightId`),
- *    `Aircraft.hourMeterMinutes` advanced by `minutes` from the
- *    CALLER-SUPPLIED current value (never re-read here — Dev Notes: that
- *    value already reflects any earlier write to the SAME row within this
- *    transaction).
+ *    (`amountCents: -(total)`, linked via `flightId`). Nothing is written on
+ *    the `Aircraft` row (story 19.2: its hours are the sum of its flights).
  */
 async function registerFlightCore(tx: Prisma.TransactionClient, params: RegisterFlightCoreInput): Promise<RegisterFlightCoreResult> {
   const aggregate = await tx.accountMovement.aggregate({
@@ -1172,11 +1051,8 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
       flightType: params.flightType,
       isSolo: params.isSolo,
       minutes: params.minutes,
-      hourMeterStart: params.hourMeterStart,
-      hourMeterEnd: params.hourMeterEnd,
       takeoffs: params.takeoffs,
       landings: params.landings,
-      notes: params.notes,
       aircraftRateCentsPerHour: params.aircraftRateCentsPerHour,
       aircraftAmountCents,
       instructorRateCentsPerHour: params.instructorRateCentsPerHour,
@@ -1208,16 +1084,6 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
     },
   });
 
-  // Contaore ALWAYS advances by `minutes` (+=) from the CALLER-SUPPLIED
-  // current value (never a SET to `hourMeterEnd`, never re-read here — Dev
-  // Notes/module doc-comment: out-of-order registrations, a prior manual
-  // adjustment, or (story 5.3) this SAME transaction's own storno decrement
-  // would make a fresh, blind SET destructive).
-  await tx.aircraft.update({
-    where: { id: params.aircraftId },
-    data: { hourMeterMinutes: params.aircraftHourMeterMinutes + params.minutes },
-  });
-
   return { flight: created, balanceBeforeCents, balanceAfterCents: balanceBeforeCents - totalAmountCents };
 }
 
@@ -1238,8 +1104,8 @@ function isUniqueViolation(error: unknown): boolean {
  * Guards and rate lookups: `resolveFlightInput` (story 5.3's extraction —
  * unchanged behavior/error codes from 5.1).
  *
- * ONE `prisma.$transaction`: `FOR UPDATE` locks on the `Aircraft` row (same
- * raw-query pattern as `aircraft.service.ts#adjustHourMeter`) and, after the
+ * ONE `prisma.$transaction`: `FOR UPDATE` locks on the `Aircraft` row (raw
+ * SQL — Prisma has no select-for-update) and, after the
  * `Account` get-or-create upsert, on the `Account` row (same pattern as
  * `recordAdjustment`) so the pre-movement balance never races a concurrent
  * top-up/adjustment/flight on the same account. This lock shape is
@@ -1268,13 +1134,12 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
     accountId,
     accountCreatedAt,
   } = await prisma.$transaction(async (tx) => {
-    // Row lock (FOR UPDATE): same raw-query pattern as `adjustHourMeter` —
-    // serializes concurrent flights/adjustments touching this aircraft's
-    // contaore.
-    const lockedAircraft = await tx.$queryRaw<Array<{ hourMeterMinutes: number }>>`
-      SELECT "hourMeterMinutes" FROM "Aircraft" WHERE "id" = ${resolved.aircraft.id} FOR UPDATE`;
-    const existingAircraft = lockedAircraft[0];
-    if (!existingAircraft) {
+    // Row lock (FOR UPDATE) — serializes concurrent registrations on this
+    // aircraft, so the `FLIGHT_OVERLAP` read below never misses a racing
+    // flight (story 16.2), and opens the `Aircraft -> Account` lock order.
+    const lockedAircraft = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Aircraft" WHERE "id" = ${resolved.aircraft.id} FOR UPDATE`;
+    if (lockedAircraft.length === 0) {
       throw new NotFoundError('Aircraft not found.');
     }
 
@@ -1308,7 +1173,6 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       actorUserId: actor.userId,
       aircraftId: resolved.aircraft.id,
       aircraftRegistration: resolved.aircraft.registration,
-      aircraftHourMeterMinutes: existingAircraft.hourMeterMinutes,
       accountId: account.id,
       personId: resolved.person.id,
       instructorProfileId: resolved.instructorProfileId,
@@ -1321,11 +1185,8 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       flightType: input.flightType,
       isSolo: input.isSolo,
       minutes: resolved.minutes,
-      hourMeterStart: resolved.hourMeterStart,
-      hourMeterEnd: resolved.hourMeterEnd,
       takeoffs: input.takeoffs ?? 1,
       landings: input.landings ?? 1,
-      notes: input.notes ?? null,
       aircraftRateCentsPerHour: resolved.aircraftRateCentsPerHour,
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
       instructorAmountCents: resolved.instructorAmountCents,
@@ -1389,7 +1250,6 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
   personId: string;
   /** Review F4 (ratifica R-14.4-b) — the ORIGINAL flight's own instructor, by PERSON id (matching `resolveFlightInput`'s own `instructorPersonId` local) so a correction that keeps every identity field unchanged can skip the expiry guard entirely. `null` <=> the original flight had no instructor. */
   instructorPersonId: string | null;
-  minutes: number;
   flightDate: Date;
   /** Story 14.3 review F3 (ratifica R-14.3-a) — the ORIGINAL flight's own recorded type, so `correctFlight` can let a correction keep it unchanged even for a person who is student-only TODAY. */
   flightType: FlightType;
@@ -1403,7 +1263,6 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
       status: true,
       aircraftId: true,
       personId: true,
-      minutes: true,
       flightDate: true,
       flightType: true,
       instructorProfile: { select: { person: { select: { id: true } } } },
@@ -1445,7 +1304,6 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
     aircraftId: flight.aircraftId,
     personId: flight.personId,
     instructorPersonId: flight.instructorProfile?.person.id ?? null,
-    minutes: flight.minutes,
     flightDate: flight.flightDate,
     flightType: flight.flightType,
     aircraft: flight.aircraft,
@@ -1476,11 +1334,9 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
  * when it happens, same convention as `recordAdjustment`) with a P2002 catch
  * on `reversalOfId`
  * (the backstop half, for a concurrent double-cancel that raced past the
- * pre-check), and `Aircraft.hourMeterMinutes = max(0, current - minutes)`
- * (clamped — module doc-comment: a prior manual rectification undershooting
- * this flight's minutes must never BLOCK the cancellation — written through
- * `decreaseHourMeterForReversal`, which since story 16.2 records the clamp
- * as an `HourMeterAdjustment` whenever it bites).
+ * pre-check). Nothing is written on the `Aircraft` row (story 19.2): the
+ * lock on it stays for the macro order with a concurrent `correctFlight` and
+ * to serialize a cancel against a correction of the SAME flight.
  *
  * NO overlap guard here (story 16.2, AD-4): a storno creates no interval, so
  * there is nothing for it to conflict with — the same line story AOG-1a's
@@ -1496,10 +1352,9 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
   const reason = input.reason;
 
   const updated = await prisma.$transaction(async (tx) => {
-    const lockedAircraft = await tx.$queryRaw<Array<{ hourMeterMinutes: number }>>`
-      SELECT "hourMeterMinutes" FROM "Aircraft" WHERE "id" = ${flight.aircraftId} FOR UPDATE`;
-    const existingAircraft = lockedAircraft[0];
-    if (!existingAircraft) {
+    const lockedAircraft = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Aircraft" WHERE "id" = ${flight.aircraftId} FOR UPDATE`;
+    if (lockedAircraft.length === 0) {
       throw new NotFoundError('Aircraft not found.');
     }
 
@@ -1543,16 +1398,6 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
       throw error;
     }
 
-    // Story 16.2 (F13/AD-6): the clamp still clamps, but a clamp that BITES
-    // now leaves its `HourMeterAdjustment` behind (see that helper).
-    await decreaseHourMeterForReversal(tx, {
-      aircraftId: flight.aircraftId,
-      currentMinutes: existingAircraft.hourMeterMinutes,
-      flightMinutes: flight.minutes,
-      actorUserId: actor.userId,
-      flight: { id: flight.id, registration: flight.aircraft.registration, flightDate: flight.flightDate },
-    });
-
     return updatedFlight;
   });
 
@@ -1578,7 +1423,7 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
  * (Contesto).
  *
  * Transaction order (Contesto, mandatory): lock -> overlap guard (story
- * 16.2) -> storno (movimento + status + contaore giù) -> saldo-prima ->
+ * 16.2) -> storno (movimento + status) -> saldo-prima ->
  * nuova registrazione (via `registerFlightCore`) -> alert post-commit if the
  * band worsened. The guard sits before the storno so a correction onto an
  * occupied slot leaves NOTHING behind — not even the storno.
@@ -1595,7 +1440,7 @@ export async function cancelFlight(actor: Actor, flightId: string, input: Cancel
  *
  * The storno write is IDENTICAL in shape to `cancelFlight`'s (status +
  * cancelledAt/cancelReason + `FLIGHT_CHARGE_REVERSAL` with its P2002
- * backstop + the contaore clamp) — but on the ORIGINAL aircraft, which may
+ * backstop) — but on the ORIGINAL aircraft, which may
  * differ from the corrected data's aircraft. `registerFlightCore` is then
  * called with `correctionOfId` set to the original flight's id; its OWN
  * internal "saldo-prima" read (the first thing it does) happens AFTER this
@@ -1635,10 +1480,10 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
     // doc-comment) — a 1-element set (the common case: same aircraft,
     // corrected minutes/date/etc.) uses the identical query shape.
     const aircraftIds = Array.from(new Set([originalFlight.aircraftId, resolved.aircraft.id]));
-    const lockedAircraftRows = await tx.$queryRaw<Array<{ id: string; hourMeterMinutes: number }>>`
-      SELECT "id", "hourMeterMinutes" FROM "Aircraft" WHERE "id" IN (${Prisma.join(aircraftIds)}) ORDER BY "id" FOR UPDATE`;
-    const hourMeterById = new Map(lockedAircraftRows.map((row) => [row.id, row.hourMeterMinutes]));
-    if (!hourMeterById.has(originalFlight.aircraftId) || !hourMeterById.has(resolved.aircraft.id)) {
+    const lockedAircraftRows = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Aircraft" WHERE "id" IN (${Prisma.join(aircraftIds)}) ORDER BY "id" FOR UPDATE`;
+    const lockedAircraftIds = new Set(lockedAircraftRows.map((row) => row.id));
+    if (!lockedAircraftIds.has(originalFlight.aircraftId) || !lockedAircraftIds.has(resolved.aircraft.id)) {
       throw new NotFoundError('Aircraft not found.');
     }
 
@@ -1708,31 +1553,10 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       throw error;
     }
 
-    // Story 16.2 (F13/AD-6): same shared helper as `cancelFlight` — the row
-    // it writes records THIS clamp (`current -> 0`), not the value the
-    // re-registration below leaves.
-    const originalAircraftNewMeter = await decreaseHourMeterForReversal(tx, {
-      aircraftId: originalFlight.aircraftId,
-      currentMinutes: hourMeterById.get(originalFlight.aircraftId)!,
-      flightMinutes: originalFlight.minutes,
-      actorUserId: actor.userId,
-      flight: {
-        id: originalFlight.id,
-        registration: originalFlight.aircraft.registration,
-        flightDate: originalFlight.flightDate,
-      },
-    });
-    // Reflect the storno's decrement so `registerFlightCore` below
-    // increments from the POST-storno value — matters ONLY when the
-    // correction keeps the SAME aircraft (module doc-comment:
-    // `registerFlightCore` never re-reads the row itself).
-    hourMeterById.set(originalFlight.aircraftId, originalAircraftNewMeter);
-
     return registerFlightCore(tx, {
       actorUserId: actor.userId,
       aircraftId: resolved.aircraft.id,
       aircraftRegistration: resolved.aircraft.registration,
-      aircraftHourMeterMinutes: hourMeterById.get(resolved.aircraft.id)!,
       accountId: newAccount.id,
       personId: resolved.person.id,
       instructorProfileId: resolved.instructorProfileId,
@@ -1745,11 +1569,8 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       flightType: input.flightType,
       isSolo: input.isSolo,
       minutes: resolved.minutes,
-      hourMeterStart: resolved.hourMeterStart,
-      hourMeterEnd: resolved.hourMeterEnd,
       takeoffs: input.takeoffs ?? 1,
       landings: input.landings ?? 1,
-      notes: input.notes ?? null,
       aircraftRateCentsPerHour: resolved.aircraftRateCentsPerHour,
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
       instructorAmountCents: resolved.instructorAmountCents,

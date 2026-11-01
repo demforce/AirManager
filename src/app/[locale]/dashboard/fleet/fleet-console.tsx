@@ -64,7 +64,7 @@ export type FleetConsoleLabels = {
     openDetail: string;
     close: string;
     edit: string;
-    sheet: { status: string; aogReason: string; rate: string; seats: string; fuel: string; hourMeter: string; monthHours: string; notes: string };
+    sheet: { status: string; aogReason: string; rate: string; totalHours: string; monthHours: string };
     noValue: string;
   };
   editor: AircraftEditorLabels;
@@ -75,7 +75,6 @@ export type FleetConsoleLabels = {
     unarchived: string;
     setOutOfService: string;
     returnedToService: string;
-    hourMeterAdjusted: string;
     rateAdded: string;
   };
 };
@@ -90,6 +89,8 @@ type FleetConsoleProps = {
   locale: 'it' | 'en';
   /** Story 15.5 (R-15.5-b): flown minutes of the CURRENT MONTH, per aircraft of THIS page — `sumFlightMinutesByAircraft`. Missing key = did not fly. */
   monthMinutesById: Record<string, number>;
+  /** Story 19.2 (R-19-b): ALL-TIME flown minutes per aircraft of THIS page (the aircraft's hours), same source and same missing-key rule as `monthMinutesById`. */
+  totalMinutesById: Record<string, number>;
   labels: FleetConsoleLabels;
 };
 
@@ -121,6 +122,7 @@ export function FleetConsole({
   exportHref,
   locale,
   monthMinutesById,
+  totalMinutesById,
   labels,
 }: FleetConsoleProps) {
   const router = useRouter();
@@ -307,6 +309,7 @@ export function FleetConsole({
         target={target}
         onClose={() => setTarget(null)}
         onMutated={() => router.refresh()}
+        totalMinutes={target?.mode === 'edit' ? (totalMinutesById[target.aircraft.id] ?? 0) : null}
         locale={locale}
         labels={labels.editor}
         toastLabels={labels.toast}
@@ -320,17 +323,12 @@ export function FleetConsole({
           open
           onClose={closeSheet}
           testId="mobile-fleet-sheet"
-          // Review 15.5 F1: the `sub` ends up inside the dialog's accessible
-          // name (`${sub} — ${title}`, `bottom-sheet.tsx`), so an ABSENT segment
-          // is OMITTED here, never replaced by the "—" placeholder: 115 of the
-          // 121 active aircraft have no `fuelType`, and the placeholder made
-          // every one of their names read "Basato · — — I-ABCD · …".
-          sub={[sheetAircraft.based ? labels.editor.identity.basedOptions.based : labels.editor.identity.basedOptions.guest, sheetAircraft.fuelType]
-            .filter((part): part is string => Boolean(part))
-            .join(' · ')}
+          // The `sub` ends up inside the dialog's accessible name (`${sub} — ${title}`,
+          // `bottom-sheet.tsx`), so it must never be empty: the type is NOT NULL.
+          sub={sheetAircraft.type}
           title={`${sheetAircraft.registration} · ${sheetAircraft.model}`}
           badge={badgeFor(sheetAircraft, labels.badge)}
-          rows={fleetSheetRows(sheetAircraft, monthMinutesById[sheetAircraft.id] ?? 0, locale, labels)}
+          rows={fleetSheetRows(sheetAircraft, totalMinutesById[sheetAircraft.id] ?? 0, monthMinutesById[sheetAircraft.id] ?? 0, locale, labels)}
           closeLabel={labels.mobile.close}
           actions={
             <button
@@ -353,7 +351,13 @@ export function FleetConsole({
 }
 
 /** Detail rows of the fleet sheet — the template's own `openTail` builder (script 598-599), with the app's fields. */
-function fleetSheetRows(aircraft: FleetConsoleItem, monthMinutes: number, locale: 'it' | 'en', labels: FleetConsoleLabels): BottomSheetRow[] {
+function fleetSheetRows(
+  aircraft: FleetConsoleItem,
+  totalMinutes: number,
+  monthMinutes: number,
+  locale: 'it' | 'en',
+  labels: FleetConsoleLabels,
+): BottomSheetRow[] {
   const statusLabel = aircraft.archivedAt !== null ? labels.badge.archived : aircraft.status === 'OUT_OF_SERVICE' ? labels.badge.aog : aircraft.reserved ? labels.badge.reserved : labels.badge.available;
   const rows: BottomSheetRow[] = [{ k: labels.mobile.sheet.status, v: statusLabel }];
   if (aircraft.status === 'OUT_OF_SERVICE' && aircraft.statusReason) {
@@ -361,11 +365,8 @@ function fleetSheetRows(aircraft: FleetConsoleItem, monthMinutes: number, locale
   }
   rows.push(
     { k: labels.mobile.sheet.rate, v: aircraft.wetRateCents === null ? labels.mobile.noValue : `${formatCents(aircraft.wetRateCents, locale)}/h` },
-    { k: labels.mobile.sheet.seats, v: aircraft.seats === null ? labels.mobile.noValue : String(aircraft.seats) },
-    { k: labels.mobile.sheet.fuel, v: aircraft.fuelType ?? labels.mobile.noValue },
-    { k: labels.mobile.sheet.hourMeter, v: formatMinutes(aircraft.hourMeterMinutes) },
+    { k: labels.mobile.sheet.totalHours, v: formatMinutes(totalMinutes) },
     { k: labels.mobile.sheet.monthHours, v: formatMinutes(monthMinutes) },
-    { k: labels.mobile.sheet.notes, v: aircraft.notes ?? labels.mobile.noValue },
   );
   return rows;
 }

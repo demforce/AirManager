@@ -68,10 +68,15 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
   // THIS page, exactly like the two readers beside it — the window is the
   // current calendar month, and the card's own caption names it.
   const monthStart = parseDateOnlyUtc(`${toDateOnlyString(today).slice(0, 7)}-01`);
-  const [currentRatesById, reservedIds, monthMinutesById] = await Promise.all([
+  // Story 19.2 (R-19-b): the aircraft's hours (sheet row + editor readout) —
+  // the same aggregate with no window at all. No upper bound rather than
+  // `today`: `today` is a UTC date and would drop the flights registered
+  // between 00:00 and 02:00 Rome time.
+  const [currentRatesById, reservedIds, monthMinutesById, totalMinutesById] = await Promise.all([
     getEffectiveRates(actor, ids, today),
     listReservedAircraftIds(actor, ids, now),
     sumFlightMinutesByAircraft(actor, ids, monthStart, today),
+    sumFlightMinutesByAircraft(actor, ids, null, null),
   ]);
 
   const totalCount = fleetTotalResult.total;
@@ -89,16 +94,11 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
     registration: aircraft.registration,
     type: aircraft.type,
     model: aircraft.model,
-    hourMeterMinutes: aircraft.hourMeterMinutes,
-    notes: aircraft.notes,
     status: aircraft.status,
     statusReason: aircraft.statusReason,
     // Story AOG-1a — already `YYYY-MM-DD` off the service DTO (same `@db.Date`
     // wire convention as `AircraftRateListItem.validFrom`), so no conversion here.
     outOfServiceUntil: aircraft.outOfServiceUntil,
-    seats: aircraft.seats,
-    fuelType: aircraft.fuelType,
-    based: aircraft.based,
     archivedAt: aircraft.archivedAt ? aircraft.archivedAt.toISOString() : null,
     wetRateCents: currentRatesById.get(aircraft.id)?.priceCentsPerHour ?? null,
     reserved: reservedIds.has(aircraft.id),
@@ -123,6 +123,7 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
         exportHref={exportHref}
         locale={locale as 'it' | 'en'}
         monthMinutesById={Object.fromEntries(monthMinutesById)}
+        totalMinutesById={Object.fromEntries(totalMinutesById)}
         labels={{
           cardTitle: t('cardTitle'),
           searchPlaceholder: t('searchPlaceholder'),
@@ -148,11 +149,8 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               status: t('mobile.sheet.status'),
               aogReason: t('mobile.sheet.aogReason'),
               rate: t('mobile.sheet.rate'),
-              seats: t('mobile.sheet.seats'),
-              fuel: t('mobile.sheet.fuel'),
-              hourMeter: t('mobile.sheet.hourMeter'),
+              totalHours: t('mobile.sheet.totalHours'),
               monthHours: t('mobile.sheet.monthHours'),
-              notes: t('mobile.sheet.notes'),
             },
             noValue: t('mobile.noValue'),
           },
@@ -168,18 +166,6 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               registration: t('editor.identity.registration'),
               type: t('editor.identity.type'),
               model: t('editor.identity.model'),
-              seats: t('editor.identity.seats'),
-              fuelType: t('editor.identity.fuelType'),
-              fuelOptions: {
-                avgas: t('editor.identity.fuelOptions.avgas'),
-                jetA1: t('editor.identity.fuelOptions.jetA1'),
-                mogas: t('editor.identity.fuelOptions.mogas'),
-              },
-              based: t('editor.identity.based'),
-              basedOptions: { based: t('editor.identity.basedOptions.based'), guest: t('editor.identity.basedOptions.guest') },
-              notes: t('editor.identity.notes'),
-              hourMeter: t('editor.identity.hourMeter'),
-              hourMeterHint: t('editor.identity.hourMeterHint'),
             },
             availability: {
               sectionTitle: t('editor.availability.sectionTitle'),
@@ -232,17 +218,9 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               historyEmpty: t('editor.rates.historyEmpty'),
               showAll: t.raw('editor.rates.showAll') as string,
             },
-            hourMeter: {
-              sectionTitle: t('editor.hourMeter.sectionTitle'),
-              current: t('editor.hourMeter.current'),
-              newValue: t('editor.hourMeter.newValue'),
-              hint: t('editor.hourMeter.hint'),
-              reason: t('editor.hourMeter.reason'),
-              delta: t('editor.hourMeter.delta'),
-              submit: t('editor.hourMeter.submit'),
-              historyTitle: t('editor.hourMeter.historyTitle'),
-              historyEmpty: t('editor.hourMeter.historyEmpty'),
-              loadMore: t('editor.hourMeter.loadMore'),
+            flightHours: {
+              sectionTitle: t('editor.flightHours.sectionTitle'),
+              total: t('editor.flightHours.total'),
             },
             archive: {
               sectionTitle: t('editor.archive.sectionTitle'),
@@ -259,7 +237,6 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               conflictRegistration: t('editor.errors.conflictRegistration'),
               conflictStatus: t('editor.errors.conflictStatus'),
               conflictRate: t('editor.errors.conflictRate'),
-              invalidHourMeter: t('editor.errors.invalidHourMeter'),
               invalidPrice: t('editor.errors.invalidPrice'),
               invalidDate: t('editor.errors.invalidDate'),
               reasonRequired: t('editor.errors.reasonRequired'),
@@ -272,7 +249,6 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
             unarchived: t('toast.unarchived'),
             setOutOfService: t('toast.setOutOfService'),
             returnedToService: t('toast.returnedToService'),
-            hourMeterAdjusted: t('toast.hourMeterAdjusted'),
             rateAdded: t('toast.rateAdded'),
           },
         }}

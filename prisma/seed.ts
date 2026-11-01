@@ -196,8 +196,7 @@ async function seedStudentProfile(): Promise<void> {
 /**
  * Story 2.4: a demo aircraft so the fleet CRUD UI/e2e have real data.
  * Idempotent like the rest of the seed — upsert keyed on the unique
- * `registration`. `hourMeterMinutes` is an integer (AD-2), never a decimal
- * hours value.
+ * `registration`.
  */
 async function seedAircraft(): Promise<void> {
   await prisma.aircraft.upsert({
@@ -207,8 +206,6 @@ async function seedAircraft(): Promise<void> {
       registration: 'I-ABCD',
       type: 'Ultraleggero 3 assi',
       model: 'Tecnam P92 Eaglet',
-      hourMeterMinutes: 12 * 60 + 30,
-      notes: 'Velivolo scuola volo demo.',
     },
   });
 

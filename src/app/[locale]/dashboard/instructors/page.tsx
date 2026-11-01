@@ -128,7 +128,6 @@ export default async function InstructorsPage({ params }: PageProps) {
               email: t('editor.identity.email'),
               phone: t('editor.identity.phone'),
               address: t('editor.identity.address'),
-              fiscalCode: t('editor.identity.fiscalCode'),
               save: t('editor.identity.save'),
               loadError: t('editor.identity.loadError'),
               requiredField: t('editor.identity.requiredField'),

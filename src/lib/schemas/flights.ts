@@ -59,24 +59,19 @@ export type ListFlightsQuery = z.infer<typeof listFlightsQuerySchema>;
 
 /**
  * `POST /api/v1/flights` body (story 11.1, AC 1/2/3 — replaces story 5.1's
- * minutes/hourMeter-only shape). `departureAirfield`/`arrivalAirfield`
+ * minutes-only shape). `departureAirfield`/`arrivalAirfield`
  * (free text, AC 1 defaults them to the airfield's own name for a local
  * flight) and `takeoffAt`/`landingAt` (full instants, `z.iso.datetime()`,
  * wire format ISO 8601 UTC — AD-8, same pattern as `createBookingSchema`)
  * are the SOURCE of both `minutes` and `flightDate`, derived server-side
  * (`flights.service.ts#resolveFlightInput`) — neither is an input anymore.
- * `hourMeterStart`/`hourMeterEnd` are now informational-only (never the
- * duration source): both optional, validated as a self-consistent PAIR by
- * the service (422 `HOUR_METER_INVALID` if incomplete or
- * `end <= start`) — no schema-level cross-field refine needed since a
- * malformed pair is just as easily checked once the service has resolved
- * everything else. `takeoffs`/`landings` default to 1 AT THE SERVICE CALL
+ * `takeoffs`/`landings` default to 1 AT THE SERVICE CALL
  * SITE, never via Zod's own `.default()` (lesson 10.1: a `.default()`
  * masks a caller that forgot to pass the field, `?? 1` at the point of use
  * does not). `instructorPersonId` is resolved server-side to an ACTIVE
  * `InstructorProfile` (`flights.service.ts`) — never trusted as an
  * `InstructorProfile.id` directly (consistent with
- * `.../people/{id}/instructor-rates`). `notes` is optional.
+ * `.../people/{id}/instructor-rates`).
  *
  * `force`/`forceReason` (story 14.4, AC 2; ratifica R4): an ADMIN-only bypass
  * (`flights.forceExpiry`, checked SERVICE-side — AD-5) of a blocking expired
@@ -101,8 +96,6 @@ const registerFlightFields = z.object({
   // Dual/solo distinction on SCHOOL flights (story 9.4) — the service
   // rejects `true` on a non-SCHOOL flightType (422 `SOLO_REQUIRES_SCHOOL`).
   isSolo: z.boolean().optional().default(false),
-  hourMeterStart: z.number().int().min(0).max(2_147_483_647).optional(),
-  hourMeterEnd: z.number().int().min(0).max(2_147_483_647).optional(),
   // Story 16.2 (F14/AD-7): `min(1)`, not `min(0)` — the literal alignment
   // with what `schema.prisma`'s own `Flight.takeoffs`/`landings` doc-comment
   // has always DECLARED ("both NOT NULL DEFAULT 1 — every flight has at
@@ -110,7 +103,6 @@ const registerFlightFields = z.object({
   // field in `path`; the DB default stays `1`, so no migration is involved.
   takeoffs: z.number().int().min(1).max(500).optional(),
   landings: z.number().int().min(1).max(500).optional(),
-  notes: z.string().trim().min(1).max(1000).nullish(),
   force: z.boolean().optional(),
   forceReason: z.string().trim().min(1).max(500).optional(),
 });
@@ -150,9 +142,7 @@ export type FlightBreakdownDto = z.infer<typeof flightBreakdownSchema>;
 /**
  * One entry of `GET /api/v1/flights` (AC 1/2/3, story 5.1, extended story
  * 5.4 to own-access + filters). Documentation only, mirroring
- * `flights.service.ts`'s `FlightListItem` TS type. `hourMeterStart`/
- * `hourMeterEnd` are the OBSERVATIONS recorded on this flight — never the
- * aircraft's own contaore. `actorEmail` is now CONDITIONAL (story 5.4,
+ * `flights.service.ts`'s `FlightListItem` TS type. `actorEmail` is now CONDITIONAL (story 5.4,
  * Contesto): present only when the caller has `people.read` (staff), same
  * pattern as `AccountStatementItem` (3.2) — a pilot/student reading their own
  * registry never learns who registered the movement.
@@ -172,11 +162,8 @@ export const flightListItemSchema = z.object({
   minutes: z.number().int().positive(),
   /** Story 11.1 — NOT NULL DEFAULT 1 on the DB; never null on the wire. */
   takeoffs: z.number().int(),
-  hourMeterStart: z.number().int().nullable(),
-  hourMeterEnd: z.number().int().nullable(),
   /** Story 11.1 — NOT NULL DEFAULT 1 on the DB (backfilled from historical NULL); never null on the wire anymore. */
   landings: z.number().int(),
-  notes: z.string().nullable(),
   aircraft: z.object({ id: z.string(), registration: z.string() }),
   person: z.object({ id: z.string(), firstName: z.string(), lastName: z.string() }),
   instructor: z.object({ personId: z.string(), firstName: z.string(), lastName: z.string() }).nullable(),
@@ -242,9 +229,9 @@ export type CancelFlightInput = z.infer<typeof cancelFlightSchema>;
  * base (story 14.4: `registerFlightSchema` itself is a `.refine()`d
  * `ZodEffects`, which has no `.extend()` — see that schema's own
  * doc-comment), then the SAME `requireForceReason` check re-applied. Story
- * 11.1 removed the former minutes/hourMeter XOR `superRefine`; the only
- * remaining cross-field check on this shape (`HOUR_METER_INVALID`) lives in
- * `resolveFlightInput`, shared by both `registerFlight`/`correctFlight`.
+ * 11.1 removed the former minutes XOR `superRefine`; the cross-field checks
+ * on this shape (`FLIGHT_TIMES_INVALID`, ...) live in `resolveFlightInput`,
+ * shared by both `registerFlight`/`correctFlight`.
  */
 export const correctFlightSchema = registerFlightFields
   .extend({ reason: z.string().trim().min(1).max(500) })

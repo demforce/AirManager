@@ -5,7 +5,6 @@ import {
   correctFlightSchema,
   listFlightsQuerySchema,
   registerFlightSchema,
-  type RegisterFlightInput,
 } from '@/lib/schemas/flights';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
@@ -40,12 +39,6 @@ vi.mock('@/server/db/prisma', () => ({
       findMany: vi.fn(),
       count: vi.fn(),
       aggregate: vi.fn(),
-    },
-    // Story 16.2 (F13) — the row `decreaseHourMeterForReversal` writes when
-    // the storno clamp bites. Absent from this mock until now: the table was
-    // only ever touched by `aircraft.service.ts`.
-    hourMeterAdjustment: {
-      create: vi.fn(),
     },
     // Review F5 (ratifica R-14.4-a) — `findMissingBlockingDocuments`'s own
     // direct queries (never routed through the mocked `bookings.service`
@@ -126,7 +119,6 @@ const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
 const flightCreateMock = vi.mocked(prisma.flight.create);
 const flightFindUniqueMock = vi.mocked(prisma.flight.findUnique);
 const flightFindFirstMock = vi.mocked(prisma.flight.findFirst);
-const hourMeterAdjustmentCreateMock = vi.mocked(prisma.hourMeterAdjustment.create);
 const flightUpdateMock = vi.mocked(prisma.flight.update);
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const flightCountMock = vi.mocked(prisma.flight.count);
@@ -246,10 +238,7 @@ const CREATED_FLIGHT_ROW = {
   landingAt: new Date('2020-01-15T11:20:00.000Z'),
   minutes: 80,
   takeoffs: 1,
-  hourMeterStart: null,
-  hourMeterEnd: null,
   landings: 1,
-  notes: null,
   aircraftRateCentsPerHour: 15000,
   aircraftAmountCents: 20000,
   instructorRateCentsPerHour: null,
@@ -320,7 +309,6 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     flightCreateMock.mockReset();
     flightFindUniqueMock.mockReset();
     flightFindFirstMock.mockReset();
-    hourMeterAdjustmentCreateMock.mockReset();
     flightUpdateMock.mockReset();
     flightFindManyMock.mockReset();
     flightCountMock.mockReset();
@@ -505,7 +493,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL' });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
 
       await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
@@ -522,7 +510,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
 
       await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
     });
@@ -544,7 +532,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL' });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
 
       await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
@@ -567,7 +555,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes(toDateOnlyString(todayDateOnlyUtcInZone(APP_TIMEZONE)), 80) });
 
       await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
@@ -592,7 +580,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
         accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
         flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-        queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+        queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
         const input = registerFlightSchema.parse({
           ...BASE_INPUT,
           takeoffAt: '2026-07-14T22:10:00.000Z', // 00:10 Rome, 15 Jul
@@ -611,7 +599,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
         accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
         flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-        queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+        queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
         const input = registerFlightSchema.parse({
           ...BASE_INPUT,
           takeoffAt: '2026-01-14T23:05:00.000Z', // 00:05 Rome, 15 Jan
@@ -659,7 +647,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 1 });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({
         ...BASE_INPUT,
         takeoffAt: '2020-01-15T09:00:00.000Z',
@@ -686,84 +674,25 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 1440 });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 1440) });
 
       await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
     });
 
-    it('derives minutes as round((landingAt - takeoffAt) / 60000), never from hourMeterStart/hourMeterEnd', async () => {
+    it('derives minutes as round((landingAt - takeoffAt) / 60000)', async () => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
-      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, hourMeterStart: 1000, hourMeterEnd: 1050, minutes: 50 });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
-      const input = registerFlightSchema.parse({
-        ...BASE_INPUT,
-        ...buildTimes('2020-01-15', 50),
-        hourMeterStart: 1000,
-        hourMeterEnd: 1050,
-      });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 50 });
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 50) });
 
       await registerFlight(adminActor(), input);
 
-      expect(flightCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ minutes: 50, hourMeterStart: 1000, hourMeterEnd: 1050 }),
-        }),
-      );
-      expect(aircraftUpdateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: { hourMeterMinutes: 550 } }),
-      );
-    });
-
-    it('a legitimate hourMeterStart/hourMeterEnd pair whose OWN difference diverges from minutes is accepted as-is (engine time vs block time, story 11.1)', async () => {
-      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
-      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
-      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, hourMeterStart: 1000, hourMeterEnd: 1200, minutes: 80 });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
-      // 80' from takeoffAt/landingAt, but a 200-unit hourMeter reading — no cross-validation anymore.
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, hourMeterStart: 1000, hourMeterEnd: 1200 });
-
-      await registerFlight(adminActor(), input);
-
-      expect(flightCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ minutes: 80, hourMeterStart: 1000, hourMeterEnd: 1200 }) }),
-      );
-      // The aircraft's own hour meter advances by MINUTES, never by the hourMeter reading's own delta.
-      expect(aircraftUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { hourMeterMinutes: 580 } }));
-    });
-
-    it('throws a 422 HOUR_METER_INVALID when only hourMeterStart is given (incomplete pair)', async () => {
-      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, hourMeterStart: 1000 });
-
-      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it('throws a 422 HOUR_METER_INVALID when only hourMeterEnd is given (incomplete pair)', async () => {
-      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, hourMeterEnd: 1050 });
-
-      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it('throws a 422 HOUR_METER_INVALID when hourMeterEnd <= hourMeterStart', async () => {
-      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      const input: RegisterFlightInput = { ...BASE_INPUT, hourMeterStart: 1050, hourMeterEnd: 1050 };
-
-      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'HOUR_METER_INVALID' });
-      expect(transactionMock).not.toHaveBeenCalled();
+      expect(flightCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ minutes: 50 }) }));
     });
 
     it('derives flightDate as the Europe/Rome calendar day of takeoffAt, not the UTC day (a 00:30 Roma takeoff is 23:30Z the day before)', async () => {
@@ -773,7 +702,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, minutes: 40 });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       // 2020-01-15T23:30Z is 2020-01-16T00:30 in Europe/Rome (CET, +1h in January).
       const input = registerFlightSchema.parse({
         ...BASE_INPUT,
@@ -827,7 +756,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL', isSolo: true });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: true, instructorPersonId: 'person_instructor' });
 
       await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
@@ -906,7 +835,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
     it('80 minutes at 150 €/h (15000 cents/h) -> 20000 cents (the PRD-testable case)', async () => {
@@ -956,7 +885,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
   });
 
-  describe('registerFlight — the transaction (AC 1/2: Flight + movement(-total) + contaore advanced)', () => {
+  describe('registerFlight — the transaction (AC 1/2: Flight + movement(-total))', () => {
     beforeEach(() => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
@@ -965,10 +894,10 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
-    it('creates the Flight snapshot, the FLIGHT_CHARGE movement linked via flightId, and advances the aircraft hour meter — all inside one transaction', async () => {
+    it('creates the Flight snapshot and the FLIGHT_CHARGE movement linked via flightId inside one transaction — and never writes the Aircraft row (story 19.2)', async () => {
       await registerFlight(adminActor(), BASE_INPUT);
 
       expect(flightCreateMock).toHaveBeenCalledWith(
@@ -999,10 +928,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
           }),
         }),
       );
-      expect(aircraftUpdateMock).toHaveBeenCalledWith({
-        where: { id: 'aircraft_1' },
-        data: { hourMeterMinutes: 580 },
-      });
+      expect(aircraftUpdateMock).not.toHaveBeenCalled();
     });
 
     it('locks the Aircraft row (FOR UPDATE) inside the transaction', async () => {
@@ -1054,7 +980,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
     it('does NOT throw when the post-commit `getAccountOverview` re-read fails — degrades to the balance already computed inside the transaction', async () => {
@@ -1063,8 +989,8 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
       const result = await registerFlight(adminActor(), BASE_INPUT);
 
-      // The flight + charge + hour-meter write already happened — exactly
-      // once — before the failing read.
+      // The flight + charge write already happened — exactly once — before
+      // the failing read.
       expect(flightCreateMock).toHaveBeenCalledTimes(1);
       expect(accountMovementCreateMock).toHaveBeenCalledTimes(1);
       // Degraded but correct: the balance the transaction itself computed
@@ -1088,7 +1014,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
     it('adds the instructor charge to the total and snapshots instructor* fields (non-null)', async () => {
@@ -1143,7 +1069,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       await registerFlight(adminActor(), dualInput);
 
       personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, flightType: 'SCHOOL', isSolo: true });
       const soloInput = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: true, instructorPersonId: 'person_instructor' });
       await registerFlight(adminActor(), soloInput);
@@ -1176,7 +1102,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
 
       const result = await registerFlight(adminActor(), BASE_INPUT);
 
@@ -1195,7 +1121,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
     // Note: no microtask-flush wait is needed here — unlike
@@ -1260,7 +1186,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
     it('a blocking document expired at the FLIGHT DATE (not "today") -> 422 FLIGHT_BLOCKED_BY_EXPIRY, transaction never opens', async () => {
@@ -1567,7 +1493,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightFindUnique.mockResolvedValue(ORIGINAL_FLIGHT_ROW);
       accountMovementCreate.mockResolvedValue({ id: 'movement_reversal' });
       flightUpdate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_orig', status: 'CANCELLED' });
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     });
 
@@ -1670,22 +1596,10 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       });
     });
 
-    it('reduces the aircraft hour meter by the flight minutes', async () => {
+    it('never writes the Aircraft row: the cancelled minutes leave the total through the status alone (story 19.2, R-19-b)', async () => {
       await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
 
-      expect(aircraftUpdateMock).toHaveBeenCalledWith({
-        where: { id: 'aircraft_1' },
-        data: { hourMeterMinutes: 420 }, // 500 - 80
-      });
-    });
-
-    it('clamps the aircraft hour meter at 0 (deliberate, Contesto) when a prior rectification already undershot it', async () => {
-      queryRawMock.mockReset();
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 50 }]).mockResolvedValueOnce([]); // 50 - 80 would be negative
-
-      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 0 } });
+      expect(aircraftUpdateMock).not.toHaveBeenCalled();
     });
 
     it('sends NO negative-balance alert (a storno only ever adds money back)', async () => {
@@ -1738,7 +1652,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_x' });
       flightUpdate.mockResolvedValue({});
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 30, aircraftAmountCents: 7500 });
-      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     });
 
@@ -1841,7 +1755,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
     it('a correction that KEEPS the same aircraft is NOT blocked, even though that aircraft is grounded TODAY (AC 9 — the dead end R-14.4-b already closed once)', async () => {
       // `ORIGINAL_FLIGHT_ROW.aircraftId === 'aircraft_1'` and the correction
-      // keeps it: fixing the minutes/notes of a HISTORICAL flight must not
+      // keeps it: fixing the minutes/cycles of a HISTORICAL flight must not
       // become impossible the day its airframe goes into maintenance.
       aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
       findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
@@ -1861,10 +1775,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       // is rebuilt rather than appended to.
       queryRawMock.mockReset();
       queryRaw
-        .mockResolvedValueOnce([
-          { id: 'aircraft_1', hourMeterMinutes: 500 },
-          { id: 'aircraft_2', hourMeterMinutes: 100 },
-        ])
+        .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2', force: true, forceReason: 'Velivolo corretto a posteriori' });
 
@@ -1880,7 +1791,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     // Review F3 (ratifica R-14.3-a): correcting a flight while KEEPING its
     // OWN recorded type is ALWAYS allowed, even for a person who is
     // student-only TODAY (the profile may have changed SINCE the flight was
-    // flown) — this is exactly what lets a notes/times-only correction go
+    // flown) — this is exactly what lets a cycles/times-only correction go
     // through without ever rewriting the flight's type. `ORIGINAL_FLIGHT_ROW`
     // and `CORRECT_INPUT` both carry `flightType: 'TOURISM'` — unchanged.
     it("a correction that keeps the flight's OWN recorded flightType is allowed for a person who is student-only today (R-14.3-a: correcting is not registering anew)", async () => {
@@ -1963,14 +1874,14 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       );
     });
 
-    it('the ORIGINAL flight is stornoed (status CANCELLED + cancelledAt/cancelReason) and its aircraft hour meter reduced', async () => {
+    it('the ORIGINAL flight is stornoed (status CANCELLED + cancelledAt/cancelReason) and no Aircraft row is ever written (story 19.2)', async () => {
       await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
 
       expect(flightUpdateMock).toHaveBeenCalledWith({
         where: { id: 'flight_orig' },
         data: { status: 'CANCELLED', cancelledAt: expect.any(Date), cancelReason: 'Errore minuti' },
       });
-      expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 420 } }); // 500 - 80
+      expect(aircraftUpdateMock).not.toHaveBeenCalled();
     });
 
     it('fires the negative-balance alert when the (post-storno) balance band worsens', async () => {
@@ -2011,10 +1922,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue(secondAircraft);
       queryRawMock.mockReset();
       queryRaw
-        .mockResolvedValueOnce([
-          { id: 'aircraft_1', hourMeterMinutes: 500 },
-          { id: 'aircraft_2', hourMeterMinutes: 100 },
-        ])
+        .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       accountUpsert.mockResolvedValue({ id: 'account_2' });
       const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2', personId: 'person_2' });
@@ -2036,18 +1944,15 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(accountStrings.join('?')).toContain('ORDER BY');
       // Aircraft lock strictly before Account lock (module doc-comment's macro order).
       expect(queryRawMock.mock.invocationCallOrder[0]).toBeLessThan(queryRawMock.mock.invocationCallOrder[1]);
-      // Both aircraft rows resolved to a hour-meter value (Map keyed by id) — the NEW aircraft's is used for the core's increment (100 + 30 minutes).
-      expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_2' }, data: { hourMeterMinutes: 130 } });
-      expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 420 } });
     });
 
     // Review F4 (ratifica R-14.4-b): a correction that changes NEITHER
     // person, NOR instructor, NOR flight date is exempt from the expiry
-    // guard ENTIRELY — a notes/hour-meter-only correction of a historical
+    // guard ENTIRELY — a cycles-only correction of a historical
     // flight must never dead-end on a document that only expired (or was
     // only ever required) AFTER the flight was flown.
     describe('review F4 — unchanged-identity correction exemption', () => {
-      it('a notes-only correction (same person, no instructor, same flight date) skips the guard entirely, even with a real blocking document', async () => {
+      it('an unchanged-identity correction (same person, no instructor, same flight date) skips the guard entirely, even with a real blocking document', async () => {
         // If the guard ran, THIS would 422 — proving the skip, not a
         // coincidentally-clear fixture.
         findBlockingExpiredDocumentsMock.mockResolvedValue({
@@ -2166,7 +2071,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
     // U1 — the audit's probe 14.
@@ -2297,20 +2202,15 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     // The audit's own probes 13a/13b/14, with the expectation ROVESCIATA.
-    // Before this story these two calls produced TWO flights, TWO charges of
-    // -15000 and a contaore going 6000 -> 6060 -> 6120 for 60 minutes flown.
-    it('P2/P6 (probe 13a/13b): the SAME request twice WITHOUT an Idempotency-Key -> 201 then 409, one flight, one charge, contaore 6000 -> 6060 (never 6120)', async () => {
+    // Before story 16.2 these two calls produced TWO flights and TWO charges
+    // of -15000 for 60 minutes flown.
+    it('P2/P6 (probe 13a/13b): the SAME request twice WITHOUT an Idempotency-Key -> 201 then 409, one flight, one charge', async () => {
       const registered: StoredFlight[] = [];
-      let hourMeterMinutes = 6000;
 
       queryRawMock.mockReset();
       asImpl<[TemplateStringsArray]>(queryRawMock).mockImplementation((strings) =>
-        Promise.resolve(strings.join('?').includes('Aircraft') ? [{ id: 'aircraft_1', hourMeterMinutes }] : []),
+        Promise.resolve(strings.join('?').includes('Aircraft') ? [{ id: 'aircraft_1' }] : []),
       );
-      asImpl<[{ data: { hourMeterMinutes: number } }]>(aircraftUpdateMock).mockImplementation((args) => {
-        hourMeterMinutes = args.data.hourMeterMinutes;
-        return Promise.resolve({});
-      });
       asImpl<[{ where: OverlapWhere }]>(flightFindFirstMock).mockImplementation((args) =>
         Promise.resolve(findFirstOverlapping(args.where, registered)),
       );
@@ -2323,19 +2223,16 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:00', '10:00') });
 
       await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
-      expect(hourMeterMinutes).toBe(6060);
 
       await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_OVERLAP' });
       expect(flightCreateMock).toHaveBeenCalledTimes(1);
       expect(accountMovementCreateMock).toHaveBeenCalledTimes(1);
-      expect(hourMeterMinutes).toBe(6060);
 
       // …and the audit's probe 14 on top of the same store: a PARTIAL
       // overlap on the same aircraft is refused too.
       const overlapping = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:30', '10:30') });
       await expect(registerFlight(adminActor(), overlapping)).rejects.toMatchObject({ code: 'FLIGHT_OVERLAP' });
       expect(flightCreateMock).toHaveBeenCalledTimes(1);
-      expect(hourMeterMinutes).toBe(6060);
     });
   });
 
@@ -2346,7 +2243,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       departureAirfield: 'Base Airfield',
       arrivalAirfield: 'Base Airfield',
       flightType: 'TOURISM' as const,
-      reason: 'Errore note',
+      reason: 'Errore atterraggi',
     };
     /** The ORIGINAL flight, still REGISTERED at guard time — `loadRegisteredFlightForReversal` returns `ORIGINAL_FLIGHT_ROW` (id `flight_orig`). */
     const ORIGINAL_IN_STORE: StoredFlight = {
@@ -2367,16 +2264,16 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementCreate.mockResolvedValue({ id: 'movement_x' });
       flightUpdate.mockResolvedValue({});
       flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig' });
-      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', hourMeterMinutes: 500 }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     });
 
     // U8 — the clause that carries this whole call site: the guard runs
     // BEFORE the storno, so the original is still REGISTERED and every
     // conservative correction would be a 409 without `id: { not }`.
-    it('U8: a correction that KEEPS its own slot (same aircraft, same instants, changed notes) is accepted — the original is excluded by id', async () => {
+    it('U8: a correction that KEEPS its own slot (same aircraft, same instants, changed landings) is accepted — the original is excluded by id', async () => {
       const store = stubOverlapStore([ORIGINAL_IN_STORE]);
-      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('09:00', '10:00'), notes: 'Nota corretta' });
+      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('09:00', '10:00'), landings: 2 });
 
       await expect(correctFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
       expect(store.lastWhere()).toMatchObject({ id: { not: 'flight_orig' } });
@@ -2405,10 +2302,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-ZZZZ' });
       queryRawMock.mockReset();
       queryRaw
-        .mockResolvedValueOnce([
-          { id: 'aircraft_1', hourMeterMinutes: 500 },
-          { id: 'aircraft_2', hourMeterMinutes: 900 },
-        ])
+        .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       const store = stubOverlapStore([
         ORIGINAL_IN_STORE,
@@ -2428,10 +2322,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-ZZZZ' });
       queryRawMock.mockReset();
       queryRaw
-        .mockResolvedValueOnce([
-          { id: 'aircraft_1', hourMeterMinutes: 500 },
-          { id: 'aircraft_2', hourMeterMinutes: 900 },
-        ])
+        .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       const store = stubOverlapStore([ORIGINAL_IN_STORE]);
       const input = correctFlightSchema.parse({ ...CORRECT_BASE, aircraftId: 'aircraft_2', ...window('09:30', '10:30') });
@@ -2453,98 +2344,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         { ...ORIGINAL_IN_STORE, status: 'CANCELLED' },
         { ...EXISTING_09_10, id: 'flight_winner' },
       ]);
-      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('09:00', '10:00'), notes: 'Nota corretta' });
+      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('09:00', '10:00'), landings: 2 });
 
       await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({ code: 'CONFLICT' });
       expect(flightFindFirstMock).not.toHaveBeenCalled();
       expect(flightUpdateMock).not.toHaveBeenCalled();
       expect(accountMovementCreateMock).not.toHaveBeenCalled();
       expect(flightCreateMock).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('the storno contaore clamp leaves a trace (story 16.2, F13; ops-audit sonda 19)', () => {
-    const CANCEL_INPUT = cancelFlightSchema.parse({ reason: 'Errore inserimento' });
-
-    beforeEach(() => {
-      // The AC's own numbers: a 30-minute flight on I-ABCD, 2020-01-15.
-      flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, minutes: 30 });
-      accountMovementCreate.mockResolvedValue({ id: 'movement_reversal' });
-      flightUpdate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_orig', status: 'CANCELLED' });
-      getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
-    });
-
-    // U10 — the audit measured 25 minutes evaporating with no record.
-    it('U10: contaore 5 and a flight of 30 minutes -> contaore 0 AND an HourMeterAdjustment naming the aircraft, the flight date, the id and the 25 minutes that could not be subtracted', async () => {
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 5 }]).mockResolvedValueOnce([]);
-
-      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).resolves.toBeDefined();
-
-      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith({
-        data: {
-          aircraftId: 'aircraft_1',
-          actorUserId: 'admin_1',
-          previousMinutes: 5,
-          newMinutes: 0,
-          reason: 'Storno volo I-ABCD 2020-01-15 (id flight_orig): 25 minuti non sottraibili dal contaore.',
-        },
-      });
-      expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 0 } });
-    });
-
-    // U11 — non-regression: when the clamp does not bite, the behavior is
-    // byte-identical to before this story (no row, no cost).
-    it('U11: contaore 6000 and a flight of 30 minutes -> contaore 5970 and NO HourMeterAdjustment at all', async () => {
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 6000 }]).mockResolvedValueOnce([]);
-
-      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(hourMeterAdjustmentCreateMock).not.toHaveBeenCalled();
-      expect(aircraftUpdateMock).toHaveBeenCalledWith({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 5970 } });
-    });
-
-    // U14 / AC 14 — a storno is ALWAYS lecito: there is no 422 anywhere on
-    // the contaore path, whatever the current reading is.
-    it('AC 14: a storno whose minutes exceed the contaore still answers successfully (never a 422)', async () => {
-      queryRaw.mockResolvedValueOnce([{ hourMeterMinutes: 0 }]).mockResolvedValueOnce([]);
-
-      const result = await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(result.flight.status).toBe('CANCELLED');
-      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledTimes(1);
-    });
-
-    // U12 — the same helper in `correctFlight`: the row records the CLAMP
-    // (5 -> 0), and the contaore ends at 0 + the NEW flight's minutes. The
-    // two are distinct events and must not be conflated into one row.
-    it('U12: the clamp inside correctFlight writes the row for 5 -> 0 and the contaore ends at 0 + the new minutes', async () => {
-      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
-      accountUpsert.mockResolvedValue({ id: 'account_1' });
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
-      accountMovementCreate.mockResolvedValue({ id: 'movement_x' });
-      flightUpdate.mockResolvedValue({});
-      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 30 });
-      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1', hourMeterMinutes: 5 }]).mockResolvedValueOnce([]);
-      stubOverlapStore([]);
-      const input = correctFlightSchema.parse({
-        aircraftId: 'aircraft_1',
-        personId: 'person_1',
-        departureAirfield: 'Base Airfield',
-        arrivalAirfield: 'Base Airfield',
-        flightType: 'TOURISM',
-        ...buildTimes('2020-01-15', 30),
-        reason: 'Errore minuti',
-      });
-
-      await correctFlight(adminActor(), 'flight_orig', input);
-
-      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ previousMinutes: 5, newMinutes: 0 }) }),
-      );
-      expect(aircraftUpdateMock).toHaveBeenNthCalledWith(1, { where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 0 } });
-      expect(aircraftUpdateMock).toHaveBeenNthCalledWith(2, { where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 30 } });
     });
   });
 
@@ -2891,22 +2697,24 @@ describe('registerFlightSchema (story 11.1, AC 1/2/3 — logbook fields, no more
     expect(parsed).not.toHaveProperty('minutes');
   });
 
-  it('accepts an optional hourMeterStart/hourMeterEnd pair, with NO schema-level cross-field check anymore (moved to the service)', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 100, hourMeterEnd: 90 }).success).toBe(true);
-    expect(registerFlightSchema.safeParse({ ...VALID, hourMeterStart: 100 }).success).toBe(true);
+  it('drops a removed hourMeterStart/hourMeterEnd/notes key instead of rejecting it (story 19.2: a stale client gets a 201, never a 422)', () => {
+    const parsed = registerFlightSchema.parse({ ...VALID, hourMeterStart: 100, hourMeterEnd: 160, notes: 'Nota' });
+    expect(parsed).not.toHaveProperty('hourMeterStart');
+    expect(parsed).not.toHaveProperty('hourMeterEnd');
+    expect(parsed).not.toHaveProperty('notes');
+    const corrected = correctFlightSchema.parse({ ...VALID, reason: 'Errore', hourMeterStart: 100, hourMeterEnd: 160, notes: 'Nota' });
+    expect(corrected).not.toHaveProperty('hourMeterStart');
+    expect(corrected).not.toHaveProperty('hourMeterEnd');
+    expect(corrected).not.toHaveProperty('notes');
   });
 
   it('rejects an invalid flightType', () => {
     expect(registerFlightSchema.safeParse({ ...VALID, flightType: 'JOYRIDE' }).success).toBe(false);
   });
 
-  it('accepts an omitted or null instructorPersonId/notes; omitted takeoffs/landings', () => {
+  it('accepts an omitted or null instructorPersonId; omitted takeoffs/landings', () => {
     expect(registerFlightSchema.safeParse(VALID).success).toBe(true);
-    expect(registerFlightSchema.safeParse({ ...VALID, instructorPersonId: null, notes: null }).success).toBe(true);
-  });
-
-  it('rejects a notes string over 1000 chars', () => {
-    expect(registerFlightSchema.safeParse({ ...VALID, notes: 'x'.repeat(1001) }).success).toBe(false);
+    expect(registerFlightSchema.safeParse({ ...VALID, instructorPersonId: null }).success).toBe(true);
   });
 
   // Story 16.2 (F14, AC 16) — the `0` case is INVERTED, not deleted: as

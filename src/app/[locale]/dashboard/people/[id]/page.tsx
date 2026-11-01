@@ -167,7 +167,6 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
     { label: t('personalData.email'), value: person.email ?? t('personalData.noValue') },
     { label: t('personalData.phone'), value: person.phone ?? t('personalData.noValue') },
     { label: t('personalData.address'), value: person.address ?? t('personalData.noValue') },
-    { label: t('personalData.fiscalCode'), value: person.fiscalCode ?? t('personalData.noValue') },
   ];
 
   const roles = roleBadges(person.profiles, {
@@ -187,7 +186,6 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
     email: person.email,
     phone: person.phone,
     address: person.address,
-    fiscalCode: person.fiscalCode,
     archivedAt: person.archivedAt ? person.archivedAt.toISOString() : null,
     profiles: person.profiles,
     balanceCents: 0,

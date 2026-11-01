@@ -159,7 +159,7 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number | nu
   const registration = `I-FL${suffix}`.toUpperCase().slice(0, 20);
 
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
@@ -221,7 +221,7 @@ async function openNewEntryForm(page: Page): Promise<void> {
 }
 
 test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Story 11.1, AC 1/2; Story 12.8: AirOps logbook)', () => {
-  test('admin registers a flight with takeoff/landing times: duration auto-derived and shown live, breakdown shown INSIDE the slide-over, balance drops in the estratto conto (FLIGHT_CHARGE, negative), aircraft hour meter advances', async ({
+  test('admin registers a flight with takeoff/landing times: duration auto-derived and shown live, breakdown shown INSIDE the slide-over, balance drops in the estratto conto (FLIGHT_CHARGE, negative), the aircraft total hours are the flight', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -232,6 +232,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
 
     await page.goto('/it/dashboard/logbook');
     await openNewEntryForm(page);
+    // Story 19.2 (AC 18): the three removed fields are gone from the form.
+    for (const label of ['Contaore iniziale', 'Contaore finale', 'Note']) {
+      await expect(page.getByTestId('flight-form').getByLabel(label, { exact: true })).toHaveCount(0);
+    }
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     // 80' (1:20) via takeoff/landing times — story 11.1, AC 2: the duration is derived, never a direct input.
@@ -252,7 +256,8 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(row).toContainText('1:20');
     await expect(row).toContainText(/200,00\s€/);
 
-    // Aircraft hour meter advanced by exactly the flight's minutes (100 + 80 = 180 -> 3:00).
+    // The aircraft's total hours are the sum of its registered flights (story
+    // 19.2, R-19-b): this one alone, 1:20.
     // T0 hardening: filter by this test's own registration instead of relying
     // on it landing on the default page 1 (root-caused empirically — under a
     // fully-parallel e2e run, dozens of aircraft get created by OTHER specs;
@@ -262,12 +267,12 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // never appear, which read as a flaky `toContainText` timeout even
     // though the underlying data was correct all along). The fleet page
     // still supports `?q=` server-side search (`aircraft.service.ts`); the
-    // contaore now lives inside the slide-over editor's "Contaore" section
-    // (the card itself only shows the wet rate, story 12.5 AC 2), scoped by
-    // the card's own `data-testid="ac-card-{id}"` (no text-match ambiguity).
+    // hours live inside the slide-over editor's "Ore di volo" section (the
+    // card itself only shows the wet rate, story 12.5 AC 2), scoped by the
+    // card's own `data-testid="ac-card-{id}"` (no text-match ambiguity).
     await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
     await page.getByTestId(`ac-card-${aircraft.id}`).click();
-    await expect(page.getByTestId('hour-meter-current')).toContainText('3:00');
+    await expect(page.getByTestId('aircraft-total-hours')).toHaveText('Ore totali: 1:20');
 
     // Estratto conto: a FLIGHT_CHARGE row, negative, same total.
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
@@ -276,7 +281,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(page.getByTestId('account-balance')).toContainText(/-200,00\s€/);
   });
 
-  test('orari decollo/atterraggio derivano la durata (contaore ormai solo informativo); a SCHOOL flight with an instructor charges both and sums the total', async ({
+  test('orari decollo/atterraggio derivano la durata; a SCHOOL flight with an instructor charges both and sums the total', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -292,7 +297,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
     await page.getByTestId('flight-form').getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
-    // 60' via takeoff/landing times — the (optional, purely informational) contaore pair is left blank.
+    // 60' via takeoff/landing times.
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:00');
@@ -311,45 +316,6 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(row).toContainText(/160,00\s€/);
     // Dual SCHOOL flight (AC 2): the PIC is the INSTRUCTOR (own dedicated cell, distinct from the "pilota" column above).
     await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${instructor.lastName} ${instructor.firstName}`);
-  });
-
-  test('an invalid hour-meter pair (end <= start) shows the HOUR_METER_INVALID message in the form (story 11.1: two independent optional fields, no radio/mode anymore)', async ({
-    page,
-  }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const aircraft = await createAircraftWithRate(page, 15000);
-    const pilot = await createPilotWithLogin(page, 'PilotFlights789!');
-
-    await page.goto('/it/dashboard/logbook');
-    await openNewEntryForm(page);
-    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
-    await page.getByLabel('Ora decollo').fill('10:00');
-    await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
-    await page.getByLabel('Contaore finale', { exact: true }).fill('200');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
-
-    await expect(page.getByTestId('flight-form-error')).toContainText("Il contaore finale deve essere maggiore dell'iniziale.");
-  });
-
-  test('an incomplete hour-meter pair (only the start filled) shows the HOUR_METER_INVALID message in the form', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const aircraft = await createAircraftWithRate(page, 15000);
-    const pilot = await createPilotWithLogin(page, 'PilotFlightsHM1!');
-
-    await page.goto('/it/dashboard/logbook');
-    await openNewEntryForm(page);
-    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
-    await page.getByLabel('Ora decollo').fill('10:00');
-    await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
-
-    await expect(page.getByTestId('flight-form-error')).toContainText("Il contaore finale deve essere maggiore dell'iniziale.");
   });
 
   test('an aircraft with no rate in effect shows the NO_AIRCRAFT_RATE message', async ({ page }) => {
@@ -607,7 +573,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
   });
 
-  test('review F1/F2 (14.3): "Correggi volo" on a TOURISM flight whose person is student-only TODAY never rewrites the type nor locks the select — a notes-only correction succeeds unchanged (ratifica R-14.3-a)', async ({
+  test('review F1/F2 (14.3): "Correggi volo" on a TOURISM flight whose person is student-only TODAY never rewrites the type nor locks the select — a cycles-only correction succeeds unchanged (ratifica R-14.3-a)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -649,6 +615,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(row).toHaveCount(1);
     await row.getByTestId('flight-correct-action').click();
     await expect(page.getByTestId('flight-form')).toBeVisible();
+    // Story 19.2 (AC 18): the correction form has none of the removed fields either.
+    for (const label of ['Contaore iniziale', 'Contaore finale', 'Note']) {
+      await expect(page.getByTestId('flight-form').getByLabel(label, { exact: true })).toHaveCount(0);
+    }
 
     const flightTypeSelect = page.getByTestId('flight-type-select');
     // F1: the type stays what is ON FILE — never silently re-derived from
@@ -672,7 +642,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // race the closing animation and read stale/absent nodes (that is exactly
     // how this test first failed). Leaving the combobox popup open is fine:
     // the assertions below read the select's state, not its visibility, and
-    // filling "Note" further down closes the popup naturally.
+    // filling "Atterraggi" further down closes the popup naturally.
 
     // Now the profile IS known — the select must STILL be enabled and
     // STILL on TOURISM (never locked into a server-rejected dead end, the
@@ -683,9 +653,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(flightTypeSelect).toBeEnabled();
     await expect(page.getByTestId('flight-form').locator('.fld-hint')).toContainText('Turismo');
 
-    // A notes-only correction goes through untouched: type unchanged, no
-    // instructor needed (still TOURISM), no new SCHOOL charge.
-    await page.getByLabel('Note').fill('Nota di correzione, tipo invariato');
+    // A cycles-only correction goes through untouched: type unchanged, no
+    // instructor needed (still TOURISM), no new SCHOOL charge. `exact: true`:
+    // "Ora atterraggio" contains "atterraggi" (getByLabel is substring).
+    await page.getByLabel('Atterraggi', { exact: true }).fill('2');
     await page.getByLabel('Motivo della correzione').fill('Verifica review F1/F2');
     await page.getByRole('button', { name: 'Conferma correzione' }).click();
 
@@ -693,10 +664,13 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
 
     const detailResponse = await page.request.get(`/api/v1/flights?personId=${pilot.personId}&pageSize=10`);
     expect(detailResponse.status()).toBe(200);
-    const detailBody = (await detailResponse.json()) as { items: { id: string; flightType: string; status: string; correctionOfId: string | null }[] };
+    const detailBody = (await detailResponse.json()) as {
+      items: { id: string; flightType: string; status: string; correctionOfId: string | null; landings: number }[];
+    };
     const corrected = detailBody.items.find((item) => item.correctionOfId === flight.flight.id);
     expect(corrected?.flightType).toBe('TOURISM');
     expect(corrected?.status).toBe('REGISTERED');
+    expect(corrected?.landings).toBe(2);
   });
 });
 
@@ -861,11 +835,10 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
 });
 
 /**
- * Story 16.2 (ops-audit F3/F13/F14) — the flight registry's SECOND line of
+ * Story 16.2 (ops-audit F3/F14) — the flight registry's SECOND line of
  * defence. Request idempotency (TD-2) is opt-in on a header; without it the
- * registry used to accept the very same flight twice, charge it twice and
- * advance the contaore twice (measured 6000 -> 6060 -> 6120 for 60 minutes
- * flown). Every test below creates its OWN aircraft and pilot (run-unique)
+ * registry used to accept the very same flight twice and charge it twice.
+ * Every test below creates its OWN aircraft and pilot (run-unique)
  * and touches no global `AppSettings`, so this block deliberately stays out
  * of `playwright.config.ts`'s serialized chain.
  *
@@ -887,18 +860,12 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
  * sequential API calls instead of the ~5 seconds `createPilotWithLogin`
  * spends waiting on the Mailpit invite.
  */
-test.describe('Flight registry guards: no duplicate, no overlap, no minute lost (Story 16.2)', () => {
+test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', () => {
   /** The registry's own view of one aircraft's flights (admin scope) — how a refused registration is proved to have written nothing. */
   async function countFlights(page: Page, aircraftId: string): Promise<number> {
     const response = await page.request.get(`/api/v1/flights?aircraftId=${aircraftId}&pageSize=50`);
     expect(response.status()).toBe(200);
     return ((await response.json()) as { items: unknown[] }).items.length;
-  }
-
-  async function hourMeterMinutes(page: Page, aircraftId: string): Promise<number> {
-    const response = await page.request.get(`/api/v1/aircraft/${aircraftId}`);
-    expect(response.status()).toBe(200);
-    return ((await response.json()) as { hourMeterMinutes: number }).hourMeterMinutes;
   }
 
 
@@ -956,7 +923,7 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
   }
 
   // E1 — the audit's probes 13a/13b on the real stack.
-  test('E1: the same request twice WITHOUT an Idempotency-Key answers 201 then 409 FLIGHT_OVERLAP naming the first flight — one row, one contaore advance', async ({
+  test('E1: the same request twice WITHOUT an Idempotency-Key answers 201 then 409 FLIGHT_OVERLAP naming the first flight — one row', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -964,13 +931,9 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
     const pilot = await createPilotPerson(page);
     const body = flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`);
 
-    const meterBefore = await hourMeterMinutes(page, aircraft.id);
-
     const first = await page.request.post('/api/v1/flights', { data: body });
     expect(first.status()).toBe(201);
     const firstFlight = (await first.json()) as { flight: { id: string } };
-    const meterAfterFirst = await hourMeterMinutes(page, aircraft.id);
-    expect(meterAfterFirst).toBe(meterBefore + 60);
 
     const second = await page.request.post('/api/v1/flights', { data: body });
     expect(second.status()).toBe(409);
@@ -985,12 +948,11 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
     });
 
     expect(await countFlights(page, aircraft.id)).toBe(1);
-    expect(await hourMeterMinutes(page, aircraft.id)).toBe(meterAfterFirst);
   });
 
   // E2 — the TD-2 contract, untouched by this story and proved HERE, since
   // `idempotency.spec.ts` never registers a flight.
-  test('E2: the same request twice WITH the same Idempotency-Key replays the first response (201, Idempotency-Replayed: true) — one row, one contaore advance', async ({
+  test('E2: the same request twice WITH the same Idempotency-Key replays the first response (201, Idempotency-Replayed: true) — one row', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -998,8 +960,6 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
     const pilot = await createPilotPerson(page);
     const body = flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`);
     const key = `flight-16-2-${uniqueSuffix()}`;
-
-    const meterBefore = await hourMeterMinutes(page, aircraft.id);
 
     const first = await page.request.post('/api/v1/flights', { data: body, headers: { 'Idempotency-Key': key } });
     expect(first.status()).toBe(201);
@@ -1011,7 +971,6 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
     expect(((await replay.json()) as { flight: { id: string } }).flight.id).toBe(firstFlight.flight.id);
 
     expect(await countFlights(page, aircraft.id)).toBe(1);
-    expect(await hourMeterMinutes(page, aircraft.id)).toBe(meterBefore + 60);
   });
 
   // E3 — the `FOR UPDATE` lock on the aircraft is what serializes these two.
@@ -1021,8 +980,6 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
     const pilot = await createPilotPerson(page);
     const body = flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`);
 
-    const meterBefore = await hourMeterMinutes(page, aircraft.id);
-
     const [left, right] = await Promise.all([
       page.request.post('/api/v1/flights', { data: body }),
       page.request.post('/api/v1/flights', { data: body }),
@@ -1030,7 +987,6 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
 
     expect([left.status(), right.status()].sort((a, b) => a - b)).toEqual([201, 409]);
     expect(await countFlights(page, aircraft.id)).toBe(1);
-    expect(await hourMeterMinutes(page, aircraft.id)).toBe(meterBefore + 60);
   });
 
   // E4 — the SEMI-OPEN interval, the very semantics `Booking` already uses.
@@ -1079,12 +1035,12 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
     expect(otherResponse.status()).toBe(201);
     const other = (await otherResponse.json()) as { flight: { id: string } };
 
-    // Same aircraft, same instants, changed notes: accepted, because the
+    // Same aircraft, same instants, changed landings: accepted, because the
     // flight being corrected is excluded from the guard by id.
     const keepSlot = await page.request.post(`/api/v1/flights/${target.flight.id}/correct`, {
       data: {
         ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`),
-        notes: 'Nota corretta',
+        landings: 2,
         reason: 'Correzione conservativa',
       },
     });
@@ -1267,45 +1223,29 @@ test.describe('Flight registry guards: no duplicate, no overlap, no minute lost 
     expect(await countFlights(page, aircraft.id)).toBe(2);
   });
 
-  // E7 — F13: the clamp keeps clamping, but no longer in silence.
-  test('E7: a storno whose minutes exceed the contaore lands it at 0 AND writes the HourMeterAdjustment naming the minutes it could not subtract', async ({
-    page,
-  }) => {
+  // Story 19.2 (AC 12/18): the removed keys are dropped on both writes — a
+  // stale client gets a 201, never a 422 — and no response carries them.
+  test('register and correct drop hourMeterStart/hourMeterEnd/notes instead of rejecting them, and the responses never carry them', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
     const pilot = await createPilotPerson(page);
+    const removed = { hourMeterStart: 100, hourMeterEnd: 160, notes: 'Nota' };
 
-    const flightResponse = await page.request.post('/api/v1/flights', {
-      data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T09:30:00.000Z`),
+    const registered = await page.request.post('/api/v1/flights', {
+      data: { ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`), ...removed },
     });
-    expect(flightResponse.status()).toBe(201);
-    const flight = (await flightResponse.json()) as { flight: { id: string } };
+    expect(registered.status(), await registered.text()).toBe(201);
+    const registeredFlight = ((await registered.json()) as { flight: Record<string, unknown> & { id: string } }).flight;
 
-    // A manual rectification takes the contaore BELOW the flight's minutes —
-    // the exact situation the clamp exists for.
-    const adjustResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments`, {
-      data: { newMinutes: 5, reason: 'Allineamento strumento' },
+    const corrected = await page.request.post(`/api/v1/flights/${registeredFlight.id}/correct`, {
+      data: { ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:30:00.000Z`), ...removed, reason: 'Durata' },
     });
-    expect(adjustResponse.status()).toBe(200);
+    expect(corrected.status(), await corrected.text()).toBe(201);
+    const correctedFlight = ((await corrected.json()) as { flight: Record<string, unknown> }).flight;
 
-    const cancelResponse = await page.request.post(`/api/v1/flights/${flight.flight.id}/cancel`, {
-      data: { reason: 'Errore di registrazione' },
-    });
-    expect(cancelResponse.status()).toBe(200);
-
-    expect(await hourMeterMinutes(page, aircraft.id)).toBe(0);
-
-    const historyResponse = await page.request.get(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments?pageSize=10`);
-    expect(historyResponse.status()).toBe(200);
-    const history = (await historyResponse.json()) as {
-      items: Array<{ previousMinutes: number; newMinutes: number; reason: string }>;
-    };
-    // Two rows: the manual rectification, and the clamp's own.
-    expect(history.items).toHaveLength(2);
-    const clampRow = history.items.find((item) => item.previousMinutes === 5 && item.newMinutes === 0);
-    expect(clampRow).toBeDefined();
-    expect(clampRow!.reason).toContain(aircraft.registration);
-    expect(clampRow!.reason).toContain(`(id ${flight.flight.id}): 25 minuti non sottraibili dal contaore.`);
+    for (const flight of [registeredFlight, correctedFlight]) {
+      for (const key of Object.keys(removed)) expect(flight).not.toHaveProperty(key);
+    }
   });
 
   // F14 on the wire and in the form.

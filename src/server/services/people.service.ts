@@ -23,7 +23,6 @@ export type PersonListItem = {
   email: string | null;
   phone: string | null;
   address: string | null;
-  fiscalCode: string | null;
   archivedAt: Date | null;
   createdAt: Date;
   profiles: ProfileFlags;
@@ -71,7 +70,6 @@ const PERSON_SELECT = {
   email: true,
   phone: true,
   address: true,
-  fiscalCode: true,
   archivedAt: true,
   createdAt: true,
   ...PROFILE_FLAG_SELECT,
@@ -92,7 +90,6 @@ type SelectedPerson = {
   email: string | null;
   phone: string | null;
   address: string | null;
-  fiscalCode: string | null;
   archivedAt: Date | null;
   createdAt: Date;
   pilotProfile: { deactivatedAt: Date | null } | null;
@@ -119,7 +116,6 @@ function toListItem(person: SelectedPerson): PersonListItem {
     email: person.email,
     phone: person.phone,
     address: person.address,
-    fiscalCode: person.fiscalCode,
     archivedAt: person.archivedAt,
     createdAt: person.createdAt,
     profiles: {
@@ -143,7 +139,7 @@ function toPersonDetail(person: SelectedPersonDetail): PersonDetail {
   };
 }
 
-/** Prisma unique-constraint violation (concurrent duplicate email/fiscalCode). */
+/** Prisma unique-constraint violation (concurrent duplicate email). */
 function isUniqueViolation(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -156,22 +152,19 @@ function isUniqueViolation(error: unknown): boolean {
 /**
  * Pre-check for the check-then-write race the `try`/`catch` around
  * `create`/`update` backstops (same pattern as `users.service.ts`'s
- * `assertPersonAvailable`). Falsy `email`/`fiscalCode` (undefined or the
- * `null` that clears the field) is never a conflict — Postgres treats
- * multiple `NULL`s in a unique column as distinct.
+ * `assertPersonAvailable`). A falsy `email` (undefined or the `null` that
+ * clears the field) is never a conflict — Postgres treats multiple `NULL`s in
+ * a unique column as distinct.
  */
-async function assertUnique(fields: { email?: string | null; fiscalCode?: string | null }, excludeId?: string): Promise<void> {
-  const conditions: Array<Record<string, string>> = [];
-  if (fields.email) conditions.push({ email: fields.email });
-  if (fields.fiscalCode) conditions.push({ fiscalCode: fields.fiscalCode });
-  if (conditions.length === 0) return;
+async function assertUnique(email: string | null | undefined, excludeId?: string): Promise<void> {
+  if (!email) return;
 
   const existing = await prisma.person.findFirst({
-    where: { OR: conditions, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    where: { email, ...(excludeId ? { id: { not: excludeId } } : {}) },
     select: { id: true },
   });
   if (existing) {
-    throw new ConflictError('A person with this email or fiscal code already exists.');
+    throw new ConflictError('A person with this email already exists.');
   }
 }
 
@@ -384,7 +377,6 @@ async function createPersonCore(tx: Prisma.TransactionClient, input: CreatePerso
         email: input.email ?? null,
         phone: input.phone ?? null,
         address: input.address ?? null,
-        fiscalCode: input.fiscalCode ?? null,
       },
       select: PERSON_SELECT,
     });
@@ -392,7 +384,7 @@ async function createPersonCore(tx: Prisma.TransactionClient, input: CreatePerso
     // assertUnique (below) is check-then-write: a concurrent request can win
     // the race and the unique constraint fires here instead.
     if (isUniqueViolation(error)) {
-      throw new ConflictError('A person with this email or fiscal code already exists.');
+      throw new ConflictError('A person with this email already exists.');
     }
     throw error;
   }
@@ -477,7 +469,7 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
     authorize(actor, 'users.manage');
   }
 
-  await assertUnique({ email: input.email, fiscalCode: input.fiscalCode });
+  await assertUnique(input.email);
 
   if (input.access) {
     const existingUser = await prisma.user.findUnique({ where: { email: input.access.email }, select: { id: true } });
@@ -542,7 +534,7 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
   };
 }
 
-/** Partial update: name, contact details, fiscal code. Archiving is separate (AC 2). */
+/** Partial update: name, contact details. Archiving is separate (AC 2). */
 export async function updatePerson(actor: Actor, id: string, patch: UpdatePersonInput): Promise<PersonListItem> {
   authorize(actor, 'people.manage');
 
@@ -551,7 +543,7 @@ export async function updatePerson(actor: Actor, id: string, patch: UpdatePerson
     throw new NotFoundError('Person not found.');
   }
 
-  await assertUnique({ email: patch.email, fiscalCode: patch.fiscalCode }, id);
+  await assertUnique(patch.email, id);
 
   let person;
   try {
@@ -563,13 +555,12 @@ export async function updatePerson(actor: Actor, id: string, patch: UpdatePerson
         ...(patch.email !== undefined && { email: patch.email }),
         ...(patch.phone !== undefined && { phone: patch.phone }),
         ...(patch.address !== undefined && { address: patch.address }),
-        ...(patch.fiscalCode !== undefined && { fiscalCode: patch.fiscalCode }),
       },
       select: PERSON_SELECT,
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new ConflictError('A person with this email or fiscal code already exists.');
+      throw new ConflictError('A person with this email already exists.');
     }
     throw error;
   }

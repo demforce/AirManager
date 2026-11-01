@@ -157,8 +157,6 @@ export type LogbookConsoleLabels = {
     takeoffs: string;
     landings: string;
     times: string;
-    hourMeter: string;
-    notes: string;
     lineage: string;
     correctionBadge: string;
     statusAll: string;
@@ -426,9 +424,9 @@ export function LogbookConsole({
   /**
    * Parity of the sheet with the desktop row (AC 2, lesson 15.5 F2): the 11
    * columns, the four things the row shows OUTSIDE a column (deroga + motivo,
-   * annullato + data/motivo, "correzione di", "corretto da") and the three the
-   * DTO carries that the desktop table has no room for (orari, contaore, note
-   * — ratifica R-15.6-b: the phone may show MORE, never less).
+   * annullato + data/motivo, "correzione di", "corretto da") and what the DTO
+   * carries that the desktop table has no room for (orari — ratifica
+   * R-15.6-b: the phone may show MORE, never less).
    *
    * `forceReason` is printed only when the server actually sent it: it is
    * masked for a viewer without `flights.manage` (`flights.service.ts`'s
@@ -458,12 +456,7 @@ export function LogbookConsole({
       },
       { k: labels.mobile.takeoffs, v: flight.takeoffs },
       { k: labels.mobile.landings, v: flight.landings },
-      {
-        k: labels.mobile.hourMeter,
-        v: flight.hourMeterStart !== null && flight.hourMeterEnd !== null ? `${flight.hourMeterStart} – ${flight.hourMeterEnd}` : labels.table.noValue,
-      },
       { k: labels.table.amount, v: formatCents(flight.breakdown.totalAmountCents, moneyLocale) },
-      { k: labels.mobile.notes, v: flight.notes ?? labels.table.noValue },
     ];
 
     if (flight.forceReason) rows.push({ k: labels.table.forcedBadge, v: flight.forceReason });

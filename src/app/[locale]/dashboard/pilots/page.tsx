@@ -75,7 +75,6 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
     email: item.email,
     phone: item.phone,
     address: item.address,
-    fiscalCode: item.fiscalCode,
     archivedAt: item.archivedAt ? item.archivedAt.toISOString() : null,
     profiles: item.profiles,
     balanceCents: item.balanceCents,

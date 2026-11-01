@@ -79,7 +79,7 @@ test.describe('Panoramica fleet-wide AOG count (story AOG-1a, AC 13)', () => {
     // can only be counted by a reader that looks past the first page.
     const groundedRegistration = `I-ZAOG${stamp}`.toUpperCase().slice(0, 20);
     const created = await page.request.post('/api/v1/aircraft', {
-      data: { registration: groundedRegistration, type: 'Ultraleggero 3 assi', model: 'AOG count', hourMeterMinutes: 1 },
+      data: { registration: groundedRegistration, type: 'Ultraleggero 3 assi', model: 'AOG count' },
     });
     expect(created.status()).toBe(201);
     const grounded = (await created.json()) as { id: string };
@@ -104,7 +104,6 @@ test.describe('Panoramica fleet-wide AOG count (story AOG-1a, AC 13)', () => {
           registration: `I-AFIL${stamp}${String(filler).padStart(3, '0')}`.toUpperCase().slice(0, 20),
           type: 'Ultraleggero 3 assi',
           model: 'AOG count filler',
-          hourMeterMinutes: 1,
         },
       });
       expect(response.status()).toBe(201);

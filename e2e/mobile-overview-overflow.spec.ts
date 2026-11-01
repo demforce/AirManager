@@ -57,12 +57,12 @@ test.describe('story 15.3 — the pending card declares its own truncation (revi
 
     // One run-unique aircraft and person, then nine non-overlapping slots on it.
     // Payload shapes copied VERBATIM from `mobile-overview.spec.ts`'s helpers:
-    // `POST /aircraft` needs `type` and `hourMeterMinutes` (the composite create
-    // of story 14.8) and answers `{ id }` at the top level, and a booking's
+    // `POST /aircraft` needs `type` (the composite create of story 14.8) and
+    // answers `{ id }` at the top level, and a booking's
     // person needs an ACTIVE pilot profile.
     const tag = `OF${Date.now().toString().slice(-6)}`;
     const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-      data: { registration: `I-M${tag}`.slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Overflow 15.3', hourMeterMinutes: 60 },
+      data: { registration: `I-M${tag}`.slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Overflow 15.3' },
     });
     expect(aircraftResponse.status(), await aircraftResponse.text()).toBe(201);
     const aircraftId = ((await aircraftResponse.json()) as { id: string }).id;

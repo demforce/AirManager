@@ -599,7 +599,7 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       const personId = ((await person.json()) as { id: string }).id;
       expect((await page.request.put(`/api/v1/people/${personId}/profiles/pilot`, { data: { licenseNumber: `LIC-${uniqueSuffix()}`, licenseType: 'PPL(A)' } })).status()).toBe(200);
 
-      const aircraft = await page.request.post('/api/v1/aircraft', { data: { registration: `I-BK${uniqueSuffix().replace(/[^A-Za-z0-9]/g, '').slice(-5).toUpperCase()}`, type: 'Ultraleggero 3 assi', model: 'Blocked', hourMeterMinutes: 10 } });
+      const aircraft = await page.request.post('/api/v1/aircraft', { data: { registration: `I-BK${uniqueSuffix().replace(/[^A-Za-z0-9]/g, '').slice(-5).toUpperCase()}`, type: 'Ultraleggero 3 assi', model: 'Blocked' } });
       expect(aircraft.status()).toBe(201);
       aircraftId = ((await aircraft.json()) as { id: string }).id;
       expect((await page.request.post(`/api/v1/aircraft/${aircraftId}/rates`, { data: { priceCentsPerHour: 12000, validFrom: '2020-01-01' } })).status()).toBe(201);

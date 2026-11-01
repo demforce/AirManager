@@ -64,7 +64,7 @@ function formatDateOnly(dateOnly: string, locale: 'it' | 'en'): string {
 async function createAircraft(page: Page, withRate = false): Promise<{ id: string; registration: string }> {
   const registration = `I-AOG${uniqueSuffix()}`.toUpperCase().slice(0, 20);
   const response = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'AOG Test', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'AOG Test' },
   });
   expect(response.status()).toBe(201);
   const aircraft = (await response.json()) as { id: string };

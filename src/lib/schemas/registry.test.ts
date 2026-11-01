@@ -57,7 +57,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/aircraft/{id}/unarchive',
         '/api/v1/aircraft/{id}/out-of-service',
         '/api/v1/aircraft/{id}/return-to-service',
-        '/api/v1/aircraft/{id}/hour-meter-adjustments',
         '/api/v1/aircraft/{id}/rates',
         '/api/v1/users',
         '/api/v1/users/{id}',
@@ -143,6 +142,48 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
   it('documents the optional composite rate block on CreateAircraftRequest (story 14.8, review F3)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
     expect(schemas?.['CreateAircraftRequest']?.properties).toHaveProperty('rate');
+  });
+
+  describe('Removed fields (story 19.2)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+
+    it('documents no fiscalCode on the person schemas (AC 2)', () => {
+      for (const name of ['Person', 'PersonDetail', 'CreatePersonRequest', 'UpdatePersonRequest']) {
+        expect(schemas?.[name]?.properties, name).toBeDefined();
+        expect(schemas?.[name]?.properties, name).not.toHaveProperty('fiscalCode');
+      }
+    });
+
+    it('documents no seats/fuelType/based/notes/hourMeterMinutes on the aircraft schemas (AC 6, AC 11)', () => {
+      for (const name of ['Aircraft', 'CreateAircraftRequest', 'UpdateAircraftRequest']) {
+        expect(schemas?.[name]?.properties, name).toBeDefined();
+        for (const field of ['seats', 'fuelType', 'based', 'notes', 'hourMeterMinutes']) {
+          expect(schemas?.[name]?.properties, `${name}.${field}`).not.toHaveProperty(field);
+        }
+      }
+    });
+
+    it('documents no hourMeterStart/hourMeterEnd/notes on the flight schemas (AC 12, AC 18)', () => {
+      // The flight DTO is not registered on its own: it is the `FlightList` item.
+      const flightList = schemas?.['FlightList']?.properties?.['items'] as { items?: { properties?: Record<string, unknown> } } | undefined;
+      const flightSchemas: Record<string, Record<string, unknown> | undefined> = {
+        Flight: flightList?.items?.properties,
+        RegisterFlightRequest: schemas?.['RegisterFlightRequest']?.properties,
+        CorrectFlightRequest: schemas?.['CorrectFlightRequest']?.properties,
+      };
+      for (const [name, properties] of Object.entries(flightSchemas)) {
+        expect(properties, name).toHaveProperty('takeoffs');
+        for (const field of ['hourMeterStart', 'hourMeterEnd', 'notes']) {
+          expect(properties, `${name}.${field}`).not.toHaveProperty(field);
+        }
+      }
+    });
+
+    it('documents no hour-meter adjustment path nor schema (AC 10)', () => {
+      expect(Object.keys(doc.paths ?? {})).not.toContain('/api/v1/aircraft/{id}/hour-meter-adjustments');
+      expect(schemas).not.toHaveProperty('CreateHourMeterAdjustmentRequest');
+      expect(schemas).not.toHaveProperty('HourMeterAdjustmentList');
+    });
   });
 
   it('documents blocksBooking on the ExpiryType schema (story 7.4)', () => {

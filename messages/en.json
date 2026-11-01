@@ -267,13 +267,12 @@
       "email": "Email",
       "phone": "Phone",
       "address": "Address",
-      "fiscalCode": "Fiscal code",
       "submitCreate": "Create person",
       "submitEdit": "Save changes",
       "cancel": "Cancel",
       "requiredField": "This field is required.",
       "genericError": "Something went wrong. Please try again.",
-      "conflictError": "A person with this email or fiscal code already exists."
+      "conflictError": "A person with this email already exists."
     },
     "feedback": {
       "created": "Person created.",
@@ -401,8 +400,7 @@
         "lastName": "Last name",
         "email": "Email",
         "phone": "Phone",
-        "address": "Address",
-        "fiscalCode": "Fiscal code"
+        "address": "Address"
       },
       "profiles": {
         "sectionTitle": "Profiles"
@@ -470,7 +468,7 @@
       "errors": {
         "required": "Required field.",
         "generic": "Something went wrong. Please try again.",
-        "conflictEmail": "A person with this email or fiscal code already exists."
+        "conflictEmail": "A person with this email already exists."
       }
     },
     "toast": {
@@ -541,7 +539,6 @@
         "email": "Email",
         "phone": "Phone",
         "address": "Address",
-        "fiscalCode": "Fiscal code",
         "save": "Save changes",
         "loadError": "Could not load the identity data.",
         "requiredField": "Required field."
@@ -667,7 +664,6 @@
       "email": "Email",
       "phone": "Phone",
       "address": "Address",
-      "fiscalCode": "Fiscal code",
       "noValue": "—",
       "archivedBadge": "Archived"
     },
@@ -953,7 +949,7 @@
       "registration": "Registration",
       "type": "Type",
       "model": "Model",
-      "hourMeter": "Hour meter",
+      "totalHours": "Total hours",
       "status": "Status",
       "operationalStatus": "Operational status"
     },
@@ -981,11 +977,8 @@
         "status": "Status",
         "aogReason": "AOG reason",
         "rate": "Rate",
-        "seats": "Seats",
-        "fuel": "Fuel",
-        "hourMeter": "Hour meter",
-        "monthHours": "Hours this month",
-        "notes": "Notes"
+        "totalHours": "Total hours",
+        "monthHours": "Hours this month"
       }
     },
     "pagination": {
@@ -1004,22 +997,7 @@
         "sectionTitle": "Identity",
         "registration": "Registration",
         "type": "Type",
-        "model": "Model",
-        "seats": "Seats",
-        "fuelType": "Fuel",
-        "fuelOptions": {
-          "avgas": "AVGAS 100LL",
-          "jetA1": "Jet A-1",
-          "mogas": "Mogas"
-        },
-        "based": "Based",
-        "basedOptions": {
-          "based": "Based",
-          "guest": "Guest"
-        },
-        "notes": "Notes",
-        "hourMeter": "Initial hour meter (minutes)",
-        "hourMeterHint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm)."
+        "model": "Model"
       },
       "availability": {
         "sectionTitle": "Availability",
@@ -1065,17 +1043,9 @@
         "historyEmpty": "No rates recorded yet.",
         "showAll": "Show all ({count})"
       },
-      "hourMeter": {
-        "sectionTitle": "Hour meter",
-        "current": "Current hour meter",
-        "newValue": "New value (minutes)",
-        "hint": "The hour meter is stored as whole minutes; the value in parentheses shows the same duration as hours and minutes (hh:mm).",
-        "reason": "Reason",
-        "delta": "Change",
-        "submit": "Record adjustment",
-        "historyTitle": "Adjustment history",
-        "historyEmpty": "No adjustments recorded yet.",
-        "loadMore": "Load more"
+      "flightHours": {
+        "sectionTitle": "Flight hours",
+        "total": "Total hours"
       },
       "archive": {
         "sectionTitle": "Archive",
@@ -1092,7 +1062,6 @@
         "conflictRegistration": "An aircraft with this registration already exists.",
         "conflictStatus": "The aircraft's status already changed in the meantime.",
         "conflictRate": "A rate with this effective date already exists.",
-        "invalidHourMeter": "The hour meter must be a whole number of minutes, zero or greater.",
         "invalidPrice": "The price must be a positive amount (e.g. 160.00).",
         "invalidDate": "Enter a valid date.",
         "reasonRequired": "The reason is required."
@@ -1105,7 +1074,6 @@
       "unarchived": "Aircraft restored.",
       "setOutOfService": "Aircraft marked out of service.",
       "returnedToService": "Aircraft returned to service.",
-      "hourMeterAdjusted": "Hour meter adjusted.",
       "rateAdded": "Rate added."
     }
   },
@@ -1144,15 +1112,10 @@
       "landingTime": "Landing time",
       "computedDuration": "Duration",
       "takeoffs": "Takeoffs",
-      "hourMeterStart": "Hour meter start",
-      "hourMeterEnd": "Hour meter end",
       "landings": "Landings",
-      "notes": "Notes",
       "submit": "Log flight",
       "requiredField": "Required field.",
-      "invalidHourMeter": "The end reading must be greater than the start reading.",
       "errors": {
-        "HOUR_METER_INVALID": "The end reading must be greater than the start reading.",
         "FLIGHT_TIMES_INVALID": "The landing time must be after takeoff and the duration cannot exceed 24 hours.",
         "NO_AIRCRAFT_RATE": "No hourly rate is in effect for this aircraft on the flight date.",
         "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
@@ -1339,7 +1302,6 @@
       "requiredReason": "The reason is required.",
       "conflictError": "This flight has already been cancelled.",
       "requiredField": "Required field.",
-      "invalidHourMeter": "The end reading must be greater than the start reading.",
       "invalidCycles": "Takeoffs and landings must be at least 1.",
       "fields": {
         "aircraft": "Aircraft",
@@ -1363,13 +1325,9 @@
         "landingTime": "Landing time",
         "computedDuration": "Duration",
         "takeoffs": "Takeoffs",
-        "landings": "Landings",
-        "hourMeterStart": "Hour meter start",
-        "hourMeterEnd": "Hour meter end",
-        "notes": "Notes"
+        "landings": "Landings"
       },
       "errors": {
-        "HOUR_METER_INVALID": "The end reading must be greater than the start reading.",
         "FLIGHT_TIMES_INVALID": "The landing time must be after takeoff and the duration cannot exceed 24 hours.",
         "NO_AIRCRAFT_RATE": "No hourly rate is in effect for this aircraft on the flight date.",
         "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
@@ -1424,8 +1382,6 @@
       "takeoffs": "Take-offs",
       "landings": "Landings",
       "times": "Times",
-      "hourMeter": "Hour meter",
-      "notes": "Notes",
       "lineage": "History",
       "correctionBadge": "Correction",
       "statusAll": "All",

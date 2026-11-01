@@ -17,7 +17,7 @@ import { ledgerClubAmountCents, type ListTransactionsQuery } from '@/lib/schemas
 import { dateOnlyInZone, todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
 import { getAccountOverview, listAccountMovements } from './accounts.service';
-import { listAircraft } from './aircraft.service';
+import { listAircraft, sumFlightMinutesByAircraft } from './aircraft.service';
 import { getAirfieldBranding } from './app-settings.service';
 import { listBookings } from './bookings.service';
 import { getCashReport, listCashMovements } from './cash.service';
@@ -182,11 +182,14 @@ export async function exportPeopleXlsx(actor: Actor, query: ListPeopleQuery): Pr
 // `dashboard/aircraft` page's replacement) joins it in from a SEPARATE
 // batched `getEffectiveRates` call (`rates.service.ts`), it is not part of
 // `AircraftListItem`/`GET /api/v1/aircraft`'s own DTO (verified:
-// `aircraft.service.ts#AircraftListItem` has no such field).
+// `aircraft.service.ts#AircraftListItem` has no such field). "Ore totali"
+// (story 19.2, R-19-b) is joined in the same way: ONE batched aggregate over
+// the exported ids, the same source as the fleet sheet and the editor.
 
 export async function exportAircraftXlsx(actor: Actor, query: ListAircraftQuery): Promise<XlsxExport> {
   const result = await listAircraft(actor, { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });
   assertWithinExportCap(result.total);
+  const totalMinutesById = await sumFlightMinutesByAircraft(actor, result.items.map((row) => row.id), null, null);
 
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
@@ -196,7 +199,7 @@ export async function exportAircraftXlsx(actor: Actor, query: ListAircraftQuery)
     { header: t('table.registration'), value: (row) => row.registration },
     { header: t('table.type'), value: (row) => row.type },
     { header: t('table.model'), value: (row) => row.model },
-    { header: t('table.hourMeter'), value: (row) => formatMinutes(row.hourMeterMinutes) },
+    { header: t('table.totalHours'), value: (row) => formatMinutes(totalMinutesById.get(row.id) ?? 0) },
     { header: t('table.status'), value: (row) => (row.archivedAt ? t('status.archived') : t('status.active')) },
     {
       header: t('table.operationalStatus'),

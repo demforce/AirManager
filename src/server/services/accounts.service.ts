@@ -279,7 +279,7 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
 /**
  * One entry of the full, paginated account statement (story 3.2, AC 1/2).
  * `actorEmail` is a display-only join over `actorUserId` (same enrichment
- * pattern as `listHourMeterAdjustments`, story 2.5) but, unlike that list,
+ * pattern as `rates.service.ts#listAircraftRates`, story 4.1) but, unlike that list,
  * it is conditional: only present when the caller has `people.read` (AC
  * 2's "dettaglio operativo" for an admin) — a titolare reading their own
  * statement never sees who registered a movement (Dev Notes, AD-5: the

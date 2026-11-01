@@ -144,7 +144,7 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
   const registration = `I-RV${suffix}`.toUpperCase().slice(0, 20);
 
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 500 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
@@ -158,7 +158,7 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
 }
 
 test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1/2/3/4)', () => {
-  test('cancel a school flight (instructor): balance/contaore revert, flight shows ANNULLATO with the reason; a second cancel is a 409; correcting a fresh flight links old->new', async ({
+  test('cancel a school flight (instructor): balance revert, flight shows ANNULLATO with the reason; a second cancel is a 409; correcting a fresh flight links old->new', async ({
     page,
   }) => {
     // The heaviest single test in the suite (~15 UI interactions across
@@ -198,14 +198,15 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-190,00\s€/);
     await page.getByTestId('flight-result-close').click();
 
-    // Aircraft hour meter advanced by 60' (500 -> 560 = 9:20). Search-scoped:
-    // the fleet grid (`/dashboard/fleet`, story 12.5) is paginated 20/page
-    // ordered by registration, so on an accumulated DB this run's aircraft
-    // can sit past page 1 (same TD-1 T0 fix as flights.spec) — the contaore
-    // itself now lives inside the slide-over editor's "Contaore" section.
+    // The aircraft's total hours are this 60' flight (story 19.2, R-19-b:
+    // the sum of its registered flights). Search-scoped: the fleet grid
+    // (`/dashboard/fleet`, story 12.5) is paginated 20/page ordered by
+    // registration, so on an accumulated DB this run's aircraft can sit past
+    // page 1 (same TD-1 T0 fix as flights.spec) — the hours live inside the
+    // slide-over editor's "Ore di volo" section.
     await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
     await page.getByTestId(`ac-card-${aircraft.id}`).click();
-    await expect(page.getByTestId('hour-meter-current')).toContainText('9:20');
+    await expect(page.getByTestId('aircraft-total-hours')).toHaveText('Ore totali: 1:00');
 
     // Cancel it with a reason. Scope the registry to this run's aircraft via
     // the filter bar FIRST (TD-3 review D1): the unfiltered page 1 orders by
@@ -243,11 +244,11 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await expect(reversalRow).toContainText(/\+190,00\s€/);
     await expect(page.getByTestId('reversal-badge')).toBeVisible();
 
-    // Aircraft hour meter reverted to 8:20 (560 - 60 = 500). Same
-    // search-scoped fleet-grid navigation as above.
+    // A CANCELLED flight never counts: back to 0:00. Same search-scoped
+    // fleet-grid navigation as above.
     await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
     await page.getByTestId(`ac-card-${aircraft.id}`).click();
-    await expect(page.getByTestId('hour-meter-current')).toContainText('8:20');
+    await expect(page.getByTestId('aircraft-total-hours')).toHaveText('Ore totali: 0:00');
 
     // A second cancel attempt on the same flight is a 409 AD-8 envelope.
     // Scoped to this run's aircraft (TD-3 review D1 class): an UNSCOPED page 1

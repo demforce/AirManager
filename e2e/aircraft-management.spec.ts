@@ -60,10 +60,13 @@ async function createAircraft(
   const form = page.getByTestId('identity-form');
   // AC 4, story 13.4: the "Proprietario" (owner) field is removed entirely — scoped to the form, never present.
   await expect(form.getByLabel('Proprietario')).toHaveCount(0);
+  // Story 19.2 (AC 7): the anagrafica is registration, type and model only.
+  for (const label of ['Posti', 'Carburante', 'Basato', 'Note', 'Contaore iniziale (minuti)']) {
+    await expect(form.getByLabel(label, { exact: true })).toHaveCount(0);
+  }
   await form.getByLabel('Marche').fill(aircraft.registration);
   await form.getByLabel('Tipo').fill(aircraft.type);
   await form.getByLabel('Modello').fill(aircraft.model);
-  await form.getByLabel('Contaore iniziale (minuti)').fill('750');
   await page.getByTestId('identity-submit').click();
   await expect(page.getByTestId('toast').filter({ hasText: 'Velivolo creato' })).toBeVisible();
 }
@@ -79,9 +82,15 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
     const card = cardFor(page, aircraft.registration);
     await expect(card).toBeVisible();
     await expect(card.getByText('Disponibile')).toBeVisible();
-    // The hour meter itself now lives inside the editor's "Contaore" section (AC 2: the card only shows the wet rate).
+    // The aircraft's hours live inside the editor's "Ore di volo" section (AC 2:
+    // the card only shows the wet rate) — the sum of its registered flights
+    // (story 19.2, R-19-b), so a brand-new aircraft reads 0:00.
     await card.click();
-    await expect(page.getByTestId('hour-meter-current')).toContainText('12:30');
+    await expect(page.getByTestId('aircraft-total-hours')).toHaveText('Ore totali: 0:00');
+    // The edit form carries the same three fields as the create form.
+    for (const label of ['Posti', 'Carburante', 'Basato', 'Note']) {
+      await expect(page.getByTestId('identity-form').getByLabel(label, { exact: true })).toHaveCount(0);
+    }
   });
 
   test('duplicate registration is rejected with a 409/conflict message (AC 1)', async ({ page }) => {
@@ -95,7 +104,6 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
     await form.getByLabel('Marche').fill(aircraft.registration);
     await form.getByLabel('Tipo').fill('Altro tipo');
     await form.getByLabel('Modello').fill('Altro modello');
-    await form.getByLabel('Contaore iniziale (minuti)').fill('0');
     await page.getByTestId('identity-submit').click();
 
     await expect(page.getByTestId('identity-form-error')).toHaveText('Esiste già un velivolo con queste marche.');

@@ -20,9 +20,7 @@ export type SegmentedProps<T extends string> = {
    * a caller that does not wrap it in a `Field`'s implicit `<label>`), this
    * renders `role="group" aria-label={ariaLabel}` on the wrapping `div` —
    * same pattern `schedule.tsx`'s hand-rolled view-toggle already uses.
-   * Omitted (the default) keeps today's plain `<div className="segmented">`
-   * for every existing caller (`aircraft-editor.tsx`'s `BasedSegmented`),
-   * unchanged.
+   * Omitted (the default) keeps the plain `<div className="segmented">`.
    */
   ariaLabel?: string;
 };

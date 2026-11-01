@@ -55,8 +55,7 @@ export type FlightEditorLabels = {
   requiredReason: string;
   conflictError: string;
   requiredField: string;
-  invalidHourMeter: string;
-  /** Story 16.2 (AC 18) — the `<form>` is `noValidate`, so `min={1}` on the two cycle inputs is a hint, not a gate: this is the message a typed `0` gets, in the same bottom banner as {@link invalidHourMeter}. */
+  /** Story 16.2 (AC 18) — the `<form>` is `noValidate`, so `min={1}` on the two cycle inputs is a hint, not a gate: this is the message a typed `0` gets, in the same bottom banner as `errors.FLIGHT_TIMES_INVALID`. */
   invalidCycles: string;
   fields: {
     aircraft: string;
@@ -80,13 +79,9 @@ export type FlightEditorLabels = {
     computedDuration: string;
     takeoffs: string;
     landings: string;
-    hourMeterStart: string;
-    hourMeterEnd: string;
-    notes: string;
   };
   flightTypes: { private: string; school: string; other: string };
   errors: {
-    HOUR_METER_INVALID: string;
     FLIGHT_TIMES_INVALID: string;
     NO_AIRCRAFT_RATE: string;
     NO_INSTRUCTOR_RATE: string;
@@ -242,11 +237,8 @@ const flightFormSchema = z.object({
   arrivalAirfield: z.string().trim().min(1),
   takeoffTime: z.string().trim().min(1),
   landingTime: z.string().trim().min(1),
-  hourMeterStart: z.string(),
-  hourMeterEnd: z.string(),
   takeoffs: z.string(),
   landings: z.string(),
-  notes: z.string(),
 });
 
 type FlightFormValues = z.infer<typeof flightFormSchema>;
@@ -260,11 +252,8 @@ function flightFormDefaults(target: FlightEditorTarget, airfieldName: string): F
       arrivalAirfield: airfieldName,
       takeoffTime: '',
       landingTime: '',
-      hourMeterStart: '',
-      hourMeterEnd: '',
       takeoffs: '1',
       landings: '1',
-      notes: '',
     };
   }
   const flight = target.flight;
@@ -275,11 +264,8 @@ function flightFormDefaults(target: FlightEditorTarget, airfieldName: string): F
     arrivalAirfield: flight.arrivalAirfield ?? '',
     takeoffTime: flight.takeoffAt ? localTimeFromIso(flight.takeoffAt) : '',
     landingTime: flight.landingAt ? localTimeFromIso(flight.landingAt) : '',
-    hourMeterStart: flight.hourMeterStart !== null ? String(flight.hourMeterStart) : '',
-    hourMeterEnd: flight.hourMeterEnd !== null ? String(flight.hourMeterEnd) : '',
     takeoffs: String(flight.takeoffs),
     landings: String(flight.landings),
-    notes: flight.notes ?? '',
   };
 }
 
@@ -332,7 +318,7 @@ export function FlightEditor({
   // SCHOOL here based on the person's CURRENT active-profile flags used to
   // make "Correggi volo" on an old TOURISM/AERIAL_WORK flight, whose person
   // is student-only TODAY, open showing "Scuola" while the record says
-  // otherwise; confirming even a notes-only correction then re-typed the
+  // otherwise; confirming even a cycles-only correction then re-typed the
   // flight and re-charged it as SCHOOL (ratifica R-14.3-a: a historical
   // flight's type is never rewritten by the UI, only by an explicit operator
   // choice — see `isLocked`/`showStudentOnlyCorrectionWarning` below).
@@ -591,25 +577,6 @@ export function FlightEditor({
       return;
     }
 
-    const hourMeterStartRaw = values.hourMeterStart.trim();
-    const hourMeterEndRaw = values.hourMeterEnd.trim();
-    let hourMeterPayload: { hourMeterStart: number; hourMeterEnd: number } | Record<string, never> = {};
-    if (hourMeterStartRaw !== '' || hourMeterEndRaw !== '') {
-      const hourMeterStart = Number(hourMeterStartRaw);
-      const hourMeterEnd = Number(hourMeterEndRaw);
-      if (
-        hourMeterStartRaw === '' ||
-        hourMeterEndRaw === '' ||
-        !Number.isInteger(hourMeterStart) ||
-        !Number.isInteger(hourMeterEnd) ||
-        hourMeterEnd <= hourMeterStart
-      ) {
-        setFormError(labels.invalidHourMeter);
-        return;
-      }
-      hourMeterPayload = { hourMeterStart, hourMeterEnd };
-    }
-
     const takeoffs = values.takeoffs.trim() === '' ? undefined : Number(values.takeoffs);
     const landings = values.landings.trim() === '' ? undefined : Number(values.landings);
     // Story 16.2 (F14, AC 18): the server bound is now `[1, 500]` — the
@@ -618,12 +585,11 @@ export function FlightEditor({
     // typed `0` would come back as a field-shaped `VALIDATION_ERROR` on a
     // path the mapping below does not know (`takeoffs`/`landings` are not in
     // its `known` list) and the operator would read "Riprova". Same mechanic
-    // and same bottom banner as `invalidHourMeter` above.
+    // and same bottom banner as `FLIGHT_TIMES_INVALID` above.
     if ((takeoffs !== undefined && takeoffs < 1) || (landings !== undefined && landings < 1)) {
       setFormError(labels.invalidCycles);
       return;
     }
-    const notes = values.notes.trim() === '' ? undefined : values.notes.trim();
     const trimmedReason = reason.trim();
 
     const body = {
@@ -639,10 +605,8 @@ export function FlightEditor({
       // `value`/`disabled` above, so the two can never disagree.
       flightType: effectiveFlightType,
       isSolo,
-      ...hourMeterPayload,
       takeoffs,
       landings,
-      notes,
       ...(isCorrecting ? { reason: trimmedReason } : {}),
     };
 
@@ -1058,15 +1022,6 @@ export function FlightEditor({
             </Field>
             <Field label={labels.fields.landings}>
               <Input type="number" min={1} step={1} inputMode="numeric" {...register('landings')} />
-            </Field>
-            <Field label={labels.fields.hourMeterStart}>
-              <Input type="number" min={0} step={1} inputMode="numeric" {...register('hourMeterStart')} />
-            </Field>
-            <Field label={labels.fields.hourMeterEnd}>
-              <Input type="number" min={0} step={1} inputMode="numeric" {...register('hourMeterEnd')} />
-            </Field>
-            <Field label={labels.fields.notes} wide>
-              <Input {...register('notes')} />
             </Field>
             {isCorrecting ? (
               <Field label={labels.correctReason} wide error={reasonError ? labels.requiredReason : undefined}>

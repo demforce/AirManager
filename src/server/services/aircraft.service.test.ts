@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createAircraftSchema, updateAircraftSchema } from '@/lib/schemas/aircraft';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
@@ -13,11 +14,6 @@ vi.mock('@/server/db/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
-    },
-    hourMeterAdjustment: {
-      create: vi.fn(),
-      findMany: vi.fn(),
-      count: vi.fn(),
     },
     // Story 14.8: the composite `createAircraft` + rate transaction path.
     aircraftRate: {
@@ -39,7 +35,6 @@ vi.mock('@/server/db/prisma', () => ({
       findMany: vi.fn(),
     },
     $transaction: vi.fn(),
-    $queryRaw: vi.fn(),
   },
 }));
 
@@ -63,12 +58,10 @@ vi.mock('@/server/adapters/mail/templates', () => ({
 const { prisma } = await import('@/server/db/prisma');
 const { buildAircraftGroundedEmail } = await import('@/server/adapters/mail/templates');
 const {
-  adjustHourMeter,
   archiveAircraft,
   createAircraft,
   getAircraft,
   listAircraft,
-  listHourMeterAdjustments,
   listOutOfServiceAircraft,
   previewOutOfServiceImpact,
   returnToService,
@@ -87,16 +80,12 @@ const countMock = vi.mocked(prisma.aircraft.count);
 const createMock = vi.mocked(prisma.aircraft.create);
 const updateMock = vi.mocked(prisma.aircraft.update);
 const updateManyMock = vi.mocked(prisma.aircraft.updateMany);
-const hourMeterAdjustmentCreateMock = vi.mocked(prisma.hourMeterAdjustment.create);
-const hourMeterAdjustmentFindManyMock = vi.mocked(prisma.hourMeterAdjustment.findMany);
-const hourMeterAdjustmentCountMock = vi.mocked(prisma.hourMeterAdjustment.count);
 const aircraftRateCreateMock = vi.mocked(prisma.aircraftRate.create);
 const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
 const bookingFindManyMock = vi.mocked(prisma.booking.findMany);
 const personFindManyMock = vi.mocked(prisma.person.findMany);
 const userFindManyMock = vi.mocked(prisma.user.findMany);
 const transactionMock = vi.mocked(prisma.$transaction);
-const queryRawMock = vi.mocked(prisma.$queryRaw);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as people.service.test.ts).
@@ -114,18 +103,15 @@ const aircraftFindMany = findManyMock as unknown as { mockResolvedValue: (v: Air
 const bookingFindMany = bookingFindManyMock as unknown as { mockResolvedValue: (v: Array<Record<string, unknown>>) => void };
 const personFindMany = personFindManyMock as unknown as { mockResolvedValue: (v: Array<Record<string, unknown>>) => void };
 const userFindMany = userFindManyMock as unknown as { mockResolvedValue: (v: Array<Record<string, unknown>>) => void };
-// The FOR UPDATE locked read in `adjustHourMeter` (review 2.5 F1) — returns rows.
-const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: Array<{ hourMeterMinutes: number }>) => void };
-const hourMeterAdjustmentCreate = hourMeterAdjustmentCreateMock as unknown as { mockResolvedValue: (v: unknown) => void };
 const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void; mockImplementation: (fn: (arg: unknown) => unknown) => void };
 
 /**
- * `adjustHourMeter` runs its work inside `prisma.$transaction(async (tx) =>
- * ...)` — the interactive-transaction overload. The mocked module's
- * `prisma.aircraft`/`prisma.hourMeterAdjustment` delegates ARE what the
- * service calls whether reached directly or via `tx`, so handing the same
- * mocked `prisma` back as `tx` is a faithful stand-in for Prisma's real
- * per-transaction client.
+ * `listAircraft` (and the other interactive transactions of this service) run
+ * their work inside `prisma.$transaction(async (tx) => ...)` — the
+ * interactive-transaction overload. The mocked module's `prisma.aircraft`
+ * delegates ARE what the service calls whether reached directly or via `tx`,
+ * so handing the same mocked `prisma` back as `tx` is a faithful stand-in for
+ * Prisma's real per-transaction client.
  */
 function mockInteractiveTransaction(): void {
   transaction.mockImplementation((arg: unknown) => (typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : arg));
@@ -145,17 +131,11 @@ const SELECTED_AIRCRAFT = {
   registration: 'I-ABCD',
   type: 'Ultraleggero 3 assi',
   model: 'Tecnam P92 Eaglet',
-  hourMeterMinutes: 750,
-  notes: 'Velivolo scuola volo demo.',
   status: 'OPERATIONAL',
   statusReason: null,
   // Story AOG-1a: `@db.Date` at rest (a `Date` on the raw row), `YYYY-MM-DD` on
   // the DTO — `null` here, the state every pre-existing row starts in.
   outOfServiceUntil: null,
-  // Story 12.5, AC 1: additive fleet fields.
-  seats: 2,
-  fuelType: 'AVGAS 100LL',
-  based: true,
   archivedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -170,9 +150,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     createMock.mockReset();
     updateMock.mockReset();
     updateManyMock.mockReset();
-    hourMeterAdjustmentCreateMock.mockReset();
-    hourMeterAdjustmentFindManyMock.mockReset();
-    hourMeterAdjustmentCountMock.mockReset();
     aircraftRateCreateMock.mockReset();
     flightGroupByMock.mockReset();
     bookingFindManyMock.mockReset();
@@ -186,7 +163,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     personFindMany.mockResolvedValue([]);
     userFindMany.mockResolvedValue([]);
     transactionMock.mockReset();
-    queryRawMock.mockReset();
   });
 
   describe('authorization (AD-5, AC 1/2)', () => {
@@ -208,15 +184,13 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
           registration: 'I-XYZW',
           type: 'Ultraleggero',
           model: 'Test',
-          hourMeterMinutes: 0,
-          notes: null,
         }),
       ).rejects.toThrow(ForbiddenError);
       expect(findFirstMock).not.toHaveBeenCalled();
     });
 
     it('updateAircraft rejects an actor without aircraft.manage', async () => {
-      await expect(updateAircraft(pilotActor(), 'aircraft_1', { notes: 'x' })).rejects.toThrow(ForbiddenError);
+      await expect(updateAircraft(pilotActor(), 'aircraft_1', { model: 'x' })).rejects.toThrow(ForbiddenError);
       expect(findUniqueMock).not.toHaveBeenCalled();
     });
 
@@ -239,20 +213,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(updateManyMock).not.toHaveBeenCalled();
     });
 
-    it('adjustHourMeter rejects an actor without aircraft.manage', async () => {
-      await expect(
-        adjustHourMeter(pilotActor(), 'aircraft_1', { newMinutes: 800, reason: 'Correction' }),
-      ).rejects.toThrow(ForbiddenError);
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it('listHourMeterAdjustments rejects an actor without aircraft.manage', async () => {
-      await expect(
-        listHourMeterAdjustments(pilotActor(), 'aircraft_1', { page: 1, pageSize: 20 }),
-      ).rejects.toThrow(ForbiddenError);
-      expect(findUniqueMock).not.toHaveBeenCalled();
-    });
-
     it('listOutOfServiceAircraft rejects an actor without aircraft.manage', async () => {
       await expect(listOutOfServiceAircraft(pilotActor())).rejects.toThrow(ForbiddenError);
       expect(findManyMock).not.toHaveBeenCalled();
@@ -272,14 +232,9 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
             registration: 'I-ABCD',
             type: 'Ultraleggero 3 assi',
             model: 'Tecnam P92 Eaglet',
-            hourMeterMinutes: 750,
-            notes: 'Velivolo scuola volo demo.',
             status: 'OPERATIONAL',
             statusReason: null,
             outOfServiceUntil: null,
-            seats: 2,
-            fuelType: 'AVGAS 100LL',
-            based: true,
             archivedAt: null,
             createdAt: SELECTED_AIRCRAFT.createdAt,
           },
@@ -293,7 +248,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     it('excludes archived aircraft by default (AC 2)', async () => {
       // Interactive-callback transaction (story TD-1, AC 3): opt into the
       // interactive-callback stand-in (invokes the callback with `prisma`
-      // as `tx`, same as `adjustHourMeter`'s own tests already use) and mock
+      // as `tx`) and mock
       // `findMany`/`count` on their OWN mocks — a `transaction.mockResolvedValue(...)`
       // override would skip invoking the callback entirely (never calling `findMany`).
       mockInteractiveTransaction();
@@ -367,7 +322,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
       const result = await getAircraft(adminActor(), 'aircraft_1');
       expect(result.id).toBe('aircraft_1');
-      expect(result.hourMeterMinutes).toBe(750);
+      expect(result.model).toBe('Tecnam P92 Eaglet');
     });
   });
 
@@ -376,11 +331,9 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       registration: 'I-ABCD',
       type: 'Ultraleggero 3 assi',
       model: 'Tecnam P92 Eaglet',
-      hourMeterMinutes: 750,
-      notes: 'Velivolo scuola volo demo.',
     };
 
-    it('creates the aircraft (AC 1)', async () => {
+    it('creates the aircraft (AC 1) — registration, type and model only (story 19.2)', async () => {
       aircraftFindFirst.mockResolvedValue(null); // no existing conflict
       aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
 
@@ -388,10 +341,17 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       expect(createMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ registration: 'I-ABCD', hourMeterMinutes: 750 }),
+          data: { registration: 'I-ABCD', type: 'Ultraleggero 3 assi', model: 'Tecnam P92 Eaglet' },
         }),
       );
       expect(result.id).toBe('aircraft_1');
+    });
+
+    it('removed fields (story 19.2): the schemas drop seats/fuelType/based/notes/hourMeterMinutes instead of rejecting them, and registration/type/model alone is a valid create', () => {
+      const removed = { seats: 2, fuelType: 'Mogas', based: false, notes: 'Nota', hourMeterMinutes: 750 };
+
+      expect(createAircraftSchema.parse({ ...input, ...removed })).toEqual(input);
+      expect(updateAircraftSchema.parse({ model: 'Tecnam P2008', ...removed })).toEqual({ model: 'Tecnam P2008' });
     });
 
     it('throws ConflictError when the registration is already taken', async () => {
@@ -408,39 +368,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       await expect(createAircraft(adminActor(), input)).rejects.toThrow(ConflictError);
     });
 
-    it('never stores hourMeterMinutes as anything but the integer provided (AD-2)', async () => {
-      aircraftFindFirst.mockResolvedValue(null);
-      aircraftCreate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 90 });
-
-      await createAircraft(adminActor(), { ...input, hourMeterMinutes: 90 });
-
-      expect(createMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ hourMeterMinutes: 90 }) }),
-      );
-    });
-
-    it('persists the additive fleet fields when provided (story 12.5, AC 1)', async () => {
-      aircraftFindFirst.mockResolvedValue(null);
-      aircraftCreate.mockResolvedValue({ ...SELECTED_AIRCRAFT, seats: 4, fuelType: 'Jet A-1', based: false });
-
-      await createAircraft(adminActor(), { ...input, seats: 4, fuelType: 'Jet A-1', based: false });
-
-      expect(createMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ seats: 4, fuelType: 'Jet A-1', based: false }) }),
-      );
-    });
-
-    it('leaves based undefined (DB default true) when omitted, and seats/fuelType null (story 12.5, AC 1)', async () => {
-      aircraftFindFirst.mockResolvedValue(null);
-      aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
-
-      await createAircraft(adminActor(), input);
-
-      const dataArg = createMock.mock.calls[0]?.[0] as { data: Record<string, unknown> };
-      expect(dataArg.data.seats).toBeNull();
-      expect(dataArg.data.fuelType).toBeNull();
-      expect(dataArg.data.based).toBeUndefined();
-    });
 
     // Story 14.8 ("form velivolo unificato", AC 1/2): the composite create
     // path — an optional `rate` block written in the SAME transaction as
@@ -510,7 +437,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   describe('updateAircraft', () => {
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(updateAircraft(adminActor(), 'missing', { notes: 'x' })).rejects.toThrow(NotFoundError);
+      await expect(updateAircraft(adminActor(), 'missing', { model: 'x' })).rejects.toThrow(NotFoundError);
     });
 
     it('updates only the provided fields', async () => {
@@ -523,25 +450,11 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(result.model).toBe('Tecnam P2008');
     });
 
-    it('never accepts hourMeterMinutes (story 2.5): the contaore changes only via a tracked adjustment', async () => {
-      aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
-      aircraftUpdate.mockResolvedValue(SELECTED_AIRCRAFT);
-
-      // UpdateAircraftInput no longer has this field at the type level; cast
-      // to simulate a caller (e.g. a stale client) still sending it — it must
-      // be silently ignored, never forwarded to Prisma.
-      await updateAircraft(adminActor(), 'aircraft_1', { notes: 'x', hourMeterMinutes: 999 } as unknown as Parameters<
-        typeof updateAircraft
-      >[2]);
-
-      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { notes: 'x' } }));
-    });
-
     it('does not check registration uniqueness when registration is not part of the patch', async () => {
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
       aircraftUpdate.mockResolvedValue(SELECTED_AIRCRAFT);
 
-      await updateAircraft(adminActor(), 'aircraft_1', { notes: 'updated' });
+      await updateAircraft(adminActor(), 'aircraft_1', { model: 'updated' });
 
       expect(findFirstMock).not.toHaveBeenCalled();
     });
@@ -553,15 +466,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       await expect(
         updateAircraft(adminActor(), 'aircraft_1', { registration: 'I-TAKEN' }),
       ).rejects.toThrow(ConflictError);
-    });
-
-    it('patches only the provided additive fleet fields (story 12.5, AC 1)', async () => {
-      aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
-      aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, seats: 4, based: false });
-
-      await updateAircraft(adminActor(), 'aircraft_1', { seats: 4, based: false });
-
-      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { seats: 4, based: false } }));
     });
   });
 
@@ -1047,110 +951,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     });
   });
 
-  describe('adjustHourMeter (story 2.5, AC 2)', () => {
-    it('throws NotFoundError for a missing aircraft, inside the same transaction', async () => {
-      mockInteractiveTransaction();
-      queryRaw.mockResolvedValue([]);
-
-      await expect(adjustHourMeter(adminActor(), 'missing', { newMinutes: 800, reason: 'Correction' })).rejects.toThrow(
-        NotFoundError,
-      );
-      expect(hourMeterAdjustmentCreateMock).not.toHaveBeenCalled();
-    });
-
-    it('creates the adjustment (previous = row-locked current value, actorUserId = actor.userId) and updates the aircraft, in one transaction', async () => {
-      mockInteractiveTransaction();
-      queryRaw.mockResolvedValue([{ hourMeterMinutes: 750 }]);
-      hourMeterAdjustmentCreate.mockResolvedValue({});
-      aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 800 });
-
-      const result = await adjustHourMeter(adminActor(), 'aircraft_1', { newMinutes: 800, reason: 'Correction' });
-
-      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith({
-        data: {
-          aircraftId: 'aircraft_1',
-          actorUserId: 'admin_1',
-          previousMinutes: 750,
-          newMinutes: 800,
-          reason: 'Correction',
-        },
-      });
-      expect(updateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'aircraft_1' }, data: { hourMeterMinutes: 800 } }),
-      );
-      expect(result.hourMeterMinutes).toBe(800);
-    });
-
-    it('allows a negative delta (a correction can go either direction)', async () => {
-      mockInteractiveTransaction();
-      queryRaw.mockResolvedValue([{ hourMeterMinutes: 750 }]);
-      hourMeterAdjustmentCreate.mockResolvedValue({});
-      aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, hourMeterMinutes: 600 });
-
-      await adjustHourMeter(adminActor(), 'aircraft_1', { newMinutes: 600, reason: 'Reset after gauge swap' });
-
-      expect(hourMeterAdjustmentCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ previousMinutes: 750, newMinutes: 600 }) }),
-      );
-    });
-  });
-
-  describe('listHourMeterAdjustments (story 2.5, AC 2)', () => {
-    const ADJUSTMENT = {
-      id: 'adj_1',
-      aircraftId: 'aircraft_1',
-      actorUserId: 'staff_1',
-      actorUser: { email: 'staff@airmanager.local' },
-      previousMinutes: 750,
-      newMinutes: 800,
-      reason: 'Correction',
-      createdAt: new Date('2026-02-01T00:00:00.000Z'),
-    };
-
-    it('throws NotFoundError for a missing aircraft', async () => {
-      aircraftFindUnique.mockResolvedValue(null);
-      await expect(listHourMeterAdjustments(adminActor(), 'missing', { page: 1, pageSize: 20 })).rejects.toThrow(
-        NotFoundError,
-      );
-    });
-
-    it('returns the AD-8 paginated shape, most recent first, with the joined actor email', async () => {
-      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
-      // Interactive-callback transaction (story TD-1, AC 3): same
-      // `mockInteractiveTransaction()` stand-in `adjustHourMeter`'s own
-      // tests already use — invokes the callback with `prisma` as `tx`, so
-      // the underlying delegate mocks below must resolve directly (a
-      // `transaction.mockResolvedValue(...)` override would skip invoking
-      // the callback, so `hourMeterAdjustmentFindManyMock` would never be
-      // called).
-      mockInteractiveTransaction();
-      hourMeterAdjustmentFindManyMock.mockResolvedValue([ADJUSTMENT]);
-      hourMeterAdjustmentCountMock.mockResolvedValue(1);
-
-      const result = await listHourMeterAdjustments(adminActor(), 'aircraft_1', { page: 1, pageSize: 20 });
-
-      expect(result).toEqual({
-        items: [
-          {
-            id: 'adj_1',
-            aircraftId: 'aircraft_1',
-            actorUserId: 'staff_1',
-            actorEmail: 'staff@airmanager.local',
-            previousMinutes: 750,
-            newMinutes: 800,
-            reason: 'Correction',
-            createdAt: ADJUSTMENT.createdAt,
-          },
-        ],
-        total: 1,
-        page: 1,
-        pageSize: 20,
-      });
-      expect(hourMeterAdjustmentFindManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { aircraftId: 'aircraft_1' }, orderBy: [{ createdAt: 'desc' }] }),
-      );
-    });
-  });
   describe('sumFlightMinutesByAircraft (story 15.5 — the fleet card hours bar)', () => {
     it('rejects an actor without aircraft.manage', async () => {
       await expect(sumFlightMinutesByAircraft(pilotActor(), ['aircraft_1'], new Date(Date.UTC(2026, 7, 1)), new Date(Date.UTC(2026, 7, 31)))).rejects.toThrow(
@@ -1185,6 +985,19 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(result.get('aircraft_2')).toBe(0);
       // An aircraft that did not fly is simply absent (callers read `?? 0`).
       expect(result.has('aircraft_3')).toBe(false);
+    });
+
+    it('with both bounds null sums ALL the registered minutes: no `flightDate` filter at all (story 19.2, R-19-b)', async () => {
+      flightGroupByMock.mockResolvedValue([{ aircraftId: 'aircraft_1', _sum: { minutes: 4810 } }] as never);
+
+      const result = await sumFlightMinutesByAircraft(adminActor(), ['aircraft_1'], null, null);
+
+      expect(flightGroupByMock).toHaveBeenCalledWith({
+        by: ['aircraftId'],
+        where: { aircraftId: { in: ['aircraft_1'] }, status: 'REGISTERED' },
+        _sum: { minutes: true },
+      });
+      expect(result.get('aircraft_1')).toBe(4810);
     });
   });
 });

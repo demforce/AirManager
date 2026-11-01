@@ -61,6 +61,8 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     await expect(page.getByRole('heading', { name: `${person.lastName} ${person.firstName}` })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Dati anagrafici' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Profili' })).toBeVisible();
+    // Story 19.2 (AC 4): the anagrafica rows, exactly (the removed one is gone).
+    await expect(page.locator('.person-identity .info-row .k')).toHaveText(['Nome', 'Cognome', 'Email', 'Telefono', 'Indirizzo']);
 
     // Story 13.3, AC 2: the standalone "estratto conto" drill-down is now a
     // SECTION here ("Estratto conto"), replacing the old "Saldo conto" panel.
@@ -154,7 +156,7 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
     await ensureValidSeedExpiries(page, personId, 'PILOTS');
     const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-      data: { registration: `I-PD${suffix}`.toUpperCase().slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 50 },
+      data: { registration: `I-PD${suffix}`.toUpperCase().slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Test Model' },
     });
     expect(aircraftResponse.status()).toBe(201);
     const aircraft = (await aircraftResponse.json()) as { id: string };
@@ -204,6 +206,8 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     const form = page.getByTestId('pilot-identity-form');
     await expect(form.getByLabel('Nome', { exact: true })).toHaveValue(person.firstName);
     await expect(form.getByLabel('Cognome', { exact: true })).toHaveValue(person.lastName);
+    // Story 19.2 (AC 4): the removed field is absent from the edit form too.
+    await expect(form.getByLabel('Codice fiscale', { exact: true })).toHaveCount(0);
 
     const updatedPhone = '333' + Date.now().toString().slice(-7);
     await form.getByLabel('Telefono').fill(updatedPhone);

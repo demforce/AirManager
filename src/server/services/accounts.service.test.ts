@@ -113,7 +113,7 @@ const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) 
  * Every call site in this service now uses the interactive-callback overload
  * (`$transaction(async (tx) => ...)`, story TD-1 AC 3 hardened `buildOverview`/
  * `listAccountMovements` off the batch/array form — same as `recordTopUp`/
- * `recordAdjustment` already did, and same as `adjustHourMeter` in
+ * `recordAdjustment` already did, and same as `listAircraft` in
  * aircraft.service.ts). This stand-in still accepts a legacy array argument
  * too (`Promise.all` over it) for robustness, but a function is the only
  * form this service's production code sends: it is invoked with the mocked

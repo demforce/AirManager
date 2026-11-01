@@ -34,7 +34,6 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       email: t('editor.identity.email'),
       phone: t('editor.identity.phone'),
       address: t('editor.identity.address'),
-      fiscalCode: t('editor.identity.fiscalCode'),
     },
     profiles: {
       sectionTitle: t('editor.profiles.sectionTitle'),

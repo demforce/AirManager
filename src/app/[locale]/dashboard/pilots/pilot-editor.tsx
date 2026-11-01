@@ -53,7 +53,7 @@ export type PilotEditorLabels = {
   cancel: string;
   submitCreate: string;
   submitEdit: string;
-  identity: { sectionTitle: string; firstName: string; lastName: string; email: string; phone: string; address: string; fiscalCode: string };
+  identity: { sectionTitle: string; firstName: string; lastName: string; email: string; phone: string; address: string };
   profiles: {
     sectionTitle: string;
     status: { active: string; inactive: string; notActivated: string };
@@ -258,7 +258,6 @@ function IdentitySection({
       email: pilot.email,
       phone: pilot.phone,
       address: pilot.address,
-      fiscalCode: pilot.fiscalCode,
     },
   });
 
@@ -284,7 +283,7 @@ function IdentitySection({
         // THAT field instead of only the bottom banner — `labels.errors.required`
         // is reused per field (same generic string, now targeted).
         const { fieldErrors } = await parseApiError(response);
-        const known: Array<keyof UpdatePersonInput> = ['firstName', 'lastName', 'email', 'phone', 'address', 'fiscalCode'];
+        const known: Array<keyof UpdatePersonInput> = ['firstName', 'lastName', 'email', 'phone', 'address'];
         let mapped = false;
         for (const field of known) {
           if (fieldErrors.has(field)) {
@@ -308,7 +307,6 @@ function IdentitySection({
       email: string | null;
       phone: string | null;
       address: string | null;
-      fiscalCode: string | null;
       archivedAt: string | null;
       profiles: { pilot: boolean; student: boolean; instructor: boolean };
     };
@@ -320,7 +318,6 @@ function IdentitySection({
       email: updated.email,
       phone: updated.phone,
       address: updated.address,
-      fiscalCode: updated.fiscalCode,
       archivedAt: updated.archivedAt,
       profiles: updated.profiles,
     });
@@ -335,7 +332,7 @@ function IdentitySection({
         <Field label={labels.identity.lastName} error={errors.lastName ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
         </Field>
-        <Field label={labels.identity.email} wide error={errors.email ? labels.errors.required : undefined}>
+        <Field label={labels.identity.email} error={errors.email ? labels.errors.required : undefined}>
           <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
         <Field label={labels.identity.phone} error={errors.phone ? labels.errors.required : undefined}>
@@ -343,9 +340,6 @@ function IdentitySection({
         </Field>
         <Field label={labels.identity.address} wide error={errors.address ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
-        </Field>
-        <Field label={labels.identity.fiscalCode} error={errors.fiscalCode ? labels.errors.required : undefined}>
-          <Input aria-invalid={Boolean(errors.fiscalCode)} {...register('fiscalCode')} />
         </Field>
       </div>
 
@@ -456,7 +450,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
     formState: { errors, isSubmitting },
   } = useForm<z.input<typeof createPersonBaseSchema>, unknown, z.infer<typeof createPersonBaseSchema>>({
     resolver: zodResolver(createPersonBaseSchema),
-    defaultValues: { firstName: '', lastName: '', email: null, phone: null, address: null, fiscalCode: null },
+    defaultValues: { firstName: '', lastName: '', email: null, phone: null, address: null },
   });
 
   // Story 14.2 (AC 2): a single "did the user try to submit" flag instead of
@@ -591,7 +585,6 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
       email: base.email ?? null,
       phone: base.phone ?? null,
       address: base.address ?? null,
-      fiscalCode: base.fiscalCode ?? null,
       ...(activatePilot || activateStudent || activateInstructor
         ? {
             profiles: {
@@ -651,7 +644,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
         <Field label={labels.identity.lastName} error={errors.lastName ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
         </Field>
-        <Field label={labels.identity.email} wide error={errors.email ? labels.errors.required : undefined}>
+        <Field label={labels.identity.email} error={errors.email ? labels.errors.required : undefined}>
           <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
         </Field>
         <Field label={labels.identity.phone} error={errors.phone ? labels.errors.required : undefined}>
@@ -659,9 +652,6 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
         </Field>
         <Field label={labels.identity.address} wide error={errors.address ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
-        </Field>
-        <Field label={labels.identity.fiscalCode} error={errors.fiscalCode ? labels.errors.required : undefined}>
-          <Input aria-invalid={Boolean(errors.fiscalCode)} {...register('fiscalCode')} />
         </Field>
       </div>
 

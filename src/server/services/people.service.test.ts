@@ -155,7 +155,6 @@ const SELECTED_PERSON = {
   email: 'maria.bianchi@airmanager.local',
   phone: '+39 333 1234567',
   address: 'Via Roma 1, Torino',
-  fiscalCode: 'BNCMRA80A01L219K',
   archivedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   // Story 2.2: `toListItem` derives the active-profile flags from these
@@ -221,7 +220,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
 
     it('createPerson rejects an actor without people.manage', async () => {
       await expect(
-        createPerson(pilotActor(), { firstName: 'X', lastName: 'Y', email: null, phone: null, address: null, fiscalCode: null }),
+        createPerson(pilotActor(), { firstName: 'X', lastName: 'Y', email: null, phone: null, address: null }),
       ).rejects.toThrow(ForbiddenError);
       expect(findFirstMock).not.toHaveBeenCalled();
     });
@@ -267,7 +266,6 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
             email: 'maria.bianchi@airmanager.local',
             phone: '+39 333 1234567',
             address: 'Via Roma 1, Torino',
-            fiscalCode: 'BNCMRA80A01L219K',
             archivedAt: null,
             createdAt: SELECTED_PERSON.createdAt,
             profiles: { pilot: false, student: false, instructor: false },
@@ -477,7 +475,6 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       email: 'maria.bianchi@airmanager.local',
       phone: '+39 333 1234567',
       address: 'Via Roma 1, Torino',
-      fiscalCode: 'BNCMRA80A01L219K',
     };
 
     it('creates the person (AC 1)', async () => {
@@ -497,22 +494,23 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     it('throws ConflictError when the email is already taken', async () => {
       personFindFirst.mockResolvedValue({ id: 'other_person' });
 
-      await expect(createPerson(adminActor(), input)).rejects.toThrow(ConflictError);
+      await expect(createPerson(adminActor(), input)).rejects.toThrow(new ConflictError('A person with this email already exists.'));
       expect(createMock).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictError when the fiscal code is already taken', async () => {
-      personFindFirst.mockResolvedValue({ id: 'other_person' });
+    it('checks uniqueness on the email ALONE (story 19.2, AC 3: one field, no OR)', async () => {
+      personFindFirst.mockResolvedValue(null);
+      personCreate.mockResolvedValue(SELECTED_PERSON);
 
-      await expect(
-        createPerson(adminActor(), { ...input, email: null, fiscalCode: 'BNCMRA80A01L219K' }),
-      ).rejects.toThrow(ConflictError);
+      await createPerson(adminActor(), input);
+
+      expect(findFirstMock).toHaveBeenCalledWith({ where: { email: input.email }, select: { id: true } });
     });
 
-    it('never conflicts when email and fiscalCode are both omitted', async () => {
-      personCreate.mockResolvedValue({ ...SELECTED_PERSON, email: null, fiscalCode: null });
+    it('never queries uniqueness when the email is omitted', async () => {
+      personCreate.mockResolvedValue({ ...SELECTED_PERSON, email: null });
 
-      await createPerson(adminActor(), { firstName: 'X', lastName: 'Y', email: null, phone: null, address: null, fiscalCode: null });
+      await createPerson(adminActor(), { firstName: 'X', lastName: 'Y', email: null, phone: null, address: null });
 
       expect(findFirstMock).not.toHaveBeenCalled();
     });
@@ -689,6 +687,11 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       await expect(
         updatePerson(adminActor(), 'person_1', { email: 'taken@airmanager.local' }),
       ).rejects.toThrow(ConflictError);
+      // Story 19.2 (AC 3): the email alone, the person itself excluded.
+      expect(findFirstMock).toHaveBeenCalledWith({
+        where: { email: 'taken@airmanager.local', id: { not: 'person_1' } },
+        select: { id: true },
+      });
     });
   });
 

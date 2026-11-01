@@ -91,7 +91,7 @@ async function createAircraft(page: Page): Promise<{ id: string; registration: s
   const registration = `I-WF${suffix}`.toUpperCase().slice(0, 20);
 
   const response = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 50 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(response.status()).toBe(201);
   const aircraft = (await response.json()) as { id: string };
@@ -317,5 +317,52 @@ test.describe('POST /api/v1/people — one-step composite create (story 13.1, AC
     expect(response.status()).toBe(422);
     const body = await response.json();
     expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+test.describe('Removed fields — API contract (story 19.2)', () => {
+  test('aircraft and person writes drop the removed keys (201/200, never a 422), no read carries them, the hour-meter adjustment API answers 404 and the served OpenAPI documents none of it', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const removedAircraftKeys = ['hourMeterMinutes', 'seats', 'fuelType', 'based', 'notes'];
+
+    // AC 6/11: a stale client still sending the five aircraft fields gets a 201;
+    // none of them is stored or returned.
+    const registration = `I-RM${uniqueSuffix()}`.toUpperCase().slice(0, 20);
+    const created = await page.request.post('/api/v1/aircraft', {
+      data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 750, seats: 2, fuelType: 'Mogas', based: false, notes: 'Nota' },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const aircraft = (await created.json()) as Record<string, unknown> & { id: string };
+    const patched = await page.request.patch(`/api/v1/aircraft/${aircraft.id}`, { data: { model: 'Test Model 2', seats: 4, notes: 'Altra nota' } });
+    expect(patched.status(), await patched.text()).toBe(200);
+    const read = await page.request.get(`/api/v1/aircraft/${aircraft.id}`);
+    expect(read.status()).toBe(200);
+    for (const body of [aircraft, await patched.json(), await read.json()]) {
+      for (const key of removedAircraftKeys) expect(body).not.toHaveProperty(key);
+    }
+
+    // AC 10: the route folder is gone.
+    expect((await page.request.get(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments`)).status()).toBe(404);
+    expect(
+      (await page.request.post(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments`, { data: { newMinutes: 10, reason: 'x' } })).status(),
+    ).toBe(404);
+
+    // AC 2: same for the person.
+    const person = await page.request.post('/api/v1/people', { data: { firstName: 'Senza', lastName: `Codice-${uniqueSuffix()}`, fiscalCode: 'RSSMRA80A01H501U' } });
+    expect(person.status(), await person.text()).toBe(201);
+    const personBody = (await person.json()) as Record<string, unknown> & { id: string };
+    const personPatched = await page.request.patch(`/api/v1/people/${personBody.id}`, { data: { phone: '+39 333 1234567', fiscalCode: 'RSSMRA80A01H501U' } });
+    expect(personPatched.status(), await personPatched.text()).toBe(200);
+    const personRead = await page.request.get(`/api/v1/people/${personBody.id}`);
+    expect(personRead.status()).toBe(200);
+    for (const body of [personBody, await personPatched.json(), await personRead.json()]) expect(body).not.toHaveProperty('fiscalCode');
+
+    // AC 24: the contract the future Flutter app reads.
+    const openapi = await (await page.request.get('/api/v1/openapi.json')).text();
+    for (const token of ['hour-meter-adjustments', 'hourMeterMinutes', 'hourMeterStart', 'hourMeterEnd', 'fiscalCode', '"seats"', '"fuelType"', '"based"']) {
+      expect(openapi, token).not.toContain(token);
+    }
   });
 });

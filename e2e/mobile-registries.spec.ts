@@ -28,7 +28,7 @@ import type { Locator, Page } from '@playwright/test';
  * = 100`, 20-row pages): 8 aircraft + 21 more that are ARCHIVED again in the
  * same test (the pagination guard needs two pages of a filtered list, and an
  * archived aircraft leaves the pickers), 9 people, 1 user, 2 flights. The two
- * fixtures the review's fix cycle added are one aircraft WITHOUT a fuel type
+ * fixtures the review's fix cycle added are one more aircraft (its sheet name)
  * plus a person without email or profiles (F1), and a SCHOOL flight that gives
  * the instructor sheet something real to show (F2).
  *
@@ -74,10 +74,10 @@ function addDaysUtc(days: number): string {
 
 type Aircraft = { id: string; registration: string; model: string };
 
-async function createAircraft(page: Page, tag: string, model = 'Cessna 172 Skyhawk Reims Rocket', fuelType: string | null = 'AVGAS 100LL'): Promise<Aircraft> {
+async function createAircraft(page: Page, tag: string, model = 'Cessna 172 Skyhawk Reims Rocket'): Promise<Aircraft> {
   const registration = `I-${tag}`.slice(0, 20);
   const response = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model, hourMeterMinutes: 60, seats: 2, fuelType, based: true, notes: 'Nota 15.5' },
+    data: { registration, type: 'Ultraleggero 3 assi', model },
   });
   expect(response.status(), await response.text()).toBe(201);
   const { id } = (await response.json()) as { id: string };
@@ -153,10 +153,11 @@ async function measureHead(page: Page): Promise<{ height: number; sameRow: boole
  *
  * `expect(name.split(' — ')).toHaveLength(2)` — the assertion this file used to
  * make — is BLIND to the very defect it was written for (review 15.5 F1): with
- * a "—" placeholder inside the sub the name reads "Basato · — — I-ABCD · …",
- * whose two ADJACENT separators consume one another under `String.split`,
- * giving exactly 2 parts. Measured on the seeded DB: 115 of the 121 active
- * aircraft have no `fuelType` and every one of their sheets was named that way.
+ * a "—" placeholder standing for an absent part of the sub, the name read
+ * "X · — — I-ABCD · …", whose two ADJACENT separators consume one another
+ * under `String.split`, giving exactly 2 parts. Measured on the seeded DB at
+ * the time: 115 of the 121 active aircraft lacked that part and every one of
+ * their sheets was named that way.
  *
  * What is asserted here instead is the property itself: no run of two dashes,
  * and no segment that is empty or is the placeholder alone.
@@ -291,6 +292,11 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     // The caption declares the window, so the number is never ambiguous.
     await expect(page.getByTestId(`mobile-fleet-card-${flown.id}`)).toContainText('Ore mese');
     await expect(page.getByTestId(`mobile-fleet-card-${flown.id}`)).toContainText('1:00');
+
+    // Story 19.2 (R-19-b): the sheet's "Ore totali" is the same flight, summed
+    // with no window — the aircraft has no other.
+    await page.getByTestId(`mobile-fleet-card-${flown.id}`).click();
+    await expect(page.getByTestId('mobile-fleet-sheet').locator('.bottom-sheet-kv').filter({ hasText: 'Ore totali' }).locator('.bottom-sheet-v')).toHaveText('1:00');
   });
 
   test('Flotta: the card opens the detail sheet, and "Modifica" closes it before the full-screen panel (AC 4, AD-7)', async ({ page }) => {
@@ -312,10 +318,17 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     expect(name).toContain(aircraft.registration);
     expectWellFormedSheetName(name);
 
-    // Parity with the desktop card + the AOG reason the card itself truncates.
-    for (const text of ['Stato', 'Motivo AOG', 'Revisione 15.5', 'Tariffa', 'Posti', 'Carburante', 'Contaore', 'Ore mese', 'Note']) {
-      await expect(sheet).toContainText(text);
-    }
+    // Parity with the desktop card + the AOG reason the card itself truncates,
+    // as the exact list of rows (story 19.2: the anagrafica rows are gone, the
+    // aircraft's hours are "Ore totali", the sum of its registered flights).
+    const rows = Object.fromEntries(
+      await sheet.locator('.bottom-sheet-kv').evaluateAll((items) =>
+        items.map((item) => [item.querySelector('.bottom-sheet-k')!.textContent!, item.querySelector('.bottom-sheet-v')!.textContent!]),
+      ),
+    );
+    expect(Object.keys(rows)).toEqual(['Stato', 'Motivo AOG', 'Tariffa', 'Ore totali', 'Ore mese']);
+    expect(rows['Motivo AOG']).toBe('Revisione 15.5');
+    expect(rows['Ore totali']).toBe('0:00');
 
     await sheet.getByTestId('aircraft-edit-mobile').click();
     // R-15.4-d: no z-50 panel stacked on a z-40 sheet.
@@ -324,13 +337,13 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await expect(page.getByTestId('identity-form').getByLabel('Marche')).toHaveValue(aircraft.registration);
   });
 
-  test('the sheet name stays well-formed on an aircraft WITHOUT fuel type and a person WITHOUT email or profiles (AC 4, review F1)', async ({ page }) => {
+  test('the fleet sheet sub is always the aircraft type, and the pilot sheet name stays well-formed for a person WITHOUT email or profiles (AC 4, review F1; story 19.2 AD-6)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const tag = `A${uniqueSuffix()}`;
-    // The two entities the placeholder used to break: the sub of the fleet
-    // sheet is "based · fuel", the sub of the pilot sheet is "profiles · email",
-    // and 115 of the 121 seeded aircraft have no fuel type at all.
-    const aircraft = await createAircraft(page, tag, 'P92', null);
+    // The two entities a placeholder used to break: the sub of the fleet sheet
+    // is the type (NOT NULL, so never empty), the sub of the pilot sheet is
+    // "profiles · email".
+    const aircraft = await createAircraft(page, tag, 'P92');
     const bare = await page.request.post('/api/v1/people', { data: { firstName: 'Mobile', lastName: `Reg${tag}` } });
     expect(bare.status(), await bare.text()).toBe(201);
     const bareId = ((await bare.json()) as { id: string }).id;
@@ -339,7 +352,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await searchFleet(page, `I-${tag}`);
     await page.getByTestId(`mobile-fleet-card-${aircraft.id}`).click();
     const fleetName = await page.getByTestId('mobile-fleet-sheet').getByRole('dialog').getAttribute('aria-label');
-    expect(fleetName).toContain(aircraft.registration);
+    expect(fleetName).toBe(`Ultraleggero 3 assi — ${aircraft.registration} · P92`);
     expectWellFormedSheetName(fleetName);
 
     await searchPilots(page, `Reg${tag}`);

@@ -267,13 +267,12 @@
       "email": "Email",
       "phone": "Telefono",
       "address": "Indirizzo",
-      "fiscalCode": "Codice fiscale",
       "submitCreate": "Crea persona",
       "submitEdit": "Salva modifiche",
       "cancel": "Annulla",
       "requiredField": "Campo obbligatorio.",
       "genericError": "Si è verificato un errore. Riprova.",
-      "conflictError": "Esiste già una persona con questa email o codice fiscale."
+      "conflictError": "Esiste già una persona con questa email."
     },
     "feedback": {
       "created": "Persona creata.",
@@ -401,8 +400,7 @@
         "lastName": "Cognome",
         "email": "Email",
         "phone": "Telefono",
-        "address": "Indirizzo",
-        "fiscalCode": "Codice fiscale"
+        "address": "Indirizzo"
       },
       "profiles": {
         "sectionTitle": "Profili"
@@ -470,7 +468,7 @@
       "errors": {
         "required": "Campo obbligatorio.",
         "generic": "Si è verificato un errore. Riprova.",
-        "conflictEmail": "Esiste già una persona con questa email o codice fiscale."
+        "conflictEmail": "Esiste già una persona con questa email."
       }
     },
     "toast": {
@@ -541,7 +539,6 @@
         "email": "Email",
         "phone": "Telefono",
         "address": "Indirizzo",
-        "fiscalCode": "Codice fiscale",
         "save": "Salva modifiche",
         "loadError": "Impossibile caricare i dati anagrafici.",
         "requiredField": "Campo obbligatorio."
@@ -667,7 +664,6 @@
       "email": "Email",
       "phone": "Telefono",
       "address": "Indirizzo",
-      "fiscalCode": "Codice fiscale",
       "noValue": "—",
       "archivedBadge": "Archiviata"
     },
@@ -953,7 +949,7 @@
       "registration": "Marche",
       "type": "Tipo",
       "model": "Modello",
-      "hourMeter": "Contaore",
+      "totalHours": "Ore totali",
       "status": "Stato",
       "operationalStatus": "Stato operativo"
     },
@@ -981,11 +977,8 @@
         "status": "Stato",
         "aogReason": "Motivo AOG",
         "rate": "Tariffa",
-        "seats": "Posti",
-        "fuel": "Carburante",
-        "hourMeter": "Contaore",
-        "monthHours": "Ore mese",
-        "notes": "Note"
+        "totalHours": "Ore totali",
+        "monthHours": "Ore mese"
       }
     },
     "pagination": {
@@ -1004,22 +997,7 @@
         "sectionTitle": "Anagrafica",
         "registration": "Marche",
         "type": "Tipo",
-        "model": "Modello",
-        "seats": "Posti",
-        "fuelType": "Carburante",
-        "fuelOptions": {
-          "avgas": "AVGAS 100LL",
-          "jetA1": "Jet A-1",
-          "mogas": "Mogas"
-        },
-        "based": "Basato",
-        "basedOptions": {
-          "based": "Basato",
-          "guest": "Ospite"
-        },
-        "notes": "Note",
-        "hourMeter": "Contaore iniziale (minuti)",
-        "hourMeterHint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm)."
+        "model": "Modello"
       },
       "availability": {
         "sectionTitle": "Disponibilità",
@@ -1065,17 +1043,9 @@
         "historyEmpty": "Nessuna tariffa registrata.",
         "showAll": "Mostra tutte ({count})"
       },
-      "hourMeter": {
-        "sectionTitle": "Contaore",
-        "current": "Contaore attuale",
-        "newValue": "Nuovo valore (minuti)",
-        "hint": "Il contaore è espresso in minuti interi; il valore tra parentesi mostra la stessa durata in ore e minuti (hh:mm).",
-        "reason": "Motivo",
-        "delta": "Variazione",
-        "submit": "Registra rettifica",
-        "historyTitle": "Storico rettifiche",
-        "historyEmpty": "Nessuna rettifica registrata.",
-        "loadMore": "Carica altri"
+      "flightHours": {
+        "sectionTitle": "Ore di volo",
+        "total": "Ore totali"
       },
       "archive": {
         "sectionTitle": "Archivio",
@@ -1092,7 +1062,6 @@
         "conflictRegistration": "Esiste già un velivolo con queste marche.",
         "conflictStatus": "Lo stato del velivolo è già cambiato nel frattempo.",
         "conflictRate": "Esiste già una tariffa con questa data di decorrenza.",
-        "invalidHourMeter": "Il contaore deve essere un numero intero di minuti maggiore o uguale a zero.",
         "invalidPrice": "Il prezzo deve essere un importo positivo (es. 160,00).",
         "invalidDate": "Inserisci una data valida.",
         "reasonRequired": "Il motivo è obbligatorio."
@@ -1105,7 +1074,6 @@
       "unarchived": "Velivolo ripristinato.",
       "setOutOfService": "Velivolo segnato fuori servizio.",
       "returnedToService": "Velivolo rimesso in servizio.",
-      "hourMeterAdjusted": "Contaore rettificato.",
       "rateAdded": "Tariffa aggiunta."
     }
   },
@@ -1144,15 +1112,10 @@
       "landingTime": "Ora atterraggio",
       "computedDuration": "Durata",
       "takeoffs": "Decolli",
-      "hourMeterStart": "Contaore iniziale",
-      "hourMeterEnd": "Contaore finale",
       "landings": "Atterraggi",
-      "notes": "Note",
       "submit": "Registra volo",
       "requiredField": "Campo obbligatorio.",
-      "invalidHourMeter": "Il contaore finale deve essere maggiore dell'iniziale.",
       "errors": {
-        "HOUR_METER_INVALID": "Il contaore finale deve essere maggiore dell'iniziale.",
         "FLIGHT_TIMES_INVALID": "L'orario di atterraggio deve essere successivo al decollo e la durata non può superare 24 ore.",
         "NO_AIRCRAFT_RATE": "Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.",
         "NO_INSTRUCTOR_RATE": "Nessuna tariffa oraria è in vigore per questo istruttore alla data del volo.",
@@ -1339,7 +1302,6 @@
       "requiredReason": "Il motivo è obbligatorio.",
       "conflictError": "Questo volo è già stato annullato.",
       "requiredField": "Campo obbligatorio.",
-      "invalidHourMeter": "Il contaore finale deve essere maggiore dell'iniziale.",
       "invalidCycles": "Decolli e atterraggi devono essere almeno 1.",
       "fields": {
         "aircraft": "Velivolo",
@@ -1363,13 +1325,9 @@
         "landingTime": "Ora atterraggio",
         "computedDuration": "Durata",
         "takeoffs": "Decolli",
-        "landings": "Atterraggi",
-        "hourMeterStart": "Contaore iniziale",
-        "hourMeterEnd": "Contaore finale",
-        "notes": "Note"
+        "landings": "Atterraggi"
       },
       "errors": {
-        "HOUR_METER_INVALID": "Il contaore finale deve essere maggiore dell'iniziale.",
         "FLIGHT_TIMES_INVALID": "L'orario di atterraggio deve essere successivo al decollo e la durata non può superare 24 ore.",
         "NO_AIRCRAFT_RATE": "Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.",
         "NO_INSTRUCTOR_RATE": "Nessuna tariffa oraria è in vigore per questo istruttore alla data del volo.",
@@ -1424,8 +1382,6 @@
       "takeoffs": "Decolli",
       "landings": "Atterraggi",
       "times": "Orari",
-      "hourMeter": "Contaore",
-      "notes": "Note",
       "lineage": "Storico",
       "correctionBadge": "Correzione",
       "statusAll": "Tutti",

@@ -106,7 +106,7 @@ function groundingSubjects(registration: string): string[] {
 async function createAircraft(page: Page): Promise<{ id: string; registration: string }> {
   const registration = `I-AOGB${uniqueSuffix()}`.toUpperCase().slice(0, 20);
   const response = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'AOG impact', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'AOG impact' },
   });
   expect(response.status(), await response.text()).toBe(201);
   return { id: ((await response.json()) as { id: string }).id, registration };

@@ -2607,8 +2607,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* A free-text licence number or course label is one unbreakable token: at
      320px it pushed its own box 14px wider than the card (measured). */
   .person-profile-fact{ overflow-wrap: anywhere; }
-  /* Same class of defect on the "Dati anagrafici" rows: an email or a fiscal
-     code is one unbreakable token and `.info-row .v` has no wrap rule —
+  /* Same class of defect on the "Dati anagrafici" rows: an email is one
+     unbreakable token and `.info-row .v` has no wrap rule —
      measured, three rows scrolled sideways inside their own box at 375px.
      `anywhere` (not `break-word`) is the one that also shrinks the box's
      min-content contribution, the 13.10 F1 lesson.
@@ -3610,7 +3610,7 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
      the panel (the Disponibilità section gains a date field above it). Measured
      at 375x812 before this rule: 335 x 34.84, bottom edge at y 841 — 29px below
      the fold. R-15.10-f deliberately left the secondary section actions
-     (tariffe, contaore, archivio) where they were and this rule does NOT
+     (tariffe, archivio) where they were and this rule does NOT
      reopen that: it is anchored to THIS button's own testid, inside
      `@media (max-width: 640px)`, so the desktop box stays identical to the
      hundredth and no other action moves. Same `min-height: 44px` floor, and the
