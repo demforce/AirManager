@@ -4,7 +4,7 @@ baseline_commit: 72e7e1b
 
 # Story 19.3: Tariffe allievo/pilota ed editor velivolo a Salva unico
 
-Status: **ready-for-dev** — 2026-11-01. **Le 4 domande PO qui sotto sono RATIFICATE (2026-11-01): Q-a = nessun prezzo sulle card, Q-b = A, Q-c = B (allievo esclusivo anche con istruttore), Q-d = B** (CLAUDE.md, retro Epic 9: un'assunzione di dominio si ratifica PRIMA di implementare). Gli AC sono scritti sull'opzione raccomandata e marcano con **[Q-x]** le righe che cambiano se il PO sceglie diversamente. **Modello dev: Opus 5 xhigh (UI)**: la story scrive UI su editor velivolo (modifica + creazione), card flotta desktop/mobile, sheet mobile, widget Panoramica, editor pilota (messaggio profili esclusivi) e sulla primitiva `CalendarPopover`/`DateInput`, oltre a schema, migrazione, service, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-3-tariffe-allievo-pilota-editor-velivolo`.
+Status: **review** — 2026-11-02 (dev: implementazione `2e66d40`, Dev Agent Record in fondo). Scritto **ready-for-dev** il 2026-11-01. **Le 4 domande PO qui sotto sono RATIFICATE (2026-11-01): Q-a = nessun prezzo sulle card, Q-b = A, Q-c = B (allievo esclusivo anche con istruttore), Q-d = B** (CLAUDE.md, retro Epic 9: un'assunzione di dominio si ratifica PRIMA di implementare). Gli AC sono scritti sull'opzione raccomandata e marcano con **[Q-x]** le righe che cambiano se il PO sceglie diversamente. **Modello dev: Opus 5 xhigh (UI)**: la story scrive UI su editor velivolo (modifica + creazione), card flotta desktop/mobile, sheet mobile, widget Panoramica, editor pilota (messaggio profili esclusivi) e sulla primitiva `CalendarPopover`/`DateInput`, oltre a schema, migrazione, service, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-3-tariffe-allievo-pilota-editor-velivolo`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`72e7e1b`** (HEAD al 2026-11-01; il codice è quello di `5ca0be6` più il fix 16.3 su `bookings.*`/`new-booking-form.tsx` e 2 righe di `registry.ts`). Il dev della 19.3 parte **DOPO i commit della 19.1 (rimozione PPR) e della 19.2 (via campi velivolo e contaore)**, che toccano **gli stessi file**: `prisma/schema.prisma` + due migrazioni, `aircraft-editor.tsx` (19.2: `IdentitySection` resta a Marche/Tipo/Modello, via `BasedSegmented`, `HourMeterSection` → readout «Ore di volo» con prop `totalMinutes`), `aircraft.service.ts`, `src/lib/schemas/aircraft.ts`, `fleet-console.tsx` (righe dello sheet), `fleet/page.tsx` (`totalMinutesById`), `fleet-card.tsx` (`FleetCardItem` perde 5 campi), `dashboard/page.tsx` (KPI PPR e mapper flotta), `flights.service.ts` (lock su `"id"`, via contaore e note), `registry.ts`, `messages/*.json`, i tre seed ed e2e (`aircraft-rates.spec.ts:50,:206,:219-220` perdono il «Contaore iniziale»). Effetto atteso: righe slittate, blocchi già semplificati. **Prima di scrivere una riga**: `git log --oneline -5` (19.1 e 19.2 committate), rieseguire i **censimenti di §3** (sono comandi, non elenchi da fidarsi) e correggere le righe di questo file dove sono slittate.
 >
@@ -428,20 +428,20 @@ Mirati prima della consegna: `aircraft-rates`, `instructor-rates`, `flights`, `p
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento** (tutti): `git log --oneline -5` (19.1 e 19.2 committate), `scripts/e2e.sh status`, `:3000` libero; ricontrollare le decisioni PO registrate in testa; rieseguire i censimenti di §3 e annotare nel record gli scostamenti di riga.
-- [ ] **T1 — Schema e migrazione** (AC 1-3): schema, migrazione AD-1 a mano, prova su DB gemello con backfill, `prisma generate`.
-- [ ] **T2 — Tariffe server** (AC 4-8): helper decorrenza, due core upsert (nativo verificato), `createAircraftRate`, `createInstructorRate`, `createAircraft`, `updateAircraft` composito (AD-3), doc-comment.
-- [ ] **T3 — Prezzo dal profilo** (AC 9-12): `resolveFlightInput`, core, DTO, [Q-b] correzione, doc-comment.
-- [ ] **T4 — Profili esclusivi** (AC 13-16): `upsertProfile` col lock, `createPerson`, mappatura UI nell'editor pilota.
-- [ ] **T5 — Zod e OpenAPI** (AC 7, 12, 15, 31).
-- [ ] **T6 — Primitiva calendario** (AC 24): `CalendarPopover` + `DateInput` + CSS.
-- [ ] **T7 — Editor velivolo** (AC 17-23, [Q-d] 25): AD-6; `fleet/page.tsx` (D-8, item, [Q-d] fonte batch).
-- [ ] **T8 — Superfici tariffa** (AC 27): card, widget, card e sheet mobile [Q-a].
-- [ ] **T9 — i18n** (AC 28): §3.8, parità misurata.
-- [ ] **T10 — Seed** (AC 16, 29): seed-demo, seed-load (solo typecheck), query di esclusività.
-- [ ] **T11 — Unit** (§3.7, §4.1) + discriminanza §4.3 con sha256.
-- [ ] **T12 — e2e** (§3.6): `db-fixtures.ts`, `todayRome`, 27 sostituzioni, spec riscritti e nuovi.
-- [ ] **T13 — Verifica** (AC 30-33): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato.
+- [x] **T0 — Riallineamento** (tutti): `git log --oneline -5` (19.1 e 19.2 committate), `scripts/e2e.sh status`, `:3000` libero; ricontrollare le decisioni PO registrate in testa; rieseguire i censimenti di §3 e annotare nel record gli scostamenti di riga.
+- [x] **T1 — Schema e migrazione** (AC 1-3): schema, migrazione AD-1 a mano, prova su DB gemello con backfill, `prisma generate`.
+- [x] **T2 — Tariffe server** (AC 4-8): helper decorrenza, due core upsert (nativo verificato), `createAircraftRate`, `createInstructorRate`, `createAircraft`, `updateAircraft` composito (AD-3), doc-comment.
+- [x] **T3 — Prezzo dal profilo** (AC 9-12): `resolveFlightInput`, core, DTO, [Q-b] correzione, doc-comment.
+- [x] **T4 — Profili esclusivi** (AC 13-16): `upsertProfile` col lock, `createPerson`, mappatura UI nell'editor pilota.
+- [x] **T5 — Zod e OpenAPI** (AC 7, 12, 15, 31).
+- [x] **T6 — Primitiva calendario** (AC 24): `CalendarPopover` + `DateInput` + CSS.
+- [x] **T7 — Editor velivolo** (AC 17-23, [Q-d] 25): AD-6; `fleet/page.tsx` (D-8, item, [Q-d] fonte batch).
+- [x] **T8 — Superfici tariffa** (AC 27): card, widget, card e sheet mobile [Q-a].
+- [x] **T9 — i18n** (AC 28): §3.8, parità misurata.
+- [x] **T10 — Seed** (AC 16, 29): seed-demo, seed-load (solo typecheck), query di esclusività.
+- [x] **T11 — Unit** (§3.7, §4.1) + discriminanza §4.3 con sha256.
+- [x] **T12 — e2e** (§3.6): `db-fixtures.ts`, `todayRome`, 27 sostituzioni, spec riscritti e nuovi.
+- [x] **T13 — Verifica** (AC 30-33): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato.
 
 ---
 
@@ -449,28 +449,200 @@ Mirati prima della consegna: `aircraft-rates`, `instructor-rates`, `flights`, `p
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), dev subagent unico della story (`dev-19-3`), 2026-11-01/02.
+
 ### §A — Riallineamento sul HEAD (T0) e decisioni PO applicate
+
+- Partenza da `dc47b71` (19.1 `08eb558` e 19.2 `b0d142c` committate); durante il lavoro altre sessioni hanno committato solo story file (`125f339`, `5a666b1`, nessun file in comune). Implementazione in **`2e66d40`**. `:3000` libero ed `e2e.sh status` DONE prima di ogni build/run; `.next/dev/types/validator.ts` non presente.
+- **Decisioni PO applicate** (testa del file): **Q-a = nessun prezzo** sulle card (AC 27 riscritto: via la riga «Tariffa» da `fleet-card.tsx`, dalla card e dallo sheet mobile di `fleet-console.tsx`, via `wetRateCents`/`rateLabel` da item, props e mapper; AD-8 e chiavi [Q-a] di §3.8 decadute); **Q-b = A** (categoria congelata se la persona non cambia); **Q-c = B** (allievo esclusivo con pilota **e** istruttore, nomi generici per decisione della sessione principale: codice **`STUDENT_PROFILE_EXCLUSIVE`**, helper **`assertStudentProfileExclusive(tx, personId)`** — sostituiscono i segnaposto `PILOT_STUDENT_PROFILES_EXCLUSIVE`/`assertPilotStudentExclusive` del file e della 19.4); **Q-d = B** (una riga con la sola prossima variazione).
+- **Scostamenti di riga** rispetto a `72e7e1b` (censimenti §3 rieseguiti sul HEAD): `schema.prisma` `AircraftRate` 333-353 (era 340-373), `InstructorRate` 371-386, `Flight` 892+ e snapshot 863-870; `rates.service.ts` `assertRateAvailable` 94, core 114-129, `createAircraftRate` 145-187, `getEffectiveRate(s)` 227-277 (righe quasi invariate); `instructor-rates.service.ts` 92-155; `aircraft.service.ts` `createAircraft` 196-237, `updateAircraft` 240-279 (19.2 aveva già ridotto i campi a marche/tipo/modello); `flights.service.ts` `getEffectiveRate` 850, `hasActivePilot` 639, `OriginalFlightIdentity` 341, `registerFlightCore` 1026; `people.service.ts` `createPerson` 460, `upsertProfile` 686-718; `aircraft-editor.tsx` 1225 righe (`RatesSection` 1011-1169, blocco create 382-568); `fleet/page.tsx` `todayDateOnlyUtc` 65, `getEffectiveRates` 76; `dashboard/page.tsx` `getEffectiveRates` 289, mapper 427-437; `calendar-popover.tsx` celle 128-143, «Oggi» 173-176; i18n **1720** chiavi per file al HEAD (non 1989: 19.1/19.2).
+- **Census e2e** (`grep -rnE "/rates\`|instructor-rates\`" e2e`, fuori dai due spec tariffe): **27 siti in 20 spec**, come da §3.6 (righe slittate di poche unità).
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Esito | Prova |
+|---|---|---|
+| 1-2 | ✅ | `schema.prisma`: `AircraftRate.studentPriceCents/pilotPriceCents`, via `priceCentsPerHour`/`dryHourlyRateCents`, doc riscritti (anche `InstructorRate`); enum `AircraftPriceCategory` e `Flight.aircraftPriceCategory` NOT NULL, paragrafo «Snapshot» che nomina la categoria |
+| 3 | ✅ | §C (gemello, backfill, `migrate diff` vuoto) |
+| 4 | ✅ | `rates.service.ts:75` `assertRateValidFromNotPast` usato da `createAircraftRate`, `createAircraft:207`, `updateAircraft`, `createInstructorRate`; unit 00:30 Roma (rates + instructor-rates), unit «nessun upsert/transazione» sui 4 percorsi; e2e `aircraft-rates` (API: 422 su POST /rates, POST /aircraft senza creare, PATCH senza cambiare marche), `instructor-rates` (422 e lista vuota) |
+| 5 | ✅ | unici writer `upsertAircraftRateCore:93`/`upsertInstructorRateCore:95`; `grep -rn "aircraftRate.create\|instructorRate.create" src/server` (no test) = **0**; SQL nativa §D; e2e riscrittura stesso giorno (201, una riga) velivolo e istruttore |
+| 6 | ✅ | e2e `flights.spec.ts` «rewriting today's rate never reprices…»: 140,00 → volo 70,00 €; riscrittura 150/160; volo nuovo 80,00 €; il primo riletto dal registro invariato |
+| 7 | ✅ | Zod a due prezzi obbligatori; corpo col solo `priceCentsPerHour` → 422 `VALIDATION_ERROR` (unit + e2e); `registry.test.ts` +5 test; descrizioni OpenAPI riscritte (`POST/GET /aircraft/{id}/rates`, `POST /aircraft`, `PATCH /aircraft/{id}`, `POST/GET /people/{id}/instructor-rates`) |
+| 8 | ✅ | `grep -n "/rates" aircraft-editor.tsx` = **0**; GET restano con descrizione «kept for API clients» |
+| 9 | ✅ | `flights.service.ts:880`; unit nuovi (allievo Scuola → STUDENT, pilota Turismo → PILOT, pilota Scuola → PILOT, entrambi → PILOT, DTO); `breakdown.aircraftPriceCategory` in `flightBreakdownSchema` |
+| 10 | ✅ | e2e `flights.spec.ts` (fixture SQL 100/150): 10000 STUDENT, 15000 PILOT, 15000 PILOT su Scuola |
+| 11 | ✅ | unit «price category on a correction»: stessa persona ora pilota → STUDENT a 10000; persona cambiata → PILOT |
+| 12 | ✅ | doc-comment del modulo, di `resolveFlightInput` e del commento in linea riscritti (via «append-only, no meaningful race»); descrizioni OpenAPI di `POST /flights` e `/correct` |
+| 13 | ✅ | e2e `person-profiles` (pilota↔allievo e istruttore↔allievo, `GET` conferma il rollback, stesso tipo di nuovo = 200, pilota+istruttore = 200); `grep -rn STUDENT_PROFILE_EXCLUSIVE src/server` → solo `studentProfileExclusiveError` (usato dall'helper e dal pre-check di `createPerson`) + doc. `person-profiles.spec.ts:81` (allievo → pilota) verde |
+| 14 | ✅ | unit: primo `$queryRaw` con `FROM "Person"` e `FOR NO KEY UPDATE`, unico, prima di tutto, su `tx` distinto; 0 righe → 404; helper legge da `tx`; e2e `Promise.all` → `[200, 422]` |
+| 15 | ✅ | unit (`$transaction` mai chiamato) ed e2e (422, persona inesistente dopo) per pilota+allievo e istruttore+allievo; 422 documentato su `POST /people` e sui tre `PUT` |
+| 16 | ✅ | editor pilota: messaggio nella sezione per i tre profili, banner `profilesExclusive` nel «Nuovo» (e2e); seed §F (query = 0); `seed-load.ts` disgiunto per costruzione (letto: studenti = `afterPilot.slice`, dopo istruttori e piloti, righe 279-286); fixture `my-account.spec.ts` riscritta (volo Scuola con istruttore run-unique e tariffa SQL, saldo 150 − 70 = 80,00 €) |
+| 17-18 | ✅ | e2e `aircraft-rates` (un solo `<form>`, un solo submit in `.so-foot`, testid vecchi a 0, niente wet/dry/storico, placeholder `120,00`/`140,00`, `toHaveAccessibleDescription` dell'hint, `min` = oggi Roma) |
+| 19 | ✅ | e2e a/b/c/d/e (stato verificato con `GET …/rates`; c/d: zero richieste registrate, nessun toast) |
+| 20 | ✅ | unit (stesso `tx`, `$transaction` unica, rigetto propagato, senza `rate` nessuna transazione, `authorize` spiato: `settings.manage` solo con `rate`); e2e 422 + marche invariate, 409 su archiviato |
+| 21 | ✅ | e2e: pannello aperto, campi vuoti, data a oggi, placeholder = prezzi appena salvati (oggi) o invariati (data futura, AC 25) |
+| 22 | ✅ | e2e: riga `aircraft-rate-readonly`, nessun campo, body del Salva senza `rate` |
+| 23 | ✅ | e2e creazione: un prezzo solo bloccato, data passata bloccata, poi 201 con `rate` nel body, placeholder nell'editor riaperto, card senza «€» |
+| 24 | ✅ | e2e con `timezoneId: 'Europe/Rome'`: celle prima di `.today` tutte `disabled`, dalla `.today` in poi abilitate, «Oggi» abilitato, click scrive oggi; il `DateInput` «Fermo fino al» (senza `min`) non ha celle disabilitate; `datetime-input.tsx`/`schedule.tsx` non passano la prop (render invariato) |
+| 25 | ✅ | `getNextScheduledRates` (`rates.service.ts:252`, unit); e2e: riga con la più vicina (oggi+20 fra +20/+40), Salva a oggi+10 la sostituisce |
+| 26 | ✅ | `instructor-rates-panel.tsx` **non toccato**; spec adattato (oggi/oggi+30 su Roma, riscrittura = una riga col prezzo nuovo, 422 API) |
+| 27 | ✅ (Q-a) | nessun prezzo su card desktop/widget/card e sheet mobile (screenshot §I, `widget has €: false`); `fleet/page.tsx:70` data di Roma (D-8); `dashboard/page.tsx` perde la lettura `getEffectiveRates` (orfana: §H) |
+| 28 | ✅ | §F |
+| 29 | ✅ | `seed-demo.ts` (numeri di AC 29, verificati su gemello), `seed-load.ts` (prezzi uguali, `effectiveRate` → coppia, colonna dal profilo, `aircraftPriceCategory`, correzione = categoria dell'originale), typecheck verde, non eseguito |
+| 30 | ✅ con residui motivati | §F |
+| 31 | ✅ | `GET /api/v1/openapi.json` sull'app reale: `studentPriceCents` 23, `pilotPriceCents` 23, `aircraftPriceCategory` 14, `RATE_VALID_FROM_IN_PAST` 4, `STUDENT_PROFILE_EXCLUSIVE` 4, `dryHourlyRateCents` **0** |
+| 32 | ✅ | §J |
+| 33 | ✅ | §I |
+
 ### §C — Migrazione: catena, `migrate diff`, backfill (psql)
+
+`prisma/migrations/20261102000000_aircraft_rate_student_pilot_prices/migration.sql`, a mano (TD-2), dopo `20261101223000_*` della 19.2. Q-c = B esteso al passo 2: l'allievo cade anche se attivo con un **istruttore** attivo.
+
+Gemello `am_rev193` (createdb nel container; mai `airmanager` con arbitro vivo; `airmanager_load` non toccato), migrazioni precedenti applicate con psql, fixture inserite, poi la migrazione:
+
+```
+BEFORE  r1 | 15000 | 12000 | 2025-01-01      r2 | 16000 |  (null) | 2026-01-01
+        StudentProfile attivi: p1 (pilota+allievo), p2 (solo allievo), p3 (istruttore+allievo)
+UPDATE 2 (studentPriceCents) · UPDATE 2 (allievi disattivati: p1, p3) · UPDATE 4 (voli)
+AFTER   r1 | studentPriceCents 15000 | pilotPriceCents 15000      r2 | 16000 | 16000
+        StudentProfile attivo solo p2
+        Flight f1 (p1) PILOT · f2 (p2) STUDENT · f3 (p3) PILOT · f4 (p4 pilota) PILOT
+\d "AircraftRate": pilotPriceCents/studentPriceCents integer NOT NULL, nessun dryHourlyRateCents, AircraftRate_aircraftId_validFrom_key UNIQUE
+\dT "AircraftPriceCategory": STUDENT, PILOT · \d "Flight": aircraftPriceCategory "AircraftPriceCategory" NOT NULL
+```
+
+Catena da zero su gemello ricreato: `migrate deploy` → «All migrations have been successfully applied.»; `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` → **`-- This is an empty migration.`** (Prisma 7: `--from-migrations` vuole `shadowDatabaseUrl` nel config, stessa forma equivalente della 19.2 §G-5). Poi `prisma db seed` + `npm run seed:demo` verdi (§F). Gemelli `am_rev193` e `am_e2e193` cancellati (`dropdb`) a fine lavoro. `npx prisma generate` dopo lo schema. Sul DB `airmanager` (appena resettato dalla sessione principale) applicato `migrate deploy` per gli e2e.
 
 ### §D — Upsert nativo (SQL emessa) e censimento dei lock
 
+Log query Prisma (`$on('query')`) sul gemello, due scritture sulla stessa `(aircraftId, 2030-01-01)` e una istruttore:
+
+```
+INSERT INTO "public"."AircraftRate" ("id","aircraftId","studentPriceCents","pilotPriceCents","validFrom","actorUserId","createdAt") VALUES ($1,…,$7) ON CONFLICT ("aircraftId","validFrom") DO UPDATE SET "studentPriceCents" = $8, "pilotPriceCents" = $9, "actorUserId" = $10 WHERE (…) RETURNING "public"."AircraftRate"."id"
+(seconda identica) → riga finale { studentPriceCents: 22222, pilotPriceCents: 22222 } (una sola)
+INSERT INTO "public"."InstructorRate" (…) VALUES (…) ON CONFLICT ("instructorProfileId","validFrom") DO UPDATE SET "priceCentsPerHour" = $7, "actorUserId" = $8 WHERE (…) RETURNING …
+```
+
+Upsert piatto (`select: { id: true }`), poi `findUniqueOrThrow` con `RATE_SELECT` nella stessa transazione: un doppione concorrente non può dare P2002 → 500.
+
+**Lock** (`grep -rn "FOR UPDATE\|FOR NO KEY UPDATE" src/server`): nuovo `people.service.ts:745` `Person FOR NO KEY UPDATE`, **primo** statement della transazione di `upsertProfile` (tutti e tre i rami, Q-c = B), seguito solo dal profilo della persona e dall'`Account` (upsert del core). Invariati: prenotazioni `Booking → Aircraft → Person → InstructorProfile` (`bookings.service.ts:348-350`), registro voli `Aircraft → Account` (`flights.service.ts:1173/1202`, `1393/1402`, `1522/1562`), `accounts.service.ts:639` e `membership.service.ts:103` (`Account`). **Nessuna transazione prende `Account` e poi `Person`**: chi tiene `Account FOR UPDATE` tocca `Person` solo con il `FOR KEY SHARE` delle FK, compatibile con `FOR NO KEY UPDATE`. Il doc-comment del modulo prenotazioni che diceva «no other service locks … `Person`» è stato corretto nello stesso commit (`bookings.service.ts:83-90`, chiesto anche dalla 19.4).
+
 ### §E — Discriminanza (§4.3) con sha256
+
+Script in scratchpad: mutazione, `npx vitest run <file>`, ripristino del contenuto originale, sha256 (16 hex) prima/dopo.
+
+| # | Mutazione | Esito | sha256 prima → dopo |
+|---|---|---|---|
+| 1 | helper decorrenza su «oggi» UTC | `rates.service.test` **1 failed** («00:30 in Rome on 2 November…») | `cd8a88c8b63700af` → identico |
+| 2 | sempre `pilotPriceCents` | `flights.service.test` **2 failed** (allievo Scuola; correzione Q-b) | `e6cb83c37099e4b0` → identico |
+| 3 | core `upsert` → `create` | `rates.service.test` **2 failed** (AC 5) | `cd8a88c8b63700af` → identico |
+| 4 | via `FOR NO KEY UPDATE` | `people.service.test` **2 failed** (ordine/forma del lock; ramo istruttore) | `4aae95886fa45b91` → identico |
+| 5 | upsert su `prisma` invece di `tx` in `updateAircraft` | `aircraft.service.test` **2 failed** (AC 20) | `5b9c6028c2d29c08` → identico |
+| 6 | ignorare `original.aircraftPriceCategory` | `flights.service.test` **1 failed** (AC 11) | `e6cb83c37099e4b0` → identico |
+
+L'e2e di AC 10 (#2) non è stato mutato a mano: la stessa mutazione rompe l'unit, e l'e2e asserisce 10000 vs 15000.
 
 ### §F — Grep di AC 30, parità i18n, query di esclusività sui seed (verbatim)
 
+```
+$ grep -rniE "dryHourlyRateCents|wetRateCents|priceDry|currentDry|WithDry|\bwet\b|\bdry\b" src e2e messages prisma/schema.prisma prisma/seed*.ts --exclude-dir=generated
+src/lib/schemas/registry.test.ts:156:        expect(…).not.toHaveProperty('dryHourlyRateCents');
+e2e/aircraft-rates.spec.ts:111:    for (const testId of ['new-rate-form', …, 'rates-current-dry', …]) {
+$ grep -rn "priceCentsPerHour" src/lib/schemas/aircraft.ts … prisma/seed-demo.ts
+prisma/seed-demo.ts:373:          priceCentsPerHour: p.instructor.rateCentsPerHour,
+$ grep -rn "conflictRate\|rateAdded\|newRateTitle\|RatesSection\|fetchRatesHistory\|currentRateOf\|HISTORY_VISIBLE_COUNT\|createAircraftRateCore\|assertRateAvailable" src
+→ solo src/app/[locale]/dashboard/instructors/instructor-rates-panel.tsx (sue funzioni gemelle e commenti) e instructors/page.tsx:171 (`rateAdded` del pannello)
+$ grep -rn "priceCentsPerHour" e2e
+→ solo tariffe istruttore (seedInstructorRate, instructor-rates.spec, createInstructor*Rate) + aircraft-rates.spec.ts:336 (il corpo col solo priceCentsPerHour → 422 di AC 7)
+```
+
+Residui motivati in §H (D-3, D-4). **i18n**: 1720 → **1713** chiavi per file (−15: 9 `editor.rates.*`, `errors.conflictRate`, `toast.rateAdded`, `rateLabel`, `mobile.sheet.rate`, `mobile.noValue` orfana, `DashboardPage.fleetCard.rateLabel`; +8: `rates.studentPrice/pilotPrice/currentHint/scheduled`, `errors.validFromPast`, `PilotsPage.editor.errors.profilesExclusive`, `PeoplePage.profilesPanel.errors.exclusive`, `InstructorsPage.addInstructor.exclusiveError`; testo cambiato `rates.readOnlyHint`); `diff <(jq … it.json | sort) <(jq … en.json | sort)` **vuoto** (parità 0/0). Copy dei due messaggi di esclusività estesa all'istruttore (Q-c = B).
+
+**Seed** su gemello fresco (`prisma db seed` + `npm run seed:demo` verdi):
+```
+SELECT count(*) FROM "PilotProfile" p JOIN "StudentProfile" s USING ("personId") WHERE p."deactivatedAt" IS NULL AND s."deactivatedAt" IS NULL → 0
+(stessa query InstructorProfile ⋈ StudentProfile) → 0
+AircraftRate demo: I-A661 12300/13000, 13100/13800 · I-B412 11800/12500, 12500/13200 · I-PDVB 17200/17900, 18200/18900
+Flight demo: STUDENT/SCHOOL 2 voli a 12500 (prezzo allievo I-B412 2026) · PILOT/TOURISM 22 voli 13200-18900
+```
+
 ### §G — Delta test (unit ed e2e, prima/dopo)
+
+- **Unit**: 1769 → **1797** (+28: 47 `it(` aggiunti, 20 tolti/riscritti nel diff). File: `rates.service.test` (riscritto: decorrenza col fuso, upsert, scheduled, schema a due prezzi), `instructor-rates.service.test`, `aircraft.service.test` (composito di modifica, `authorize` spiato), `flights.service.test` (prezzo/categoria, correzione Q-b), `people.service.test` (esclusività, lock su `tx` distinto, `createPerson`; il test del composito pilota+allievo+istruttore diventa pilota+istruttore), `registry.test`, `flights-expiry-boundary.integration.test` (mock). `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` dei file toccati: verde.
+- **e2e**: +13 test → **delta atteso arbitro 489 → 502** (aircraft-rates 6 → 10, instructor-rates 3 → 4, person-profiles 5 → 11, flights 23 → 25; people-management e my-account invariati nel numero). Nessuno spec nuovo nella catena serializzata.
+- **Run mirati** (build di produzione da `npm run gates`, `E2E_REUSE_SERVER=1 scripts/e2e.sh start --no-deps …`):
+  1. aircraft-rates, instructor-rates, flights, person-profiles, my-account, aircraft-management, people-management → **77 passed**, `E2E_EXIT=0`.
+  2. i 17 spec restanti di §3.6 + bookings, mobile-registries, mobile-a11y-sweep (trappola 7: il pannello scorre ancora a 375, verde senza modifiche), home-dashboard, mobile-overview → **224 passed, 2 failed** (`flight-log.spec.ts:307`, `flight-reversal.spec.ts:156`, entrambi su `selectOption` del filtro velivolo del registro). Causa misurata: DB non resettato fra i due run (199 velivoli, `I-FL…` alle posizioni 84-114 per marche) e il picker del registro limitato a `OPTIONS_PAGE_SIZE = 100` (TD noto dei picker) — non la story. **Riprova**: gli stessi due spec su un DB gemello fresco (`am_e2e193`, migrate + seed, server dedicato) → **6 passed**, `E2E_EXIT=0`. Il reset del DB `airmanager` col mandato PO è stato **negato dal classifier** (Irreversible Local Destruction): DB lasciato nello stato post-run, con la migrazione 19.3 applicata.
 
 ### §H — Deviazioni motivate
 
+1. **Nomi generici** (Q-c = B, sessione principale): `STUDENT_PROFILE_EXCLUSIVE` e `assertStudentProfileExclusive` al posto dei nomi di AD-5/AC 13-16; l'helper legge anche `InstructorProfile` e il ramo `instructor` di `upsertProfile` ha lock e controllo (AD-5 lo lasciava invariato con Q-c = A).
+2. **`dashboard/page.tsx` perde `getEffectiveRates`** (e l'import di `todayDateOnlyUtc`): con Q-a nessun widget mostra la tariffa, la lettura restava orfana. Di conseguenza il re-export `export { todayDateOnlyUtc }` di `rates.service.ts` (che §3.2 diceva «resta, lo toglie la 16.9») è rimasto senza consumatori ed è stato tolto: la riga `dashboard/page.tsx:295` UTC di cui parlava la 16.9 non esiste più (la 16.9 deve rimisurare).
+3. **`AircraftPage.mobile.noValue`** rimossa: usata solo dalle due righe tariffa della card/sheet mobile (Q-a).
+4. **«Aggiungi istruttore»** (`instructors-console.tsx`): con Q-c = B attivare l'istruttore su un allievo è un 422; mappato su un messaggio dedicato (`InstructorsPage.addInstructor.exclusiveError`) invece del generico — stessa regola di AC 16 sull'unica altra UI che attiva l'istruttore. Non era in un AC: segnalarlo in review.
+5. **Hint senza tariffa solo in modifica**: in creazione i campi non hanno hint (nessuna tariffa da descrivere su un velivolo che non esiste); placeholder `0,00`.
+6. **Riga «programmata» e `readOnlyHint` in `.fld-hint`** (12 px, muto) invece di `.fld-label` (mono maiuscolo): sono frasi, come gli altri hint dei campi.
+7. **Residui di AC 30**: (a) le due asserzioni di **assenza** (`registry.test.ts:156`, `aircraft-rates.spec.ts:111`) che AC 7 e AC 17 richiedono — stessa eccezione della 19.2 §G-1; (b) `seed-demo.ts:373` è la colonna `InstructorRate.priceCentsPerHour`, che non cambia nome; (c) grep 3: oltre a `conflictRate`, il pannello istruttore (non toccabile, AC 26) ha funzioni omonime proprie (`fetchRatesHistory`, `currentRateOf`, `HISTORY_VISIBLE_COUNT`, `rateAdded`) e commenti che citano `fleet/aircraft-editor.tsx#RatesSection/#currentRateOf/#HISTORY_VISIBLE_COUNT/#todayDateOnly`, ora inesistenti: li riscrive la 19.4.
+8. **e2e `bookings.spec.ts:2040`**: la tariffa istruttore che serviva solo a leggere l'`instructorProfileId` resta via API con `validFrom: todayRome()` invece della fixture SQL (uno dei 27 siti del census: lì la data passata non serviva, nessun volo); gli altri 26 usano `db-fixtures.ts`.
+9. **Parametri degli helper e2e** `createAircraftWithRate(page, priceCents)`/`addRate(…, priceCents)` rinominati da `priceCentsPerHour` (grep 4 di AC 30); i siti e2e con prezzo unico scrivono **lo stesso valore** su allievo e pilota (nessun importo atteso cambia).
+10. **`bookings.service.ts`**: toccato solo il doc-comment del censimento lock (§D), perché la story lo rendeva falso.
+
+**TD aperti** (da riportare nel §7 della sessione principale): 19.3-a il pannello istruttore calcola ancora «oggi» in UTC (`instructor-rates-panel.tsx:71`, default e tariffa attuale) — fra le 00:00 e le 01:00/02:00 di Roma il default dà un 422 `RATE_VALID_FROM_IN_PAST` (19.4/16.9); 19.3-b il picker velivolo del registro voli limitato a 100 (causa delle 2 rosse del run 2 su DB sporco, già noto); 19.3-c `today` dell'editor velivolo è fissato al mount: un pannello lasciato aperto a cavallo della mezzanotte mostra il «minimo» di ieri finché non si riapre (il server risponde 422, mappato sul campo).
+
+**Contratti consegnati alla 19.4** (nomi definitivi): `assertStudentProfileExclusive(tx, personId)` (`people.service.ts:692`, stato finale, legge da `tx`), lock `SELECT "id" FROM "Person" WHERE "id" = ${personId} FOR NO KEY UPDATE` (primo statement, `:745`), codice **`STUDENT_PROFILE_EXCLUSIVE`** (422), `assertRateValidFromNotPast(validFrom)` (`rates.service.ts:75`, import pulito: `date-only`, `time`, `zoned-time`), `upsertInstructorRateCore(tx, instructorProfileId, input, actorUserId)` (`instructor-rates.service.ts:95`, ritorna l'id), codice `RATE_VALID_FROM_IN_PAST`, `CalendarPopover.minDate` alimentata dal `min` del `DateInput`, `PATCH /aircraft/{id}` col blocco `rate`, e2e `seedAircraftRate`/`seedInstructorRate` (`e2e/db-fixtures.ts`), `todayRome()`/`addDaysIso()` (`e2e/helpers.ts`), copy `PeoplePage.profilesPanel.errors.exclusive` / `PilotsPage.editor.errors.profilesExclusive` / `AircraftPage.editor.errors.validFromPast` / `AircraftPage.editor.rates.currentHint`.
+
+**Confine con la 16.9**: in `aircraft-editor.tsx` il `todayDateOnly()` UTC non esiste più (sostituito da `todayDateOnlyInZone(APP_TIMEZONE)`), `fleet/page.tsx:70` è su Roma (D-8): caso 3 e metà Flotta dell'AC 9 della 16.9 già chiusi qui; pannello istruttore (caso 5) resta suo; la riga `dashboard/page.tsx:295` non esiste più (§H-2).
+
 ### §I — Verifica UI (screenshot)
 
+Script `playwright-core` throwaway nello scratchpad (Chromium `chromium-1228`, `timezoneId: 'Europe/Rome'`), app reale su build di produzione, viewport **1280×900** e **375×812**: card Flotta (desktop e mobile), sheet mobile, editor in modifica con tariffa e riga programmata, popover di «In vigore da» coi giorni passati barrati e disabilitati, errore `validFromPast`, senza tariffa, archiviato, creazione, widget Panoramica, editor pilota col messaggio di esclusività. Esiti:
+
+```
+24 schermate: scrollWidth == innerWidth in tutte (1280/1280, 375/375) — nessun overflow
+so-foot (1280 e 375): ["Annulla","Salva modifiche"] · wet/dry/storico nel pannello: false · widget Panoramica con «€»: false
+```
+
+Coerenza AirOps (skill `design-taste-frontend` letta: design read «UI di prodotto/admin AirOps, preservare», fuori dal suo perimetro landing — applicate solo le regole generali di contrasto, stati, niente decorazione; `ui-ux-pro-max` consultata: label visibile + hint collegato, mai placeholder-come-label): blocco «Tariffe» con la stessa `Section` e `.form-grid` di identità e disponibilità, hint e riga programmata in `.fld-hint`, celle disabilitate barrate e attenuate (`.cal-cell:disabled`, token esistenti, nessun hover, distinguibili da `.out`), card Flotta senza la riga prezzo. La copy di `currentHint` mantiene il trattino lungo di AC 18 (il file i18n ne usa già 30; copy definitiva in 19.12).
+
 ### §J — Gate ed esiti verbatim
+
+```
+$ npm run gates          (ultimo, prima del commit 2e66d40)
+PASS  lint (21s)
+PASS  typecheck (2s)
+PASS  test (8s) — Tests  1797 passed (1797)
+PASS  build (30s)
+```
+e2e mirati: §G (77 + 224 passed; 2 rosse da DB sporco, verdi su DB fresco). L'arbitro full-suite su DB fresco resta alla sessione principale (atteso **502**).
+
+**Stato macchina a fine lavoro**: `:3000` libero, nessun run e2e attivo, gemelli cancellati, DB `airmanager` non resettato (classifier) con la migrazione 19.3 applicata e i dati dei run mirati; nessuno stash; file untracked dell'utente e cancellazione di `.claude/skills/design-taste-frontend/SKILL.md` non toccati.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created (story writer, 2026-11-01, ricognizione su `72e7e1b`).
+- Dev 2026-11-02: tutte le task T0-T13 completate; implementazione `2e66d40`; Status → review.
 
 ### File List
+
+- `prisma/schema.prisma`
+- `prisma/migrations/20261102000000_aircraft_rate_student_pilot_prices/migration.sql` (nuovo)
+- `prisma/seed-demo.ts`, `prisma/seed-load.ts`
+- `src/server/services/rates.service.ts`, `instructor-rates.service.ts`, `aircraft.service.ts`, `flights.service.ts`, `people.service.ts`, `bookings.service.ts` (doc), `exports.service.ts` (doc)
+- `src/server/services/rates.service.test.ts`, `instructor-rates.service.test.ts`, `aircraft.service.test.ts`, `flights.service.test.ts`, `people.service.test.ts`, `flights-expiry-boundary.integration.test.ts`
+- `src/lib/schemas/aircraft.ts`, `flights.ts`, `people.ts` (doc), `accounts.ts` (doc), `registry.ts`, `registry.test.ts`
+- `src/app/[locale]/dashboard/fleet/aircraft-editor.tsx`, `fleet-console.tsx`, `page.tsx`
+- `src/app/[locale]/dashboard/page.tsx`
+- `src/app/[locale]/dashboard/pilots/pilot-editor.tsx`, `pilot-editor-labels.ts`
+- `src/app/[locale]/dashboard/instructors/instructors-console.tsx`, `page.tsx`
+- `src/components/dashboard/fleet-card.tsx`
+- `src/components/ui/calendar-popover.tsx`, `date-input.tsx`
+- `src/styles/airops.css`
+- `messages/it.json`, `messages/en.json`
+- `e2e/db-fixtures.ts` (nuovo), `e2e/helpers.ts`
+- `e2e/aircraft-rates.spec.ts` (riscritto), `instructor-rates.spec.ts`, `person-profiles.spec.ts`, `flights.spec.ts`, `my-account.spec.ts`, `people-management.spec.ts`, `mobile-registries.spec.ts`, `aircraft-management.spec.ts` (commento), `bookings.spec.ts`
+- e2e solo fixture SQL: `aircraft-out-of-service-until`, `billing`, `exports`, `flight-log`, `flight-reversal`, `instructor-compensation`, `mobile-logbook`, `mobile-reports`, `mobile-self-public`, `mobile-settings`, `my-compensation`, `pdf-exports`, `person-detail`, `reports`, `typeahead-pickers` (`.spec.ts`)
+- `_bmad-output/implementation-artifacts/19-3-tariffe-allievo-pilota-editor-velivolo.md` (questo record)
+
+### Change Log
+
+- 2026-11-02 — Implementazione completa della story 19.3 (`2e66d40`): modello a due prezzi e categoria sul volo, decorrenza ≥ oggi e riscrittura, profilo allievo esclusivo, PATCH composito, editor velivolo a Salva unico, primitiva calendario con minimo, card senza prezzo, seed/i18n/OpenAPI, e2e con fixture SQL. Status → review.
