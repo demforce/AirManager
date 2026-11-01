@@ -4,7 +4,7 @@ baseline_commit: d9dbc8c
 
 # Story 19.1: Rimozione del dominio PPR
 
-Status: **ready-for-dev** — 2026-11-01. **Modello dev: Opus 5 xhigh (UI)**: la story tocca codice UI su sei superfici (Panoramica desktop e mobile, Statistiche, Impostazioni, shell con sidebar, tab bar e sheet «Altro», CSS AirOps), oltre a backend, DB, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent.
+Status: **review** — 2026-11-01 (dev completato; ready-for-dev 2026-11-01). **Modello dev: Opus 5 xhigh (UI)**: la story tocca codice UI su sei superfici (Panoramica desktop e mobile, Statistiche, Impostazioni, shell con sidebar, tab bar e sheet «Altro», CSS AirOps), oltre a backend, DB, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent.
 
 > ⚠️ **Baseline**: ogni `file:riga` di questo file è misurato su **`d9dbc8c`**, cioè `5ca0be6` (CR approvata) più la chiusura docs-only della 16.3 (`d9dbc8c` tocca solo story file, `sprint-status.yaml` e `HANDOFF.md`: nessuna riga di codice si è spostata). Prima di scrivere una riga: `git log --oneline -3`, rileggere sul HEAD corrente le righe citate e **correggere questo file** dove sono slittate.
 >
@@ -481,6 +481,8 @@ Righe sul HEAD di baseline. «C» = solo commento o doc (AD-8).
 | **TD 19.1-c** | Progetto Claude Design non risincronizzato dopo la 19.1 (`airops.css`, `conventions.md`, preview `KPI`): eseguire la ricetta di `.design-sync/NOTES.md`. |
 | **TD 19.1-d** | Panoramica e Statistiche hanno 4 KPI nel `.kpi-row` base a 5 colonne (quinta colonna vuota a ≥1200px), come Istruttori e Registro voli: candidata per una story desktop dell'epic 18. |
 | **TD 19.1-e** | Story file ready-for-dev che citano il dominio rimosso (16.7, 17.4, 17.7): da rileggere quando partono. |
+| **TD 19.1-f** | (dal dev) `mobile-a11y-sweep.spec.ts:111/:164` aprono «la prima `flight-row-mobile`» del Registro voli senza creare un volo: su un DB fresco, lanciati da soli, falliscono; nella suite completa passano perché altri spec registrano voli prima. Preesistente: dare ai due test una fixture propria. |
+| **TD 19.1-g** | (dal dev) `mobile-billing.spec.ts` AC 12 viii/ix confronta `utilBarWidths` di Statistiche come Set ORDINATO (`[281, 0]`): su un DB post-suite il primo velivolo per marca non è fra i top-8 per minuti e l'ordine si inverte (`[0, 281]`). Verde su DB fresco; da confrontare come insieme. |
 
 ---
 
@@ -488,35 +490,206 @@ Righe sul HEAD di baseline. «C» = solo commento o doc (AD-8).
 
 ### Agent Model Used
 
-_(Opus 5 xhigh — un solo dev subagent)_
+Opus 5.5 (`claude-opus-5-5`) — un solo dev subagent (`dev-19-1`), 2026-11-01.
 
 ### §A — Verifica della ricognizione sul HEAD corrente
-_(righe slittate, file in più o in meno rispetto a §3, correzioni a questo file)_
+
+- HEAD di partenza `72e7e1b` (= `d9dbc8c` + i due story file 19.1/19.2, docs-only): nessuna riga di codice slittata rispetto a §3. Grep A ∪ B sul HEAD: **120 file**, esattamente come §3 (2.075 righe A, 529 righe B; salvati nello scratchpad).
+- Correzioni alla ricognizione: (a) unit nei 4 file cancellati = **111**, non ~105 (77 `ppr.service` + 15 `schemas/ppr` + 11 `ppr-movement-status` + 8 `mobile-movements`); (b) i test cancellati DENTRO file misti sono 29 (v. §L); (c) `mobile-ink-targets.spec.ts` describe «/dashboard/ppr» = 4 test (3 viewport + «shared ManualPprForm»), `mobile-self-public` = 7 test (5 modulo pubblico + 2 deep link); (d) `cash.service.ts:52`, citato nel commento di `cash-categories-card.tsx`, era già sfasato (oggi la Set è a `:53`) — preesistente, non toccato.
+- Lettura di AC 1 per l'anonimo: il testo di AC 1 descrive l'opzione A; si applica la **ratifica B** (sezione in testa): `/ppr` resta in `PUBLIC_WEB_PATHS` (riga byte-identica) con una riga di commento-lapide sopra la costante, `'/api/v1/ppr-requests'` esce da `PUBLIC_API_PATHS`.
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Esito | Prova |
+|---|---|---|
+| 1 | ✅ | 29 file cancellati (`git rm`); sonda §D: 13/13 → 404 con sessione admin; anonimo `/it/ppr` e `/en/ppr` → **404** (B), `POST /api/v1/ppr-requests` → **401** `UNAUTHENTICATED` |
+| 2 | ✅ | service/schemi/lib cancellati; `templates.ts` −3 tipi −3 builder; `rbac.ts` senza `ppr.manage`; `proxy.ts` come §A; `RateLimitError` + mapping 429 + `ERROR_DESCRIPTIONS[429]` + `429` nell'union via; doc di `ConflictError` sui codici reali `PERSON_BUSY`/`INSTRUCTOR_BUSY` |
+| 3 | ✅ | §C (gemello popolato, conteggi verbatim, `migrate diff` vuoto in due modi); `git diff --stat d9dbc8c -- prisma/migrations` → vuoto sulle storiche, unica aggiunta la cartella nuova `20261101193941_remove_ppr_domain`; `npx prisma generate` eseguito |
+| 4 | ✅ | `SYSTEM_CASH_CATEGORY_NAMES = {Ricariche, Compensi istruttori}`; «PPR» via da `seed.ts`/`seed-demo.ts`; riga `CASH` con `reference: null` (DTO invariato); 3 commenti «tre categorie» → due; unit `cash.service.test.ts` 72/72 |
+| 5 | ✅ | `club-card.tsx` −2 campi −2 PUT (3 PUT: club, metar-station, membership-fee); `settings/page.tsx` −2 letture; griglia 2×2 senza celle orfane (§K); copy `club.sub`/`smtp.sub` |
+| 6 | ✅ | 4 KPI; sottotitolo `[ICAO, N AOG]` (Promise.all −2 query `listPprRequests`: da 19 a 17 elementi); avvisi a 2 fonti; unit `overview-alerts` 14/14 con ordine intero; e2e `mobile-overview` asserisce la lista ESATTA dei testid della `.kpi-row` + struttura del sottotitolo (v. §I-1) |
+| 7 | ✅ | `route-registry.test.ts` `toEqual` esatti (ADMIN tabs `overview, schedule, fleet, pilots`; more 6 voci; riempimento ricostruito su ADMIN senza `fleet` → `overview, schedule, pilots, instructors`); e2e `mobile-shell` 4 tab, sheet 6, navigazione via `mobile-more-instructors`, negazione pilota su `mobile-tab-fleet` |
+| 8 | ✅ | unit chiavi esatte + mock senza `pprRequest`; e2e `reports` delta ricavi = solo voli, movimenti +2, mix a 3 chiavi, KPI 4; JSON OpenAPI `Stats` §D; «Utilizzo flotta» figlia diretta di `.page` (larghezza 992 = contenuto della pagina, §K) |
+| 9 | ✅ | `exportPprRequestsXlsx/Pdf` + `PPR_STATUS_KEYS` via; `git grep -n MovementsPage -- src` → 0; `exports.service.test.ts` 29/29 |
+| 10 | ✅ | registry: −8 `register`, −`pprRequestIdParams`, −429, −9 path (tag `Ppr` sparito); path del JSON servito **84 → 75**, schemi **94 → 86**, grep A sul JSON **99 → 0**, grep B **55 → 0** |
+| 11 | ✅ | §H: 1.989 → **1.760** chiavi per file, parità 0/0, 3 copy |
+| 12 | ✅ | grep di AC 12 → **0**; §F: 0 differenze di computed style su 21 nodi campione × tutte le proprietà |
+| 13 | ✅ | `npx prisma db seed` exit 0 e `npx tsx prisma/seed-demo.ts` exit 0 su gemello appena migrato (§C); `seed-load.ts` passa il typecheck (Phase 8 via, 9→8, 10→9); NON eseguito a `LOAD_SCALE` ridotto (facoltativo, dichiarato) |
+| 14 | ✅ | `CLAUDE.md:3` e route map, `README.md:3`, `load-testing.md` (riga `pdf ppr`), `targets.json` (−6, JSON valido), `targets-hot.json` (−1), `e2e.sh:18` (`e2e/bookings.spec.ts`), `.design-sync` (descrizione + preview a 4 KPI); `node -e JSON.parse` OK su entrambi |
+| 15 | ✅ | §E: A → 1 riga (l'eccezione ammessa di `src/proxy.ts`), B → 0 righe |
+| 16 | ✅ | §L: 1.923 → **1.783**; `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` verde su tutti i 71 file (run completo in shell senza env) |
+| 17 | ✅ | §G; `git diff -- playwright.config.ts` vuoto; nessun testid nuovo |
+| 18 | ✅ | §K (screenshot, overflow 0 a 320/375/390, console senza errori) |
+| 19 | ✅ dev / ⏳ arbitro | `npm run gates` verde (§L); suite completa = arbitro della sessione principale |
+
 ### §C — Migrazione: fixture, conteggi prima/dopo, `migrate diff` (AC 3)
+
+Gemello `am_19_1` nel container: migrato fino a `20260807074113` (cartella nuova spostata temporaneamente nello scratchpad), `db seed` della baseline, poi fixture SQL: richiesta COMPLETED con tassa 2500 + `CashMovement` collegato (`pprRequestId`), **storno** di quel movimento (stessa categoria, `reversalOfId`), una APPROVED e una PENDING, `PprCounter`, un movimento manuale nella categoria «PPR» senza collegamento, 3 chiavi `ppr.*`, `IdempotencyRecord` `ppr-approve` + uno `booking-create`, una categoria non PPR con movimento + storno. Poi `npx prisma migrate deploy` → «All migrations have been successfully applied».
+
+```
+                                           PRIMA                              DOPO
+CashMovement categoria PPR                 3                                  0   (per id: twin_cm_fee/_storno/_manual_ppr → 0)
+CashMovement non PPR                       4                                  4
+checksum non PPR (id:importo:reversalOf)   b070c1655b4ce4e7fb1bf8681d36e513   b070c1655b4ce4e7fb1bf8681d36e513
+CashCategory PPR / totale                  1 / 9                              0 / 8
+to_regclass PprRequest / PprCounter        "PprRequest" / "PprCounter"        NULL / NULL
+pg_type PprStatus                          1                                  0
+AppSetting ppr.*                           3                                  0
+IdempotencyRecord ppr-* / altri            1 / 1                              0 / 1
+colonna CashMovement.pprRequestId          1                                  0
+```
+
+`migrate diff` (Prisma 7.8): `--from-config-datasource --to-schema prisma/schema.prisma --script` sul gemello migrato → `-- This is an empty migration.`; `--from-migrations prisma/migrations --to-schema prisma/schema.prisma --script` (config temporanea con `shadowDatabaseUrl` su `am_19_1_shadow`, cancellata subito) → `-- This is an empty migration.`.
+
+AC 13 sul gemello ricreato da zero (`DROP` + `createdb` + `migrate deploy` con tutte le migrazioni): `npx prisma db seed` exit 0 («7 cash categories ready»), `npx tsx prisma/seed-demo.ts` exit 0 («24 flights registered», «6 bookings ready», nessuna riga PPR); categorie = `Altro, Assicurazione, Carburante, Compensi istruttori, Manutenzione, Ricariche, Utenze`, `to_regclass('"PprRequest"')` = NULL. Gemelli `am_19_1`/`am_19_1_shadow` eliminati; `airmanager_load` mai toccato.
+
+DB `airmanager`: migrazione applicata con `migrate deploy` (prima: 72 `PprRequest`, 190 `CashMovement` di cui 6 PPR; dopo: 184, tutto a zero), poi **resettato** con la ricetta di HANDOFF (mandato PO) prima del secondo run mirato.
 
 ### §D — Sonda 404 verbatim (AC 1) e JSON OpenAPI (AC 10)
 
+Build di produzione (`npm run gates` → `next start`), script `playwright-core` throwaway:
+
+```
+--- admin session
+GET /it/dashboard/ppr -> 404
+GET /en/dashboard/ppr -> 404
+GET /it/dashboard/movements -> 404
+GET /en/dashboard/movements -> 404
+GET /it/ppr -> 404
+GET /en/ppr -> 404
+GET /api/v1/ppr-requests -> 404
+POST /api/v1/ppr-requests -> 404
+POST /api/v1/ppr-requests/manual -> 404
+GET /api/v1/ppr-requests/pdf -> 404
+POST /api/v1/ppr-requests/x/approve -> 404
+GET /api/v1/settings/ppr-landing-fee -> 404
+GET /api/v1/settings/ppr-operating-instructions -> 404
+--- anonymous (no cookies)
+GET /it/ppr -> 404
+GET /en/ppr -> 404
+POST /api/v1/ppr-requests -> 401 {"error":{"code":"UNAUTHENTICATED","message":"Authentication required."}}
+GET /it/dashboard/ppr -> 307 location=/it/login?callbackUrl=%2Fit%2Fdashboard%2Fppr
+GET /it/dashboard/movements -> 307 location=/it/login?callbackUrl=%2Fit%2Fdashboard%2Fmovements
+```
+
+OpenAPI servito (`GET /api/v1/openapi.json`, 200): path **84 → 75** (−9: i 7 PPR + i 2 di impostazioni), schemi **94 → 86** (−8 `Ppr*`/`*PprRequest*`), tag senza `Ppr`, stati di risposta documentati `200,201,204,401,403,404,409,422,500` (niente 429). Grep A (pattern di AC 15) sul JSON 99 → **0**, grep B 55 → **0** (`grep -ci ppr` darebbe 1 riga/35 occorrenze: sono tutte dentro `APPROVED`/`approved`, falsi positivi del case-insensitive). Schema `Stats`: `kpis` = `["revenueCents","flightMinutes","movements","fleetUtilization"]`, `series` = `["months","revenueCents","flightMinutes"]`, `movementMix.key` = `{"type":"string","enum":["SCHOOL","TOURISM","AERIAL_WORK"]}`; descrizione «Read-only aggregation over flights/ledger/compensation…».
+
 ### §E — Grep di AC 15 verbatim (baseline e finale)
+
+Baseline (`72e7e1b`): A 2.075 righe + B 529 righe, **120 file** (= 91 + 29 di §3). Finale (working tree, comandi di AC 15 identici):
+
+```
+$ git grep -nIP '(?<![A-Za-z])[Pp][Pp][Rr]|[a-z]Ppr|[a-z]PPR' -- . "${EX[@]}"
+src/proxy.ts:13:const PUBLIC_WEB_PATHS = new Set(['', '/login', '/set-password', '/forgot-password', '/ppr']);
+$ git grep -nIiP "transit(?!ion|iv)|landing.?fee|operating.?instructions|/dashboard/movements|MovementsPage|['\"]visiting['\"]|onGround|in transito" -- . "${EX[@]}"
+$
+```
+
+L'unica riga è l'eccezione ratificata (Q-19.1-a = B), byte-identica al HEAD; la lapide è la riga di commento sopra (`// Last entry: route removed in story 19.1, kept public so anonymous visitors get a 404, not the login page.`), che il grep non vede. La migrazione nuova nomina gli oggetti che droppa (eccezione `prisma/migrations/`).
 
 ### §F — CSS: diff e campione `getComputedStyle` prima/dopo (AC 12)
 
-### §G — e2e: tabella cancellati / ri-ospitati (ospite e proprietà dimostrata) / adattati (valori cambiati e causa)
+- `grep -cE "\.ppr-|\.movements-|manual-ppr|mobile-row-transit|mobile-complete-step|mobile-row-model|\.info-card|\.flow-bar-info|^\.req\b" src/styles/airops.css` → **0**.
+- `git diff -U0 src/styles/airops.css`: 65 righe `+` / 328 righe `-`. Audit: ogni riga `-` che non è commento appartiene a un selettore della colonna «Esce» di AD-4 (`.ppr-*`, `.movements-*`, `.info-card*`, `.req`, `.mobile-row-transit`, `.mobile-row-model`, `.mobile-complete-step*`, `.flow-bar-info`) o è un elenco di selettori ACCORCIATO (`.scadenze-mobile, .my-expiries-mobile{…}`, `.mobile-row-expiry{…}`, `.scadenze-filter-panel{…}`, `.scadenze-head > .scadenze-filters-trigger{display:none}`) o è la chiusura del blocco `@media` della sola `.ppr-form-grid`. Restano identiche: `.btn.big`, `.btn.accent*` (commento 13.9 riscritto senza l'esempio), `.info-row*`, tutto `.bottom-sheet-*`/`.mobile-sheet-list*`/`.slideover-panel`, `.scadenze-*`, `.my-expiries-*`, `.mobile-row-expiry*`, `.membership-fee-*`, `.account-*`. Commenti riscritti per AD-8 (lezione conservata): `:71`, `:1118`, il commento `.flow-bar-*` («All five tones» → «Every tone», `--info` non c'è più), `:1710`, `:1951`, `:2148-2152`, `:2220`, `:2348`, `:2459`, `:2487`, `:2751`, apertura del blocco 15.7 (sole Scadenze), `:3168` (**3** `.split`), `:3344`, `:3489`, apertura 15.9, `:3702`, `:3738-3739`, `:3820`; il punto (8) di 15.10 esce intero.
+- **Campione** (`css-sample.mjs`, ogni proprietà di `getComputedStyle` del nodo e dei primi 60 discendenti, stesso DB con la sola differenza delle righe PPR), 21 chiavi: a 1280 e 375 `.scadenze-head`, `.scadenze-kpi-row`, `.scadenze-mobile`, `.scadenze-desktop-body`, `membership-fee-panel` aperto, `.info-row` e `.info-row .v` della scheda persona; a 375 `BottomSheet` aperto (`:has(> .bottom-sheet-head)` della card scadenza), `mobile-scadenze-filter-panel` aperto, `.slideover-panel:not([inert])` aperto; pilota a 1280 e 375 `my-expiries`, `my-expiry-row-mobile`. Prima = build di baseline (`72e7e1b`, server fermato dopo la presa), dopo = build della story. Ripetibilità provata due volte sulla baseline (0 differenze), poi baseline vs story: **`TOTAL DIFFS: 0`**.
+
+### §G — e2e: cancellati / ri-ospitati / adattati
+
+`npx playwright test --list` (CI=1): baseline **543 test in 64 file** → dopo **492 test in 61 file** = **−51**.
+
+| Spec | Prima → dopo | Classe | Dettaglio |
+|---|---|---|---|
+| `ppr-public` / `ppr-queue` / `movements` | 6 / 9 / 12 → file cancellati | Cancella | −27 |
+| `mobile-expiries-movements` | 23 → 13 | Cancella 10, Adatta 8, invariati 5 | via `:388 :411 :530 :574 :630 :661 :684 :788 :824 :1324`; adattati `:451` (metà card transito), `:470` (empty state movimenti), `:888` (i due redirect `/movements`), `:960` (paginazione movimenti), `:1034` (testid del registro/overlay/marche), `:1166` (URL movimenti), `:1215` **ri-ospitato su Scadenze** (v. §I-3), `:1258` (titolo e commento: il pavimento 44 è ora solo in `.scadenze-filter-panel`); helper orfani via (`createPendingRequest`, `createApprovedRequest`, `gotoMovementsFor`, `createManualApproved`, `movementCards`, `pprCategoryId`, `pprMovementsWithDescription`, `UI_MOVEMENTS_PAGE_SIZE`, `romeDateOnly`, `uniqueRegistration`, `futureIso`, import `Locator`) |
+| `mobile-self-public` | 21 → 14 | Cancella 7 | describe modulo pubblico (5) e deep link (2), helper `createApprovedPpr`, import `Browser`; l'esclusione «honeypot» di `hiddenScrollers` (codice morto) tolta: lo sweep resta quello canonico |
+| `mobile-primitives` | 3 → 2 | Cancella 1, **Ri-ospita** 1, Adatta 1 | via gli alberi della coda; SlideOver a tutto schermo **ri-ospitato** sull'editor volo da `/it/dashboard` (`dispatch-flight-button`): stesse asserzioni, probe scoped a `.slideover.open` (la Panoramica monta più SlideOver), submit preso per struttura `.slideover.open .so-foot button[type="submit"]` (nessun testid nuovo). Proprietà dell'ospite **asserite nel test stesso**: `anchored.scrollable === true` (corpo che scorre a 375×812), submit dentro `.so-foot`, `.date-input-btn` nel pannello (il popover si apre dentro il viewport). Striscia KPI: `cardCount >= 4`; «ultima card non raggiungibile a `scrollLeft 0`» resta asserita e passa (4×146 + 3×10 = 614 > 375) |
+| `mobile-a11y-sweep` | 9 → 9 | **Ri-ospita** 2 | «shared form panel» → editor volo (`dispatch-flight-button`, condiviso col Registro voli): grammatica distinta dalle altre due; pannello chiuso `inert`: `/it/dashboard/ppr` → `/it/dashboard/logbook`. **Discriminanza rimisurata** togliendo `inert` in pagina: bookings 11/11 candidati prendono il focus, pilots 1/1, logbook **18/18** a 375 e a 1280 → commento «11 / 18» |
+| `mobile-ink-targets` | 23 → 19 | Cancella 4, Adatta 1 | describe «/dashboard/ppr» (3 viewport + ManualPprForm); calendar trigger: URL `/movements` e `/dashboard/ppr` via, misura di controllo su `/it/ppr` via |
+| `datetime-picker` | 6 → 5 | Cancella 1, **Ri-ospita** 2 | invio reale da `/ppr` via (coperto da `:126`); 375 → campo «Fine» della nuova prenotazione, stesse asserzioni; TD7-F1 → «Fine» nel pannello nuova prenotazione a 1440: precondizione **asserita** prima del click raw (`innerHeight − bottom` ∈ [60, 100], ottenuta tagliando il viewport a `bottom + 80`), poi due rAF perché il `resize` arrivi PRIMA del click (`useFixedPopover` chiude il popover su resize — misurato: senza, 1 flaky al primo run) |
+| `mobile-registries` | invariato (1 test, −1 blocco) | Cancella (blocco) | il controllo `.info-row` su `/it/ppr` dentro il test della scheda persona |
+| `shell-misc` | 3 → 2 | Cancella 1 | icona Flotta = icona Movimenti |
+| `mobile-shell` | invariato | Adatta | 4 tab `overview, schedule, fleet, pilots`; sheet **6**; `mobile-more-instructors`; negazione pilota `mobile-tab-fleet` |
+| `home-dashboard` | invariato | Adatta | lista KPI a 4, titolo «4 real KPIs» |
+| `mobile-overview` | invariato | Adatta | `kpi-value` 5 → **4**; lista esatta dei testid della `.kpi-row`; sottotitolo ≤ 2 parti con `N AOG` in coda |
+| `reports` (catena) | invariato | Adatta | helper transito e tipo `StatsDto` allineati; delta ricavi = solo voli, movimenti **+2**, mix a 3 chiavi esatte, KPI **4** |
+| `mobile-reports` | invariato | Adatta | SVG 3 → **2** (desktop `[612.66, 287.34]`); AC 7: `.chart-label` 36 → **24** (12 etichette × 2 grafici), bande del mix ≥ 8 → **≥ 6** (3 bande + 3 pallini), selettore senza `.flow-bar-info` |
+| `mobile-billing` | invariato | Adatta | `.split` di reports `[319, 319, 319]`, voce `/movements` via |
+| `settings` (catena) | invariato | Adatta | Club: via tassa/istruzioni, attese le risposte di `club` e `membership-fee` |
+| `mobile-settings` (catena) | invariato | Adatta | 5 PUT → **3**; 3 testid via dalla matrice; `/movements` → `/it/dashboard/bookings` (2 `.date-input` resi a 375) |
+| `pdf-exports` | invariato | Adatta | 6 → **5** PDF; righe/asserzioni `ppr-requests/pdf` via in 4 test |
+| `billing-global`, `bookings` | invariato | C | solo commenti |
+
+**Run mirati** (build di produzione unica, `E2E_REUSE_SERVER=1 scripts/e2e.sh start`, log copiati nello scratchpad):
+1. 15 spec del project `chromium` sul DB **sporco** dell'arbitro 16.3 (216 velivoli attivi): 180 passed, 11 failed, 1 flaky. I fallimenti sono la classe «DB post-suite» (prenotazioni 422 e picker `Pilota o allievo` oltre `OPTIONS_PAGE_SIZE`, card prenotazione assente, ordine del Set `utilBarWidths`) + **2 miei**, corretti: `mobile-reports` AC 7 (conteggi per costruzione) e il flaky del TD7-F1 ri-ospitato (resize).
+2. Stessi 15 spec dopo il **reset del DB**: **189 passed, 1 flaky** (`mobile-billing:969`, «guardie DISCRIMINANTI», verde al retry, non toccato), **2 failed** = `mobile-a11y-sweep:111/:164`, che aprono «la prima `flight-row-mobile`» del Registro voli e su un DB fresco senza voli non la trovano (dipendenza da dati creati da altri spec nella suite completa — preesistente, TD 19.1-f). Rilanciati dopo che il DB aveva voli: **3/3 passed** (insieme a `mobile-billing:969`).
+3. Catena con `--project=settings --project=reports --project=billing-global --project=mobile-settings --no-deps --workers=1`: **26 passed**, exit 0.
+4. Guardie ri-ospitate `--repeat-each=5 --retries=0` (datetime `:214` e `:255`, primitives `:66`, a11y `:235` ×3 consumer e `:436` ×2 viewport, scadenze AC 11 `:615`): **45/45 passed**.
+
+**Delta atteso per l'arbitro**: 543 − 51 = **492 test** (−27 coi 3 spec cancellati, −24 dentro gli spec misti: 10 + 7 + 4 + 1 + 1 + 1; ri-ospitati e adattati a numero invariato).
 
 ### §H — i18n: conteggio chiavi prima/dopo, parità verbatim
 
+Chiavi via, identiche nei due file: `PprPage` 45, `PprQueuePage` 66, `MovementsPage` 95, `shell.nav.ppr|visiting` + `shell.pageTitle.ppr|visiting` 4, `DashboardPage.overview.pprPendingCount|onGroundCount|kpis.pprPending|mobile.alerts.pprSub` 4, `SettingsPage.club.landingFee|landingFeeHint|operatingInstructionsIt|En` 4, `Emails.pprReceipt|pprApproval|pprRejection` 7, `ReportsPage.kpi.transitShare|charts.transits.*|movementMix.keys.TRANSIT` 4 = **229** per file. Rimozione via parse+dump JSON (roundtrip byte-identico verificato prima sui due file), copy con sostituzione puntuale.
+
+```
+python3 -c "…k(…)…"   →   it-only: 0 en-only: 0 it: 1760 en: 1760
+```
+
+Copy: `overview.mobile.alerts.empty` «Nessun avviso: scadenze e saldi sono in regola.» / «No alerts: expiries and balances are all in order.»; `smtp.sub` «Posta in uscita per inviti, promemoria e avvisi» / «Outgoing mail for invitations, reminders and alerts»; `club.sub` «Identità usata nella console e nei PDF esportati» / «Identity used across the console and exported PDFs» (testi indicativi della story, adottati tali e quali).
+
 ### §I — Deviazioni motivate e decisioni non ovvie
+
+1. **AC 6 «`kpi-ppr-pending` count 0» non è scritto in uno spec**: lo spec conterrebbe `ppr`, cioè il residuo che AC 15 vieta (stessa logica di AD-10). L'assenza è asserita per **struttura** (lista esatta dei testid figli della `.kpi-row` a 375 e 1280 in `mobile-overview`) e il count 0 è misurato nella verifica UI (§K: 0 a 1280, 0 a 375).
+2. `settings.spec.ts` aspetta le risposte di `club` e `membership-fee` (come prima aspettava 4 dei 5 PUT, senza `metar-station`); il conteggio dei 3 PUT è asserito in `mobile-settings.spec.ts`.
+3. `mobile-expiries-movements :1215` («lo sheet copre la tab bar…») era interamente sul registro transiti: togliere la metà transiti l'avrebbe svuotato. È **ri-ospitato su Scadenze** (sheet `mobile-scadenze-sheet` e pannello `mobile-scadenze-filter-panel`, stesse asserzioni `elementFromPoint` sulla tab bar) invece che adattato.
+4. `seed-load.ts`: la stima del commento d'apertura passa da «~28000-32000 cash movements» a **«~29500-30500»**: top-up 25.000 (uno a uno col gemello di cassa) + operativi 2.500 + payout 2.000-3.000; le tasse PPR erano ≈ 5.000 × 0,55 × 0,7 × 5/6 ≈ 1.600 righe.
+5. Commenti fuori dall'elenco di §3.2 corretti perché sarebbero diventati falsi: `stats.ts` («5th KPI» → 4th, «three data arrays» → two), il commento `.flow-bar-*` di `airops.css`, `client-ip.ts` ridotto al vero (non c'è più un estrattore gemello), `errors.ts` (primo chiamante con codice proprio = `PERSON_BUSY`/`INSTRUCTOR_BUSY`).
+6. `cash.service.test.ts`: dove «PPR» era categoria di SISTEMA → «Ricariche» (come prescritto; l'`it.each` duplica così il test singolo «Ricariche» già presente — scelta della story, conteggio invariato); dove era una categoria qualunque → «Carburante»; nel report a due categorie la prima diventa «Hangar»/`cat_hangar` (la seconda era già «Carburante»).
+7. Panoramica: le 2 query in meno del `Promise.all` sono misurate a lettura (19 → 17 elementi destrutturati); `PPR_GROUND_SCAN_LIMIT` e i due import via.
 
 ### §J — TD e note per la review
 
+- TD 19.1-a..e di §7 **confermati** così come sono scritti (aggiunti f e g in §7).
+- Nota per la review: «Utilizzo flotta» a tutta riga mostra a 1280 la colonna `90px` delle marche troncata sulle marche lunghe delle fixture e2e (`I-BK1793560912523-8Z`): è la griglia inline `90px 1fr 80px` preesistente (stessa resa di prima dentro la `.split`, AD-7 non la tocca), invisibile con marche reali (`I-ABCD`).
+- Nota: a 1280 la quinta colonna del `.kpi-row` resta vuota su Panoramica e Statistiche (TD 19.1-d, voluto).
+- Nota: l'ordine del Set `utilBarWidths` in `mobile-billing` AC 12 viii/ix dipende da quale velivolo è primo per marca e se è fra i top-8 per minuti — su DB sporco si inverte (TD 19.1-g); verde su DB fresco.
+
 ### §K — Verifica UI (screenshot)
+
+Script `ui-verify.mjs` + `shot-top.mjs` (playwright-core, Chromium in cache), build di produzione, DB post-run. Screenshot in `/tmp/claude-1000/-home-admin-AirManager/0e319238-d164-418e-b515-b195fddb6a7e/scratchpad/shots/`: `overview-it-1280-light`, `overview-en-1280-light`, `overview-it-375-light`, `overview-en-375-light`, `overview-it-1280-dark`, `overview-it-375-dark`, `overview-it-375-more-sheet`, `sidebar-1280`, `reports-it-1280-top`, `reports-it-1280-mix`, `reports-it-1280` (pagina intera), `reports-it-375(-top)`, `settings-club-{it,en}-{1280,375}`.
+
+Misure: KPI Panoramica = `kpi-flights-today, kpi-fleet-available, kpi-bookings-pending, kpi-revenue` (EN «Flights today, Fleet available, Bookings pending, Revenue this month»), `kpi-ppr-pending` **0** nodi a 1280 e a 375, `.kpi-value` = 4 a 375; sottotitolo «LIM1 · 2 AOG»; sidebar: gruppo Operazioni = Panoramica, Pianificazione; tab bar `overview, schedule, fleet, pilots, more`; sheet «Altro» = `instructors, scadenze, logbook, billing, reports, settings` (griglia 3×2 senza celle vuote); feed Avvisi presente (scadenze, «+26 altri · Vedi tutte»). Statistiche: KPI 4, `.split` 3, SVG `[612.66, 287.34]`, card «Utilizzo flotta» figlia diretta di `.page`, larghezza 992 = larghezza utile della pagina; mix 6 nodi (3 bande + 3 pallini). Impostazioni: griglia Club `468px 468px` con 4 celle a 2×2 (ICAO | email, METAR | quota), nessuna cella orfana; `club.sub` nuovo. Overflow orizzontale **0** su Panoramica, Statistiche, Impostazioni a 320, 375 e 390. Console: **nessun errore** (`console.error` + `pageerror`) su tutte le pagine visitate.
 
 ### §L — Gate ed esiti verbatim (unit prima/dopo, e2e prima/dopo)
 
+```
+Baseline (72e7e1b):            PASS lint (21s) · PASS typecheck (5s) · PASS test (8s) — Tests 1923 passed (1923) · PASS build (32s)
+Story (prima del commit):      PASS lint (20s) · PASS typecheck (4s) · PASS test (7s) — Tests 1783 passed (1783) · PASS build (29s)
+```
+
+Lint: 0 errori, 302 warning identici alla baseline (stessi file). Tipi di route generati: rigenerati con `npx next typegen` (nessun file spostato). Unit **1.923 → 1.783 (−140)**: −111 coi 4 file cancellati; −29 dentro file modificati (`app-settings` 67 → 54: −19 dei due describe PPR, +6 dell'`it.each` spostato sulla quota; `registry` 38 → 30; `overview-alerts` 17 → 14; `exports` 31 → 29; `stats` 17 → 15; `cash` 73 → 72). Shell pulita: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` → 71 file, 1.783 test, verdi. e2e: §G (delta −51 → 492).
+
 ### Completion Notes List
+
+- Dominio PPR/transiti rimosso per intero (29 file, 7.215 righe) con migrazione forward unica provata su gemello popolato; nessun residuo salvo l'eccezione ratificata di `src/proxy.ts`.
+- Contratto `/api/v1/stats` ridotto ai soli campi di A3; parser dei cents rinominato (`parseStoredCents`/`MAX_STORED_CENTS`) con la copertura dei 6 valori corrotti spostata sulla quota.
+- UI: Panoramica a 4 KPI e sottotitolo a 2 parti, avvisi a 2 fonti, tab bar `overview, schedule, fleet, pilots` col riempimento predefinito, Statistiche con «Utilizzo flotta» a tutta riga, card Club a 4 campi; CSS rimosso chirurgicamente con 0 differenze di computed style sulle superfici condivise.
+- e2e: −51 test (27 con gli spec cancellati, 24 dentro gli spec misti), 6 guardie ri-ospitate con proprietà dell'ospite asserite/misurate, catena serializzata invariata.
 
 ### File List
 
+Cancellati (29): `src/app/[locale]/dashboard/ppr/{page.tsx,ppr-console.tsx,manual-ppr-launch-button.tsx}`, `src/app/[locale]/dashboard/movements/{page.tsx,movements-table.tsx,log-arrival-launch-button.tsx}`, `src/app/[locale]/ppr/{page.tsx,ppr-form.tsx}`, `src/components/ppr/manual-ppr-form.tsx`, `src/app/api/v1/ppr-requests/{route.ts,manual/route.ts,pdf/route.ts,[id]/approve/route.ts,[id]/reject/route.ts,[id]/complete/route.ts,[id]/cancel/route.ts}`, `src/app/api/v1/settings/{ppr-landing-fee,ppr-operating-instructions}/route.ts`, `src/server/services/ppr.service{,.test}.ts`, `src/lib/schemas/ppr{,.test}.ts`, `src/lib/ppr-movement-status{,.test}.ts`, `src/lib/mobile-movements{,.test}.ts`, `e2e/{ppr-public,ppr-queue,movements}.spec.ts`.
+
+Nuovo: `prisma/migrations/20261101193941_remove_ppr_domain/migration.sql`.
+
+Modificati — dominio/server: `prisma/schema.prisma`, `prisma/seed.ts`, `prisma/seed-demo.ts`, `prisma/seed-load.ts`, `src/proxy.ts`, `src/server/auth/{rbac.ts,rbac.test.ts,auth.ts,login-throttle.ts}`, `src/server/adapters/mail/templates.ts`, `src/server/adapters/excel/workbook.ts`, `src/server/services/{app-settings.service.ts,app-settings.service.test.ts,stats.service.ts,stats.service.test.ts,exports.service.ts,exports.service.test.ts,cash.service.ts,cash.service.test.ts,transactions.service.ts,transactions.service.test.ts,errors.ts,errors.test.ts,auth-tokens.service.ts,bookings.service.ts,bookings.service.test.ts}`, `src/lib/api/{handler.ts,client-ip.ts}`, `src/lib/schemas/{registry.ts,registry.test.ts,stats.ts,transactions.ts,cash.ts,settings.ts}`, `src/lib/{overview-alerts.ts,overview-alerts.test.ts,mobile-settings.ts,use-idempotency-key.ts,zoned-time.ts}`, `src/app/api/v1/auth/forgot-password/route.ts`, `src/app/api/v1/bookings/pdf/route.ts`.
+
+Modificati — UI: `src/components/shell/{route-registry.ts,route-registry.test.ts}`, `src/components/dashboard/mobile-alerts-card.tsx`, `src/components/ui/{bottom-sheet.tsx,calendar-popover.tsx,date-input.tsx,field.tsx,fixed-popover.ts,mobile-sheet.tsx}`, `src/app/[locale]/dashboard/{page.tsx,mobile-booking-list.tsx,mobile-pending-bookings.tsx}`, `src/app/[locale]/dashboard/reports/{page.tsx,reports-console.tsx}`, `src/app/[locale]/dashboard/settings/{club-card.tsx,page.tsx,cash-categories-card.tsx}`, `src/app/[locale]/dashboard/fleet/{fleet-console.tsx,aircraft-editor.tsx}`, `src/app/[locale]/dashboard/people/[id]/page.tsx`, `src/app/[locale]/layout.tsx`, `src/app/globals.css`, `src/styles/airops.css`, `messages/it.json`, `messages/en.json`.
+
+Modificati — e2e: `e2e/{billing-global,bookings,datetime-picker,home-dashboard,mobile-a11y-sweep,mobile-billing,mobile-expiries-movements,mobile-ink-targets,mobile-overview,mobile-primitives,mobile-registries,mobile-reports,mobile-self-public,mobile-settings,mobile-shell,pdf-exports,reports,settings,shell-misc}.spec.ts`.
+
+Modificati — docs/harness: `CLAUDE.md`, `README.md`, `docs/operations/load-testing.md`, `scripts/e2e.sh`, `scripts/perf/targets.json`, `scripts/perf/targets-hot.json`, `.design-sync/conventions.md`, `.design-sync/previews/KPI.tsx`; BMAD: questo file, `_bmad-output/implementation-artifacts/sprint-status.yaml`.
+
 ### Change Log
+
+- 2026-11-01 — Implementazione completa (dev Opus 5.5): rimozione del dominio PPR/transiti (codice, API, email, permesso, DB con migrazione forward, seed, i18n, CSS, OpenAPI, docs, e2e). Gates verdi (unit 1.923 → 1.783), e2e mirati verdi su DB fresco (salvo 2 test dipendenti da dati di altri spec, verdi quando i dati ci sono), delta atteso dell'arbitro 543 → 492. Status → review. Commit implementazione `08eb558` (`feat(19.1)`), gates rieseguiti verdi subito prima del commit (1.783 unit, build OK).
