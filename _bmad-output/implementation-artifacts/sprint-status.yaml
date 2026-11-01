@@ -511,7 +511,7 @@ development_status:
   # _bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md, ratifiche R-19-a..p).
   # Tutte con UI: dev Opus 5 xhigh, review Opus 5 xhigh. Eseguito dopo la chiusura della 16.3.
   epic-19: backlog
-  19-1-rimozione-dominio-ppr: backlog
+  19-1-rimozione-dominio-ppr: ready-for-dev  # story file 2026-11-01 (19 AC, baseline d9dbc8c), Q-19.1-a ratificata B (/ppr resta pubblico solo per il 404 all anonimo); dev Opus
   19-2-via-codice-fiscale-campi-velivolo-contaore: ready-for-dev  # story file 2026-11-01 (26 AC, baseline 5ca0be6), dev Opus DOPO il commit della 19.1; D-1..D-3 accettate dalla sessione principale
   19-3-tariffe-allievo-pilota-editor-velivolo: backlog
   19-4-editor-pilota-istruttore-salva-unico: backlog
