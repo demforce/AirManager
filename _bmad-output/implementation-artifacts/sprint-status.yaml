@@ -485,7 +485,7 @@ development_status:
   16-6a-data-valuta-e-totali: ready-for-dev  # split 2026-09-10; CR 2026-11-01: via la parte 'voli annullati fuori dal PDF' (dopo 19.6 non esistono piu')
   16-6b-quota-rettifiche-catene: ready-for-dev  # split 2026-09-10; CR 2026-11-01: R-16-g SUPERATA da R-19-k (quota 12 mesi, rinnovo cumulativo); restano Idempotency-Key stabile, 422 rettifica su FLIGHT_CHARGE, classificatore; rileggere dopo 19.6/19.7
   16-7-dati-sessioni-rate-limit: ready-for-dev  # story file 2026-09-10; dev Opus (bookings-table.tsx:244); stesso file della 16.3; CR 2026-11-01: via l'AC del rate limit PPR (dominio rimosso in 19.1)
-  16-8-archivio-velivolo-tutele-aog: ready-for-dev  # story file 4521c80 (2026-09-26), 18 AC, ratifiche Q-16.8-a (409 AIRCRAFT_ARCHIVED) e Q-16.8-b (riga Archiviato con prenotazioni visibili) chiuse; dev Opus
+  16-8-archivio-velivolo-tutele-aog: ready-for-dev  # story file 4521c80 (2026-09-26), 18 AC, ratifiche Q-16.8-a (409 AIRCRAFT_ARCHIVED) e Q-16.8-b (riga Archiviato con prenotazioni visibili) chiuse; dev Opus; CR 2026-11-01: DA RIPERIMETRARE prima del dev (review 19.2 F1: ~15 righe sul contaore eliminato — P2, AC 9/D6, AD-8/AD-9, copy, fixture; editor velivolo a Salva unico della 19.3)
   16-9-un-solo-calendario-client: ready-for-dev  # story file 2026-09-10; assorbe TD 16.1-b e 16.1-c; dev Opus
   epic-16-retrospective: optional
   epic-17: in-progress
@@ -512,7 +512,7 @@ development_status:
   # Tutte con UI: dev Opus 5 xhigh, review Opus 5 xhigh. Eseguito dopo la chiusura della 16.3.
   epic-19: in-progress
   19-1-rimozione-dominio-ppr: done  # 2026-11-01 — feat 08eb558, record e5ce1b2, review SHIPPABLE-WITH-FIXES (0 major, F1 minor guardia e2e senza scroll reale, F2-F4 low), arbitro reviewer 492/492 exit 0 (543 -> 492), fix F1 in sessione principale 10/10 x5; TD 19.1-a..h nel §7 del file story (19.1-a contactEmail -> 19.8; 19.1-d KPI 4 col + 3+1 fra 901-1200 -> epic 18; 19.1-h 404/API envelope trasversale)
-  19-2-via-codice-fiscale-campi-velivolo-contaore: review  # 2026-11-01 — dev Opus 5.5 completato: gates verdi, e2e dei 32 spec toccati 307/307, delta atteso arbitro 492 -> 489 (-5 cancellati, +2 nuovi); migrazione 20261101223000 provata su gemello; TD 19.2-a..d nel §7 del file story; attesa review adversarial + arbitro
+  19-2-via-codice-fiscale-campi-velivolo-contaore: done  # 2026-11-01 — feat b0d142c (+ cancellazione route in 2acbf6e per indice condiviso), record 232bc06, review SHIPPABLE (2 low), arbitro 488+1 flaky = 489 exit 0 (flaky E3 = TD 16.2-g), F2 doc-comment corretto; TD 19.2-a..d nel §7
   19-3-tariffe-allievo-pilota-editor-velivolo: ready-for-dev  # story file 2026-11-01 (33 AC, baseline 72e7e1b); Q-a nessun prezzo sulle card, Q-b A, Q-c allievo esclusivo anche con istruttore, Q-d riga variazione programmata; dev Opus DOPO 19.2
   19-4-editor-pilota-istruttore-salva-unico: ready-for-dev  # story file 2026-11-01 (29 AC, baseline 72e7e1b); Q-a compenso precompilato, Q-b riga tariffa programmata; dev Opus DOPO 19.3 (segnaposto 19.3 da risolvere al T0)
   19-5-form-volo-tipi-dropdown-toggle: ready-for-dev  # story file 2026-11-01 (29 AC, baseline 3876e72), nessuna domanda PO (8 scelte su delega §0.3: Toggle «Volo solista» acceso = solista, SearchCombobox con lista statica, Escape del popup non chiude il pannello); dev Opus DOPO 19.4
