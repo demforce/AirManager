@@ -4,7 +4,7 @@ baseline_commit: d9dbc8c
 
 # Story 19.1: Rimozione del dominio PPR
 
-Status: **review** — 2026-11-01 (dev completato; ready-for-dev 2026-11-01). **Modello dev: Opus 5 xhigh (UI)**: la story tocca codice UI su sei superfici (Panoramica desktop e mobile, Statistiche, Impostazioni, shell con sidebar, tab bar e sheet «Altro», CSS AirOps), oltre a backend, DB, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent.
+Status: **done** — 2026-11-01 (review SHIPPABLE-WITH-FIXES, arbitro 492/492 exit 0, fix F1-F3 della sessione principale). Storico — **review** — 2026-11-01 (dev completato; ready-for-dev 2026-11-01). **Modello dev: Opus 5 xhigh (UI)**: la story tocca codice UI su sei superfici (Panoramica desktop e mobile, Statistiche, Impostazioni, shell con sidebar, tab bar e sheet «Altro», CSS AirOps), oltre a backend, DB, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent.
 
 > ⚠️ **Baseline**: ogni `file:riga` di questo file è misurato su **`d9dbc8c`**, cioè `5ca0be6` (CR approvata) più la chiusura docs-only della 16.3 (`d9dbc8c` tocca solo story file, `sprint-status.yaml` e `HANDOFF.md`: nessuna riga di codice si è spostata). Prima di scrivere una riga: `git log --oneline -3`, rileggere sul HEAD corrente le righe citate e **correggere questo file** dove sono slittate.
 >
@@ -26,7 +26,7 @@ A1 dice: `/ppr`, `/dashboard/ppr`, `/dashboard/movements` rispondono **404**, «
 
 *Raccomandazione A (NON scelta dal PO — vale B, v. sopra)*: A1 voleva escludere un redirect **dedicato** (verso Panoramica o altrove), non il gate di autenticazione che vale per tutta l'app. Gli AC erano scritti su **A**; il PO ha scelto **B**, quindi si applica: AC 2 tiene `'/ppr'` in `PUBLIC_WEB_PATHS` con un commento di una riga, e AC 15 aggiunge `src/proxy.ts` (quella sola riga) alle eccezioni.
 
-> **DECISIONE PO**: _(da registrare)_
+> **DECISIONE PO (2026-11-01)**: **B** — v. la ratifica in testa a questa domanda (fix review F3).
 
 Nessun'altra assunzione di dominio nuova: tutte le scelte qui sotto o sono coperte da R-19-a/A1-A4, o sono decisioni tecniche/UI dichiarate in §1 (la sessione principale può portarle al PO se lo ritiene).
 
@@ -209,7 +209,7 @@ Uno spec che asserisce «`/it/ppr` → 404» dovrebbe contenere `/ppr`, cioè il
 ### Rimozioni
 
 **AC 1 — Le tre pagine e le API non esistono più: 404 (A1), verificato con una sonda.**
-Cancellati: `src/app/[locale]/dashboard/ppr/**` (3 file), `src/app/[locale]/dashboard/movements/**` (3), `src/app/[locale]/ppr/**` (2), `src/components/ppr/manual-ppr-form.tsx`, `src/app/api/v1/ppr-requests/**` (7 route), `src/app/api/v1/settings/ppr-landing-fee/route.ts`, `src/app/api/v1/settings/ppr-operating-instructions/route.ts`. **Sonda verbatim** (curl o script `playwright-core`) sulla **build di produzione**, con la sessione admin: `GET /it/dashboard/ppr`, `/en/dashboard/ppr`, `/it/dashboard/movements`, `/it/ppr`, `/en/ppr` → **404**; `GET /api/v1/ppr-requests`, `POST /api/v1/ppr-requests/manual`, `GET /api/v1/ppr-requests/pdf`, `POST /api/v1/ppr-requests/x/approve`, `GET /api/v1/settings/ppr-landing-fee`, `GET /api/v1/settings/ppr-operating-instructions` → **404**. Senza sessione (Q-19.1-a opzione **A**): `/it/ppr` → redirect a `/it/login?callbackUrl=%2Fit%2Fppr`, `POST /api/v1/ppr-requests` → **401** `UNAUTHENTICATED`. Nessuna pagina di redirect dedicata.
+Cancellati: `src/app/[locale]/dashboard/ppr/**` (3 file), `src/app/[locale]/dashboard/movements/**` (3), `src/app/[locale]/ppr/**` (2), `src/components/ppr/manual-ppr-form.tsx`, `src/app/api/v1/ppr-requests/**` (7 route), `src/app/api/v1/settings/ppr-landing-fee/route.ts`, `src/app/api/v1/settings/ppr-operating-instructions/route.ts`. **Sonda verbatim** (curl o script `playwright-core`) sulla **build di produzione**, con la sessione admin: `GET /it/dashboard/ppr`, `/en/dashboard/ppr`, `/it/dashboard/movements`, `/it/ppr`, `/en/ppr` → **404**; `GET /api/v1/ppr-requests`, `POST /api/v1/ppr-requests/manual`, `GET /api/v1/ppr-requests/pdf`, `POST /api/v1/ppr-requests/x/approve`, `GET /api/v1/settings/ppr-landing-fee`, `GET /api/v1/settings/ppr-operating-instructions` → **404**. Senza sessione (Q-19.1-a ratificata **B** — testo corretto in review F3): `/it/ppr` e `/en/ppr` → **404**, `POST /api/v1/ppr-requests` → **401** `UNAUTHENTICATED`. Nessuna pagina di redirect dedicata.
 
 **AC 2 — Dominio server e gate: nessun codice PPR resta.**
 Cancellati `src/server/services/ppr.service.ts` (+test), `src/lib/schemas/ppr.ts` (+test), `src/lib/ppr-movement-status.ts` (+test), `src/lib/mobile-movements.ts` (+test). `templates.ts`: via i tre tipi (`:25-27`) e i tre builder con i loro doc (`:204-315`); il doc di `buildBookingDeniedEmail` (`:325`) smette di rimandare a `buildPprRejectionEmail`. `rbac.ts`: `'ppr.manage'` via dall'union (`:33`) e da `ALL_PERMISSIONS` (`:75`). `proxy.ts`: via `'/ppr'` (`:14`) e `'/api/v1/ppr-requests'` (`:44`) e i commenti relativi (`:11-13`, `:34-37`). Orfani di AD-3 via: `RateLimitError`, il suo mapping 429, il 429 del registry. `errors.ts:52-63`: il doc di `ConflictError` cita come primi chiamanti con codice proprio quelli che esistono davvero (`PERSON_BUSY`/`INSTRUCTOR_BUSY`, `bookings.service.ts:432-433`).
@@ -479,9 +479,10 @@ Righe sul HEAD di baseline. «C» = solo commento o doc (AD-8).
 | **TD 19.1-a** | `airfield.contactEmail` («Email di contatto» nella card Club) non ha consumer: non lo leggeva neppure il modulo `/ppr`. Da decidere nella 19.8 (tenerlo e dargli un uso, o toglierlo). |
 | **TD 19.1-b** | `.btn.accent` e `.btn.big` restano senza consumer nell'app: sono vocabolario del design system documentato in `.design-sync/conventions.md`. Da rivalutare al prossimo design-sync. |
 | **TD 19.1-c** | Progetto Claude Design non risincronizzato dopo la 19.1 (`airops.css`, `conventions.md`, preview `KPI`): eseguire la ricetta di `.design-sync/NOTES.md`. |
-| **TD 19.1-d** | Panoramica e Statistiche hanno 4 KPI nel `.kpi-row` base a 5 colonne (quinta colonna vuota a ≥1200px), come Istruttori e Registro voli: candidata per una story desktop dell'epic 18. |
+| **TD 19.1-d** | Panoramica e Statistiche hanno 4 KPI nel `.kpi-row` base a 5 colonne (quinta colonna vuota a ≥1200px), come Istruttori e Registro voli; e fra **901 e 1200 px** la regola `repeat(3, 1fr)` (`airops.css` `@media (max-width: 1200px)`) dispone le 4 card **3+1**, con una card orfana su una seconda riga (misura della review, F2): candidata per una story desktop dell'epic 18. |
 | **TD 19.1-e** | Story file ready-for-dev che citano il dominio rimosso (16.7, 17.4, 17.7): da rileggere quando partono. |
 | **TD 19.1-f** | (dal dev) `mobile-a11y-sweep.spec.ts:111/:164` aprono «la prima `flight-row-mobile`» del Registro voli senza creare un volo: su un DB fresco, lanciati da soli, falliscono; nella suite completa passano perché altri spec registrano voli prima. Preesistente: dare ai due test una fixture propria. |
+| **TD 19.1-h** | (dalla review, F4 — preesistente e trasversale) Un path sconosciuto risponde con la pagina 404 **di default di Next, in inglese** anche sotto `/it/…`, e le API rimosse/sconosciute rispondono in **HTML** invece che con l'envelope d'errore AD-8 `{error:{code,message}}`: `not-found` localizzato + catch-all API JSON. Nessuna azione nella 19.1. |
 | **TD 19.1-g** | (dal dev) `mobile-billing.spec.ts` AC 12 viii/ix confronta `utilBarWidths` di Statistiche come Set ORDINATO (`[281, 0]`): su un DB post-suite il primo velivolo per marca non è fra i top-8 per minuti e l'ordine si inverte (`[0, 281]`). Verde su DB fresco; da confrontare come insieme. |
 
 ---
@@ -693,3 +694,14 @@ Modificati — docs/harness: `CLAUDE.md`, `README.md`, `docs/operations/load-tes
 ### Change Log
 
 - 2026-11-01 — Implementazione completa (dev Opus 5.5): rimozione del dominio PPR/transiti (codice, API, email, permesso, DB con migrazione forward, seed, i18n, CSS, OpenAPI, docs, e2e). Gates verdi (unit 1.923 → 1.783), e2e mirati verdi su DB fresco (salvo 2 test dipendenti da dati di altri spec, verdi quando i dati ci sono), delta atteso dell'arbitro 543 → 492. Status → review. Commit implementazione `08eb558` (`feat(19.1)`), gates rieseguiti verdi subito prima del commit (1.783 unit, build OK).
+
+## Review Record — 19.1
+
+- **Review adversarial** (Opus, 2026-11-01): **SHIPPABLE-WITH-FIXES** — 0 major, 1 minor, 3 low. Report: `19-1-review-report.md`.
+- **Arbitro del reviewer** (DB fresco, `CI=1` build di produzione): **492 passed, 0 flaky, 0 skipped, E2E_EXIT=0** — delta 543 → 492 confermato. Gates rieseguiti in shell senza env: verdi, 1783 unit.
+- **F1 (minor) — corretto** dalla sessione principale: in `e2e/mobile-primitives.spec.ts` la guardia «SlideOver a tutto schermo» ri-ospitata sull'editor volo ora scorre SEMPRE `.so-body` fino a poco sopra il trigger della data (`scrollTop = max(1, offset − 8)`) e asserisce `scrollTop > 0` prima di aprire il popover; commento riscritto con le misure del nuovo ospite (via «scrollTop 0 -> 314»). Verifica: `mobile-primitives.spec.ts --repeat-each=5 --retries=0` → **10/10** su build di produzione e DB fresco; `npm run gates` verde (1783 unit).
+- **F2 (low)** → testo del **TD 19.1-d** esteso alla fascia 901-1200 px (riga KPI 3+1). Nessun CSS nella 19.1 (AD della story).
+- **F3 (low) — corretto**: riga «DECISIONE PO: da registrare» e clausola dell'anonimo in AC 1 allineate alla ratifica B.
+- **F4 (low, preesistente)** → **TD 19.1-h** (404 di default inglese di Next e API sconosciute in HTML invece dell'envelope AD-8).
+- Nessuna decisione PO aperta.
+
