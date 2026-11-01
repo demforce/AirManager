@@ -53,7 +53,11 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
         cancel: tProfiles('profilesPanel.actions.cancel'),
         save: tProfiles('profilesPanel.actions.save'),
       },
-      errors: { requiredField: tProfiles('profilesPanel.errors.requiredField'), generic: tProfiles('profilesPanel.errors.generic') },
+      errors: {
+        requiredField: tProfiles('profilesPanel.errors.requiredField'),
+        generic: tProfiles('profilesPanel.errors.generic'),
+        exclusive: tProfiles('profilesPanel.errors.exclusive'),
+      },
       pilot: {
         title: tProfiles('profilesPanel.pilot.title'),
         licenseNumber: tProfiles('profilesPanel.pilot.licenseNumber'),
@@ -132,6 +136,7 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       required: t('editor.errors.required'),
       generic: t('editor.errors.generic'),
       conflictEmail: t('editor.errors.conflictEmail'),
+      profilesExclusive: t('editor.errors.profilesExclusive'),
     },
   };
 }

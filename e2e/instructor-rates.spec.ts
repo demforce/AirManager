@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { addDaysIso, todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -44,11 +45,6 @@ async function createInstructorPerson(page: Page, person: { firstName: string; l
   return created.id;
 }
 
-/** Today, `YYYY-MM-DD`, browser-local time — matches `InstructorRatesPanel`'s `<input type="date">` default. */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** A safely-in-the-past date — always earlier than any run-unique person's creation time. */
 const PAST_DATE = '2020-01-01';
 
@@ -73,62 +69,80 @@ async function openInstructorRatesPanel(page: Page, personId: string) {
 }
 
 test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4.1), on the instructors page (story 12.7)', () => {
-  test('admin adds a past and a current rate; history shows both and the current rate is the most recent (AC 1)', async ({
+  // Story 19.3 (R-19-f): a rate takes effect today or later (Europe/Rome), so
+  // the two rates are today and today + 30 — both typed explicitly, never the
+  // panel's own default (still a UTC date until story 19.4 rewrites the panel).
+  test('admin adds a rate from today and one from today + 30; history shows both, the future one is never current (AC 1, story 19.3 AC 26)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Marco');
     const personId = await createInstructorPerson(page, person);
 
-    const today = todayDateOnly();
+    const today = todayRome();
+    const inThirtyDays = addDaysIso(today, 30);
     const panel = await openInstructorRatesPanel(page, personId);
     await expect(panel.getByTestId('instructor-rates-current')).toContainText('Nessuna tariffa in vigore');
 
-    // First rate: 40 €/h from a past date.
+    // First rate: 40 €/h from today.
     await panel.getByLabel('Prezzo (€/h)').fill('40,00');
-    await panel.getByLabel('In vigore da').fill(PAST_DATE);
-    await panel.getByTestId('instructor-rates-submit').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
-    await expect(panel.getByTestId('instructor-rates-current')).toContainText(/40,00\s€/);
-
-    // Second rate: 45 €/h from today.
-    await panel.getByLabel('Prezzo (€/h)').fill('45,00');
     await panel.getByLabel('In vigore da').fill(today);
     await panel.getByTestId('instructor-rates-submit').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
 
-    // Current rate is now 45,00 € (AD-4: max validFrom <= today) and BOTH
-    // history rows are visible (append-only, AC 1).
-    await expect(panel.getByTestId('instructor-rates-current')).toContainText(/45,00\s€/);
+    // Second rate: 45 €/h from today + 30.
+    await panel.getByLabel('Prezzo (€/h)').fill('45,00');
+    await panel.getByLabel('In vigore da').fill(inThirtyDays);
+    await panel.getByTestId('instructor-rates-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
+
+    // BOTH rows in the history, most recent validFrom first; the scheduled
+    // one is not the rate in effect (AD-4: max validFrom <= today).
     const historyRows = panel.getByTestId('instructor-rate-history-row');
     await expect(historyRows).toHaveCount(2);
-    await expect(historyRows.nth(0)).toContainText(ddmmyyyy(today));
+    await expect(historyRows.nth(0)).toContainText(ddmmyyyy(inThirtyDays));
     await expect(historyRows.nth(0)).toContainText(/45,00\s€/);
-    await expect(historyRows.nth(1)).toContainText(ddmmyyyy(PAST_DATE));
+    await expect(historyRows.nth(1)).toContainText(ddmmyyyy(today));
     await expect(historyRows.nth(1)).toContainText(/40,00\s€/);
+    await expect(panel.getByTestId('instructor-rates-current')).not.toContainText('45,00');
   });
 
-  test('a second rate with the same validFrom shows a 409 conflict message (AC 2)', async ({ page }) => {
+  test('a second rate on the same validFrom REWRITES it: no conflict message, one row with the new price (story 19.3, AC 26)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Giulia');
     const personId = await createInstructorPerson(page, person);
+    const today = todayRome();
 
     const panel = await openInstructorRatesPanel(page, personId);
 
     await panel.getByLabel('Prezzo (€/h)').fill('40,00');
-    await panel.getByLabel('In vigore da').fill(PAST_DATE);
+    await panel.getByLabel('In vigore da').fill(today);
     await panel.getByTestId('instructor-rates-submit').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
-    await expect(panel.getByTestId('instructor-rates-current')).toContainText(/40,00\s€/);
+    await expect(panel.getByTestId('instructor-rate-history-row')).toHaveCount(1);
 
-    // Re-insert a rate with the SAME validFrom (AC 2 — 409).
-    await panel.getByLabel('Prezzo (€/h)').fill('999,00');
-    await panel.getByLabel('In vigore da').fill(PAST_DATE);
+    // The SAME validFrom again: rewritten in place (R-19-f), never a 409.
+    await panel.getByLabel('Prezzo (€/h)').fill('99,00');
+    await panel.getByLabel('In vigore da').fill(today);
     await panel.getByTestId('instructor-rates-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' }).last()).toBeVisible();
 
-    await expect(panel.getByTestId('instructor-rates-form-error')).toContainText(
-      'Esiste già una tariffa con questa data di decorrenza',
-    );
+    await expect(panel.getByTestId('instructor-rate-history-row')).toHaveCount(1);
+    await expect(panel.getByTestId('instructor-rate-history-row')).toContainText(/99,00\s€/);
+    await expect(panel.getByTestId('instructor-rates-form-error')).toHaveCount(0);
+  });
+
+  test('a validFrom before today (Europe/Rome) answers 422 RATE_VALID_FROM_IN_PAST and writes nothing (story 19.3, AC 4/26)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const personId = await createInstructorPerson(page, uniquePerson('Paolo'));
+
+    const response = await page.request.post(`/api/v1/people/${personId}/instructor-rates`, {
+      data: { priceCentsPerHour: 4500, validFrom: addDaysIso(todayRome(), -1) },
+    });
+    expect(response.status()).toBe(422);
+    expect((await response.json()).error.code).toBe('RATE_VALID_FROM_IN_PAST');
+    const list = await page.request.get(`/api/v1/people/${personId}/instructor-rates`);
+    expect(await list.json()).toEqual([]);
   });
 
   test('a pilot gets a 403 AD-8 envelope from POST /api/v1/people/{id}/instructor-rates', async ({ page }) => {

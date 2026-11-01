@@ -28,7 +28,7 @@ export type AccountMovementTypeDto = z.infer<typeof accountMovementTypeSchema>;
  * `amountCents` is a SIGNED integer (AD-2) but a top-up is always positive —
  * `.positive()` rejects zero/negative at the boundary, capped at the
  * Postgres INTEGER max so an absurd value fails as a clean 422 instead of a
- * driver overflow (same defense-in-depth as `createAircraftRateSchema.priceCentsPerHour`,
+ * driver overflow (same defense-in-depth as `createAircraftRateSchema`'s prices,
  * review 2.4 F2). The UI converts euros to cents only at submit time
  * (Dev Notes) — this schema only ever sees the integer cents wire value.
  * `effectiveDate` is a calendar date only (`YYYY-MM-DD`), same

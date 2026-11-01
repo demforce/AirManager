@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -160,10 +161,7 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     });
     expect(aircraftResponse.status()).toBe(201);
     const aircraft = (await aircraftResponse.json()) as { id: string };
-    const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-      data: { priceCentsPerHour: 10000, validFrom: '2020-01-01' },
-    });
-    expect(rateResponse.status()).toBe(201);
+    await seedAircraftRate(aircraft.id, { studentPriceCents: 10000, pilotPriceCents: 10000, validFrom: '2020-01-01' });
     const flightResponse = await page.request.post('/api/v1/flights', {
       data: {
         aircraftId: aircraft.id,

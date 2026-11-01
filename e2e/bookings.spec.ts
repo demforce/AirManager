@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
+import { todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -2029,14 +2030,14 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
   // so a shared identity (the seed pilot) would couple these tests to every
   // other spec running under `fullyParallel`, and to their leftovers.
 
-  /** A run-unique instructor PERSON (no login) and its `InstructorProfile.id`, read back from the one admin write that returns it — an hourly rate, harmless on an instructor nobody else uses. */
+  /** A run-unique instructor PERSON (no login) and its `InstructorProfile.id`, read back from the one admin write that returns it — an hourly rate (from today: the API refuses a past `validFrom` since story 19.3), harmless on an instructor nobody else uses. */
   async function createInstructorProfileId(page: Page): Promise<string> {
     const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Istruttore', lastName: `Occupato-${uniqueSuffix()}` } });
     expect(personResponse.status()).toBe(201);
     const person = (await personResponse.json()) as { id: string };
     const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: { ratings: 'FI(A)' } });
     expect(profileResponse.status()).toBe(200);
-    const rateResponse = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, { data: { priceCentsPerHour: 3000, validFrom: '2020-01-01' } });
+    const rateResponse = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, { data: { priceCentsPerHour: 3000, validFrom: todayRome() } });
     expect(rateResponse.status()).toBe(201);
     return ((await rateResponse.json()) as { instructorProfileId: string }).instructorProfileId;
   }

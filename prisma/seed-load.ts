@@ -53,6 +53,7 @@ import { hashPassword } from '../src/server/auth/password';
 import { prisma } from '../src/server/db/prisma';
 import type {
   AccountMovementType,
+  AircraftPriceCategory,
   AircraftStatus,
   BookingStatus,
   FlightStatus,
@@ -445,7 +446,7 @@ async function main(): Promise<void> {
     registration: string;
     archivedAt: Date | null;
     isOutOfService: boolean;
-    rates: Array<{ validFrom: Date; priceCentsPerHour: number }>;
+    rates: Array<{ validFrom: Date; priceCents: number }>;
     lastFlightDate: Date | null; // mutable, tracked in Phase 3 for correction ordering
   };
 
@@ -471,7 +472,7 @@ async function main(): Promise<void> {
     outOfServiceUntil: Date | null;
     archivedAt: Date | null;
   }> = [];
-  const aircraftRateRows: Array<{ id: string; aircraftId: string; priceCentsPerHour: number; dryHourlyRateCents: number | null; validFrom: Date; actorUserId: string }> = [];
+  const aircraftRateRows: Array<{ id: string; aircraftId: string; studentPriceCents: number; pilotPriceCents: number; validFrom: Date; actorUserId: string }> = [];
 
   for (let i = 0; i < VOL.aircraft; i++) {
     const spec = choice(AIRCRAFT_MODELS);
@@ -493,19 +494,19 @@ async function main(): Promise<void> {
       archivedAt,
     });
 
-    // 1-3 rates over the last 3 years, ascending price.
+    // 1-3 rates over the last 3 years, ascending price. Story 19.3 (A6): one
+    // price for both columns, student and pilot — measurement data, no rule.
     const rateCount = randInt(1, 3);
-    const rates: Array<{ validFrom: Date; priceCentsPerHour: number }> = [];
+    const rates: Array<{ validFrom: Date; priceCents: number }> = [];
     let priceCents = randInt(spec.priceBandCents[0], spec.priceBandCents[1]);
     for (let r = 0; r < rateCount; r++) {
       const validFrom = r === 0 ? HISTORY_START : addDays(HISTORY_START, Math.round((HISTORY_DAYS * r) / rateCount));
-      const isLast = r === rateCount - 1;
-      rates.push({ validFrom, priceCentsPerHour: priceCents });
+      rates.push({ validFrom, priceCents });
       aircraftRateRows.push({
         id: id(),
         aircraftId,
-        priceCentsPerHour: priceCents,
-        dryHourlyRateCents: isLast && chance(0.6) ? Math.round(priceCents * 0.82) : null,
+        studentPriceCents: priceCents,
+        pilotPriceCents: priceCents,
         validFrom,
         actorUserId: ADMIN_USER_ID,
       });
@@ -526,12 +527,13 @@ async function main(): Promise<void> {
   // ===========================================================================
   console.log('\nPhase 3: flights...');
 
-  function effectiveRate(rates: Array<{ validFrom: Date; priceCentsPerHour: number }>, onDate: Date): number {
-    let best = rates[0]!.priceCentsPerHour;
+  /** The rate in effect on `onDate` as its two prices (story 19.3) — equal here (A6), but read per column like the real flight snapshot. */
+  function effectiveRate(rates: Array<{ validFrom: Date; priceCents: number }>, onDate: Date): { studentPriceCents: number; pilotPriceCents: number } {
+    let best = rates[0]!.priceCents;
     for (const r of rates) {
-      if (r.validFrom.getTime() <= onDate.getTime()) best = r.priceCentsPerHour;
+      if (r.validFrom.getTime() <= onDate.getTime()) best = r.priceCents;
     }
-    return best;
+    return { studentPriceCents: best, pilotPriceCents: best };
   }
 
   function seasonalWeight(date: Date): number {
@@ -570,6 +572,7 @@ async function main(): Promise<void> {
     takeoffs: number;
     landings: number;
     aircraftRateCentsPerHour: number;
+    aircraftPriceCategory: AircraftPriceCategory;
     aircraftAmountCents: number;
     instructorRateCentsPerHour: number | null;
     instructorAmountCents: number | null;
@@ -639,7 +642,11 @@ async function main(): Promise<void> {
       const landingAt = new Date(instant.takeoffAt.getTime() + minutes * 60_000);
       aircraft.lastFlightDate = flightDate;
 
-      const aircraftRateCentsPerHour = effectiveRate(aircraft.rates, flightDate);
+      // Story 19.3 (R-19-e): the column of the person's profile — the pools
+      // are disjoint, a SCHOOL flight is a student's, every other a pilot's.
+      const aircraftPriceCategory: AircraftPriceCategory = isSchool ? 'STUDENT' : 'PILOT';
+      const rate = effectiveRate(aircraft.rates, flightDate);
+      const aircraftRateCentsPerHour = aircraftPriceCategory === 'STUDENT' ? rate.studentPriceCents : rate.pilotPriceCents;
       const aircraftAmountCents = Math.round((aircraftRateCentsPerHour * minutes) / 60);
       const instructorRateCentsPerHour = instructorProfileId ? (instructorRateByProfileId.get(instructorProfileId) ?? null) : null;
       const instructorAmountCents = instructorRateCentsPerHour !== null ? Math.round((instructorRateCentsPerHour * minutes) / 60) : null;
@@ -666,6 +673,7 @@ async function main(): Promise<void> {
         takeoffs: touchAndGo,
         landings: touchAndGo,
         aircraftRateCentsPerHour,
+        aircraftPriceCategory,
         aircraftAmountCents,
         instructorRateCentsPerHour,
         instructorAmountCents,
@@ -701,7 +709,9 @@ async function main(): Promise<void> {
       const landingAt = new Date(takeoffAt.getTime() + newMinutes * 60_000);
       aircraft.lastFlightDate = forcedDay;
 
-      const aircraftRateCentsPerHour = effectiveRate(aircraft.rates, forcedDay);
+      // Same person, so the same category (Q-19.3-b).
+      const rate = effectiveRate(aircraft.rates, forcedDay);
+      const aircraftRateCentsPerHour = original.aircraftPriceCategory === 'STUDENT' ? rate.studentPriceCents : rate.pilotPriceCents;
       const aircraftAmountCents = Math.round((aircraftRateCentsPerHour * newMinutes) / 60);
       const instructorRateCentsPerHour = original.instructorProfileId ? (instructorRateByProfileId.get(original.instructorProfileId) ?? null) : null;
       const instructorAmountCents = instructorRateCentsPerHour !== null ? Math.round((instructorRateCentsPerHour * newMinutes) / 60) : null;
@@ -726,6 +736,7 @@ async function main(): Promise<void> {
         takeoffs: 1,
         landings: 1,
         aircraftRateCentsPerHour,
+        aircraftPriceCategory: original.aircraftPriceCategory,
         aircraftAmountCents,
         instructorRateCentsPerHour,
         instructorAmountCents,
@@ -759,6 +770,7 @@ async function main(): Promise<void> {
           takeoffs: f.takeoffs,
           landings: f.landings,
           aircraftRateCentsPerHour: f.aircraftRateCentsPerHour,
+          aircraftPriceCategory: f.aircraftPriceCategory,
           aircraftAmountCents: f.aircraftAmountCents,
           instructorRateCentsPerHour: f.instructorRateCentsPerHour,
           instructorAmountCents: f.instructorAmountCents,

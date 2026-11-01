@@ -177,10 +177,11 @@ export async function exportPeopleXlsx(actor: Actor, query: ListPeopleQuery): Pr
 }
 
 // --- Aircraft (`GET /api/v1/aircraft`) --------------------------------------
-// Deviation (Dev Notes' "annotarlo in notesForReview"): the fleet card's
-// "Tariffa" is NOT exported — `dashboard/fleet/page.tsx` (story 12.5, the
-// `dashboard/aircraft` page's replacement) joins it in from a SEPARATE
-// batched `getEffectiveRates` call (`rates.service.ts`), it is not part of
+// Deviation (Dev Notes' "annotarlo in notesForReview"): the aircraft's rate
+// is NOT exported — `dashboard/fleet/page.tsx` (story 12.5, the
+// `dashboard/aircraft` page's replacement) joins it in for the editor (story
+// 19.3: no card shows it) from a SEPARATE batched `getEffectiveRates` call
+// (`rates.service.ts`), it is not part of
 // `AircraftListItem`/`GET /api/v1/aircraft`'s own DTO (verified:
 // `aircraft.service.ts#AircraftListItem` has no such field). "Ore totali"
 // (story 19.2, R-19-b) is joined in the same way: ONE batched aggregate over

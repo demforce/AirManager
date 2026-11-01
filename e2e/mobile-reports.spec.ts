@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 /**
  * Statistiche on a phone (story 15.8b, R-15.8b-b/c/e).
@@ -232,8 +233,7 @@ async function createAircraft(page: Page, tag: string): Promise<{ id: string; re
  */
 async function createFlownAircraft(page: Page, minutes: number): Promise<{ id: string; registration: string }> {
   const aircraft = await createAircraft(page, 'ZZ');
-  const rate = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour: 12000, validFrom: '2020-01-01' } });
-  expect(rate.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: 12000, pilotPriceCents: 12000, validFrom: '2020-01-01' });
 
   const suffix = uniqueSuffix();
   const person = await page.request.post('/api/v1/people', { data: { firstName: 'Reports', lastName: `Cap-${suffix}` } });

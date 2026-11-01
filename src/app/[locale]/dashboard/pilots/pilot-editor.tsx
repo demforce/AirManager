@@ -68,7 +68,8 @@ export type PilotEditorLabels = {
       cancel: string;
       save: string;
     };
-    errors: { requiredField: string; generic: string };
+    /** `exclusive` — story 19.3: the 422 `STUDENT_PROFILE_EXCLUSIVE` (Student with Pilot or Instructor), shown in the section instead of the generic error. */
+    errors: { requiredField: string; generic: string; exclusive: string };
     pilot: { title: string; licenseNumber: string; licenseType: string };
     student: { title: string; courseStartDate: string };
     instructor: { title: string };
@@ -96,7 +97,8 @@ export type PilotEditorLabels = {
     invalidEmail: string;
   };
   archive: { sectionTitle: string; archive: string; unarchive: string; confirmArchive: string; confirmUnarchive: string; confirmYes: string; confirmCancel: string };
-  errors: { required: string; generic: string; conflictEmail: string };
+  /** `profilesExclusive` — story 19.3: the create's 422 `STUDENT_PROFILE_EXCLUSIVE`, in the form banner. */
+  errors: { required: string; generic: string; conflictEmail: string; profilesExclusive: string };
 };
 
 export type ToastLabels = {
@@ -605,10 +607,12 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
     });
 
     if (!response.ok) {
+      // The body is read ONCE (story 19.3: a 422 can now carry a domain code,
+      // `STUDENT_PROFILE_EXCLUSIVE`, that a second read would lose).
+      const { code, fieldErrors } = await parseApiError(response);
       if (response.status === 422) {
         // Story 14.2, AC 3: same field-shaped-422 mapping as the edit form's
         // `IdentitySection` above, reusing `labels.errors.required` per field.
-        const { fieldErrors } = await parseApiError(response);
         const known: Array<'firstName' | 'lastName' | 'email'> = ['firstName', 'lastName', 'email'];
         let mapped = false;
         for (const field of known) {
@@ -622,8 +626,9 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
           return;
         }
       }
-      const code = await errorCodeOf(response);
-      setFormError(code === 'CONFLICT' ? labels.errors.conflictEmail : labels.errors.generic);
+      setFormError(
+        code === 'CONFLICT' ? labels.errors.conflictEmail : code === 'STUDENT_PROFILE_EXCLUSIVE' ? labels.errors.profilesExclusive : labels.errors.generic,
+      );
       return;
     }
 
@@ -972,7 +977,7 @@ function PilotProfileForm({
       body: JSON.stringify(values),
     });
     if (!response.ok) {
-      setFormError(labels.errors.generic);
+      setFormError((await errorCodeOf(response)) === 'STUDENT_PROFILE_EXCLUSIVE' ? labels.errors.exclusive : labels.errors.generic);
       await onSaved();
       return;
     }
@@ -1092,7 +1097,7 @@ function StudentProfileForm({
       body: JSON.stringify(values),
     });
     if (!response.ok) {
-      setFormError(labels.errors.generic);
+      setFormError((await errorCodeOf(response)) === 'STUDENT_PROFILE_EXCLUSIVE' ? labels.errors.exclusive : labels.errors.generic);
       await onSaved();
       return;
     }
@@ -1206,7 +1211,7 @@ function InstructorProfileForm({
       body: JSON.stringify(values),
     });
     if (!response.ok) {
-      setFormError(labels.errors.generic);
+      setFormError((await errorCodeOf(response)) === 'STUDENT_PROFILE_EXCLUSIVE' ? labels.errors.exclusive : labels.errors.generic);
       await onSaved();
       return;
     }

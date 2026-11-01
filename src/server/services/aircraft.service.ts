@@ -15,7 +15,7 @@ import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { computeAogImpact, type AogBookingImpact, type AogImpact, type ImpactedApprovedBooking } from './aog-impact';
 import { ConflictError, NotFoundError } from './errors';
-import { createAircraftRateCore } from './rates.service';
+import { assertRateValidFromNotPast, upsertAircraftRateCore } from './rates.service';
 
 export type AircraftListItem = {
   id: string;
@@ -189,9 +189,10 @@ export async function getAircraft(actor: Actor, id: string): Promise<AircraftLis
  * `createAircraftRate` itself enforces), then both writes run inside ONE
  * `$transaction` so a rejected rate rolls back the aircraft too — never a
  * silently half-created aircraft (same `createPerson`/`profiles`+`access`
- * composite precedent, `people.service.ts`). Without `rate` (the pre-14.8
- * shape, still the common case) the aircraft insert stays a single
- * non-transactional call, unchanged.
+ * composite precedent, `people.service.ts`). The rate's `validFrom` must be
+ * today or later (story 19.3, `RATE_VALID_FROM_IN_PAST`), checked before any
+ * write. Without `rate` (the pre-14.8 shape, still the common case) the
+ * aircraft insert stays a single non-transactional call, unchanged.
  */
 export async function createAircraft(actor: Actor, input: CreateAircraftInput): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
@@ -203,6 +204,7 @@ export async function createAircraft(actor: Actor, input: CreateAircraftInput): 
     // `settings.manage`; coverage for it is no longer expressible (an
     // adjacent test can only reach the OUTER `aircraft.manage` gate).
     authorize(actor, 'settings.manage');
+    assertRateValidFromNotPast(input.rate.validFrom);
   }
 
   await assertRegistrationAvailable(input.registration);
@@ -220,7 +222,7 @@ export async function createAircraft(actor: Actor, input: CreateAircraftInput): 
     aircraft = rate
       ? await prisma.$transaction(async (tx) => {
           const created = await tx.aircraft.create({ data, select: AIRCRAFT_SELECT });
-          await createAircraftRateCore(tx, created.id, rate, actor.userId);
+          await upsertAircraftRateCore(tx, created.id, rate, actor.userId);
           return created;
         })
       : await prisma.aircraft.create({ data, select: AIRCRAFT_SELECT });
@@ -236,30 +238,59 @@ export async function createAircraft(actor: Actor, input: CreateAircraftInput): 
   return toListItem(aircraft);
 }
 
-/** Partial update: registration, type, model. Archiving is separate (AC 2). */
+/**
+ * Partial update: registration, type, model — plus, since story 19.3 (A17,
+ * R-19-m: the editor's ONE Salva), an optional `rate` block saved in the SAME
+ * transaction as the identity fields, so a rejected rate never leaves a
+ * half-saved form behind. Archiving and the availability actions stay
+ * separate endpoints (AC 2). With `rate`: the stricter `settings.manage`
+ * (same split as `createAircraft`), an archived aircraft is a 409 (same
+ * message as `createAircraftRate`), a past `validFrom` a 422
+ * `RATE_VALID_FROM_IN_PAST` — all before any write. Without `rate` the
+ * update is the single non-transactional call it always was. The response
+ * carries no rate (`AircraftListItem` is unchanged).
+ */
 export async function updateAircraft(actor: Actor, id: string, patch: UpdateAircraftInput): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
+  if (patch.rate) {
+    // Structurally unreachable today, same reasoning as `createAircraft`'s
+    // own `settings.manage` branch (review 14.9 F5).
+    authorize(actor, 'settings.manage');
+  }
 
   const existing = await prisma.aircraft.findUnique({ where: { id } });
   if (!existing) {
     throw new NotFoundError('Aircraft not found.');
   }
 
+  if (patch.rate) {
+    if (existing.archivedAt !== null) {
+      throw new ConflictError('Cannot add a rate to an archived aircraft.');
+    }
+    assertRateValidFromNotPast(patch.rate.validFrom);
+  }
+
   if (patch.registration !== undefined) {
     await assertRegistrationAvailable(patch.registration, id);
   }
 
+  const data = {
+    ...(patch.registration !== undefined && { registration: patch.registration }),
+    ...(patch.type !== undefined && { type: patch.type }),
+    ...(patch.model !== undefined && { model: patch.model }),
+  };
+
+  const rate = patch.rate;
+
   let aircraft;
   try {
-    aircraft = await prisma.aircraft.update({
-      where: { id },
-      data: {
-        ...(patch.registration !== undefined && { registration: patch.registration }),
-        ...(patch.type !== undefined && { type: patch.type }),
-        ...(patch.model !== undefined && { model: patch.model }),
-      },
-      select: AIRCRAFT_SELECT,
-    });
+    aircraft = rate
+      ? await prisma.$transaction(async (tx) => {
+          const updated = await tx.aircraft.update({ where: { id }, data, select: AIRCRAFT_SELECT });
+          await upsertAircraftRateCore(tx, id, rate, actor.userId);
+          return updated;
+        })
+      : await prisma.aircraft.update({ where: { id }, data, select: AIRCRAFT_SELECT });
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw new ConflictError('An aircraft with this registration already exists.');

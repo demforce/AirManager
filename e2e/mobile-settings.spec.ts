@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { seedAircraftRate } from './db-fixtures';
 
 /**
  * Impostazioni on a phone (story 15.8b, R-15.8b-d).
@@ -602,7 +603,7 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       const aircraft = await page.request.post('/api/v1/aircraft', { data: { registration: `I-BK${uniqueSuffix().replace(/[^A-Za-z0-9]/g, '').slice(-5).toUpperCase()}`, type: 'Ultraleggero 3 assi', model: 'Blocked' } });
       expect(aircraft.status()).toBe(201);
       aircraftId = ((await aircraft.json()) as { id: string }).id;
-      expect((await page.request.post(`/api/v1/aircraft/${aircraftId}/rates`, { data: { priceCentsPerHour: 12000, validFrom: '2020-01-01' } })).status()).toBe(201);
+      await seedAircraftRate(aircraftId, { studentPriceCents: 12000, pilotPriceCents: 12000, validFrom: '2020-01-01' });
 
       const takeoffAt = `${new Date().toISOString().slice(0, 10)}T09:00:00.000Z`;
       const flight = await page.request.post('/api/v1/flights', {

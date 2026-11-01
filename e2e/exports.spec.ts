@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -31,7 +32,7 @@ function uniqueSuffix(): string {
 const PAST_DATE = '2020-01-01';
 
 /** Same helper as `flight-log.spec.ts`'s `createAircraftWithRate`. */
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string; registration: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-EX${suffix}`.toUpperCase().slice(0, 20);
 
@@ -41,10 +42,7 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
 
   return { id: aircraft.id, registration };
 }

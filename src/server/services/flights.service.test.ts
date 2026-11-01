@@ -240,6 +240,7 @@ const CREATED_FLIGHT_ROW = {
   takeoffs: 1,
   landings: 1,
   aircraftRateCentsPerHour: 15000,
+  aircraftPriceCategory: 'PILOT' as const,
   aircraftAmountCents: 20000,
   instructorRateCentsPerHour: null,
   instructorAmountCents: null,
@@ -268,6 +269,8 @@ const ORIGINAL_FLIGHT_ROW = {
   // Story 14.3 review F3 — the flight's OWN recorded type, needed so
   // `correctFlight` can exempt a correction that keeps it unchanged.
   flightType: 'TOURISM' as const,
+  // Story 19.3 (Q-19.3-b) — the price column the original flight was charged.
+  aircraftPriceCategory: 'PILOT' as const,
   aircraft: { registration: 'I-ABCD' },
   movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: null }],
 };
@@ -326,7 +329,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
     getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
-    getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+    getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
     // Story 14.4 default: no blocking document — every PRE-EXISTING test in
     // this file (none of which cares about this guard) keeps passing
     // unmodified; the dedicated describe block below overrides this per test.
@@ -513,6 +516,8 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
 
       await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
+      // Story 19.3 (D-4/D-5): both profiles active (legacy data) reads as a pilot.
+      expect(flightCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ aircraftPriceCategory: 'PILOT' }) }));
     });
 
     // Ratifica R-14.3-b (PO, 2026-07-29): "un pilota deve poter essere
@@ -840,7 +845,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
     it('80 minutes at 150 €/h (15000 cents/h) -> 20000 cents (the PRD-testable case)', async () => {
       personFindUnique.mockResolvedValue(PILOT_PERSON);
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
 
       await registerFlight(adminActor(), BASE_INPUT);
 
@@ -854,7 +859,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
     it('30 minutes at 333 cents/h -> Math.round(166.5) = 167 (half-up)', async () => {
       personFindUnique.mockResolvedValue(PILOT_PERSON);
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 333 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 333, pilotPriceCents: 333 });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 30) });
 
       await registerFlight(adminActor(), input);
@@ -868,7 +873,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       // 50' @ 100 c/h -> 83.33 -> 83; 50' @ 101 c/h -> 84.166 -> 84; sum = 167.
       // A naive round((100+101)*50/60) would give round(167.5) = 168 instead.
       personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 100 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 100, pilotPriceCents: 100 });
       getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 101 });
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 50), instructorPersonId: 'person_instructor' });
 
@@ -885,6 +890,73 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
   });
 
+  // Story 19.3 (R-19-e, AC 9): the aircraft price is the column of the
+  // flying person's PROFILE, frozen on the flight with the category.
+  describe('registerFlight — price from the profile (story 19.3, AC 9)', () => {
+    const STUDENT_PERSON = { ...PILOT_PERSON, pilotProfile: null, studentProfile: { deactivatedAt: null } };
+    const SCHOOL_INPUT = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 60), flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
+
+    beforeEach(() => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 10000, pilotPriceCents: 15000 });
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 4000 });
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
+    });
+
+    function createdData(): Record<string, unknown> {
+      return (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+    }
+
+    it('a student-only person on a SCHOOL flight pays the STUDENT price', async () => {
+      personFindUnique.mockResolvedValueOnce(STUDENT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+      await registerFlight(adminActor(), SCHOOL_INPUT);
+
+      expect(createdData()).toMatchObject({ aircraftRateCentsPerHour: 10000, aircraftPriceCategory: 'STUDENT', aircraftAmountCents: 10000 });
+    });
+
+    it('a pilot on a TOURISM flight pays the PILOT price', async () => {
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-15', 60) });
+
+      await registerFlight(adminActor(), input);
+
+      expect(createdData()).toMatchObject({ aircraftRateCentsPerHour: 15000, aircraftPriceCategory: 'PILOT', aircraftAmountCents: 15000 });
+    });
+
+    it('a pilot on a SCHOOL flight with an instructor still pays the PILOT price (R-19-e to the letter)', async () => {
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+      await registerFlight(adminActor(), SCHOOL_INPUT);
+
+      expect(createdData()).toMatchObject({ aircraftRateCentsPerHour: 15000, aircraftPriceCategory: 'PILOT', aircraftAmountCents: 15000 });
+    });
+
+    it('both profiles active (legacy data, D-4) reads as a pilot', async () => {
+      personFindUnique
+        .mockResolvedValueOnce({ ...PILOT_PERSON, studentProfile: { deactivatedAt: null } })
+        .mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+      await registerFlight(adminActor(), SCHOOL_INPUT);
+
+      expect(createdData()).toMatchObject({ aircraftRateCentsPerHour: 15000, aircraftPriceCategory: 'PILOT' });
+    });
+
+    it('the DTO carries the frozen category in the breakdown', async () => {
+      personFindUnique.mockResolvedValueOnce(STUDENT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, aircraftRateCentsPerHour: 10000, aircraftPriceCategory: 'STUDENT' });
+
+      const result = await registerFlight(adminActor(), SCHOOL_INPUT);
+
+      expect(result.flight.breakdown.aircraftPriceCategory).toBe('STUDENT');
+      expect(result.flight.breakdown.aircraftRateCentsPerHour).toBe(10000);
+    });
+  });
+
   describe('registerFlight — the transaction (AC 1/2: Flight + movement(-total))', () => {
     beforeEach(() => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
@@ -893,7 +965,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
       queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
@@ -954,6 +1026,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(result.flight.id).toBe('flight_1');
       expect(result.flight.breakdown).toEqual({
         aircraftRateCentsPerHour: 15000,
+        aircraftPriceCategory: 'PILOT',
         aircraftAmountCents: 20000,
         totalAmountCents: 20000,
       });
@@ -979,7 +1052,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
       queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
@@ -1013,7 +1086,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountUpsert.mockResolvedValue({ id: 'account_1' });
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
       queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
@@ -1100,7 +1173,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountUpsert.mockResolvedValue({ id: 'account_1' });
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
 
@@ -1119,7 +1192,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
@@ -1184,7 +1257,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountUpsert.mockResolvedValue({ id: 'account_1' });
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
@@ -1645,7 +1718,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       flightFindUnique.mockResolvedValue(ORIGINAL_FLIGHT_ROW);
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
-      getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+      getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
       getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
@@ -1786,6 +1859,47 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
           data: expect.objectContaining({ forcedByUserId: 'admin_1', forceReason: 'Velivolo corretto a posteriori', forcedAt: expect.any(Date) }),
         }),
       );
+    });
+
+    // Story 19.3 (Q-19.3-b, AC 11): correcting is not registering anew — a
+    // correction that keeps the person keeps the price column the original
+    // flight was charged, even if the person took the licence since.
+    describe('price category on a correction (story 19.3, Q-19.3-b, AC 11)', () => {
+      const STUDENT_ORIGINAL = {
+        ...ORIGINAL_FLIGHT_ROW,
+        flightType: 'SCHOOL' as const,
+        aircraftPriceCategory: 'STUDENT' as const,
+        instructorProfile: { person: { id: 'person_instructor' } },
+      };
+      const SCHOOL_CORRECTION = correctFlightSchema.parse({ ...CORRECT_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
+
+      beforeEach(() => {
+        flightFindUnique.mockResolvedValue(STUDENT_ORIGINAL);
+        getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 10000, pilotPriceCents: 15000 });
+        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 4000 });
+      });
+
+      function createdData(): Record<string, unknown> {
+        return (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+      }
+
+      it('same person, now a pilot (student deactivated, pilot activated): the corrected flight stays STUDENT at the student price of the flight-date rate', async () => {
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+        await correctFlight(adminActor(), 'flight_orig', SCHOOL_CORRECTION);
+
+        expect(getEffectiveRateMock).toHaveBeenCalledWith(expect.anything(), 'aircraft_1', new Date('2020-01-15T00:00:00.000Z'));
+        expect(createdData()).toMatchObject({ aircraftPriceCategory: 'STUDENT', aircraftRateCentsPerHour: 10000, aircraftAmountCents: 5000 });
+      });
+
+      it('a correction that CHANGES the person to a pilot takes the new person\'s profile: PILOT', async () => {
+        personFindUnique.mockResolvedValueOnce({ ...PILOT_PERSON, id: 'person_2' }).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+        const input = correctFlightSchema.parse({ ...SCHOOL_CORRECTION, personId: 'person_2' });
+
+        await correctFlight(adminActor(), 'flight_orig', input);
+
+        expect(createdData()).toMatchObject({ aircraftPriceCategory: 'PILOT', aircraftRateCentsPerHour: 15000, aircraftAmountCents: 7500 });
+      });
     });
 
     // Review F3 (ratifica R-14.3-a): correcting a flight while KEEPING its

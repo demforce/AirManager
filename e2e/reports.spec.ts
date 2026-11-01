@@ -12,6 +12,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 /**
  * Statistiche / reports (epic 12, story 12.10, AC 4). `stats.service.ts`
@@ -87,23 +88,19 @@ async function createInstructorPerson(page: Page, tag: string): Promise<{ person
   return { personId: person.id, firstName, lastName };
 }
 
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string; registration: string }> {
   const registration = uniqueRegistration('RP');
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
     data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour, validFrom: RATE_VALID_FROM } });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: RATE_VALID_FROM });
   return { id: aircraft.id, registration };
 }
 
 async function createInstructorRate(page: Page, instructorPersonId: string, priceCentsPerHour: number): Promise<void> {
-  const rateResponse = await page.request.post(`/api/v1/people/${instructorPersonId}/instructor-rates`, {
-    data: { priceCentsPerHour, validFrom: RATE_VALID_FROM },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedInstructorRate(instructorPersonId, { priceCentsPerHour, validFrom: RATE_VALID_FROM });
 }
 
 type RegisterFlightParams = {

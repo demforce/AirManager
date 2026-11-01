@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 /**
  * Story 15.6 — the phone face of the flight registry: the widest table of the
@@ -99,8 +100,7 @@ async function createAircraftWithRate(page: Page, tag: string): Promise<Aircraft
   });
   expect(created.status(), await created.text()).toBe(201);
   const { id } = (await created.json()) as { id: string };
-  const rate = await page.request.post(`/api/v1/aircraft/${id}/rates`, { data: { priceCentsPerHour: 15000, validFrom: PAST_DATE } });
-  expect(rate.status(), await rate.text()).toBe(201);
+  await seedAircraftRate(id, { studentPriceCents: 15000, pilotPriceCents: 15000, validFrom: PAST_DATE });
   return { id, registration };
 }
 
@@ -137,8 +137,7 @@ async function createInstructor(page: Page, tag: string): Promise<Person> {
   const { id } = await createPerson(page, 'Mobile', lastName);
   const profile = await page.request.put(`/api/v1/people/${id}/profiles/instructor`, { data: { ratings: 'FI(A)' } });
   expect(profile.status(), await profile.text()).toBe(200);
-  const rate = await page.request.post(`/api/v1/people/${id}/instructor-rates`, { data: { priceCentsPerHour: 5000, validFrom: PAST_DATE } });
-  expect(rate.status(), await rate.text()).toBe(201);
+  await seedInstructorRate(id, { priceCentsPerHour: 5000, validFrom: PAST_DATE });
   return personOf(id, 'Mobile', lastName);
 }
 

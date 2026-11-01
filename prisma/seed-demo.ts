@@ -126,18 +126,20 @@ const STANDARD_EXPIRY_TYPES: Array<{
 
 // --- fleet ------------------------------------------------------------------
 
+// Story 19.3 (D-9): two billed prices per rate; the student one is the pilot
+// one minus 7,00 €/h, demo data only, so the two columns visibly differ.
 const AIRCRAFT = [
   {
     registration: 'I-B412', type: 'Ultraleggero 3 assi', model: 'Tecnam P92 Echo Super',
-    rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 12500 }, { validFrom: '2026-01-01', priceCentsPerHour: 13200, dryHourlyRateCents: 10500 }],
+    rates: [{ validFrom: '2025-06-01', studentPriceCents: 11800, pilotPriceCents: 12500 }, { validFrom: '2026-01-01', studentPriceCents: 12500, pilotPriceCents: 13200 }],
   },
   {
     registration: 'I-A661', type: 'Ultraleggero 3 assi', model: 'Tecnam P2002 Sierra',
-    rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 13000 }, { validFrom: '2026-01-01', priceCentsPerHour: 13800, dryHourlyRateCents: 11000 }],
+    rates: [{ validFrom: '2025-06-01', studentPriceCents: 12300, pilotPriceCents: 13000 }, { validFrom: '2026-01-01', studentPriceCents: 13100, pilotPriceCents: 13800 }],
   },
   {
     registration: 'I-PDVB', type: 'Aereo certificato', model: 'Piper PA-28-161 Warrior II',
-    rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 17900 }, { validFrom: '2026-01-01', priceCentsPerHour: 18900, dryHourlyRateCents: 15200 }],
+    rates: [{ validFrom: '2025-06-01', studentPriceCents: 17200, pilotPriceCents: 17900 }, { validFrom: '2026-01-01', studentPriceCents: 18200, pilotPriceCents: 18900 }],
   },
 ];
 
@@ -392,8 +394,8 @@ async function main(): Promise<void> {
       await prisma.aircraftRate.create({
         data: {
           aircraftId: created.id,
-          priceCentsPerHour: rate.priceCentsPerHour,
-          dryHourlyRateCents: 'dryHourlyRateCents' in rate ? rate.dryHourlyRateCents : null,
+          studentPriceCents: rate.studentPriceCents,
+          pilotPriceCents: rate.pilotPriceCents,
           validFrom: new Date(rate.validFrom),
           actorUserId: admin.userId,
         },

@@ -468,6 +468,12 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
     // adjacent test can only reach the OUTER `people.manage` gate).
     authorize(actor, 'users.manage');
   }
+  // Story 19.3 (R-19-e, Q-19.3-c): the body alone decides it for a person who
+  // does not exist yet — no concurrency to serialize, so no need for
+  // `assertStudentProfileExclusive`'s read; same code, before any query.
+  if (input.profiles?.student && (input.profiles.pilot || input.profiles.instructor)) {
+    throw studentProfileExclusiveError();
+  }
 
   await assertUnique(input.email);
 
@@ -662,18 +668,62 @@ async function upsertInstructorProfileCore(tx: Prisma.TransactionClient, personI
   });
 }
 
+function studentProfileExclusiveError(): ValidationError {
+  return new ValidationError(
+    'The student profile cannot be active together with the pilot or instructor profile.',
+    undefined,
+    'STUDENT_PROFILE_EXCLUSIVE',
+  );
+}
+
+/**
+ * The student profile excludes the pilot AND the instructor profile (story
+ * 19.3, R-19-e — "a student has no licence" — extended by Q-19.3-c: an
+ * instructor holds one too). Reads the person's three profiles FROM `tx` and
+ * throws 422 `STUDENT_PROFILE_EXCLUSIVE` when the student one is active
+ * together with either of the others. Called AFTER the profile writes of the
+ * same transaction, so it judges the FINAL state and its throw rolls back
+ * everything the transaction wrote (profile and `Account` alike): a "deactivate
+ * Student + activate Pilot" pair in one save passes, "activate Pilot" with
+ * Student still active does not. The caller must hold the `Person` row lock
+ * (`upsertProfile`) so two concurrent activations cannot both read the other
+ * profile inactive. Exported for the person composite of story 19.4.
+ */
+export async function assertStudentProfileExclusive(tx: Prisma.TransactionClient, personId: string): Promise<void> {
+  const profiles = await tx.person.findUnique({
+    where: { id: personId },
+    select: {
+      pilotProfile: { select: { deactivatedAt: true } },
+      studentProfile: { select: { deactivatedAt: true } },
+      instructorProfile: { select: { deactivatedAt: true } },
+    },
+  });
+  const isActive = (profile: { deactivatedAt: Date | null } | null | undefined): boolean => profile != null && profile.deactivatedAt === null;
+  if (isActive(profiles?.studentProfile) && (isActive(profiles?.pilotProfile) || isActive(profiles?.instructorProfile))) {
+    throw studentProfileExclusiveError();
+  }
+}
+
 /**
  * Activates or updates one of a person's profiles (story 2.2, AC 1/2).
  * Creates the profile row if it doesn't exist yet; if it does — active or
- * previously deactivated — updates its data and clears `deactivatedAt`
- * (AC 2: reactivating, e.g. the student→pilot transition, is just an
- * upsert). `Person.id` never changes across this. Write access:
+ * previously deactivated — updates its data and clears `deactivatedAt`.
+ * Since story 19.3 the student profile excludes the pilot and the instructor
+ * one (`assertStudentProfileExclusive`, 422 `STUDENT_PROFILE_EXCLUSIVE`): the
+ * student→pilot transition is now "deactivate Student, then activate Pilot".
+ * `Person.id` never changes across this. Write access:
  * `people.manage`. Allowed on an archived person (Dev Notes, consistent with
- * review 2.1 F3: editing an archived person is by-design). Each branch
- * below wraps its `*Core` helper in a trivial `$transaction` — same
- * interactive-callback idiom as `accounts.service.ts#readOverview`, kept
- * even for the instructor branch (no companion write) so all three stay
- * uniform and reusable by `createPerson`'s composite the same way.
+ * review 2.1 F3: editing an archived person is by-design).
+ *
+ * Each branch runs in ONE `$transaction` whose FIRST statement locks the
+ * `Person` row — `FOR NO KEY UPDATE`, the same mode and the same reason as
+ * `bookings.service.ts#lockBookingPeople` (it serializes the writers of this
+ * person's profiles without blocking the `FOR KEY SHARE` of any FK check on
+ * the person) — and doubles as the existence check (0 rows → 404). Then the
+ * `*Core` helper (shared with `createPerson`'s composite), then the
+ * exclusivity check on the final state. Lock order inside it: `Person` →
+ * the profile row → `Account` (the core's upsert); no transaction in this
+ * codebase takes `Account` and then `Person`.
  */
 export async function upsertProfile(actor: Actor, personId: string, type: 'pilot', data: PilotProfileInput): Promise<PilotProfileDto>;
 export async function upsertProfile(actor: Actor, personId: string, type: 'student', data: StudentProfileInput): Promise<StudentProfileDto>;
@@ -691,22 +741,22 @@ export async function upsertProfile(
 ): Promise<PilotProfileDto | StudentProfileDto | InstructorProfileDto> {
   authorize(actor, 'people.manage');
 
-  const person = await prisma.person.findUnique({ where: { id: personId }, select: { id: true } });
-  if (!person) {
-    throw new NotFoundError('Person not found.');
-  }
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Person" WHERE "id" = ${personId} FOR NO KEY UPDATE`;
+    if (locked.length === 0) {
+      throw new NotFoundError('Person not found.');
+    }
 
-  if (type === 'pilot') {
-    const input = data as PilotProfileInput;
-    return prisma.$transaction((tx) => upsertPilotProfileCore(tx, personId, input));
-  }
+    const profile =
+      type === 'pilot'
+        ? await upsertPilotProfileCore(tx, personId, data as PilotProfileInput)
+        : type === 'student'
+          ? await upsertStudentProfileCore(tx, personId, data as StudentProfileInput)
+          : await upsertInstructorProfileCore(tx, personId);
 
-  if (type === 'student') {
-    const input = data as StudentProfileInput;
-    return prisma.$transaction((tx) => upsertStudentProfileCore(tx, personId, input));
-  }
-
-  return prisma.$transaction((tx) => upsertInstructorProfileCore(tx, personId));
+    await assertStudentProfileExclusive(tx, personId);
+    return profile;
+  });
 }
 
 /**

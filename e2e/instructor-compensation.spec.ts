@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -60,7 +61,7 @@ async function createStudentPerson(page: Page, tag: string): Promise<{ personId:
 }
 
 /** Aircraft + rate (`NO_AIRCRAFT_RATE` 422 otherwise), same helper shape as `school.spec.ts#createAircraftWithRate`. */
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-CP${suffix}`.toUpperCase().slice(0, 20);
 
@@ -70,18 +71,14 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour, validFrom: PAST_DATE } });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
 
   return { id: aircraft.id };
 }
 
 /** A SCHOOL flight ALSO bills the instructor (`flights.service.ts` 422 `NO_INSTRUCTOR_RATE` otherwise) — the STUDENT-charged rate (D8), unrelated to the payout rate this story adds. Same helper as `school.spec.ts#createInstructorRate`. */
 async function createInstructorRate(page: Page, instructorPersonId: string, priceCentsPerHour: number): Promise<void> {
-  const rateResponse = await page.request.post(`/api/v1/people/${instructorPersonId}/instructor-rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedInstructorRate(instructorPersonId, { priceCentsPerHour, validFrom: PAST_DATE });
 }
 
 /**

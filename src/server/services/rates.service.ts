@@ -1,27 +1,26 @@
 import type { Prisma } from '@/generated/prisma/client';
-import { parseDateOnlyUtc, todayDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
+import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { CreateAircraftRateInput } from '@/lib/schemas/aircraft';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { ConflictError, NotFoundError } from './errors';
-
-// `parseDateOnlyUtc`/`todayDateOnlyUtc`/`toDateOnlyString` used to live here;
-// story 4.2 extracted them into `src/lib/date-only.ts` so this service and
-// its twin `instructor-rates.service.ts` share one implementation instead of
-// duplicating it. Re-exported so existing importers (`aircraft/page.tsx`)
-// don't need to change their import path.
-export { todayDateOnlyUtc };
+import { ConflictError, NotFoundError, ValidationError } from './errors';
 
 /**
- * Historicized aircraft rates (epic 4, story 4.1, AD-4/AD-2). Append-only
- * (AD-3's spirit) — there is deliberately no update/delete function here: a
- * wrong price is corrected by `createAircraftRate`-ing a NEW rate with a
- * later `validFrom`, the history never changes.
+ * Historicized aircraft rates (epic 4, story 4.1, AD-4/AD-2). Two billed
+ * prices per row since story 19.3 (R-19-e): `studentPriceCents` and
+ * `pilotPriceCents` — the flight takes the column of the flying person's
+ * profile (`flights.service.ts#resolveFlightInput`). Writes (R-19-f): a
+ * `validFrom` today or later only (`assertRateValidFromNotPast`), and a row
+ * whose `validFrom` is still today or later is rewritten in place
+ * (`upsertAircraftRateCore`) — a past row never changes.
  */
 export type AircraftRateListItem = {
   id: string;
   aircraftId: string;
-  priceCentsPerHour: number;
+  studentPriceCents: number;
+  pilotPriceCents: number;
   /** Calendar-only date (`YYYY-MM-DD`), never a timestamp — see `toDateOnlyString`. */
   validFrom: string;
   actorUserId: string;
@@ -32,7 +31,8 @@ export type AircraftRateListItem = {
 const RATE_SELECT = {
   id: true,
   aircraftId: true,
-  priceCentsPerHour: true,
+  studentPriceCents: true,
+  pilotPriceCents: true,
   validFrom: true,
   actorUserId: true,
   actorUser: { select: { email: true } },
@@ -42,7 +42,8 @@ const RATE_SELECT = {
 type SelectedRate = {
   id: string;
   aircraftId: string;
-  priceCentsPerHour: number;
+  studentPriceCents: number;
+  pilotPriceCents: number;
   validFrom: Date;
   actorUserId: string;
   actorUser: { email: string };
@@ -53,7 +54,8 @@ function toListItem(rate: SelectedRate): AircraftRateListItem {
   return {
     id: rate.id,
     aircraftId: rate.aircraftId,
-    priceCentsPerHour: rate.priceCentsPerHour,
+    studentPriceCents: rate.studentPriceCents,
+    pilotPriceCents: rate.pilotPriceCents,
     validFrom: toDateOnlyString(rate.validFrom),
     actorUserId: rate.actorUserId,
     actorEmail: rate.actorUser.email,
@@ -62,77 +64,61 @@ function toListItem(rate: SelectedRate): AircraftRateListItem {
 }
 
 /**
- * Dry-rate-inclusive projection (story 12.5, AC 1) — used ONLY by
- * `createAircraftRate`/`listAircraftRates`, deliberately a SEPARATE select
- * object from `RATE_SELECT`: the pricing-critical hot path
- * (`getEffectiveRate`/`getEffectiveRates`, read by `flights.service.ts`)
- * stays byte-for-byte unchanged — the dry rate is display-only and never
- * feeds it.
+ * The one decorrenza rule of both rate twins (story 19.3, R-19-f, A16): a new
+ * or rewritten rate takes effect TODAY or later, "today" being the
+ * Europe/Rome calendar day — a past `validFrom` would reprice days whose
+ * flights already froze the old price. Checked by every rate write path
+ * (`POST /aircraft/{id}/rates`, the `rate` block of `POST`/`PATCH
+ * /aircraft`, `POST /people/{id}/instructor-rates`) BEFORE any write and
+ * before any transaction. `validFrom` is already a `z.iso.date()` string.
  */
-const RATE_SELECT_WITH_DRY = {
-  ...RATE_SELECT,
-  dryHourlyRateCents: true,
-} as const;
-
-export type AircraftRateListItemWithDry = AircraftRateListItem & { dryHourlyRateCents: number | null };
-
-type SelectedRateWithDry = SelectedRate & { dryHourlyRateCents: number | null };
-
-function toListItemWithDry(rate: SelectedRateWithDry): AircraftRateListItemWithDry {
-  return { ...toListItem(rate), dryHourlyRateCents: rate.dryHourlyRateCents };
-}
-
-/** Prisma unique-constraint violation (same pattern as every other service). */
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2002';
-}
-
-/**
- * Pre-check for the check-then-write race the `try`/`catch` around `create`
- * backstops (same pattern as `aircraft.service.ts#assertRegistrationAvailable`).
- */
-async function assertRateAvailable(aircraftId: string, validFrom: Date): Promise<void> {
-  const existing = await prisma.aircraftRate.findFirst({
-    where: { aircraftId, validFrom },
-    select: { id: true },
-  });
-  if (existing) {
-    throw new ConflictError('A rate with this validFrom already exists for this aircraft.');
+export function assertRateValidFromNotPast(validFrom: string): void {
+  if (parseDateOnlyUtc(validFrom).getTime() < todayDateOnlyUtcInZone(APP_TIMEZONE).getTime()) {
+    throw new ValidationError('validFrom cannot be in the past.', undefined, 'RATE_VALID_FROM_IN_PAST');
   }
 }
 
 /**
- * The raw `AircraftRate` insert behind `createAircraftRate` (story 14.8,
- * same `createPersonCore` precedent in `people.service.ts`) — extracted so
- * the aircraft composite-create transaction
- * (`aircraft.service.ts#createAircraft`, "form velivolo unificato") can run
- * it inside the SAME `tx` as the aircraft insert, without duplicating the
- * write. No `assertRateAvailable` pre-check here (unlike the standalone
- * endpoint above): `aircraftId` is a brand-new id at this point, so the
- * `[aircraftId, validFrom]` unique constraint can never collide.
+ * The ONLY writer of `AircraftRate` (story 19.3, AD-2): inserts the rate, or
+ * rewrites the prices (and the actor) of the row already on that
+ * `(aircraftId, validFrom)` — callers have already checked
+ * `assertRateValidFromNotPast`, so the row it can rewrite is never a past
+ * one. `createdAt` keeps the first write. Runs on the caller's `tx`:
+ * `createAircraftRate` (its own), and the aircraft composites
+ * `aircraft.service.ts#createAircraft`/`#updateAircraft` (theirs, next to the
+ * aircraft write). A flat upsert — no nested read in its `select` — so
+ * Prisma emits a native `INSERT … ON CONFLICT DO UPDATE` and two concurrent
+ * writes of the same day can never collide on the unique constraint.
  */
-export async function createAircraftRateCore(
+export async function upsertAircraftRateCore(
   tx: Prisma.TransactionClient,
   aircraftId: string,
   input: CreateAircraftRateInput,
   actorUserId: string,
-): Promise<void> {
-  await tx.aircraftRate.create({
-    data: {
+): Promise<string> {
+  const validFrom = parseDateOnlyUtc(input.validFrom);
+  const rate = await tx.aircraftRate.upsert({
+    where: { aircraftId_validFrom: { aircraftId, validFrom } },
+    create: {
       aircraftId,
-      priceCentsPerHour: input.priceCentsPerHour,
-      dryHourlyRateCents: input.dryHourlyRateCents ?? null,
-      validFrom: parseDateOnlyUtc(input.validFrom),
+      studentPriceCents: input.studentPriceCents,
+      pilotPriceCents: input.pilotPriceCents,
+      validFrom,
       actorUserId,
     },
+    update: { studentPriceCents: input.studentPriceCents, pilotPriceCents: input.pilotPriceCents, actorUserId },
+    select: { id: true },
   });
+  return rate.id;
 }
 
 /**
- * Records a new historicized rate (AC 1/2). `settings.manage` (admin) only —
- * pricing configuration, deliberately stricter than day-to-day fleet
- * management (`aircraft.manage`, ADMIN-only, which only gets read access
- * below) — same split as `createCashCategory` vs `listCashCategories`.
+ * Records a rate (AC 1/2), or rewrites the one already on that `validFrom`
+ * (story 19.3, R-19-f: a 201 with the updated row, never a 409).
+ * `settings.manage` (admin) only — pricing configuration, deliberately
+ * stricter than day-to-day fleet management (`aircraft.manage`, which only
+ * gets read access below) — same split as `createCashCategory` vs
+ * `listCashCategories`.
  *
  * Decision (Dev Notes left this open): an ARCHIVED aircraft rejects new
  * rates with a 409, not a 404 — the aircraft demonstrably exists (an
@@ -142,11 +128,7 @@ export async function createAircraftRateCore(
  * "already archived" `ConflictError` for the same "valid id, wrong state"
  * shape.
  */
-export async function createAircraftRate(
-  actor: Actor,
-  aircraftId: string,
-  input: CreateAircraftRateInput,
-): Promise<AircraftRateListItemWithDry> {
+export async function createAircraftRate(actor: Actor, aircraftId: string, input: CreateAircraftRateInput): Promise<AircraftRateListItem> {
   authorize(actor, 'settings.manage');
 
   const aircraft = await prisma.aircraft.findUnique({ where: { id: aircraftId }, select: { id: true, archivedAt: true } });
@@ -156,45 +138,28 @@ export async function createAircraftRate(
   if (aircraft.archivedAt !== null) {
     throw new ConflictError('Cannot add a rate to an archived aircraft.');
   }
+  assertRateValidFromNotPast(input.validFrom);
 
-  const validFrom = parseDateOnlyUtc(input.validFrom);
+  // The response carries the actor's email (a nested read), which would
+  // turn the upsert into a non-native read-then-write: write flat, read after.
+  const rate = await prisma.$transaction(async (tx) => {
+    const id = await upsertAircraftRateCore(tx, aircraftId, input, actor.userId);
+    return tx.aircraftRate.findUniqueOrThrow({ where: { id }, select: RATE_SELECT });
+  });
 
-  // Check-then-write pre-check; the try/catch below backstops the
-  // concurrency race (lezione review: "mai fidarsi solo del pre-check").
-  await assertRateAvailable(aircraftId, validFrom);
-
-  let rate;
-  try {
-    rate = await prisma.aircraftRate.create({
-      data: {
-        aircraftId,
-        priceCentsPerHour: input.priceCentsPerHour,
-        // Optional "dry" rate (story 12.5, AC 1) — display-only.
-        dryHourlyRateCents: input.dryHourlyRateCents ?? null,
-        validFrom,
-        actorUserId: actor.userId,
-      },
-      select: RATE_SELECT_WITH_DRY,
-    });
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new ConflictError('A rate with this validFrom already exists for this aircraft.');
-    }
-    throw error;
-  }
-
-  return toListItemWithDry(rate);
+  return toListItem(rate);
 }
 
 /**
  * Lists an aircraft's full rate history, most recent `validFrom` first (AC
- * 1). `aircraft.manage` (ADMIN-only) — a deliberately wider read than the
+ * 1) — kept for API clients (story 19.3, D-2): the UI shows only the current
+ * and the next scheduled rate, never this list. `aircraft.manage` (ADMIN-only) — a deliberately wider read than the
  * `settings.manage` write above (Dev Notes: an admin reads fleet pricing
  * through this wider permission, even though the same admin also sets it).
  * No pagination (small, admin-managed list, same
  * choice as `listCashCategories`) but defensively capped at `take: 500`.
  */
-export async function listAircraftRates(actor: Actor, aircraftId: string): Promise<AircraftRateListItemWithDry[]> {
+export async function listAircraftRates(actor: Actor, aircraftId: string): Promise<AircraftRateListItem[]> {
   authorize(actor, 'aircraft.manage');
 
   const aircraft = await prisma.aircraft.findUnique({ where: { id: aircraftId }, select: { id: true } });
@@ -204,12 +169,12 @@ export async function listAircraftRates(actor: Actor, aircraftId: string): Promi
 
   const rates = await prisma.aircraftRate.findMany({
     where: { aircraftId },
-    select: RATE_SELECT_WITH_DRY,
+    select: RATE_SELECT,
     orderBy: [{ validFrom: 'desc' }],
     take: 500,
   });
 
-  return rates.map(toListItemWithDry);
+  return rates.map(toListItem);
 }
 
 /**
@@ -219,10 +184,9 @@ export async function listAircraftRates(actor: Actor, aircraftId: string): Promi
  * as a real Postgres `date` — TZ-safe (review 3.5 F1's lesson: a raw
  * `date >= timestamptz` comparison promotes to the session timezone and can
  * drop boundary rows; the typed query never does that promotion). Returns
- * `null` when the aircraft has no rate on or before `onDate` — this is the
- * hook epic 5's flight snapshot will call; it is NOT consumed by a
- * dedicated route in this story, only internally (the "current price" shown
- * in the UI, `onDate = today`).
+ * `null` when the aircraft has no rate on or before `onDate`. Read by the
+ * flight snapshot (`flights.service.ts#resolveFlightInput`, `onDate =
+ * flightDate`); no route of its own.
  */
 export async function getEffectiveRate(actor: Actor, aircraftId: string, onDate: Date): Promise<AircraftRateListItem | null> {
   authorize(actor, 'aircraft.manage');
@@ -266,6 +230,41 @@ export async function getEffectiveRates(
     where: { aircraftId: { in: aircraftIds }, validFrom: { lte: onDate } },
     select: RATE_SELECT,
     orderBy: [{ aircraftId: 'asc' }, { validFrom: 'desc' }],
+    distinct: ['aircraftId'],
+  });
+
+  for (const rate of rates) {
+    result.set(rate.aircraftId, toListItem(rate));
+  }
+
+  return result;
+}
+
+/**
+ * Batched NEXT scheduled rate (story 19.3, Q-19.3-d): per aircraft, the row
+ * with the MINIMUM `validFrom > onDate` — the one line "variazione
+ * programmata" the aircraft editor shows under its price fields (only the
+ * next one, never a list). The mirror of `getEffectiveRates`: same
+ * `authorize`, same typed query on `@db.Date`, same one-query `distinct`
+ * trick with the order flipped to `validFrom asc`, same "every requested id
+ * has an entry, `null` when nothing is scheduled" contract.
+ */
+export async function getNextScheduledRates(
+  actor: Actor,
+  aircraftIds: string[],
+  onDate: Date,
+): Promise<Map<string, AircraftRateListItem | null>> {
+  authorize(actor, 'aircraft.manage');
+
+  const result = new Map<string, AircraftRateListItem | null>(aircraftIds.map((id) => [id, null]));
+  if (aircraftIds.length === 0) {
+    return result;
+  }
+
+  const rates = await prisma.aircraftRate.findMany({
+    where: { aircraftId: { in: aircraftIds }, validFrom: { gt: onDate } },
+    select: RATE_SELECT,
+    orderBy: [{ aircraftId: 'asc' }, { validFrom: 'asc' }],
     distinct: ['aircraftId'],
   });
 

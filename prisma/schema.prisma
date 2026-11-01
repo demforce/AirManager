@@ -316,30 +316,31 @@ model Aircraft {
   bookings     Booking[]
 }
 
-/// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). Append-only
-/// (AD-3's spirit): there is deliberately NO update/delete API — a wrong
-/// price is corrected by inserting ANOTHER rate with a later `validFrom`,
-/// the history is never rewritten. The rate in effect for a given date D is
+/// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). TWO billed
+/// prices (story 19.3, R-19-e): `studentPriceCents` and `pilotPriceCents`,
+/// both integer euro cents (AD-2) and always > 0 — enforced at the
+/// Zod/service boundary, not a DB constraint. A flight takes the column of
+/// the PROFILE of whoever flies it (`flights.service.ts#resolveFlightInput`)
+/// and freezes it, together with the category it applied
+/// (`Flight.aircraftPriceCategory`). The rate in effect for a given date D is
 /// the row with the MAXIMUM `validFrom <= D` (AD-4) — see
-/// `rates.service.ts#getEffectiveRate`, the hook epic 5's flight snapshot
-/// will call (not implemented here). `priceCentsPerHour` is an integer
-/// number of euro cents (AD-2) and always > 0 — enforced at the Zod/service
-/// boundary, not a DB constraint.
+/// `rates.service.ts#getEffectiveRate`, read by the flight snapshot.
 /// `validFrom` is calendar-only (`@db.Date`, same convention as
 /// `AccountMovement.effectiveDate`) — a rate takes effect on a whole day,
-/// never at a specific time. `@@unique([aircraftId, validFrom])` backs AC 2:
-/// two rates for the same aircraft on the same day is a 409, not a silent
-/// overwrite.
+/// never at a specific time. Writes (story 19.3, R-19-f): `validFrom` must be
+/// today or later (Europe/Rome calendar, A16 — `RATE_VALID_FROM_IN_PAST`),
+/// and a row whose `validFrom` is today or later is REWRITTEN in place by a
+/// second write on the same day (`@@unique([aircraftId, validFrom])` backs
+/// the upsert, `rates.service.ts#upsertAircraftRateCore`) — a past row can
+/// never change, so a registered flight's frozen price never disagrees with
+/// the history. The history stays in the DB (and on `GET .../rates` for API
+/// clients); the UI shows only the current rate and the next scheduled one.
 model AircraftRate {
   id                 String   @id @default(cuid())
   aircraftId         String
   aircraft           Aircraft @relation(fields: [aircraftId], references: [id])
-  priceCentsPerHour  Int
-  /// Optional "dry" (fuel-excluded) hourly rate (story 12.5, AC 1) —
-  /// DISPLAY-ONLY: pricing/flight-cost computation (`rates.service.ts#getEffectiveRate`/
-  /// `#getEffectiveRates`, `flights.service.ts`) reads exclusively
-  /// `priceCentsPerHour` ("wet") and never this column.
-  dryHourlyRateCents Int?
+  studentPriceCents  Int
+  pilotPriceCents    Int
   validFrom          DateTime @db.Date
   /// The acting `User.id` (`Actor.userId`, always present) — who recorded
   /// this rate. Not `personId`: a staff member recording it may have no
@@ -353,21 +354,19 @@ model AircraftRate {
 }
 
 /// Historicized hourly rate for an instructor (story 4.2, epic 4; AD-4/AD-2)
-/// — the deliberate twin of `AircraftRate`, same shape and same rules, just
-/// keyed on `instructorProfileId` instead of `aircraftId`. Append-only (AD-3's
-/// spirit): there is deliberately NO update/delete API — a wrong price is
-/// corrected by inserting ANOTHER rate with a later `validFrom`, the history
-/// is never rewritten. The rate in effect for a given date D is the row with
-/// the MAXIMUM `validFrom <= D` (AD-4) — see
-/// `instructor-rates.service.ts#getEffectiveInstructorRate`, the hook epic 5's
-/// flight snapshot will call (not implemented here). `priceCentsPerHour` is an
-/// integer number of euro cents (AD-2) and always > 0 — enforced at the
-/// Zod/service boundary, not a DB constraint, same choice as `AircraftRate`.
-/// `validFrom` is calendar-only (`@db.Date`, same convention as
-/// `AccountMovement.effectiveDate`/`AircraftRate.validFrom`) — a rate takes
-/// effect on a whole day, never at a specific time.
-/// `@@unique([instructorProfileId, validFrom])` backs AC 2: two rates for the
-/// same instructor on the same day is a 409, not a silent overwrite.
+/// — the twin of `AircraftRate`, same rules, keyed on `instructorProfileId`
+/// instead of `aircraftId`, with ONE price. The rate in effect for a given
+/// date D is the row with the MAXIMUM `validFrom <= D` (AD-4) — see
+/// `instructor-rates.service.ts#getEffectiveInstructorRate`, read by the
+/// flight snapshot. `priceCentsPerHour` is an integer number of euro cents
+/// (AD-2) and always > 0 — enforced at the Zod/service boundary, not a DB
+/// constraint, same choice as `AircraftRate`. `validFrom` is calendar-only
+/// (`@db.Date`, same convention as `AircraftRate.validFrom`). Writes (story
+/// 19.3, R-19-f): `validFrom` today or later (Europe/Rome, A16), and a row
+/// whose `validFrom` is today or later is rewritten in place
+/// (`@@unique([instructorProfileId, validFrom])` backs the upsert,
+/// `instructor-rates.service.ts#upsertInstructorRateCore`). The history stays
+/// in the DB, not in the UI.
 model InstructorRate {
   id                  String            @id @default(cuid())
   instructorProfileId String
@@ -698,7 +697,7 @@ model CashMovement {
 /// (AD-2 — same cardinal rule as `Flight.minutes`), never a
 /// decimal-hours float. `priceCents` is an integer number of euro cents
 /// (AD-2), always > 0, enforced at the Zod/service boundary (not a DB
-/// constraint, same choice as `AircraftRate.priceCentsPerHour`). The
+/// constraint, same choice as `AircraftRate`'s two prices). The
 /// "effective hourly price" shown in the UI is derived from these two
 /// fields at render time and is NEVER persisted. `validityMonths` is the
 /// optional validity of a sold package, in whole months; `null` means no
@@ -847,6 +846,16 @@ enum FlightStatus {
   CANCELLED
 }
 
+/// Which of the aircraft rate's two prices a flight was charged (story 19.3,
+/// R-19-e): the column of the flying person's PROFILE — an active student
+/// profile with no active pilot profile → `STUDENT`, otherwise `PILOT`
+/// (a pilot on a `SCHOOL` flight still pays the pilot price). Frozen on the
+/// flight next to the price it selected (`Flight.aircraftPriceCategory`).
+enum AircraftPriceCategory {
+  STUDENT
+  PILOT
+}
+
 /// A registered flight (epic 5, story 5.1; FR-9/FR-14/FR-15) — the model
 /// that, in ONE transaction (`flights.service.ts#registerFlight`), both
 /// produces the `FLIGHT_CHARGE` `AccountMovement` (linked via
@@ -865,7 +874,11 @@ enum FlightStatus {
 /// `aircraftAmountCents` (and, when there is an instructor,
 /// `instructorRateCentsPerHour`/`instructorAmountCents`) capture the rate in
 /// effect at `flightDate` at registration time — a later change to the rate
-/// history never rewrites an already-registered flight. There is
+/// history never rewrites an already-registered flight. Since story 19.3 the
+/// aircraft rate has two prices: `aircraftRateCentsPerHour` is the one
+/// APPLIED, `aircraftPriceCategory` says which column it came from (the
+/// person's profile at registration; a correction that keeps the person
+/// keeps the category, Q-19.3-b). There is
 /// deliberately NO persisted total: the total lives on the linked
 /// `AccountMovement.amountCents` (negative); the UI/DTO computes it from the
 /// two per-component amounts (`flights.service.ts#FlightListItem`).
@@ -955,6 +968,9 @@ model Flight {
   landings Int @default(1)
 
   aircraftRateCentsPerHour   Int
+  /// The column of the aircraft rate `aircraftRateCentsPerHour` was taken
+  /// from (story 19.3, AD-4) — see `AircraftPriceCategory`.
+  aircraftPriceCategory      AircraftPriceCategory
   /// Snapshot (AD-4) of the amount ACTUALLY CHARGED for the aircraft
   /// component (story 5.2): pro-rata on `minutes - packageCoveredMinutes`,
   /// never on the full flight duration once a package covered part of it.

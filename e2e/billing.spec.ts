@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -83,7 +84,7 @@ async function createInstructorPerson(page: Page, tag: string): Promise<{ person
 }
 
 /** Creates an aircraft with a rate in effect since a safely-past date (same pattern as `flight-reversal.spec.ts`). */
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string; registration: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-BL${suffix}`.toUpperCase().slice(0, 20);
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
@@ -91,10 +92,7 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-    data: { priceCentsPerHour, validFrom: '2020-01-01' },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: '2020-01-01' });
   return { id: aircraft.id, registration };
 }
 

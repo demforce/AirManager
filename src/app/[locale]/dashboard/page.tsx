@@ -38,7 +38,6 @@ import { getOwnCompensationSummary } from '@/server/services/instructor-compensa
 import { getMetar } from '@/server/services/metar.service';
 import { getMe, type MeResult } from '@/server/services/me.service';
 import { listPeople } from '@/server/services/people.service';
-import { getEffectiveRates, todayDateOnlyUtc } from '@/server/services/rates.service';
 import { getStats } from '@/server/services/stats.service';
 import {
   buildBookingsTableLabels,
@@ -268,7 +267,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     branding,
     schedulingSettings,
     reservedIds,
-    currentRatesById,
     pendingBookingsResult,
     monthStats,
     flightsTodayTotals,
@@ -286,7 +284,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     getAirfieldBranding(),
     getSchedulingSettings(),
     listReservedAircraftIds(actor, allAircraftIds, now),
-    getEffectiveRates(actor, allAircraftIds, todayDateOnlyUtc()),
     listBookings(actor, { status: ['PENDING'], page: 1, pageSize: 1 }),
     getStats(actor, { period: 'month' }),
     getFlightTotals(actor, { dateFrom: today, dateTo: today, status: 'REGISTERED', page: 1, pageSize: 1 }),
@@ -432,7 +429,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     status: aircraft.status,
     statusReason: aircraft.statusReason,
     archivedAt: null,
-    wetRateCents: currentRatesById.get(aircraft.id)?.priceCentsPerHour ?? null,
     reserved: reservedIds.has(aircraft.id),
   }));
 
@@ -739,7 +735,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
             summary: t.raw('fleetCard.summary') as string,
             addAircraft: t('fleetCard.addAircraft'),
             empty: t('fleetCard.empty'),
-            rateLabel: t('fleetCard.rateLabel'),
             badge: {
               aog: t('fleetCard.badge.aog'),
               reserved: t('fleetCard.badge.reserved'),

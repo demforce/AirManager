@@ -144,6 +144,53 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(schemas?.['CreateAircraftRequest']?.properties).toHaveProperty('rate');
   });
 
+  describe('Student/pilot rates and exclusive profiles (story 19.3)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    const paths = doc.paths as Record<string, Record<string, { description?: string }>>;
+
+    it('documents the two prices on the rate schemas, without the two old price columns (AC 7)', () => {
+      for (const name of ['AircraftRate', 'CreateAircraftRateRequest']) {
+        expect(schemas?.[name]?.properties, name).toHaveProperty('studentPriceCents');
+        expect(schemas?.[name]?.properties, name).toHaveProperty('pilotPriceCents');
+        expect(schemas?.[name]?.properties, name).not.toHaveProperty('priceCentsPerHour');
+        expect(schemas?.[name]?.properties, name).not.toHaveProperty('dryHourlyRateCents');
+      }
+    });
+
+    it('documents the composite rate block on UpdateAircraftRequest (AC 7, A17)', () => {
+      expect(schemas?.['UpdateAircraftRequest']?.properties).toHaveProperty('rate');
+    });
+
+    it('keeps the rate history paths for API clients (AC 7-8, D-2)', () => {
+      expect(paths['/api/v1/aircraft/{id}/rates']).toHaveProperty('get');
+      expect(paths['/api/v1/aircraft/{id}/rates']).toHaveProperty('post');
+      expect(paths['/api/v1/people/{id}/instructor-rates']).toHaveProperty('get');
+      expect(paths['/api/v1/people/{id}/instructor-rates']).toHaveProperty('post');
+    });
+
+    it('documents the applied price category on the flight breakdown (AC 9)', () => {
+      const flightList = schemas?.['FlightList']?.properties?.['items'] as
+        | { items?: { properties?: { breakdown?: { properties?: Record<string, unknown> } } } }
+        | undefined;
+      expect(flightList?.items?.properties?.breakdown?.properties).toHaveProperty('aircraftPriceCategory');
+    });
+
+    it('documents the new 422 codes on the paths that raise them (AC 7, AC 15)', () => {
+      for (const [path, method] of [
+        ['/api/v1/aircraft/{id}/rates', 'post'],
+        ['/api/v1/aircraft', 'post'],
+        ['/api/v1/aircraft/{id}', 'patch'],
+        ['/api/v1/people/{id}/instructor-rates', 'post'],
+      ] as const) {
+        expect(paths[path]?.[method]?.description, `${method} ${path}`).toContain('RATE_VALID_FROM_IN_PAST');
+      }
+      for (const path of ['/api/v1/people', '/api/v1/people/{id}/profiles/pilot', '/api/v1/people/{id}/profiles/student', '/api/v1/people/{id}/profiles/instructor']) {
+        const method = path === '/api/v1/people' ? 'post' : 'put';
+        expect(paths[path]?.[method]?.description, `${method} ${path}`).toContain('STUDENT_PROFILE_EXCLUSIVE');
+      }
+    });
+  });
+
   describe('Removed fields (story 19.2)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
 

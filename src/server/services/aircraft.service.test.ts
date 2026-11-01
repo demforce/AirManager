@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAircraftSchema, updateAircraftSchema } from '@/lib/schemas/aircraft';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
@@ -15,9 +15,9 @@ vi.mock('@/server/db/prisma', () => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
-    // Story 14.8: the composite `createAircraft` + rate transaction path.
+    // Story 14.8 / 19.3: the composite create/update + rate transaction path.
     aircraftRate: {
-      create: vi.fn(),
+      upsert: vi.fn(),
     },
     // Story 15.5: `sumFlightMinutesByAircraft`, the fleet card's hours bar.
     flight: {
@@ -55,7 +55,16 @@ vi.mock('@/server/adapters/mail/templates', () => ({
   buildAircraftGroundedEmail: vi.fn(async () => ({ subject: 'Aircraft grounded subject', text: 'Aircraft grounded text' })),
 }));
 
+// Story 19.3 (AC 20): `authorize` spied through, so the `settings.manage`
+// check of the composite update can be asserted even though no role holds
+// `aircraft.manage` without it (the branch itself is unreachable today).
+vi.mock('@/server/auth/rbac', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/server/auth/rbac')>();
+  return { ...actual, authorize: vi.fn(actual.authorize) };
+});
+
 const { prisma } = await import('@/server/db/prisma');
+const { authorize } = await import('@/server/auth/rbac');
 const { buildAircraftGroundedEmail } = await import('@/server/adapters/mail/templates');
 const {
   archiveAircraft,
@@ -80,7 +89,7 @@ const countMock = vi.mocked(prisma.aircraft.count);
 const createMock = vi.mocked(prisma.aircraft.create);
 const updateMock = vi.mocked(prisma.aircraft.update);
 const updateManyMock = vi.mocked(prisma.aircraft.updateMany);
-const aircraftRateCreateMock = vi.mocked(prisma.aircraftRate.create);
+const aircraftRateUpsertMock = vi.mocked(prisma.aircraftRate.upsert);
 const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
 const bookingFindManyMock = vi.mocked(prisma.booking.findMany);
 const personFindManyMock = vi.mocked(prisma.person.findMany);
@@ -150,7 +159,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     createMock.mockReset();
     updateMock.mockReset();
     updateManyMock.mockReset();
-    aircraftRateCreateMock.mockReset();
+    aircraftRateUpsertMock.mockReset();
     flightGroupByMock.mockReset();
     bookingFindManyMock.mockReset();
     personFindManyMock.mockReset();
@@ -371,65 +380,83 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
     // Story 14.8 ("form velivolo unificato", AC 1/2): the composite create
     // path — an optional `rate` block written in the SAME transaction as
-    // the aircraft.
-    describe('composite create with a rate (story 14.8)', () => {
+    // the aircraft. Two prices and the decorrenza rule since story 19.3.
+    describe('composite create with a rate (story 14.8; story 19.3 AC 4)', () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T10:00:00.000Z'));
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
       it('creates the aircraft and its first rate in ONE transaction (AC 1/2)', async () => {
         // Review 14.8 F4: a DISTINCT tx client (instead of echoing the global
         // `prisma` back, which makes tx.* and prisma.* the SAME spy) lets this
         // test FAIL if either write ever escapes the transaction onto the
         // global client — the atomicity is asserted, not assumed.
         const txAircraftCreate = vi.fn().mockResolvedValue(SELECTED_AIRCRAFT);
-        const txRateCreate = vi.fn().mockResolvedValue({});
+        const txRateUpsert = vi.fn().mockResolvedValue({ id: 'rate_1' });
         transaction.mockImplementation((arg: unknown) =>
           typeof arg === 'function'
-            ? (arg as (tx: unknown) => unknown)({ aircraft: { create: txAircraftCreate }, aircraftRate: { create: txRateCreate } })
+            ? (arg as (tx: unknown) => unknown)({ aircraft: { create: txAircraftCreate }, aircraftRate: { upsert: txRateUpsert } })
             : arg,
         );
         aircraftFindFirst.mockResolvedValue(null);
 
         const result = await createAircraft(adminActor(), {
           ...input,
-          rate: { priceCentsPerHour: 16000, dryHourlyRateCents: 11500, validFrom: '2026-01-01' },
+          rate: { studentPriceCents: 15300, pilotPriceCents: 16000, validFrom: '2026-01-01' },
         });
 
         expect(transactionMock).toHaveBeenCalledTimes(1);
         expect(txAircraftCreate).toHaveBeenCalledTimes(1);
-        expect(txRateCreate).toHaveBeenCalledWith(
+        expect(txRateUpsert).toHaveBeenCalledWith(
           expect.objectContaining({
-            data: expect.objectContaining({
+            create: expect.objectContaining({
               aircraftId: SELECTED_AIRCRAFT.id,
-              priceCentsPerHour: 16000,
-              dryHourlyRateCents: 11500,
+              studentPriceCents: 15300,
+              pilotPriceCents: 16000,
               actorUserId: 'admin_1',
             }),
           }),
         );
         // The GLOBAL client must never be touched by the composite path.
         expect(aircraftCreate).not.toHaveBeenCalled();
-        expect(aircraftRateCreateMock).not.toHaveBeenCalled();
+        expect(aircraftRateUpsertMock).not.toHaveBeenCalled();
         expect(result.id).toBe(SELECTED_AIRCRAFT.id);
       });
 
-      it('never touches the transaction/rate insert when `rate` is absent (pre-14.8 shape, unchanged)', async () => {
+      it('never touches the transaction/rate write when `rate` is absent (pre-14.8 shape, unchanged)', async () => {
         aircraftFindFirst.mockResolvedValue(null);
         aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
 
         await createAircraft(adminActor(), input);
 
         expect(transactionMock).not.toHaveBeenCalled();
-        expect(aircraftRateCreateMock).not.toHaveBeenCalled();
+        expect(aircraftRateUpsertMock).not.toHaveBeenCalled();
         expect(createMock).toHaveBeenCalledTimes(1);
       });
 
-      it('a failure inside the transaction (e.g. the rate insert) propagates — never a silently half-created aircraft (AC 2)', async () => {
+      it('a failure inside the transaction (e.g. the rate write) propagates — never a silently half-created aircraft (AC 2)', async () => {
         mockInteractiveTransaction();
         aircraftFindFirst.mockResolvedValue(null);
         aircraftCreate.mockResolvedValue(SELECTED_AIRCRAFT);
-        aircraftRateCreateMock.mockRejectedValue(new Error('rate insert failed'));
+        aircraftRateUpsertMock.mockRejectedValue(new Error('rate write failed'));
 
         await expect(
-          createAircraft(adminActor(), { ...input, rate: { priceCentsPerHour: 16000, validFrom: '2026-01-01' } }),
-        ).rejects.toThrow('rate insert failed');
+          createAircraft(adminActor(), { ...input, rate: { studentPriceCents: 15300, pilotPriceCents: 16000, validFrom: '2026-01-01' } }),
+        ).rejects.toThrow('rate write failed');
+      });
+
+      it('a past validFrom is a 422 RATE_VALID_FROM_IN_PAST before any query or write (story 19.3, AC 4)', async () => {
+        await expect(
+          createAircraft(adminActor(), { ...input, rate: { studentPriceCents: 15300, pilotPriceCents: 16000, validFrom: '2025-12-31' } }),
+        ).rejects.toMatchObject({ code: 'RATE_VALID_FROM_IN_PAST' });
+        expect(findFirstMock).not.toHaveBeenCalled();
+        expect(transactionMock).not.toHaveBeenCalled();
+        expect(createMock).not.toHaveBeenCalled();
       });
     });
   });
@@ -466,6 +493,105 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       await expect(
         updateAircraft(adminActor(), 'aircraft_1', { registration: 'I-TAKEN' }),
       ).rejects.toThrow(ConflictError);
+    });
+
+    // Story 19.3 (AD-3, A17): the editor's ONE Salva — identity + rate in ONE transaction.
+    describe('composite update with a rate (story 19.3, AC 20)', () => {
+      const rate = { studentPriceCents: 12500, pilotPriceCents: 14000, validFrom: '2026-07-07' };
+
+      beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-07-07T10:00:00.000Z'));
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('runs the aircraft update and the rate upsert on the SAME tx inside ONE $transaction — the global client is never written', async () => {
+        const txAircraftUpdate = vi.fn().mockResolvedValue({ ...SELECTED_AIRCRAFT, model: 'Tecnam P2008' });
+        const txRateUpsert = vi.fn().mockResolvedValue({ id: 'rate_1' });
+        transaction.mockImplementation((arg: unknown) =>
+          typeof arg === 'function'
+            ? (arg as (tx: unknown) => unknown)({ aircraft: { update: txAircraftUpdate }, aircraftRate: { upsert: txRateUpsert } })
+            : arg,
+        );
+        aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+
+        const result = await updateAircraft(adminActor(), 'aircraft_1', { model: 'Tecnam P2008', rate });
+
+        expect(transactionMock).toHaveBeenCalledTimes(1);
+        expect(txAircraftUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'aircraft_1' }, data: { model: 'Tecnam P2008' } }));
+        expect(txRateUpsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { aircraftId_validFrom: { aircraftId: 'aircraft_1', validFrom: new Date('2026-07-07T00:00:00.000Z') } },
+            update: { studentPriceCents: 12500, pilotPriceCents: 14000, actorUserId: 'admin_1' },
+          }),
+        );
+        expect(updateMock).not.toHaveBeenCalled();
+        expect(aircraftRateUpsertMock).not.toHaveBeenCalled();
+        expect(result.model).toBe('Tecnam P2008');
+      });
+
+      it('a rejected rate write rejects the whole update, and nothing is written outside the transaction', async () => {
+        const txAircraftUpdate = vi.fn().mockResolvedValue(SELECTED_AIRCRAFT);
+        const txRateUpsert = vi.fn().mockRejectedValue(new Error('rate write failed'));
+        transaction.mockImplementation((arg: unknown) =>
+          typeof arg === 'function'
+            ? (arg as (tx: unknown) => unknown)({ aircraft: { update: txAircraftUpdate }, aircraftRate: { upsert: txRateUpsert } })
+            : arg,
+        );
+        aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+
+        await expect(updateAircraft(adminActor(), 'aircraft_1', { model: 'x', rate })).rejects.toThrow('rate write failed');
+        expect(updateMock).not.toHaveBeenCalled();
+        expect(aircraftRateUpsertMock).not.toHaveBeenCalled();
+      });
+
+      it('without `rate`, no transaction at all (the pre-19.3 path, unchanged)', async () => {
+        aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+        aircraftUpdate.mockResolvedValue(SELECTED_AIRCRAFT);
+
+        await updateAircraft(adminActor(), 'aircraft_1', { model: 'x' });
+
+        expect(transactionMock).not.toHaveBeenCalled();
+        expect(updateMock).toHaveBeenCalledTimes(1);
+      });
+
+      it('a past validFrom is a 422 RATE_VALID_FROM_IN_PAST with nothing written (registration pre-check included)', async () => {
+        aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+
+        await expect(
+          updateAircraft(adminActor(), 'aircraft_1', { registration: 'I-NEW', rate: { ...rate, validFrom: '2026-07-06' } }),
+        ).rejects.toMatchObject({ code: 'RATE_VALID_FROM_IN_PAST' });
+        expect(findFirstMock).not.toHaveBeenCalled();
+        expect(transactionMock).not.toHaveBeenCalled();
+        expect(updateMock).not.toHaveBeenCalled();
+      });
+
+      it('an archived aircraft refuses a rate with a 409 before any write', async () => {
+        aircraftFindUnique.mockResolvedValue({ ...SELECTED_AIRCRAFT, archivedAt: new Date('2026-05-01T00:00:00.000Z') });
+
+        await expect(updateAircraft(adminActor(), 'aircraft_1', { rate })).rejects.toThrow(ConflictError);
+        expect(transactionMock).not.toHaveBeenCalled();
+        expect(updateMock).not.toHaveBeenCalled();
+      });
+
+      it('checks settings.manage only when a rate is present', async () => {
+        aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+        aircraftUpdate.mockResolvedValue(SELECTED_AIRCRAFT);
+        mockInteractiveTransaction();
+        aircraftRateUpsertMock.mockResolvedValue({ id: 'rate_1' } as never);
+        const authorizeMock = vi.mocked(authorize);
+
+        authorizeMock.mockClear();
+        await updateAircraft(adminActor(), 'aircraft_1', { model: 'x' });
+        expect(authorizeMock.mock.calls.map(([, permission]) => permission)).toEqual(['aircraft.manage']);
+
+        authorizeMock.mockClear();
+        await updateAircraft(adminActor(), 'aircraft_1', { model: 'x', rate });
+        expect(authorizeMock.mock.calls.map(([, permission]) => permission)).toEqual(['aircraft.manage', 'settings.manage']);
+      });
     });
   });
 

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -172,10 +173,7 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     expect(aircraftResponse.status()).toBe(201);
     const { id: aircraftId } = (await aircraftResponse.json()) as { id: string };
 
-    const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraftId}/rates`, {
-      data: { priceCentsPerHour: 16000, validFrom: '2026-01-01' },
-    });
-    expect(rateResponse.status()).toBe(201);
+    await seedAircraftRate(aircraftId, { studentPriceCents: 16000, pilotPriceCents: 16000, validFrom: '2026-01-01' });
 
     // Gives ultimo-volo + voli-recenti (90 minutes -> "1:30").
     const flightResponse = await page.request.post('/api/v1/flights', {
@@ -465,7 +463,9 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     expect(createRequests).toHaveLength(0);
   });
 
-  test('creates a person with STUDENT and INSTRUCTOR profiles together in ONE composite submit (multi-profile)', async ({ page }) => {
+  // Story 19.3 (Q-19.3-c): the student profile now excludes the instructor
+  // one, so the legal multi-profile combination is pilot + instructor.
+  test('creates a person with PILOT and INSTRUCTOR profiles together in ONE composite submit (multi-profile)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('MultiProfile');
 
@@ -476,8 +476,9 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
     await form.getByLabel('Email', { exact: true }).fill(person.email);
 
-    await form.getByTestId('new-person-activate-student').check();
-    await form.getByTestId('new-person-student-course-start').fill('2026-01-15');
+    await form.getByTestId('new-person-activate-pilot').check();
+    await form.getByTestId('new-person-pilot-license-number').fill('IT-PPL-MULTI');
+    await form.getByTestId('new-person-pilot-license-type').fill('PPL(A)');
     await form.getByTestId('new-person-activate-instructor').check();
 
     await page.getByTestId('pilot-identity-submit').click();
@@ -491,10 +492,10 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     const detailResponse = await page.request.get(`/api/v1/people/${items[0]!.id}`);
     expect(detailResponse.status()).toBe(200);
     const detail = (await detailResponse.json()) as {
-      studentProfile: { deactivatedAt: string | null } | null;
+      pilotProfile: { deactivatedAt: string | null } | null;
       instructorProfile: { deactivatedAt: string | null } | null;
     };
-    expect(detail.studentProfile?.deactivatedAt).toBeNull();
+    expect(detail.pilotProfile?.deactivatedAt).toBeNull();
     expect(detail.instructorProfile?.deactivatedAt).toBeNull();
   });
 });

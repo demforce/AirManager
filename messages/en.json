@@ -204,7 +204,6 @@
       "summary": "{total} total · {available} available · {aog} AOG",
       "addAircraft": "Add aircraft",
       "empty": "No aircraft on file.",
-      "rateLabel": "Rate",
       "badge": {
         "aog": "AOG",
         "reserved": "Reserved",
@@ -307,7 +306,8 @@
       },
       "errors": {
         "requiredField": "This field is required.",
-        "generic": "Something went wrong. Please try again."
+        "generic": "Something went wrong. Please try again.",
+        "exclusive": "Student cannot be active together with Pilot or Instructor: deactivate the other profile first."
       },
       "pilot": {
         "title": "Pilot",
@@ -468,7 +468,8 @@
       "errors": {
         "required": "Required field.",
         "generic": "Something went wrong. Please try again.",
-        "conflictEmail": "A person with this email already exists."
+        "conflictEmail": "A person with this email already exists.",
+        "profilesExclusive": "The student profile cannot be activated together with pilot or instructor."
       }
     },
     "toast": {
@@ -526,7 +527,8 @@
       "submit": "Activate instructor profile",
       "cancel": "Cancel",
       "requiredField": "Required field.",
-      "genericError": "Something went wrong. Please try again."
+      "genericError": "Something went wrong. Please try again.",
+      "exclusiveError": "This person has an active student profile: deactivate it before activating the instructor."
     },
     "editor": {
       "closeLabel": "Close",
@@ -941,7 +943,6 @@
     "cardTitle": "Fleet",
     "exportLabel": "Export",
     "exportXls": "Export XLS",
-    "rateLabel": "Rate",
     "searchPlaceholder": "Search by registration or model…",
     "includeArchivedLabel": "Show archived",
     "empty": "No aircraft found.",
@@ -972,11 +973,9 @@
       "openDetail": "Open detail",
       "close": "Close",
       "edit": "Edit",
-      "noValue": "—",
       "sheet": {
         "status": "Status",
         "aogReason": "AOG reason",
-        "rate": "Rate",
         "totalHours": "Total hours",
         "monthHours": "Hours this month"
       }
@@ -1030,18 +1029,13 @@
       },
       "rates": {
         "sectionTitle": "Rates",
-        "current": "Current rate (wet)",
-        "currentDry": "Current rate (dry)",
+        "studentPrice": "Student price (€/h)",
+        "pilotPrice": "Pilot price (€/h)",
         "noCurrentRate": "No rate in effect",
-        "newRateTitle": "New rate",
-        "price": "Wet price (€/h)",
-        "priceDry": "Dry price (€/h) — optional",
+        "currentHint": "Current: {price}/h — leave empty to keep it.",
+        "scheduled": "Scheduled change from {date}: student {student}/h · pilot {pilot}/h",
         "validFrom": "Effective from",
-        "submit": "Add rate",
-        "readOnlyHint": "Only an administrator can add new rates.",
-        "historyTitle": "Rate history",
-        "historyEmpty": "No rates recorded yet.",
-        "showAll": "Show all ({count})"
+        "readOnlyHint": "An archived aircraft cannot take new rates."
       },
       "flightHours": {
         "sectionTitle": "Flight hours",
@@ -1061,9 +1055,9 @@
         "generic": "Something went wrong. Please try again.",
         "conflictRegistration": "An aircraft with this registration already exists.",
         "conflictStatus": "The aircraft's status already changed in the meantime.",
-        "conflictRate": "A rate with this effective date already exists.",
         "invalidPrice": "The price must be a positive amount (e.g. 160.00).",
         "invalidDate": "Enter a valid date.",
+        "validFromPast": "The effective date cannot be in the past.",
         "reasonRequired": "The reason is required."
       }
     },
@@ -1073,8 +1067,7 @@
       "archived": "Aircraft archived.",
       "unarchived": "Aircraft restored.",
       "setOutOfService": "Aircraft marked out of service.",
-      "returnedToService": "Aircraft returned to service.",
-      "rateAdded": "Rate added."
+      "returnedToService": "Aircraft returned to service."
     }
   },
   "FlightsPage": {

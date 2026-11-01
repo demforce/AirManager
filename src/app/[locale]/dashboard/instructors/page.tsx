@@ -117,6 +117,7 @@ export default async function InstructorsPage({ params }: PageProps) {
             cancel: t('addInstructor.cancel'),
             requiredField: t('addInstructor.requiredField'),
             genericError: t('addInstructor.genericError'),
+            exclusiveError: t('addInstructor.exclusiveError'),
           },
           editor: {
             closeLabel: t('editor.closeLabel'),

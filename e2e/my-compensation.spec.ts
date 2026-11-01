@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 /**
  * "I miei compensi" — self-service instructor compensation page (story
@@ -139,7 +140,7 @@ async function createStudentPerson(page: Page, tag: string): Promise<{ personId:
 }
 
 /** Aircraft + rate (`NO_AIRCRAFT_RATE` 422 otherwise) — same helper shape as `instructor-compensation.spec.ts#createAircraftWithRate`. */
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-CP${suffix}`.toUpperCase().slice(0, 20);
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
@@ -147,17 +148,13 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour, validFrom: PAST_DATE } });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
   return { id: aircraft.id };
 }
 
 /** The STUDENT-charged instructor rate (D8, `NO_INSTRUCTOR_RATE` 422 otherwise) — unrelated to the payout rate this page reads. Same helper shape as `instructor-compensation.spec.ts#createInstructorRate`. */
 async function createInstructorRate(page: Page, instructorPersonId: string, priceCentsPerHour: number): Promise<void> {
-  const rateResponse = await page.request.post(`/api/v1/people/${instructorPersonId}/instructor-rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedInstructorRate(instructorPersonId, { priceCentsPerHour, validFrom: PAST_DATE });
 }
 
 /**

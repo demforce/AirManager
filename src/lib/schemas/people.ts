@@ -247,10 +247,11 @@ export type PersonDetailDto = z.infer<typeof personDetailSchema>;
  * `POST /api/v1/people/{id}/instructor-rates` body (story 4.2, AC 1/2): a new
  * historicized rate. `priceCentsPerHour` is an integer number of euro cents
  * (AD-2) — an HOURLY price, always > 0, capped at the Postgres INTEGER max
- * (identical to `createAircraftRateSchema.priceCentsPerHour`). `validFrom` is
- * a calendar date only (`YYYY-MM-DD`, same `z.iso.date()` pattern) — two
- * rates sharing the same `(instructorProfileId, validFrom)` are a 409 (AC 2),
- * never silently overwritten.
+ * (identical to `createAircraftRateSchema`'s prices). `validFrom` is a
+ * calendar date only (`YYYY-MM-DD`, same `z.iso.date()` pattern); since story
+ * 19.3 (R-19-f) the service rejects one in the past (`RATE_VALID_FROM_IN_PAST`,
+ * Europe/Rome calendar) and REWRITES the row already on the same
+ * `(instructorProfileId, validFrom)` instead of answering 409.
  */
 export const createInstructorRateSchema = z.object({
   priceCentsPerHour: z.number().int().positive().max(2_147_483_647),

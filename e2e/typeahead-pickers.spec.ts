@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -112,10 +113,7 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     });
     expect(aircraftResponse.status()).toBe(201);
     const aircraft = (await aircraftResponse.json()) as { id: string; registration: string };
-    const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-      data: { priceCentsPerHour: 9000, validFrom: PAST_DATE },
-    });
-    expect(rateResponse.status()).toBe(201);
+    await seedAircraftRate(aircraft.id, { studentPriceCents: 9000, pilotPriceCents: 9000, validFrom: PAST_DATE });
 
     await page.goto('/it/dashboard/logbook');
     await page.getByTestId('logbook-new-button').click();

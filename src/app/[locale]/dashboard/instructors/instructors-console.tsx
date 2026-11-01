@@ -28,6 +28,7 @@ import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { parseApiError } from '@/lib/api-field-errors';
 import { avatarColorFor, initialsOf } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
@@ -65,6 +66,8 @@ export type InstructorsConsoleLabels = {
     cancel: string;
     requiredField: string;
     genericError: string;
+    /** Story 19.3 (Q-19.3-c): the 422 `STUDENT_PROFILE_EXCLUSIVE` — the picked person is an active student. */
+    exclusiveError: string;
   };
   editor: InstructorEditorLabels;
   profile: InstructorProfileLabels;
@@ -685,7 +688,8 @@ function AddInstructorSlideOver({ open, onClose, onMutated, labels, successMessa
     });
     setSubmitting(false);
     if (!response.ok) {
-      setFormError(labels.genericError);
+      const { code } = await parseApiError(response);
+      setFormError(code === 'STUDENT_PROFILE_EXCLUSIVE' ? labels.exclusiveError : labels.genericError);
       return;
     }
     toast.show(successMessage, 'ok');

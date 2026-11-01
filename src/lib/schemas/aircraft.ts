@@ -3,24 +3,25 @@ import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
 
 /**
- * `POST /api/v1/aircraft/{id}/rates` body (story 4.1, AC 1/2): a new
- * historicized rate. `priceCentsPerHour` is an integer number of euro cents
- * (AD-2) — an HOURLY price, always > 0, capped at the Postgres INTEGER max
- * so an absurd value fails as a clean 422 instead of a driver overflow error
- * → 500 (review 2.4 F2). `validFrom` is a calendar
- * date only (`YYYY-MM-DD`, same `z.iso.date()` pattern as
- * `recordCashMovementSchema.effectiveDate`) — two rates sharing the same
- * `(aircraftId, validFrom)` are a 409 (AC 2), never silently overwritten.
- * `dryHourlyRateCents` (story 12.5, AC 1) is OPTIONAL — the "dry" (fuel
- * excluded) rate, display-only: it never feeds pricing/flight-cost
- * computation (`rates.service.ts`/`flights.service.ts` read `priceCentsPerHour`
- * exclusively). Moved above `createAircraftSchema` (story 14.8) so the
- * latter can embed it as an optional `rate` block — same shape reused
- * verbatim for the standalone endpoint and the composite create.
+ * `POST /api/v1/aircraft/{id}/rates` body (story 4.1, AC 1/2), reshaped by
+ * story 19.3 (R-19-e): TWO billed hourly prices, `studentPriceCents` and
+ * `pilotPriceCents` — the flight takes the column of the flying person's
+ * profile. Both are integer euro cents (AD-2), always > 0, capped at the
+ * Postgres INTEGER max so an absurd value fails as a clean 422 instead of a
+ * driver overflow error → 500 (review 2.4 F2), and BOTH are mandatory ("leave
+ * empty to keep it" is a UI rule, the client fills the field with the current
+ * price — D-1). `validFrom` is a calendar date only (`YYYY-MM-DD`, same
+ * `z.iso.date()` pattern as `recordCashMovementSchema.effectiveDate`); the
+ * service rejects one in the past (`RATE_VALID_FROM_IN_PAST`, Europe/Rome
+ * calendar) and REWRITES the row already on the same `(aircraftId,
+ * validFrom)` instead of answering 409 (R-19-f). Declared above
+ * `createAircraftSchema` (story 14.8) so the aircraft composites can embed it
+ * as an optional `rate` block — same shape reused verbatim for the standalone
+ * endpoint, the composite create and the composite update.
  */
 export const createAircraftRateSchema = z.object({
-  priceCentsPerHour: z.number().int().positive().max(2_147_483_647),
-  dryHourlyRateCents: z.number().int().positive().max(2_147_483_647).nullish(),
+  studentPriceCents: z.number().int().positive().max(2_147_483_647),
+  pilotPriceCents: z.number().int().positive().max(2_147_483_647),
   validFrom: z.iso.date(),
 });
 
@@ -52,12 +53,17 @@ export type CreateAircraftInput = z.infer<typeof createAircraftSchema>;
 /**
  * Partial update — every field optional so a caller can patch just one.
  * Archiving/unarchiving are separate endpoints (AC 2), not part of this
- * schema — `archivedAt` is never client-settable directly.
+ * schema — `archivedAt` is never client-settable directly. `rate` (story
+ * 19.3, A17 — the editor's ONE Salva) OPTIONALLY records or rewrites a rate
+ * in the SAME transaction as the identity fields
+ * (`aircraft.service.ts#updateAircraft`), reusing `createAircraftRateSchema`
+ * verbatim, the same block `createAircraftSchema` carries.
  */
 export const updateAircraftSchema = z.object({
   registration: z.string().trim().toUpperCase().min(1).optional(),
   type: z.string().trim().min(1).optional(),
   model: z.string().trim().min(1).optional(),
+  rate: createAircraftRateSchema.optional(),
 });
 
 export type UpdateAircraftInput = z.infer<typeof updateAircraftSchema>;
@@ -200,17 +206,16 @@ export const setOutOfServiceResponseSchema = z.object({
 // `createAircraftSchema` (story 14.8) — see that schema's doc-comment.
 
 /**
- * One entry of `GET /api/v1/aircraft/{id}/rates` (story 4.1). Documentation
- * only, mirroring `rates.service.ts`'s `AircraftRateListItem` TS type — same
- * pattern as `aircraftListItemSchema`. `actorEmail` is a
- * display-only join over the stored `actorUserId`. `dryHourlyRateCents`
- * (story 12.5, AC 1) is display-only, `null` when not recorded.
+ * One entry of `GET /api/v1/aircraft/{id}/rates` (story 4.1; two prices since
+ * story 19.3). Documentation only, mirroring `rates.service.ts`'s
+ * `AircraftRateListItem` TS type — same pattern as `aircraftListItemSchema`.
+ * `actorEmail` is a display-only join over the stored `actorUserId`.
  */
 export const aircraftRateItemSchema = z.object({
   id: z.string(),
   aircraftId: z.string(),
-  priceCentsPerHour: z.number().int().positive(),
-  dryHourlyRateCents: z.number().int().positive().nullable(),
+  studentPriceCents: z.number().int().positive(),
+  pilotPriceCents: z.number().int().positive(),
   validFrom: z.iso.date(),
   actorUserId: z.string(),
   actorEmail: z.string(),

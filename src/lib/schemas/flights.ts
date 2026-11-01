@@ -127,10 +127,14 @@ export type RegisterFlightInput = z.infer<typeof registerFlightSchema>;
  * flight had an instructor; `totalAmountCents` is always the (already
  * separately rounded) sum, never a persisted column. Story 12.13 retired
  * package consumption (ratifica utente 4a) — the aircraft component is
- * always charged on the full flight duration.
+ * always charged on the full flight duration. `aircraftPriceCategory` (story
+ * 19.3, R-19-e) says which of the aircraft rate's two prices
+ * `aircraftRateCentsPerHour` is: the flying person's profile at registration
+ * (`STUDENT` = student-only, otherwise `PILOT`), frozen with the price.
  */
 export const flightBreakdownSchema = z.object({
   aircraftRateCentsPerHour: z.number().int().positive(),
+  aircraftPriceCategory: z.enum(['STUDENT', 'PILOT']),
   aircraftAmountCents: z.number().int().nonnegative(),
   instructorRateCentsPerHour: z.number().int().positive().optional(),
   instructorAmountCents: z.number().int().nonnegative().optional(),

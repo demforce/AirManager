@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 /**
  * "Le mie transazioni" — self-service estratto conto (story 14.6). A
@@ -103,7 +104,7 @@ async function createPersonWithLogin(
   return { personId: person.id, email };
 }
 
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-MA${suffix}`.toUpperCase().slice(0, 20);
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
@@ -111,10 +112,7 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-    data: { priceCentsPerHour, validFrom: '2020-01-01' },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: '2020-01-01' });
   return { id: aircraft.id };
 }
 
@@ -226,31 +224,39 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const password = 'MyAccountStudent123!';
     const student = await createPersonWithLogin(page, 'student', password, 'Own');
-    // Story 14.3 (AC 1, ratifica R1): a student-ONLY active profile can only
-    // log SCHOOL flights now — this fixture's own TOURISM `registerFlight`
-    // call below only needs SOME flight charge to exist for the own-access
-    // assertions, unrelated to `flightType`, so activating an ADDITIONAL
-    // pilot profile (both active -> unrestricted, same as a plain pilot)
-    // keeps this test's TOURISM charge legal without touching its balance
-    // math or its STUDENT-role login/self-access assertions below.
-    const pilotUpgrade = await page.request.put(`/api/v1/people/${student.personId}/profiles/pilot`, {
-      data: { licenseNumber: `IT-PPL-${student.personId.slice(-8)}`, licenseType: 'PPL(A)' },
-    });
-    expect(pilotUpgrade.status()).toBe(200);
-    // Story 14.4 blast-radius fixture fix: now BOTH profiles are active, the
-    // flight guard's `applicableProfiles` also includes PILOTS — `createPersonWithLogin`
-    // only covered STUDENTS above (see `ensureValidSeedExpiries`'s own doc-comment, e2e/helpers.ts).
-    await ensureValidSeedExpiries(page, student.personId, 'PILOTS');
+    // Story 14.3 (ratifica R1): a student-only person logs SCHOOL flights, and
+    // since story 19.3 (R-19-e, Q-19.3-c) the student profile can no longer sit
+    // next to a pilot one — so this fixture flies a SCHOOL flight with its own
+    // run-unique instructor (rate via SQL fixture: the flight is in the past).
+    const instructorResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Istruttore', lastName: `Own-${uniqueSuffix()}` } });
+    expect(instructorResponse.status()).toBe(201);
+    const instructor = (await instructorResponse.json()) as { id: string };
+    expect((await page.request.put(`/api/v1/people/${instructor.id}/profiles/instructor`, { data: {} })).status()).toBe(200);
+    await ensureValidSeedExpiries(page, instructor.id, 'INSTRUCTORS');
+    await seedInstructorRate(instructor.id, { priceCentsPerHour: 4000, validFrom: '2020-01-01' }); // 40,00 €/h
     const aircraft = await createAircraftWithRate(page, 10000); // 100,00 €/h
     const flightDate = uniquePastDateOnly();
 
     await recordTopUp(page, student.personId, 15000, flightDate); // +150,00 €
-    await registerFlight(page, aircraft.id, student.personId, flightDate, 30); // 30 min @ 100,00 €/h = -50,00 €
-    // Expected balance: 150,00 - 50,00 = 100,00 €.
+    const takeoffAt = `${flightDate}T10:00:00.000Z`;
+    const flightResponse = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: student.personId,
+        instructorPersonId: instructor.id,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'SCHOOL',
+        takeoffAt,
+        landingAt: new Date(new Date(takeoffAt).getTime() + 30 * 60_000).toISOString(),
+      },
+    });
+    expect(flightResponse.status()).toBe(201); // 30 min: 50,00 € aircraft (student price) + 20,00 € instructor = -70,00 €
+    // Expected balance: 150,00 - 70,00 = 80,00 €.
 
     await loginExpectingDashboard(page, student.email, password);
     await page.goto('/it/dashboard/my-account');
-    await expect(page.getByTestId('account-balance')).toHaveText(/100,00\s€/);
+    await expect(page.getByTestId('account-balance')).toHaveText(/80,00\s€/);
     await expect(page.getByTestId('account-movement-row')).toHaveCount(2);
     await expect(page.getByTestId('account-statement-header-row')).not.toContainText('Registrato da');
   });

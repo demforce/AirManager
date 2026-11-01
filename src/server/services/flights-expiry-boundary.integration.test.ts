@@ -196,7 +196,7 @@ describe('flights.service — AC 6 boundary, through the REAL findBlockingExpire
     flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
     // Story 16.2: no overlapping flight, so the guard is transparent here.
     (flightFindFirstMock as unknown as { mockResolvedValue: (v: null) => void }).mockResolvedValue(null);
-    getEffectiveRateMock.mockResolvedValue({ priceCentsPerHour: 15000 });
+    getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
     getAccountOverviewMock.mockResolvedValue({ account: { id: 'account_1', createdAt: new Date('2026-01-01T00:00:00.000Z') }, balanceCents: -20000, recentMovements: [] });
     getNegativeBalanceThresholdCentsMock.mockResolvedValue(-999_999_999);
     queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);

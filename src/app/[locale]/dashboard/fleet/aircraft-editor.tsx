@@ -4,18 +4,19 @@
  * Aircraft slide-over editor (story 12.5, AC 3) — port of
  * `docs/design-reference/airops/src/Fleet.jsx#AircraftEditor`, extended to
  * sections carrying EVERY legacy `aircraft-manager.tsx` function
- * (anagrafica, disponibilità, tariffe, archivio) — all visible
+ * (anagrafica, tariffe, disponibilità, archivio) — all visible
  * TOGETHER in one scrollable slide-over, rather than the legacy's swapped
  * single-panel-at-a-time layout, since AC 3 calls for "sezioni" not
- * "pannelli". Only the identity (anagrafica) section shares a Cancel/Submit
- * pair with the create flow (mirrors the prototype's own footer); every
- * other section is a self-contained mini-form/action, closed only via the
- * slide-over's own `X`.
+ * "pannelli". Story 19.3 (R-19-m, A17): the data — anagrafica AND tariffe —
+ * live in ONE form with ONE Salva (`identity-form`, submitted from the
+ * panel's footer), in creation and in modification alike; the rate rides in
+ * the same composite request (`POST`/`PATCH /api/v1/aircraft`). Disponibilità
+ * and Archivio stay ACTIONS with effects of their own, not data.
  */
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
+import type { z } from 'zod';
 import { Field, Input } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { SlideOver } from '@/components/ui/slide-over';
@@ -23,16 +24,16 @@ import { useToast } from '@/components/ui/toast';
 import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents, parseCents } from '@/lib/money';
-import { formatDateOnly, formatMinutes } from '@/lib/time';
+import { APP_TIMEZONE, formatDateOnly, formatMinutes } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import {
   createAircraftSchema,
   updateAircraftSchema,
-  type AircraftRateItemDto,
   type AogBookingImpactDto,
   type CreateAircraftInput,
   type UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
-import type { FleetConsoleItem } from './fleet-console';
+import type { FleetConsoleItem, RatePrices, ScheduledRate } from './fleet-console';
 
 export type AircraftEditorLabels = {
   newTitle: string;
@@ -91,21 +92,20 @@ export type AircraftEditorLabels = {
     /** AC 5 — the banner's way out towards the bookings it is talking about. */
     impactBookingsLink: string;
   };
+  /** Story 19.3 (R-19-f) — the two prices + "In vigore da" of the ONE form; no history, no display-only price. */
   rates: {
     sectionTitle: string;
-    current: string;
-    currentDry: string;
-    noCurrentRate: string;
-    newRateTitle: string;
-    price: string;
-    priceDry: string;
+    studentPrice: string;
+    pilotPrice: string;
     validFrom: string;
-    submit: string;
+    /** `t.raw` template with a `{price}` placeholder — the field hint when a rate is in effect today (the placeholder alone is not accessible). */
+    currentHint: string;
+    /** The field hint when NO rate is in effect today. */
+    noCurrentRate: string;
+    /** `t.raw` template, `{date}`/`{student}`/`{pilot}` — the ONE "variazione programmata" line (Q-19.3-d). */
+    scheduled: string;
+    /** Shown instead of the three fields on an archived aircraft. */
     readOnlyHint: string;
-    historyTitle: string;
-    historyEmpty: string;
-    /** `t.raw` template, `"Mostra tutte ({count})"` — client-interpolated (AC 2, story 13.4: default shows only the last 5). */
-    showAll: string;
   };
   /** Story 19.2 (R-19-b) — read-only: the aircraft's hours are the sum of its registered flights. */
   flightHours: {
@@ -126,9 +126,10 @@ export type AircraftEditorLabels = {
     generic: string;
     conflictRegistration: string;
     conflictStatus: string;
-    conflictRate: string;
     invalidPrice: string;
     invalidDate: string;
+    /** Story 19.3 — "In vigore da" before today (client check, and the server's `RATE_VALID_FROM_IN_PAST`). */
+    validFromPast: string;
     reasonRequired: string;
   };
 };
@@ -140,7 +141,6 @@ type ToastLabels = {
   unarchived: string;
   setOutOfService: string;
   returnedToService: string;
-  rateAdded: string;
 };
 
 type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetConsoleItem };
@@ -158,15 +158,15 @@ type AircraftEditorProps = {
 };
 
 /**
- * The editor's own working copy — a subset of `FleetCardItem` (no
- * `wetRateCents`/`reserved`, grid-only presentation fields) PLUS
- * `outOfServiceUntil` (story AOG-1a). The date is added HERE rather than on
- * `FleetCardItem` on purpose: R-AOG-e keeps the fleet cards (desktop, mobile,
- * and the Panoramica widget that shares the very same component) out of this
- * story's perimeter, and widening the shared card type would have dragged
- * `dashboard/page.tsx#fleetItems` in with it.
+ * The editor's own working copy — the fleet row minus the grid-only
+ * `reserved` badge and the two rates (story 19.3), which the editor keeps in
+ * a state of its own (`AircraftEditor#rates`): this copy is rebuilt from API
+ * responses (`toEditable`), and no aircraft response carries a rate.
  */
-type EditableAircraft = Omit<FleetConsoleItem, 'wetRateCents' | 'reserved'>;
+type EditableAircraft = Omit<FleetConsoleItem, 'reserved' | 'currentRate' | 'scheduledRate'>;
+
+/** The rate in effect today and the next scheduled one — the placeholders and the "variazione programmata" line (story 19.3, D-6). */
+type EditorRates = { current: RatePrices | null; scheduled: ScheduledRate | null };
 
 type AircraftApiResponse = {
   id: string;
@@ -206,12 +206,7 @@ async function errorCodeOf(response: Response): Promise<string | null> {
   return (body as ApiErrorBody | null)?.error?.code ?? null;
 }
 
-/** Same browser-local "today" `YYYY-MM-DD` default as the legacy `RatesPanel`'s `todayDateOnly`. */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** Same >0/`INT_MAX` validity rule as `newRateFormSchema`'s own `.refine` (`RatesSection`, below) — reused imperatively by the create-mode composite "Tariffe" block (story 14.8), which is plain state rather than react-hook-form. */
+/** The server's >0/`INT_MAX` price rule (`createAircraftRateSchema`), checked imperatively by the "Tariffe" block, which is plain state rather than react-hook-form. */
 function isValidRatePrice(value: string): boolean {
   const trimmed = value.trim();
   if (trimmed.length === 0) return false;
@@ -223,16 +218,19 @@ function isValidRatePrice(value: string): boolean {
   }
 }
 
-/** The row with the maximum `validFrom <= today` (AD-4), computed client-side over an already-fetched history — display only, never fed back into pricing. */
-function currentRateOf(history: AircraftRateItemDto[]): AircraftRateItemDto | null {
-  const today = todayDateOnly();
-  return history.find((rate) => rate.validFrom <= today) ?? null;
+/** A price the way it is typed (`132,00` — no symbol, no grouping): the placeholder of a price field (story 19.3, AD-6). */
+function typableCents(cents: number): string {
+  return (cents / 100).toFixed(2).replace('.', ',');
 }
 
 export function AircraftEditor({ target, onClose, onMutated, totalMinutes, locale, labels, toastLabels }: AircraftEditorProps) {
   const toast = useToast();
   const isNew = target?.mode === 'new';
   const [current, setCurrent] = useState<EditableAircraft | null>(target?.mode === 'edit' ? target.aircraft : null);
+  /** Story 19.3 (D-6): seeded from the server row, updated locally after a Salva — survives the availability/archive actions, which rebuild `current` from responses with no rate. */
+  const [rates, setRates] = useState<EditorRates>(
+    target?.mode === 'edit' ? { current: target.aircraft.currentRate, scheduled: target.aircraft.scheduledRate } : { current: null, scheduled: null },
+  );
   /** Mirrors `IdentitySection`'s `isSubmitting` so the footer submit can be disabled while the request is in flight. */
   const [identityBusy, setIdentityBusy] = useState(false);
 
@@ -243,6 +241,21 @@ export function AircraftEditor({ target, onClose, onMutated, totalMinutes, local
   function handleMutated(updated: EditableAircraft): void {
     setCurrent(updated);
     onMutated();
+  }
+
+  /**
+   * Story 19.3 (D-6) — the placeholders after a Salva, without re-reading the
+   * history: every write has `validFrom >= today`, so a rate saved for TODAY
+   * becomes the current one, and a future one only competes with the known
+   * next scheduled rate (the nearer wins; on the same date, the saved one).
+   */
+  function handleRateSaved(saved: ScheduledRate, today: string): void {
+    const prices = { studentPriceCents: saved.studentPriceCents, pilotPriceCents: saved.pilotPriceCents };
+    setRates((previous) =>
+      saved.validFrom === today
+        ? { ...previous, current: prices }
+        : { ...previous, scheduled: previous.scheduled !== null && previous.scheduled.validFrom < saved.validFrom ? previous.scheduled : saved },
+    );
   }
 
   /* Story 15.10 (R-15.10-f): the identity submit moves from the in-body
@@ -270,6 +283,7 @@ export function AircraftEditor({ target, onClose, onMutated, totalMinutes, local
       {isNew ? (
         <IdentitySection
           mode="new"
+          locale={locale}
           labels={labels}
           toastLabels={toastLabels}
           toast={toast}
@@ -282,28 +296,19 @@ export function AircraftEditor({ target, onClose, onMutated, totalMinutes, local
           <IdentitySection
             mode="edit"
             aircraft={current}
+            rates={rates}
+            locale={locale}
             labels={labels}
             toastLabels={toastLabels}
             toast={toast}
             onBusyChange={setIdentityBusy}
             onClose={onClose}
             onSaved={handleMutated}
+            onRateSaved={handleRateSaved}
           />
 
           <Section title={labels.availability.sectionTitle}>
             <AvailabilitySection aircraft={current} locale={locale} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
-          </Section>
-
-          <Section title={labels.rates.sectionTitle}>
-            <RatesSection
-              aircraftId={current.id}
-              archived={current.archivedAt !== null}
-              locale={locale}
-              labels={labels}
-              toastLabels={toastLabels}
-              toast={toast}
-              onMutated={onMutated}
-            />
           </Section>
 
           <Section title={labels.flightHours.sectionTitle}>
@@ -340,6 +345,7 @@ type ToastHandle = { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') 
 type IdentitySectionProps =
   | {
       mode: 'new';
+      locale: 'it' | 'en';
       labels: AircraftEditorLabels;
       toastLabels: ToastLabels;
       toast: ToastHandle;
@@ -351,52 +357,72 @@ type IdentitySectionProps =
   | {
       mode: 'edit';
       aircraft: EditableAircraft;
+      rates: EditorRates;
+      locale: 'it' | 'en';
       labels: AircraftEditorLabels;
       toastLabels: ToastLabels;
       toast: ToastHandle;
       onBusyChange: (busy: boolean) => void;
       onClose: () => void;
       onSaved: (updated: EditableAircraft) => void;
+      /** Story 19.3 (D-6) — the rate this Salva wrote, and the "today" it was checked against. */
+      onRateSaved: (saved: ScheduledRate, today: string) => void;
     };
 
 function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
-  const { labels } = props;
+  const { labels, locale } = props;
   const [formError, setFormError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const isNew = props.mode === 'new';
-  // Review 14.9 (F9, ratifica R-14.9-d): the create-mode "Tariffe" block
-  // used to be gated on `settings.manage` (the STAFF/ADMIN split from story
-  // 14.8) — post-14.9 only ADMIN can reach this form at all (`aircraft.manage`
-  // route gate), so the block is unconditional now.
-  const showRatesSection = props.mode === 'new';
+  // Story 19.3 (R-19-m): the "Tariffe" block lives in this ONE form in both
+  // modes — except on an archived aircraft, which takes no new rate (the
+  // server would answer 409), so the block shows a sentence instead and the
+  // body never carries `rate`.
+  const archived = props.mode === 'edit' && props.aircraft.archivedAt !== null;
+  const currentRate = props.mode === 'edit' ? props.rates.current : null;
+  const scheduledRate = props.mode === 'edit' ? props.rates.scheduled : null;
 
-  // Story 14.8 (AC 1/2): the optional "Tariffe" block folded into the SAME
-  // composite submit as identity — plain state + imperative validation, NOT
-  // react-hook-form, same "conditional block validated against the
-  // mirrored server rule" convention as `pilot-editor.tsx`'s `NewPersonForm`
-  // (its own doc-comment: fighting RHF over a conditionally-relevant,
-  // differently-shaped nested object isn't worth it for a one-shot form).
-  // Untouched (and unused) in edit mode, which keeps its own independent
-  // `RatesSection` form further down this file.
-  const [ratePrice, setRatePrice] = useState('');
-  const [ratePriceDry, setRatePriceDry] = useState('');
-  const [rateValidFrom, setRateValidFrom] = useState(todayDateOnly());
+  // Plain state + imperative validation, NOT react-hook-form (story 14.8's
+  // convention for this block, same as `pilot-editor.tsx`'s `NewPersonForm`):
+  // whether a field is required depends on a rate in effect, not on the field.
+  const [studentPrice, setStudentPrice] = useState('');
+  const [pilotPrice, setPilotPrice] = useState('');
+  // A16 (story 16.9 AD-1 idiom): "today" is the Europe/Rome calendar day, the
+  // same day the server's `RATE_VALID_FROM_IN_PAST` checks against. Computed
+  // once per mount: the panel only renders client-side, after a click.
+  const [today] = useState(() => todayDateOnlyInZone(APP_TIMEZONE));
+  const [rateValidFrom, setRateValidFrom] = useState(today);
   const [rateSubmitAttempted, setRateSubmitAttempted] = useState(false);
+  /** The server's 422 `RATE_VALID_FROM_IN_PAST` (midnight between render and Salva) — cleared as soon as the date changes. */
+  const [validFromServerPast, setValidFromServerPast] = useState(false);
 
-  const hasRate = ratePrice.trim().length > 0;
-  // Review 14.8 F1: the block counts as "touched" if ANY of its fields is —
-  // a dry price without a wet one must BLOCK the submit (mirror of edit's
-  // `newRateFormSchema` `price: min(1)`), never be silently dropped.
-  const rateTouched = hasRate || ratePriceDry.trim().length > 0;
-  const ratePriceMissing = rateTouched && !hasRate;
-  const ratePriceInvalid = hasRate && !isValidRatePrice(ratePrice);
-  const ratePriceDryInvalid = ratePriceDry.trim().length > 0 && !isValidRatePrice(ratePriceDry);
-  const rateValidFromMissing = rateTouched && rateValidFrom.trim().length === 0;
+  // Touched = at least one price typed; the date alone writes nothing (AD-6).
+  const rateTouched = !archived && (studentPrice.trim().length > 0 || pilotPrice.trim().length > 0);
+  /** `null` = valid; otherwise the message for that price field. An empty field inherits the rate in effect today (D-1) and is required only without one. */
+  function priceError(value: string): string | null {
+    if (!rateTouched) return null;
+    if (value.trim().length === 0) return currentRate === null ? labels.errors.required : null;
+    return isValidRatePrice(value) ? null : labels.errors.invalidPrice;
+  }
+  const studentPriceError = priceError(studentPrice);
+  const pilotPriceError = priceError(pilotPrice);
+  const trimmedValidFrom = rateValidFrom.trim();
   // Review 14.8 F2: Chromium's date input accepts >4-digit years that
   // `z.iso.date()` rejects server-side as an unmappable `rate` fieldError —
-  // enforce the ISO shape client-side so that 422 is unreachable.
-  const rateValidFromInvalid = rateTouched && rateValidFrom.trim().length > 0 && !/^\d{4}-\d{2}-\d{2}$/.test(rateValidFrom.trim());
+  // the ISO shape is enforced here so that 422 is unreachable. The native
+  // `min` does not stop a TYPED earlier date (the form is `noValidate`), so
+  // "before today" is checked here too — ISO strings compare as dates.
+  const validFromError = !rateTouched
+    ? null
+    : trimmedValidFrom.length === 0
+      ? labels.errors.required
+      : !/^\d{4}-\d{2}-\d{2}$/.test(trimmedValidFrom)
+        ? labels.errors.invalidDate
+        : trimmedValidFrom < today || validFromServerPast
+          ? labels.errors.validFromPast
+          : null;
+  const rateBlocked = studentPriceError !== null || pilotPriceError !== null || validFromError !== null;
 
   const defaultValues = isNew
     ? { registration: '', type: '', model: '' }
@@ -426,36 +452,29 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
 
   /** RHF's INVALID branch (base fields failed their own zodResolver check) — same `onInvalid` role as `pilot-editor.tsx`'s `NewPersonForm`: flips the plain-state "Tariffe" block's error visibility too, so a submit with BOTH an empty identity field AND an invalid rate field marks both at once instead of leaving the rate block mute. */
   function onInvalid(): void {
-    if (isNew) setRateSubmitAttempted(true);
+    setRateSubmitAttempted(true);
   }
 
   async function onSubmit(values: CreateAircraftInput | UpdateAircraftInput): Promise<void> {
     setFormError(null);
-
-    if (isNew) {
-      setRateSubmitAttempted(true);
-      if (ratePriceMissing || ratePriceInvalid || ratePriceDryInvalid || rateValidFromMissing || rateValidFromInvalid) {
-        setTimeout(() => focusFirstInvalid(formRef.current), 0);
-        return;
-      }
+    setRateSubmitAttempted(true);
+    if (rateBlocked) {
+      setTimeout(() => focusFirstInvalid(formRef.current), 0);
+      return;
     }
 
-    // Story 14.8 (AC 2, "un solo submit"): the optional rate rides along in
-    // the SAME composite body — `createAircraft` runs both writes in one
-    // `$transaction` server-side (`aircraft.service.ts`), so a rejected
-    // rate never leaves a half-created aircraft for this form to recover
-    // from.
-    const body: CreateAircraftInput | UpdateAircraftInput =
-      isNew && hasRate
-        ? {
-            ...(values as CreateAircraftInput),
-            rate: {
-              priceCentsPerHour: parseCents(ratePrice),
-              dryHourlyRateCents: ratePriceDry.trim().length > 0 ? parseCents(ratePriceDry) : undefined,
-              validFrom: rateValidFrom,
-            },
-          }
-        : values;
+    // ONE composite body (story 14.8 for the create, story 19.3 / A17 for the
+    // update): the server writes identity and rate in one `$transaction`, so a
+    // rejected rate never leaves a half-saved form behind. An empty price is
+    // the price in effect today (D-1: what you see is what you save).
+    const rate = rateTouched
+      ? {
+          studentPriceCents: studentPrice.trim().length > 0 ? parseCents(studentPrice) : currentRate!.studentPriceCents,
+          pilotPriceCents: pilotPrice.trim().length > 0 ? parseCents(pilotPrice) : currentRate!.pilotPriceCents,
+          validFrom: trimmedValidFrom,
+        }
+      : null;
+    const body: CreateAircraftInput | UpdateAircraftInput = rate ? { ...values, rate } : values;
 
     const response = isNew
       ? await fetch('/api/v1/aircraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -466,11 +485,16 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
         });
 
     if (!response.ok) {
+      const { code, fieldErrors } = await parseApiError(response);
+      if (code === 'RATE_VALID_FROM_IN_PAST') {
+        setValidFromServerPast(true);
+        setTimeout(() => focusFirstInvalid(formRef.current), 0);
+        return;
+      }
       if (response.status === 422) {
         // Story 14.2, AC 3: field-shaped 422 mapped onto the matching Field,
         // reusing `labels.errors.required` (same generic string as client-side
         // required checks) — the raw server message is never shown (AD-8).
-        const { fieldErrors } = await parseApiError(response);
         const known: Array<'registration' | 'type' | 'model'> = ['registration', 'type', 'model'];
         let mapped = false;
         for (const field of known) {
@@ -484,20 +508,31 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
           return;
         }
       }
-      const code = await errorCodeOf(response);
       setFormError(code === 'CONFLICT' ? labels.errors.conflictRegistration : labels.errors.generic);
       return;
     }
 
     const updated = (await response.json()) as AircraftApiResponse;
-    if (isNew) {
+    if (props.mode === 'new') {
       props.toast.show(props.toastLabels.created, 'ok');
       props.onClose();
       props.onCreated();
     } else {
       props.toast.show(props.toastLabels.updated, 'ok');
+      // D-6: the panel stays open on a fresh, empty rate block.
+      if (rate) props.onRateSaved(rate, today);
+      setStudentPrice('');
+      setPilotPrice('');
+      setRateValidFrom(today);
+      setRateSubmitAttempted(false);
       props.onSaved(toEditable(updated));
     }
+  }
+
+  /** The field hint (linked by `aria-describedby`, unlike the placeholder): the price in effect today, or that there is none. Creation has nothing to say. */
+  function priceHint(cents: number | undefined): string | undefined {
+    if (isNew) return undefined;
+    return cents === undefined ? labels.rates.noCurrentRate : labels.rates.currentHint.replace('{price}', formatCents(cents, locale));
   }
 
   return (
@@ -514,58 +549,66 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
         </Field>
       </div>
 
-      {showRatesSection ? (
-        <Section title={labels.rates.sectionTitle}>
-          <div className="form-grid">
-            <Field
-              label={labels.rates.price}
-              error={
-                rateSubmitAttempted && (ratePriceMissing || ratePriceInvalid)
-                  ? ratePriceMissing
-                    ? labels.errors.required
-                    : labels.errors.invalidPrice
-                  : undefined
-              }
-            >
-              <Input
-                inputMode="decimal"
-                placeholder="0,00"
-                aria-invalid={rateSubmitAttempted && (ratePriceMissing || ratePriceInvalid)}
-                value={ratePrice}
-                onChange={(event) => setRatePrice(event.target.value)}
-                data-testid="new-aircraft-rate-price"
-              />
-            </Field>
-            <Field label={labels.rates.priceDry} error={rateSubmitAttempted && ratePriceDryInvalid ? labels.errors.invalidPrice : undefined}>
-              <Input
-                inputMode="decimal"
-                placeholder="0,00"
-                aria-invalid={rateSubmitAttempted && ratePriceDryInvalid}
-                value={ratePriceDry}
-                onChange={(event) => setRatePriceDry(event.target.value)}
-                data-testid="new-aircraft-rate-price-dry"
-              />
-            </Field>
-            <Field
-              label={labels.rates.validFrom}
-              error={
-                rateSubmitAttempted && (rateValidFromMissing || rateValidFromInvalid)
-                  ? rateValidFromMissing
-                    ? labels.errors.required
-                    : labels.errors.invalidDate
-                  : undefined
-              }
-            >
-              <DateInput
-                aria-invalid={rateSubmitAttempted && (rateValidFromMissing || rateValidFromInvalid)}
-                value={rateValidFrom}
-                onChange={(event) => setRateValidFrom(event.target.value)}
-                data-testid="new-aircraft-rate-valid-from"
-              />
-            </Field>
-          </div>
-        </Section>
-      ) : null}
+      <Section title={labels.rates.sectionTitle}>
+        {archived ? (
+          <p className="fld-hint" data-testid="aircraft-rate-readonly">
+            {labels.rates.readOnlyHint}
+          </p>
+        ) : (
+          <>
+            <div className="form-grid">
+              <Field
+                label={labels.rates.studentPrice}
+                error={rateSubmitAttempted ? (studentPriceError ?? undefined) : undefined}
+                hint={priceHint(currentRate?.studentPriceCents)}
+              >
+                <Input
+                  inputMode="decimal"
+                  placeholder={currentRate ? typableCents(currentRate.studentPriceCents) : '0,00'}
+                  aria-invalid={rateSubmitAttempted && studentPriceError !== null}
+                  value={studentPrice}
+                  onChange={(event) => setStudentPrice(event.target.value)}
+                  data-testid="aircraft-rate-student"
+                />
+              </Field>
+              <Field
+                label={labels.rates.pilotPrice}
+                error={rateSubmitAttempted ? (pilotPriceError ?? undefined) : undefined}
+                hint={priceHint(currentRate?.pilotPriceCents)}
+              >
+                <Input
+                  inputMode="decimal"
+                  placeholder={currentRate ? typableCents(currentRate.pilotPriceCents) : '0,00'}
+                  aria-invalid={rateSubmitAttempted && pilotPriceError !== null}
+                  value={pilotPrice}
+                  onChange={(event) => setPilotPrice(event.target.value)}
+                  data-testid="aircraft-rate-pilot"
+                />
+              </Field>
+              <Field label={labels.rates.validFrom} error={rateSubmitAttempted ? (validFromError ?? undefined) : undefined}>
+                <DateInput
+                  aria-invalid={rateSubmitAttempted && validFromError !== null}
+                  value={rateValidFrom}
+                  min={today}
+                  onChange={(event) => {
+                    setRateValidFrom(event.target.value);
+                    setValidFromServerPast(false);
+                  }}
+                  data-testid="aircraft-rate-valid-from"
+                />
+              </Field>
+            </div>
+            {scheduledRate ? (
+              <p className="fld-hint" data-testid="aircraft-rate-scheduled" style={{ marginTop: 12 }}>
+                {labels.rates.scheduled
+                  .replace('{date}', formatDateOnly(scheduledRate.validFrom, locale))
+                  .replace('{student}', formatCents(scheduledRate.studentPriceCents, locale))
+                  .replace('{pilot}', formatCents(scheduledRate.pilotPriceCents, locale))}
+              </p>
+            ) : null}
+          </>
+        )}
+      </Section>
 
       {formError ? (
         <p role="alert" data-testid="identity-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
@@ -605,7 +648,7 @@ function AvailabilitySection({
   onMutated,
 }: {
   aircraft: EditableAircraft;
-  /** Story AOG-1a — needed only to format the fermo date in "Stato attuale" (same `formatDateOnly` + locale pair `RatesSection` already takes). */
+  /** Story AOG-1a — needed only to format the fermo date in "Stato attuale" (the same `formatDateOnly` + locale pair the Tariffe block uses). */
   locale: 'it' | 'en';
   labels: AircraftEditorLabels;
   toastLabels: ToastLabels;
@@ -964,206 +1007,6 @@ function AvailabilitySection({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// --- Rates (tariffe) ---------------------------------------------------------
-
-const newRateFormSchema = z
-  .object({ price: z.string().trim().min(1), priceDry: z.string().trim(), validFrom: z.string().trim().min(1) })
-  .refine(
-    (values) => {
-      try {
-        const cents = parseCents(values.price);
-        return cents > 0 && cents <= 2_147_483_647;
-      } catch {
-        return false;
-      }
-    },
-    { message: 'invalidPrice', path: ['price'] },
-  )
-  .refine(
-    (values) => {
-      if (values.priceDry.trim().length === 0) return true;
-      try {
-        const cents = parseCents(values.priceDry);
-        return cents > 0 && cents <= 2_147_483_647;
-      } catch {
-        return false;
-      }
-    },
-    { message: 'invalidPrice', path: ['priceDry'] },
-  );
-
-type NewRateFormValues = z.infer<typeof newRateFormSchema>;
-
-/** Default visible window for the rates history (R3, story 13.4) — full history stays reachable via "mostra tutte". */
-const HISTORY_VISIBLE_COUNT = 5;
-
-/** Pure fetch, no setState (see the effect's own doc-comment for why). */
-async function fetchRatesHistory(aircraftId: string): Promise<AircraftRateItemDto[]> {
-  const response = await fetch(`/api/v1/aircraft/${aircraftId}/rates`);
-  if (!response.ok) return [];
-  return (await response.json()) as AircraftRateItemDto[];
-}
-
-function RatesSection({
-  aircraftId,
-  archived,
-  locale,
-  labels,
-  toastLabels,
-  toast,
-  onMutated,
-}: {
-  aircraftId: string;
-  archived: boolean;
-  locale: 'it' | 'en';
-  labels: AircraftEditorLabels;
-  toastLabels: ToastLabels;
-  toast: { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
-  onMutated: () => void;
-}) {
-  const [history, setHistory] = useState<AircraftRateItemDto[] | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  // AC 2 (R3): the full history is already fetched (defensively capped at
-  // 500 server-side) — showing only the last 5 by default is a pure
-  // client-side slice, no extra round-trip needed to "show all".
-  const [showAllRates, setShowAllRates] = useState(false);
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<NewRateFormValues>({ resolver: zodResolver(newRateFormSchema), defaultValues: { price: '', priceDry: '', validFrom: todayDateOnly() } });
-
-  /** Story 14.2: `newRateFormSchema`'s own `.refine(...)` tags a price violation with the `'invalidPrice'` marker (never shown verbatim) — anything else on the field is the plain `min(1)` required check. */
-  function priceFieldError(fieldError: { message?: string } | undefined): string | undefined {
-    if (!fieldError) return undefined;
-    return fieldError.message === 'invalidPrice' ? labels.errors.invalidPrice : labels.errors.required;
-  }
-
-  useEffect(() => {
-    // Same `.then(callback)` shape as `account-panel.tsx`'s own fetch effect
-    // (not a named async function referenced via `void loadHistory()`, which
-    // the `react-hooks/set-state-in-effect` rule flags even behind a
-    // `cancelled` guard) — `fetchRatesHistory` itself performs no setState,
-    // only the `.then` callback below does, gated on `cancelled`.
-    let cancelled = false;
-    void fetchRatesHistory(aircraftId).then((result) => {
-      if (!cancelled) setHistory(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [aircraftId]);
-
-  async function onSubmit(values: NewRateFormValues): Promise<void> {
-    setFormError(null);
-    const priceCentsPerHour = parseCents(values.price);
-    const dryHourlyRateCents = values.priceDry.trim().length > 0 ? parseCents(values.priceDry) : undefined;
-
-    const response = await fetch(`/api/v1/aircraft/${aircraftId}/rates`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ priceCentsPerHour, dryHourlyRateCents, validFrom: values.validFrom }),
-    });
-
-    if (!response.ok) {
-      const code = await errorCodeOf(response);
-      setFormError(code === 'CONFLICT' ? labels.errors.conflictRate : labels.errors.generic);
-      return;
-    }
-
-    reset({ price: '', priceDry: '', validFrom: todayDateOnly() });
-    toast.show(toastLabels.rateAdded, 'ok');
-    setHistory(await fetchRatesHistory(aircraftId));
-    onMutated();
-  }
-
-  const current = history ? currentRateOf(history) : null;
-
-  return (
-    <div>
-      <p className="fld-label">
-        {labels.rates.current}:{' '}
-        <span data-testid="rates-current">{current ? `${formatCents(current.priceCentsPerHour, locale)}/h` : labels.rates.noCurrentRate}</span>
-      </p>
-      {current?.dryHourlyRateCents ? (
-        <p className="fld-label" data-testid="rates-current-dry">
-          {labels.rates.currentDry}: {formatCents(current.dryHourlyRateCents, locale)}/h
-        </p>
-      ) : null}
-
-      {/* `archived` remains a live gate independent of role (review 14.9 F9,
-          ratifica R-14.9-d): the old `canManageSettings &&` conjunct is
-          dropped because only ADMIN ever reaches this editor (`aircraft.manage`
-          route gate) — the readOnlyHint below now fires ONLY for an archived
-          aircraft, never for a permission gap. */}
-      {!archived ? (
-        <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="new-rate-form" style={{ marginTop: 10 }}>
-          <div className="form-grid">
-            <Field label={labels.rates.price} error={priceFieldError(errors.price)}>
-              <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.price)} {...register('price')} />
-            </Field>
-            <Field label={labels.rates.priceDry} error={priceFieldError(errors.priceDry)}>
-              <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.priceDry)} {...register('priceDry')} />
-            </Field>
-            <Field label={labels.rates.validFrom} error={errors.validFrom ? labels.errors.required : undefined}>
-              <DateInput aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
-            </Field>
-          </div>
-          {formError ? (
-            <p role="alert" data-testid="new-rate-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-              {formError}
-            </p>
-          ) : null}
-          <div style={{ marginTop: 10 }}>
-            <button type="submit" disabled={isSubmitting} className="btn" data-testid="new-rate-submit">
-              {labels.rates.submit}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <p className="fld-label" style={{ marginTop: 8 }}>
-          {labels.rates.readOnlyHint}
-        </p>
-      )}
-
-      <div style={{ marginTop: 14 }}>
-        <div className="fld-label" style={{ fontWeight: 600 }}>
-          {labels.rates.historyTitle}
-        </div>
-        {history === null ? null : history.length === 0 ? (
-          <p className="fld-label" style={{ marginTop: 6 }}>
-            {labels.rates.historyEmpty}
-          </p>
-        ) : (
-          <div style={{ marginTop: 6 }}>
-            {(showAllRates ? history : history.slice(0, HISTORY_VISIBLE_COUNT)).map((rate) => (
-              <div key={rate.id} data-testid="rate-history-row" className="meter-row" style={{ padding: '4px 0' }}>
-                <span>{formatDateOnly(rate.validFrom, locale)}</span>
-                <span className="v mono">
-                  {formatCents(rate.priceCentsPerHour, locale)}/h{rate.dryHourlyRateCents ? ` · ${formatCents(rate.dryHourlyRateCents, locale)}/h dry` : ''}
-                </span>
-              </div>
-            ))}
-            {!showAllRates && history.length > HISTORY_VISIBLE_COUNT ? (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setShowAllRates(true)}
-                data-testid="rates-history-show-all"
-                style={{ marginTop: 8 }}
-              >
-                {labels.rates.showAll.replace('{count}', String(history.length - HISTORY_VISIBLE_COUNT))}
-              </button>
-            ) : null}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -1,12 +1,14 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import { buildExportHref } from '@/lib/export-href';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { redirect } from '@/i18n/navigation';
 import { listAircraft, listOutOfServiceAircraft, sumFlightMinutesByAircraft } from '@/server/services/aircraft.service';
 import { listReservedAircraftIds } from '@/server/services/bookings.service';
-import { getEffectiveRates, todayDateOnlyUtc } from '@/server/services/rates.service';
+import { getEffectiveRates, getNextScheduledRates } from '@/server/services/rates.service';
 import { FleetConsole, type FleetConsoleItem } from './fleet-console';
 
 type PageProps = {
@@ -62,18 +64,22 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
   ]);
 
   const ids = aircraftResult.items.map((item) => item.id);
-  const today = todayDateOnlyUtc();
+  // Story 19.3 (D-8, A16): the Europe/Rome day — the same "today" the editor's
+  // "In vigore da" minimum and the server's `RATE_VALID_FROM_IN_PAST` use, so
+  // the price placeholders never speak of yesterday between 00:00 and 02:00.
+  const today = todayDateOnlyUtcInZone(APP_TIMEZONE);
   const now = new Date();
   // Story 15.5 (R-15.5-b): the phone card's hours bar. Batched over the ids of
-  // THIS page, exactly like the two readers beside it — the window is the
+  // THIS page, exactly like the readers beside it — the window is the
   // current calendar month, and the card's own caption names it.
   const monthStart = parseDateOnlyUtc(`${toDateOnlyString(today).slice(0, 7)}-01`);
   // Story 19.2 (R-19-b): the aircraft's hours (sheet row + editor readout) —
-  // the same aggregate with no window at all. No upper bound rather than
-  // `today`: `today` is a UTC date and would drop the flights registered
-  // between 00:00 and 02:00 Rome time.
-  const [currentRatesById, reservedIds, monthMinutesById, totalMinutesById] = await Promise.all([
+  // the same aggregate with no window at all (a flight is never in the
+  // future, so no upper bound is needed).
+  const [currentRatesById, scheduledRatesById, reservedIds, monthMinutesById, totalMinutesById] = await Promise.all([
     getEffectiveRates(actor, ids, today),
+    // Story 19.3 (Q-19.3-d): the next scheduled rate, the editor's one line.
+    getNextScheduledRates(actor, ids, today),
     listReservedAircraftIds(actor, ids, now),
     sumFlightMinutesByAircraft(actor, ids, monthStart, today),
     sumFlightMinutesByAircraft(actor, ids, null, null),
@@ -89,20 +95,29 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
 
   const exportHref = buildExportHref('/api/v1/aircraft', { q, includeArchived: includeArchived ? 'true' : undefined }, locale);
 
-  const items: FleetConsoleItem[] = aircraftResult.items.map((aircraft) => ({
-    id: aircraft.id,
-    registration: aircraft.registration,
-    type: aircraft.type,
-    model: aircraft.model,
-    status: aircraft.status,
-    statusReason: aircraft.statusReason,
-    // Story AOG-1a — already `YYYY-MM-DD` off the service DTO (same `@db.Date`
-    // wire convention as `AircraftRateListItem.validFrom`), so no conversion here.
-    outOfServiceUntil: aircraft.outOfServiceUntil,
-    archivedAt: aircraft.archivedAt ? aircraft.archivedAt.toISOString() : null,
-    wetRateCents: currentRatesById.get(aircraft.id)?.priceCentsPerHour ?? null,
-    reserved: reservedIds.has(aircraft.id),
-  }));
+  const items: FleetConsoleItem[] = aircraftResult.items.map((aircraft) => {
+    const currentRate = currentRatesById.get(aircraft.id) ?? null;
+    const scheduledRate = scheduledRatesById.get(aircraft.id) ?? null;
+    return {
+      id: aircraft.id,
+      registration: aircraft.registration,
+      type: aircraft.type,
+      model: aircraft.model,
+      status: aircraft.status,
+      statusReason: aircraft.statusReason,
+      // Story AOG-1a — already `YYYY-MM-DD` off the service DTO (same `@db.Date`
+      // wire convention as `AircraftRateListItem.validFrom`), so no conversion here.
+      outOfServiceUntil: aircraft.outOfServiceUntil,
+      archivedAt: aircraft.archivedAt ? aircraft.archivedAt.toISOString() : null,
+      currentRate: currentRate && { studentPriceCents: currentRate.studentPriceCents, pilotPriceCents: currentRate.pilotPriceCents },
+      scheduledRate: scheduledRate && {
+        studentPriceCents: scheduledRate.studentPriceCents,
+        pilotPriceCents: scheduledRate.pilotPriceCents,
+        validFrom: scheduledRate.validFrom,
+      },
+      reserved: reservedIds.has(aircraft.id),
+    };
+  });
 
   return (
     <main className="page">
@@ -130,7 +145,6 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
           includeArchivedLabel: t('includeArchivedLabel'),
           empty: t('empty'),
           newAircraft: t('newAircraft'),
-          rateLabel: t('rateLabel'),
           exportLabel: tExport('button'),
           exportXls: tExport('button'),
           pagination: { prev: t('pagination.prev'), next: t('pagination.next') },
@@ -148,11 +162,9 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
             sheet: {
               status: t('mobile.sheet.status'),
               aogReason: t('mobile.sheet.aogReason'),
-              rate: t('mobile.sheet.rate'),
               totalHours: t('mobile.sheet.totalHours'),
               monthHours: t('mobile.sheet.monthHours'),
             },
-            noValue: t('mobile.noValue'),
           },
           editor: {
             newTitle: t('editor.newTitle'),
@@ -187,8 +199,8 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               confirmQuestionUnknown: t('editor.availability.confirmQuestionUnknown'),
               // Story AOG-1b — `t.raw` for every template carrying a
               // client-interpolated placeholder (same convention as
-              // `rates.showAll`): the count and the date are only known in the
-              // browser.
+              // `rates.currentHint`): the count and the date are only known in
+              // the browser.
               impactPreviewNone: t('editor.availability.impactPreviewNone'),
               impactPreviewOne: t('editor.availability.impactPreviewOne'),
               impactPreviewMany: t.raw('editor.availability.impactPreviewMany') as string,
@@ -205,18 +217,13 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
             },
             rates: {
               sectionTitle: t('editor.rates.sectionTitle'),
-              current: t('editor.rates.current'),
-              currentDry: t('editor.rates.currentDry'),
-              noCurrentRate: t('editor.rates.noCurrentRate'),
-              newRateTitle: t('editor.rates.newRateTitle'),
-              price: t('editor.rates.price'),
-              priceDry: t('editor.rates.priceDry'),
+              studentPrice: t('editor.rates.studentPrice'),
+              pilotPrice: t('editor.rates.pilotPrice'),
               validFrom: t('editor.rates.validFrom'),
-              submit: t('editor.rates.submit'),
+              currentHint: t.raw('editor.rates.currentHint') as string,
+              noCurrentRate: t('editor.rates.noCurrentRate'),
+              scheduled: t.raw('editor.rates.scheduled') as string,
               readOnlyHint: t('editor.rates.readOnlyHint'),
-              historyTitle: t('editor.rates.historyTitle'),
-              historyEmpty: t('editor.rates.historyEmpty'),
-              showAll: t.raw('editor.rates.showAll') as string,
             },
             flightHours: {
               sectionTitle: t('editor.flightHours.sectionTitle'),
@@ -236,9 +243,9 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               generic: t('editor.errors.generic'),
               conflictRegistration: t('editor.errors.conflictRegistration'),
               conflictStatus: t('editor.errors.conflictStatus'),
-              conflictRate: t('editor.errors.conflictRate'),
               invalidPrice: t('editor.errors.invalidPrice'),
               invalidDate: t('editor.errors.invalidDate'),
+              validFromPast: t('editor.errors.validFromPast'),
               reasonRequired: t('editor.errors.reasonRequired'),
             },
           },
@@ -249,7 +256,6 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
             unarchived: t('toast.unarchived'),
             setOutOfService: t('toast.setOutOfService'),
             returnedToService: t('toast.returnedToService'),
-            rateAdded: t('toast.rateAdded'),
           },
         }}
       />

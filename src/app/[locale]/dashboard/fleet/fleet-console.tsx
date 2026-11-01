@@ -31,21 +31,33 @@ import { Icon } from '@/components/ui/icons';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { hoursBarPercent } from '@/lib/mobile-registries';
-import { formatCents } from '@/lib/money';
 import { formatMinutes } from '@/lib/time';
 import { AircraftEditor, type AircraftEditorLabels } from './aircraft-editor';
 
 export type { FleetCardItem } from '@/components/dashboard/fleet-card';
 
+/** The two prices of an aircraft rate (story 19.3, R-19-e), integer euro cents. */
+export type RatePrices = { studentPriceCents: number; pilotPriceCents: number };
+
+/** A rate that takes effect after today (story 19.3, Q-19.3-d) — `validFrom` is `YYYY-MM-DD`. */
+export type ScheduledRate = RatePrices & { validFrom: string };
+
 /**
- * The fleet page's own row: the shared card item PLUS `outOfServiceUntil`
- * (story AOG-1a), which only the editor's Disponibilità section reads.
- * Deliberately widened HERE and not on `FleetCardItem` itself: R-AOG-e keeps
- * every card surface — including the Panoramica's `FleetCardGrid`, which shares
- * that type — out of this story's perimeter. `FleetCardGrid`/`badgeFor` accept
- * the narrower type and are handed these rows unchanged.
+ * The fleet page's own row: the shared card item PLUS what only the editor
+ * reads — `outOfServiceUntil` (story AOG-1a, Disponibilità) and the two rates
+ * of story 19.3 (the price placeholders and the "variazione programmata"
+ * line; no card shows a price since Q-19.3-a). Deliberately widened HERE and
+ * not on `FleetCardItem` itself: the Panoramica's `FleetCardGrid` shares that
+ * type and needs none of it. `FleetCardGrid`/`badgeFor` accept the narrower
+ * type and are handed these rows unchanged.
  */
-export type FleetConsoleItem = FleetCardItem & { outOfServiceUntil: string | null };
+export type FleetConsoleItem = FleetCardItem & {
+  outOfServiceUntil: string | null;
+  /** The rate in effect today (Europe/Rome), or `null`. */
+  currentRate: RatePrices | null;
+  /** The NEXT rate with `validFrom` after today, or `null`. */
+  scheduledRate: ScheduledRate | null;
+};
 
 export type FleetConsoleLabels = {
   cardTitle: string;
@@ -53,7 +65,6 @@ export type FleetConsoleLabels = {
   includeArchivedLabel: string;
   empty: string;
   newAircraft: string;
-  rateLabel: string;
   exportLabel: string;
   exportXls: string;
   pagination: { prev: string; next: string };
@@ -64,8 +75,7 @@ export type FleetConsoleLabels = {
     openDetail: string;
     close: string;
     edit: string;
-    sheet: { status: string; aogReason: string; rate: string; totalHours: string; monthHours: string };
-    noValue: string;
+    sheet: { status: string; aogReason: string; totalHours: string; monthHours: string };
   };
   editor: AircraftEditorLabels;
   toast: {
@@ -75,7 +85,6 @@ export type FleetConsoleLabels = {
     unarchived: string;
     setOutOfService: string;
     returnedToService: string;
-    rateAdded: string;
   };
 };
 
@@ -216,8 +225,6 @@ export function FleetConsole({
           ) : (
             <FleetCardGrid
               items={items}
-              locale={locale}
-              rateLabel={labels.rateLabel}
               badgeLabels={labels.badge}
               /* The grid hands back the NARROW shared `FleetCardItem` (story
                  AOG-1a leaves `fleet-card.tsx` untouched, R-AOG-e) — the row
@@ -257,10 +264,6 @@ export function FleetConsole({
                   <span className="mobile-ac-tail">{aircraft.registration}</span>
                   <span className="mobile-ac-status">{badgeFor(aircraft, labels.badge)}</span>
                   <span className="mobile-ac-model">{aircraft.model}</span>
-                  <span className="mobile-ac-meter">
-                    <span>{labels.rateLabel}</span>
-                    <span className="v">{aircraft.wetRateCents === null ? labels.mobile.noValue : `${formatCents(aircraft.wetRateCents, locale)}/h`}</span>
-                  </span>
                   <span className="meter-bar">
                     <span className={`fill ${aog ? 'bad' : ''}`} style={{ width: `${hoursBarPercent(minutes, maxMonthMinutes)}%` }} />
                   </span>
@@ -328,7 +331,7 @@ export function FleetConsole({
           sub={sheetAircraft.type}
           title={`${sheetAircraft.registration} · ${sheetAircraft.model}`}
           badge={badgeFor(sheetAircraft, labels.badge)}
-          rows={fleetSheetRows(sheetAircraft, totalMinutesById[sheetAircraft.id] ?? 0, monthMinutesById[sheetAircraft.id] ?? 0, locale, labels)}
+          rows={fleetSheetRows(sheetAircraft, totalMinutesById[sheetAircraft.id] ?? 0, monthMinutesById[sheetAircraft.id] ?? 0, labels)}
           closeLabel={labels.mobile.close}
           actions={
             <button
@@ -351,20 +354,13 @@ export function FleetConsole({
 }
 
 /** Detail rows of the fleet sheet — the template's own `openTail` builder (script 598-599), with the app's fields. */
-function fleetSheetRows(
-  aircraft: FleetConsoleItem,
-  totalMinutes: number,
-  monthMinutes: number,
-  locale: 'it' | 'en',
-  labels: FleetConsoleLabels,
-): BottomSheetRow[] {
+function fleetSheetRows(aircraft: FleetConsoleItem, totalMinutes: number, monthMinutes: number, labels: FleetConsoleLabels): BottomSheetRow[] {
   const statusLabel = aircraft.archivedAt !== null ? labels.badge.archived : aircraft.status === 'OUT_OF_SERVICE' ? labels.badge.aog : aircraft.reserved ? labels.badge.reserved : labels.badge.available;
   const rows: BottomSheetRow[] = [{ k: labels.mobile.sheet.status, v: statusLabel }];
   if (aircraft.status === 'OUT_OF_SERVICE' && aircraft.statusReason) {
     rows.push({ k: labels.mobile.sheet.aogReason, v: aircraft.statusReason });
   }
   rows.push(
-    { k: labels.mobile.sheet.rate, v: aircraft.wetRateCents === null ? labels.mobile.noValue : `${formatCents(aircraft.wetRateCents, locale)}/h` },
     { k: labels.mobile.sheet.totalHours, v: formatMinutes(totalMinutes) },
     { k: labels.mobile.sheet.monthHours, v: formatMinutes(monthMinutes) },
   );

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -130,16 +131,13 @@ async function createInstructorWithRate(page: Page, priceCentsPerHour: number): 
   // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
   await ensureValidSeedExpiries(page, person.id, 'INSTRUCTORS');
 
-  const rateResponse = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedInstructorRate(person.id, { priceCentsPerHour, validFrom: PAST_DATE });
 
   return { personId: person.id, firstName, lastName };
 }
 
 /** Creates an aircraft with a rate in effect since `PAST_DATE` (same pattern as `flights.spec.ts`). */
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string; registration: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-RV${suffix}`.toUpperCase().slice(0, 20);
 
@@ -149,10 +147,7 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Pr
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
 
   return { id: aircraft.id, registration };
 }

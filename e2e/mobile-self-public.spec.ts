@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 /**
  * Story 15.9 — the two self-service surfaces (the shared estratto conto of
@@ -141,8 +142,7 @@ async function createReversedFlightCharge(page: Page, personId: string): Promise
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour: 1, validFrom: FLIGHT_DATE } });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: 1, pilotPriceCents: 1, validFrom: FLIGHT_DATE });
 
   const flightResponse = await page.request.post('/api/v1/flights', {
     data: {

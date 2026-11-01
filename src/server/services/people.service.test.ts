@@ -50,6 +50,8 @@ vi.mock('@/server/db/prisma', () => ({
       create: vi.fn(),
     },
     $transaction: vi.fn(),
+    // Story 19.3 (AD-5): `upsertProfile`'s `Person` row lock.
+    $queryRaw: vi.fn(),
   },
 }));
 
@@ -73,6 +75,7 @@ const {
   unarchivePerson,
   updatePerson,
   upsertProfile,
+  assertStudentProfileExclusive,
 } = await import('./people.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
@@ -83,6 +86,7 @@ const countMock = vi.mocked(prisma.person.count);
 const createMock = vi.mocked(prisma.person.create);
 const updateMock = vi.mocked(prisma.person.update);
 const transactionMock = vi.mocked(prisma.$transaction);
+const queryRawMock = vi.mocked(prisma.$queryRaw);
 const pilotProfileUpsertMock = vi.mocked(prisma.pilotProfile.upsert);
 const pilotProfileUpdateManyMock = vi.mocked(prisma.pilotProfile.updateMany);
 const studentProfileUpsertMock = vi.mocked(prisma.studentProfile.upsert);
@@ -190,6 +194,9 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     expiryTypeFindManyMock.mockReset();
     expiryCreateMock.mockReset();
     sendInviteEmailMock.mockReset();
+    queryRawMock.mockReset();
+    // Story 19.3 default: the `Person` row lock finds the person.
+    (queryRawMock as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue([{ id: 'person_1' }]);
 
     // Story 3.1 (interactive-callback form since story TD-1, AC 3):
     // `upsertProfile`'s pilot/student branches run their profile upsert
@@ -538,11 +545,10 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expect(sendInviteEmailMock).not.toHaveBeenCalled();
     });
 
-    it('activates pilot+student+instructor, registers an expiry per profile scope, and creates+invites the linked user — all in ONE $transaction, invite sent only AFTER it resolves', async () => {
+    it('activates pilot+instructor (the student profile excludes both since story 19.3), registers an expiry per profile scope, and creates+invites the linked user — all in ONE $transaction, invite sent only AFTER it resolves', async () => {
       personFindFirst.mockResolvedValue(null);
       personCreate.mockResolvedValue(SELECTED_PERSON);
       pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
-      studentProfileUpsert.mockResolvedValue({ courseStartDate: new Date('2026-01-01'), deactivatedAt: null });
       instructorProfileUpsert.mockResolvedValue({ deactivatedAt: null });
       expiryTypeFindMany.mockResolvedValue([{ id: 'et_pilot', scope: 'PILOTS', isActive: true }]);
       expiryCreate.mockResolvedValue({ id: 'expiry_1' });
@@ -554,7 +560,6 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         ...input,
         profiles: {
           pilot: { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' },
-          student: { courseStartDate: '2026-01-01' },
           instructor: {},
         },
         expiries: [{ expiryTypeId: 'et_pilot', expiresAt: '2027-01-01' }],
@@ -565,7 +570,6 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expect(transactionMock).toHaveBeenCalledTimes(1);
 
       expect(pilotProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
-      expect(studentProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
       expect(instructorProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
       expect(expiryCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ personId: 'person_1', expiryTypeId: 'et_pilot', actorUserId: 'admin_1' }) }),
@@ -577,7 +581,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       // The invite is sent AFTER the transaction resolves (fire-and-forget), never inside it.
       expect(sendInviteEmailMock).toHaveBeenCalledWith('user_1', 'maria@airmanager.local', 'it');
 
-      expect(result.profiles).toEqual({ pilot: true, student: true, instructor: true });
+      expect(result.profiles).toEqual({ pilot: true, student: false, instructor: true });
     });
 
     it('access.email already taken by another user → ConflictError, before the transaction opens', async () => {
@@ -742,8 +746,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
   });
 
   describe('upsertProfile (story 2.2, AC 1/2)', () => {
-    it('throws NotFoundError for a missing person', async () => {
-      personFindUnique.mockResolvedValue(null);
+    it('throws NotFoundError for a missing person (the Person row lock finds no row, story 19.3)', async () => {
+      (queryRawMock as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue([]);
 
       await expect(
         upsertProfile(adminActor(), 'missing', 'pilot', { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' }),
@@ -920,6 +924,110 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expect(pilotProfileUpsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1' } }));
       expect(createMock).not.toHaveBeenCalled();
       expect(updateMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // Story 19.3 (R-19-e, Q-19.3-c, AD-5): the student profile excludes the
+  // pilot AND the instructor profile — checked on the FINAL state, from the
+  // transaction's own client, under a `Person` row lock.
+  describe('exclusive student profile (story 19.3, AC 13-15)', () => {
+    const PILOT_INPUT = { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)' };
+    const ACTIVE = { deactivatedAt: null };
+    const INACTIVE = { deactivatedAt: new Date('2026-01-01T00:00:00.000Z') };
+
+    /** A `tx` DISTINCT from the global `prisma` (review 14.8 F4's idiom): a read that escapes the transaction cannot pass. */
+    function distinctTx(profiles: { pilotProfile?: unknown; studentProfile?: unknown; instructorProfile?: unknown }, calls: string[]) {
+      return {
+        $queryRaw: vi.fn(async (strings: TemplateStringsArray) => {
+          calls.push(`queryRaw:${strings.join('?')}`);
+          return [{ id: 'person_1' }];
+        }),
+        pilotProfile: { upsert: vi.fn(async () => (calls.push('pilotProfile.upsert'), { licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null })) },
+        studentProfile: { upsert: vi.fn(async () => (calls.push('studentProfile.upsert'), { courseStartDate: new Date('2026-03-01'), deactivatedAt: null })) },
+        instructorProfile: { upsert: vi.fn(async () => (calls.push('instructorProfile.upsert'), { deactivatedAt: null })) },
+        account: { upsert: vi.fn(async () => (calls.push('account.upsert'), { id: 'account_1' })) },
+        person: {
+          findUnique: vi.fn(async () => (calls.push('person.findUnique'), { pilotProfile: null, studentProfile: null, instructorProfile: null, ...profiles })),
+        },
+      };
+    }
+
+    function runOn(tx: unknown): void {
+      (transaction as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation((arg: unknown) =>
+        (arg as (t: unknown) => unknown)(tx),
+      );
+    }
+
+    it('activating Pilot while Student is active: 422 STUDENT_PROFILE_EXCLUSIVE, raised AFTER the core write so the rollback undoes it', async () => {
+      const calls: string[] = [];
+      const tx = distinctTx({ pilotProfile: ACTIVE, studentProfile: ACTIVE }, calls);
+      runOn(tx);
+
+      await expect(upsertProfile(adminActor(), 'person_1', 'pilot', PILOT_INPUT)).rejects.toMatchObject({ code: 'STUDENT_PROFILE_EXCLUSIVE' });
+      expect(calls).toEqual([expect.stringContaining('FROM "Person"'), 'pilotProfile.upsert', 'account.upsert', 'person.findUnique']);
+    });
+
+    it('the FIRST statement of the transaction locks the Person row FOR NO KEY UPDATE, before any other query (AC 14)', async () => {
+      const calls: string[] = [];
+      runOn(distinctTx({ studentProfile: ACTIVE }, calls));
+
+      await upsertProfile(adminActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' });
+
+      expect(calls[0]).toContain('FROM "Person"');
+      expect(calls[0]).toContain('FOR NO KEY UPDATE');
+      expect(calls.filter((call) => call.startsWith('queryRaw:'))).toHaveLength(1);
+      // Nothing touched the global client: the lock, the write and the check all ran on `tx`.
+      expect(queryRawMock).not.toHaveBeenCalled();
+      expect(findUniqueMock).not.toHaveBeenCalled();
+      expect(studentProfileUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('activating Student while Pilot is active, or while Instructor is active (Q-19.3-c): same 422', async () => {
+      runOn(distinctTx({ studentProfile: ACTIVE, pilotProfile: ACTIVE }, []));
+      await expect(upsertProfile(adminActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' })).rejects.toMatchObject({
+        code: 'STUDENT_PROFILE_EXCLUSIVE',
+      });
+
+      runOn(distinctTx({ studentProfile: ACTIVE, instructorProfile: ACTIVE }, []));
+      await expect(upsertProfile(adminActor(), 'person_1', 'student', { courseStartDate: '2026-03-01' })).rejects.toMatchObject({
+        code: 'STUDENT_PROFILE_EXCLUSIVE',
+      });
+    });
+
+    it('activating Instructor while Student is active (Q-19.3-c): 422 — the instructor branch is checked too', async () => {
+      const calls: string[] = [];
+      runOn(distinctTx({ instructorProfile: ACTIVE, studentProfile: ACTIVE }, calls));
+
+      await expect(upsertProfile(adminActor(), 'person_1', 'instructor', {})).rejects.toMatchObject({ code: 'STUDENT_PROFILE_EXCLUSIVE' });
+      expect(calls[0]).toContain('FOR NO KEY UPDATE');
+    });
+
+    it('pilot + instructor stays allowed, and a deactivated student never blocks (the student → pilot transition)', async () => {
+      runOn(distinctTx({ pilotProfile: ACTIVE, instructorProfile: ACTIVE, studentProfile: INACTIVE }, []));
+      await expect(upsertProfile(adminActor(), 'person_1', 'pilot', PILOT_INPUT)).resolves.toMatchObject({ deactivatedAt: null });
+      await expect(upsertProfile(adminActor(), 'person_1', 'instructor', {})).resolves.toEqual({ deactivatedAt: null });
+    });
+
+    it('assertStudentProfileExclusive reads the three profiles from the given tx', async () => {
+      const tx = distinctTx({ studentProfile: ACTIVE, pilotProfile: INACTIVE, instructorProfile: null }, []);
+
+      await expect(assertStudentProfileExclusive(tx as never, 'person_1')).resolves.toBeUndefined();
+      expect(tx.person.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'person_1' }, select: expect.objectContaining({ pilotProfile: expect.anything(), studentProfile: expect.anything(), instructorProfile: expect.anything() }) }),
+      );
+      expect(findUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('createPerson with profiles.student AND profiles.pilot (or .instructor): 422 before any query or transaction (AC 15)', async () => {
+      const base = { firstName: 'Ada', lastName: 'Lovelace' };
+      await expect(
+        createPerson(adminActor(), { ...base, profiles: { pilot: PILOT_INPUT, student: { courseStartDate: '2026-03-01' } } }),
+      ).rejects.toMatchObject({ code: 'STUDENT_PROFILE_EXCLUSIVE' });
+      await expect(
+        createPerson(adminActor(), { ...base, profiles: { instructor: {}, student: { courseStartDate: '2026-03-01' } } }),
+      ).rejects.toMatchObject({ code: 'STUDENT_PROFILE_EXCLUSIVE' });
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(findFirstMock).not.toHaveBeenCalled();
     });
   });
 

@@ -1,4 +1,4 @@
-import { Prisma, type ExpiryScope, type FlightStatus, type FlightType } from '@/generated/prisma/client';
+import { Prisma, type AircraftPriceCategory, type ExpiryScope, type FlightStatus, type FlightType } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { CancelFlightInput, CorrectFlightInput, ListFlightsQuery, RegisterFlightInput } from '@/lib/schemas/flights';
@@ -28,7 +28,11 @@ import { getEffectiveRate } from './rates.service';
  * insufficient-balance block, the domain expects the pilot to top up
  * afterwards). Rate lookups (AD-4) reuse `rates.service.ts#getEffectiveRate`
  * and `instructor-rates.service.ts#getEffectiveInstructorRate`, both called
- * BEFORE the transaction (append-only tables, no meaningful race). The
+ * BEFORE the transaction: rates are rewritable only while their `validFrom`
+ * is today or later (story 19.3, R-19-f), so the only row that can change
+ * under a flight is TODAY's, and a flight of today registered while the
+ * admin rewrites it takes either price — both legitimate at that instant —
+ * and freezes it. The
  * negative-balance alert (FR-27) reuses `accounts.service.ts`'s
  * lock-read-compare-send dance (`getNegativeBalanceThresholdCents`,
  * `balanceBand`, `bandWorsened`, `sendNegativeBalanceAlert`) verbatim —
@@ -120,6 +124,8 @@ import { getEffectiveRate } from './rates.service';
 
 export type FlightBreakdown = {
   aircraftRateCentsPerHour: number;
+  /** Story 19.3 (R-19-e) — which of the aircraft rate's two prices `aircraftRateCentsPerHour` is, frozen with it. */
+  aircraftPriceCategory: AircraftPriceCategory;
   /** Always on the FULL flight duration (story 12.13: package consumption retired). */
   aircraftAmountCents: number;
   instructorRateCentsPerHour?: number;
@@ -200,6 +206,7 @@ const FLIGHT_SELECT = {
   takeoffs: true,
   landings: true,
   aircraftRateCentsPerHour: true,
+  aircraftPriceCategory: true,
   aircraftAmountCents: true,
   instructorRateCentsPerHour: true,
   instructorAmountCents: true,
@@ -235,6 +242,7 @@ type SelectedFlight = {
   takeoffs: number;
   landings: number;
   aircraftRateCentsPerHour: number;
+  aircraftPriceCategory: AircraftPriceCategory;
   aircraftAmountCents: number;
   instructorRateCentsPerHour: number | null;
   instructorAmountCents: number | null;
@@ -291,6 +299,7 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean, includeF
       : null,
     breakdown: {
       aircraftRateCentsPerHour: flight.aircraftRateCentsPerHour,
+      aircraftPriceCategory: flight.aircraftPriceCategory,
       aircraftAmountCents: flight.aircraftAmountCents,
       ...(hasInstructor
         ? {
@@ -336,9 +345,17 @@ export type FlightBlockingDocument = {
 /**
  * The ORIGINAL flight's identity fields, supplied ONLY by `correctFlight`
  * (review F4, ratifica R-14.4-b) — see `resolveFlightInput`'s own
- * doc-comment for what this exempts.
+ * doc-comment for what this exempts. `aircraftPriceCategory` (story 19.3,
+ * Q-19.3-b) is the price column the original flight was charged: a
+ * correction that keeps the person keeps it.
  */
-type OriginalFlightIdentity = { aircraftId: string; personId: string; instructorPersonId: string | null; flightDate: Date };
+type OriginalFlightIdentity = {
+  aircraftId: string;
+  personId: string;
+  instructorPersonId: string | null;
+  flightDate: Date;
+  aircraftPriceCategory: AircraftPriceCategory;
+};
 
 type ResolvedFlightInput = {
   aircraft: { id: string; registration: string };
@@ -351,6 +368,7 @@ type ResolvedFlightInput = {
   flightDate: Date;
   minutes: number;
   aircraftRateCentsPerHour: number;
+  aircraftPriceCategory: AircraftPriceCategory;
   instructorRateCentsPerHour: number | null;
   /** Already rounded on the FULL duration. */
   instructorAmountCents: number | null;
@@ -545,10 +563,17 @@ function isIdentityUnchanged(
  * person unknown OR without an active `InstructorProfile` ->
  * `INSTRUCTOR_NOT_FOUND` (deliberately folded into one code — Dev Notes:
  * never reveal whether an unknown id belongs to nobody or to a
- * non-instructor). Then, BEFORE any transaction (rates are append-only, no
- * meaningful race): `getEffectiveRate` -> null -> `NO_AIRCRAFT_RATE`; with
+ * non-instructor). Then, BEFORE any transaction (see the module doc-comment
+ * for why that read is safe): `getEffectiveRate` -> null -> `NO_AIRCRAFT_RATE`; with
  * an instructor, `getEffectiveInstructorRate` -> null ->
- * `NO_INSTRUCTOR_RATE`. The instructor amount is rounded here,
+ * `NO_INSTRUCTOR_RATE`. The aircraft price is the column of the person's
+ * PROFILE (story 19.3, R-19-e): student-only -> `studentPriceCents`,
+ * otherwise -> `pilotPriceCents` — a pilot on a `SCHOOL` flight pays the
+ * pilot price, and a person with both profiles active (legacy data, D-4) is a
+ * pilot, the same reading `STUDENT_FLIGHT_MUST_BE_SCHOOL` makes. A correction
+ * that keeps the person keeps the ORIGINAL category (Q-19.3-b, same
+ * "correcting is not registering anew" principle as below), at the rate in
+ * effect at the new `flightDate`. The instructor amount is rounded here,
  * `Math.round(rate * minutes / 60)` on the FULL duration (AD-2/NFR-5) — the
  * aircraft amount is computed the SAME way, but inside `registerFlightCore`
  * (module doc-comment), which stayed the single place that writes it after
@@ -845,12 +870,16 @@ async function resolveFlightInput(
     }
   }
 
-  // Rate lookups BEFORE any transaction (Dev Notes: append-only tables, no
-  // meaningful race) — AD-4, the effective rate at `flightDate`.
+  // Rate lookups BEFORE any transaction (module doc-comment) — AD-4, the
+  // effective rate at `flightDate`.
   const aircraftRate = await getEffectiveRate(actor, input.aircraftId, flightDate);
   if (!aircraftRate) {
     throw new ValidationError('No aircraft rate is in effect on the flight date.', undefined, 'NO_AIRCRAFT_RATE');
   }
+  // Story 19.3 (R-19-e, Q-19.3-b) — this function's own doc-comment.
+  const aircraftPriceCategory: AircraftPriceCategory =
+    original !== undefined && original.personId === input.personId ? original.aircraftPriceCategory : hasActivePilot ? 'PILOT' : 'STUDENT';
+  const aircraftRateCentsPerHour = aircraftPriceCategory === 'PILOT' ? aircraftRate.pilotPriceCents : aircraftRate.studentPriceCents;
 
   let instructorRate: InstructorRateListItem | null = null;
   if (instructorPersonId) {
@@ -872,7 +901,8 @@ async function resolveFlightInput(
     landingAt,
     flightDate,
     minutes,
-    aircraftRateCentsPerHour: aircraftRate.priceCentsPerHour,
+    aircraftRateCentsPerHour,
+    aircraftPriceCategory,
     instructorRateCentsPerHour: instructorRate?.priceCentsPerHour ?? null,
     instructorAmountCents,
     forceStamp,
@@ -987,6 +1017,7 @@ type RegisterFlightCoreInput = {
   takeoffs: number;
   landings: number;
   aircraftRateCentsPerHour: number;
+  aircraftPriceCategory: AircraftPriceCategory;
   instructorRateCentsPerHour: number | null;
   instructorAmountCents: number | null;
   /** `Flight.correctionOfId` (story 5.3) — the ORIGINAL flight this one replaces, or `null` for a plain `registerFlight` call. */
@@ -1054,6 +1085,7 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
       takeoffs: params.takeoffs,
       landings: params.landings,
       aircraftRateCentsPerHour: params.aircraftRateCentsPerHour,
+      aircraftPriceCategory: params.aircraftPriceCategory,
       aircraftAmountCents,
       instructorRateCentsPerHour: params.instructorRateCentsPerHour,
       instructorAmountCents: params.instructorAmountCents,
@@ -1188,6 +1220,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       takeoffs: input.takeoffs ?? 1,
       landings: input.landings ?? 1,
       aircraftRateCentsPerHour: resolved.aircraftRateCentsPerHour,
+      aircraftPriceCategory: resolved.aircraftPriceCategory,
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
       instructorAmountCents: resolved.instructorAmountCents,
       correctionOfId: null,
@@ -1253,6 +1286,8 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
   flightDate: Date;
   /** Story 14.3 review F3 (ratifica R-14.3-a) — the ORIGINAL flight's own recorded type, so `correctFlight` can let a correction keep it unchanged even for a person who is student-only TODAY. */
   flightType: FlightType;
+  /** Story 19.3 (Q-19.3-b) — the ORIGINAL flight's price column, kept by a correction that keeps the person. */
+  aircraftPriceCategory: AircraftPriceCategory;
   aircraft: { registration: string };
   originalMovement: OriginalChargeMovement;
 }> {
@@ -1265,6 +1300,7 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
       personId: true,
       flightDate: true,
       flightType: true,
+      aircraftPriceCategory: true,
       instructorProfile: { select: { person: { select: { id: true } } } },
       aircraft: { select: { registration: true } },
       movements: {
@@ -1306,6 +1342,7 @@ async function loadRegisteredFlightForReversal(flightId: string): Promise<{
     instructorPersonId: flight.instructorProfile?.person.id ?? null,
     flightDate: flight.flightDate,
     flightType: flight.flightType,
+    aircraftPriceCategory: flight.aircraftPriceCategory,
     aircraft: flight.aircraft,
     originalMovement,
   };
@@ -1468,6 +1505,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
     personId: originalFlight.personId,
     instructorPersonId: originalFlight.instructorPersonId,
     flightDate: originalFlight.flightDate,
+    aircraftPriceCategory: originalFlight.aircraftPriceCategory,
   });
   const thresholdCents = await getNegativeBalanceThresholdCents();
 
@@ -1572,6 +1610,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
       takeoffs: input.takeoffs ?? 1,
       landings: input.landings ?? 1,
       aircraftRateCentsPerHour: resolved.aircraftRateCentsPerHour,
+      aircraftPriceCategory: resolved.aircraftPriceCategory,
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
       instructorAmountCents: resolved.instructorAmountCents,
       correctionOfId: originalFlight.id,

@@ -82,8 +82,8 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
     const card = cardFor(page, aircraft.registration);
     await expect(card).toBeVisible();
     await expect(card.getByText('Disponibile')).toBeVisible();
-    // The aircraft's hours live inside the editor's "Ore di volo" section (AC 2:
-    // the card only shows the wet rate) — the sum of its registered flights
+    // The aircraft's hours live inside the editor's "Ore di volo" section (the
+    // card shows no price since story 19.3, Q-19.3-a) — the sum of its registered flights
     // (story 19.2, R-19-b), so a brand-new aircraft reads 0:00.
     await card.click();
     await expect(page.getByTestId('aircraft-total-hours')).toHaveText('Ore totali: 0:00');

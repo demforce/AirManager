@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 /**
  * Story 15.5 — the phone faces of the four registry surfaces: the fleet as a
@@ -85,9 +86,8 @@ async function createAircraft(page: Page, tag: string, model = 'Cessna 172 Skyha
 }
 
 /** A rate is a precondition of `POST /api/v1/flights` (no rate in force -> 422). */
-async function addRate(page: Page, aircraftId: string, priceCentsPerHour = 18000): Promise<void> {
-  const response = await page.request.post(`/api/v1/aircraft/${aircraftId}/rates`, { data: { priceCentsPerHour, validFrom: '2020-01-01' } });
-  expect(response.status(), await response.text()).toBe(201);
+async function addRate(page: Page, aircraftId: string, priceCents = 18000): Promise<void> {
+  await seedAircraftRate(aircraftId, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: '2020-01-01' });
 }
 
 type Person = { id: string; firstName: string; lastName: string };
@@ -320,13 +320,14 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
 
     // Parity with the desktop card + the AOG reason the card itself truncates,
     // as the exact list of rows (story 19.2: the anagrafica rows are gone, the
-    // aircraft's hours are "Ore totali", the sum of its registered flights).
+    // aircraft's hours are "Ore totali", the sum of its registered flights;
+    // story 19.3, Q-19.3-a: no price row, the rates live in the editor only).
     const rows = Object.fromEntries(
       await sheet.locator('.bottom-sheet-kv').evaluateAll((items) =>
         items.map((item) => [item.querySelector('.bottom-sheet-k')!.textContent!, item.querySelector('.bottom-sheet-v')!.textContent!]),
       ),
     );
-    expect(Object.keys(rows)).toEqual(['Stato', 'Motivo AOG', 'Tariffa', 'Ore totali', 'Ore mese']);
+    expect(Object.keys(rows)).toEqual(['Stato', 'Motivo AOG', 'Ore totali', 'Ore mese']);
     expect(rows['Motivo AOG']).toBe('Revisione 15.5');
     expect(rows['Ore totali']).toBe('0:00');
 
@@ -518,8 +519,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     // A SCHOOL flight also needs the instructor's CHARGE rate in force (the
     // `payoutRateCents` above is what the club owes HIM) — without it
     // `POST /flights` answers 422 `NO_INSTRUCTOR_RATE`.
-    const chargeRate = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, { data: { priceCentsPerHour: 4000, validFrom: '2020-01-01' } });
-    expect(chargeRate.status(), await chargeRate.text()).toBe(201);
+    await seedInstructorRate(person.id, { priceCentsPerHour: 4000, validFrom: '2020-01-01' });
     const student = await createPilot(page, `${tag}S`);
     const today = addDaysUtc(0);
     const flight = await page.request.post('/api/v1/flights', {

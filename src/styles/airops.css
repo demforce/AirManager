@@ -1375,6 +1375,18 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
   color: oklch(0.28 0.09 60);
 }
 .cal-cell.sel:hover{ background: var(--accent); }
+/* Story 19.3 (AD-7): a day before the field's `min` — inert, struck through
+   and fainter than an out-of-month day (`.out`), no hover (the same "booked
+   date" idiom of every booking calendar). Only rendered when a `DateInput`
+   carries a `min`; every other calendar is unchanged. */
+.cal-cell:disabled,
+.cal-cell:disabled:hover{
+  background: transparent;
+  color: var(--ink-4);
+  opacity: .45;
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
 
 .cal-foot{
   display: flex; justify-content: flex-end; gap: 8px;

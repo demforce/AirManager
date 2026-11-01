@@ -1,20 +1,26 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInstructorRateSchema } from '@/lib/schemas/people';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
-vi.mock('@/server/db/prisma', () => ({
-  prisma: {
-    person: {
-      findUnique: vi.fn(),
+vi.mock('@/server/db/prisma', () => {
+  const instructorRate = {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    upsert: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
+  };
+  return {
+    prisma: {
+      person: {
+        findUnique: vi.fn(),
+      },
+      instructorRate,
+      // Same `tx`-is-the-mocked-delegates shape as rates.service.test.ts.
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback({ instructorRate })),
     },
-    instructorRate: {
-      findFirst: vi.fn(),
-      findMany: vi.fn(),
-      create: vi.fn(),
-    },
-  },
-}));
+  };
+});
 
 const { prisma } = await import('@/server/db/prisma');
 const { createInstructorRate, getEffectiveInstructorRate, listInstructorRates } = await import('./instructor-rates.service');
@@ -23,7 +29,9 @@ const { ConflictError, NotFoundError } = await import('./errors');
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const rateFindFirstMock = vi.mocked(prisma.instructorRate.findFirst);
 const rateFindManyMock = vi.mocked(prisma.instructorRate.findMany);
-const rateCreateMock = vi.mocked(prisma.instructorRate.create);
+const rateUpsertMock = vi.mocked(prisma.instructorRate.upsert);
+const rateFindUniqueOrThrowMock = vi.mocked(prisma.instructorRate.findUniqueOrThrow);
+const transactionMock = vi.mocked(prisma.$transaction);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as rates.service.test.ts).
@@ -31,7 +39,8 @@ type Fixture = Record<string, unknown> | null;
 const personFindUnique = personFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const rateFindFirst = rateFindFirstMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const rateFindMany = rateFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
-const rateCreate = rateCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const rateUpsert = rateUpsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const rateFindUniqueOrThrow = rateFindUniqueOrThrowMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
@@ -65,7 +74,13 @@ describe('instructor-rates.service (story 4.2 — historicized instructor rates,
     personFindUniqueMock.mockReset();
     rateFindFirstMock.mockReset();
     rateFindManyMock.mockReset();
-    rateCreateMock.mockReset();
+    rateUpsertMock.mockReset();
+    rateFindUniqueOrThrowMock.mockReset();
+    transactionMock.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('authorization (AD-5)', () => {
@@ -89,13 +104,18 @@ describe('instructor-rates.service (story 4.2 — historicized instructor rates,
     });
   });
 
-  describe('createInstructorRate (AC 1/2)', () => {
+  describe('createInstructorRate (AC 1/2; story 19.3 AC 4-5)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-07T10:00:00.000Z'));
+    });
+
     it('throws NotFoundError for a missing person', async () => {
       personFindUnique.mockResolvedValue(null);
       await expect(
         createInstructorRate(adminActor(), 'missing', { priceCentsPerHour: 4500, validFrom: '2026-07-07' }),
       ).rejects.toThrow(NotFoundError);
-      expect(rateCreateMock).not.toHaveBeenCalled();
+      expect(rateUpsertMock).not.toHaveBeenCalled();
     });
 
     it('throws ConflictError when the person has no instructor profile', async () => {
@@ -103,7 +123,7 @@ describe('instructor-rates.service (story 4.2 — historicized instructor rates,
       await expect(
         createInstructorRate(adminActor(), 'person_1', { priceCentsPerHour: 4500, validFrom: '2026-07-07' }),
       ).rejects.toThrow(ConflictError);
-      expect(rateCreateMock).not.toHaveBeenCalled();
+      expect(rateUpsertMock).not.toHaveBeenCalled();
     });
 
     it('throws ConflictError when the instructor profile is deactivated', async () => {
@@ -111,52 +131,59 @@ describe('instructor-rates.service (story 4.2 — historicized instructor rates,
       await expect(
         createInstructorRate(adminActor(), 'person_1', { priceCentsPerHour: 4500, validFrom: '2026-07-07' }),
       ).rejects.toThrow(ConflictError);
-      expect(rateCreateMock).not.toHaveBeenCalled();
+      expect(rateUpsertMock).not.toHaveBeenCalled();
     });
 
-    it('creates the rate with actorUserId = actor.userId and a UTC-midnight validFrom', async () => {
+    it('a past validFrom is a 422 RATE_VALID_FROM_IN_PAST before any write or transaction (AC 4)', async () => {
       personFindUnique.mockResolvedValue(ACTIVE_INSTRUCTOR_PERSON);
-      rateFindFirst.mockResolvedValue(null); // pre-check: no existing conflict
-      rateCreate.mockResolvedValue(rateFixture());
+
+      await expect(
+        createInstructorRate(adminActor(), 'person_1', { priceCentsPerHour: 4500, validFrom: '2026-07-06' }),
+      ).rejects.toMatchObject({ code: 'RATE_VALID_FROM_IN_PAST' });
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(rateUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('Europe/Rome "today": at 00:30 in Rome on 2 November (23:30 UTC on the 1st) the 1st is refused, the 2nd accepted (AC 4)', async () => {
+      vi.setSystemTime(new Date('2026-11-01T23:30:00.000Z'));
+      personFindUnique.mockResolvedValue(ACTIVE_INSTRUCTOR_PERSON);
+      rateUpsert.mockResolvedValue({ id: 'rate_1' });
+      rateFindUniqueOrThrow.mockResolvedValue(rateFixture({ validFrom: new Date('2026-11-02T00:00:00.000Z') }));
+
+      await expect(
+        createInstructorRate(adminActor(), 'person_1', { priceCentsPerHour: 4500, validFrom: '2026-11-01' }),
+      ).rejects.toMatchObject({ code: 'RATE_VALID_FROM_IN_PAST' });
+      await expect(createInstructorRate(adminActor(), 'person_1', { priceCentsPerHour: 4500, validFrom: '2026-11-02' })).resolves.toMatchObject({
+        validFrom: '2026-11-02',
+      });
+    });
+
+    it('upserts on (instructorProfileId, validFrom) flat, then reads the row inside the same transaction — a rewrite is the same call, never a 409 (AC 5)', async () => {
+      personFindUnique.mockResolvedValue(ACTIVE_INSTRUCTOR_PERSON);
+      rateUpsert.mockResolvedValue({ id: 'rate_1' });
+      rateFindUniqueOrThrow.mockResolvedValue(rateFixture());
 
       const result = await createInstructorRate(adminActor(), 'person_1', {
         priceCentsPerHour: 4500,
         validFrom: '2026-07-07',
       });
 
-      expect(rateCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: {
-            instructorProfileId: 'instructor_1',
-            priceCentsPerHour: 4500,
-            validFrom: new Date('2026-07-07T00:00:00.000Z'),
-            actorUserId: 'admin_1',
-          },
-        }),
-      );
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      expect(rateUpsertMock).toHaveBeenCalledWith({
+        where: { instructorProfileId_validFrom: { instructorProfileId: 'instructor_1', validFrom: new Date('2026-07-07T00:00:00.000Z') } },
+        create: {
+          instructorProfileId: 'instructor_1',
+          priceCentsPerHour: 4500,
+          validFrom: new Date('2026-07-07T00:00:00.000Z'),
+          actorUserId: 'admin_1',
+        },
+        update: { priceCentsPerHour: 4500, actorUserId: 'admin_1' },
+        select: { id: true },
+      });
+      expect(rateFindUniqueOrThrowMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'rate_1' } }));
       expect(result.priceCentsPerHour).toBe(4500);
       expect(result.validFrom).toBe('2026-07-07');
       expect(result.actorEmail).toBe('admin@airmanager.local');
-    });
-
-    it('throws ConflictError when the pre-check finds an existing rate for the same validFrom (AC 2)', async () => {
-      personFindUnique.mockResolvedValue(ACTIVE_INSTRUCTOR_PERSON);
-      rateFindFirst.mockResolvedValue({ id: 'existing_rate' });
-
-      await expect(
-        createInstructorRate(adminActor(), 'person_1', { priceCentsPerHour: 4500, validFrom: '2026-07-07' }),
-      ).rejects.toThrow(ConflictError);
-      expect(rateCreateMock).not.toHaveBeenCalled();
-    });
-
-    it('maps a race-condition P2002 to ConflictError (concurrency backstop, AC 2)', async () => {
-      personFindUnique.mockResolvedValue(ACTIVE_INSTRUCTOR_PERSON);
-      rateFindFirst.mockResolvedValue(null);
-      rateCreateMock.mockRejectedValue(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
-
-      await expect(
-        createInstructorRate(adminActor(), 'person_1', { priceCentsPerHour: 4500, validFrom: '2026-07-07' }),
-      ).rejects.toThrow(ConflictError);
     });
   });
 

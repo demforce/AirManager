@@ -407,7 +407,7 @@ registry.registerPath({
   path: '/api/v1/people',
   summary: 'Create a person — optionally one-step (profiles + expiries + access)',
   description:
-    'The base anagrafica create (`firstName`/`lastName`/...) is unchanged; three OPTIONAL blocks (story 13.1, AC 5) turn this into the one-step "Aggiungi pilota" flow, all inside ONE atomic transaction (any failure rolls back the whole person): `profiles` activates pilot/student/instructor (same per-type shape as `PUT /people/{id}/profiles/{type}`); `expiries` registers `{ expiryTypeId, expiresAt }` pairs against the just-activated profiles (`expiresAt` mandatory, R-13.1-c; unknown/inactive type or scope mismatch → 422); `access` creates a linked user + sends the invite email (requires `users.manage` on top of `people.manage` — 403 if missing, never silently dropped).',
+    'The base anagrafica create (`firstName`/`lastName`/...) is unchanged; three OPTIONAL blocks (story 13.1, AC 5) turn this into the one-step "Aggiungi pilota" flow, all inside ONE atomic transaction (any failure rolls back the whole person): `profiles` activates pilot/student/instructor (same per-type shape as `PUT /people/{id}/profiles/{type}`); `expiries` registers `{ expiryTypeId, expiresAt }` pairs against the just-activated profiles (`expiresAt` mandatory, R-13.1-c; unknown/inactive type or scope mismatch → 422); `access` creates a linked user + sends the invite email (requires `users.manage` on top of `people.manage` — 403 if missing, never silently dropped). Story 19.3 (R-19-e, Q-19.3-c): `profiles.student` together with `profiles.pilot` or `profiles.instructor` answers 422 `STUDENT_PROFILE_EXCLUSIVE` before anything is written.',
   tags: ['People'],
   security,
   request: { body: { content: jsonContent(createPersonSchema), required: true } },
@@ -484,7 +484,8 @@ registry.registerPath({
   method: 'put',
   path: '/api/v1/people/{id}/profiles/pilot',
   summary: 'Activate or update the pilot profile',
-  description: 'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2).',
+  description:
+    'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2). Story 19.3 (R-19-e, Q-19.3-c): the student profile excludes the pilot AND the instructor profile — activating the pilot profile while the student profile is active answers 422 `STUDENT_PROFILE_EXCLUSIVE` and writes nothing (deactivate the other profile first). Serialized per person by a `Person` row lock (`FOR NO KEY UPDATE`).',
   tags: ['People'],
   security,
   request: { params: personIdParams, body: { content: jsonContent(pilotProfileRequestSchema), required: true } },
@@ -512,7 +513,8 @@ registry.registerPath({
   method: 'put',
   path: '/api/v1/people/{id}/profiles/student',
   summary: 'Activate or update the student profile',
-  description: 'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2).',
+  description:
+    'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2). Story 19.3 (R-19-e, Q-19.3-c): the student profile excludes the pilot AND the instructor profile — activating the student profile while the pilot or instructor profile is active answers 422 `STUDENT_PROFILE_EXCLUSIVE` and writes nothing (deactivate the other profile first). Serialized per person by a `Person` row lock (`FOR NO KEY UPDATE`).',
   tags: ['People'],
   security,
   request: { params: personIdParams, body: { content: jsonContent(studentProfileRequestSchema), required: true } },
@@ -540,7 +542,8 @@ registry.registerPath({
   method: 'put',
   path: '/api/v1/people/{id}/profiles/instructor',
   summary: 'Activate or update the instructor profile',
-  description: 'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2).',
+  description:
+    'Creates the profile if absent; if present (active or deactivated), updates it and clears `deactivatedAt` (AC 2). Story 19.3 (R-19-e, Q-19.3-c): the student profile excludes the pilot AND the instructor profile — activating the instructor profile while the student profile is active answers 422 `STUDENT_PROFILE_EXCLUSIVE` and writes nothing (deactivate the other profile first). Serialized per person by a `Person` row lock (`FOR NO KEY UPDATE`).',
   tags: ['People'],
   security,
   request: { params: personIdParams, body: { content: jsonContent(instructorProfileRequestSchema), required: true } },
@@ -647,7 +650,7 @@ registry.registerPath({
   path: '/api/v1/people/{id}/instructor-rates',
   summary: "List a person's historicized instructor-rate history (most recent validFrom first)",
   description:
-    'Story 4.2, AC 1 — the twin of `GET /api/v1/aircraft/{id}/rates`, a plain array (no pagination, capped at 500). A person without an (active) instructor profile gets an empty array, NOT a 404 — only an unknown person is. Requires `people.read` (ADMIN-only — a wider read than the `settings.manage` write below, since instructor data lives under `people`).',
+    'Story 4.2, AC 1 — the twin of `GET /api/v1/aircraft/{id}/rates`, a plain array (no pagination, capped at 500); the history is kept for API clients (story 19.3). A person without an (active) instructor profile gets an empty array, NOT a 404 — only an unknown person is. Requires `people.read` (ADMIN-only — a wider read than the `settings.manage` write below, since instructor data lives under `people`).',
   tags: ['People'],
   security,
   request: { params: personIdParams },
@@ -662,12 +665,12 @@ registry.registerPath({
   path: '/api/v1/people/{id}/instructor-rates',
   summary: 'Record a new historicized instructor rate (AD-4)',
   description:
-    'Story 4.2, AC 1/2 — the twin of `POST /api/v1/aircraft/{id}/rates`. Append-only (AD-3 spirit): there is no update/delete endpoint; a wrong price is corrected by a NEW rate with a later `validFrom`. Two rates sharing the same `(instructorProfileId, validFrom)` are a 409 (AC 2). A person with no active instructor profile (never activated, or deactivated) also answers 409. Requires `settings.manage` (admin-only pricing configuration, same as `POST /api/v1/aircraft/{id}/rates`).',
+    'Story 4.2, AC 1/2, rules rewritten by story 19.3 (R-19-f) — the twin of `POST /api/v1/aircraft/{id}/rates`. `validFrom` must be today or later on the Europe/Rome calendar (422 `RATE_VALID_FROM_IN_PAST` otherwise); a second write on the same `(instructorProfileId, validFrom)` REWRITES that row and answers 201 with it (never a 409, never a second row) — registered flights keep the price they froze. A person with no active instructor profile (never activated, or deactivated) answers 409. Requires `settings.manage` (admin-only pricing configuration, same as `POST /api/v1/aircraft/{id}/rates`).',
   tags: ['People'],
   security,
   request: { params: personIdParams, body: { content: jsonContent(createInstructorRateSchema), required: true } },
   responses: {
-    201: { description: 'The created rate.', content: jsonContent(instructorRateItemSchema) },
+    201: { description: 'The created or rewritten rate.', content: jsonContent(instructorRateItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });
@@ -946,7 +949,7 @@ registry.registerPath({
   path: '/api/v1/flights',
   summary: 'Register a flight and its automatic charge (FR-9/FR-14/FR-15)',
   description:
-    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`) and the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block). `minutes` and `flightDate` are derived from `takeoffAt`/`landingAt` (story 11.1). `isSolo` (story 9.4) is only meaningful on a `SCHOOL` flight (dual/false vs solo/true — a solo still carries and bills the instructor, the student is PIC) and defaults to `false`. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid takeoff/landing pair, a SCHOOL flight without an instructor, `isSolo` on a non-SCHOOL flight, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Story 14.4 (ratifica R4): a blocking expired document (`ExpiryType.blocksBooking`) on the pilot/student OR the instructor, valid at `flightDate`, answers 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents`) — bypassable ONLY with `force: true` + a mandatory `forceReason`, and only by an actor holding `flights.forceExpiry` (ADMIN, 403 otherwise). Story AOG-1a (P2, ratifica R-AOG-c): a grounded aircraft answers 422 `AIRCRAFT_OUT_OF_SERVICE` (`details.reason`/`outOfServiceUntil`, plus `details.documents` in the same shape when that same request is ALSO blocked by a document — review MAJOR-1: the ONE `force` covers both blocks, so both are reported before it is given), checked right after `AIRCRAFT_ARCHIVED` and therefore BEFORE the flight-date guard; a correction that KEEPS the same aircraft is exempt. Story 16.2 (F3): a `REGISTERED` flight on the SAME aircraft whose `[takeoffAt, landingAt)` interval OVERLAPS the requested one answers **409 `FLIGHT_OVERLAP`**, with `details.flightId`/`details.takeoffAt`/`details.landingAt` (ISO 8601 UTC) naming the earliest conflicting flight. The interval is SEMI-OPEN, exactly like a `Booking`\'s: two flights that merely touch (`landingAt` of one equal to `takeoffAt` of the other) do NOT overlap. Only `REGISTERED` flights occupy an interval — a `CANCELLED` one frees it. The check runs INSIDE the transaction, under an `Aircraft` `FOR UPDATE` lock, so two concurrent identical requests answer exactly one 201 and one 409. It is NOT derogable by `force`/`forceReason` (unlike `FLIGHT_BLOCKED_BY_EXPIRY`/`AIRCRAFT_OUT_OF_SERVICE`): the way out is to cancel or correct the flight the 409 names. This is the server-side second line of defence behind the opt-in `Idempotency-Key`: the same request sent twice WITHOUT the header gets 201 then 409 (one flight, one charge), while WITH the header the second call replays the first response (`Idempotency-Replayed: true`, contract unchanged). Story 16.2 (F14) also tightens two declared bounds: `takeoffs`/`landings` are `[1, 500]` (a `0` is a 422 at the Zod boundary — the schema has always documented "at least one of each"), and a flight shorter than ONE minute answers 422 `FLIGHT_TIMES_INVALID` instead of being rounded up to a 1-minute flight (the 1440-minute ceiling answers with that same code, as before). The response\'s `balanceAlert` flags a worsened balance band (story 3.3/14.4) without blocking the registration. Requires `flights.manage` (FR-14: only an admin registers a flight). Accepts the opt-in `Idempotency-Key` header (story TD-2) — NOT `/flights/{id}/cancel`/`/correct`, already protected by `reversalOfId`.',
+    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`; story 19.3: the aircraft price is the column of the person\'s profile — student-only → `studentPriceCents`, otherwise `pilotPriceCents`, also on a SCHOOL flight — frozen with `breakdown.aircraftPriceCategory`) and the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block). `minutes` and `flightDate` are derived from `takeoffAt`/`landingAt` (story 11.1). `isSolo` (story 9.4) is only meaningful on a `SCHOOL` flight (dual/false vs solo/true — a solo still carries and bills the instructor, the student is PIC) and defaults to `false`. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid takeoff/landing pair, a SCHOOL flight without an instructor, `isSolo` on a non-SCHOOL flight, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Story 14.4 (ratifica R4): a blocking expired document (`ExpiryType.blocksBooking`) on the pilot/student OR the instructor, valid at `flightDate`, answers 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents`) — bypassable ONLY with `force: true` + a mandatory `forceReason`, and only by an actor holding `flights.forceExpiry` (ADMIN, 403 otherwise). Story AOG-1a (P2, ratifica R-AOG-c): a grounded aircraft answers 422 `AIRCRAFT_OUT_OF_SERVICE` (`details.reason`/`outOfServiceUntil`, plus `details.documents` in the same shape when that same request is ALSO blocked by a document — review MAJOR-1: the ONE `force` covers both blocks, so both are reported before it is given), checked right after `AIRCRAFT_ARCHIVED` and therefore BEFORE the flight-date guard; a correction that KEEPS the same aircraft is exempt. Story 16.2 (F3): a `REGISTERED` flight on the SAME aircraft whose `[takeoffAt, landingAt)` interval OVERLAPS the requested one answers **409 `FLIGHT_OVERLAP`**, with `details.flightId`/`details.takeoffAt`/`details.landingAt` (ISO 8601 UTC) naming the earliest conflicting flight. The interval is SEMI-OPEN, exactly like a `Booking`\'s: two flights that merely touch (`landingAt` of one equal to `takeoffAt` of the other) do NOT overlap. Only `REGISTERED` flights occupy an interval — a `CANCELLED` one frees it. The check runs INSIDE the transaction, under an `Aircraft` `FOR UPDATE` lock, so two concurrent identical requests answer exactly one 201 and one 409. It is NOT derogable by `force`/`forceReason` (unlike `FLIGHT_BLOCKED_BY_EXPIRY`/`AIRCRAFT_OUT_OF_SERVICE`): the way out is to cancel or correct the flight the 409 names. This is the server-side second line of defence behind the opt-in `Idempotency-Key`: the same request sent twice WITHOUT the header gets 201 then 409 (one flight, one charge), while WITH the header the second call replays the first response (`Idempotency-Replayed: true`, contract unchanged). Story 16.2 (F14) also tightens two declared bounds: `takeoffs`/`landings` are `[1, 500]` (a `0` is a 422 at the Zod boundary — the schema has always documented "at least one of each"), and a flight shorter than ONE minute answers 422 `FLIGHT_TIMES_INVALID` instead of being rounded up to a 1-minute flight (the 1440-minute ceiling answers with that same code, as before). The response\'s `balanceAlert` flags a worsened balance band (story 3.3/14.4) without blocking the registration. Requires `flights.manage` (FR-14: only an admin registers a flight). Accepts the opt-in `Idempotency-Key` header (story TD-2) — NOT `/flights/{id}/cancel`/`/correct`, already protected by `reversalOfId`.',
   tags: ['Flights'],
   security,
   request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(registerFlightSchema), required: true } },
@@ -976,7 +979,7 @@ registry.registerPath({
   path: '/api/v1/flights/{id}/correct',
   summary: 'Correct a registered flight: storno + new registration (FR-16)',
   description:
-    'Story 5.3, AC 2/3/4 — in one transaction: storno of the original flight (identical to /cancel) followed immediately by a brand-new registration with the given data, re-validated from scratch (the same 404/422 guards as POST /flights apply to the NEW data) — linked via Flight.correctionOfId. If the new registration fails, the whole transaction (storno included) rolls back. Already-cancelled -> 409. Story 16.2: the overlap guard of `POST /api/v1/flights` applies to the CORRECTED data too, on the corrected data\'s aircraft (a correction that MOVES the flight onto another airframe is checked THERE) — 409 `FLIGHT_OVERLAP` with the same `details` shape, before the storno, so nothing at all is written. The flight being corrected is EXCLUDED from the check, so a correction that keeps its own slot (changed cycles or airfields) is never a conflict with itself; `force` does not derogate it. The tightened `takeoffs`/`landings` `[1, 500]` and one-minute minimum duration apply here as well. Requires `flights.manage`.',
+    'Story 5.3, AC 2/3/4 — in one transaction: storno of the original flight (identical to /cancel) followed immediately by a brand-new registration with the given data, re-validated from scratch (the same 404/422 guards as POST /flights apply to the NEW data) — linked via Flight.correctionOfId. Story 19.3 (Q-19.3-b): a correction that keeps the person keeps the original `aircraftPriceCategory` (at the rate in effect on the new `flightDate`); one that changes the person takes the new person\'s profile. If the new registration fails, the whole transaction (storno included) rolls back. Already-cancelled -> 409. Story 16.2: the overlap guard of `POST /api/v1/flights` applies to the CORRECTED data too, on the corrected data\'s aircraft (a correction that MOVES the flight onto another airframe is checked THERE) — 409 `FLIGHT_OVERLAP` with the same `details` shape, before the storno, so nothing at all is written. The flight being corrected is EXCLUDED from the check, so a correction that keeps its own slot (changed cycles or airfields) is never a conflict with itself; `force` does not derogate it. The tightened `takeoffs`/`landings` `[1, 500]` and one-minute minimum duration apply here as well. Requires `flights.manage`.',
   tags: ['Flights'],
   security,
   request: { params: flightIdParams, body: { content: jsonContent(correctFlightSchema), required: true } },
@@ -1009,7 +1012,7 @@ registry.registerPath({
   path: '/api/v1/aircraft',
   summary: 'Create an aircraft',
   description:
-    'Registration (marche) must be unique — conflict is a 409. The optional `rate` block (story 14.8) creates the first hourly rate in the SAME transaction and additionally requires the `settings.manage` permission (admin-only): a caller with only `aircraft.manage` gets 403 when `rate` is present, 201 without it.',
+    'Registration (marche) must be unique — conflict is a 409. The optional `rate` block (story 14.8; two prices since story 19.3) creates the first hourly rate in the SAME transaction and additionally requires the `settings.manage` permission (admin-only): a caller with only `aircraft.manage` gets 403 when `rate` is present, 201 without it. Its `validFrom` must be today or later (Europe/Rome) — 422 `RATE_VALID_FROM_IN_PAST`, before anything is written.',
   tags: ['Aircraft'],
   security,
   request: { body: { content: jsonContent(createAircraftSchema), required: true } },
@@ -1035,7 +1038,9 @@ registry.registerPath({
 registry.registerPath({
   method: 'patch',
   path: '/api/v1/aircraft/{id}',
-  summary: 'Update an aircraft (registration, type, model)',
+  summary: 'Update an aircraft (registration, type, model; optional rate)',
+  description:
+    'Partial update of registration, type, model; the optional `rate` block (story 19.3, the editor\'s single Save) is saved in the SAME transaction — a rejected rate rolls the identity change back too. With `rate`: requires `settings.manage` on top of `aircraft.manage`; an archived aircraft answers 409; `validFrom` must be today or later (Europe/Rome, 422 `RATE_VALID_FROM_IN_PAST`); a rate already on that `validFrom` is rewritten (no 409). Registration conflicts are a 409. The response is the aircraft (no rate fields). Archive and the out-of-service/return-to-service actions stay separate endpoints.',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams, body: { content: jsonContent(updateAircraftSchema), required: true } },
@@ -1125,7 +1130,7 @@ registry.registerPath({
   path: '/api/v1/aircraft/{id}/rates',
   summary: "List an aircraft's historicized rate history (most recent validFrom first)",
   description:
-    'Story 4.1, AC 1 — a plain array (no pagination, small admin-managed list, capped at 500). Requires `aircraft.manage` (ADMIN-only — sees fleet pricing, a wider read than the `settings.manage` write below).',
+    'Story 4.1, AC 1 — a plain array (no pagination, small admin-managed list, capped at 500); since story 19.3 each row carries `studentPriceCents`/`pilotPriceCents`. The history is kept for API clients; the UI never shows it. Requires `aircraft.manage` (ADMIN-only — sees fleet pricing, a wider read than the `settings.manage` write below).',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams },
@@ -1138,14 +1143,14 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/v1/aircraft/{id}/rates',
-  summary: 'Record a new historicized rate (AD-4)',
+  summary: 'Record or rewrite an aircraft rate (AD-4)',
   description:
-    'Append-only (AD-3 spirit, story 4.1, AC 1/2) — there is no update/delete endpoint; a wrong price is corrected by a NEW rate with a later `validFrom`. Two rates sharing the same `(aircraftId, validFrom)` are a 409 (AC 2). An archived aircraft also answers 409. Requires `settings.manage` (admin-only pricing configuration, story 3.4\'s cash-category pattern).',
+    'Story 4.1, rules rewritten by story 19.3 (R-19-e/R-19-f): two billed prices, `studentPriceCents` and `pilotPriceCents` (both mandatory) — a flight takes the column of the flying person\'s profile. `validFrom` must be today or later on the Europe/Rome calendar (422 `RATE_VALID_FROM_IN_PAST` otherwise); a second write on the same `(aircraftId, validFrom)` REWRITES that row and answers 201 with it (never a 409, never a second row) — registered flights keep the price they froze. An archived aircraft answers 409. Requires `settings.manage` (admin-only pricing configuration, story 3.4\'s cash-category pattern).',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams, body: { content: jsonContent(createAircraftRateSchema), required: true } },
   responses: {
-    201: { description: 'The created rate.', content: jsonContent(aircraftRateItemSchema) },
+    201: { description: 'The created or rewritten rate.', content: jsonContent(aircraftRateItemSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });

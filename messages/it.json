@@ -204,7 +204,6 @@
       "summary": "{total} totali · {available} disponibili · {aog} AOG",
       "addAircraft": "Aggiungi aeromobile",
       "empty": "Nessun aeromobile registrato.",
-      "rateLabel": "Tariffa",
       "badge": {
         "aog": "AOG",
         "reserved": "Riservato",
@@ -307,7 +306,8 @@
       },
       "errors": {
         "requiredField": "Campo obbligatorio.",
-        "generic": "Si è verificato un errore. Riprova."
+        "generic": "Si è verificato un errore. Riprova.",
+        "exclusive": "Allievo non può essere attivo insieme a Pilota o Istruttore: disattiva prima l'altro profilo."
       },
       "pilot": {
         "title": "Pilota",
@@ -468,7 +468,8 @@
       "errors": {
         "required": "Campo obbligatorio.",
         "generic": "Si è verificato un errore. Riprova.",
-        "conflictEmail": "Esiste già una persona con questa email."
+        "conflictEmail": "Esiste già una persona con questa email.",
+        "profilesExclusive": "Il profilo allievo non può essere attivato insieme a pilota o istruttore."
       }
     },
     "toast": {
@@ -526,7 +527,8 @@
       "submit": "Attiva profilo istruttore",
       "cancel": "Annulla",
       "requiredField": "Campo obbligatorio.",
-      "genericError": "Si è verificato un errore. Riprova."
+      "genericError": "Si è verificato un errore. Riprova.",
+      "exclusiveError": "Questa persona ha un profilo allievo attivo: disattivalo prima di attivare l'istruttore."
     },
     "editor": {
       "closeLabel": "Chiudi",
@@ -941,7 +943,6 @@
     "cardTitle": "Flotta",
     "exportLabel": "Esporta",
     "exportXls": "Esporta XLS",
-    "rateLabel": "Tariffa",
     "searchPlaceholder": "Cerca per marche o modello…",
     "includeArchivedLabel": "Mostra archiviati",
     "empty": "Nessun aeromobile trovato.",
@@ -972,11 +973,9 @@
       "openDetail": "Apri dettaglio",
       "close": "Chiudi",
       "edit": "Modifica",
-      "noValue": "—",
       "sheet": {
         "status": "Stato",
         "aogReason": "Motivo AOG",
-        "rate": "Tariffa",
         "totalHours": "Ore totali",
         "monthHours": "Ore mese"
       }
@@ -1030,18 +1029,13 @@
       },
       "rates": {
         "sectionTitle": "Tariffe",
-        "current": "Tariffa attuale (wet)",
-        "currentDry": "Tariffa attuale (dry)",
+        "studentPrice": "Prezzo allievo (€/h)",
+        "pilotPrice": "Prezzo pilota (€/h)",
         "noCurrentRate": "Nessuna tariffa in vigore",
-        "newRateTitle": "Nuova tariffa",
-        "price": "Prezzo wet (€/h)",
-        "priceDry": "Prezzo dry (€/h) — opzionale",
+        "currentHint": "Attuale: {price}/h — lascia vuoto per non cambiarlo.",
+        "scheduled": "Variazione programmata dal {date}: allievo {student}/h · pilota {pilot}/h",
         "validFrom": "In vigore da",
-        "submit": "Aggiungi tariffa",
-        "readOnlyHint": "Solo un amministratore può aggiungere nuove tariffe.",
-        "historyTitle": "Storico tariffe",
-        "historyEmpty": "Nessuna tariffa registrata.",
-        "showAll": "Mostra tutte ({count})"
+        "readOnlyHint": "Un velivolo archiviato non accetta nuove tariffe."
       },
       "flightHours": {
         "sectionTitle": "Ore di volo",
@@ -1061,9 +1055,9 @@
         "generic": "Si è verificato un errore. Riprova.",
         "conflictRegistration": "Esiste già un velivolo con queste marche.",
         "conflictStatus": "Lo stato del velivolo è già cambiato nel frattempo.",
-        "conflictRate": "Esiste già una tariffa con questa data di decorrenza.",
         "invalidPrice": "Il prezzo deve essere un importo positivo (es. 160,00).",
         "invalidDate": "Inserisci una data valida.",
+        "validFromPast": "La decorrenza non può essere nel passato.",
         "reasonRequired": "Il motivo è obbligatorio."
       }
     },
@@ -1073,8 +1067,7 @@
       "archived": "Velivolo archiviato.",
       "unarchived": "Velivolo ripristinato.",
       "setOutOfService": "Velivolo segnato fuori servizio.",
-      "returnedToService": "Velivolo rimesso in servizio.",
-      "rateAdded": "Tariffa aggiunta."
+      "returnedToService": "Velivolo rimesso in servizio."
     }
   },
   "FlightsPage": {

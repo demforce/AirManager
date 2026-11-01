@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ensureValidSeedExpiries, registerExpiry } from './helpers';
+import { ensureValidSeedExpiries, registerExpiry, todayRome } from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -142,15 +143,12 @@ async function createInstructorWithRate(page: Page, priceCentsPerHour: number): 
   // Review F5 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment.
   await ensureValidSeedExpiries(page, person.id, 'INSTRUCTORS');
 
-  const rateResponse = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedInstructorRate(person.id, { priceCentsPerHour, validFrom: PAST_DATE });
 
   return { personId: person.id, firstName, lastName };
 }
 
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number | null): Promise<{ id: string; registration: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number | null): Promise<{ id: string; registration: string }> {
   // Same `.slice(0, 20)` convention as `aircraft-rates.spec.ts`'s `uniqueAircraft`
   // — keeps the full millisecond timestamp (which differs call to call) plus
   // a couple of random chars; slicing tighter would truncate away the only
@@ -164,11 +162,8 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number | nu
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  if (priceCentsPerHour !== null) {
-    const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-      data: { priceCentsPerHour, validFrom: PAST_DATE },
-    });
-    expect(rateResponse.status()).toBe(201);
+  if (priceCents !== null) {
+    await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
   }
 
   return { id: aircraft.id, registration };
@@ -226,7 +221,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
-    // Admin defines the aircraft rate (API) — 150,00 €/h.
+    // The aircraft rate — 150,00 €/h, from a past date (SQL fixture, story 19.3 D-7).
     const aircraft = await createAircraftWithRate(page, 15000);
     const pilot = await createPilotWithLogin(page, 'PilotFlights123!');
 
@@ -268,7 +263,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // though the underlying data was correct all along). The fleet page
     // still supports `?q=` server-side search (`aircraft.service.ts`); the
     // hours live inside the slide-over editor's "Ore di volo" section (the
-    // card itself only shows the wet rate, story 12.5 AC 2), scoped by the
+    // card itself shows no price since story 19.3, Q-19.3-a), scoped by the
     // card's own `data-testid="ac-card-{id}"` (no text-match ambiguity).
     await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
     await page.getByTestId(`ac-card-${aircraft.id}`).click();
@@ -1283,5 +1278,83 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
     await expect(page.getByTestId('flight-form-error')).toContainText('Decolli e atterraggi devono essere almeno 1.');
+  });
+});
+
+/**
+ * Story 19.3 (R-19-e, AC 6/10): the aircraft price is the column of the
+ * flying person's PROFILE, frozen on the flight with the category it applied,
+ * and a later rewrite of the rate never touches a registered flight.
+ */
+test.describe('Aircraft price from the profile, frozen on the flight (Story 19.3, AC 6/10)', () => {
+  async function createPersonWithProfile(page: Page, profile: 'pilot' | 'student'): Promise<string> {
+    const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Prezzo', lastName: `${profile}-${uniqueSuffix()}` } });
+    expect(personResponse.status()).toBe(201);
+    const { id } = (await personResponse.json()) as { id: string };
+    const body = profile === 'pilot' ? { licenseNumber: `IT-PPL-${uniqueSuffix()}`, licenseType: 'PPL(A)' } : { courseStartDate: PAST_DATE };
+    expect((await page.request.put(`/api/v1/people/${id}/profiles/${profile}`, { data: body })).status()).toBe(200);
+    await ensureValidSeedExpiries(page, id, profile === 'pilot' ? 'PILOTS' : 'STUDENTS');
+    return id;
+  }
+
+  type Breakdown = { aircraftRateCentsPerHour: number; aircraftAmountCents: number; aircraftPriceCategory: 'STUDENT' | 'PILOT' };
+
+  async function postFlight(page: Page, data: Record<string, unknown>): Promise<Breakdown> {
+    const response = await page.request.post('/api/v1/flights', { data: { departureAirfield: 'Base', arrivalAirfield: 'Base', ...data } });
+    expect(response.status(), await response.text()).toBe(201);
+    return ((await response.json()) as { flight: { breakdown: Breakdown } }).flight.breakdown;
+  }
+
+  test('student, pilot, and pilot on a SCHOOL flight: student 100,00 / pilot 150,00 per hour, category frozen in the breakdown (AC 10)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, null);
+    await seedAircraftRate(aircraft.id, { studentPriceCents: 10000, pilotPriceCents: 15000, validFrom: PAST_DATE });
+    const instructor = await createInstructorWithRate(page, 4000);
+    const student = await createPersonWithProfile(page, 'student');
+    const pilot = await createPersonWithProfile(page, 'pilot');
+
+    // Three distinct days on the same airframe: the overlap guard never fires.
+    const school = { flightType: 'SCHOOL', instructorPersonId: instructor.personId };
+    expect(await postFlight(page, { aircraftId: aircraft.id, personId: student, ...school, ...flightTimes('2020-02-03', 60) })).toMatchObject({
+      aircraftAmountCents: 10000,
+      aircraftPriceCategory: 'STUDENT',
+    });
+    expect(await postFlight(page, { aircraftId: aircraft.id, personId: pilot, flightType: 'TOURISM', ...flightTimes('2020-02-04', 60) })).toMatchObject({
+      aircraftAmountCents: 15000,
+      aircraftPriceCategory: 'PILOT',
+    });
+    expect(await postFlight(page, { aircraftId: aircraft.id, personId: pilot, ...school, ...flightTimes('2020-02-05', 60) })).toMatchObject({
+      aircraftAmountCents: 15000,
+      aircraftPriceCategory: 'PILOT',
+    });
+  });
+
+  test("rewriting today's rate never reprices a flight already registered today; the next flight takes the new price (AC 6)", async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, null);
+    const pilot = await createPersonWithProfile(page, 'pilot');
+    const today = todayRome();
+    // 09:00Z / 11:00Z are 10:00 / 12:00 (or 11:00 / 13:00) in Rome — today
+    // either way; a flight dated today is accepted at any hour (the guard
+    // compares dates only).
+    const at = (hourUtc: string) => ({ takeoffAt: `${today}T${hourUtc}:00:00.000Z`, landingAt: `${today}T${hourUtc}:30:00.000Z` });
+
+    expect((await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { studentPriceCents: 13000, pilotPriceCents: 14000, validFrom: today } })).status()).toBe(201);
+    const first = await postFlight(page, { aircraftId: aircraft.id, personId: pilot, flightType: 'TOURISM', ...at('09') });
+    expect(first).toMatchObject({ aircraftRateCentsPerHour: 14000, aircraftAmountCents: 7000 });
+
+    const rewrite = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { studentPriceCents: 15000, pilotPriceCents: 16000, validFrom: today } });
+    expect(rewrite.status()).toBe(201);
+    expect(await rewrite.json()).toMatchObject({ studentPriceCents: 15000, pilotPriceCents: 16000, validFrom: today });
+
+    const second = await postFlight(page, { aircraftId: aircraft.id, personId: pilot, flightType: 'TOURISM', ...at('11') });
+    expect(second).toMatchObject({ aircraftRateCentsPerHour: 16000, aircraftAmountCents: 8000 });
+
+    // The first flight, read back from the registry: its frozen breakdown is untouched.
+    const list = await page.request.get(`/api/v1/flights?aircraftId=${aircraft.id}&pageSize=10`);
+    expect(list.status()).toBe(200);
+    const rows = ((await list.json()) as { items: Array<{ takeoffAt: string; breakdown: Breakdown }> }).items;
+    const firstRow = rows.find((row) => row.takeoffAt === `${today}T09:00:00.000Z`);
+    expect(firstRow?.breakdown).toMatchObject({ aircraftRateCentsPerHour: 14000, aircraftAmountCents: 7000, aircraftPriceCategory: 'PILOT' });
   });
 });

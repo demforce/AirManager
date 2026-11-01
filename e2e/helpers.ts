@@ -72,3 +72,19 @@ export async function ensureValidSeedExpiries(page: Page, personId: string, scop
     expect(response.status()).toBe(201);
   }
 }
+
+/**
+ * Today on the Europe/Rome calendar, `YYYY-MM-DD` (story 19.3, A16) — the
+ * "today" the API's `RATE_VALID_FROM_IN_PAST` checks against. A UTC date
+ * would be "yesterday" for Rome between 00:00 and 01:00/02:00, and a rate
+ * written for it would be a 422.
+ */
+export function todayRome(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+/** `YYYY-MM-DD` plus `days` calendar days (negative to go back), UTC arithmetic on a date-only string. */
+export function addDaysIso(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
