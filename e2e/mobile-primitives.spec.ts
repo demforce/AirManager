@@ -141,24 +141,28 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     // AC 8: a portalled picker popover (z 65/66) stays ABOVE the panel and
     // inside the viewport (TD-7's own invariant, re-measured full-screen).
     //
-    // If the date row sits below the scrollport with the body at
-    // `scrollTop: 0`, it has to be scrolled to before it can be clicked.
-    // Doing it here rather than letting the click do it is not cosmetic:
+    // The popover must open from a body that has REALLY scrolled — the epic's
+    // own AC-11 formulation (hit-test after a real scroll), asserted instead
+    // of assumed. On the flight editor the only date trigger sits near the top
+    // of the panel (measured at 375x812: trigger top 123 px, body top 84 px,
+    // body scrollHeight 1041 > clientHeight 659), so the body is scrolled up
+    // to just above the trigger: it moves up and stays inside the scrollport.
+    // Scrolling here rather than letting the click do it is not cosmetic:
     // `useFixedPopover` closes the popover on ANY scroll outside it
-    // (`fixed-popover.ts:198`, capture phase, by design) and Playwright's own
-    // scroll-into-view lands a frame AFTER the click, so the popover opened
-    // and vanished 4ms later (measured: `scrollTop` 0 -> 314). Scrolling first
-    // removes the race without weakening anything this test asserts, and the
-    // hit-test after a REAL scroll — the epic's own AC-11 formulation — is
-    // asserted instead of assumed.
+    // (`fixed-popover.ts:198`, capture phase, by design), and a scroll landing
+    // a frame after the click would close the popover the click just opened.
     const dateTrigger = page.locator('.slideover.open .date-input-btn').first();
     await page.evaluate(() => {
       const body = document.querySelector('.slideover.open .so-body');
       const trigger = document.querySelector('.slideover.open .date-input-btn');
       if (!body || !trigger) return;
-      const overlap = trigger.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom;
-      if (overlap > 0) body.scrollTop += overlap + 12;
+      const offset = trigger.getBoundingClientRect().top - body.getBoundingClientRect().top;
+      body.scrollTop = Math.max(1, offset - 8);
     });
+    expect(
+      await page.locator('.slideover.open .so-body').evaluate((el) => el.scrollTop),
+      'the popover is opened from a body that has really scrolled',
+    ).toBeGreaterThan(0);
     // Let the scroll event land BEFORE the popover exists: `useFixedPopover`
     // closes on any scroll outside it (`fixed-popover.ts:198`, capture phase,
     // by design), and a scroll dispatched a frame after the click would close
