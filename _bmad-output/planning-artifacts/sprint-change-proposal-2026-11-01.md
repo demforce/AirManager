@@ -292,3 +292,17 @@ AD-6 — Consumo pacchetti: già storico dalla 12.13; le PackageConsumption resi
 - **Criteri di successo**: le 15 richieste del PO verificabili una per una sull'app reale (verifica interattiva su
   ogni story con UI), `npm run gates` verde e arbitro e2e completo verde su DB fresco a ogni story, nessun riferimento
   residuo al dominio PPR, ai campi eliminati e al contaore.
+
+---
+
+## Addendum — ratifiche emerse dai file story (2026-11-01)
+
+| ID | Story | Decisione |
+|---|---|---|
+| Q-19.1-a | 19.1 | `/ppr` resta pubblico solo per rispondere «pagina non trovata» anche all'anonimo (opzione B). |
+| Q-19.3-a | 19.3 | Le card (Flotta desktop, widget Panoramica, card e sheet mobile) **non mostrano più la tariffa**: si vede solo nell'editor velivolo. |
+| Q-19.3-b | 19.3 | Correzione/modifica di un volo: categoria di prezzo congelata se la persona non cambia (sessione principale, principio AD-4). |
+| Q-19.3-c | 19.3/19.4 | **Il profilo allievo esclude sia il pilota sia l'istruttore** (estende R-19-e e FR-49). |
+| Q-19.3-d / Q-19.4-b | 19.3/19.4 | Una riga sotto i campi tariffa con la sola prossima variazione programmata. |
+| Q-19.4-a | 19.4 | Il compenso istruttore resta precompilato (non ha decorrenza; vuoto = nessun compenso). |
+

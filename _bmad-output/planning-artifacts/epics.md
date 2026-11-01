@@ -63,7 +63,7 @@ Questo documento fornisce la scomposizione completa in epics e stories di AirMan
 - FR-46: Currency — current con almeno X voli negli ultimi Y giorni (X e Y configurabili dall'admin); non current = niente voli solisti finché non si torna current volando con un istruttore (CR 2026-11-01)
 - FR-47: Volo senza addebito, solo admin (CR 2026-11-01)
 - FR-48: Ogni form ha un solo Salva in fondo; le azioni con effetti propri restano separate (CR 2026-11-01)
-- FR-49: Profili pilota e allievo mutuamente esclusivi (CR 2026-11-01)
+- FR-49: Il profilo allievo esclude pilota e istruttore (CR 2026-11-01, Q-19.3-c)
 
 ### NonFunctional Requirements
 
