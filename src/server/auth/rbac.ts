@@ -30,7 +30,6 @@ export type Permission =
   | 'bookings.manage.own'
   | 'bookings.manage.any'
   | 'expiries.manage'
-  | 'ppr.manage'
   | 'settings.manage'
   | 'users.manage'
   | 'self.read'
@@ -72,7 +71,6 @@ const ALL_PERMISSIONS: Permission[] = [
   'bookings.manage.own',
   'bookings.manage.any',
   'expiries.manage',
-  'ppr.manage',
   'settings.manage',
   'users.manage',
   'self.read',

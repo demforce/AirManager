@@ -68,7 +68,7 @@ html[data-theme="dark"]{
    Tailwind's preflight (`@layer base`), removed with Tailwind itself in 13.11
    without a replacement. Not a full preflight port — only the rules proven
    load-bearing by injecting the pre-13.11 baseline CSS on real pages
-   (/ppr public, /settings, /login, /dashboard) and diffing computed styles
+   (/settings, /login, /dashboard) and diffing computed styles
    until the diff was empty, both themes. See story Dev Agent Record. */
 *,*::before,*::after{ box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
 ol,ul,menu{ list-style: none; }
@@ -770,16 +770,15 @@ html[data-theme="dark"] .stat-tone-warn{ color: var(--warn); }
    `--ok` bar 2.47, the `--accent` bar of both `RankBars`' second metric 1.85
    (an exemplar the story did not list), and the four "Composizione
    movimenti" bands 2.73 / 2.04 / 4.85 / 3.61 — with their legend DOTS
-   carrying the identical four values (a second unlisted family). All five
-   tones get the same 70/30 ink mix so that a band strip stays ONE palette
-   instead of two darkened bands next to two untouched ones; `--info` and
-   `--ink-3` were already above the 3:1 floor and are mixed for that reason
-   only, never to reach it. No token changes value, no new literal. */
+   carrying the identical four values (a second unlisted family). Every
+   tone gets the same 70/30 ink mix so that a band strip stays ONE palette
+   instead of darkened bands next to untouched ones; `--ink-3` was already
+   above the 3:1 floor and is mixed for that reason only, never to reach it.
+   No token changes value, no new literal. */
 .flow-bar-in,
 .util-bar .seg.flown{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
 .flow-bar-out{ background: color-mix(in oklch, var(--bad) 70%, var(--ink)); }
 .flow-bar-accent{ background: color-mix(in oklch, var(--accent) 70%, var(--ink)); }
-.flow-bar-info{ background: color-mix(in oklch, var(--info) 70%, var(--ink)); }
 .flow-bar-muted{ background: color-mix(in oklch, var(--ink-3) 70%, var(--ink)); }
 
 /* Story 13.9: block-level alert/confirmation box for the (auth) forms
@@ -1114,8 +1113,8 @@ html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
    the TD never named — 4.14:1 DARK, both under the floor for body text.
    `--ink-3` is 4.85 / 5.72, the same tone 15.4, 15.6 and 15.8b each moved one
    consumer to. This is DESKTOP text before it is mobile text: it shows on the
-   6 pages whose panels pass a non-empty `subtitle` (bookings x2, logbook,
-   instructors x2, movements, billing, ppr), at every width. */
+   pages whose panels pass a non-empty `subtitle` (bookings x2, logbook,
+   instructors x2, billing), at every width. */
 .so-sub{
   font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
   text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;
@@ -1492,33 +1491,6 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
 .wd-bar.a{ background: var(--accent); }
 .wd-bar.b{ background: var(--info); }
 
-/* ---------- PPR week strip ---------- */
-.ppr-week{
-  display: grid; grid-template-columns: repeat(7, 1fr);
-  gap: 1px; background: var(--border); padding: 1px;
-}
-.ppr-day{
-  background: var(--panel);
-  padding: 12px 10px;
-  display: flex; flex-direction: column; gap: 10px;
-  min-height: 140px;
-}
-.ppr-day-head{ display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
-.ppr-day-body{ display: flex; flex-direction: column; gap: 4px; }
-.ppr-empty{ font-size: 11px; color: var(--ink-4); }
-.ppr-chip{
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 4px 8px;
-  border-radius: 5px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  font-size: 11px;
-}
-.ppr-chip.approved{ background: var(--ok-soft); border-color: transparent; color: oklch(0.35 0.1 155); }
-.ppr-chip.pending{ background: var(--warn-soft); border-color: transparent; color: var(--accent-ink); }
-.ppr-chip.denied{ background: var(--bad-soft); border-color: transparent; color: oklch(0.4 0.17 25); }
-.ppr-chip-dot{ width: 6px; height: 6px; border-radius: 999px; background: currentColor; opacity: 0.8; }
-
 /* responsive */
 @media (max-width: 1200px){
   .kpi-row{ grid-template-columns: repeat(3, 1fr); }
@@ -1544,77 +1516,21 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
   .kpi{ min-width: 0; }
 }
 
-/* ---------- ppr public form (extracted from docs/design-reference/airops/PPR Request.html <style>, story 12.1 AC 1b) ---------- */
-/* `flex-shrink:0` (epic 12, story 12.4 — the first real page to use `.ppr-page`, outside the dashboard `.app` shell): without it, `html,body{height:100%}` above makes `body`'s own flex-column layout shrink this item down to exactly the viewport height whenever real content (this page, unlike the static prototype mock, can be taller than one screen) exceeds it — the excess visually overflows `.ppr-page`'s own now-too-short box, so its `background`/`color` stop covering the overflowing area and the page's OWN light-mode `<body>` background/text show through underneath in dark theme. `flex-shrink:0` keeps this item at its natural (>= 100vh) content height instead. */
-.ppr-page{min-height:100vh;flex-shrink:0;background:var(--bg);color:var(--ink);display:flex;flex-direction:column}
-.ppr-top{background:var(--ink);color:var(--bg)}
-.ppr-top-in{max-width:1060px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:12px}
-.ppr-mark{width:32px;height:32px;border-radius:8px;background:var(--accent);color:var(--ink);display:grid;place-items:center}
-.ppr-mark svg{width:19px;height:19px}
-/* story 13.9 review F1: same always-bright --accent fill pattern as .btn.accent
-   below — --ink flips near-white in dark (1.58:1 measured), the fill doesn't */
-html[data-theme="dark"] .ppr-mark{ color: oklch(0.28 0.09 60); }
-.ppr-brand-name{font-weight:600;font-size:15px;letter-spacing:-0.01em;line-height:1.1}
-/* Story 13.9: `.ppr-top`'s background/text are `--ink`/`--bg` — a
-   deliberately REVERSED bar that inverts fully with the theme (dark bar in
-   light mode, light bar in dark mode). The muted sub-text below used a
-   literal light-gray tuned only for the light-mode (dark) bar; in dark
-   theme the bar itself goes light, so that same literal read as light-gray
-   on near-white (~1.7-2:1). `color-mix` against the two tokens that
-   actually flip auto-adapts to either bar color, no dark override needed. */
-.ppr-brand-sub{font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:color-mix(in oklch, var(--bg) 70%, var(--ink))}
-.ppr-top-right{margin-left:auto;display:flex;gap:22px;font-family:var(--font-mono);font-size:11px;color:color-mix(in oklch, var(--bg) 75%, var(--ink))}
-.ppr-top-right b{color:var(--bg);font-weight:600}
-.ppr-hero{max-width:1060px;margin:0 auto;width:100%;padding:38px 24px 22px}
-.ppr-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent-ink);margin-bottom:10px}
-.ppr-hero h1{font-family:var(--font-display);font-weight:400;font-size:44px;line-height:1.02;letter-spacing:-0.01em;margin:0 0 10px}
-.ppr-hero p{margin:0;max-width:60ch;color:var(--ink-2);font-size:15px}
-.ppr-grid{max-width:1060px;margin:0 auto;width:100%;padding:8px 24px 72px;display:grid;grid-template-columns:1.7fr 1fr;gap:22px;align-items:start}
-.ppr-section-label{font-family:var(--font-mono);font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3);margin:22px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
-.ppr-section-label:first-child{margin-top:4px}
-.ppr-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.ppr-form-grid .fld.wide{grid-column:1/-1}
-.ppr-actions{display:flex;align-items:center;gap:14px;margin-top:26px;padding-top:20px;border-top:1px solid var(--border)}
-.ppr-actions .note{font-size:12px;color:var(--ink-3)}
+/* ---------- button variants and key/value rows (extracted from the prototype's request form <style>, story 12.1 AC 1b) ---------- */
 .btn.big{padding:11px 20px;font-size:14px;border-radius:var(--radius-md)}
 .btn.accent{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 .btn.accent:hover{background:oklch(from var(--accent) calc(l - 0.04) c h)}
 /* Story 13.9: `--accent-ink` is calibrated to pair with `--accent-soft` (dark
    in dark theme, L .32 — see .btn.on/.badge.warn), not with the full-strength
    `--accent` this rule actually uses, which STAYS bright in dark theme
-   (L .82). Paired together in dark, both land light (~1.35:1) — e.g. the
-   public PPR page's "Invia richiesta" CTA. Same fixed dark-ink override as
-   `.cal-cell.sel` below, for the same "text on a full --accent fill" case. */
+   (L .82). Paired together in dark, both land light (~1.35:1). Same fixed
+   dark-ink override as `.cal-cell.sel` below, for the same "text on a full
+   --accent fill" case. */
 html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
-.ppr-aside{display:flex;flex-direction:column;gap:14px;position:sticky;top:22px}
-.info-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-md);padding:18px 18px;box-shadow:var(--shadow-sm)}
-.info-card h3{margin:0 0 10px;font-size:13px;font-weight:600}
 .info-row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:12.5px;border-bottom:1px solid var(--border)}
 .info-row:last-child{border-bottom:0}
 .info-row .k{color:var(--ink-3)}
 .info-row .v{font-family:var(--font-mono);font-weight:500;text-align:right}
-.info-card ul{margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;line-height:1.7}
-.info-card.accent{background:var(--accent-soft);border-color:oklch(from var(--accent) l c h / 0.5)}
-.req{color:var(--bad)}
-.ppr-success{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:40px 36px;text-align:center;box-shadow:var(--shadow-md)}
-.ppr-success .check{width:60px;height:60px;border-radius:50%;background:var(--ok-soft);color:var(--ok);display:grid;place-items:center;margin:0 auto 18px}
-.ppr-success .check svg{width:32px;height:32px}
-.ppr-success h2{margin:0 0 8px;font-size:24px;letter-spacing:-0.01em}
-.ppr-success p{margin:0 auto 6px;max-width:46ch;color:var(--ink-2);font-size:14px}
-.ppr-ref{display:inline-block;margin:16px 0 22px;font-family:var(--font-mono);font-size:15px;font-weight:600;padding:8px 16px;border:1px dashed var(--border-strong);border-radius:var(--radius-sm);background:var(--bg-sunken)}
-.ppr-foot{margin-top:auto;border-top:1px solid var(--border);background:var(--panel)}
-.ppr-foot-in{max-width:1060px;margin:0 auto;padding:16px 24px;display:flex;justify-content:space-between;gap:12px;font-size:11.5px;color:var(--ink-3);font-family:var(--font-mono)}
-/* Story 15.9 (R-15.9-g): `.ppr-top-right{display:none}` USED to be the fourth
-   declaration of this query. It hid the ONLY IT/EN switch of the public
-   showcase on every phone and every tablet (measured: the link had a 0x0 rect
-   at 320/375/390/641/800 and came back at 821), and the language it switches
-   is also the language of the receipt email (`ppr-form.tsx`'s `locale` in the
-   body). Its historical reason is gone: the prototype's `.ppr-top-right` held
-   three AFIS/ELEV/OPS stat blocks that did not fit a phone, and story 12.4
-   OMITTED all three — what the rule hid is one eight-character word. The
-   declaration is REMOVED rather than overridden, so `/ppr` keeps exactly ONE
-   breakpoint (820px) and no third threshold is introduced. */
-@media (max-width:820px){.ppr-grid{grid-template-columns:1fr}.ppr-aside{position:static}.ppr-hero h1{font-size:34px}}
 
 /* ---------- AirManager additions (story 12.1 review, finding F1) ----------
    Narrow-viewport topbar: the prototype has no <900px rules for the topbar, and
@@ -1644,17 +1560,6 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
    topbar rule above) keeps every field full-width and directly reachable. */
 @media (max-width: 640px){
   .form-grid{ grid-template-columns: 1fr; }
-}
-
-/* Story 13.10 review F3: `.ppr-form-grid` (public `/ppr` request form) has
-   the same 2-column shape as `.form-grid` above — the original sweep's
-   comment here claimed it was "measured NOT to overflow at 375px", which
-   the review disproved: at 375px the grid's two 174px columns leave the
-   ETD field's time input clipped ~60px by the card (the time segment +
-   picker icon rendered outside the visible/hit-testable area). Same fix,
-   same threshold, as `.form-grid`. */
-@media (max-width: 640px){
-  .ppr-form-grid{ grid-template-columns: 1fr; }
 }
 
 /* Story 13.10 (mobile pass): `.page-head`'s title/actions row (13 page
@@ -1707,7 +1612,7 @@ html[data-theme="dark"] .btn.accent{ color: oklch(0.28 0.09 60); }
    above the floor rather than invent a literal or a token — `--ink-3` is the
    same muted family one step up, and is exactly what `.bottom-sheet-sub`
    already uses at 4.85/5.72. No token changes value, and `--ink-4`'s other
-   consumers (`.so-sub`, `.mobile-row-chev`, `.syl-num`, `.ppr-card-id`) are
+   consumers (`.so-sub`, `.mobile-row-chev`, `.syl-num`) are
    untouched: this switches ONE class's consumer, it does not repaint a token.
    The colour lives here, not inline in `bar-chart.tsx`/`line-chart.tsx`,
    because an inline style wins over any class rule — the two components keep
@@ -1930,11 +1835,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    new colour literal (the decision buttons reuse `.btn.primary` and
    `.btn.mini.bad`, dark calibration of 13.9 included). */
 
-/* The mobile PPR list is in the DOM at every width (the switch is CSS
-   only), so it must be `display: none` OUTSIDE the query too — otherwise
-   the desktop suite gets two matches for every registration on screen. */
-.ppr-queue-mobile{ display: none; }
-
 @media (max-width: 640px){
   /* --- (1) row-detail bottom sheet --- */
   .bottom-sheet-head{
@@ -1948,7 +1848,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      group label but not for TEXT: measured on `--panel`, this over-line is
      3.66:1 (light) / 4.14 (dark), under the 4.5:1 AC 11 asks. `--ink-3`
      measures 4.85 / 5.72. One declaration, colour only, and it lifts every
-     sheet of the epic (PPR, prenotazioni, piloti, istruttori, flotta, voli) —
+     sheet of the epic (prenotazioni, piloti, istruttori, flotta, voli) —
      the same reasoning 15.4 recorded for its own twin. */
   .bottom-sheet-sub{
     font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
@@ -1986,34 +1886,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .bottom-sheet-close{ width: 100%; margin-top: 10px; color: var(--ink-2); }
   /* Second step of a decision started in the sheet (R-15.2-a). */
   .bottom-sheet-step{ display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
-
-  /* --- PPR queue: the mobile half of the double markup ---
-     Hooked to the page's OWN two classes, never to `.students` (shared by
-     13 consoles) nor to a generic `.only-mobile` utility. */
-  .ppr-queue-desktop{ display: none; }
-  .ppr-queue-mobile{ display: block; }
-  /* Ratifica R-15.2-b: the decision lives ONLY in the sheet, so the whole
-     card is ONE button — no nested interactive element to guard with
-     `stopPropagation`, and one honest 44px+ touch target. */
-  .ppr-card{
-    display: block; width: 100%;
-    padding: 11px 16px; min-height: 44px;
-    background: transparent; border: 0; border-top: 1px solid var(--border);
-    font: inherit; color: var(--ink); text-align: left; cursor: pointer;
-  }
-  .ppr-card:active{ background: var(--panel-2); }
-  .ppr-card-head{ display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  /* The card's inner nodes are `<span>`s (nothing but the card itself may be
-     a `<button>`, R-15.2-b), so each one has to be told to be a block. */
-  .ppr-card-main{ display: block; min-width: 0; }
-  .ppr-card-name{ display: block; font-size: 13px; font-weight: 600; }
-  .ppr-card-sub{
-    display: block;
-    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin-top: 2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .ppr-card-side{ display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
-  .ppr-card-id{ font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-4); }
 
   /* --- (2) SlideOver, full-screen mode (R3) ---
      `left: 0` + `width: 100%` beat the inherited `right: 0`, so the panel's
@@ -2144,14 +2016,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 
    The switch hangs off classes this page OWNS — `.overview-mobile`,
    `.landing-mobile` and `.home-desktop-surface` — never off `.card`, `.split`,
-   `.list` or `.list-item` (13 consoles share those). Precedent and reasoning:
-   `.ppr-queue-mobile` above.
-
-   Card CSS is NOT a rename of `.ppr-card*`: these rows carry a registration
-   chip, a left time column and a right badge that the PPR card has none of, so
-   generalizing those class names would have changed how the PPR queue renders
-   at 375px — the story's own precondition for the rename ("only if it costs
-   nothing") does not hold. The two families are siblings, deliberately. */
+   `.list` or `.list-item` (13 consoles share those). Every mobile tree of the
+   epic switches the same way: a class of its own page, `display: none`
+   outside the query and `display: block` inside it. */
 
 /* Both mobile trees are in the DOM at every width (the switch is CSS only), so
    they must be `display: none` OUTSIDE the query too — otherwise the desktop
@@ -2217,7 +2084,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .mobile-card-foot{ padding: 10px 16px; border-top: 1px solid var(--border); }
   .mobile-card-foot .btn{ width: 100%; justify-content: center; min-height: 44px; }
 
-  /* --- one row = one trigger (R3 + the `.ppr-card` idiom of 15.2) ---
+  /* --- one row = one trigger (R3) ---
      The whole row is ONE `<button>`: the decision lives in the sheet
      (R-15.3-b), so there is no nested interactive element to guard with
      `stopPropagation` and the touch target is the row itself. Its children are
@@ -2345,8 +2212,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    The switch hangs off classes these two cards OWN — `.schedule-desktop-body`,
    `.schedule-mobile`, `.bookings-desktop-body`, `.bookings-mobile` — never off
    `.schedule`, `.week-grid` or `.students` (that last one is shared by 13
-   consoles). Precedent and reasoning: `.ppr-queue-mobile` (15.2),
-   `.home-desktop-surface` (15.3).
+   consoles). Precedent and reasoning: `.home-desktop-surface` (15.3).
 
    Rows deliberately reuse the `.mobile-row*` family of 15.3 rather than a new
    one: this IS that row (left time column, registration chip, right badge),
@@ -2456,7 +2322,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      `flex: 1` alone (15.2) never wraps: a `flex-basis: 0` item shrinks below
      its own content instead, so four buttons squeezed onto one 195px line. A
      half-width basis wraps the third and fourth onto their own row and leaves
-     the two-button sheets (PPR queue, pending queue) rendering exactly as
+     the two-button sheets (e.g. the pending queue) rendering exactly as
      before — 50% + 8px gap is what `flex: 1` already produced for two. */
   .bottom-sheet-actions{ flex-wrap: wrap; }
   .bottom-sheet-actions .btn{ flex-basis: calc(50% - 4px); }
@@ -2484,8 +2350,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    `.instructors-desktop-body`/`.instructors-mobile`, `.person-expiries` — never
    off `.fleet-grid`/`.ac-card` (shared with the Overview's fleet widget) nor
    `.students` (shared by 13 consoles). Precedent and reasoning:
-   `.ppr-queue-mobile` (15.2), `.home-desktop-surface` (15.3),
-   `.bookings-mobile` (15.4).
+   `.home-desktop-surface` (15.3), `.bookings-mobile` (15.4).
 
    Rows reuse the `.mobile-row*` family of 15.3/15.4 rather than a new one: this
    IS that row, with a 30px avatar in front and TWO stacked values behind
@@ -2747,9 +2612,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      measured, three rows scrolled sideways inside their own box at 375px.
      `anywhere` (not `break-word`) is the one that also shrinks the box's
      min-content contribution, the 13.10 F1 lesson.
-     ANCHORED to the dossier's own card (review 15.5 F5): `.info-row` is shared
-     with the PUBLIC `/ppr` module, which belongs to story 15.9 — a descendant
-     selector reached its "aviosuperficie" block too (lesson 15.3 F1). */
+     ANCHORED to the dossier's own card (review 15.5 F5): `.info-row` is a
+     shared class, and a descendant selector reaches every consumer of it
+     (lesson 15.3 F1). */
   .person-identity > .info-row > .v{ min-width: 0; overflow-wrap: anywhere; }
   /* The scadenze table becomes a stacked row — the SAME four cells, re-placed,
      never duplicated into a second tree (`person-detail.spec.ts:217` and
@@ -2879,16 +2744,13 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .logbook-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
 }
 
-/* ---------- scadenze + transiti mobile (story 15.7, epic 15 R1-R4) ----------
-   The last two operational registries that could only be read from a desk:
-   the Scadenze registry (868px of table inside 317px of screen, with a 262px
-   head above it — the first row started at 70% of the viewport) and the Voli
-   in transito register (800px of table, and a closure whose button needed
-   483px of horizontal scroll to reach and then opened its panel 483px to the
-   LEFT of the finger). Both become one card per row plus a detail sheet, in
-   the template's own language (`AirOps Mobile` 207-225 and 266-286), and so
-   does the self face "Le mie scadenze" — one of the FIVE tab-bar entries a
-   pilota/allievo/istruttore has.
+/* ---------- scadenze mobile (story 15.7, epic 15 R1-R4) ----------
+   An operational registry that could only be read from a desk: the Scadenze
+   registry (868px of table inside 317px of screen, with a 262px head above
+   it — the first row started at 70% of the viewport). It becomes one card per
+   row plus a detail sheet, in the template's own language (`AirOps Mobile`
+   266-286), and so does the self face "Le mie scadenze" — one of the FIVE
+   tab-bar entries a pilota/allievo/istruttore has.
 
    Same rules of engagement as the 15.1-15.6 blocks above: every declaration
    is additive inside `@media (max-width: 640px)`, no existing token changes
@@ -2901,47 +2763,36 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    lesson) and because the mobile trees are in the DOM at every width.
 
    The switch hangs off classes these pages OWN — `.scadenze-desktop-body`/
-   `.scadenze-mobile`, `.movements-desktop-body`/`.movements-mobile`,
-   `.my-expiries-desktop-body`/`.my-expiries-mobile`, `.scadenze-head`,
-   `.movements-head` — never off `.students`/`.student-row` (13 consoles), nor
+   `.scadenze-mobile`, `.my-expiries-desktop-body`/`.my-expiries-mobile`,
+   `.scadenze-head` — never off `.students`/`.student-row` (13 consoles), nor
    `.card-head`, nor `.kpi-row`, nor `.mini-modal` (shared with the logbook's
    storno), and above all never off `.segmented`: that class has SIX consumers
    (pianificazione, panoramica, statistiche, the scadenze widget and the
    primitive itself), so the finestra filter's phone form is NEW markup and
    the desktop `.segmented` is hidden here through a class of this page
-   (`.scadenze-window-desktop`), which is not a rule on `.segmented` at all.
-   Same for `.date-input`, shared with contabilità and registro voli: the two
-   period filters are reached through `.movements-filter-inpanel`. */
+   (`.scadenze-window-desktop`), which is not a rule on `.segmented` at all. */
 
-/* The three mobile trees are in the DOM at every width (the switch is CSS
+/* The two mobile trees are in the DOM at every width (the switch is CSS
    only), so they must be `display: none` OUTSIDE the query too — otherwise
-   the desktop suite finds two matches for every registration and every person
-   name on these pages. Same for the two phone-only "Filtri" triggers. */
+   the desktop suite finds two matches for every person name on these pages.
+   Same for the phone-only "Filtri" trigger. */
 .scadenze-mobile,
-.movements-mobile,
 .my-expiries-mobile,
-.scadenze-head > .scadenze-filters-trigger,
-.movements-head > .movements-filters-trigger{ display: none; }
+.scadenze-head > .scadenze-filters-trigger{ display: none; }
 
-/* The declarations these six nodes carried inline. An inline `width`/
+/* The declarations these nodes carried inline. An inline `width`/
    `display`/`grid-template-columns`/`max-width` cannot be overridden by a
    media query, and the phone face has to stretch, hide or re-place each one.
    Identical computed style above 640px — measured pre/post at 1280/800/641px. */
 .scadenze-search{ width: 190px; }
 .scadenze-kpi-row{ grid-template-columns: repeat(4, 1fr); }
-.movements-head-actions{ display: flex; gap: 8px; flex-wrap: wrap; }
-.ppr-complete-form{ display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; }
-.ppr-complete-field{ max-width: 200px; }
-.ppr-complete-actions{ display: flex; gap: 8px; }
 .membership-fee-actions{ display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 .membership-fee-override-label{ display: flex; align-items: center; gap: 6px; margin-top: 10px; font-weight: 400; }
 
 @media (max-width: 640px){
   .scadenze-desktop-body,
-  .movements-desktop-body,
   .my-expiries-desktop-body{ display: none; }
   .scadenze-mobile,
-  .movements-mobile,
   .my-expiries-mobile{ display: block; }
 
   /* --- the head of the Scadenze card (ratifica R-15.7-e) ---
@@ -2996,103 +2847,40 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      idempotent job twice. The `role="status"` paragraph stays for the desktop. */
   .scadenze-reminders-feedback{ display: none; }
 
-  /* --- the head of the Voli in transito card (ratifica R-15.7-f) ---
-     Measured pre-fix: 143px at 375px in both locales (230 at 320px, 186 with
-     a filter active), against 68px at 1280px. The 15.5 recipe applied
-     literally (all five controls full-width at 44px) would have made it
-     276px, so stato moves onto a chip strip, periodo and "Azzera" into the
-     panel, and the head keeps only the two things that act. */
-  .movements-head{ padding: 12px 16px; column-gap: 8px; }
-  .movements-head > .spacer{ display: none; }
-  /* Both the title and the count go: the page `<h1>` and its own sub-line
-     ("N attualmente al suolo") already say what this card is, and the count
-     here is the CURRENT PAGE's row count, which the list itself shows. */
-  .movements-head > .card-title,
-  .movements-head > .card-sub{ display: none; }
-  /* Stato (now the chip strip), the two period filters and "Azzera filtri"
-     (now the panel's own footer button). They stay in the DOM with their
-     testids and their desktop behaviour, one node each. */
-  .movements-head > .movements-filter-status,
-  .movements-head > .movements-filter-inpanel{ display: none; }
-  /* One row: Filtri + Esporta, half each. */
-  .movements-head > .movements-filters-trigger{ display: inline-flex; flex: 1 1 0; justify-content: center; min-height: 44px; }
-  .movements-head > div:has(> .btn){ flex: 1 1 0; }
-  .movements-head > div:has(> .btn) > .btn{ width: 100%; justify-content: center; min-height: 44px; }
-  /* "Registra arrivo", full width under the page sub-line — the grammar
-     ratifiche R-15.3-d/R-15.4-f/R-15.5-g already set for a primary action, and
-     the last page CTA of the epic still measuring 127x35. DIRECT child:
-     `LogArrivalLaunchButton` renders its trigger AND its `ManualPprForm`
-     panel as siblings inside this wrapper (lesson 15.3 F1). */
-  .movements-head-actions{ flex: 1 0 100%; }
-  .movements-head-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
-
-  /* --- the two "Filtri" panels ---
+  /* --- the "Filtri" panel ---
      `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed
-     header and the anchored action; the bodies only need the editors' own
+     header and the anchored action; the body only needs the editors' own
      vertical rhythm on one column. */
-  .scadenze-filter-panel,
-  .movements-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
-  /* Every control of a panel is a control of the head that moved into it
-     (R4), so AC 5/6's 44px floor follows it there: measured without these,
-     the tipo select was 36px and the two date fields 38.8px with a 24x24
-     calendar trigger — the smallest target of either page. Bounded by the two
-     panel classes this story owns; the `SlideOver` chassis is untouched. */
-  .scadenze-filter-panel .input,
-  .movements-filter-panel .input{ min-height: 44px; }
+  .scadenze-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
+  /* Every control of the panel is a control of the head that moved into it
+     (R4), so AC 5/6's 44px floor follows it there: measured without this,
+     the tipo select was 36px. Bounded by the panel class this story owns;
+     the `SlideOver` chassis is untouched. */
+  .scadenze-filter-panel .input{ min-height: 44px; }
   /* The 36px trigger this story anchored here is now the app-wide 44px floor
      of story 15.10 (R-15.10-d): the rule that replaced it is at the end of
      this file, and the value went 36 -> 44 on this panel. */
 
-  /* --- the transit card (template 207-225) ---
+  /* --- the scadenza card (template 266-286) ---
      `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, an
      identifier and an ellipsised line on the left, a pill on the right). Only
-     the tracks and the type slot are new, so this is a MODIFIER, not a family
-     — and `.ppr-card*` (15.2) is deliberately NOT reused: its rows have no
-     right-hand track, so a status pill as long as "In arrivo" would compete
-     with the marks instead of being protected by one (AD-3).
+     the tracks are new, so this is a MODIFIER, not a family.
      `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
-     `minmax(auto, 1fr)` and a long requester name would push its own track
+     `minmax(auto, 1fr)` and a long person name would push its own track
      wider than the card (the 13.10 F1 idiom, re-measured in 15.5/15.6). */
-  .mobile-row-transit,
   .mobile-row-expiry{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
   /* `.mobile-row-side` carries `grid-column: 3` for the three-track person row
      of 15.5; here the right column is the second track. */
-  .mobile-row-transit > .mobile-row-side,
   .mobile-row-expiry > .mobile-row-side{ grid-column: 2; }
   /* The pill never wraps and never shrinks: it is the word that changes what
      the row MEANS, and the `auto` track is sized on it. The left track's
      `minmax(0, …)` is what absorbs the difference. */
-  .mobile-row-transit > .mobile-row-side .badge,
   .mobile-row-expiry > .mobile-row-side .badge{ white-space: nowrap; }
-  /* The template's own second slot on the title line (207-225): the aircraft
-     TYPE, mono, quieter and lighter than the marks beside it. It ellipsises
-     and the marks chip does not, so a long type never eats the identifier.
-     `--ink-3` on `--panel` measures 4.85:1 light / 5.72 dark (the pair 15.6
-     already established for `.mobile-row-sub`) — never the template's own
-     `--ink-4`, which is a >=3:1 floor meant for group labels, not for text. */
-  .mobile-row-model{
-    min-width: 0;
-    font-family: var(--font-mono); font-size: 10.5px; font-weight: 400; color: var(--ink-3);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
   /* "Le mie scadenze" only: the dormant "Proposta in attesa" chip gets its own
      row in column 1 — never spanning (an item that SPANS tracks contributes
      its max-content to all of them, the defect 15.5 measured), and never in
      the right-hand slot, where it would eat the status pill. */
   .mobile-row-expiry > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
-
-  /* --- the closure of a transit, inside the sheet (ratifica R-15.7-d) ---
-     The SAME `CompleteForm` the desktop row panel renders (AD-8) — only its
-     container changes, so the three inline styles it used to carry had to
-     become classes first. The two fields lose their 200px desktop cap and the
-     two buttons become equal 44px halves. Bounded by a class this story owns,
-     whose subtree is this one form. */
-  .mobile-complete-step > .ppr-complete-form{ padding: 0; }
-  .mobile-complete-step .ppr-complete-field{ max-width: none; }
-  /* The two fields of an operation with a REAL accounting effect: measured
-     36.8px (importo) and 36px (metodo) without this. */
-  .mobile-complete-step .input{ min-height: 44px; }
-  .mobile-complete-step .ppr-complete-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
 
   /* --- "Quota associativa" as a full-screen panel (ratifica R-15.7-g) ---
      Measured pre-fix at 375px: a 335x385 card with a 131x35 submit and a
@@ -3165,7 +2953,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    The switch hangs off classes this page OWNS — `.billing-desktop-body`/
    `.billing-mobile`, `.billing-head`, `.billing-kpi-row` — never off
    `.students`/`.student-row` (13 consoles), nor `.card-head`, nor `.kpi-row`,
-   nor `.split` (4 more instances on `/dashboard/reports`, the story gemella's
+   nor `.split` (3 more instances on `/dashboard/reports`, the story gemella's
    own page), nor `.mini-modal` (shared with the registro voli's storno), nor
    `.segmented` (6 consumers), nor `.date-input` (5 pages): the two period
    fields are reached through `.billing-filter-inpanel` and the panel's own
@@ -3341,7 +3129,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* The fields of operations with a real accounting effect: measured 34.84px
      (importo), 36.84px (motivo della rettifica) without this. Anchored to a
      class of THIS story, never to `.bottom-sheet-step` — that one is shared
-     with the registro voli's storno and the transiti's closure (15.6/15.7). */
+     with the registro voli's storno (15.6). */
   .billing-sheet-step .input{ min-height: 44px; }
 
   /* --- "Saldi negativi": the scroller stays, its rows grow ---
@@ -3486,9 +3274,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      38.84, 12 "Salva" at 34.84, one calendar trigger at 24. Anchored to a
      class carried only by these seven cards. The nested calendar trigger
      stays at 36x36 — the PO line since 15.7: a nested trigger lives INSIDE a
-     44px box (`airops.css`'s own `.movements-filter-panel` precedent), and
-     it is DECLARED in the sweep instead of being silently excluded (lesson
-     15.8a MINOR-1). */
+     44px box, and it is DECLARED in the sweep instead of being silently
+     excluded (lesson 15.8a MINOR-1). */
   .settings-card .input{ min-height: 44px; }
   /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
   .settings-card textarea.input{ min-height: 88px; }
@@ -3552,19 +3339,15 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .settings-card form input[type="checkbox"]{ width: 24px; height: 24px; flex-shrink: 0; }
 }
 
-/* ---------- aree self + modulo pubblico mobile (story 15.9, epic 15 R1-R4) ----------
+/* ---------- aree self mobile (story 15.9, epic 15 R1-R4) ----------
    The two self-service surfaces every pilot, student and instructor has in the
-   first row of their own tab bar, plus the public showcase. Measured before
-   this block, at 375x812:
+   first row of their own tab bar. Measured before this block, at 375x812:
 
    - "Le mie transazioni" (`account-section.tsx`, SHARED with the scheda
      persona): the statement grid computes `104px 150px 0px 120px` — the
      Descrizione track is literally ZERO — and the amount ends at x=481 inside
      a 281px card body. The admin face adds two tracks and ends at 849.
    - "I miei compensi": `.students` 281/640, the amount at 687.
-   - `/ppr`: 12 fields out of 12 under 44px (9 inputs at 36.84, 2
-     datetime-local at 38.84, the textarea is tall enough), two 24x24 calendar
-     triggers, a submit 64.59px tall only because its Italian label wraps.
 
    Same rules of engagement as the 15.1-15.8b blocks above: every declaration
    is additive inside `@media (max-width: 640px)`, no existing token changes
@@ -3573,13 +3356,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    at every width; (ii) `.account-pagination`, an inline style moved into a
    class so a media query can reach it at all (the move R-15.8a-f had to make).
 
-   `/ppr` lives OUTSIDE the shell and outside this threshold: its own
-   breakpoint is 820px and its rules are the two marked below, anchored to
-   `.ppr-*` — `/ppr` shares `.card`, `.input`, `.fld`, `.btn`, `.info-card`,
-   `.info-row` and `.date-input-btn` with the dashboard, and review 15.5 F5 is
-   the proof that an unanchored selector reaches it. The 47 targets under 43.5
-   inside `.cal-popover` (42 `.cal-cell` at 34.58, 2 `.iconbtn` at 24x24) are a
-   SHARED primitive with 11+ consumers and stay a declared TD for 15.10.
+   The 47 targets under 43.5 inside `.cal-popover` (42 `.cal-cell` at 34.58,
+   2 `.iconbtn` at 24x24) are a SHARED primitive with 11+ consumers and stay a
+   declared TD for 15.10.
 
    The switch hangs off classes these surfaces OWN — `.account-desktop-body`/
    `.account-mobile`, `.compensation-desktop-body`/`.compensation-mobile`,
@@ -3596,23 +3375,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    query could reach it. Same values, same node, same two links — measured
    identical at 641/800/1280. */
 .account-pagination{ display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px; }
-
-/* R-15.9-g, the other half of removing `display:none` above: the switch is a
-   real target at EVERY width. The declaration is unconditional because the
-   defect is (the link measured 45.72x15.94 even at 821px, where it WAS
-   visible), and its arithmetic price on the desktop header is declared in the
-   record: `.ppr-top-in` is a 14px-padded flex row whose tallest item was the
-   32px logo mark, so a 44px item makes the header 72px instead of 60px. */
-.ppr-top-right a{ display: inline-flex; align-items: center; min-height: 44px; }
-/* A configured airfield name is free text (the e2e chain writes a 38-character
-   one) and now shares a 320px header with the switch: the brand block is the
-   one that gives way, so the header can never push the page wider than the
-   viewport. Only the NAME is clamped — `.ppr-brand-sub` is a fixed i18n string
-   and keeps wrapping onto a second line exactly as before (measured: clamping
-   it too truncated "Autorizzazione Preventiva Obbligatoria" at 375px, which is
-   content this page loses for nothing). */
-.ppr-brand-block{ min-width: 0; }
-.ppr-brand-name{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 640px){
   /* --- estratto conto: table out, cards in (AC 1/2, TD 14.6 F4) --- */
@@ -3699,28 +3461,10 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* --- the rettifica as a second step INSIDE the sheet (R-15.9-c) ---
      Same fields as the riquadro, same endpoint, same 409 mapping — only the
      container changes. Anchored to a class of THIS story, never to
-     `.bottom-sheet-step`, which is shared with the PPR queue's rejection, the
-     registro voli's storno and the Contabilità's three writes. */
+     `.bottom-sheet-step`, which is shared with the registro voli's storno and
+     the Contabilità's three writes. */
   .account-sheet-step .input{ min-height: 44px; }
   .account-sheet-step form > div:last-child > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
-
-  /* --- the public form (AC 6, R-15.9-f) ---
-     Anchored to `.ppr-form-grid`, which only `ppr-form.tsx` uses: `.input`,
-     `.fld` and `.date-input-btn` are app-wide, and an unanchored rule here
-     would resize every field of every dashboard page (and vice versa — that is
-     exactly what review 15.5 F5 caught going the other way). */
-  .ppr-form-grid .input{ min-height: 44px; }
-  /* The trigger goes to a full 44x44 (R-15.9-f), so the text needs more room
-     than `.date-input input`'s own 30px: at 24px the value was clear of the
-     icon by 6px, and the same clearance at 44px needs 48px. */
-  /* Same 44x44 + 48px, now the app-wide floor of story 15.10 (R-15.10-d):
-     this page's measurement must NOT move, and it does not — the global rule
-     lands on exactly the values this one set. */
-  /* Submit full width, the "campi obbligatori" note on its own line. The row
-     was `flex-wrap: nowrap` and 85.59px tall with a 101.64x64.59 button whose
-     height came from its label wrapping, not from a decision. */
-  .ppr-actions{ flex-wrap: wrap; }
-  .ppr-actions > .btn{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
 }
 
 /* ============================================================================
@@ -3735,9 +3479,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
         REPLACES six anchored exceptions (four at 36px, two at 44px) that four
         stories wrote one surface at a time. Ratifica R-15.10-d asked for one
         rule instead of a seventh exception. Measured before: 24x24 on
-        logbook (1), movements (2), bookings (2) and /dashboard/ppr (2); 36x36
-        on billing and settings; 44x44 on the public /ppr, which this rule
-        reaches at exactly the value 15.9 gave it, so that page does not move;
+        logbook (1) and bookings (2); 36x36 on billing and settings;
    (ii) the METAR band below is a `min-width`/`max-width` band, not a <=640
         rule, because that IS the ratified requirement (R-15.10-k: the tablet
         is a usage surface);
@@ -3816,9 +3558,9 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
 @media (max-width: 640px){
   /* --- (4) the calendar trigger, five faces and ONE rule (R-15.10-d) ---
      `.date-input-btn` is 24x24 app-wide. Four stories raised it on their own
-     surface (36px on movements/billing/transaction/settings, 44px on the
-     account top-up and on the public /ppr form) and left the other five faces
-     at 24. Those six anchored rules are REMOVED above and replaced by this
+     surface (36px on billing/transaction/settings, 44px on the account
+     top-up) and left the other faces at 24. Those anchored rules are REMOVED
+     above and replaced by this
      pair. The input grows with it: the trigger is `position: absolute` inside
      the field, so a 44px button inside a 38.84px input would stick out 2.6px
      top and bottom — and a 38.84px input is itself under the 43.5 floor. The
@@ -3853,21 +3595,6 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
      ratifica names. */
   .cal-head .iconbtn{ width: 44px; height: 44px; }
   .cal-foot .btn{ min-height: 44px; }
-
-  /* --- (8) `/dashboard/ppr`, the 19 targets (R-15.10-j) ---
-     The one surface built BEFORE the primitives were complete. Everything
-     else about it is already right (the card is a `<button>` with zero
-     interactive children, the sheet is a named dialog with 44px controls, the
-     ExportMenu is a bottom sheet, `pageOverflow` is 0 at 320/375/390): what
-     was missing is the touch floor. Three anchors, all on classes these two
-     files own — never `.card-head`, `.form-grid` or `.btn`, which 13 consoles
-     share. `ManualPprForm` is mounted from BOTH `/dashboard/ppr` and
-     `/dashboard/movements` (log arrival), so this rule fixes 15 targets on two
-     surfaces at once. */
-  .ppr-head-actions > .btn{ min-height: 44px; }
-  .ppr-queue-head .input,
-  .ppr-queue-head .btn{ min-height: 44px; }
-  .manual-ppr-form .input{ min-height: 44px; }
 
   /* --- (9) the self statement's redundant card title (R-15.10-h) ---
      On the SELF face the page head already says "Le mie transazioni" and the

@@ -128,12 +128,12 @@ async function createAircraft(page: Page, tag: string): Promise<{ id: string; re
   return { id: aircraft.id, registration };
 }
 
-const ADMIN_OVERVIEW_KPI_TESTIDS = ['kpi-flights-today', 'kpi-fleet-available', 'kpi-ppr-pending', 'kpi-bookings-pending', 'kpi-revenue'];
+const ADMIN_OVERVIEW_KPI_TESTIDS = ['kpi-flights-today', 'kpi-fleet-available', 'kpi-bookings-pending', 'kpi-revenue'];
 const PILOT_LANDING_KPI_TESTIDS = ['kpi-balance', 'kpi-license', 'kpi-medical', 'kpi-ratings'];
 const INSTRUCTOR_LANDING_KPI_TESTIDS = ['kpi-hours-month', 'kpi-payout-rate', 'kpi-owed-month', 'kpi-flights-today'];
 
 test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)', () => {
-  test('admin lands on the AdminOverview console: 5 real KPIs, embedded Schedule + BookingsTable, Scadenze/Fleet widgets, dispatch CTA', async ({ page }) => {
+  test('admin lands on the AdminOverview console: 4 real KPIs, embedded Schedule + BookingsTable, Scadenze/Fleet widgets, dispatch CTA', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await expect(page.getByRole('heading', { name: 'Panoramica operativa' })).toBeVisible();
 

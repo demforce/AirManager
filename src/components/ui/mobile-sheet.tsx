@@ -105,7 +105,7 @@ export function MobileSheet({ open, onClose, label, testId, className, scrimClas
     // scroll-into-view has nothing to do — EXCEPT for the one consumer that is
     // not a sheet above 640px. `ExportMenu`'s popover is `position: absolute`
     // inside the page, and focusing it scrolled `.main` by up to 461px on the
-    // scheda persona (measured on logbook/ppr/movements/person at 1280): a
+    // scheda persona (measured on logbook/person at 1280): a
     // desktop this story declares invariant does not jump when a menu opens.
     panelRef.current?.focus({ preventScroll: true });
     const handleKeydown = (event: KeyboardEvent) => {

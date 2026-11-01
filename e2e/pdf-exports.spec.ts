@@ -138,47 +138,13 @@ async function registerExpiry(page: Page, personId: string, expiryTypeId: string
   expect(response.status()).toBe(201);
 }
 
-/** Creates + approves a PPR request via the public POST + authenticated approve (story 13.6 fixture, same pattern as `movements.spec.ts#createApprovedRequest`). */
-async function createApprovedPprRequest(page: Page): Promise<{ registration: string }> {
-  const registration = `I-PD${uniqueSuffix()}`.toUpperCase().slice(0, 20);
-  const createResponse = await page.request.post('/api/v1/ppr-requests', {
-    headers: { 'x-forwarded-for': `e2e-pdf-exports-${uniqueSuffix()}` },
-    data: {
-      firstName: 'PdfExport',
-      lastName: `Ppr-${uniqueSuffix()}`,
-      email: `ppr-pdf-${uniqueSuffix()}@e2e.airmanager.local`,
-      phone: '+39 333 0000000',
-      aircraftRegistration: registration,
-      aircraftType: 'Cessna 172',
-      origin: 'LIRN Napoli',
-      destination: 'LIRU Urbe',
-      eta: new Date(Date.now() + 5 * 3_600_000).toISOString(),
-      personsOnBoard: 1,
-      locale: 'it',
-    },
-  });
-  expect(createResponse.status()).toBe(201);
-
-  const listResponse = await page.request.get(`/api/v1/ppr-requests?status=PENDING&pageSize=100`);
-  expect(listResponse.status()).toBe(200);
-  const listBody = (await listResponse.json()) as { items: { id: string; aircraftRegistration: string }[] };
-  const match = listBody.items.find((item) => item.aircraftRegistration === registration);
-  if (!match) throw new Error(`PENDING PprRequest with registration ${registration} not found`);
-
-  const approveResponse = await page.request.post(`/api/v1/ppr-requests/${match.id}/approve`);
-  expect(approveResponse.status()).toBe(200);
-
-  return { registration };
-}
-
-// The airfield settings row is GLOBAL, shared, mutable state (same reason
-// `ppr-queue.spec.ts` serializes its own operating-instructions scenario) —
-// this whole file runs serially so a settings PUT in one test is never
-// raced by a concurrent PUT from another test in the same file.
+// The airfield settings row is GLOBAL, shared, mutable state — this whole
+// file runs serially so a settings PUT in one test is never raced by a
+// concurrent PUT from another test in the same file.
 test.describe.configure({ mode: 'serial' });
 
 test.describe('PDF exports (Story 10.2, FR-40)', () => {
-  test('admin exports the 6 report PDFs: 200, application/pdf, attachment filename, %PDF- magic bytes (AC 2/3; story 13.6 AC 4; story 13.7 AC 2)', async ({ page }) => {
+  test('admin exports the 5 report PDFs: 200, application/pdf, attachment filename, %PDF- magic bytes (AC 2/3; story 13.7 AC 2)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const aircraft = await createAircraftWithRate(page, 15000);
@@ -197,8 +163,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
       data: { amountCents: 5000, paymentMethod: 'CASH', effectiveDate: dateAt(0) },
     });
     expect(topUpResponse.status()).toBe(200);
-
-    await createApprovedPprRequest(page);
 
     // Story 13.7, AC 2 — the bookings PDF's own fixture (`bookingsAircraft`,
     // kept separate from `aircraft` above so its rate/flight setup stays
@@ -223,7 +187,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
       { url: `/api/v1/cash-report/pdf?from=${cashDate}&to=${cashDate}`, filenamePrefix: 'cash-report' },
       { url: `/api/v1/flights/pdf?aircraftId=${aircraft.id}`, filenamePrefix: 'flights' },
       { url: `/api/v1/expiries/pdf?expiryTypeId=${expiryTypeId}`, filenamePrefix: 'expiries' },
-      { url: `/api/v1/ppr-requests/pdf?status=APPROVED`, filenamePrefix: 'ppr-requests' },
       { url: `/api/v1/bookings/pdf?aircraftId=${bookingsAircraft.id}`, filenamePrefix: 'bookings' },
     ];
 
@@ -273,7 +236,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     expect(putResponse.status()).toBe(403);
   });
 
-  test('own-access parity: a pilot exports their own account statement (200) but another person\'s (403), and the staff-only cash report/expiries/ppr-requests PDFs (403) (AC 3; story 13.6 AC 4)', async ({
+  test('own-access parity: a pilot exports their own account statement (200) but another person\'s (403), and the staff-only cash report/expiries PDFs (403) (AC 3)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -295,9 +258,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
 
     const expiriesResponse = await page.request.get('/api/v1/expiries/pdf');
     expect(expiriesResponse.status()).toBe(403);
-
-    const pprResponse = await page.request.get('/api/v1/ppr-requests/pdf');
-    expect(pprResponse.status()).toBe(403);
   });
 
   test('GET /api/v1/bookings/pdf is self.read — every authenticated role gets 200, unlike the staff-only report PDFs above (story 13.7, AC 2)', async ({
@@ -315,7 +275,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
       '/api/v1/cash-report/pdf?from=2026-01-01&to=2026-01-31',
       '/api/v1/flights/pdf',
       '/api/v1/expiries/pdf',
-      '/api/v1/ppr-requests/pdf',
       '/api/v1/bookings/pdf',
     ]) {
       const response = await request.get(url);
@@ -324,7 +283,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     }
   });
 
-  test('invalid filters (inverted period) get a 422 AD-8 envelope, never a file (AC 3; story 13.6 AC 4)', async ({ page }) => {
+  test('invalid filters (inverted period) get a 422 AD-8 envelope, never a file (AC 3)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const cashReportResponse = await page.request.get('/api/v1/cash-report/pdf?from=2026-01-10&to=2026-01-01');
@@ -334,10 +293,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     const flightsResponse = await page.request.get('/api/v1/flights/pdf?dateFrom=2026-01-10&dateTo=2026-01-01');
     expect(flightsResponse.status()).toBe(422);
     expect((await flightsResponse.json()).error.code).toBe('VALIDATION_ERROR');
-
-    const pprResponse = await page.request.get('/api/v1/ppr-requests/pdf?from=2026-01-10&to=2026-01-01');
-    expect(pprResponse.status()).toBe(422);
-    expect((await pprResponse.json()).error.code).toBe('VALIDATION_ERROR');
   });
 
   test('clicking "Voli (PDF)" in the flight log\'s ExportMenu dropdown triggers a real file download with the applied filter (AC 5; story 13.5 AC 6)', async ({ page }) => {

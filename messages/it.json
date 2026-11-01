@@ -14,8 +14,6 @@
     "nav": {
       "overview": "Panoramica",
       "schedule": "Pianificazione",
-      "ppr": "Richieste PPR",
-      "visiting": "Voli in transito",
       "pilots": "Piloti",
       "instructors": "Istruttori",
       "fleet": "Aeromobili",
@@ -30,8 +28,6 @@
     "pageTitle": {
       "overview": "Panoramica operativa",
       "schedule": "Pianificazione",
-      "ppr": "Richieste PPR",
-      "visiting": "Voli in transito",
       "pilots": "Piloti",
       "instructors": "Istruttori",
       "fleet": "Aeromobili",
@@ -116,13 +112,10 @@
     "overview": {
       "title": "Panoramica operativa",
       "aogCount": "{count} AOG",
-      "pprPendingCount": "{count} PPR in attesa",
-      "onGroundCount": "{count} in transito al suolo",
       "dispatchButton": "Pianifica volo",
       "kpis": {
         "flightsToday": "Voli oggi",
         "fleetAvailable": "Flotta disponibile",
-        "pprPending": "PPR in attesa",
         "bookingsPending": "Prenotazioni in attesa",
         "revenue": "Ricavi del mese"
       },
@@ -140,11 +133,10 @@
         },
         "alerts": {
           "title": "Avvisi",
-          "empty": "Nessun avviso: scadenze, saldi e PPR sono in regola.",
+          "empty": "Nessun avviso: scadenze e saldi sono in regola.",
           "seeAll": "+{count} altri · Vedi tutte",
           "seeAllAtLeast": "+{count} e oltre · Vedi tutte",
-          "balanceSub": "Saldo {amount}",
-          "pprSub": "Richieste in attesa di risposta"
+          "balanceSub": "Saldo {amount}"
         },
         "shortcuts": {
           "schedule": "Pianificazione",
@@ -1768,292 +1760,6 @@
       "STUDENT": "Allievo"
     }
   },
-  "PprPage": {
-    "switchTo": "English",
-    "footer": "I dati inseriti sono usati solo per gestire la tua richiesta di PPR.",
-    "metadata": {
-      "title": "Richiesta PPR",
-      "description": "Modulo pubblico per richiedere il permesso di atterraggio (PPR) a questa aviosuperficie."
-    },
-    "top": {
-      "brandSub": "Autorizzazione Preventiva Obbligatoria"
-    },
-    "hero": {
-      "eyebrow": "Aeromobili in transito · PPR",
-      "title": "Richiedi il permesso di atterraggio",
-      "description": "Compila il modulo per richiedere il PPR a questa aviosuperficie. Ti risponderemo via email con l'esito della richiesta."
-    },
-    "form": {
-      "sections": {
-        "requester": "Richiedente",
-        "aircraft": "Aeromobile",
-        "schedule": "Orari (locali)",
-        "additional": "Informazioni aggiuntive"
-      },
-      "firstName": "Nome",
-      "lastName": "Cognome",
-      "email": "Email",
-      "phone": "Telefono",
-      "aircraftRegistration": "Marche",
-      "aircraftType": "Tipo aeromobile",
-      "origin": "Provenienza",
-      "destination": "Destinazione",
-      "eta": "ETA (arrivo previsto)",
-      "etd": "ETD (partenza prevista, facoltativo)",
-      "personsOnBoard": "Persone a bordo",
-      "notes": "Note (facoltative)",
-      "submit": "Invia richiesta",
-      "submitting": "Invio in corso…",
-      "requiredNote": "I campi contrassegnati con * sono obbligatori.",
-      "requiredField": "Campo obbligatorio.",
-      "invalidEmail": "Inserisci un indirizzo email valido.",
-      "invalidRange": "L'ETD deve essere successivo all'ETA.",
-      "invalidPersons": "Inserisci un numero di persone a bordo tra 1 e 99.",
-      "errors": {
-        "ETA_IN_PAST": "L'ETA deve essere nel futuro.",
-        "ETD_NOT_AFTER_ETA": "L'ETD deve essere successivo all'ETA.",
-        "RATE_LIMITED": "Troppe richieste da questo indirizzo. Riprova più tardi.",
-        "generic": "Non è stato possibile inviare la richiesta. Riprova."
-      }
-    },
-    "aside": {
-      "howItWorks": {
-        "title": "Come funziona",
-        "item1": "Invia almeno 24 h prima dell'arrivo.",
-        "item2": "Le operazioni esaminano e confermano il tuo slot.",
-        "item3": "Verrai contattato via email o telefono."
-      },
-      "airport": {
-        "title": "Aeroporto",
-        "nameLabel": "Nome",
-        "icaoLabel": "ICAO"
-      }
-    },
-    "success": {
-      "title": "Richiesta inviata",
-      "message": "Abbiamo ricevuto la tua richiesta di PPR. Riceverai a breve un'email di conferma con il riepilogo, seguita da un'altra email con l'esito della richiesta.",
-      "again": "Invia un'altra richiesta"
-    }
-  },
-  "PprQueuePage": {
-    "title": "Richieste PPR",
-    "sub": "{pending} in attesa · {approved} approvate · {rejected} rifiutate",
-    "header": {
-      "publicForm": "Modulo pubblico",
-      "manual": "PPR manuale"
-    },
-    "filters": {
-      "status": "Stato",
-      "statusAll": "Tutti",
-      "statusOptions": {
-        "pending": "In attesa",
-        "approved": "Approvato",
-        "rejected": "Rifiutato",
-        "completed": "Completato",
-        "cancelled": "Annullato"
-      }
-    },
-    "card": {
-      "title": "Richieste in arrivo",
-      "subTemplate": "{total} richieste"
-    },
-    "table": {
-      "aircraft": "Nominativo · tipo",
-      "requester": "Richiedente",
-      "schedule": "Orario",
-      "persons": "POB",
-      "status": "Stato",
-      "actions": "Azioni"
-    },
-    "badge": {
-      "fromPublicForm": "da modulo web"
-    },
-    "actions": {
-      "approve": "Approva",
-      "reject": "Rifiuta"
-    },
-    "rejectModal": {
-      "title": "Rifiuta richiesta PPR",
-      "subtitle": "Il richiedente riceverà un'email con il motivo, se ha fornito un indirizzo.",
-      "reasonPlaceholder": "Documentazione mancante, aeroporto chiuso, conflitto di slot…",
-      "reasonRequired": "Il motivo è obbligatorio.",
-      "submit": "Conferma rifiuto",
-      "cancel": "Annulla"
-    },
-    "mobile": {
-      "openDetail": "Apri dettaglio richiesta",
-      "close": "Chiudi",
-      "requestLabel": "Richiesta",
-      "etd": "Partenza (ETD)",
-      "notes": "Note",
-      "rejectionReason": "Motivo del rifiuto",
-      "viewInMovements": "Vedi in Transiti"
-    },
-    "toast": {
-      "approved": "Richiesta approvata: numero PPR {pprNumber}.",
-      "rejected": "Richiesta rifiutata.",
-      "conflictError": "Questa richiesta è già stata decisa da un altro operatore.",
-      "genericError": "Non è stato possibile completare l'operazione. Riprova.",
-      "manualCreated": "Richiesta PPR aggiunta."
-    },
-    "empty": "Nessuna richiesta PPR trovata.",
-    "manualForm": {
-      "title": "PPR manuale",
-      "subtitle": "Richieste PPR",
-      "firstName": "Nome",
-      "lastName": "Cognome",
-      "email": "Email",
-      "phone": "Telefono",
-      "aircraftRegistration": "Marche",
-      "aircraftType": "Tipo aeromobile",
-      "origin": "Provenienza",
-      "destination": "Destinazione",
-      "eta": "Arrivo (ETA)",
-      "etd": "Partenza (ETD, facoltativo)",
-      "personsOnBoard": "Persone a bordo",
-      "notes": "Note (facoltative)",
-      "submit": "Aggiungi richiesta",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "invalidEmail": "Inserisci un indirizzo email valido.",
-      "invalidRange": "L'ETD deve essere successivo all'ETA.",
-      "invalidPersons": "Inserisci un numero di persone a bordo tra 1 e 99.",
-      "contactRequired": "Inserisci almeno un contatto (email o telefono).",
-      "errors": {
-        "ETA_IN_PAST": "L'ETA deve essere nel futuro.",
-        "ETD_NOT_AFTER_ETA": "L'ETD deve essere successivo all'ETA.",
-        "generic": "Non è stato possibile completare l'operazione. Riprova."
-      }
-    },
-    "export": {
-      "label": "Esporta"
-    }
-  },
-  "MovementsPage": {
-    "title": "Voli in transito",
-    "sub": "Movimenti non basati · {onGround} attualmente al suolo",
-    "header": {
-      "logArrival": "Registra arrivo"
-    },
-    "kpi": {
-      "onGround": "Al suolo ora",
-      "inboundToday": "In arrivo oggi",
-      "expectedTomorrow": "Attesi domani",
-      "month": "Movimenti nel mese"
-    },
-    "filters": {
-      "status": "Stato",
-      "statusAll": "Tutti",
-      "statusOptions": {
-        "pending": "In attesa",
-        "approved": "Approvato",
-        "rejected": "Rifiutato",
-        "completed": "Completato",
-        "cancelled": "Annullato"
-      },
-      "from": "Dal",
-      "to": "Al",
-      "reset": "Azzera filtri"
-    },
-    "card": {
-      "title": "Registro movimenti",
-      "subTemplate": "{total} record"
-    },
-    "export": {
-      "label": "Esporta",
-      "pprNumber": "Numero PPR"
-    },
-    "table": {
-      "aircraft": "Nominativo",
-      "type": "Tipo",
-      "route": "Rotta",
-      "requester": "Richiedente · contatto",
-      "eta": "ETA",
-      "etd": "Partenza",
-      "status": "Stato",
-      "fee": "Tassa",
-      "actions": "Azioni",
-      "noValue": "—"
-    },
-    "status": {
-      "ATTESO": "Atteso",
-      "IN_ARRIVO": "In arrivo",
-      "AL_SUOLO": "Al suolo",
-      "PARTITO": "Partito"
-    },
-    "actions": {
-      "complete": "Completa",
-      "cancel": "Annulla PPR",
-      "confirmCancelPrompt": "Confermi l'annullamento di questo PPR?",
-      "confirmYes": "Sì, annulla",
-      "confirmNo": "No",
-      "feeLabel": "Tassa di atterraggio",
-      "feeHint": "Importo in euro, prefillato dal default (modificabile). 0 ammesso.",
-      "methodLabel": "Metodo",
-      "methods": {
-        "CASH": "Contanti",
-        "BANK_TRANSFER": "Bonifico",
-        "POS": "POS"
-      },
-      "invalidFee": "Inserisci un importo valido (anche 0,00).",
-      "submitComplete": "Conferma completamento",
-      "closePanel": "Annulla"
-    },
-    "toast": {
-      "completed": "PPR completato.",
-      "cancelled": "PPR annullato.",
-      "conflictError": "Questo PPR non è più in stato Approvato (probabilmente già chiuso da un altro operatore).",
-      "genericError": "Non è stato possibile completare l'operazione. Riprova.",
-      "logArrivalCreated": "Arrivo registrato: numero PPR {pprNumber}."
-    },
-    "empty": "Nessun PPR trovato per i filtri selezionati.",
-    "logArrivalForm": {
-      "title": "Registra arrivo",
-      "subtitle": "Voli in transito",
-      "firstName": "Nome",
-      "lastName": "Cognome",
-      "email": "Email",
-      "phone": "Telefono",
-      "aircraftRegistration": "Marche",
-      "aircraftType": "Tipo aeromobile",
-      "origin": "Provenienza",
-      "destination": "Destinazione",
-      "eta": "Arrivo (ETA)",
-      "etd": "Partenza (ETD, facoltativo)",
-      "personsOnBoard": "Persone a bordo",
-      "notes": "Note (facoltative)",
-      "submit": "Registra movimento",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "invalidEmail": "Inserisci un indirizzo email valido.",
-      "invalidRange": "L'ETD deve essere successivo all'ETA.",
-      "invalidPersons": "Inserisci un numero di persone a bordo tra 1 e 99.",
-      "contactRequired": "Inserisci almeno un contatto (email o telefono).",
-      "errors": {
-        "ETA_IN_PAST": "L'ETA deve essere nel futuro.",
-        "ETD_NOT_AFTER_ETA": "L'ETD deve essere successivo all'ETA.",
-        "generic": "Non è stato possibile completare l'operazione. Riprova."
-      }
-    },
-    "mobile": {
-      "openDetail": "Apri dettaglio transito",
-      "close": "Chiudi",
-      "back": "Indietro",
-      "pprNumber": "Numero PPR",
-      "email": "Email",
-      "phone": "Telefono",
-      "personsOnBoard": "Persone a bordo",
-      "notes": "Note",
-      "source": "Origine richiesta",
-      "sourcePublic": "Modulo web",
-      "rejectionReason": "Motivo rifiuto",
-      "closedAt": "Chiusura",
-      "filters": "Filtri",
-      "filtersCount": "Filtri ({count})",
-      "filtersTitle": "Filtri del registro",
-      "apply": "Applica"
-    }
-  },
   "Export": {
     "button": "Esporta Excel",
     "buttonPdf": "Esporta PDF"
@@ -2067,16 +1773,12 @@
     "sub": "Configurazione club · pianificazione · notifiche",
     "club": {
       "title": "Club",
-      "sub": "Identità usata nella console e nei moduli pubblici",
+      "sub": "Identità usata nella console e nei PDF esportati",
       "identityHeading": "Identità",
       "icao": "Aeroporto base (ICAO)",
       "contactEmail": "Email di contatto",
       "metarStation": "Stazione METAR",
       "metarStationHint": "Stazione per il meteo in sidebar. Vuota = usa l'ICAO del campo.",
-      "landingFee": "Tassa PPR di default",
-      "landingFeeHint": "Precompila l'importo nel completamento delle richieste PPR.",
-      "operatingInstructionsIt": "Istruzioni operative PPR (IT)",
-      "operatingInstructionsEn": "Istruzioni operative PPR (EN)",
       "membershipFee": "Quota associativa annuale",
       "membershipFeeHint": "Importo precompilato nell'azione \"Quota associativa\" in Scadenze.",
       "save": "Salva",
@@ -2109,7 +1811,7 @@
     },
     "smtp": {
       "title": "Email (SMTP)",
-      "sub": "Posta in uscita per risposte PPR, fatture e promemoria",
+      "sub": "Posta in uscita per inviti, promemoria e avvisi",
       "testEmail": "Invia email di prova",
       "testEmailSent": "Email di prova inviata.",
       "testEmailFailed": "Invio non riuscito. Controlla la configurazione SMTP.",
@@ -2367,19 +2069,6 @@
       "noEmailFlag": " [senza email — contattare la persona direttamente]",
       "sendFailedFlag": " [invio email fallito — verificare l'indirizzo o riprovare]"
     },
-    "pprReceipt": {
-      "subject": "Richiesta PPR ricevuta: {aircraftRegistration}",
-      "body": "Ciao {firstName},\n\nAbbiamo ricevuto la tua richiesta di PPR per {aircraftRegistration} ({aircraftType}), da {origin} a {destination}.\n\nETA: {eta}\n{personsOnBoard, plural, one {# persona a bordo} other {# persone a bordo}}.\n\nRiceverai un'altra email con l'esito della richiesta."
-    },
-    "pprApproval": {
-      "subject": "PPR {pprNumber} approvato: {aircraftRegistration}",
-      "body": "Ciao {firstName},\n\nLa tua richiesta di PPR per {aircraftRegistration} è stata approvata.\n\nNumero PPR: {pprNumber}\nETA: {eta}",
-      "instructions": "Istruzioni operative:\n{instructions}"
-    },
-    "pprRejection": {
-      "subject": "Richiesta PPR non accolta: {aircraftRegistration}",
-      "body": "Ciao {firstName},\n\nLa tua richiesta di PPR per {aircraftRegistration} (ETA: {eta}) non è stata accolta.\n\nMotivo: {reason}"
-    },
     "bookingDenied": {
       "subject": "Prenotazione rifiutata: {aircraftRegistration}",
       "body": "Ciao {firstName},\n\nLa tua prenotazione per {aircraftRegistration} del {when} è stata rifiutata.\n\nMotivo: {reason}"
@@ -2608,7 +2297,6 @@
       "revenue": "Ricavi",
       "hours": "Ore volate",
       "movements": "Movimenti",
-      "transitShare": "Quota transiti",
       "fleetUtilization": "Utilizzo flotta"
     },
     "charts": {
@@ -2619,10 +2307,6 @@
       "hours": {
         "title": "Ore volate",
         "sub": "ultimi {count} mesi · h"
-      },
-      "transits": {
-        "title": "Movimenti in transito",
-        "sub": "ultimi {count} mesi"
       },
       "fleet": {
         "title": "Utilizzo flotta",
@@ -2636,8 +2320,7 @@
       "keys": {
         "SCHOOL": "Scuola",
         "TOURISM": "Turismo/Privato",
-        "AERIAL_WORK": "Lavoro aereo",
-        "TRANSIT": "Transiti"
+        "AERIAL_WORK": "Lavoro aereo"
       }
     },
     "instructors": {

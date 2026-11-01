@@ -39,11 +39,10 @@ function isRecordNotFound(error: unknown): boolean {
  * Categories owned by automated flows: "Ricariche" (top-up twin, story 3.1,
  * `accounts.service.ts`'s `TOP_UP_CASH_CATEGORY_NAME`), "Compensi istruttori"
  * (instructor-payout twin, story Billing-1 AC 4,
- * `instructor-compensation.service.ts`'s `INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME`)
- * and "PPR" (landing-fee twin, `ppr.service.ts`'s `PPR_CASH_CATEGORY_NAME`).
+ * `instructor-compensation.service.ts`'s `INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME`).
  * Guarded here (review 3.4 F1/F2; review Billing-1 F2 extended the set to
- * the latter two — same exposure, pre-existing): a MANUAL movement in one of
- * these would inflate a cash line no account/payout/PPR request reflects
+ * the latter — same exposure, pre-existing): a MANUAL movement in one of
+ * these would inflate a cash line no account/payout reflects
  * (the exact conto/cassa divergence the storno rules defend against), and
  * DELETING one — legal per AC 1 while unused — would 500 every subsequent
  * automatic movement until the seed is re-run. Deactivation stays allowed:
@@ -51,7 +50,7 @@ function isRecordNotFound(error: unknown): boolean {
  * `isSystem` (below) is a PURE function of this Set, never a stored column —
  * there is nothing to seed for it.
  */
-const SYSTEM_CASH_CATEGORY_NAMES = new Set(['Ricariche', 'Compensi istruttori', 'PPR']);
+const SYSTEM_CASH_CATEGORY_NAMES = new Set(['Ricariche', 'Compensi istruttori']);
 
 export type CashCategoryListItem = {
   id: string;
@@ -437,8 +436,7 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
 /**
  * Reclassifies an UNATTRIBUTED historical cash movement (story Billing-2,
  * AC 3) — assigns a `paymentMethod` to a movement backfilled/recorded as
- * `null` (pre-Billing-1 manual entries, or a PPR landing fee recorded
- * without one, D2). `finance.manage` (ADMIN-only) — same day-to-day gate as
+ * `null` (pre-Billing-1 manual entries, D2). `finance.manage` (ADMIN-only) — same day-to-day gate as
  * `recordCashMovement`/`reverseCashMovement`, not the stricter
  * `settings.manage` category CRUD uses. Deliberately scoped to movements
  * CURRENTLY unattributed (`paymentMethod === null`): every automatic twin

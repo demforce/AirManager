@@ -3,9 +3,9 @@ import { prisma } from '@/server/db/prisma';
 /**
  * Login brute-force / credential-stuffing throttle (H1, CWE-307,
  * `docs/security/owasp-audit-2026-07-22.md`) — a DB-backed rolling-window
- * failed-attempt counter, same "count recent rows in a window" pattern as
- * `ppr.service.ts`'s per-IP rate limit. Two independent caps apply: an
- * identifier (email) locks after too many of ITS OWN recent failures, and
+ * failed-attempt counter ("count recent rows in a window", the same pattern
+ * as `auth-tokens.service.ts`'s forgot-password throttle). Two independent
+ * caps apply: an identifier (email) locks after too many of ITS OWN recent failures, and
  * an IP locks after too many failures from THAT IP across any identifier
  * (credential stuffing spread across many accounts from one source).
  * Either cap alone is enough to lock.
@@ -85,11 +85,10 @@ export const LOGIN_MAX_FAILED_PER_IP = 30;
  * the failure record. On success, `recordSuccessfulLogin` deletes every
  * failed row for the identifier, including this reservation, for free.
  *
- * `ip: null` (no resolvable `x-forwarded-for` — no trusted proxy in front,
- * same situation `ppr.service.ts` handles) skips the per-IP check but NEVER
- * the per-identifier one: the identifier always comes from the login form
- * itself, so a missing/spoofed IP can never fully bypass the throttle the
- * way it once did for the PPR form when IP was the ONLY dimension (H5).
+ * `ip: null` (no resolvable `x-forwarded-for` — no trusted proxy in front)
+ * skips the per-IP check but NEVER the per-identifier one: the identifier
+ * always comes from the login form itself, so a missing/spoofed IP can never
+ * fully bypass the throttle (H5: IP must never be the ONLY dimension).
  */
 export async function reserveLoginAttempt(identifier: string, ip: string | null): Promise<boolean> {
   return prisma.$transaction(async (tx) => {

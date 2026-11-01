@@ -61,13 +61,11 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
 
   const chartCount = isYear ? 12 : 6;
   const seriesLabels = stats.series.months.map((month) => shortMonthLabel(month, displayLocale));
-  const transitSharePercent = new Intl.NumberFormat(intlLocale, { style: 'percent', maximumFractionDigits: 1 }).format(stats.kpis.transitShare);
 
   const labels: ReportsLabels = {
     charts: {
       revenue: { title: t('charts.revenue.title'), sub: t('charts.revenue.sub', { count: chartCount }) },
       hours: { title: t('charts.hours.title'), sub: t('charts.hours.sub', { count: chartCount }) },
-      transits: { title: t('charts.transits.title'), sub: t('charts.transits.sub', { count: chartCount }) },
       fleet: { title: t('charts.fleet.title'), sub: t('charts.fleet.sub', { period: periodLabel }), empty: t('charts.fleet.empty') },
     },
     movementMix: {
@@ -77,7 +75,6 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
         SCHOOL: t('movementMix.keys.SCHOOL'),
         TOURISM: t('movementMix.keys.TOURISM'),
         AERIAL_WORK: t('movementMix.keys.AERIAL_WORK'),
-        TRANSIT: t('movementMix.keys.TRANSIT'),
       },
     },
     instructors: {
@@ -140,7 +137,6 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
         <KPI label={t('kpi.revenue')} value={formatCents(stats.kpis.revenueCents, displayLocale)} />
         <KPI label={t('kpi.hours')} value={formatMinutes(stats.kpis.flightMinutes)} />
         <KPI label={t('kpi.movements')} value={stats.kpis.movements} />
-        <KPI label={t('kpi.transitShare')} value={transitSharePercent} />
         {/* Story 12.11, AC 6: OMITTED entirely (never a fake 0%) when sched.openTime/closeTime aren't configured or there is no OPERATIONAL aircraft. */}
         {stats.kpis.fleetUtilization !== null ? (
           <KPI

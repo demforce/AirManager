@@ -201,9 +201,8 @@ export function todayDateOnlyUtcInZone(timeZone: string): Date {
  * calendar days in `timeZone` (story 10.3, AC 1) — the staff home
  * dashboard's "prenotazioni di oggi/domani" widget. A pure composition of
  * the three primitives above (`dateOnlyInZone`/`addDaysDateOnly`/
- * `zonedMidnightUtc`), the same DST-aware range-building pattern
- * `ppr.service.ts#listPprRequests` already uses for its `eta` filter — no
- * new date arithmetic. `now` defaults to the real clock but is overridable
+ * `zonedMidnightUtc`) — no new date arithmetic. `now` defaults to the real
+ * clock but is overridable
  * for tests (same pattern as `period-presets.ts#currentMonthRange`).
  */
 export function todayTomorrowRangeUtc(timeZone: string, now: Date = new Date()): { from: Date; to: Date } {

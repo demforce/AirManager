@@ -109,7 +109,7 @@ export type ReverseCashMovementInput = z.infer<typeof reverseCashMovementSchema>
 /**
  * `PATCH /api/v1/cash-movements/{id}` body (story Billing-2, AC 3) —
  * reclassifies a single UNATTRIBUTED historical movement (`paymentMethod
- * IS NULL`, the "secchiello" a pre-Billing-1 manual/PPR entry falls into)
+ * IS NULL`, the "secchiello" a pre-Billing-1 manual entry falls into)
  * by assigning it a `paymentMethod`. Nothing else about the movement
  * changes — amount, category, date, and lineage are all immutable here
  * (bulk reclassification is explicitly out of scope for this story: one

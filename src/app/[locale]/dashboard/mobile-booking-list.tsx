@@ -14,8 +14,8 @@
  * component in this codebase (story 7.1's lesson, `bookings-table.tsx`'s own
  * `startsAtDateOnly`).
  *
- * The card IS the trigger of the `BottomSheet` (R3 + the `.ppr-card` idiom of
- * 15.2): one `<button>`, `<span>` children only, no nested interactive
+ * The card IS the trigger of the `BottomSheet` (R3, ratifica R-15.2-b): one
+ * `<button>`, `<span>` children only, no nested interactive
  * element, one honest 44px+ target. Nothing here decides anything — the
  * decision queue is `mobile-pending-bookings.tsx`.
  *
@@ -69,7 +69,7 @@ export function MobileBookingList({ rows, labels, withTimeColumn = false, testId
   /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
   const closeSheet = useCallback((): void => setOpenId(null), []);
 
-  /** The sheet follows the LIST, exactly like the PPR console's: no row, no sheet. */
+  /** The sheet follows the LIST: no row, no sheet. */
   const openRow = rows.find((row) => row.id === openId) ?? null;
 
   return (

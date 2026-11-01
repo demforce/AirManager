@@ -6,7 +6,7 @@
  * clipping bug reviews 13.7-F1/13.11 already fixed once for
  * `bookings/schedule.tsx`'s own two popovers, now live in the NEW
  * `date-input.tsx`/`datetime-input.tsx` consumers too (`.card{overflow:hidden}`
- * — the public `/ppr` form, the pre-existing billing console filter — and
+ * — the pre-existing billing console filter — and
  * `.so-body{overflow:auto}` — every SlideOver form): a `position:absolute`
  * popover gets silently clipped, its lower controls present in the DOM but
  * not hit-testable (`elementFromPoint`), whenever the field renders low

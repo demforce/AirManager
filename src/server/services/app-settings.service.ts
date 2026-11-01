@@ -1,5 +1,4 @@
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
-import type { PprOperatingInstructionsDto } from '@/lib/schemas/ppr';
 import type {
   AirfieldBrandingDto,
   SchedulingSettingsDto,
@@ -19,17 +18,13 @@ import { prisma } from '@/server/db/prisma';
  * story 1.1, never given a dedicated service until now — see the model's
  * doc-comment in `schema.prisma`). Deliberately minimal rather than a
  * generic settings CRUD: each caller gets its own narrow get/set pair —
- * PPR's `ppr.operatingInstructions.*`/`ppr.landingFeeCents` (epic 8,
- * stories 8.2/8.3) and (story 10.2, AC 1) the airfield PDF branding's
+ * e.g. (story 10.2, AC 1) the airfield PDF branding's
  * `airfield.name` (name-only since story 13.8, AC 4 — the `airfield.logo`
  * key some installs may still carry from before that story is never read or
  * written here anymore). A future story that needs another setting adds its
  * own pair here rather than widening these into something generic.
  */
 
-const PPR_OPERATING_INSTRUCTIONS_IT_KEY = 'ppr.operatingInstructions.it';
-const PPR_OPERATING_INSTRUCTIONS_EN_KEY = 'ppr.operatingInstructions.en';
-const PPR_LANDING_FEE_CENTS_KEY = 'ppr.landingFeeCents';
 const AIRFIELD_NAME_KEY = 'airfield.name';
 const AIRFIELD_ICAO_KEY = 'airfield.icao';
 const AIRFIELD_CONTACT_EMAIL_KEY = 'airfield.contactEmail';
@@ -37,130 +32,24 @@ const AIRFIELD_CONTACT_EMAIL_KEY = 'airfield.contactEmail';
 /** Fresh-install default (story 10.2, AC 1) — no admin has configured branding yet. */
 const DEFAULT_AIRFIELD_NAME = 'AirManager';
 
-/** `PprRequest.landingFeeCents`/`recordCashMovement`'s own `amountCents` bound (AD-2, `.max(2_147_483_647)` at the Zod boundary) — kept as a local const rather than importing across the schema layer for one integer. */
-const MAX_LANDING_FEE_CENTS = 2_147_483_647;
+/** `recordCashMovement`'s own `amountCents` bound (AD-2, `.max(2_147_483_647)` at the Zod boundary) — the `Int` ceiling every stored cents setting is capped at, kept as a local const rather than importing across the schema layer for one integer. */
+const MAX_STORED_CENTS = 2_147_483_647;
 
 /**
- * Reads the admin-configured PPR approval-email operating instructions
- * (AC 1). Gated `ppr.manage` (AD-5) — not `settings.manage`: an admin sees
- * these in the queue (read-only) even though only an admin can edit them
- * (`setPprOperatingInstructions` below). Absent key(s) read as `''`, never
- * `null` (Contesto) — a fresh install has no instructions configured yet,
- * and `''` is exactly the "omit this section" signal
- * `templates.ts#buildPprApprovalEmail` checks for.
+ * Parses a stored cents setting (`AppSetting.value`) — a bare non-negative
+ * integer string (`String(cents)`, the exact shape the setters below write).
+ * `null` for anything else: absent digits, a leading `-`/decimal point,
+ * leading/trailing whitespace, or a value beyond the `Int` ceiling (AD-2) —
+ * an operational corruption (e.g. a hand-edited row) no setter here ever
+ * produces, so the getter treats it as "no amount configured" rather than
+ * throwing.
  */
-export async function getPprOperatingInstructions(actor: Actor): Promise<PprOperatingInstructionsDto> {
-  authorize(actor, 'ppr.manage');
-
-  const rows = await prisma.appSetting.findMany({
-    where: { key: { in: [PPR_OPERATING_INSTRUCTIONS_IT_KEY, PPR_OPERATING_INSTRUCTIONS_EN_KEY] } },
-    select: { key: true, value: true },
-  });
-
-  const it = rows.find((row) => row.key === PPR_OPERATING_INSTRUCTIONS_IT_KEY)?.value ?? '';
-  const en = rows.find((row) => row.key === PPR_OPERATING_INSTRUCTIONS_EN_KEY)?.value ?? '';
-
-  return { it, en };
-}
-
-/**
- * Sets the PPR approval-email operating instructions (AC 1). Gated
- * `settings.manage` — admin-only, same write-vs-read asymmetry as
- * `expiry-types.service.ts`'s catalogue. Both locales are always written
- * together (the caller's form always submits both fields, Zod-bound at
- * `pprOperatingInstructionsSchema`) — `upsert` per key since a fresh
- * install has neither `AppSetting` row yet.
- */
-export async function setPprOperatingInstructions(
-  actor: Actor,
-  input: PprOperatingInstructionsDto,
-): Promise<PprOperatingInstructionsDto> {
-  authorize(actor, 'settings.manage');
-
-  await prisma.$transaction([
-    prisma.appSetting.upsert({
-      where: { key: PPR_OPERATING_INSTRUCTIONS_IT_KEY },
-      update: { value: input.it },
-      create: { key: PPR_OPERATING_INSTRUCTIONS_IT_KEY, value: input.it },
-    }),
-    prisma.appSetting.upsert({
-      where: { key: PPR_OPERATING_INSTRUCTIONS_EN_KEY },
-      update: { value: input.en },
-      create: { key: PPR_OPERATING_INSTRUCTIONS_EN_KEY, value: input.en },
-    }),
-  ]);
-
-  return input;
-}
-
-/**
- * Parses `AppSetting.value` for `ppr.landingFeeCents` — a bare non-negative
- * integer string (`String(cents)`, the exact shape `setPprLandingFeeDefaultCents`
- * writes below). `null` for anything else: absent digits, a leading `-`/
- * decimal point, leading/trailing whitespace, or a value beyond the `Int`
- * ceiling (AD-2) — an operational corruption (e.g. a hand-edited row) this
- * function itself never produces, so `getPprLandingFeeDefaultCents` treats
- * it as "no default configured" rather than throwing.
- */
-function parseStoredLandingFeeCents(value: string): number | null {
+function parseStoredCents(value: string): number | null {
   if (!/^\d+$/.test(value)) {
     return null;
   }
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed <= MAX_LANDING_FEE_CENTS ? parsed : null;
-}
-
-/**
- * Reads the admin-configured default PPR landing fee, in integer euro cents
- * (AD-2) — story 8.3, AC 1. Gated `ppr.manage`, not `settings.manage`: the
- * completion panel prefills its fee input with this default for every actor
- * who can complete a PPR (an admin), even though only an admin can change the
- * default itself (`setPprLandingFeeDefaultCents` below) — same read/write
- * asymmetry as `getPprOperatingInstructions`. Absent key -> `0` (Contesto:
- * a fresh install charges nothing until an admin configures a fee). A
- * stored value that fails {@link parseStoredLandingFeeCents} also reads as
- * `0`, logged via `console.warn` rather than thrown — the completion flow
- * must never be blocked by a broken setting, only silently fall back to "no
- * default fee".
- */
-export async function getPprLandingFeeDefaultCents(actor: Actor): Promise<number> {
-  authorize(actor, 'ppr.manage');
-
-  const row = await prisma.appSetting.findUnique({ where: { key: PPR_LANDING_FEE_CENTS_KEY }, select: { value: true } });
-  if (!row) {
-    return 0;
-  }
-
-  const parsed = parseStoredLandingFeeCents(row.value);
-  if (parsed === null) {
-    console.warn(`getPprLandingFeeDefaultCents: stored value "${row.value}" is not a valid non-negative integer — defaulting to 0.`);
-    return 0;
-  }
-
-  return parsed;
-}
-
-/**
- * Sets the admin-configured default PPR landing fee (AC 1). Gated
- * `settings.manage` — admin-only, same write-vs-read asymmetry as
- * `setPprOperatingInstructions`. `cents` is trusted as an already-bounded
- * (`0..2_147_483_647`, AD-2's `Int` ceiling) integer — enforced at the Zod
- * boundary (`pprLandingFeeDefaultSchema`) before this function ever runs,
- * same "service trusts its Zod-typed input" contract as
- * `setPprOperatingInstructions` above. Stored as a plain decimal string
- * (`AppSetting.value`'s column shape) that {@link parseStoredLandingFeeCents}
- * reads back unchanged.
- */
-export async function setPprLandingFeeDefaultCents(actor: Actor, cents: number): Promise<number> {
-  authorize(actor, 'settings.manage');
-
-  await prisma.appSetting.upsert({
-    where: { key: PPR_LANDING_FEE_CENTS_KEY },
-    update: { value: String(cents) },
-    create: { key: PPR_LANDING_FEE_CENTS_KEY, value: String(cents) },
-  });
-
-  return cents;
+  return Number.isSafeInteger(parsed) && parsed <= MAX_STORED_CENTS ? parsed : null;
 }
 
 /**
@@ -320,7 +209,7 @@ function isSmtpSecurity(value: string | undefined): value is SmtpSecurityDto {
   return value === 'NONE' || value === 'STARTTLS' || value === 'SSL_TLS';
 }
 
-/** Reads the SMTP settings for the Impostazioni form (AC 1/2). Gated `settings.manage` — admin-only, mirroring the write side (unlike the read-broader asymmetry of the PPR getters: nobody but the admin editing this card needs to see it). `pass` is NEVER included — only whether one is configured. */
+/** Reads the SMTP settings for the Impostazioni form (AC 1/2). Gated `settings.manage` — admin-only, mirroring the write side (nobody but the admin editing this card needs to see it). `pass` is NEVER included — only whether one is configured. */
 export async function getSmtpSettings(actor: Actor): Promise<SmtpSettingsDto> {
   authorize(actor, 'settings.manage');
 
@@ -448,11 +337,11 @@ const MEMBERSHIP_ANNUAL_FEE_CENTS_KEY = 'membership.annualFeeCents';
  * field (`chargeMembershipFee`'s caller). Gated `finance.manage` (ADMIN-only):
  * the SAME actors who can trigger the charge itself need to see the
  * default; `settings.manage` (ADMIN-only) is reserved for CHANGING it
- * (`setMembershipFeeCents` below), same read/write asymmetry as
- * `getPprLandingFeeDefaultCents`. Absent key -> `0` (Contesto: a fresh
- * install charges nothing until an admin configures a fee) — a corrupted
- * stored value also falls back to `0`, logged, never thrown (same rule as
- * `getPprLandingFeeDefaultCents`).
+ * (`setMembershipFeeCents` below). Absent key -> `0` (Contesto: a fresh
+ * install charges nothing until an admin configures a fee); a stored value
+ * that fails {@link parseStoredCents} also reads as `0`, logged via
+ * `console.warn` rather than thrown — the charge flow must never be blocked
+ * by a broken setting.
  */
 export async function getMembershipFeeCents(actor: Actor): Promise<number> {
   authorize(actor, 'finance.manage');
@@ -462,7 +351,7 @@ export async function getMembershipFeeCents(actor: Actor): Promise<number> {
     return 0;
   }
 
-  const parsed = parseStoredLandingFeeCents(row.value);
+  const parsed = parseStoredCents(row.value);
   if (parsed === null) {
     console.warn(`getMembershipFeeCents: stored value "${row.value}" is not a valid non-negative integer — defaulting to 0.`);
     return 0;

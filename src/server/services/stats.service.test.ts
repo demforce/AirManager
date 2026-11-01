@@ -27,7 +27,6 @@ import { ForbiddenError } from './errors';
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
     flight: { findMany: vi.fn(), groupBy: vi.fn() },
-    pprRequest: { findMany: vi.fn(), count: vi.fn() },
     person: { findMany: vi.fn() },
     instructorProfile: { findMany: vi.fn() },
   },
@@ -52,8 +51,6 @@ const { getSchedulingSettings } = await import('./app-settings.service');
 
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
-const pprFindManyMock = vi.mocked(prisma.pprRequest.findMany);
-const pprCountMock = vi.mocked(prisma.pprRequest.count);
 const personFindManyMock = vi.mocked(prisma.person.findMany);
 const instructorProfileFindManyMock = vi.mocked(prisma.instructorProfile.findMany);
 const listAircraftMock = vi.mocked(listAircraft);
@@ -75,8 +72,6 @@ const EMPTY_AIRCRAFT_RESULT = { items: [], total: 0, page: 1, pageSize: 100 };
 function resetMocksToEmpty(): void {
   flightFindManyMock.mockResolvedValue([]);
   flightGroupByMock.mockResolvedValue([]);
-  pprFindManyMock.mockResolvedValue([]);
-  pprCountMock.mockResolvedValue(0);
   personFindManyMock.mockResolvedValue([]);
   instructorProfileFindManyMock.mockResolvedValue([]);
   listAircraftMock.mockResolvedValue(EMPTY_AIRCRAFT_RESULT as never);
@@ -123,18 +118,7 @@ describe('getStats (story 12.10, AC 1)', () => {
     expect(result.series.months).toEqual(['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02']);
   });
 
-  it('buckets a PPR transit by its EUROPE/ROME calendar month, not its UTC one (bordi mese Rome)', async () => {
-    // 2026-10-31T23:30Z is already CET (DST ended 2026-10-25) -> Rome wall-clock 2026-11-01T00:30, i.e. NOVEMBER.
-    pprFindManyMock.mockResolvedValue([{ eta: new Date('2026-10-31T23:30:00.000Z') }] as never);
-
-    const result = await getStats(adminActor(), { period: 'month', ref: '2026-11' }, new Date('2026-11-15T10:00:00.000Z'));
-    const novIndex = result.series.months.indexOf('2026-11');
-    const octIndex = result.series.months.indexOf('2026-10');
-    expect(result.series.transitMovements[novIndex]).toBe(1);
-    expect(result.series.transitMovements[octIndex]).toBe(0);
-  });
-
-  it('movements/movementMix are coherent in the SAME unit (flights by type + transits, ratifica 1)', async () => {
+  it('movements/movementMix are coherent in the SAME unit (flights by type, ratifica 1) and the response carries exactly these keys', async () => {
     flightGroupByMock.mockImplementation((async (args: { by: string[] }) => {
       if (args.by[0] === 'flightType') {
         return [
@@ -145,25 +129,21 @@ describe('getStats (story 12.10, AC 1)', () => {
       }
       return [];
     }) as never);
-    pprCountMock.mockResolvedValue(2);
 
     const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
-    expect(result.kpis.movements).toBe(8); // 3 + 2 + 1 flights + 2 transits
+    expect(result.kpis.movements).toBe(6); // 3 + 2 + 1 REGISTERED flights
     expect(result.kpis.flightMinutes).toBe(300);
-    expect(result.kpis.transitShare).toBeCloseTo(0.25);
     expect(result.movementMix).toEqual([
       { key: 'SCHOOL', count: 3 },
       { key: 'TOURISM', count: 2 },
       { key: 'AERIAL_WORK', count: 1 },
-      { key: 'TRANSIT', count: 2 },
     ]);
-  });
-
-  it('transitShare is 0 when there are no movements at all (never NaN/Infinity)', async () => {
-    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
-    expect(result.kpis.movements).toBe(0);
-    expect(result.kpis.transitShare).toBe(0);
+    // The `/api/v1/stats` contract (a future Flutter client reads it): the
+    // exact key sets, so a field added or left behind fails here.
+    expect(Object.keys(result.kpis).sort()).toEqual(['fleetUtilization', 'flightMinutes', 'movements', 'revenueCents']);
+    expect(Object.keys(result.series).sort()).toEqual(['flightMinutes', 'months', 'revenueCents']);
+    expect(result.movementMix.map((m) => m.key)).toEqual(['SCHOOL', 'TOURISM', 'AERIAL_WORK']);
   });
 
   it('instructors: minutes computed for a HISTORICAL ref, owedCents forced null (never asks the compensation summary)', async () => {

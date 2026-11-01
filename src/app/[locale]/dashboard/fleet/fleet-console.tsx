@@ -21,8 +21,7 @@
  * `/dashboard` — which `mobile-overview.spec.ts` asserts against at 375 AND
  * 1280px. The switch between the two faces is CSS only, on the two classes
  * this file owns (`.fleet-desktop-body`/`.fleet-mobile`), never on
- * `.fleet-grid`/`.ac-card` (shared) — precedent `.ppr-queue-mobile` (15.2),
- * `.bookings-mobile` (15.4).
+ * `.fleet-grid`/`.ac-card` (shared) — precedent `.bookings-mobile` (15.4).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FleetCardGrid, badgeFor, type FleetCardItem } from '@/components/dashboard/fleet-card';

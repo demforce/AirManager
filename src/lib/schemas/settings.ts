@@ -11,7 +11,7 @@ import { z } from './zod-with-openapi';
  * Name-only since story 13.8 (AC 4): the logo field (`logoDataUrl`, a
  * client-uploaded base64 data URL) was never exercised by any admin —
  * removed from the wire contract, the settings UI, and every branding
- * consumer (PDF header, `/ppr`), a ratified punch-list wire change. The
+ * consumer, a ratified punch-list wire change. The
  * `airfield.logo` `AppSetting` key some installs may still carry stays an
  * orphan row (no destructive migration).
  */
@@ -191,7 +191,7 @@ export type MetarStationDto = z.infer<typeof metarStationDtoSchema>;
 
 // --- Membership fee (story 12.11, AC 1, ratifica utente 1) ------------------
 
-/** Same `Int` ceiling as `pprLandingFeeDefaultSchema` (AD-2). */
+/** The `Int` ceiling (AD-2), same as every stored cents amount. */
 const MAX_MEMBERSHIP_FEE_CENTS = 2_147_483_647;
 
 export const membershipFeeSettingSchema = z.object({

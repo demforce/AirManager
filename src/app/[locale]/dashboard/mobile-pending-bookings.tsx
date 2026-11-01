@@ -12,8 +12,8 @@
  * the code -> message mapping are the shared `postBookingTransition` the
  * desktop table now calls too.
  *
- * Ratifica R-15.3-b: Approva/Nega live ONLY inside the sheet, exactly like the
- * PPR queue (R-15.2-b) — the card stays one `<button>` with no nested control,
+ * Ratifica R-15.3-b: Approva/Nega live ONLY inside the sheet (the rule of
+ * R-15.2-b) — the card stays one `<button>` with no nested control,
  * and two destructive buttons never sit under the thumb while scrolling. The
  * bullet of the epic plan ("Approva/Nega inline", which the template also
  * shows) is superseded by that ratification; and it could not have completed
@@ -99,7 +99,7 @@ export function MobilePendingBookings({ rows, labels, locale, hiddenCount }: Mob
   }, []);
 
   /**
-   * Same fix as review 15.2 F1 on the PPR sheet: swapping the sheet's body
+   * Same fix as review 15.2 F1: swapping the sheet's body
    * removes the very button that was pressed and `document.activeElement`
    * falls back to `<body>`, losing the dialog context for assistive
    * technology even though the node survives. Each step takes the focus to

@@ -330,7 +330,7 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
     }
   });
 
-  test('AC 2/AD-9: i tre grafici sono INVARIATI — stessa larghezza SVG e stesso minGap a 320/375/390 e a 1280', async ({ page }) => {
+  test('AC 2/AD-9: i due grafici sono INVARIATI — stessa larghezza SVG e stesso minGap a 320/375/390 e a 1280', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
 
     for (const [viewport, expectedSvg, expectedVisible] of [
@@ -341,7 +341,7 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
       await page.setViewportSize(viewport);
       await gotoReports(page);
       const charts = await page.evaluate(CHART_GEOMETRY);
-      expect(charts).toHaveLength(3);
+      expect(charts).toHaveLength(2);
       for (const chart of charts) {
         expect(chart.svgW).toBe(expectedSvg);
         expect(chart.total).toBe(12);
@@ -358,13 +358,13 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
       expect(chart.visible).toBe(3);
     }
 
-    // 1280: nothing is thinned, the two wide charts are 612.66 and the narrow
-    // one 287.34 — and its 6.03px minGap is DESKTOP tightness that predates
-    // this story and stays (declared, out of mandate).
+    // 1280: nothing is thinned, the wide chart is 612.66 and the narrow one
+    // 287.34 — and its 6.03px minGap is DESKTOP tightness that predates this
+    // story and stays (declared, out of mandate).
     await page.setViewportSize(DESKTOP);
     await gotoReports(page);
     const desktopCharts = await page.evaluate(CHART_GEOMETRY);
-    expect(desktopCharts.map((c) => c.svgW)).toEqual([612.66, 287.34, 612.66]);
+    expect(desktopCharts.map((c) => c.svgW)).toEqual([612.66, 287.34]);
     for (const chart of desktopCharts) expect(chart.visible).toBe(12);
   });
 
@@ -514,15 +514,15 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
         const segAlt = (await page.evaluate('__c.bg(".util-bar .seg")')) as number[];
         for (const ratio of segAlt) expect(ratio).toBeGreaterThanOrEqual(3);
 
-        // 3) the four "Composizione movimenti" bands AND their legend dots,
+        // 3) the three "Composizione movimenti" bands AND their legend dots,
         // which share the same tone map (the dots were not in the list either).
-        const bands = (await page.evaluate('__c.bg(".flow-bar-in, .flow-bar-accent, .flow-bar-muted, .flow-bar-info")')) as number[];
-        expect(bands.length).toBeGreaterThanOrEqual(8);
+        const bands = (await page.evaluate('__c.bg(".flow-bar-in, .flow-bar-accent, .flow-bar-muted")')) as number[];
+        expect(bands.length).toBeGreaterThanOrEqual(6);
         for (const ratio of bands) expect(ratio).toBeGreaterThanOrEqual(3);
 
         // 4) `.chart-label` is TEXT: the floor is 4.5, not 3.
         const labels = (await page.evaluate('__c.text(".chart-label")')) as number[];
-        expect(labels.length).toBe(36);
+        expect(labels.length).toBe(24); // 12 month labels x the 2 charts (story 19.1: one chart fewer)
         for (const ratio of labels) expect(ratio).toBeGreaterThanOrEqual(4.5);
       }
     }

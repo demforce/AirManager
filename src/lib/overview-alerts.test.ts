@@ -9,15 +9,14 @@ function balance(personId: string, balanceCents: number) {
   return { personId, firstName: 'Anna', lastName: 'Bianchi', balanceCents };
 }
 
-const EMPTY: OverviewAlertsInput = { expiries: [], negativeBalances: [], pprPendingCount: 0 };
+const EMPTY: OverviewAlertsInput = { expiries: [], negativeBalances: [] };
 
 describe('buildOverviewAlerts — ratified order (R-15.3-e)', () => {
-  it('ranks scaduto -> saldo negativo -> <=7g -> PPR -> <=30g -> <=60g', () => {
+  it('ranks scaduto -> saldo negativo -> <=7g -> <=30g -> <=60g', () => {
     const result = buildOverviewAlerts(
       {
         expiries: [expiry('in60', 55), expiry('in30', 20), expiry('in7', 3), expiry('overdue', -4)],
         negativeBalances: [balance('debtor', -12_000)],
-        pprPendingCount: 2,
       },
       99,
     );
@@ -26,7 +25,6 @@ describe('buildOverviewAlerts — ratified order (R-15.3-e)', () => {
       'expiry:overdue',
       'balance:debtor',
       'expiry:in7',
-      'ppr:pending',
       'expiry:in30',
       'expiry:in60',
     ]);
@@ -39,7 +37,6 @@ describe('buildOverviewAlerts — ratified order (R-15.3-e)', () => {
       {
         expiries: [expiry('late-1', -1), expiry('late-30', -30), expiry('late-9', -9)],
         negativeBalances: [balance('small', -500), balance('big', -90_000)],
-        pprPendingCount: 0,
       },
       99,
     );
@@ -56,18 +53,6 @@ describe('buildOverviewAlerts — ratified order (R-15.3-e)', () => {
   it('drops a scadenza beyond the 60-day window (tier 4 is not an avviso)', () => {
     const result = buildOverviewAlerts({ ...EMPTY, expiries: [expiry('far', 120)] });
     expect(result.items).toEqual([]);
-  });
-
-  it('omits the PPR voice entirely when nothing is pending', () => {
-    const result = buildOverviewAlerts({ ...EMPTY, pprPendingCount: 0 });
-    expect(result.items).toEqual([]);
-    expect(result.hiddenCount).toBe(0);
-  });
-
-  it('collapses the PPR queue into ONE voice carrying the count, never one row per request', () => {
-    const result = buildOverviewAlerts({ ...EMPTY, pprPendingCount: 7 });
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0]).toMatchObject({ kind: 'pprPending', count: 7, tone: 'amber' });
   });
 });
 
@@ -104,11 +89,10 @@ describe('buildOverviewAlerts — cap and "Vedi tutte" (the case no e2e can fabr
     const result = buildOverviewAlerts({
       expiries: Array.from({ length: 5 }, (_, index) => expiry(`late-${index}`, -10 - index)),
       negativeBalances: [balance('debtor', -5000)],
-      pprPendingCount: 3,
     });
 
     expect(result.items).toHaveLength(5);
-    expect(result.hiddenCount).toBe(2);
+    expect(result.hiddenCount).toBe(1);
     expect(result.moreHref).toBe('/dashboard/billing');
   });
 
@@ -116,21 +100,9 @@ describe('buildOverviewAlerts — cap and "Vedi tutte" (the case no e2e can fabr
     const result = buildOverviewAlerts({
       expiries: Array.from({ length: 8 }, (_, index) => expiry(`late-${index}`, -10 - index)),
       negativeBalances: [],
-      pprPendingCount: 0,
     });
     expect(result.hiddenCount).toBe(3);
     expect(result.moreHref).toBe('/dashboard/expiries');
-  });
-
-  it('points at PPR when the pending queue is the first hidden voice', () => {
-    const result = buildOverviewAlerts({
-      expiries: [expiry('a', -3), expiry('b', 2)],
-      negativeBalances: [balance('c', -1), balance('d', -2), balance('e', -3)],
-      pprPendingCount: 1,
-    });
-    expect(result.items).toHaveLength(5);
-    expect(result.hiddenCount).toBe(1);
-    expect(result.moreHref).toBe('/dashboard/ppr');
   });
 
   it('deep-links a single negative-balance voice to its own person, not to the list', () => {

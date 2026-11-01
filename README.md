@@ -1,6 +1,6 @@
 # AirManager
 
-Gestionale per aviosuperficie: piloti, velivoli, voli, PPR, finanze, scuola volo, prenotazioni e scadenze.
+Gestionale per aviosuperficie: piloti, velivoli, voli, finanze, scuola volo, prenotazioni e scadenze.
 
 ## Stack
 

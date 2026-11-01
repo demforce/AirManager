@@ -227,7 +227,7 @@ async function seedAircraft(): Promise<void> {
 // untouched (no destructive migration, §9).
 // Story Billing-1 (AC 4): "Compensi istruttori" — the instructor payout's
 // automatic money twin (`instructor-compensation.service.ts#recordPayout`).
-const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
+const CASH_CATEGORY_NAMES = ['Ricariche', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
 
 async function seedCashCategories(): Promise<void> {
   for (const name of CASH_CATEGORY_NAMES) {
@@ -267,9 +267,9 @@ async function seedCashCategories(): Promise<void> {
  * trade-off review Billing-2 F4/F5 already accepted.
  *
  * Both are dated in 2019, outside every spec's isolation window, and neither
- * is reachable through any HTTP writer: since Billing-1 AC2 (+ review F8/D2 on
- * `completePprRequest`) every live path REQUIRES a `paymentMethod`, which is
- * why an e2e cannot create its own.
+ * is reachable through any HTTP writer: since Billing-1 AC2 (+ review F8/D2)
+ * every live path REQUIRES a `paymentMethod`, which is why an e2e cannot
+ * create its own.
  */
 const UNATTRIBUTED_SEED_ROWS: readonly { description: string; amountCents: number; effectiveDate: string }[] = [
   { description: 'Movimento storico pre-Billing-1 (seed)', amountCents: 500, effectiveDate: '2019-06-15' },

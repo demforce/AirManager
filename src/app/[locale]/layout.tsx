@@ -87,9 +87,8 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
           were already redundant with airops.css (`html,body{height:100%}` line 68,
           `body{-webkit-font-smoothing:antialiased}` line 76); the one non-redundant
           bit (`-moz-osx-font-smoothing:grayscale`) moved into that same airops.css
-          body rule. `flex min-h-full flex-col` (real shell geometry, see `.ppr-page`'s
-          `flex-shrink:0` comment above) moved to a plain `body{}` rule in
-          globals.css. */}
+          body rule. `flex min-h-full flex-col` (real shell geometry) moved to a
+          plain `body{}` rule in globals.css. */}
       <body>
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
       </body>

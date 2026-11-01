@@ -9,11 +9,11 @@ import { formatCents } from '@/lib/money';
 import type { StatsResponseDto } from '@/lib/schemas/stats';
 import { formatMinutes } from '@/lib/time';
 
-type MixKey = 'SCHOOL' | 'TOURISM' | 'AERIAL_WORK' | 'TRANSIT';
+type MixKey = 'SCHOOL' | 'TOURISM' | 'AERIAL_WORK';
 
 /**
- * Movement-mix tones (AC 3) — the prototype's own 4 legend tokens
- * (`--info`/`--accent`/`--ok`/`--ink-3`), reassigned to D13's real taxonomy
+ * Movement-mix tones (AC 3) — three of the prototype's own legend tokens
+ * (`--accent`/`--ok`/`--ink-3`), reassigned to D13's real taxonomy
  * (the prototype's own keys, "Dep/arr basati"/"Noleggi"/etc., don't exist in
  * this domain — ratifica utente 1).
  *
@@ -28,14 +28,12 @@ const MIX_TONES: Record<MixKey, string> = {
   SCHOOL: 'flow-bar-in',
   TOURISM: 'flow-bar-accent',
   AERIAL_WORK: 'flow-bar-muted',
-  TRANSIT: 'flow-bar-info',
 };
 
 export type ReportsLabels = {
   charts: {
     revenue: { title: string; sub: string };
     hours: { title: string; sub: string };
-    transits: { title: string; sub: string };
     fleet: { title: string; sub: string; empty: string };
   };
   movementMix: { title: string; sub: string; keys: Record<MixKey, string> };
@@ -54,8 +52,8 @@ export type ReportsConsoleProps = {
 };
 
 /**
- * Reports body (epic 12, story 12.10, AC 3) — the 4 `.split` rows below the
- * page's own page-head/kpi-row. Client boundary (pattern 12.5-12.9) mainly
+ * Reports body (epic 12, story 12.10, AC 3) — the 3 `.split` rows and the
+ * full-width "Utilizzo flotta" card below the page's own page-head/kpi-row. Client boundary (pattern 12.5-12.9) mainly
  * for `RankBars`' own metric-toggle state; `BarChart`/`LineChart` are pure
  * presentational and simply render inside this tree.
  */
@@ -69,7 +67,6 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
 
   const revenueData = stats.series.revenueCents.map((cents) => cents / 100);
   const hoursData = stats.series.flightMinutes.map((minutes) => minutes / 60);
-  const transitsData = stats.series.transitMovements;
 
   const fleetMax = Math.max(1, ...stats.fleet.map((aircraft) => aircraft.minutes));
   const instructorsMax = Math.max(1, ...stats.instructors.map((instructor) => instructor.minutes));
@@ -126,49 +123,38 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
         </div>
       </div>
 
-      <div className="split">
-        <div className="card">
-          <div className="card-head">
-            <div className="card-title">{labels.charts.transits.title}</div>
-            <span className="card-sub">{labels.charts.transits.sub}</span>
-          </div>
+      <div className="card">
+        <div className="card-head">
+          <div className="card-title">{labels.charts.fleet.title}</div>
+          <span className="card-sub">{labels.charts.fleet.sub}</span>
+        </div>
+        {stats.fleet.length === 0 ? (
           <div className="card-body">
-            <BarChart data={transitsData} labels={seriesLabels} color="oklch(0.6 0.14 260)" />
+            <p style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{labels.charts.fleet.empty}</p>
           </div>
-        </div>
-        <div className="card">
-          <div className="card-head">
-            <div className="card-title">{labels.charts.fleet.title}</div>
-            <span className="card-sub">{labels.charts.fleet.sub}</span>
-          </div>
-          {stats.fleet.length === 0 ? (
-            <div className="card-body">
-              <p style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{labels.charts.fleet.empty}</p>
-            </div>
-          ) : (
-            <>
-              <div className={`util-rows ranked-rows${fleetExpanded ? '' : ' ranked-rows-capped'}`} ref={fleetRowsRef} tabIndex={-1}>
-                {stats.fleet.map((aircraft, i) => (
-                  <div
-                    className={fleetTop.has(i) ? 'util-row' : 'util-row ranked-row-overflow'}
-                    key={aircraft.registration}
-                    data-testid={`reports-fleet-row-${aircraft.registration}`}
-                    style={{ gridTemplateColumns: '90px 1fr 80px' }}
-                  >
-                    <div className="util-tail mono">{aircraft.registration}</div>
-                    <div className="util-bar">
-                      <div className="seg flown" style={{ left: 0, width: `${(aircraft.minutes / fleetMax) * 100}%` }} />
-                    </div>
-                    <div className="util-value mono">{formatMinutes(aircraft.minutes)}</div>
+        ) : (
+          <>
+            <div className={`util-rows ranked-rows${fleetExpanded ? '' : ' ranked-rows-capped'}`} ref={fleetRowsRef} tabIndex={-1}>
+              {stats.fleet.map((aircraft, i) => (
+                <div
+                  className={fleetTop.has(i) ? 'util-row' : 'util-row ranked-row-overflow'}
+                  key={aircraft.registration}
+                  data-testid={`reports-fleet-row-${aircraft.registration}`}
+                  style={{ gridTemplateColumns: '90px 1fr 80px' }}
+                >
+                  <div className="util-tail mono">{aircraft.registration}</div>
+                  <div className="util-bar">
+                    <div className="seg flown" style={{ left: 0, width: `${(aircraft.minutes / fleetMax) * 100}%` }} />
                   </div>
-                ))}
-              </div>
-              {fleetExpanded ? null : (
-                <RankedCapFoot cap={fleetCap} total={stats.fleet.length} labels={labels.cap} onShowAll={showAllFleet} testId="mobile-reports-fleet-cap" />
-              )}
-            </>
-          )}
-        </div>
+                  <div className="util-value mono">{formatMinutes(aircraft.minutes)}</div>
+                </div>
+              ))}
+            </div>
+            {fleetExpanded ? null : (
+              <RankedCapFoot cap={fleetCap} total={stats.fleet.length} labels={labels.cap} onShowAll={showAllFleet} testId="mobile-reports-fleet-cap" />
+            )}
+          </>
+        )}
       </div>
 
       <div className="split">

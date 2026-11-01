@@ -16,7 +16,6 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     'bookings.manage.own',
     'bookings.manage.any',
     'expiries.manage',
-    'ppr.manage',
     'settings.manage',
     'users.manage',
     'self.read',
@@ -44,13 +43,10 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     expect(hasPermission(pilot, 'people.read')).toBe(false);
     expect(hasPermission(pilot, 'bookings.manage.any')).toBe(false);
     expect(hasPermission(pilot, 'finance.manage')).toBe(false);
-    // Story 8.2: PPR decisions are staff/admin-only.
-    expect(hasPermission(pilot, 'ppr.manage')).toBe(false);
     // Story 14.5 (ratifica R3): a pilot never sees booking-holder names on
     // someone else's booking — "Occupato" only.
     expect(hasPermission(pilot, 'bookings.read.names')).toBe(false);
     expect(() => authorize(pilot, 'people.read')).toThrow(ForbiddenError);
-    expect(() => authorize(pilot, 'ppr.manage')).toThrow(ForbiddenError);
   });
 
   it('grants an instructor bookings.read.names — unlike a plain pilot (story 14.5, ratifica R3)', () => {
@@ -87,8 +83,6 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
 
     expect(hasPermission(student, 'bookings.manage.own')).toBe(false);
     expect(hasPermission(student, 'bookings.manage.any')).toBe(false);
-    // Story 8.2: PPR decisions are staff/admin-only.
-    expect(hasPermission(student, 'ppr.manage')).toBe(false);
     // Story 14.5 (ratifica R3): same "Occupato" masking as a pilot.
     expect(hasPermission(student, 'bookings.read.names')).toBe(false);
     expect(() => authorize(student, 'bookings.manage.own')).toThrow(ForbiddenError);

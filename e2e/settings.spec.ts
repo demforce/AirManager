@@ -98,7 +98,7 @@ test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 
     await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 
-  test('Club card: ICAO/contact email/landing fee/instructions/membership fee round-trip through the save action\'s own responses', async ({ page }) => {
+  test('Club card: ICAO/contact email/membership fee round-trip through the save action\'s own responses', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await gotoSettingsAndWaitForHydration(page);
 
@@ -107,26 +107,20 @@ test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 
 
     await page.getByTestId('club-icao-input').fill(icao);
     await page.getByTestId('club-contact-email-input').fill(contactEmail);
-    await page.getByTestId('club-landing-fee-input').fill('12.50');
     await page.getByTestId('club-membership-fee-input').fill('60.00');
-    await page.getByTestId('club-instructions-it-input').fill('Presentarsi in torre.');
 
-    // Assert on the save action's OWN 4 PUT responses (same request, no
+    // Assert on the save action's OWN PUT responses (same request, no
     // window for another spec's concurrent write on the SAME global keys —
     // `membership.annualFeeCents` in particular is also written by
     // `membership-fee.spec.ts`; a follow-up GET here would reopen that race).
-    const [clubResponse, feeResponse, instructionsResponse, membershipResponse] = await Promise.all([
+    const [clubResponse, membershipResponse] = await Promise.all([
       page.waitForResponse((r) => r.url().includes('/api/v1/settings/club') && r.request().method() === 'PUT'),
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/ppr-landing-fee') && r.request().method() === 'PUT'),
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/ppr-operating-instructions') && r.request().method() === 'PUT'),
       page.waitForResponse((r) => r.url().includes('/api/v1/settings/membership-fee') && r.request().method() === 'PUT'),
       page.getByTestId('club-settings-save').click(),
     ]);
     await expect(page.getByTestId('club-settings-feedback')).toBeVisible();
 
     expect(await clubResponse.json()).toEqual({ icao, contactEmail });
-    expect((await feeResponse.json()).landingFeeCents).toBe(1250);
-    expect((await instructionsResponse.json()).it).toBe('Presentarsi in torre.');
     expect((await membershipResponse.json()).annualFeeCents).toBe(6000);
   });
 
@@ -203,7 +197,7 @@ test.describe('Impostazioni — Club/Pianificazione/SMTP cards (Story 12.11, AC 
   });
 });
 
-/** Run-unique cash-category name (same pattern as `uniqueCategoryName` in `cash-register.spec.ts`) — NEVER a seeded name (`Ricariche`/`PPR`/`Carburante`/`Assicurazione`/`Manutenzione`/`Utenze`/`Altro`, shared with `billing.spec.ts`/`cash-register.spec.ts`). */
+/** Run-unique cash-category name (same pattern as `uniqueCategoryName` in `cash-register.spec.ts`) — NEVER a seeded name (`Ricariche`/`Carburante`/`Assicurazione`/`Manutenzione`/`Utenze`/`Altro`, shared with `billing.spec.ts`/`cash-register.spec.ts`). */
 function uniqueCategoryName(prefix: string): string {
   return `${prefix}-${uniqueSuffix()}`;
 }

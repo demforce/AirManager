@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import type { Browser, Locator, Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
 
 /**
  * Story 15.9 — the two self-service surfaces (the shared estratto conto of
- * "Le mie transazioni" + the scheda persona, and "I miei compensi") and the
- * public `/ppr` showcase, on a phone.
+ * "Le mie transazioni" + the scheda persona, and "I miei compensi"), on a
+ * phone.
  *
  * Project `chromium`, `fullyParallel`: this story writes NO `AppSettings`, so
  * it stays out of the serialized chain (`playwright.config.ts`). Two
@@ -191,35 +191,6 @@ async function createInstructorWithLogin(page: Page, password: string, tag: stri
   return { personId: person.id, email };
 }
 
-/** A manual, immediately-approved PPR — the only shape that OWNS a `pprNumber` (null while PENDING, null forever on REJECTED). One row per call; this spec creates 2 per run. */
-async function createApprovedPpr(page: Page, tag: string): Promise<{ pprNumber: string; lastName: string; registration: string }> {
-  const suffix = uniqueSuffix();
-  const lastName = `${tag}-${suffix}`;
-  const registration = `I-Z${suffix}`.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20);
-  const eta = new Date(Date.now() + 40 * 86_400_000);
-  eta.setUTCHours(9, 0, 0, 0);
-  const response = await page.request.post('/api/v1/ppr-requests/manual', {
-    data: {
-      firstName: 'Transito',
-      lastName,
-      email: `transito-${suffix}@e2e.airmanager.local`,
-      phone: '+39 333 0000000',
-      aircraftRegistration: registration,
-      aircraftType: 'Cessna 172 Skyhawk',
-      origin: 'LIRN Napoli',
-      destination: 'LIRU Urbe',
-      eta: eta.toISOString(),
-      personsOnBoard: 2,
-      locale: 'it',
-      approveImmediately: true,
-    },
-  });
-  expect(response.status()).toBe(201);
-  const created = (await response.json()) as { pprNumber: string | null };
-  expect(created.pprNumber).not.toBeNull();
-  return { pprNumber: created.pprNumber!, lastName, registration };
-}
-
 /** `display` of BOTH trees — a guard that reads one side only lets "I hid everything" through. */
 async function treeDisplays(page: Page, desktopSelector: string, mobileSelector: string): Promise<{ desktop: string; mobile: string }> {
   return page.evaluate(
@@ -243,27 +214,12 @@ async function targetsUnderFloor(page: Page, root: string): Promise<string[]> {
   );
 }
 
-/** The CANONICAL hidden-scroller sweep (the one `mobile-registries.spec.ts` runs on the scheda persona), with the exclusions this story declares. */
+/** The CANONICAL hidden-scroller sweep (the one `mobile-registries.spec.ts` runs on the scheda persona). */
 async function hiddenScrollers(page: Page, root: string): Promise<string[]> {
   return page.evaluate(
     (rootSelector) =>
       [...document.querySelectorAll(`${rootSelector} *`)]
-        .filter(
-          (el) =>
-            el.scrollWidth > el.clientWidth + 1 &&
-            !el.closest('.slideover') &&
-            // Declared exclusion, and ONLY that one: the `/ppr` honeypot lives
-            // in an off-screen 1px wrapper (`position:absolute; left:-9999px`)
-            // — not a clipped control, anti-abuse machinery (AC 6 c). The
-            // wrapper is matched with `:scope >`, never with a plain
-            // `querySelector`: that one is true for EVERY ancestor, so it also
-            // dropped `<form>`, `#formCard` and `.ppr-grid` from the sweep —
-            // the containers that can actually blow out (review 15.9 MINOR-2:
-            // a 2000px child injected in `#formCard` was invisible to it).
-            !el.closest('[data-testid="ppr-honeypot"]') &&
-            el.querySelector(':scope > [data-testid="ppr-honeypot"]') === null &&
-            getComputedStyle(el).textOverflow !== 'ellipsis',
-        )
+        .filter((el) => el.scrollWidth > el.clientWidth + 1 && !el.closest('.slideover') && getComputedStyle(el).textOverflow !== 'ellipsis')
         .map((el) => `${el.getAttribute('data-testid') ?? ''}|${String(el.className)}|${el.clientWidth}/${el.scrollWidth}`),
     root,
   );
@@ -899,238 +855,5 @@ test.describe('Multi-actor (AC 14)', () => {
         await expect(page.getByTestId('my-compensation-empty'), email).toHaveCount(hasProfile ? 0 : 1);
       }
     }
-  });
-});
-
-test.describe('The public /ppr showcase on a phone (AC 6)', () => {
-  /** A fresh context with a run-unique fake `x-forwarded-for`: the rate limit is DB-backed and the DB is not reset between runs. */
-  async function newPublicContext(browser: Browser, viewport = PHONE): Promise<{ page: Page; close: () => Promise<void> }> {
-    const context = await browser.newContext({
-      viewport,
-      extraHTTPHeaders: { 'x-forwarded-for': `e2e-selfmobile-${uniqueSuffix()}` },
-      timezoneId: 'UTC',
-    });
-    return { page: await context.newPage(), close: () => context.close() };
-  }
-
-  test('every field and the submit are real targets, the page never scrolls sideways, and the only clipped node is the declared honeypot', async ({ browser }) => {
-    const { page, close } = await newPublicContext(browser);
-    try {
-      for (const width of [320, 375, 390]) {
-        await page.setViewportSize({ width, height: 812 });
-        await page.goto('/it/ppr');
-        await expect(page.getByTestId('ppr-form')).toBeVisible();
-
-        // Pre-fix at 375: 9 `input.input` at 36.84, 2 datetime-local at 38.84,
-        // 2 calendar triggers at 24x24 — 12 fields out of 12 under the floor.
-        // The honeypot (18x198, off-screen by design) is the ONE declared
-        // exclusion, named here rather than filtered silently.
-        const underFloor = (await targetsUnderFloor(page, '.ppr-page')).filter((entry) => !entry.startsWith('ppr-honeypot:'));
-        expect(underFloor, `width ${width}`).toEqual([]);
-
-        // The submit measures 64.59px at 375 only because its Italian label
-        // wraps; the guard is on the requirement, and on it being full width.
-        const submitBox = await page.getByTestId('ppr-submit').boundingBox();
-        expect(submitBox!.height).toBeGreaterThanOrEqual(TARGET_FLOOR);
-        const actionsBox = await page.locator('.ppr-actions').boundingBox();
-        expect(Math.round(submitBox!.width)).toBe(Math.round(actionsBox!.width));
-
-        expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `width ${width}`).toBe(0);
-        expect(await hiddenScrollers(page, '.ppr-page'), `width ${width}`).toEqual([]);
-        expect(await coveredControlsAtBottom(page), `width ${width}`).toEqual([]);
-      }
-    } finally {
-      await close();
-    }
-  });
-
-  test('the IT/EN switch is visible and tappable at EVERY width, and it really switches the page', async ({ browser }) => {
-    const { page, close } = await newPublicContext(browser);
-    try {
-      // Pre-fix: `.ppr-top-right{display:none}` under 820px gave the link a
-      // 0x0 rect at 320/375/390/641/800 — "the link exists in the DOM" would
-      // have passed on the defect, so the guard is on the RECT.
-      for (const width of [320, 375, 390, 641, 800, 1280]) {
-        await page.setViewportSize({ width, height: 812 });
-        await page.goto('/it/ppr');
-        const link = page.getByTestId('ppr-locale-switch');
-        await expect(link, `width ${width}`).toBeVisible();
-        const box = await link.boundingBox();
-        expect(box!.width, `width ${width}`).toBeGreaterThan(0);
-        expect(box!.height, `width ${width}`).toBeGreaterThanOrEqual(TARGET_FLOOR);
-      }
-
-      await page.setViewportSize(PHONE);
-      await page.goto('/it/ppr');
-      await page.getByTestId('ppr-locale-switch').click();
-      await expect(page).toHaveURL(/\/en\/ppr$/);
-      await expect(page.getByTestId('ppr-locale-switch')).toHaveText('Italiano');
-      await expect(page.getByLabel('Registration', { exact: true })).toBeVisible();
-    } finally {
-      await close();
-    }
-  });
-
-  test('the flow is unchanged on a phone: an empty submit marks every field without a single request, and a real submit reaches the success view', async ({ browser }) => {
-    const { page, close } = await newPublicContext(browser);
-    try {
-      await page.goto('/it/ppr');
-      let calls = 0;
-      await page.route('**/api/v1/ppr-requests', (route) => {
-        calls += 1;
-        return route.continue();
-      });
-
-      await page.getByTestId('ppr-submit').click();
-      await expect(page.locator('.fld-error').first()).toBeVisible();
-      expect(await page.locator('.fld-error').count()).toBe(10);
-      expect(calls).toBe(0);
-      await expect(page.getByTestId('ppr-form-error')).toHaveCount(0);
-
-      const suffix = uniqueSuffix();
-      const eta = new Date(Date.now() + 26 * 3_600_000);
-      const etaLocal = `${eta.toISOString().slice(0, 10)}T09:00`;
-      await page.getByLabel('Nome', { exact: true }).fill('Mobile');
-      await page.getByLabel('Cognome', { exact: true }).fill(`Telefono-${suffix}`);
-      await page.getByLabel('Email', { exact: true }).fill(`mobile-${suffix}@e2e.airmanager.local`);
-      await page.getByLabel('Telefono', { exact: true }).fill('+39 333 1112223');
-      await page.getByLabel('Marche', { exact: true }).fill('I-MOBI');
-      await page.getByLabel('Tipo aeromobile', { exact: true }).fill('Tecnam P92');
-      await page.getByLabel('Provenienza', { exact: true }).fill('LIRU Urbe');
-      await page.getByLabel('Destinazione', { exact: true }).fill('LIMB Bresso');
-      await page.getByLabel('ETA (arrivo previsto)', { exact: true }).fill(etaLocal);
-      await page.getByLabel('Persone a bordo', { exact: true }).fill('2');
-      await page.getByTestId('ppr-submit').click();
-
-      await expect(page.getByTestId('ppr-success')).toBeVisible();
-      expect(calls).toBe(1);
-      // D13: the success view never carries a PPR number.
-      await expect(page.getByTestId('ppr-success')).not.toContainText('PPR-');
-      const successBox = await page.getByTestId('ppr-success-again').boundingBox();
-      expect(successBox!.height).toBeGreaterThanOrEqual(TARGET_FLOOR);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
-      await page.getByTestId('ppr-success-again').click();
-      await expect(page.getByTestId('ppr-form')).toBeVisible();
-      await expect(page.getByLabel('Nome', { exact: true })).toHaveValue('');
-    } finally {
-      await close();
-    }
-  });
-
-  test('the calendar trigger is a real target and its popover stays inside the viewport', async ({ browser }) => {
-    const { page, close } = await newPublicContext(browser);
-    try {
-      await page.goto('/it/ppr');
-      const trigger = page.locator('.ppr-form-grid .date-input-btn').first();
-      const box = await trigger.boundingBox();
-      expect(box!.height).toBeGreaterThanOrEqual(TARGET_FLOOR);
-      expect(box!.width).toBeGreaterThanOrEqual(TARGET_FLOOR);
-      await trigger.scrollIntoViewIfNeeded();
-      await trigger.click();
-      await expect(page.locator('.cal-popover')).toBeVisible();
-      const popover = await page.evaluate(() => {
-        const rect = document.querySelector('.cal-popover')!.getBoundingClientRect();
-        return { left: rect.left, right: rect.right };
-      });
-      expect(popover.left).toBeGreaterThanOrEqual(0);
-      expect(popover.right).toBeLessThanOrEqual(375);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    } finally {
-      await close();
-    }
-  });
-
-  test('a session does not change the public page (it is outside the shell: no tab bar, no top bar)', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.setViewportSize(PHONE);
-    await page.goto('/it/ppr');
-    await expect(page.getByTestId('ppr-form')).toBeVisible();
-    await expect(page.getByTestId('mobile-tab-bar')).toHaveCount(0);
-    await expect(page.locator('.mobile-topbar')).toHaveCount(0);
-    await expect(page.getByTestId('ppr-locale-switch')).toBeVisible();
-    expect((await page.getByTestId('ppr-locale-switch').boundingBox())!.height).toBeGreaterThanOrEqual(TARGET_FLOOR);
-  });
-});
-
-test.describe('PPR queue <-> Transiti deep link (AC 15, R-15.9-h)', () => {
-  test('the sheet of a numbered request links to the register filtered on THAT number, and an unknown number lands on the empty state', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const mine = await createApprovedPpr(page, 'Deeplink');
-    const other = await createApprovedPpr(page, 'Altro');
-
-    // The queue is FIFO (`createdAt asc`) and pages at 20: a row created NOW
-    // is on the LAST page, never on page 1 (lesson 15.7 — no test of this
-    // suite may assume "my row is on page 1"). The page number comes from the
-    // API's own total, not from a guess.
-    const approved = await page.request.get('/api/v1/ppr-requests?status=APPROVED&page=1&pageSize=1');
-    expect(approved.status()).toBe(200);
-    const lastQueuePage = Math.max(1, Math.ceil(((await approved.json()) as { total: number }).total / 20));
-
-    await page.setViewportSize(PHONE);
-    await page.goto(`/it/dashboard/ppr?status=APPROVED&page=${lastQueuePage}`);
-    const card = page.getByTestId('ppr-row-mobile').filter({ hasText: mine.lastName });
-    await expect(card).toHaveCount(1);
-    await card.click();
-
-    const link = page.getByTestId('ppr-view-in-movements-mobile');
-    await expect(link).toHaveCount(1);
-    expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(TARGET_FLOOR);
-    await expect(link).toHaveAttribute('href', new RegExp(`pprNumber=${mine.pprNumber}`));
-    await link.click();
-
-    await expect(page).toHaveURL(new RegExp(`pprNumber=${mine.pprNumber}`));
-    const rows = page.getByTestId('ppr-register-row-mobile');
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText(mine.registration);
-    await expect(page.locator('body')).not.toContainText(other.lastName);
-
-    // A well-formed but unknown number: an empty register, never an error.
-    await page.goto('/it/dashboard/movements?status=ALL&pprNumber=PPR-1999-9999');
-    await expect(page.getByTestId('ppr-register-row-mobile')).toHaveCount(0);
-    await expect(page.getByTestId('mobile-movements-empty')).toBeVisible();
-  });
-
-  test('a PENDING request offers no link (it owns no number), and a malformed number is a 422 on the API', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const suffix = uniqueSuffix();
-    const eta = new Date(Date.now() + 30 * 86_400_000);
-    eta.setUTCHours(10, 0, 0, 0);
-    const pending = await page.request.post('/api/v1/ppr-requests/manual', {
-      data: {
-        firstName: 'Attesa',
-        lastName: `Pending-${suffix}`,
-        email: `pending-${suffix}@e2e.airmanager.local`,
-        phone: '+39 333 0000000',
-        aircraftRegistration: `I-P${suffix}`.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20),
-        aircraftType: 'Tecnam P92',
-        origin: 'LIRU Urbe',
-        destination: 'LIMB Bresso',
-        eta: eta.toISOString(),
-        personsOnBoard: 1,
-        locale: 'it',
-      },
-    });
-    expect(pending.status()).toBe(201);
-    expect(((await pending.json()) as { pprNumber: string | null }).pprNumber).toBeNull();
-
-    // Same FIFO pagination as above: the row just created is on the LAST page.
-    const pendingList = await page.request.get('/api/v1/ppr-requests?status=PENDING&page=1&pageSize=1');
-    const lastQueuePage = Math.max(1, Math.ceil(((await pendingList.json()) as { total: number }).total / 20));
-
-    await page.setViewportSize(PHONE);
-    await page.goto(`/it/dashboard/ppr?page=${lastQueuePage}`);
-    const card = page.getByTestId('ppr-row-mobile').filter({ hasText: `Pending-${suffix}` });
-    await expect(card).toHaveCount(1);
-    await card.click();
-    await expect(page.getByTestId('mobile-ppr-sheet')).toBeVisible();
-    await expect(page.getByTestId('ppr-view-in-movements-mobile')).toHaveCount(0);
-    await expect(page.getByTestId('ppr-approve-button-mobile')).toHaveCount(1);
-
-    // The filter is validated, not swallowed: a malformed value is a 422.
-    const malformed = await page.request.get('/api/v1/ppr-requests?status=ALL&pprNumber=NOT-A-NUMBER');
-    expect(malformed.status()).toBe(422);
-    const wellFormed = await page.request.get('/api/v1/ppr-requests?status=ALL&pprNumber=PPR-1999-9999');
-    expect(wellFormed.status()).toBe(200);
-    expect(((await wellFormed.json()) as { total: number }).total).toBe(0);
   });
 });

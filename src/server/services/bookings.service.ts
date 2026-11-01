@@ -1263,9 +1263,9 @@ type LockedBookingRow = { id: string; status: BookingStatus; personId: string; i
  * Moves a booking through the approval workflow (AC 3) — `bookings.manage.any`
  * only, for EVERY transition (including "riapri": staff-only, never an
  * own-path action — see the module doc-comment). Locks the `Booking` row
- * `FOR UPDATE` as the FIRST statement in the transaction (same discipline as
- * `ppr.service.ts#lockPprRequest`), so a race with another transition on the
- * SAME booking serializes rather than double-applying.
+ * `FOR UPDATE` as the FIRST statement in the transaction, so a race with
+ * another transition on the SAME booking serializes rather than
+ * double-applying.
  *
  * `PENDING -> APPROVED` re-runs `createBooking`'s own checks against the
  * CURRENT booking, in `createBooking`'s own order and with its own codes —

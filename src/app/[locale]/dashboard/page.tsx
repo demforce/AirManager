@@ -16,7 +16,6 @@ import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { categoryOf } from '@/lib/expiry-status';
 import { formatCents } from '@/lib/money';
 import { buildOverviewAlerts } from '@/lib/overview-alerts';
-import { deriveApprovedPprMovementStatus } from '@/lib/ppr-movement-status';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
 import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, zonedMidnightUtc } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
@@ -39,7 +38,6 @@ import { getOwnCompensationSummary } from '@/server/services/instructor-compensa
 import { getMetar } from '@/server/services/metar.service';
 import { getMe, type MeResult } from '@/server/services/me.service';
 import { listPeople } from '@/server/services/people.service';
-import { listPprRequests } from '@/server/services/ppr.service';
 import { getEffectiveRates, todayDateOnlyUtc } from '@/server/services/rates.service';
 import { getStats } from '@/server/services/stats.service';
 import {
@@ -68,8 +66,6 @@ type DisplayLocale = 'it' | 'en';
 // `OPTIONS_PAGE_SIZE`/`fleet/page.tsx`'s fleet-wide reads — a real airfield's
 // roster/fleet comfortably fits in one page.
 const OPTIONS_PAGE_SIZE = 100;
-/** Mirrors `movements/page.tsx`'s own `KPI_SCAN_LIMIT` — every currently-open APPROVED PPR request, for the "in transito al suolo" derivation. */
-const PPR_GROUND_SCAN_LIMIT = 500;
 /** The embedded "Prenotazioni" card shows a handful of rows — "next page" deep-links into the full `/dashboard/bookings` list (`bookings-table.tsx#pageHref` is hardcoded to that route regardless of caller). */
 const EMBED_BOOKINGS_PAGE_SIZE = 8;
 /** Same set `bookings/page.tsx#ALL_BOOKING_STATUSES` shows — the embedded table is the SAME "Prenotazioni" card, same `startsAt`-ascending order, just row-capped. */
@@ -193,7 +189,7 @@ function buildMobileDetailLabels(t: Translator): MobileDetailLabels {
  * Rows of a booking's bottom sheet (AC 8, template's own `openBooking`): the
  * sheet shows everything the card shows PLUS what the card has no room for
  * (istruttore, durata, note). The STATUS is the sheet's badge, never a
- * duplicated line — the same choice `ppr-console.tsx#detailRows` made.
+ * duplicated line.
  */
 function bookingDetailRows(booking: BookingListItem, labels: MobileDetailLabels, displayLocale: DisplayLocale, noValue: string): BottomSheetRow[] {
   const minutes = Math.max(0, Math.round((booking.endsAt.getTime() - booking.startsAt.getTime()) / 60_000));
@@ -273,8 +269,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     schedulingSettings,
     reservedIds,
     currentRatesById,
-    pendingPprResult,
-    groundScanResult,
     pendingBookingsResult,
     monthStats,
     flightsTodayTotals,
@@ -293,8 +287,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     getSchedulingSettings(),
     listReservedAircraftIds(actor, allAircraftIds, now),
     getEffectiveRates(actor, allAircraftIds, todayDateOnlyUtc()),
-    listPprRequests(actor, { status: 'PENDING', page: 1, pageSize: 1 }),
-    listPprRequests(actor, { status: 'APPROVED', to: today, page: 1, pageSize: PPR_GROUND_SCAN_LIMIT }),
     listBookings(actor, { status: ['PENDING'], page: 1, pageSize: 1 }),
     getStats(actor, { period: 'month' }),
     getFlightTotals(actor, { dateFrom: today, dateTo: today, status: 'REGISTERED', page: 1, pageSize: 1 }),
@@ -328,7 +320,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     listOutOfServiceAircraft(actor),
   ]);
 
-  // --- .sub: ICAO (D3) + AOG + PPR pending + al suolo (12.4 reuse) --------
+  // --- .sub: ICAO (D3) + AOG ---------------------------------------------
   // Story AOG-1a, AC 13 — was `aircraftResult.items.length - operationalIds.length`,
   // i.e. the grounded aircraft among the FIRST `OPTIONS_PAGE_SIZE` (100) by
   // registration only: measured on a post-suite DB (148 active aircraft) the
@@ -349,12 +341,9 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   // neither 100 nor the 175 aircraft actually active).
   const fleetTotalCount = aircraftResult.total;
   const fleetOperationalCount = Math.max(0, fleetTotalCount - aogCount);
-  const onGroundCount = groundScanResult.items.filter((item) => deriveApprovedPprMovementStatus(item.eta, now) === 'AL_SUOLO').length;
   const subParts = [
     icao || null,
     t('overview.aogCount', { count: aogCount }),
-    t('overview.pprPendingCount', { count: pendingPprResult.total }),
-    t('overview.onGroundCount', { count: onGroundCount }),
   ].filter((part): part is string => Boolean(part));
 
   // --- KPI row (AC 1) ------------------------------------------------------
@@ -490,13 +479,12 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     detail: bookingDetailRows(booking, mobileDetailLabels, displayLocale, mobileNoValue),
   }));
 
-  // Ratifica R-15.3-e: scadenze + saldi negativi + PPR in attesa, ordered by
+  // Ratifica R-15.3-e: scadenze + saldi negativi, ordered by
   // real urgency and capped at 5. The order and the cap are unit-tested on the
   // pure function (AD-4); here only the wording is added.
   const alerts = buildOverviewAlerts({
     expiries: expiriesResult.items,
     negativeBalances,
-    pprPendingCount: pendingPprResult.total,
     // The same cap the fetch above used: when the scan comes back full, the
     // feed's "+N" is a floor and says so (review 15.3 F7).
     expiriesScanLimit: EXPIRIES_WIDGET_SCAN_LIMIT,
@@ -522,8 +510,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           title: `${alert.balance.lastName} ${alert.balance.firstName}`,
           sub: t('overview.mobile.alerts.balanceSub', { amount: formatCents(alert.balance.balanceCents, displayLocale) }),
         };
-      case 'pprPending':
-        return { ...common, title: t('overview.pprPendingCount', { count: alert.count }), sub: t('overview.mobile.alerts.pprSub') };
     }
   });
 
@@ -561,9 +547,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         </div>
         <div data-testid="kpi-fleet-available">
           <KPI label={t('overview.kpis.fleetAvailable')} value={trulyAvailableCount} unit={`/ ${fleetOperationalCount}`} />
-        </div>
-        <div data-testid="kpi-ppr-pending">
-          <KPI label={t('overview.kpis.pprPending')} value={pendingPprResult.total} />
         </div>
         <div data-testid="kpi-bookings-pending">
           <KPI label={t('overview.kpis.bookingsPending')} value={pendingBookingsResult.total} />

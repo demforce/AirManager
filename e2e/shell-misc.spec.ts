@@ -58,19 +58,3 @@ test.describe('Top bar — language switcher (story 13.8, AC 1)', () => {
     await expect(page).toHaveURL(/\/it\/dashboard\/bookings\?view=week&date=2026-08-05$/);
   });
 });
-
-test.describe('Sidebar — fleet icon (story 13.8, AC 2)', () => {
-  test('"Aeromobili" (fleet) renders the SAME small-plane icon as "Voli in transito" (movements)', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const nav = page.getByRole('navigation', { name: 'Aree operative' });
-    const fleetSvg = await nav.locator('a[href="/it/dashboard/fleet"] svg').innerHTML();
-    const visitingSvg = await nav.locator('a[href="/it/dashboard/movements"] svg').innerHTML();
-    const pilotsSvg = await nav.locator('a[href="/it/dashboard/pilots"] svg').innerHTML();
-
-    expect(fleetSvg).toBeTruthy();
-    expect(fleetSvg).toBe(visitingSvg);
-    // Sanity check against a false positive (both empty/undefined): fleet's icon must differ from an unrelated nav item's.
-    expect(fleetSvg).not.toBe(pilotsSvg);
-  });
-});

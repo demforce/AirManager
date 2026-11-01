@@ -100,7 +100,6 @@ const baseCashRow: Fixture = {
   accountMovementId: null,
   category: { name: 'Manutenzione' },
   accountMovement: null,
-  pprRequest: null,
 };
 
 beforeEach(() => {

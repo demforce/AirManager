@@ -44,7 +44,6 @@ const DESKTOP_TESTIDS = [
   'fleet-card-widget',
   'kpi-flights-today',
   'kpi-fleet-available',
-  'kpi-ppr-pending',
   'kpi-bookings-pending',
   'kpi-revenue',
 ];
@@ -251,7 +250,19 @@ test.describe('story 15.3 — the CSS switch, measured on BOTH sides', () => {
       // the KPI strip are adapted in CSS, never duplicated).
       await expect(page.getByRole('heading', { name: 'Panoramica operativa' })).toHaveCount(1);
       expect(await page.locator('.kpi-row').count()).toBe(1);
-      expect(await page.locator('.kpi-value').count()).toBe(5);
+      expect(await page.locator('.kpi-value').count()).toBe(4);
+      // Story 19.1: the row holds exactly these four KPIs, nothing else.
+      expect(await page.locator('.kpi-row > [data-testid]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-testid')))).toEqual([
+        'kpi-flights-today',
+        'kpi-fleet-available',
+        'kpi-bookings-pending',
+        'kpi-revenue',
+      ]);
+      // ...and the sub-line is `[ICAO ·] N AOG`: two parts at most, the AOG
+      // count last (asserted by structure, not by looking for a word).
+      const subParts = ((await page.locator('.page-title-block .sub').textContent()) ?? '').trim().split(' · ');
+      expect(subParts.length).toBeLessThanOrEqual(2);
+      expect(subParts[subParts.length - 1]).toMatch(/^\d+ AOG$/);
     }
   });
 });
@@ -395,8 +406,8 @@ test.describe('story 15.3 — "In corso ora" and the "Avvisi" feed', () => {
   });
 
   /**
-   * Ratifica R-15.3-e: the feed merges scadenze, saldi negativi and PPR in
-   * attesa. Order and cap are proven in unit (`src/lib/overview-alerts.test.ts`
+   * Ratifica R-15.3-e: the feed merges scadenze and saldi negativi. Order and
+   * cap are proven in unit (`src/lib/overview-alerts.test.ts`
    * — no e2e can fabricate 40 debtors without poisoning the suite); this proves
    * a REAL scadenza reaches the card. The fixture is overdue by a decade so it
    * sorts first inside rank 0 and the cap can never hide it, whatever the

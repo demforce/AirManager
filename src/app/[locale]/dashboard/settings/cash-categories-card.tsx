@@ -267,7 +267,7 @@ export function CashCategoriesCard({ categories, labels }: CashCategoriesCardPro
       {/* --- the phone face of this catalogue (story 15.8b, R-15.8b-d) ------
           Same shape as the two expiry-type catalogues above. The one rule that
           differs is domain, not layout: on a SYSTEM category ("Ricariche",
-          "Compensi istruttori", "PPR") the "Elimina" action stays ABSENT — not
+          "Compensi istruttori") the "Elimina" action stays ABSENT — not
           disabled — exactly as on the desktop row (`cash.service.ts:52`). */}
       <div className="cash-categories-mobile" data-testid="mobile-cash-category-list">
         {categories.length === 0 ? (

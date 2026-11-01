@@ -31,11 +31,9 @@ export function randomIdempotencyKey(): string {
 
 /**
  * Client-side lifecycle for the `Idempotency-Key` header (story TD-2, AC 6),
- * shared by the 5 money-mutating forms (top-up, rettifica, vendita
- * pacchetto, registrazione volo, movimento cassa) plus (epic 12, story 12.4)
- * the manual PPR intake slide-over (`manual-ppr-form.tsx`) — data-creating,
- * not money-mutating, but the same "a network retry must replay, not
- * duplicate" contract applies. The key survives a
+ * shared by the money-mutating forms (top-up, rettifica, vendita
+ * pacchetto, registrazione volo, movimento cassa) — "a network retry must
+ * replay, not duplicate". The key survives a
  * NETWORK failure (the `fetch` call itself throws — offline, DNS, a dropped
  * connection mid-request — exactly the retry this protects: the caller must
  * reuse the SAME key so the server-side wrapper (`src/lib/api/handler.ts`)

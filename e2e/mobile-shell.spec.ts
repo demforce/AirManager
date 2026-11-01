@@ -47,13 +47,14 @@ test.describe('Mobile shell — tab bar and "Altro" sheet (story 15.1, AC 1/2/3)
     await expect(page.locator('.sidebar')).toBeHidden();
     await expect(page.locator('.topbar')).toBeHidden();
 
-    // AC 2: the template's own admin bar — 4 slots + "Altro".
+    // AC 2: the admin bar — the 3 slotted sections, the first unslotted one
+    // in registry order (Piloti), + "Altro".
     await expect(page.getByTestId('mobile-tab-overview')).toHaveAttribute('aria-current', 'page');
-    for (const id of ['overview', 'schedule', 'ppr', 'fleet']) {
+    for (const id of ['overview', 'schedule', 'fleet', 'pilots']) {
       await expect(page.getByTestId(`mobile-tab-${id}`)).toBeVisible();
     }
     await expect(page.getByTestId('mobile-tab-more')).toBeVisible();
-    // Nothing else made it into the bar (the other 8 items live in the sheet).
+    // Nothing else made it into the bar (the other 6 items live in the sheet).
     await expect(page.getByTestId('mobile-tab-bar').getByRole('link')).toHaveCount(4);
 
     // Navigation from the bar.
@@ -68,10 +69,10 @@ test.describe('Mobile shell — tab bar and "Altro" sheet (story 15.1, AC 1/2/3)
     await moreTab.click();
     await expect(page.getByTestId('mobile-more-sheet')).toBeVisible();
     await expect(moreTab).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.getByTestId('mobile-more-sheet').getByRole('link')).toHaveCount(8);
+    await expect(page.getByTestId('mobile-more-sheet').getByRole('link')).toHaveCount(6);
 
-    await page.getByTestId('mobile-more-pilots').click();
-    await expect(page).toHaveURL(/\/it\/dashboard\/pilots$/);
+    await page.getByTestId('mobile-more-instructors').click();
+    await expect(page).toHaveURL(/\/it\/dashboard\/instructors$/);
     await expect(page.getByTestId('mobile-more-sheet')).toHaveCount(0);
     // A route hidden behind "Altro" lights up the "Altro" tab itself.
     await expect(moreTab).toHaveClass(/active/);
@@ -135,7 +136,7 @@ test.describe('Mobile shell — tab bar and "Altro" sheet (story 15.1, AC 1/2/3)
     }
     // <= 5 items means no overflow sheet at all, and no admin route leaks in.
     await expect(page.getByTestId('mobile-tab-more')).toHaveCount(0);
-    await expect(page.getByTestId('mobile-tab-ppr')).toHaveCount(0);
+    await expect(page.getByTestId('mobile-tab-fleet')).toHaveCount(0);
 
     await page.getByTestId('mobile-tab-myAccount').click();
     await expect(page).toHaveURL(/\/it\/dashboard\/my-account$/);

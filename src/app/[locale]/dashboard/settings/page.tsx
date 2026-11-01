@@ -8,8 +8,6 @@ import {
   getAirfieldIcao,
   getMembershipFeeCents,
   getMetarStation,
-  getPprLandingFeeDefaultCents,
-  getPprOperatingInstructions,
   getSchedulingSettings,
   getSmtpSettings,
   getTreasurySettings,
@@ -111,8 +109,8 @@ function expiryTypeCardLabels(t: Translator, ns: 'ratings' | 'medical'): Ratings
  * `pdf-exports.spec.ts` drives it; name-only since story 13.8, AC 4). Port
  * of
  * `docs/design-reference/airops/src/SettingsView.jsx`: Club (identity +
- * ICAO + contact email + METAR station + PPR default fee/instructions +
- * quota associativa default), Pianificazione (booking window), Email
+ * ICAO + contact email + METAR station + quota associativa default),
+ * Pianificazione (booking window), Email
  * (SMTP, settings-first mailer + real test send), Abilitazioni + Visite
  * mediche (story 13.1, AC 3, R-13.1-a — TWO instances of the SAME
  * `RatingsCard` component split by `ExpiryType.kind`, the expiry-type
@@ -143,14 +141,12 @@ export default async function SettingsPage({ params }: PageProps) {
     return;
   }
 
-  const [branding, icao, contactEmail, metarStation, landingFeeCents, operatingInstructions, membershipFeeCents, schedulingSettings, smtpSettings, treasurySettings, expiryTypes, cashCategories] =
+  const [branding, icao, contactEmail, metarStation, membershipFeeCents, schedulingSettings, smtpSettings, treasurySettings, expiryTypes, cashCategories] =
     await Promise.all([
       getAirfieldBranding(),
       getAirfieldIcao(),
       getAirfieldContactEmail(),
       getMetarStation(),
-      getPprLandingFeeDefaultCents(actor),
-      getPprOperatingInstructions(actor),
       getMembershipFeeCents(actor),
       getSchedulingSettings(),
       getSmtpSettings(actor),
@@ -187,8 +183,6 @@ export default async function SettingsPage({ params }: PageProps) {
         // never as a value the admin didn't actually set) rather than
         // looking like a redundant override.
         metarStation={metarStation === icao ? '' : metarStation}
-        landingFeeCents={landingFeeCents}
-        operatingInstructions={operatingInstructions}
         membershipFeeCents={membershipFeeCents}
         labels={{
           title: t('club.title'),
@@ -205,10 +199,6 @@ export default async function SettingsPage({ params }: PageProps) {
           contactEmail: t('club.contactEmail'),
           metarStation: t('club.metarStation'),
           metarStationHint: t('club.metarStationHint'),
-          landingFee: t('club.landingFee'),
-          landingFeeHint: t('club.landingFeeHint'),
-          operatingInstructionsIt: t('club.operatingInstructionsIt'),
-          operatingInstructionsEn: t('club.operatingInstructionsEn'),
           membershipFee: t('club.membershipFee'),
           membershipFeeHint: t('club.membershipFeeHint'),
           save: t('club.save'),

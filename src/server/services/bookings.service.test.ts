@@ -1496,7 +1496,7 @@ const BASE_LOCKED_BOOKING: LockedBookingFixture = {
   endsAt: new Date(FUTURE_ENDS_AT),
 };
 
-/** Queues the booking-row lock read (`transitionBooking`'s FIRST `$queryRaw` call) — same `mockResolvedValueOnce` ordering trick as `ppr.service.test.ts`'s `mockLockedRequest`. A SECOND `$queryRaw` call (the Aircraft lock, APPROVE only) falls through to `beforeEach`'s base `queryRaw.mockResolvedValue(LOCKED_OPERATIONAL_AIRCRAFT)`. */
+/** Queues the booking-row lock read (`transitionBooking`'s FIRST `$queryRaw` call) — a `mockResolvedValueOnce`, so it is consumed by that first call only. A SECOND `$queryRaw` call (the Aircraft lock, APPROVE only) falls through to `beforeEach`'s base `queryRaw.mockResolvedValue(LOCKED_OPERATIONAL_AIRCRAFT)`. */
 function mockBookingLock(overrides: Partial<LockedBookingFixture> = {}): void {
   queryRaw.mockResolvedValueOnce([{ ...BASE_LOCKED_BOOKING, ...overrides }]);
 }

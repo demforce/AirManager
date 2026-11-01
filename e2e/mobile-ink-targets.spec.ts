@@ -292,12 +292,10 @@ test.describe('story 15.10 — the touch targets of the shared primitives (AC 5)
   });
 
   /**
-   * `.date-input-btn` had SIX anchored exceptions and five faces left at 24x24
-   * (logbook 1, movements 2, bookings 2, /dashboard/ppr 2). One rule now
-   * covers them all — including the public `/ppr`, whose 44x44 must NOT move
-   * (control measure: 15.9 set it, this rule lands on the same value).
+   * `.date-input-btn` had anchored exceptions and bare faces left at 24x24
+   * (logbook 1, bookings 2). One rule now covers them all.
    */
-  test('every calendar trigger is 44x44 at <=640 — the five bare faces, the ones already raised, and the public /ppr', async ({ page }) => {
+  test('every calendar trigger is 44x44 at <=640 — the bare faces and the ones already raised', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
 
@@ -317,7 +315,7 @@ test.describe('story 15.10 — the touch targets of the shared primitives (AC 5)
           }),
       );
 
-    for (const url of ['/it/dashboard/logbook', '/it/dashboard/movements', '/it/dashboard/bookings', '/it/dashboard/ppr', '/it/dashboard/billing', '/it/dashboard/settings']) {
+    for (const url of ['/it/dashboard/logbook', '/it/dashboard/bookings', '/it/dashboard/billing', '/it/dashboard/settings']) {
       await page.goto(url);
       await page.waitForSelector('.page');
       const triggers = await readTriggers();
@@ -329,18 +327,6 @@ test.describe('story 15.10 — the touch targets of the shared primitives (AC 5)
         expect(trigger.inputH, `${url}: the field itself`).toBeGreaterThanOrEqual(TARGET_FLOOR);
         expect(trigger.paddingRight).toBe('48px');
       }
-    }
-
-    // Control measure — the public module, outside the shell, must be EXACTLY
-    // where 15.9 left it.
-    await page.goto('/it/ppr');
-    await page.waitForSelector('.ppr-page');
-    const publicTriggers = await readTriggers();
-    expect(publicTriggers.length).toBeGreaterThan(0);
-    for (const trigger of publicTriggers) {
-      expect(trigger.w).toBe(44);
-      expect(trigger.h).toBe(44);
-      expect(trigger.paddingRight).toBe('48px');
     }
   });
 
@@ -506,119 +492,6 @@ test.describe('story 15.10 — the three page-level contrasts (AC 6)', () => {
   }
 });
 
-test.describe('story 15.10 — /dashboard/ppr, the surface built before the primitives (AC 7)', () => {
-  /**
-   * Pre-fix, measured at 320, 375 and 390: NINETEEN targets under 43.5 —
-   * `ppr-public-form-link` and `ppr-manual-button` at 34.84, the panel ✕ at
-   * 32, twelve `ManualPprForm` fields at 36.84/38.84, two calendar triggers at
-   * 24x24, `ppr-queue-filter-status` at 36 and `export-menu-trigger` at 34.84.
-   * Everything else was already right and must stay identical: `pageOverflow`
-   * 0, the card a `<button>` with zero interactive children.
-   *
-   * Review 15.10 MAJOR-1 — how "the card is untouched" is asserted, and why
-   * NOT with its height. `expect(cardHeight).toBe(82.83)` was a photograph of
-   * the FIRST row of a queue other specs write under `fullyParallel`: a
-   * 30-character fixture name ("Nega Test-1786045551936-hvgdm8") wraps at
-   * 320px and the same card measures 101.67, which turned the arbiter red 3
-   * times out of 3 and, with the `chromium` project red, kept the 39 tests of
-   * the serialized chain from running at all. What follows asserts the
-   * REQUIREMENT instead, and every value in it is content-INDEPENDENT: the box
-   * 15.2 gave the card (padding, border, floor, `display`), the typography of
-   * its two lines, and — the part that actually catches a 44px rule of this
-   * story reaching the card — that the card's height is nothing but its own
-   * box plus its content. A `min-height`, an extra padding or an inflated
-   * child would break that equation at ANY row content.
-   */
-  for (const width of [320, 375, 390]) {
-    test(`no target under the floor at ${width}px, and the card is untouched`, async ({ page }) => {
-      await loginExpectingDashboard(page, ADMIN_EMAIL);
-      await page.setViewportSize({ width, height: 812 });
-      await page.goto('/it/dashboard/ppr');
-      await page.waitForSelector('.page');
-
-      const small = await smallTargets(page, '.page');
-      expect(small, JSON.stringify(small)).toEqual([]);
-
-      const geometry = await page.evaluate(() => {
-        const round = (value: number) => Math.round(value * 100) / 100;
-        const px = (value: string) => round(Number.parseFloat(value));
-        const card = document.querySelector('[data-testid="ppr-row-mobile"]');
-        const pageOverflow = document.documentElement.scrollWidth - document.documentElement.clientWidth;
-        if (!card) return { pageOverflow, card: null, emptyStates: document.querySelectorAll('[data-testid="ppr-queue-empty"]').length };
-        const style = getComputedStyle(card);
-        const head = card.querySelector('.ppr-card-head');
-        const name = card.querySelector('.ppr-card-name');
-        const sub = card.querySelector('.ppr-card-sub');
-        return {
-          pageOverflow,
-          emptyStates: document.querySelectorAll('[data-testid="ppr-queue-empty"]').length,
-          card: {
-            tag: card.tagName.toLowerCase(),
-            interactiveChildren: card.querySelectorAll('a,button,input,select,textarea').length,
-            height: round(card.getBoundingClientRect().height),
-            headHeight: head ? round(head.getBoundingClientRect().height) : null,
-            box: {
-              paddingTop: px(style.paddingTop),
-              paddingBottom: px(style.paddingBottom),
-              borderTop: px(style.borderTopWidth),
-              borderBottom: px(style.borderBottomWidth),
-              minHeight: px(style.minHeight),
-              display: style.display,
-            },
-            nameFontSize: name ? getComputedStyle(name).fontSize : null,
-            // Every `min-height` INSIDE the card: the touch-floor rules of
-            // this story must not reach a single node of it.
-            floorsInside: [...card.querySelectorAll('*')]
-              .map((node) => getComputedStyle(node).minHeight)
-              .filter((value) => value !== '0px' && value !== 'auto'),
-            subClipping: sub ? [getComputedStyle(sub).whiteSpace, getComputedStyle(sub).overflow, getComputedStyle(sub).textOverflow].join(' ') : null,
-          },
-        };
-      });
-      expect(geometry.pageOverflow).toBeLessThanOrEqual(0);
-
-      if (geometry.card === null) {
-        // No row on this DB — then the queue must be showing its empty state,
-        // so the branch is visible instead of silently skipped.
-        expect(geometry.emptyStates, 'an empty queue renders exactly one empty state').toBe(1);
-        return;
-      }
-      const card = geometry.card;
-      expect(card.tag).toBe('button');
-      expect(card.interactiveChildren).toBe(0);
-      // The box 15.2 gave it, untouched by the target floor of this story.
-      expect(card.box).toEqual({ paddingTop: 11, paddingBottom: 11, borderTop: 1, borderBottom: 0, minHeight: 44, display: 'block' });
-      expect(card.nameFontSize).toBe('13px');
-      expect(card.floorsInside, 'no 44px floor rule of this story reaches inside the card').toEqual([]);
-      // The sub still contains its own overflow (lesson 15.5 F1 in reverse).
-      expect(card.subClipping).toBe('nowrap hidden ellipsis');
-      // Height = its own box + its content, never a floor of its own: with a
-      // 44px rule reaching the card this equation is what breaks, whatever the
-      // row happens to contain.
-      const explained = Math.max(44, card.headHeight! + card.box.paddingTop + card.box.paddingBottom + card.box.borderTop);
-      expect(card.height, `head ${card.headHeight} + box ${JSON.stringify(card.box)}`).toBeCloseTo(explained, 1);
-      expect(card.height).toBeGreaterThanOrEqual(44);
-    });
-  }
-
-  /**
-   * The same form is mounted by `/dashboard/movements` ("Registra arrivo"):
-   * the rule reaches both. The root is the whole open panel, not just the
-   * `<form>`: since review 15.10 LOW-4 the primary action lives in `.so-foot`,
-   * OUTSIDE the form, and a sweep rooted on the form would stop covering it.
-   */
-  test('the shared ManualPprForm has no small target on /dashboard/movements either', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.setViewportSize(PHONE);
-    await page.goto('/it/dashboard/movements');
-    await page.waitForSelector('.page');
-    await page.getByTestId('log-arrival-button').click();
-    await expect(page.getByTestId('manual-ppr-form')).toBeVisible();
-    const small = await smallTargets(page, '.slideover.open .slideover-panel');
-    expect(small, JSON.stringify(small)).toEqual([]);
-  });
-});
-
 test.describe('story 15.10 — the two minors (R-15.10-h, R-15.10-l)', () => {
   /**
    * R-15.10-h: on `/dashboard/my-account` the page head already says "Le mie
@@ -709,8 +582,8 @@ test.describe('story 15.10 — the two minors (R-15.10-h, R-15.10-l)', () => {
   test('the bars that touch a screen edge declare their safe-area inset, and at inset 0 nothing moves', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
-    // The flight editor, not the PPR panel: this panel has carried a `.so-foot`
-    // since 12.x, so the guard measures the CSS and only the CSS.
+    // The flight editor: this panel has carried a `.so-foot` since 12.x, so
+    // the guard measures the CSS and only the CSS.
     await page.goto('/it/dashboard/logbook');
     await page.waitForSelector('.page');
     await page.getByTestId('logbook-new-button').click();

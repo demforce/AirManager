@@ -368,8 +368,8 @@ const EXPIRED_EXPIRES_AT = '2020-06-01';
 function soonestFutureSlot(): { startsAt: string; endsAt: string } {
   // datetime-local inputs are wall-clock time: render LOCAL components, never
   // toISOString() (UTC) — off-UTC that shifts "now + 10min" into the past and
-  // the server rejects the booking (same class as the ppr-register:292 lesson;
-  // invisible on CI only because CI runs UTC).
+  // the server rejects the booking (invisible on CI only because CI runs
+  // UTC).
   const toDatetimeLocal = (d: Date): string => {
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;

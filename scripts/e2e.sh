@@ -15,7 +15,7 @@
 # went. Never re-run the suite to find out.
 #
 # Usage:
-#   scripts/e2e.sh start [playwright args...]   # e.g. start e2e/ppr-queue.spec.ts
+#   scripts/e2e.sh start [playwright args...]   # e.g. start e2e/bookings.spec.ts
 #   scripts/e2e.sh status [tail-lines]
 #   scripts/e2e.sh stop
 #

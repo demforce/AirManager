@@ -52,7 +52,6 @@ export type MobileAlertsCardProps = {
 const KIND_ICON: Record<OverviewAlertKind, (typeof Icon)['clock']> = {
   expiry: Icon.clock,
   negativeBalance: Icon.cash,
-  pprPending: Icon.plane,
 };
 
 export function MobileAlertsCard({ items, locale, labels, hiddenCount, hiddenCountIsFloor, moreHref }: MobileAlertsCardProps) {

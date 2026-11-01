@@ -52,17 +52,9 @@ function uniqueRegistration(prefix: string): string {
   return `I-${prefix}${uniqueSuffix().replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase()}`;
 }
 
-function uniqueFakeIp(): string {
-  return `e2e-reports-${uniqueSuffix()}`;
-}
-
 /** `YYYY-MM-DD` "today" in UTC — the same convention `flight-log.spec.ts#registerFlight` relies on (`T10:00:00.000Z`, comfortably clear of any midnight boundary). */
 function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function futureIso(hoursFromNow: number): string {
-  return new Date(Date.now() + hoursFromNow * 3_600_000).toISOString();
 }
 
 async function createPilotPerson(page: Page, tag: string): Promise<{ personId: string; firstName: string; lastName: string }> {
@@ -149,48 +141,11 @@ async function registerFlight(page: Page, params: RegisterFlightParams): Promise
   };
 }
 
-/** Creates + approves + completes a PPR request (a "transit" in `getStats`'s ratified definition) — `eta` a couple of hours from now, comfortably inside TODAY's Rome calendar month. */
-async function createCompletedTransit(page: Page, landingFeeCents: number): Promise<void> {
-  const registration = uniqueRegistration('T');
-  const createResponse = await page.request.post('/api/v1/ppr-requests', {
-    headers: { 'x-forwarded-for': uniqueFakeIp() },
-    data: {
-      firstName: 'Transito',
-      lastName: `Rep-${uniqueSuffix()}`,
-      email: `transit-${uniqueSuffix()}@e2e.airmanager.local`,
-      phone: '+39 333 0000000',
-      aircraftRegistration: registration,
-      aircraftType: 'Cessna 172',
-      origin: 'LIRN Napoli',
-      destination: 'LIRU Urbe',
-      eta: futureIso(2),
-      personsOnBoard: 1,
-      locale: 'it',
-    },
-  });
-  expect(createResponse.status()).toBe(201);
-
-  const listResponse = await page.request.get('/api/v1/ppr-requests?status=PENDING&pageSize=100');
-  expect(listResponse.status()).toBe(200);
-  const list = (await listResponse.json()) as { items: { id: string; aircraftRegistration: string }[] };
-  const match = list.items.find((item) => item.aircraftRegistration === registration);
-  if (!match) throw new Error(`PENDING PprRequest ${registration} not found`);
-
-  const approveResponse = await page.request.post(`/api/v1/ppr-requests/${match.id}/approve`);
-  expect(approveResponse.status()).toBe(200);
-
-  const completeResponse = await page.request.post(`/api/v1/ppr-requests/${match.id}/complete`, {
-    data: { landingFeeCents, paymentMethod: 'CASH' },
-    headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
-  });
-  expect(completeResponse.status()).toBe(200);
-}
-
 type StatsDto = {
-  kpis: { revenueCents: number; flightMinutes: number; movements: number; transitShare: number; fleetUtilization: number | null };
-  series: { months: string[]; revenueCents: number[]; flightMinutes: number[]; transitMovements: number[] };
+  kpis: { revenueCents: number; flightMinutes: number; movements: number; fleetUtilization: number | null };
+  series: { months: string[]; revenueCents: number[]; flightMinutes: number[] };
   fleet: { registration: string; minutes: number; revenueCents: number }[];
-  movementMix: { key: 'SCHOOL' | 'TOURISM' | 'AERIAL_WORK' | 'TRANSIT'; count: number }[];
+  movementMix: { key: 'SCHOOL' | 'TOURISM' | 'AERIAL_WORK'; count: number }[];
   instructors: { name: string; minutes: number; owedCents: number | null }[];
   topPilots: { name: string; minutes: number; spentCents: number }[];
 };
@@ -233,7 +188,7 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
     await context.close();
   });
 
-  test('a real fixture (2 flights, 1 completed transit) moves the KPIs/mix by EXACTLY the right delta, and populates fleet/instructor/topPilot rows exactly (AC 1/3/4)', async ({ page }) => {
+  test('a real fixture (2 flights) moves the KPIs/mix by EXACTLY the right delta, and populates fleet/instructor/topPilot rows exactly (AC 1/3/4)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const before = await fetchStats(page, 'month');
@@ -257,19 +212,17 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
       minutes: 30,
       takeoffTimeUtc: '12:00',
     });
-    // 1 completed transit, landing fee 2500c.
-    await createCompletedTransit(page, 2500);
 
     const after = await fetchStats(page, 'month');
 
     const expectedFlightRevenue = schoolFlight.aircraftAmountCents + schoolFlight.instructorAmountCents + tourismFlight.aircraftAmountCents;
-    expect(after.kpis.revenueCents - before.kpis.revenueCents).toBe(expectedFlightRevenue + 2500);
+    expect(after.kpis.revenueCents - before.kpis.revenueCents).toBe(expectedFlightRevenue);
     expect(after.kpis.flightMinutes - before.kpis.flightMinutes).toBe(90);
-    expect(after.kpis.movements - before.kpis.movements).toBe(3); // 2 flights + 1 transit
+    expect(after.kpis.movements - before.kpis.movements).toBe(2); // 2 flights
     expect(mixCount(after, 'SCHOOL') - mixCount(before, 'SCHOOL')).toBe(1);
     expect(mixCount(after, 'TOURISM') - mixCount(before, 'TOURISM')).toBe(1);
     expect(mixCount(after, 'AERIAL_WORK') - mixCount(before, 'AERIAL_WORK')).toBe(0);
-    expect(mixCount(after, 'TRANSIT') - mixCount(before, 'TRANSIT')).toBe(1);
+    expect(after.movementMix.map((mix) => mix.key)).toEqual(['SCHOOL', 'TOURISM', 'AERIAL_WORK']);
 
     // Uniquely-identified rows: exact assertions, no delta needed.
     const fleetRow = after.fleet.find((row) => row.registration === aircraft.registration);
@@ -345,7 +298,7 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
 
   // --- fleetUtilization (story 12.11, AC 6 — closes ratifica utente 2 from 12.10) ---
 
-  test('fleetUtilization: once sched.openTime/closeTime are configured, the API returns a number and the 5th KPI card renders (positive assertion — scheduling settings are process-wide and may already be configured by other specs, so absence is not asserted here)', async ({ page }) => {
+  test('fleetUtilization: once sched.openTime/closeTime are configured, the API returns a number and the 4th KPI card renders (positive assertion — scheduling settings are process-wide and may already be configured by other specs, so absence is not asserted here)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const schedResponse = await page.request.put('/api/v1/settings/scheduling', {
@@ -359,6 +312,6 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
 
     await page.goto('/it/dashboard/reports');
     const kpiValues = page.locator('.kpi-row .kpi .kpi-value');
-    await expect(kpiValues).toHaveCount(5);
+    await expect(kpiValues).toHaveCount(4);
   });
 });

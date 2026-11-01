@@ -1,11 +1,10 @@
 import { KPI } from 'airops';
 
-// Panoramica KPI row (dashboard/page.tsx): five KPIs inside `.kpi-row`.
+// Panoramica KPI row (dashboard/page.tsx): four KPIs inside `.kpi-row`.
 export const OverviewRow = () => (
   <div className="kpi-row">
     <KPI label="Voli oggi" value={12} />
     <KPI label="Flotta disponibile" value={4} unit="/ 6" />
-    <KPI label="PPR in attesa" value={3} />
     <KPI label="Prenotazioni in attesa" value={5} />
     <KPI label="Ricavi del mese" value="€ 18.420,00" />
   </div>

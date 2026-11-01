@@ -305,8 +305,8 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
           <h2 className="card-title">{t('personalData.heading')}</h2>
         </div>
         {/* `person-identity` is the anchor of the phone wrap rule (review 15.5
-            F5): `.info-row` is shared with the PUBLIC `/ppr` module (story
-            15.9), so the selector must not be a descendant one. */}
+            F5): `.info-row` is a shared class, so the selector must not be a
+            descendant one. */}
         <div className="card-body person-identity">
           {personalDataRows.map((row) => (
             <div className="info-row" key={row.label}>

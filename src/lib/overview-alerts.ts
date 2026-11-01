@@ -1,13 +1,12 @@
 /**
  * "Avvisi" feed of the mobile Panoramica (story 15.3, AC 4, ratifica
- * R-15.3-e) — PURE merge + urgency ordering + cap over the three sources the
+ * R-15.3-e) — PURE merge + urgency ordering + cap over the two sources the
  * app really has:
  *
  * 1. **scadenze** — `listAllExpiries(actor, {window:'60'})`, already fetched by
  *    the Panoramica for `ScadenzeWidget` (no new query);
  * 2. **saldi negativi** — `listNegativeBalances(actor)` (`finance.manage`), the
- *    ONE query ratifica R-15.3-e accepted as new on the home;
- * 3. **PPR in attesa** — already counted for the KPI and the sub-line.
+ *    ONE query ratifica R-15.3-e accepted as new on the home.
  *
  * It lives here, pure, because the ORDER and the CAP are the two things an
  * e2e cannot prove: fabricating 40 negative balances and a dozen overdue
@@ -16,10 +15,10 @@
  * here, and the e2e only proves that a real fixture reaches the card.
  *
  * Ratified order (R-15.3-e), read as ranks: scaduto -> saldo negativo -> in
- * scadenza <=7g -> PPR in attesa. The two remaining scadenza tiers (<=30g,
- * <=60g) rank BELOW the PPR line rather than being dropped: on mobile this
- * feed REPLACES `ScadenzeWidget` (ratifica R-15.3-d), whose default window is
- * 30 days, so dropping them would make the phone show strictly less than the
+ * scadenza <=7g. The two remaining scadenza tiers (<=30g, <=60g) rank BELOW
+ * them rather than being dropped: on mobile this feed REPLACES
+ * `ScadenzeWidget` (ratifica R-15.3-d), whose default window is 30 days, so
+ * dropping them would make the phone show strictly less than the
  * desktop — the opposite of the epic's parity rule. The cap then hides them
  * first, which is exactly the intent of the ratified order.
  *
@@ -29,7 +28,7 @@
 import { tierOf } from './expiry-status';
 
 /** Every voice is verifiable at its source (AC 4): the kind says which source produced it. */
-export type OverviewAlertKind = 'expiry' | 'negativeBalance' | 'pprPending';
+export type OverviewAlertKind = 'expiry' | 'negativeBalance';
 
 /** Reuses `.list-icon`'s calibrated tones (13.9) — no new colour is introduced for this feed. */
 export type OverviewAlertTone = 'red' | 'amber';
@@ -55,7 +54,6 @@ export type OverviewAlertNegativeBalance = {
 export type OverviewAlertsInput = {
   expiries: readonly OverviewAlertExpiry[];
   negativeBalances: readonly OverviewAlertNegativeBalance[];
-  pprPendingCount: number;
   /**
    * The cap the caller applied when FETCHING `expiries`
    * (`EXPIRIES_WIDGET_SCAN_LIMIT`). When the fetch came back full, this feed
@@ -68,8 +66,7 @@ export type OverviewAlertsInput = {
 
 export type OverviewAlert =
   | { key: string; kind: 'expiry'; tone: OverviewAlertTone; href: string; expiry: OverviewAlertExpiry }
-  | { key: string; kind: 'negativeBalance'; tone: 'red'; href: string; balance: OverviewAlertNegativeBalance }
-  | { key: string; kind: 'pprPending'; tone: 'amber'; href: string; count: number };
+  | { key: string; kind: 'negativeBalance'; tone: 'red'; href: string; balance: OverviewAlertNegativeBalance };
 
 export type OverviewAlerts = {
   /** At most `limit` voices, most urgent first. */
@@ -98,14 +95,12 @@ export type OverviewAlerts = {
 export const OVERVIEW_ALERTS_LIMIT = 5;
 
 const EXPIRIES_HREF = '/dashboard/expiries';
-const PPR_HREF = '/dashboard/ppr';
 /** Where the negative-balance LIST lives (`listNegativeBalances`' only other caller today). A single voice deep-links to its person instead. */
 const BALANCES_HREF = '/dashboard/billing';
 
 const DOMAIN_HREF: Record<OverviewAlertKind, string> = {
   expiry: EXPIRIES_HREF,
   negativeBalance: BALANCES_HREF,
-  pprPending: PPR_HREF,
 };
 
 /** Lower = more urgent. See the ratified order in the module doc-comment. */
@@ -120,8 +115,6 @@ function rankOf(alert: OverviewAlert): number {
     }
     case 'negativeBalance':
       return 1;
-    case 'pprPending':
-      return 3;
   }
 }
 
@@ -132,8 +125,6 @@ function weightOf(alert: OverviewAlert): number {
       return alert.expiry.daysUntil;
     case 'negativeBalance':
       return alert.balance.balanceCents;
-    case 'pprPending':
-      return 0;
   }
 }
 
@@ -161,10 +152,6 @@ export function buildOverviewAlerts(input: OverviewAlertsInput, limit: number = 
       href: `/dashboard/people/${balance.personId}`,
       balance,
     });
-  }
-
-  if (input.pprPendingCount > 0) {
-    all.push({ key: 'ppr:pending', kind: 'pprPending', tone: 'amber', href: PPR_HREF, count: input.pprPendingCount });
   }
 
   // `key` as the final tiebreak: two scadenze of the same person on the same

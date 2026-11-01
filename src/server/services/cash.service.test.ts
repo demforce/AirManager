@@ -139,7 +139,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(result[1]).toEqual({ id: 'cat_2', name: 'Obsoleta', isActive: false, movementCount: 0, isSystem: false });
     });
 
-    it.each(['Ricariche', 'PPR', 'Compensi istruttori'])(
+    it.each(['Ricariche', 'Compensi istruttori'])(
       '"%s" is flagged isSystem: true — a pure function of the name, nothing seeded (review Billing-1 F2)',
       async (name) => {
         categoryFindMany.mockResolvedValue([{ id: 'cat_sys', name, isActive: true, _count: { movements: 0 } }]);
@@ -193,7 +193,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(categoryUpdateMock).not.toHaveBeenCalled();
     });
 
-    it.each(['PPR', 'Compensi istruttori'])(
+    it.each(['Ricariche', 'Compensi istruttori'])(
       'the system category "%s" is never renameable either (review Billing-1 F2 — same exposure as "Ricariche")',
       async (name) => {
         categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name });
@@ -315,7 +315,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(categoryDeleteMock).not.toHaveBeenCalled();
     });
 
-    it.each(['PPR', 'Compensi istruttori'])(
+    it.each(['Ricariche', 'Compensi istruttori'])(
       'the system category "%s" is never deletable either, even when unused (review Billing-1 F2 — same exposure as "Ricariche")',
       async (name) => {
         categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name, _count: { movements: 0 } });
@@ -343,7 +343,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
 
-    it.each(['PPR', 'Compensi istruttori'])(
+    it.each(['Ricariche', 'Compensi istruttori'])(
       'rejects a manual movement in the system category "%s" too (review Billing-1 F2 — same exposure as "Ricariche")',
       async (name) => {
         categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name, isActive: true });
@@ -378,7 +378,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       movementCreate.mockResolvedValue({
         id: 'move_1',
         categoryId: 'cat_1',
-        category: { name: 'PPR' },
+        category: { name: 'Carburante' },
         amountCents: 5000,
         effectiveDate: new Date('2026-07-01T00:00:00.000Z'),
         description: null,
@@ -412,7 +412,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(result).toEqual({
         id: 'move_1',
         categoryId: 'cat_1',
-        categoryName: 'PPR',
+        categoryName: 'Carburante',
         amountCents: 5000,
         effectiveDate: '2026-07-01',
         description: null,
@@ -519,7 +519,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       movementCreate.mockResolvedValue({
         id: 'move_reversal',
         categoryId: 'cat_1',
-        category: { name: 'PPR' },
+        category: { name: 'Carburante' },
         amountCents: -5000,
         effectiveDate: new Date(),
         description: 'Importo errato',
@@ -569,7 +569,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
         movementCreate.mockResolvedValue({
           id: 'move_reversal',
           categoryId: 'cat_1',
-          category: { name: 'PPR' },
+          category: { name: 'Carburante' },
           amountCents: -5000,
           effectiveDate: parseDateOnlyUtc('2026-09-01'),
           description: 'Importo errato',
@@ -690,7 +690,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       movementUpdate.mockResolvedValue({
         id: 'move_1',
         categoryId: 'cat_1',
-        category: { name: 'PPR' },
+        category: { name: 'Carburante' },
         amountCents: 3500,
         effectiveDate: new Date('2026-05-01'),
         description: 'Tassa atterraggio in contanti',
@@ -715,7 +715,7 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
     const baseRow = {
       id: 'move_1',
       categoryId: 'cat_1',
-      category: { name: 'PPR' },
+      category: { name: 'Carburante' },
       amountCents: 5000,
       effectiveDate: new Date('2026-07-01T00:00:00.000Z'),
       description: null,
@@ -809,14 +809,14 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
 
     it('mixed in/out across multiple categories: per-category and overall totals are correct', async () => {
       queryRawMock.mockResolvedValue([
-        { categoryId: 'cat_ppr', categoryName: 'PPR', movementCount: 2, inCents: 10000, outCents: -2000 },
+        { categoryId: 'cat_hangar', categoryName: 'Hangar', movementCount: 2, inCents: 10000, outCents: -2000 },
         { categoryId: 'cat_fuel', categoryName: 'Carburante', movementCount: 1, inCents: 0, outCents: -3000 },
       ]);
 
       const result = await getCashReport(adminActor(), { from: '2026-07-01', to: '2026-07-31' });
 
       expect(result.categories).toEqual([
-        { categoryId: 'cat_ppr', categoryName: 'PPR', inCents: 10000, outCents: -2000, netCents: 8000 },
+        { categoryId: 'cat_hangar', categoryName: 'Hangar', inCents: 10000, outCents: -2000, netCents: 8000 },
         { categoryId: 'cat_fuel', categoryName: 'Carburante', inCents: 0, outCents: -3000, netCents: -3000 },
       ]);
       expect(result.totalInCents).toBe(10000);

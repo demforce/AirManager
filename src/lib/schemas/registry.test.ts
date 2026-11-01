@@ -73,14 +73,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/bookings/calendar',
         '/api/v1/bookings/{id}',
         '/api/v1/bookings/{id}/cancel',
-        '/api/v1/ppr-requests',
-        '/api/v1/ppr-requests/pdf',
-        '/api/v1/ppr-requests/{id}/approve',
-        '/api/v1/ppr-requests/{id}/reject',
-        '/api/v1/ppr-requests/{id}/complete',
-        '/api/v1/ppr-requests/{id}/cancel',
-        '/api/v1/settings/ppr-operating-instructions',
-        '/api/v1/settings/ppr-landing-fee',
         '/api/v1/people/{id}/account/pdf',
         '/api/v1/cash-report/pdf',
         '/api/v1/flights/pdf',
@@ -181,71 +173,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(Object.keys(cancelBooking?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
   });
 
-  it('documents 201/422/429/500 responses and NO security requirement on the public PPR endpoint (story 8.1, AC 1/2)', () => {
-    const createPprRequest = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; security?: unknown[] }>>)[
-      '/api/v1/ppr-requests'
-    ]?.['post'];
-    expect(Object.keys(createPprRequest?.responses ?? {}).sort()).toEqual(['201', '422', '429', '500']);
-    expect(createPprRequest?.security).toEqual([]);
-  });
-
-  it('documents the CreatePprRequestRequest/PprRequestCreatedResponse schemas including the honeypot field (story 8.1, AC 2)', () => {
-    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
-    expect(schemas?.['CreatePprRequestRequest']?.properties).toHaveProperty('website');
-    expect(schemas?.['CreatePprRequestRequest']?.properties).toHaveProperty('locale');
-    expect(schemas?.['PprRequestCreatedResponse']?.properties).toHaveProperty('status');
-  });
-
-  describe('PPR staff approval queue (story 8.2, AC 1/2)', () => {
-    it('documents 200/401/403/422/500 on the GET list endpoint, WITH a cookieAuth security requirement (unlike the public POST)', () => {
-      const listPprRequests = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; security?: unknown[] }>>)[
-        '/api/v1/ppr-requests'
-      ]?.['get'];
-      expect(Object.keys(listPprRequests?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
-      expect(listPprRequests?.security).toEqual([{ cookieAuth: [] }]);
-    });
-
-    it('documents 200/401/403/404/409/500 on the approve endpoint and references the IdempotencyKey header', () => {
-      const approve = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; parameters?: Array<{ $ref?: string }> }>>)[
-        '/api/v1/ppr-requests/{id}/approve'
-      ]?.['post'];
-      expect(Object.keys(approve?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '500']);
-      const refs = (approve?.parameters ?? []).map((param) => param.$ref);
-      expect(refs).toContain('#/components/parameters/IdempotencyKey');
-    });
-
-    it('documents 200/401/403/404/409/422/500 on the reject endpoint and references the IdempotencyKey header', () => {
-      const reject = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; parameters?: Array<{ $ref?: string }> }>>)[
-        '/api/v1/ppr-requests/{id}/reject'
-      ]?.['post'];
-      expect(Object.keys(reject?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
-      const refs = (reject?.parameters ?? []).map((param) => param.$ref);
-      expect(refs).toContain('#/components/parameters/IdempotencyKey');
-    });
-
-    it('documents the PprRequest schema with pprNumber/rejectionReason, never submitterIp', () => {
-      const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
-      const pprRequest = schemas?.['PprRequest'];
-      expect(pprRequest?.properties).toHaveProperty('pprNumber');
-      expect(pprRequest?.properties).toHaveProperty('rejectionReason');
-      expect(pprRequest?.properties).not.toHaveProperty('submitterIp');
-    });
-
-    it('documents 200/401/403/500 GET and 200/401/403/422/500 PUT on the operating-instructions settings endpoint', () => {
-      const paths = doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>;
-      const get = paths['/api/v1/settings/ppr-operating-instructions']?.['get'];
-      const put = paths['/api/v1/settings/ppr-operating-instructions']?.['put'];
-      expect(Object.keys(get?.responses ?? {}).sort()).toEqual(['200', '401', '403', '500']);
-      expect(Object.keys(put?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
-    });
-
-    it('documents the PprOperatingInstructions schema with it/en', () => {
-      const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
-      expect(schemas?.['PprOperatingInstructions']?.properties).toHaveProperty('it');
-      expect(schemas?.['PprOperatingInstructions']?.properties).toHaveProperty('en');
-    });
-  });
-
   describe('PDF exports (story 10.2, FR-40)', () => {
     const paths = doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; security?: unknown[] }>>;
 
@@ -255,12 +182,11 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       expect(route?.responses?.['200']).toMatchObject({ content: { 'application/pdf': {} } });
     });
 
-    it('documents 200/401/403/422/500 on the cash report, flights, expiries, PPR requests, and bookings PDF routes', () => {
+    it('documents 200/401/403/422/500 on the cash report, flights, expiries, and bookings PDF routes', () => {
       for (const path of [
         '/api/v1/cash-report/pdf',
         '/api/v1/flights/pdf',
         '/api/v1/expiries/pdf',
-        '/api/v1/ppr-requests/pdf',
         '/api/v1/bookings/pdf',
       ] as const) {
         const route = paths[path]?.['get'];

@@ -4,11 +4,11 @@
 // `prisma db seed`): this script populates a realistic aviosuperficie —
 // 2 admin (owner + operations) + 9 members (2 instructors, 6 pilots, 1
 // student), 3 aircraft with rate history, expiries, top-ups, ~24 registered
-// flights, upcoming bookings in every workflow state, and PPR traffic.
+// flights and upcoming bookings in every workflow state.
 //
 // Domain data goes through the REAL services (registerFlight, recordTopUp,
-// createBooking, ...) so every invariant holds (charges, hour meters, balances,
-// PPR numbering); only catalogue/anagrafica rows are raw creates, mirroring
+// createBooking, ...) so every invariant holds (charges, hour meters,
+// balances); only catalogue/anagrafica rows are raw creates, mirroring
 // `prisma/seed.ts`'s own idiom.
 //
 // Assumes a FRESHLY migrated, EMPTY domain DB (guard below) and the machine's
@@ -21,7 +21,6 @@ import type { Actor } from '../src/server/auth/rbac';
 import { recordTopUp } from '../src/server/services/accounts.service';
 import { registerFlight } from '../src/server/services/flights.service';
 import { createBooking, transitionBooking } from '../src/server/services/bookings.service';
-import { createManualPprRequest, completePprRequest } from '../src/server/services/ppr.service';
 import { recordPayout } from '../src/server/services/instructor-compensation.service';
 import { setSchedulingSettings, setMetarStation, setMembershipFeeCents } from '../src/server/services/app-settings.service';
 import type { Role, PaymentMethod, FlightType } from '../src/generated/prisma/client';
@@ -103,7 +102,7 @@ const DEMO_PEOPLE: DemoPerson[] = [
 
 // Story Billing-1 (AC 4): "Compensi istruttori" — the instructor payout's
 // automatic money twin (`instructor-compensation.service.ts#recordPayout`).
-const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
+const CASH_CATEGORY_NAMES = ['Ricariche', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
 
 // Story 13.1 (AC 1): `kind` splits RATING from MEDICAL — the person editor
 // renders them as two separate chip groups, so a medical typed as a rating
@@ -491,28 +490,6 @@ async function main(): Promise<void> {
   const denied = await book(pilotActor('davide.marchetti@gmail.com'), 'davide.marchetti@gmail.com', 'I-B412', 4, 16, 0, 17, 30);
   await transitionBooking(admin, denied, { to: 'DENIED', reason: 'Manutenzione programmata: sostituzione elica, velivolo fermo tutto il giorno.' });
   console.log('Seed: 6 bookings ready (3 approved, 2 pending, 1 denied).');
-
-  // PPR traffic — one completed (with landing fee), one approved, one pending.
-  const completedPpr = await createManualPprRequest(admin, {
-    firstName: 'Andreas', lastName: 'Keller', email: 'a.keller@web.de', phone: '+49 171 5502211',
-    aircraftRegistration: 'D-EKPT', aircraftType: 'Cessna 172S', origin: 'Bolzano (LIPB)', destination: AIRFIELD_NAME,
-    eta: daysFromNow(-1, 11, 20).toISOString(), etd: daysFromNow(-1, 16, 0).toISOString(),
-    personsOnBoard: 2, notes: 'Sosta pranzo e rifornimento.', locale: 'en', approveImmediately: true,
-  }, { approveImmediately: true });
-  await completePprRequest(admin, completedPpr.id, { landingFeeCents: 2500, paymentMethod: 'CASH' });
-  await createManualPprRequest(admin, {
-    firstName: 'Jean', lastName: 'Moreau', email: 'j.moreau@orange.fr', phone: '+33 6 44 71 08 92',
-    aircraftRegistration: 'F-HBGA', aircraftType: 'Robin DR401', origin: 'Cannes (LFMD)', destination: AIRFIELD_NAME,
-    eta: daysFromNow(1, 10, 30).toISOString(), etd: daysFromNow(1, 17, 30).toISOString(),
-    personsOnBoard: 3, locale: 'en', approveImmediately: true,
-  }, { approveImmediately: true });
-  await createManualPprRequest(admin, {
-    firstName: 'Martin', lastName: 'Novak', email: 'm.novak@seznam.cz', phone: '+420 736 220 418',
-    aircraftRegistration: 'OK-VPR', aircraftType: 'Cirrus SR20', origin: 'Praga-Letnany (LKLT)', destination: AIRFIELD_NAME,
-    eta: daysFromNow(3, 9, 45).toISOString(),
-    personsOnBoard: 2, notes: 'Tappa di un giro turistico in Italia, chiede parcheggio per due notti.', locale: 'en', approveImmediately: false,
-  });
-  console.log('Seed: 3 PPR requests ready (1 completed with landing fee, 1 approved, 1 pending).');
 
   console.log('\nDemo seed complete. Login: admin@airmanager.local (password: SEED_ADMIN_PASSWORD from .env).');
 }

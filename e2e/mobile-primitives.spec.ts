@@ -5,11 +5,10 @@ import type { Page } from '@playwright/test';
  * Story 15.2 — geometry guards for the three mobile primitives (epic 15, R3).
  *
  * Everything here is PURELY GEOMETRIC: it opens panels and measures boxes,
- * and it never approves, rejects or saves anything. That is why it can live
- * outside `ppr-queue.spec.ts`'s serial describe and stay in the default
- * `fullyParallel` project — it writes no global state at all (no AppSettings,
- * no PPR decision, no booking), so it cannot move another spec's page
- * boundaries under its feet (lesson 12.11 F1).
+ * and it never approves, rejects or saves anything. That is why it can stay
+ * in the default `fullyParallel` project — it writes no global state at all
+ * (no AppSettings, no decision, no booking), so it cannot move another spec's
+ * page boundaries under its feet (lesson 12.11 F1).
  *
  * Each test is the guard of one rule introduced for a MEASURED defect (AC 10);
  * the comment above each one names the rule and what the pre-fix state looked
@@ -44,35 +43,6 @@ function reachable(el: HTMLElement): boolean {
 
 test.describe('story 15.2 — mobile primitives (geometry only, no state written)', () => {
   /**
-   * Rules (i)/(ii) — `.ppr-queue-desktop`/`.ppr-queue-mobile` `display: none`
-   * on the inactive side — are guarded in `ppr-queue.spec.ts` instead: both
-   * trees only exist when the queue has at least one row, and creating that
-   * row means touching the PENDING queue's shared page boundaries, which is
-   * precisely what that file's serial describe exists for. What IS asserted
-   * here is the half that needs NO row: the empty state stays ONE node
-   * (AC 3), not one per tree.
-   */
-  test('the two trees stay in 1:1 correspondence and the empty state is exactly one node when (and only when) the queue is empty', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    await page.setViewportSize(PHONE);
-
-    // Deliberately NOT "navigate to a status that should be empty": no PPR
-    // status is empty by construction on a shared DB (`movements.spec.ts`
-    // completes and cancels requests, this file's siblings approve and
-    // reject them), and a first attempt at that flaked on the full suite.
-    // The invariant is asserted against whatever the queue actually holds,
-    // which makes it deterministic AND stronger: it also catches a card list
-    // that drifts out of step with the table.
-    for (const status of ['PENDING', 'APPROVED', 'REJECTED', 'COMPLETED', 'CANCELLED'] as const) {
-      await page.goto(`/it/dashboard/ppr?status=${status}`);
-      await expect(page.getByTestId('ppr-queue')).toBeVisible();
-      const rows = await page.getByTestId('ppr-row').count();
-      expect(await page.getByTestId('ppr-row-mobile').count()).toBe(rows);
-      expect(await page.getByTestId('ppr-queue-empty').count()).toBe(rows === 0 ? 1 : 0);
-    }
-  });
-
-  /**
    * Rule (iii): `.slideover-panel{ left:0; width:100% }` at <=640px. Pre-fix
    * the panel was `min(520px, 92vw)` = 345px of 375, i.e. 30px of scrim strip
    * and 30px of lost form width on every phone.
@@ -82,26 +52,31 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
    * INSIDE the scrolling body; review 15.10 LOW-4 (PO decision 2026-08-06)
    * replaced it with `SlideOver`'s `footer` slot, OUTSIDE `.so-body`, because
    * a sticky bar covers whatever sits at the bottom edge at every scroll
-   * position but the last: measured at 375px on both surfaces that mount this
-   * form, the bar (743-812) covered the ETA calendar trigger (756.73-800.73,
-   * `elementFromPoint` = `manual-ppr-submit`). The REQUIREMENT is unchanged
-   * and asserted more strictly below: hit-testable at `scrollTop 0` AND with
-   * the body scrolled to its very end.
+   * position but the last (measured on 15.10's host: the bar covered a
+   * calendar trigger at the bottom edge). The REQUIREMENT is unchanged and
+   * asserted more strictly below: hit-testable at `scrollTop 0` AND with the
+   * body scrolled to its very end.
+   *
+   * Host (story 19.1): the flight editor opened from the Panoramica's
+   * "Registra volo" — a `SlideOver` form with a `footer`, a body that scrolls
+   * at 375x812 (asserted below, not assumed) and a `.date-input-btn` inside
+   * the panel. The Panoramica mounts more than one `SlideOver`, so every probe
+   * is scoped to the OPEN one (`.slideover.open`).
    */
   test('at 375px a SlideOver form is full-screen with a fixed header and a primary action outside the scrolling body; at 1280px the desktop geometry is untouched', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
-    await page.goto('/it/dashboard/ppr');
+    await page.goto('/it/dashboard');
 
-    await page.getByTestId('ppr-manual-button').click();
-    await expect(page.getByTestId('manual-ppr-form')).toBeVisible();
+    await page.getByTestId('dispatch-flight-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
 
     // The panel now rises from the bottom (`translateY`), so the measurement
     // has to outlast the 260ms transition — poll instead of racing it.
     await expect(async () => {
-      const panelGeometry = await page.locator('.slideover-panel').evaluate((el) => {
+      const panelGeometry = await page.locator('.slideover.open .slideover-panel').evaluate((el) => {
         const rect = el.getBoundingClientRect();
         return { left: rect.left, top: rect.top, width: rect.width, height: rect.height, borderLeft: getComputedStyle(el).borderLeftWidth };
       });
@@ -114,13 +89,13 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
 
     // The header never scrolls (only `.so-body` does) and the body starts at
     // the top: both are preconditions of the sticky-row measurement below.
-    expect(await page.locator('.so-body').evaluate((el) => el.scrollTop)).toBe(0);
-    expect(await page.locator('.so-head .so-title').evaluate(reachable)).toBe(true);
-    expect(await page.locator('.so-head .iconbtn').evaluate(reachable)).toBe(true);
+    expect(await page.locator('.slideover.open .so-body').evaluate((el) => el.scrollTop)).toBe(0);
+    expect(await page.locator('.slideover.open .so-head .so-title').evaluate(reachable)).toBe(true);
+    expect(await page.locator('.slideover.open .so-head .iconbtn').evaluate(reachable)).toBe(true);
 
     // AC 5: the primary action is hit-testable with the body still at the top
-    // and all 12 fields loaded, and it is >=44px tall.
-    const submit = page.getByTestId('manual-ppr-submit');
+    // and every field loaded, and it is >=44px tall.
+    const submit = page.locator('.slideover.open .so-foot button[type="submit"]');
     expect(await submit.evaluate(reachable)).toBe(true);
     expect(await submit.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
     // ...and it is OUT of the scroller, so scrolling the body to its end
@@ -128,9 +103,9 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     // passed the line above and failed this one: measured pre-fix on the three
     // editors, `hit: false` with the body at `scrollHeight`.
     const anchored = await page.evaluate(() => {
-      const body = document.querySelector('.so-body')!;
-      const foot = document.querySelector('.so-foot');
-      const button = document.querySelector('[data-testid="manual-ppr-submit"]')!;
+      const body = document.querySelector('.slideover.open .so-body')!;
+      const foot = document.querySelector('.slideover.open .so-foot');
+      const button = document.querySelector('.slideover.open .so-foot button[type="submit"]')!;
       body.scrollTop = body.scrollHeight;
       const rect = button.getBoundingClientRect();
       const atPoint = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -142,14 +117,14 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
         hit: atPoint === button || button.contains(atPoint),
       };
     });
-    expect(anchored.scrollable, 'a 12-field form is only interesting because its body scrolls').toBe(true);
+    expect(anchored.scrollable, 'a long form is only interesting because its body scrolls').toBe(true);
     expect(anchored.insideFoot).toBe(true);
     expect(anchored.insideBody).toBe(false);
     // AD-6: one anchored action row per panel, and it is the foot.
     expect(anchored.anchoredRows).toBe(0);
     expect(anchored.hit).toBe(true);
     await page.evaluate(() => {
-      document.querySelector('.so-body')!.scrollTop = 0;
+      document.querySelector('.slideover.open .so-body')!.scrollTop = 0;
     });
 
     // AC 8: the full-screen panel (z 50) covers the 15.1 tab bar (z 5) — no
@@ -166,9 +141,8 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     // AC 8: a portalled picker popover (z 65/66) stays ABOVE the panel and
     // inside the viewport (TD-7's own invariant, re-measured full-screen).
     //
-    // The ETA row is the 9th field of twelve: with the body at `scrollTop: 0`
-    // it is below the scrollport (measured at 375px: trigger at 756.73, body
-    // ending at 743), so it has to be scrolled to before it can be clicked.
+    // If the date row sits below the scrollport with the body at
+    // `scrollTop: 0`, it has to be scrolled to before it can be clicked.
     // Doing it here rather than letting the click do it is not cosmetic:
     // `useFixedPopover` closes the popover on ANY scroll outside it
     // (`fixed-popover.ts:198`, capture phase, by design) and Playwright's own
@@ -177,10 +151,10 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     // removes the race without weakening anything this test asserts, and the
     // hit-test after a REAL scroll — the epic's own AC-11 formulation — is
     // asserted instead of assumed.
-    const dateTrigger = page.locator('.date-input-btn').first();
+    const dateTrigger = page.locator('.slideover.open .date-input-btn').first();
     await page.evaluate(() => {
-      const body = document.querySelector('.so-body');
-      const trigger = document.querySelector('.date-input-btn');
+      const body = document.querySelector('.slideover.open .so-body');
+      const trigger = document.querySelector('.slideover.open .date-input-btn');
       if (!body || !trigger) return;
       const overlap = trigger.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom;
       if (overlap > 0) body.scrollTop += overlap + 12;
@@ -215,7 +189,7 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     // foot at both widths, never a full-screen phone bar leaking upwards.
     await page.setViewportSize(DESKTOP);
     await expect(async () => {
-      const desktopPanel = await page.locator('.slideover-panel').evaluate((el) => {
+      const desktopPanel = await page.locator('.slideover.open .slideover-panel').evaluate((el) => {
         const rect = el.getBoundingClientRect();
         return { width: rect.width, right: rect.right };
       });
@@ -225,7 +199,7 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     const desktopFoot = await page.evaluate(() => {
       const foot = document.querySelector('.slideover.open .so-foot');
       const panel = document.querySelector('.slideover.open .slideover-panel');
-      const button = document.querySelector('[data-testid="manual-ppr-submit"]');
+      const button = document.querySelector('.slideover.open .so-foot button[type="submit"]');
       if (!foot || !panel || !button) return null;
       return {
         position: getComputedStyle(foot).position,
@@ -269,7 +243,7 @@ test.describe('story 15.2 — mobile primitives (geometry only, no state written
     // border. True 9/9 by inspection today; held by an assertion from now on.
     expect(await strip.evaluate((el) => el.parentElement?.classList.contains('page'))).toBe(true);
     const cardCount = await strip.evaluate((el) => el.children.length);
-    expect(cardCount).toBeGreaterThanOrEqual(5);
+    expect(cardCount).toBeGreaterThanOrEqual(4);
 
     const first = strip.locator(':scope > *').first();
     const last = strip.locator(':scope > *').last();

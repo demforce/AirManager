@@ -332,18 +332,16 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await page.setViewportSize(PHONE);
     await gotoSettings(page);
 
-    // --- Club: FIVE PUTs on one "Salva", fired with the values already on
+    // --- Club: THREE PUTs on one "Salva", fired with the values already on
     // screen (a no-op round trip: the contract is proven, no stored value
     // moves).
-    const [club, metar, fee, instructions, membership] = await Promise.all([
+    const [club, metar, membership] = await Promise.all([
       page.waitForResponse((r) => r.url().includes('/api/v1/settings/club') && r.request().method() === 'PUT'),
       page.waitForResponse((r) => r.url().includes('/api/v1/settings/metar-station') && r.request().method() === 'PUT'),
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/ppr-landing-fee') && r.request().method() === 'PUT'),
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/ppr-operating-instructions') && r.request().method() === 'PUT'),
       page.waitForResponse((r) => r.url().includes('/api/v1/settings/membership-fee') && r.request().method() === 'PUT'),
       page.getByTestId('club-settings-save').click(),
     ]);
-    for (const response of [club, metar, fee, instructions, membership]) expect(response.status()).toBe(200);
+    for (const response of [club, metar, membership]) expect(response.status()).toBe(200);
     await expect(page.getByTestId('club-settings-feedback')).toBeVisible();
 
     // --- Club: the 422 marks THAT field, inline, from the phone too.
@@ -680,8 +678,8 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await login(page, ADMIN_EMAIL);
 
     const singletons = [
-      'club-settings-card', 'club-settings-save', 'club-icao-input', 'club-contact-email-input', 'club-metar-station-input', 'club-landing-fee-input', 'club-membership-fee-input',
-      'club-instructions-it-input', 'club-instructions-en-input', 'airfield-settings-form', 'airfield-name-input', 'airfield-settings-save',
+      'club-settings-card', 'club-settings-save', 'club-icao-input', 'club-contact-email-input', 'club-metar-station-input', 'club-membership-fee-input',
+      'airfield-settings-form', 'airfield-name-input', 'airfield-settings-save',
       'scheduling-settings-card', 'scheduling-settings-save', 'scheduling-open-time-input', 'scheduling-close-time-input', 'scheduling-min-slot-input', 'scheduling-turnaround-input', 'scheduling-max-advance-input',
       'smtp-settings-card', 'smtp-settings-save', 'smtp-host-input', 'smtp-port-input', 'smtp-security-select', 'smtp-from-input', 'smtp-user-input', 'smtp-pass-input', 'smtp-test-email-button',
       'treasury-settings-card', 'treasury-settings-save', 'treasury-opening-cash-input', 'treasury-opening-bank-input', 'treasury-opening-date-input',
@@ -801,10 +799,10 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     // trigger stayed 36x36 here and 24x24 on the pages nobody had raised.
     // Story 15.10 (ratifica R-15.10-d) replaced those six anchored exceptions
     // with ONE floor at <=640px, so the requirement this line guards is the
-    // opposite one: the floor reaches these three pages too. Same three URLs,
-    // same probe, the coverage is not reduced — only the number it protects
-    // changed, by a PO decision.
-    for (const url of ['/it/dashboard/logbook', '/it/dashboard/movements', '/it/dashboard/billing']) {
+    // opposite one: the floor reaches these three pages too. Three URLs
+    // (`/dashboard/bookings` since story 19.1), same probe, the coverage is
+    // not reduced — only the number it protects changed, by a PO decision.
+    for (const url of ['/it/dashboard/logbook', '/it/dashboard/bookings', '/it/dashboard/billing']) {
       await page.goto(url);
       await page.waitForSelector('.page');
       // RENDERED triggers only (`getClientRects()`): these pages also carry a

@@ -87,7 +87,6 @@ const CASH_ROW_SELECT = {
   accountMovementId: true,
   category: { select: { name: true } },
   accountMovement: { select: { amountCents: true, account: { select: { personId: true, person: { select: { firstName: true, lastName: true } } } } } },
-  pprRequest: { select: { pprNumber: true } },
 } as const;
 
 type SelectedCashRow = Prisma.CashMovementGetPayload<{ select: typeof CASH_ROW_SELECT }>;
@@ -294,12 +293,12 @@ function toAccountRow(row: SelectedAccountRow): InternalRow {
  * Normalizes a `CashMovement` — always its own natural direction (entrata >
  * 0, uscita < 0), never flipped. `personId`/`personName` are derived through
  * the linked `accountMovement.account.person` ONLY when this row is a
- * VISIBLE twin (`PACKAGE_PURCHASE`) — a manual/PPR entry has no person.
+ * VISIBLE twin (`PACKAGE_PURCHASE`) — a manual entry has no person.
  * `method` (story Billing-2, AC 3) is now the REAL `paymentMethod` — `null`
  * means unattributed (the secchiello). Actionable (AC 3, parity with the
  * legacy cash register's own rule): manual (no twin), not itself a storno,
- * not already reversed — `pprRequestId` is irrelevant (`reverseCashMovement`
- * never checks it).
+ * not already reversed. `reference` is always `null`: a cash movement links
+ * to no flight.
  */
 function toCashRow(row: SelectedCashRow): InternalRow {
   return {
@@ -314,7 +313,7 @@ function toCashRow(row: SelectedCashRow): InternalRow {
     description: row.description,
     amountCents: row.amountCents,
     method: row.paymentMethod,
-    reference: row.pprRequest?.pprNumber ?? null,
+    reference: null,
     reversal: row.reversalOfId !== null,
     reversed: row.reversal !== null,
     actionable: row.accountMovementId === null && row.reversalOfId === null && row.reversal === null,
@@ -433,7 +432,7 @@ export async function listTransactions(actor: Actor, query: ListTransactionsQuer
  * summed the POSITIVE side and never subtracted a same-period storno):
  * addebiti conto (`FLIGHT_CHARGE`, `ADJUSTMENT` a debito) netti dei
  * `FLIGHT_CHARGE_REVERSAL`, PLUS cash entrate not already counted on the
- * account side (PPR contante, rivendite, ...; see
+ * account side (rivendite, ...; see
  * `CASH_NOT_ALREADY_ON_ACCOUNT`'s doc-comment for the twin-dedup rule). Both
  * `OR` clauses are the SAME `ACCOUNT_REVENUE_OR`/`CASH_REVENUE_OR` consts the
  * `bookType` filter and row classification use above (story Billing-2) — one

@@ -4,7 +4,7 @@ import type { Role } from '@/generated/prisma/client';
  * AirOps sidebar route registry (story 12.1, AC 4) — one static array
  * mirroring `docs/design-reference/airops/src/Sidebar.jsx`'s groups/items,
  * with an `enabled` flag: this story turns on ONLY the routes that already
- * exist (`overview`, `schedule`, `ppr`, `scadenze`, `settings`). Every other
+ * exist (`overview`, `schedule`, `scadenze`, `settings`). Every other
  * prototype entry stays defined but `enabled: false` — the epic story that
  * builds that page flips its flag (see `docs/superpowers/plans/`, Task 1
  * dev notes). `Sidebar`/`TopBar` both read this single source of truth
@@ -20,8 +20,6 @@ export type NavGroupId = 'operations' | 'directory' | 'archive' | 'system';
 export type NavItemId =
   | 'overview'
   | 'schedule'
-  | 'ppr'
-  | 'visiting'
   | 'pilots'
   | 'instructors'
   | 'fleet'
@@ -37,7 +35,6 @@ export type NavItemId =
 export type NavIconKey =
   | 'dashboard'
   | 'calendar'
-  | 'doc'
   | 'plane'
   | 'users'
   | 'compass'
@@ -65,8 +62,9 @@ export type NavItem = {
    * single source of truth as the sidebar (href/icon/roles).
    *
    * Slots are a GLOBAL priority order, not a per-role one: each actor simply
-   * takes the lowest-slotted items among the ones they can see. 1-4 are the
-   * template's admin bar; 5-6 are the two self-service pages, which outrank
+   * takes the lowest-slotted items among the ones they can see. 1-4 come
+   * from the template's admin bar (a gap is fine: the slots are an order,
+   * not an index); 5-6 are the two self-service pages, which outrank
    * Scadenze/Registro voli for the actors who have them (PO ratification
    * R-15.1-a, 2026-07-30 — see the fill rule in `mobileNavLayout`).
    */
@@ -87,21 +85,18 @@ export const NAV_GROUPS: readonly NavGroupId[] = ['operations', 'directory', 'ar
 export const NAV_ITEMS: readonly NavItem[] = [
   // Story 12.12: the home ships in the AirOps visual language directly, replacing the legacy widget-grid dashboard.
   // Story 15.1: `mobileSlot` 1-4 = the template's own admin tab bar
-  // (Panoramica / Pianificazione / PPR / Aeromobili, `AirOps Mobile.dc.html`
-  // line 606), the 5th slot being the "Altro" sheet trigger.
+  // (`AirOps Mobile.dc.html` line 606), the 5th column being the "Altro"
+  // sheet trigger. Slot 3 is free: `mobileNavLayout` fills the column with
+  // the first unslotted item in registry order.
   { id: 'overview', href: '/dashboard', icon: 'dashboard', group: 'operations', roles: ALL_ROLES, enabled: true, mobileSlot: 1 },
   { id: 'schedule', href: '/dashboard/bookings', icon: 'calendar', group: 'operations', roles: ALL_ROLES, enabled: true, mobileSlot: 2 },
-  { id: 'ppr', href: '/dashboard/ppr', icon: 'doc', group: 'operations', roles: ADMIN_ROLES, enabled: true, mobileSlot: 3 },
-  { id: 'visiting', href: '/dashboard/movements', icon: 'plane', group: 'operations', roles: ADMIN_ROLES, enabled: true },
   // Story 12.6: the pilots registry ships in the AirOps visual language directly.
   { id: 'pilots', href: '/dashboard/pilots', icon: 'users', group: 'directory', roles: ADMIN_ROLES, enabled: true },
   // Story 12.7: the instructors compensation page ships in the AirOps visual language directly.
   { id: 'instructors', href: '/dashboard/instructors', icon: 'compass', group: 'directory', roles: ADMIN_ROLES, enabled: true },
   // Story 12.5: the fleet page ships in the AirOps visual language directly.
-  // Story 13.8 (AC 2): 'plane' — same small-aircraft glyph as `visiting`
-  // (Movimenti) above, per the user's "aereo piccolo per entrambe" item.
-  // The dedicated `fleet` icon/NavIconKey entry was removed as an orphan
-  // (story 13.11, AC 2).
+  // Story 13.8 (AC 2): 'plane', the small-aircraft glyph. The dedicated
+  // `fleet` icon/NavIconKey entry was removed as an orphan (story 13.11, AC 2).
   { id: 'fleet', href: '/dashboard/fleet', icon: 'plane', group: 'directory', roles: ADMIN_ROLES, enabled: true, mobileSlot: 4 },
   // Story 12.11: the scadenze registry ships in the AirOps visual language
   // directly. Story 12.12 fix: widened to ALL_ROLES — the legacy home's own

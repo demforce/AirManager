@@ -6,9 +6,9 @@ import type { Locator, Page } from '@playwright/test';
  * `DateTimeInput` popover now `position:fixed` + portaled to `document.body`):
  * these tests drive the picker's own UI (click the calendar button, click a
  * day, type an hour, click confirm) rather than `fill()`-ing the underlying
- * input directly — the existing specs that DO `fill()` (`bookings.spec.ts`,
- * `ppr-public.spec.ts`) are the regression guard for the transparent-wrapper
- * contract and are expected to keep passing unchanged.
+ * input directly — the existing specs that DO `fill()` (`bookings.spec.ts`)
+ * are the regression guard for the transparent-wrapper contract and are
+ * expected to keep passing unchanged.
  */
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -77,10 +77,9 @@ function futureDateOnly(monthsForward: number, day: number): string {
  * documents: a `.click()` whose OWN `scrollIntoViewIfNeeded` actionability
  * check fires the page scroll AFTER the popover has already opened races the
  * `useFixedPopover` scroll-listener that closes it on any window scroll,
- * opening and immediately closing it in the same instant (reproduced on the
- * long public `/ppr` form, whose ETA/ETD fields sit below the fold — the
- * short SlideOver forms never needed this because their fields are already
- * in view).
+ * opening and immediately closing it in the same instant (reproduced on a
+ * long page form whose date fields sat below the fold — the short SlideOver
+ * forms never needed this because their fields are already in view).
  */
 async function pickDateTimeViaPicker(fieldWrapper: Locator, monthsForward: number, day: number, time: string): Promise<void> {
   const page = fieldWrapper.page();
@@ -149,28 +148,6 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
   });
 
-  test('public /ppr: ETA driven entirely via the picker UI, every other field via fill() — real submission succeeds', async ({ page }) => {
-    await page.goto('/it/ppr');
-    const form = page.getByTestId('ppr-form');
-    await form.getByLabel('Nome', { exact: true }).fill('Picker');
-    await form.getByLabel('Cognome', { exact: true }).fill(`Test-${uniqueSuffix()}`);
-    await form.getByLabel('Email', { exact: true }).fill(`ppr-picker-${uniqueSuffix()}@e2e.airmanager.local`);
-    await form.getByLabel('Telefono', { exact: true }).fill('+39 333 0000000');
-    await form.getByLabel('Marche', { exact: true }).fill(`I-PK${uniqueSuffix().slice(-6).toUpperCase()}`);
-    await form.getByLabel('Tipo aeromobile', { exact: true }).fill('Cessna 172');
-    await form.getByLabel('Provenienza', { exact: true }).fill('LIRN Napoli');
-    await form.getByLabel('Destinazione', { exact: true }).fill('LIRU Urbe');
-    await form.getByLabel('Persone a bordo', { exact: true }).fill('1');
-
-    const etaWrapper = form.locator('span.date-input:has(input[name="eta"])');
-    await pickDateTimeViaPicker(etaWrapper, 2, 20, '08:00');
-    const expectedDay = futureDateOnly(2, 20);
-    await expect(form.locator('input[name="eta"]')).toHaveValue(`${expectedDay}T08:00`);
-
-    await form.getByRole('button', { name: 'Invia richiesta' }).click();
-    await expect(page.getByTestId('ppr-success')).toBeVisible();
-  });
-
   test('ratifica 3: picking a day with the time field still empty never writes a value — confirm stays disabled', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await createAircraft(page);
@@ -234,20 +211,29 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     expect(await hitTestsOwnControl(page, '.cal-popover', '.cal-foot .btn.primary', 'bottom')).toBe(true);
   });
 
-  test('mobile 375px: the public /ppr ETD field and its popover both stay inside the viewport (13.10-F3 regression twin)', async ({ page }) => {
+  test('mobile 375px: the new-booking "Fine" field and its popover both stay inside the viewport (13.10-F3 regression twin)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto('/it/ppr');
-    const form = page.getByTestId('ppr-form');
-    const etdWrapper = form.locator('span.date-input:has(input[name="etd"])');
+    await page.goto('/it/dashboard/bookings');
+    await page.waitForLoadState('networkidle');
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    const endsAtWrapper = form.locator('span.date-input:has(input[name="endsAt"])');
+    // The full-screen panel rises over 260ms: read the field once it has landed.
+    await expect(async () => {
+      const box = await endsAtWrapper.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+    }).toPass({ timeout: 3000 });
 
-    const fieldBox = await etdWrapper.boundingBox();
-    if (!fieldBox) throw new Error('Missing bounding box for the /ppr ETD field wrapper');
+    const fieldBox = await endsAtWrapper.boundingBox();
+    if (!fieldBox) throw new Error('Missing bounding box for the new-booking "Fine" field wrapper');
     expect(fieldBox.x).toBeGreaterThanOrEqual(0);
     expect(fieldBox.x + fieldBox.width).toBeLessThanOrEqual(375);
 
-    const etdButton = etdWrapper.getByRole('button', { name: 'Apri calendario' });
-    await etdButton.scrollIntoViewIfNeeded();
-    await etdButton.click();
+    const endsAtButton = endsAtWrapper.getByRole('button', { name: 'Apri calendario' });
+    await endsAtButton.scrollIntoViewIfNeeded();
+    await endsAtButton.click();
     // Same race as the clipping regression guard above — wait for the
     // portaled popover to actually be in the DOM before reading its rect.
     await expect(page.locator('.cal-popover')).toBeVisible();
@@ -275,23 +261,61 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     // auto-scroll via its own actionability check, so the click below is
     // dispatched directly on the DOM node instead (`evaluate` + `.click()`),
     // the same technique the review used to reproduce the failure.
+    //
+    // Host (story 19.1): the "Fine" field of the new-booking panel. The
+    // flip/clamp lives in `fixed-popover.ts` and depends on where the trigger
+    // sits in the VIEWPORT, not on the form around it — so the precondition
+    // is rebuilt and ASSERTED below instead of being inherited from a page.
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/it/ppr');
-    const form = page.getByTestId('ppr-form');
-    await form.waitFor({ state: 'visible' });
+    await page.goto('/it/dashboard/bookings');
     // Unlike every other test here, nothing below is a Playwright locator
     // action (which auto-waits for actionability) — a raw DOM `.click()` on
     // a button whose React handler hasn't hydrated yet would silently no-op,
     // so wait for the page to settle first.
     await page.waitForLoadState('networkidle');
+    await page.getByTestId('new-booking-button').click();
+    await page.getByTestId('new-booking-form').waitFor({ state: 'visible' });
+
+    const endsAtTriggerBottom = () =>
+      page.evaluate(
+        () =>
+          document
+            .querySelector('[data-testid="new-booking-form"] input[name="endsAt"]')!
+            .closest('span.date-input')!
+            .querySelector<HTMLElement>('button.date-input-btn')!
+            .getBoundingClientRect().bottom,
+      );
+    // The panel slides in over 260ms: measure once it has stopped moving.
+    let settledBottom = await endsAtTriggerBottom();
+    await expect(async () => {
+      const now = await endsAtTriggerBottom();
+      const previous = settledBottom;
+      settledBottom = now;
+      expect(now).toBe(previous);
+    }).toPass({ timeout: 3000 });
+    // The field sits high in the panel, and scrolling a body only ever moves
+    // a field UP: the viewport is cut instead, so that the trigger's bottom
+    // edge sits 80px above the bottom of the screen — the same spot the
+    // original reproduction put it in.
+    await page.setViewportSize({ width: 1440, height: Math.round(settledBottom + 80) });
+    const gapToBottom = await page.evaluate(
+      (bottom) => window.innerHeight - bottom,
+      await endsAtTriggerBottom(),
+    );
+    expect(gapToBottom, 'precondition: the trigger sits ~80px from the bottom of the viewport').toBeGreaterThanOrEqual(60);
+    expect(gapToBottom, 'precondition: the trigger sits ~80px from the bottom of the viewport').toBeLessThanOrEqual(100);
+    // The cut reaches the page as a `resize` event, and `useFixedPopover`
+    // closes an open popover on resize (`fixed-popover.ts`, by design): two
+    // animation frames guarantee it has been delivered BEFORE the click, so it
+    // cannot close the popover the click is about to open.
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
     await page.evaluate(() => {
-      const button = document.querySelector('input[name="eta"]')!.closest('span.date-input')!.querySelector<HTMLElement>('button.date-input-btn')!;
-      const rect = button.getBoundingClientRect();
-      window.scrollBy(0, rect.bottom - (window.innerHeight - 80));
-    });
-    await page.evaluate(() => {
-      const button = document.querySelector('input[name="eta"]')!.closest('span.date-input')!.querySelector<HTMLElement>('button.date-input-btn')!;
+      const button = document
+        .querySelector('[data-testid="new-booking-form"] input[name="endsAt"]')!
+        .closest('span.date-input')!
+        .querySelector<HTMLElement>('button.date-input-btn')!;
       button.click();
     });
     await expect(page.locator('.cal-popover')).toBeVisible();

@@ -23,8 +23,8 @@
  * `position:fixed`/clamp mechanism `schedule.tsx` already uses for its own
  * two popovers (`./fixed-popover.ts`) — auditing every real consumer found
  * this component's OLD `position:absolute` popover silently clipped by
- * `.card{overflow:hidden}` (the public `/ppr` form, the pre-existing
- * billing console filter) and `.so-body{overflow:auto}` (every SlideOver
+ * `.card{overflow:hidden}` (the pre-existing billing console filter) and
+ * `.so-body{overflow:auto}` (every SlideOver
  * form: `confirmHit`/`hitTestsOwnControl`-style measurement showed its
  * lower controls present in the DOM but NOT hit-testable whenever the field
  * sat low enough in the scrollable/clipped container) — exactly the bug

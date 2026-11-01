@@ -157,7 +157,7 @@ export function CalendarPopover({
                   // A bare text input inside the surrounding `<form>` would
                   // otherwise submit it on Enter (the browser's implicit-
                   // submit rule) — Enter here means "confirm the picker",
-                  // never "submit the whole booking/PPR form".
+                  // never "submit the whole booking form".
                   if (event.key === 'Enter') {
                     event.preventDefault();
                     if (!time.confirmDisabled) time.onConfirm();

@@ -22,29 +22,24 @@ export const statsQuerySchema = z.object({
 export type StatsQuery = z.infer<typeof statsQuerySchema>;
 
 /**
- * Top-line KPIs (AC 1) — `movements` = COUNT of REGISTERED flights + COUNT
- * of COMPLETED PPR transits in the window (ratifica utente 1: a transit is
- * counted ONCE, as a PPR, never re-derived from a takeoff/landing pair).
- * `transitShare` is a 0..1 FRACTION (transits / movements, `0` when
- * `movements` is `0`) — formatting to a percentage is presentation-only,
- * done in the UI (AD-2 convention: the wire never carries a formatted
- * string).
+ * Top-line KPIs (AC 1) — `movements` = COUNT of REGISTERED flights in the
+ * window (ratifica utente 1: counted ONCE, never re-derived from a
+ * takeoff/landing pair).
  *
  * `fleetUtilization` (story 12.11, AC 6 — closes ratifica utente 2 from
  * story 12.10): flown hours in the KPI window / available hours (`(closeTime
  * - openTime) hours × days in the window × OPERATIONAL non-archived
- * aircraft`) — also a 0..1-ish FRACTION (can exceed 1 if the fleet flew more
+ * aircraft`) — a 0..1-ish FRACTION (can exceed 1 if the fleet flew more
  * than its nominal window, e.g. after-hours flights once `sched.*` is
  * configured). `null` whenever `sched.openTime`/`sched.closeTime` are not
  * configured OR there is no OPERATIONAL aircraft to divide by (Contesto: "no
- * dati finti") — the UI OMITS the 5th KPI card entirely in that case, never
+ * dati finti") — the UI OMITS the 4th KPI card entirely in that case, never
  * shows a `0%`.
  */
 export const statsKpisSchema = z.object({
   revenueCents: z.number().int(),
   flightMinutes: z.number().int(),
   movements: z.number().int(),
-  transitShare: z.number(),
   fleetUtilization: z.number().nullable(),
 });
 
@@ -53,14 +48,13 @@ export const statsKpisSchema = z.object({
  * ending at `ref` inclusive: 6 points for `period=month`, 12 for
  * `period=year` (both rolling windows, matching the prototype's own
  * `months.slice(-chartN)` — NEVER calendar-year-aligned for `period=year`,
- * that alignment only applies to the KPI window itself). The three data
+ * that alignment only applies to the KPI window itself). The two data
  * arrays are parallel to `months` (same length, same order).
  */
 export const statsSeriesSchema = z.object({
   months: z.array(z.string()),
   revenueCents: z.array(z.number().int()),
   flightMinutes: z.array(z.number().int()),
-  transitMovements: z.array(z.number().int()),
 });
 
 /**
@@ -77,8 +71,8 @@ export const statsFleetItemSchema = z.object({
   revenueCents: z.number().int(),
 });
 
-/** Movement composition key (ratifica utente 1) — the 3 real `FlightType` values plus `TRANSIT` (a PPR `COMPLETED`, never a `Flight` row). */
-export const statsMovementMixKeySchema = z.enum(['SCHOOL', 'TOURISM', 'AERIAL_WORK', 'TRANSIT']);
+/** Movement composition key (ratifica utente 1) — the 3 real `FlightType` values. */
+export const statsMovementMixKeySchema = z.enum(['SCHOOL', 'TOURISM', 'AERIAL_WORK']);
 
 export const statsMovementMixItemSchema = z.object({
   key: statsMovementMixKeySchema,

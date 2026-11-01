@@ -1,8 +1,6 @@
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import { currentMonthRange } from '@/lib/period-presets';
 import type { StatsQuery, StatsResponseDto } from '@/lib/schemas/stats';
-import { APP_TIMEZONE } from '@/lib/time';
-import { addDaysDateOnly, dateOnlyInZone, zonedMidnightUtc } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { getSchedulingSettings } from './app-settings.service';
@@ -13,7 +11,7 @@ import { getLedgerRevenueCents } from './transactions.service';
 
 /**
  * Statistics/reports (epic 12, story 12.10) — read-only aggregation over
- * flights/PPR/ledger/compensation, `finance.manage` (ADMIN-only). No new
+ * flights/ledger/compensation, `finance.manage` (ADMIN-only). No new
  * model, no write path.
  *
  * **`ref` supports full history** (ratifica utente 3): `ref` (`YYYY-MM`,
@@ -32,10 +30,10 @@ import { getLedgerRevenueCents } from './transactions.service';
  * arbitrary period instead of reimplemented (the two-reader-divergence
  * lesson from story 12.8's `getFlightTotals`).
  *
- * **Movements (ratifica utente 1)**: a "movimento" is either a REGISTERED
- * `Flight` or a COMPLETED `PprRequest` (a transit) — counted ONCE each,
- * never derived from takeoffs/landings. `movementMix` counts FLIGHTS by
- * `flightType` plus transits, in the SAME unit (a count of movements).
+ * **Movements (ratifica utente 1)**: a "movimento" is
+ * a REGISTERED `Flight` — counted ONCE, never derived from takeoffs/landings.
+ * `movementMix` counts the same flights by `flightType`, in the SAME unit (a
+ * count of movements).
  *
  * **Instructors (ratifica utente 3)**: `minutes` is computed for ANY period
  * (a plain `groupBy` over SCHOOL flights) — `owedCents` is only meaningful
@@ -102,11 +100,6 @@ function currentMonthRef(now: Date): string {
   return currentMonthRange(now).from.slice(0, 7);
 }
 
-/** Semi-open `[from, to)` UTC instant bounds for a Rome calendar-day range (`DateRange`'s `to` is inclusive of that WHOLE day) — the `PprRequest.eta` instant filter, same pattern as `movements/page.tsx`/`ppr.service.ts#listPprRequests`. */
-function etaWindow(range: DateRange): { gte: Date; lt: Date } {
-  return { gte: zonedMidnightUtc(range.from, APP_TIMEZONE), lt: zonedMidnightUtc(addDaysDateOnly(range.to, 1), APP_TIMEZONE) };
-}
-
 /** `[gte, lte]` bounds for a `Flight.flightDate` (`@db.Date`) filter. */
 function flightDateWindow(range: DateRange): { gte: Date; lte: Date } {
   return { gte: parseDateOnlyUtc(range.from), lte: parseDateOnlyUtc(range.to) };
@@ -160,12 +153,10 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     revenueSeries,
     kpiRevenueCents,
     seriesFlights,
-    seriesTransitRows,
     typeGroups,
     aircraftGroups,
     personGroups,
     instructorGroups,
-    kpiTransitCount,
     aircraftRows,
     compensation,
     schedulingSettings,
@@ -178,12 +169,10 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     ),
     getLedgerRevenueCents(actor, kpiRange.from, kpiRange.to),
     prisma.flight.findMany({ where: { status: 'REGISTERED', flightDate: flightDateWindow(seriesRange) }, select: { flightDate: true, minutes: true } }),
-    prisma.pprRequest.findMany({ where: { status: 'COMPLETED', eta: etaWindow(seriesRange) }, select: { eta: true } }),
     prisma.flight.groupBy({ by: ['flightType'], where: kpiFlightWhere, _count: { _all: true }, _sum: { minutes: true } }),
     prisma.flight.groupBy({ by: ['aircraftId'], where: kpiFlightWhere, _sum: { minutes: true, aircraftAmountCents: true } }),
     prisma.flight.groupBy({ by: ['personId'], where: kpiFlightWhere, _sum: { minutes: true, aircraftAmountCents: true, instructorAmountCents: true } }),
     prisma.flight.groupBy({ by: ['instructorProfileId'], where: { ...kpiFlightWhere, flightType: 'SCHOOL' }, _sum: { minutes: true } }),
-    prisma.pprRequest.count({ where: { status: 'COMPLETED', eta: etaWindow(kpiRange) } }),
     listAllActiveAircraft(actor),
     isCurrentPeriod ? getCompensationSummary(actor) : Promise.resolve(null),
     getSchedulingSettings(),
@@ -212,19 +201,13 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
   // --- kpis --------------------------------------------------------------
   const flightsCount = typeGroups.reduce((sum, group) => sum + group._count._all, 0);
   const flightMinutes = typeGroups.reduce((sum, group) => sum + (group._sum.minutes ?? 0), 0);
-  const movements = flightsCount + kpiTransitCount;
-  const transitShare = movements > 0 ? kpiTransitCount / movements : 0;
+  const movements = flightsCount;
 
   // --- series --------------------------------------------------------------
   const seriesMinutesByMonth = new Map<string, number>();
   for (const flight of seriesFlights) {
     const key = toDateOnlyString(flight.flightDate).slice(0, 7);
     seriesMinutesByMonth.set(key, (seriesMinutesByMonth.get(key) ?? 0) + flight.minutes);
-  }
-  const seriesTransitsByMonth = new Map<string, number>();
-  for (const ppr of seriesTransitRows) {
-    const key = dateOnlyInZone(ppr.eta, APP_TIMEZONE).slice(0, 7);
-    seriesTransitsByMonth.set(key, (seriesTransitsByMonth.get(key) ?? 0) + 1);
   }
 
   // --- fleet (ratifica utente 2: OPERATIONAL, non-archived aircraft only, `listAircraft` already orders by registration asc) ---
@@ -250,13 +233,12 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     }
   }
 
-  // --- movementMix (ratifica utente 1: fixed order, always all 4 keys) ---
+  // --- movementMix (ratifica utente 1: fixed order, always all 3 keys) ---
   const countByType = new Map(typeGroups.map((group) => [group.flightType, group._count._all]));
   const movementMix = [
     { key: 'SCHOOL' as const, count: countByType.get('SCHOOL') ?? 0 },
     { key: 'TOURISM' as const, count: countByType.get('TOURISM') ?? 0 },
     { key: 'AERIAL_WORK' as const, count: countByType.get('AERIAL_WORK') ?? 0 },
-    { key: 'TRANSIT' as const, count: kpiTransitCount },
   ];
 
   // --- instructors ---------------------------------------------------------
@@ -281,12 +263,11 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     .slice(0, 10);
 
   return {
-    kpis: { revenueCents: kpiRevenueCents, flightMinutes, movements, transitShare, fleetUtilization },
+    kpis: { revenueCents: kpiRevenueCents, flightMinutes, movements, fleetUtilization },
     series: {
       months: seriesMonths,
       revenueCents: revenueSeries,
       flightMinutes: seriesMonths.map((month) => seriesMinutesByMonth.get(month) ?? 0),
-      transitMovements: seriesMonths.map((month) => seriesTransitsByMonth.get(month) ?? 0),
     },
     fleet,
     movementMix,

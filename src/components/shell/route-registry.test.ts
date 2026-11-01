@@ -18,13 +18,13 @@ describe('mobileNavLayout', () => {
     }
   });
 
-  it("gives ADMIN the template's own 4 slots plus the remaining sections behind 'Altro', in registry order", () => {
+  it("gives ADMIN the 3 slotted sections plus the first unslotted one, the rest behind 'Altro', in registry order", () => {
     const items = visibleNavItems(['ADMIN']);
     expect(items.length).toBeGreaterThan(MOBILE_TAB_COUNT);
 
     const layout = mobileNavLayout(items);
-    expect(layout.tabs.map((item) => item.id)).toEqual(['overview', 'schedule', 'ppr', 'fleet']);
-    expect(layout.more.map((item) => item.id)).toEqual(['visiting', 'pilots', 'instructors', 'scadenze', 'logbook', 'billing', 'reports', 'settings']);
+    expect(layout.tabs.map((item) => item.id)).toEqual(['overview', 'schedule', 'fleet', 'pilots']);
+    expect(layout.more.map((item) => item.id)).toEqual(['instructors', 'scadenze', 'logbook', 'billing', 'reports', 'settings']);
     // Every visible item stays reachable: 4 tabs + the sheet cover them all.
     expect(layout.tabs.length + layout.more.length).toBe(items.length);
   });
@@ -57,13 +57,13 @@ describe('mobileNavLayout', () => {
     // A hypothetical future role list — no actor sees exactly this today; the
     // point is that widening a `roles` array (as story 12.12 did) can never
     // again leave the bar with empty columns while items sit behind "Altro".
-    const items = visibleNavItems(['ADMIN']).filter((item) => !['ppr', 'fleet'].includes(item.id));
+    const items = visibleNavItems(['ADMIN']).filter((item) => item.id !== 'fleet');
     const slotted = items.filter((item) => item.mobileSlot !== undefined);
     expect(slotted.length).toBeLessThan(MOBILE_TAB_COUNT - 1);
 
     const layout = mobileNavLayout(items);
     expect(layout.tabs).toHaveLength(MOBILE_TAB_COUNT - 1);
-    expect(layout.tabs.map((item) => item.id)).toEqual(['overview', 'schedule', 'visiting', 'pilots']);
+    expect(layout.tabs.map((item) => item.id)).toEqual(['overview', 'schedule', 'pilots', 'instructors']);
     // Still a partition: nothing duplicated, nothing lost.
     expect(layout.tabs.length + layout.more.length).toBe(items.length);
     expect(layout.more.some((item) => layout.tabs.includes(item))).toBe(false);

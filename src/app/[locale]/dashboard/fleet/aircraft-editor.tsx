@@ -365,7 +365,7 @@ export function AircraftEditor({ target, onClose, onMutated, locale, labels, toa
   );
 }
 
-/** Shared section wrapper — a top divider + label, same convention `ppr-console.tsx`'s `LandingFeeEditor` sub-section uses inside `PprOperatingInstructionsEditor`. */
+/** Shared section wrapper — a top divider + label. */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>

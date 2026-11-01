@@ -931,18 +931,6 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
     await page.setViewportSize(PHONE_NARROW);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
-
-    // Review F5: `.info-row` is shared with the PUBLIC `/ppr` module, which is
-    // story 15.9's surface. The dossier's wrap rule is anchored to this page's
-    // own card, so the public module must read exactly as it does on a desktop
-    // — the guard is on the surface the rule must NOT reach (lesson 15.3 F1).
-    await page.setViewportSize(PHONE);
-    await page.goto('/it/ppr');
-    await expect(page.locator('.info-row .v').first()).toBeVisible();
-    const publicWrap = await page.evaluate(() =>
-      [...document.querySelectorAll('.info-row .v')].map((v) => `${getComputedStyle(v).overflowWrap}/${getComputedStyle(v).minWidth}`),
-    );
-    expect(new Set(publicWrap)).toEqual(new Set(['normal/auto']));
   });
 
   test('scheda persona: a pilot reaches their OWN record at 375px with the masking intact (AC 12, multi-actor)', async ({ page }) => {

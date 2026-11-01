@@ -48,7 +48,7 @@ export function expiryTypeSheetSub(input: ExpiryTypeSheetSubInput): string {
 export type CashCategorySubLineInput = {
   /** "3 movimenti" — always present (the count is 0 or more, never unknown). */
   movementsLabel: string;
-  /** Present ONLY for the three system categories (`Ricariche`, `Compensi istruttori`, `PPR`). */
+  /** Present ONLY for the two system categories (`Ricariche`, `Compensi istruttori`). */
   systemLabel?: string | null;
 };
 

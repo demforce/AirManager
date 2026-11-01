@@ -6,7 +6,7 @@
  * the bottom as key/value lines with the decision buttons underneath.
  *
  * Ported 1:1 from the `AirOps Mobile` template's own detail sheet (lines
- * 515-539) and its row-builders (`openFlight`/`openBooking`/`openPPR`/…,
+ * 515-539) and its row-builders (`openFlight`/`openBooking`/…,
  * lines 584-601), which is where the `{ sub, title, badge, rows[], act? }`
  * shape comes from: every entity maps onto exactly that, so the API is the
  * template's, not an invented one.
@@ -19,7 +19,7 @@
  *
  * Testid convention of the epic (fixed by 15.1, see `shell/mobile-nav.tsx`):
  * `testId` names a surface that exists only on mobile, so callers pass a
- * `mobile-`-prefixed name (`mobile-ppr-sheet`); the controls INSIDE it that
+ * `mobile-`-prefixed name (`mobile-booking-sheet`); the controls INSIDE it that
  * duplicate a desktop one take the desktop name plus `-mobile`.
  */
 import type { ReactNode } from 'react';
@@ -38,7 +38,7 @@ export type BottomSheetProps = {
   onClose: () => void;
   /** `data-testid` of the sheet root (mobile-only name, see the doc-comment). */
   testId: string;
-  /** Mono uppercase line above the title (template: "Richiesta PPR-2026-0001"). Doubles as the dialog's accessible name together with `title`. */
+  /** Mono uppercase line above the title (e.g. the aircraft registration). Doubles as the dialog's accessible name together with `title`. */
   sub: string;
   title: string;
   /** Status pill on the right of the header — a `Badge`, in practice. */

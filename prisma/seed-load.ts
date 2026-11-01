@@ -14,7 +14,7 @@
 // services enforce with direct, batched `createMany` inserts: aircraft/
 // instructor hourly-rate snapshots on every flight, hour-meter advances,
 // FLIGHT_CHARGE amounts (`round(rate * minutes / 60)`), booking non-overlap
-// for APPROVED bookings only, PPR per-year sequential numbering, etc. — see
+// for APPROVED bookings only, etc. — see
 // the per-phase comments below for exactly which invariant each phase
 // reproduces and where it deliberately simplifies (always flagged).
 //
@@ -34,7 +34,7 @@
 //   ~60000-60600 flights (~2% cancelled, ~1% of those corrected),
 //   ~40000 bookings, ~90000-140000 account movements (see the Phase 5
 //   comment for why this lands below the ~150000 originally suggested),
-//   ~28000-32000 cash movements, ~5000 PPR requests, ~13000-16000 expiries,
+//   ~29500-30500 cash movements, ~13000-16000 expiries,
 //   a few thousand SentAlert rows, ~2000-3000 instructor payouts.
 //
 // Idempotency: every login this script creates uses the `load.` email
@@ -58,7 +58,6 @@ import type {
   FlightStatus,
   FlightType,
   PaymentMethod,
-  PprStatus,
   Role,
 } from '../src/generated/prisma/client';
 
@@ -225,7 +224,6 @@ const VOL = {
   bookings: scaled(40000),
   topUps: scaled(25000),
   cashOperational: scaled(2500),
-  pprRequests: scaled(5000),
   packagesSold: scaled(3000),
   users: scaled(2500),
 };
@@ -248,7 +246,7 @@ async function main(): Promise<void> {
   console.log(`seed-load: target database "${ACTUAL_DB_NAME}", LOAD_SCALE=${LOAD_SCALE}`);
   console.log('Planned volumes (fixed-target phases; a few phases below are organic/derived and printed once known):');
   console.log(`  persons=${VOL.persons} aircraft=${VOL.aircraft} flights=${VOL.flights} bookings=${VOL.bookings}`);
-  console.log(`  topUps=${VOL.topUps} cashOperational=${VOL.cashOperational} pprRequests=${VOL.pprRequests} packagesSold=${VOL.packagesSold} users=${VOL.users}`);
+  console.log(`  topUps=${VOL.topUps} cashOperational=${VOL.cashOperational} packagesSold=${VOL.packagesSold} users=${VOL.users}`);
 
   const seedPassword = requireEnv('SEED_ADMIN_PASSWORD');
   const passwordHash = await hashPassword(seedPassword); // hashed ONCE — never per user.
@@ -1013,9 +1011,9 @@ async function main(): Promise<void> {
   // PHASE 5 — Account ledger: top-ups + adjustments (membership fees + misc)
   // ===========================================================================
   // NOTE on the ~150000 AccountMovement figure suggested in the brief: the
-  // schema ties every TOP_UP/PPR-landing-fee/instructor-payout to EXACTLY one
+  // schema ties every TOP_UP/instructor-payout to EXACTLY one
   // CashMovement twin (accounts.service.ts#recordTopUp,
-  // instructor-compensation.service.ts#recordPayout, ppr.service.ts), while
+  // instructor-compensation.service.ts#recordPayout), while
   // ADJUSTMENT/PACKAGE_PURCHASE never create one. Hitting ~150000
   // AccountMovement rows primarily via TOP_UP would have pushed CashMovement
   // volume 2-3x past the requested ~30000. This phase instead sizes TOP_UP to
@@ -1027,7 +1025,7 @@ async function main(): Promise<void> {
 
   const fundedPersons = personRecords.filter((p) => p.accountId);
   const cashCategoryRows = await prisma.cashCategory.findMany({
-    where: { name: { in: ['Ricariche', 'PPR', 'Compensi istruttori', ...CASH_OPERATIONAL_CATEGORIES.map((c) => c.name)] } },
+    where: { name: { in: ['Ricariche', 'Compensi istruttori', ...CASH_OPERATIONAL_CATEGORIES.map((c) => c.name)] } },
     select: { id: true, name: true },
   });
   const cashCategoryIdByName = new Map(cashCategoryRows.map((c) => [c.name, c.id]));
@@ -1225,141 +1223,9 @@ async function main(): Promise<void> {
   await batchInsert('CashMovement (operational)', (batch) => prisma.cashMovement.createMany({ data: batch }), operationalCashRows);
 
   // ===========================================================================
-  // PHASE 8 — PPR requests, per-year numbering, landing fees
+  // PHASE 8 — Expiries + SentAlert
   // ===========================================================================
-  console.log('\nPhase 8: PPR requests...');
-
-  const pprCashCategoryId = cashCategoryIdByName.get('PPR');
-  const PPR_FIRST_NAMES = ['Hans', 'Andreas', 'Jean', 'Pierre', 'Martin', 'Tomas', 'Karel', 'Klaus', 'Wolfgang', 'Luc'];
-  const PPR_LAST_NAMES = ['Müller', 'Schmidt', 'Dubois', 'Novak', 'Dvorak', 'Weber', 'Fischer', 'Bernard', 'Kral', 'Meyer'];
-  const PPR_AIRCRAFT = [
-    { reg: 'D-EKPT', type: 'Cessna 172S' },
-    { reg: 'F-HBGA', type: 'Robin DR401' },
-    { reg: 'OK-VPR', type: 'Cirrus SR20' },
-    { reg: 'D-ELLE', type: 'Piper PA-28' },
-    { reg: 'F-GXYZ', type: 'Diamond DA40' },
-  ];
-  const PPR_ORIGINS = ['Bolzano (LIPB)', 'Lucca-Tassignano (LIQL)', 'Siena-Ampugnano (LIQS)', 'Cannes (LFMD)', 'Praga-Letnany (LKLT)', 'Monaco (EDDM)'];
-
-  type PprRow = {
-    id: string;
-    status: PprStatus;
-    firstName: string;
-    lastName: string;
-    email: string | null;
-    phone: string;
-    aircraftRegistration: string;
-    aircraftType: string;
-    origin: string;
-    destination: string;
-    eta: Date;
-    etd: Date | null;
-    personsOnBoard: number;
-    locale: string;
-    pprNumber: string | null;
-    rejectionReason: string | null;
-    decidedAt: Date | null;
-    decidedByUserId: string | null;
-    closedAt: Date | null;
-    closedByUserId: string | null;
-    landingFeeCents: number | null;
-    createdAt: Date;
-  };
-
-  const pprRows: PprRow[] = [];
-  const yearSeq = new Map<number, number>();
-  const AIRFIELD_DESTINATION = AIRFIELD_NAME;
-
-  for (let i = 0; i < VOL.pprRequests; i++) {
-    const createdAt = addDays(HISTORY_START, randInt(0, HISTORY_DAYS));
-    const eta = new Date(createdAt.getTime() + randInt(1, 20) * DAY_MS);
-    const roll = rng();
-    let status: PprStatus;
-    if (roll < 0.1) status = 'PENDING';
-    else if (roll < 0.2) status = 'APPROVED';
-    else if (roll < 0.35) status = 'REJECTED';
-    else if (roll < 0.9) status = 'COMPLETED';
-    else status = 'CANCELLED';
-
-    let pprNumber: string | null = null;
-    let decidedAt: Date | null = null;
-    let closedAt: Date | null = null;
-    let rejectionReason: string | null = null;
-    let landingFeeCents: number | null = null;
-
-    if (status !== 'PENDING') {
-      decidedAt = new Date(createdAt.getTime() + randInt(1, 48) * 3_600_000);
-      if (status === 'REJECTED') {
-        rejectionReason = 'Slot non disponibile nella data richiesta.';
-      } else {
-        // APPROVED / COMPLETED / CANCELLED all went through an approval — assign a real per-year sequential number.
-        const year = decidedAt.getUTCFullYear();
-        const nextSeq = (yearSeq.get(year) ?? 0) + 1;
-        yearSeq.set(year, nextSeq);
-        pprNumber = `PPR-${year}-${String(nextSeq).padStart(4, '0')}`;
-        if (status === 'COMPLETED' || status === 'CANCELLED') {
-          closedAt = new Date(decidedAt.getTime() + randInt(1, 72) * 3_600_000);
-          if (status === 'COMPLETED' && chance(0.7)) {
-            landingFeeCents = choice([0, 1000, 1500, 2000, 2500, 3000]);
-          }
-        }
-      }
-    }
-
-    const aircraft = choice(PPR_AIRCRAFT);
-    pprRows.push({
-      id: id(),
-      status,
-      firstName: choice(PPR_FIRST_NAMES),
-      lastName: choice(PPR_LAST_NAMES),
-      email: chance(0.9) ? `ppr.${String(i + 1).padStart(5, '0')}@example.test` : null,
-      phone: `+49 17${randInt(0, 9)} ${randInt(1000000, 9999999)}`,
-      aircraftRegistration: aircraft.reg,
-      aircraftType: aircraft.type,
-      origin: choice(PPR_ORIGINS),
-      destination: AIRFIELD_DESTINATION,
-      eta,
-      etd: chance(0.7) ? new Date(eta.getTime() + randInt(2, 8) * 3_600_000) : null,
-      personsOnBoard: randInt(1, 4),
-      locale: chance(0.5) ? 'en' : 'it',
-      pprNumber,
-      rejectionReason,
-      decidedAt,
-      decidedByUserId: decidedAt ? ADMIN_USER_ID : null,
-      closedAt,
-      closedByUserId: closedAt ? ADMIN_USER_ID : null,
-      landingFeeCents,
-      createdAt,
-    });
-  }
-
-  await batchInsert('PprRequest', (batch) => prisma.pprRequest.createMany({ data: batch }), pprRows);
-
-  const pprCounterRows = Array.from(yearSeq.entries()).map(([year, lastSeq]) => ({ year, lastSeq }));
-  if (pprCounterRows.length > 0) {
-    await prisma.pprCounter.createMany({ data: pprCounterRows });
-  }
-
-  const pprLandingFeeCashRows = pprRows
-    .filter((r) => r.landingFeeCents !== null && r.landingFeeCents > 0 && pprCashCategoryId)
-    .map((r) => ({
-      id: id(),
-      categoryId: pprCashCategoryId!,
-      amountCents: r.landingFeeCents!,
-      paymentMethod: choice(paymentMethods),
-      description: `Diritti di atterraggio ${r.pprNumber}`,
-      effectiveDate: utcMidnight(r.closedAt!.getUTCFullYear(), r.closedAt!.getUTCMonth() + 1, r.closedAt!.getUTCDate()),
-      actorUserId: ADMIN_USER_ID,
-      pprRequestId: r.id,
-    }));
-  await batchInsert('CashMovement (PPR)', (batch) => prisma.cashMovement.createMany({ data: batch }), pprLandingFeeCashRows);
-
-  console.log(`Phase 8 done: ${pprRows.length} PPR requests, ${pprCounterRows.length} year counters, ${pprLandingFeeCashRows.length} landing-fee cash movements.`);
-
-  // ===========================================================================
-  // PHASE 9 — Expiries + SentAlert
-  // ===========================================================================
-  console.log('\nPhase 9: expiries...');
+  console.log('\nPhase 8: expiries...');
 
   const expiryTypes = await prisma.expiryType.findMany({
     where: { name: { in: ['Visita medica classe 1', 'Visita medica classe 2', 'Visita medica LAPL', 'Licenza', 'Rating SEP', 'Inglese ICAO', 'Quota associativa'] } },
@@ -1423,12 +1289,12 @@ async function main(): Promise<void> {
   }
   await batchInsert('SentAlert', (batch) => prisma.sentAlert.createMany({ data: batch }), sentAlertRows);
 
-  console.log(`Phase 9 done: ${expiryRows.length} expiries, ${sentAlertRows.length} sent-alert rows.`);
+  console.log(`Phase 8 done: ${expiryRows.length} expiries, ${sentAlertRows.length} sent-alert rows.`);
 
   // ===========================================================================
-  // PHASE 10 — Instructor payouts
+  // PHASE 9 — Instructor payouts
   // ===========================================================================
-  console.log('\nPhase 10: instructor payouts...');
+  console.log('\nPhase 9: instructor payouts...');
 
   const compensiCategoryId = cashCategoryIdByName.get('Compensi istruttori');
   const schoolMinutesByInstructorProfile = new Map<string, number>();
@@ -1483,7 +1349,7 @@ async function main(): Promise<void> {
   await batchInsert('InstructorPayout', (batch) => prisma.instructorPayout.createMany({ data: batch }), payoutRows);
   await batchInsert('CashMovement (Compensi istruttori)', (batch) => prisma.cashMovement.createMany({ data: batch }), payoutCashRows);
 
-  console.log(`Phase 10 done: ${payoutRows.length} instructor payouts.`);
+  console.log(`Phase 9 done: ${payoutRows.length} instructor payouts.`);
 
   // ===========================================================================
   // Summary
@@ -1499,7 +1365,6 @@ async function main(): Promise<void> {
     prisma.booking.count(),
     prisma.accountMovement.count(),
     prisma.cashMovement.count(),
-    prisma.pprRequest.count(),
     prisma.expiry.count(),
     prisma.sentAlert.count(),
     prisma.instructorPayout.count(),
@@ -1508,7 +1373,7 @@ async function main(): Promise<void> {
   ]);
   const [
     personCount, userCount, aircraftCount, aircraftRateCount, instructorRateCount, flightCount, bookingCount,
-    accountMovementCount, cashMovementCount, pprCount, expiryCount, sentAlertCount, payoutCount, hourPackageCount, packageConsumptionCount,
+    accountMovementCount, cashMovementCount, expiryCount, sentAlertCount, payoutCount, hourPackageCount, packageConsumptionCount,
   ] = finalCounts;
 
   console.log('\n=== seed-load summary ===');
@@ -1520,7 +1385,6 @@ async function main(): Promise<void> {
   console.log(`Booking: ${bookingCount}`);
   console.log(`AccountMovement: ${accountMovementCount}`);
   console.log(`CashMovement: ${cashMovementCount}`);
-  console.log(`PprRequest: ${pprCount}`);
   console.log(`Expiry: ${expiryCount}  SentAlert: ${sentAlertCount}`);
   console.log(`InstructorPayout: ${payoutCount}`);
   console.log(`HourPackage: ${hourPackageCount}  PackageConsumption: ${packageConsumptionCount}`);

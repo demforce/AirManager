@@ -60,8 +60,7 @@ export function Field({ label, children, wide = false, error, hint }: FieldProps
           accessible name is computed from ALL of its text content, so an
           error span nested INSIDE would get appended to the control's own
           accessible name (e.g. "Nome" -> "Nome Campo obbligatorio."),
-          breaking both `getByLabel` lookups and the screen-reader experience
-          (caught by `e2e/ppr-public.spec.ts`'s own AC 1/2 guard). */}
+          breaking both `getByLabel` lookups and the screen-reader experience. */}
       <label className="fld-label-group">
         <span className="fld-label">{label}</span>
         <span className="fld-ctrl">{control}</span>

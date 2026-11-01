@@ -143,7 +143,6 @@ with story 17.1's container-tuning gains on top of its own.
 | `page bookings` | 710 ms (629 KB) | 463 ms (2 584 KB) | 4.1 s, 0 errors |
 | `page billing` | 359 ms (245 KB) | 1 693 ms (2 199 KB) | 14.7 s, 0 errors |
 | `page reports` | 330 ms (247 KB) | 1 570 ms (1 257 KB) | 10.9 s, 10 errors |
-| `pdf ppr` | 1.4 s | 3.8 s | — |
 
 Browser cost at load (`render.mjs`, 1280 px): Overview **43 417 nodes**,
 `domInteractive` **7 917 ms**, 19 long tasks / **5 724 ms**, scroll **14

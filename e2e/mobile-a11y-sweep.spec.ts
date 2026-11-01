@@ -208,11 +208,11 @@ test.describe('story 15.10 — the full-screen panel is a dialog with a name and
       },
     },
     {
-      grammar: 'shared form panel (also mounted by /dashboard/movements)',
-      url: '/it/dashboard/ppr',
+      grammar: 'shared form panel (also mounted by /dashboard/logbook)',
+      url: '/it/dashboard',
       open: async (page) => {
-        await page.getByTestId('ppr-manual-button').click();
-        return 'ppr-manual-button';
+        await page.getByTestId('dispatch-flight-button').click();
+        return 'dispatch-flight-button';
       },
     },
     {
@@ -385,8 +385,7 @@ test.describe('review 15.10 MAJOR-2 — the modal context includes the portals t
    * Review LOW-1: with the listener on the panel, a focus that fell to
    * `<body>` (its node destroyed) took the trap out of the picture entirely —
    * measured synthetically by emptying a sheet: `mobile-tab-overview`,
-   * `mobile-tab-schedule`, `mobile-tab-ppr`, i.e. the tab bar behind the
-   * scrim. From `document` the same press is caught and the focus goes back
+   * `mobile-tab-schedule`, …, i.e. the tab bar behind the scrim. From `document` the same press is caught and the focus goes back
    * into the modal.
    */
   test('when the focused control is destroyed, Tab puts the focus back inside the sheet', async ({ page }) => {
@@ -424,20 +423,21 @@ test.describe('story 15.10 — a CLOSED panel is not tabbable (AC 3)', () => {
    * Pre-fix, measured with NO panel open: `.slideover` carried
    * `aria-hidden="true"` and `pointer-events: none` — which does nothing for
    * the keyboard — while the panel kept ELEVEN focusable controls at 375px on
-   * `/dashboard/bookings` (SEVENTEEN on `/dashboard/ppr`, whose panel is the
-   * 12-field manual PPR form), all reachable by tabbing through the page.
+   * `/dashboard/bookings`, all reachable by tabbing through the page.
+   * `/dashboard/logbook` is the third page (story 19.1): its closed panel is
+   * the flight editor, EIGHTEEN candidates at 375 and at 1280.
    *
    * The assertion is the browser's own inert semantics, not a repetition of
    * the selector that finds the controls: each candidate is asked to take the
-   * focus, and must fail to. Discriminance (proved by dropping `inert` and
-   * rebuilding): every candidate takes the focus and the count is 11 / 17.
+   * focus, and must fail to. Discriminance (proved by dropping `inert`):
+   * every candidate takes the focus and the count is 11 / 18.
    */
   for (const viewport of [PHONE, DESKTOP]) {
     test(`no control inside a closed .slideover-panel can take the focus at ${viewport.width}px`, async ({ page }) => {
       await loginExpectingDashboard(page, ADMIN_EMAIL);
       await page.setViewportSize(viewport);
 
-      for (const url of ['/it/dashboard/bookings', '/it/dashboard/pilots', '/it/dashboard/ppr']) {
+      for (const url of ['/it/dashboard/bookings', '/it/dashboard/pilots', '/it/dashboard/logbook']) {
         await page.goto(url);
         await page.waitForSelector('.page');
         await expect(page.locator('.slideover.open')).toHaveCount(0);

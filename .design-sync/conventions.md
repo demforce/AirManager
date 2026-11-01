@@ -1,6 +1,6 @@
 # AirOps — how to build with this design system
 
-AirOps is the UI of AirManager, an Italian airfield / flight-school manager (pilots, fleet, bookings, PPR, expiries, billing). Default copy language: **Italian**.
+AirOps is the UI of AirManager, an Italian airfield / flight-school manager (pilots, fleet, bookings, expiries, billing). Default copy language: **Italian**.
 
 ## Setup (required)
 
