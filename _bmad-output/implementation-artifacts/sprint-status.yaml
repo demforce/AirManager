@@ -518,7 +518,7 @@ development_status:
   19-5-form-volo-tipi-dropdown-toggle: ready-for-dev  # story file 2026-11-01 (29 AC, baseline 3876e72), nessuna domanda PO (8 scelte su delega §0.3: Toggle «Volo solista» acceso = solista, SearchCombobox con lista statica, Escape del popup non chiude il pannello); dev Opus DOPO 19.4
   19-6-volo-senza-addebito-cancellazione-definitiva: ready-for-dev  # story file 2026-11-01 (37 AC, baseline 3876e72); Q-19.6-a = B (tariffe obbligatorie anche senza addebito, contro la raccomandazione); PUT/DELETE /flights/{id}; dev Opus DOPO 19.5
   19-7-scadenze-licenza-mediche-quota-currency: backlog
-  19-8-impostazioni-salva-unico: backlog
+  19-8-impostazioni-salva-unico: ready-for-dev  # story file 2026-11-01 (24 AC, baseline a7e960e), nessuna domanda PO; PATCH /api/v1/settings atomico a blocchi + diff liste; nomi 19.7 proposti (da verificare sul codice committato della 19.7); TD 19.1-a chiuso (contactEmail = destinatario email di prova); dev Opus DOPO 19.7
   19-9-avviso-deroga-voli: backlog
   19-10-avviso-deroga-prenotazioni: backlog
   19-11-estratto-conto-periodo-progressivo: backlog
