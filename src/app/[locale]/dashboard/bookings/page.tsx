@@ -473,6 +473,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         canCreateNew={canCreateNew}
         status={statusFilter.param}
         formMode={formMode}
+        canForce={hasPermission(actor, 'requirements.force')}
         personOptions={personOptions}
         instructorOptions={staffInstructorOptions}
         studentOptions={studentOptions}

@@ -591,12 +591,14 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
             reasonTitle: tBookings('list.denyModal.title'),
             reasonSubmit: tBookings('list.denyModal.submit'),
             reasonCancel: tBookings('list.denyModal.cancel'),
+            requirementsTitle: tBookings('requirements.approveTitle'),
             // `t.raw`: the `{count}` placeholder is filled client-side, and
             // `t()` would render the KEY (the ICU lesson of epic 13/14.3).
             seeAll: t.raw('overview.mobile.pending.seeAll') as string,
             errors: buildBookingsTableLabels(tBookings).actions.errors,
           }}
           locale={locale}
+          canForce={hasPermission(actor, 'requirements.force')}
           // Review 15.3 F3: what the head counts minus what the card lists.
           // Never negative — the rows come from the very same query, capped.
           hiddenCount={Math.max(0, embedPendingResult.total - pendingRows.length)}
@@ -698,6 +700,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         // contract of the Pianificazione URL (R-15.4-e), not of this widget.
         status={null}
         formMode="staff"
+        canForce={hasPermission(actor, 'requirements.force')}
         personOptions={staffPersonOptions}
         instructorOptions={instructorOptions}
         studentOptions={[]}

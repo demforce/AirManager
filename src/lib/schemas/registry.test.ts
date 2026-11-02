@@ -315,6 +315,33 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(deleteSchema?.anyOf ?? deleteSchema?.oneOf).toBeUndefined();
   });
 
+  it('story 19.10 (AC 31): the three booking writes and the membership fee answer REQUIREMENTS_NOT_MET with the $ref, take `force`, and carry no retired deroga', () => {
+    type Schema = { anyOf?: Schema[]; oneOf?: Schema[]; properties?: Record<string, Schema>; $ref?: string };
+    type Operation = { description?: string; responses: Record<string, { content?: Record<string, { schema: Schema }> }>; requestBody?: { content?: Record<string, { schema: Schema }> } };
+    const paths = doc.paths as Record<string, Record<string, Operation>>;
+    const schemas = doc.components?.schemas as Record<string, Schema> | undefined;
+    const operations = [
+      paths['/api/v1/bookings']?.['post'],
+      paths['/api/v1/bookings/{id}']?.['patch'],
+      paths['/api/v1/bookings/{id}/transition']?.['post'],
+      paths['/api/v1/people/{id}/membership-fee']?.['post'],
+    ];
+    for (const operation of operations) {
+      expect(operation?.description).toContain('REQUIREMENTS_NOT_MET');
+      expect(operation?.description).toContain('requirements.force');
+      expect(operation?.description).not.toMatch(/EXPIRED_DOCUMENTS|forceReason|override|MEMBERSHIP_FEE_INSUFFICIENT_BALANCE|settings\.manage|TD 16\.3-a/);
+      const variants = operation?.responses['422']?.content?.['application/json']?.schema?.anyOf ?? [];
+      expect(variants.map((variant) => variant.properties?.['error']?.properties?.['details']?.$ref).filter(Boolean)).toEqual([
+        '#/components/schemas/RequirementsNotMetDetails',
+      ]);
+      const body = operation?.requestBody?.content?.['application/json']?.schema;
+      const bodyProperties = body?.$ref ? schemas?.[body.$ref.replace('#/components/schemas/', '')]?.properties : body?.properties;
+      expect(bodyProperties).toHaveProperty('force');
+      expect(bodyProperties).not.toHaveProperty('forceReason');
+      expect(bodyProperties).not.toHaveProperty('override');
+    }
+  });
+
   it('documents blocksBooking on the ExpiryType schema (story 7.4)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
     expect(schemas?.['ExpiryType']?.properties).toHaveProperty('blocksBooking');

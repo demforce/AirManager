@@ -119,15 +119,21 @@ test.describe.serial('BOOKING_OUTSIDE_WINDOW (Story 12.11, AC 4, ratifica utente
     // Narrow afternoon-only window: 10:00-11:00 Rome (09:00-10:00Z, winter CET) falls OUTSIDE it.
     await setScheduling(page, { openTime: '14:00', closeTime: '18:00', minSlotMinutes: 60, turnaroundMinutes: 0, maxAdvanceDays: 3650 });
 
-    const outsideResponse = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` },
-    });
-    expect(outsideResponse.status()).toBe(422);
-    expect((await outsideResponse.json()).error.code).toBe('BOOKING_OUTSIDE_WINDOW');
+    // Story 19.10 (AC 2, TD 16.3-g): the fresh pilot also fails the
+    // requirements, and the window still answers first — with or without
+    // `force`, since the deroga is decided last and never covers the window.
+    for (const force of [false, true]) {
+      const outsideResponse = await page.request.post('/api/v1/bookings', {
+        data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z`, force },
+      });
+      expect(outsideResponse.status()).toBe(422);
+      expect((await outsideResponse.json()).error.code).toBe('BOOKING_OUTSIDE_WINDOW');
+    }
 
-    // Within the window: 15:00-16:00 Rome (14:00-15:00Z) is accepted.
+    // Within the window: 15:00-16:00 Rome (14:00-15:00Z) is accepted (an
+    // admin fixture: `force`, story 19.10 AD-9 rule 1).
     const insideResponse = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T14:00:00.000Z`, endsAt: `${FUTURE_DAY}T15:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T14:00:00.000Z`, endsAt: `${FUTURE_DAY}T15:00:00.000Z`, force: true },
     });
     expect(insideResponse.status()).toBe(201);
   });
@@ -175,8 +181,7 @@ test.describe.serial('BOOKING_OUTSIDE_WINDOW (Story 12.11, AC 4, ratifica utente
     const form = page.getByTestId('new-booking-form');
     await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     // THIS run's pilot, by its run-unique label — never the first option: the
-    // shared dev DB is full of people other specs gave expired documents to,
-    // and `EXPIRED_DOCUMENTS` would answer first (measured: it did).
+    // shared dev DB is full of people other specs gave expired documents to.
     await selectFromCombobox(form.getByLabel('Pilota o allievo'), pilot.label, pilot.label);
     // 10:00-11:00 Rome (winter CET) — outside the 14:00-18:00 window above.
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:00`);
@@ -191,7 +196,7 @@ test.describe.serial('BOOKING_OUTSIDE_WINDOW (Story 12.11, AC 4, ratifica utente
     await expect(banner).not.toContainText('Riprova');
 
     const insideBooking = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T14:00:00.000Z`, endsAt: `${FUTURE_DAY}T15:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T14:00:00.000Z`, endsAt: `${FUTURE_DAY}T15:00:00.000Z`, force: true },
     });
     expect(insideBooking.status()).toBe(201);
 
@@ -234,7 +239,7 @@ test.describe.serial('BOOKING_OUTSIDE_WINDOW (Story 12.11, AC 4, ratifica utente
     const aircraft = await createAircraft(page);
     const pilot = await createPilotPerson(page);
     const response = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T21:00:00.000Z`, endsAt: `${FUTURE_DAY}T22:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T21:00:00.000Z`, endsAt: `${FUTURE_DAY}T22:00:00.000Z`, force: true },
     });
     expect(response.status()).toBe(201);
   });

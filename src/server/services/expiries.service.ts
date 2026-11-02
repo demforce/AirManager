@@ -642,7 +642,7 @@ export async function getExpiryTierCounts(actor: Actor): Promise<ExpiryTierCount
  * requirement off or satisfied; otherwise the ONE failing document (the most
  * recently expired visit, or a "missing" one with `expiresAt: null`).
  *
- * No actor, like `bookings.service.ts#findBlockingExpiredDocuments`: it runs
+ * No actor, like `requirements.service.ts#evaluateRequirements`: it runs
  * inside the booking/flight scans for whoever the operation names. Exported
  * for those scans and for the checks of stories 19.9/19.10.
  */

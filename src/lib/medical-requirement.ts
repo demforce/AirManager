@@ -17,7 +17,7 @@
  * null` (the shape the flight form already renders for a missing document).
  *
  * Dates are `YYYY-MM-DD` strings compared as strings (the convention of
- * `bookings.service.ts#findBlockingExpiredDocuments`).
+ * `requirements.service.ts#evaluateRequirements`).
  */
 export type MedicalRequirementFailure = { typeName: string; expiresAt: string | null };
 

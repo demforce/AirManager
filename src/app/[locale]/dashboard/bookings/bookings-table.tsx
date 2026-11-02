@@ -14,11 +14,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { RequirementsWarning } from '@/components/dashboard/requirements-warning';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { useToast } from '@/components/ui/toast';
 import { BOOKING_STATUS_VALUES } from '@/lib/booking-status-filter';
+import type { RequirementFailure } from '@/lib/schemas/requirements';
 import { formatDateOnly, formatTimeOfDay } from '@/lib/time';
 import {
   bookingErrorMessage,
@@ -92,6 +94,8 @@ export type BookingsTableLabels = {
     /** Story 15.3, AD-2: the same labels the shared `postBookingTransition` maps codes onto — the mobile Panoramica queue passes this very object. */
     errors: BookingTransitionErrorLabels;
   };
+  /** Story 19.10: the title of the shared requirements warning on an approval. */
+  requirementsApproveTitle: string;
   denyModal: {
     title: string;
     subtitle: string;
@@ -149,6 +153,8 @@ type BookingsTableProps = {
   /** The list's current `?status` (ratifica R-15.4-e), `null` when unfiltered — echoed by every href this card builds. */
   status: string | null;
   formMode: NewBookingFormMode;
+  /** Story 19.10: `requirements.force` — whether the requirements warnings (forms, approval) offer «Procedi comunque». */
+  canForce: boolean;
   personOptions: PersonOption[];
   instructorOptions: InstructorOption[];
   studentOptions: PersonOption[];
@@ -187,6 +193,7 @@ export function BookingsTable({
   canCreateNew,
   status,
   formMode,
+  canForce,
   personOptions,
   instructorOptions,
   studentOptions,
@@ -211,12 +218,23 @@ export function BookingsTable({
   // are the sheet's `secondStep` instead (R-15.2-a), same shape as the
   // Panoramica's pending queue.
   const [sheetId, setSheetId] = useState<string | null>(null);
-  const [sheetStep, setSheetStep] = useState<'none' | 'deny' | 'cancel'>('none');
+  const [sheetStep, setSheetStep] = useState<'none' | 'deny' | 'cancel' | 'requirements'>('none');
   const [sheetDenyReason, setSheetDenyReason] = useState('');
   const [sheetDenyError, setSheetDenyError] = useState<string | null>(null);
   const sheetPrimaryRef = useRef<HTMLButtonElement>(null);
   const sheetReasonRef = useRef<HTMLTextAreaElement>(null);
   const sheetCancelConfirmRef = useRef<HTMLButtonElement>(null);
+  const sheetRequirementsRef = useRef<HTMLDivElement>(null);
+
+  // --- requirements of an approval (story 19.10, AD-6) -----------------------
+  // One warning for the two faces: `requirements.surface` says where it shows —
+  // the desktop mini-modal or the phone sheet's own step (its z-index rule is
+  // the deny step's, above). `returnFocusRef` is the «Approva» that opened the
+  // modal (set by its click): the focus goes back there when it closes
+  // (review 19.9 F3).
+  const [requirements, setRequirements] = useState<{ id: string; failures: RequirementFailure[]; surface: 'desktop' | 'sheet' } | null>(null);
+  const [proceedError, setProceedError] = useState(false);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
   /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
   const closeSheet = useCallback((): void => {
@@ -224,6 +242,7 @@ export function BookingsTable({
     setSheetStep('none');
     setSheetDenyReason('');
     setSheetDenyError(null);
+    setRequirements((current) => (current?.surface === 'sheet' ? null : current));
   }, []);
 
   /**
@@ -236,6 +255,8 @@ export function BookingsTable({
   useEffect(() => {
     if (sheetStep === 'deny') sheetReasonRef.current?.focus();
     else if (sheetStep === 'cancel') sheetCancelConfirmRef.current?.focus();
+    // Story 19.10: the first button of the step (the warning's own buttons).
+    else if (sheetStep === 'requirements') sheetRequirementsRef.current?.querySelector('button')?.focus();
     else sheetPrimaryRef.current?.focus();
   }, [sheetStep]);
 
@@ -256,12 +277,13 @@ export function BookingsTable({
    * re-opening over a booking that no longer exists in that state (review 15.3
    * F2). The desktop reads `.ok` and behaves exactly as before.
    */
-  async function transition(id: string, to: BookingTransitionTarget, reason?: string): Promise<BookingTransitionOutcome> {
+  async function transition(id: string, to: BookingTransitionTarget, reason?: string, force?: boolean): Promise<BookingTransitionOutcome> {
     setPendingActionId(id);
-    const outcome = await postBookingTransition(id, to, labels.actions.errors, reason);
+    const outcome = await postBookingTransition(id, to, labels.actions.errors, reason, force);
     setPendingActionId(null);
 
-    if (!outcome.ok) {
+    // Story 19.10: a `failures` outcome is the caller's warning, never a toast.
+    if (!outcome.ok && !('failures' in outcome)) {
       toast.show(outcome.message, 'bad');
       if (outcome.stale) {
         closeSheet();
@@ -271,12 +293,59 @@ export function BookingsTable({
     return outcome;
   }
 
-  async function handleApprove(id: string): Promise<void> {
-    if ((await transition(id, 'APPROVED')).ok) {
-      closeSheet();
-      toast.show(labels.actions.approveSuccess, 'ok');
-      router.refresh();
+  function approved(): void {
+    closeSheet();
+    toast.show(labels.actions.approveSuccess, 'ok');
+    router.refresh();
+  }
+
+  /** «Approva» — on a 422 `REQUIREMENTS_NOT_MET` (story 19.10) the warning opens on the surface that asked, the desktop modal or the sheet's own step. */
+  async function handleApprove(id: string, surface: 'desktop' | 'sheet'): Promise<void> {
+    const outcome = await transition(id, 'APPROVED');
+    if (outcome.ok) {
+      approved();
+      return;
     }
+    if ('failures' in outcome) {
+      setProceedError(false);
+      setRequirements({ id, failures: outcome.failures, surface });
+      if (surface === 'sheet') setSheetStep('requirements');
+    }
+  }
+
+  /** Closes the warning — «Annulla» of the modal hands the focus back to its «Approva»; on the sheet it goes back to the first step. */
+  function dismissRequirements(): void {
+    const surface = requirements?.surface;
+    setRequirements(null);
+    setProceedError(false);
+    if (surface === 'sheet') setSheetStep('none');
+    else returnFocusRef.current?.focus();
+  }
+
+  /**
+   * «Procedi comunque» (story 19.10) — the same approval plus `force: true`.
+   * Every refusal except a network error closes the warning and is told the
+   * way an approval's refusals always are (`transition`'s toast, the stale row
+   * refreshed): the deroga is decided last on the server, so only a race can
+   * still refuse it, and forcing again cannot help.
+   */
+  async function proceedRequirements(): Promise<void> {
+    if (!requirements) return;
+    setProceedError(false);
+    let outcome: BookingTransitionOutcome;
+    try {
+      outcome = await transition(requirements.id, 'APPROVED', undefined, true);
+    } catch {
+      setPendingActionId(null);
+      setProceedError(true);
+      return;
+    }
+    if (outcome.ok) {
+      setRequirements(null);
+      approved();
+      return;
+    }
+    dismissRequirements();
   }
 
   async function handleReopen(id: string): Promise<void> {
@@ -357,7 +426,7 @@ export function BookingsTable({
     if (!outcome.ok) {
       // `transition` already closed the sheet on a stale row; on anything else
       // the step stays open with the reason the user typed, and says why.
-      if (!outcome.stale) setSheetDenyError(outcome.message);
+      if (!outcome.stale && 'message' in outcome) setSheetDenyError(outcome.message);
       return;
     }
 
@@ -443,7 +512,7 @@ export function BookingsTable({
           className="btn primary"
           ref={actions.length === 0 ? sheetPrimaryRef : undefined}
           disabled={busy}
-          onClick={() => void handleApprove(booking.id)}
+          onClick={() => void handleApprove(booking.id, 'sheet')}
           data-testid="booking-approve-action-mobile"
         >
           {labels.actions.approve}
@@ -642,7 +711,16 @@ export function BookingsTable({
                   <>
                     {booking.status === 'PENDING' && canManageAny ? (
                       <>
-                        <button type="button" className="btn mini ok" disabled={busy} onClick={() => void handleApprove(booking.id)} data-testid="booking-approve-action">
+                        <button
+                          type="button"
+                          className="btn mini ok"
+                          disabled={busy}
+                          onClick={(event) => {
+                            returnFocusRef.current = event.currentTarget;
+                            void handleApprove(booking.id, 'desktop');
+                          }}
+                          data-testid="booking-approve-action"
+                        >
                           {labels.actions.approve}
                         </button>
                         <button
@@ -829,6 +907,26 @@ export function BookingsTable({
         </div>
       ) : null}
 
+      {/* Story 19.10 (AD-6): the approval's requirements warning on the desktop
+          — the deny modal's own markup, the shared warning inside, its
+          «Procedi comunque» for whoever holds `requirements.force`. */}
+      {requirements?.surface === 'desktop' ? (
+        <div className="mini-modal">
+          <div className="mini-modal-card" data-testid="booking-requirements-modal">
+            <RequirementsWarning
+              failures={requirements.failures}
+              canProceed={canForce}
+              onProceed={() => void proceedRequirements()}
+              onCancel={dismissRequirements}
+              submitting={pendingActionId === requirements.id}
+              error={proceedError}
+              moneyLocale={locale}
+              title={labels.requirementsApproveTitle}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {/* Mounted only for an actor who could ever open one (`canCreate` — the
           same `bookings.manage.any || bookings.manage.own` gate as the
           "Nuova prenotazione" button/every row's Modifica) — a pure
@@ -847,6 +945,7 @@ export function BookingsTable({
             studentOptions={studentOptions}
             ownPersonId={ownPersonId}
             ownInstructorProfileId={ownInstructorProfileId}
+            canForce={canForce}
             labels={newBookingLabels}
           />
 
@@ -860,6 +959,7 @@ export function BookingsTable({
               toast.show(labels.actions.moveSuccess, 'ok');
               router.refresh();
             }}
+            canForce={canForce}
             labels={editBookingLabels}
           />
         </>
@@ -930,6 +1030,19 @@ export function BookingsTable({
                   {labels.denyModal.submit}
                 </button>
               </div>
+            </div>
+          ) : sheetStep === 'requirements' && requirements?.surface === 'sheet' ? (
+            <div className="bottom-sheet-step" ref={sheetRequirementsRef} data-testid="booking-requirements-step-mobile">
+              <RequirementsWarning
+                failures={requirements.failures}
+                canProceed={canForce}
+                onProceed={() => void proceedRequirements()}
+                onCancel={dismissRequirements}
+                submitting={pendingActionId === requirements.id}
+                error={proceedError}
+                moneyLocale={locale}
+                title={labels.requirementsApproveTitle}
+              />
             </div>
           ) : sheetStep === 'cancel' ? (
             <div className="bottom-sheet-step">

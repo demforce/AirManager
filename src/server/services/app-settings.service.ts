@@ -171,7 +171,7 @@ function parseStoredInt(value: string | undefined): number | null {
  * the top-level `prisma` client even when called from INSIDE
  * `bookings.service.ts#transitionBooking`'s own `$transaction` — the exact
  * same "sibling read via plain `prisma`, not `tx`" precedent that function's
- * own `findBlockingExpiredDocuments` call already establishes.
+ * own requirements evaluation (`requirements.service.ts`) already establishes.
  */
 export async function getSchedulingSettings(): Promise<SchedulingSettingsDto> {
   const rows = await prisma.appSetting.findMany({ where: { key: { in: [...SCHED_KEYS] } }, select: { key: true, value: true } });

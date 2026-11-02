@@ -168,9 +168,12 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     const pilot = await createPilotPerson(page);
     await topUpAccount(page, pilot.personId, 100_000); // sufficient balance for the addebito below
 
-    const missingKey = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, { data: { amountCents: 1000 } });
-    expect(missingKey.status()).toBe(422);
-    expect((await missingKey.json()).error.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
+    // Story 19.10 (AC 37a): with `force` too — the deroga never waives the key.
+    for (const data of [{ amountCents: 1000 }, { amountCents: 1000, force: true }]) {
+      const missingKey = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, { data });
+      expect(missingKey.status()).toBe(422);
+      expect((await missingKey.json()).error.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
+    }
 
     const withKey = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
@@ -179,7 +182,37 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     expect(withKey.status()).toBe(200);
   });
 
-  test('an addebito that would take a ZERO-balance pilot below zero shows a clear error, no override checked (PO decision 2026-07-17, review F3)', async ({ page }) => {
+  test('story 19.10 (AC 37b/c): a zero balance answers the shared 422 REQUIREMENTS_NOT_MET; the same Idempotency-Key resent with force charges (the 422 freed it), and its replay charges nothing more', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const pilot = await createPilotPerson(page); // no top-up: balance stays 0
+    const key = crypto.randomUUID();
+
+    const refused = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, { headers: { 'Idempotency-Key': key }, data: { amountCents: 5000 } });
+    expect(refused.status()).toBe(422);
+    expect((await refused.json()).error).toEqual({
+      code: 'REQUIREMENTS_NOT_MET',
+      message: 'Requirements not met: BALANCE.',
+      details: { failures: [{ type: 'BALANCE', role: 'person', personName: `${pilot.firstName} ${pilot.lastName}`, balanceCents: 0, costCents: 5000 }] },
+    });
+
+    const forced = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, { headers: { 'Idempotency-Key': key }, data: { amountCents: 5000, force: true } });
+    expect(forced.status(), await forced.text()).toBe(200);
+    const forcedBody = (await forced.json()) as { balanceCents: number; balanceAlert: boolean };
+    expect(forcedBody).toMatchObject({ balanceCents: -5000, balanceAlert: true });
+
+    const replay = await page.request.post(`/api/v1/people/${pilot.personId}/membership-fee`, { headers: { 'Idempotency-Key': key }, data: { amountCents: 5000, force: true } });
+    expect(replay.status()).toBe(200);
+    expect(replay.headers()['idempotency-replayed']).toBe('true');
+    expect(await replay.json()).toEqual(forcedBody);
+
+    const movementsResponse = await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`);
+    const movements = (await movementsResponse.json()) as { items: { type: string; amountCents: number; description: string | null }[] };
+    expect(movements.items.filter((m) => m.type === 'ADJUSTMENT' && m.description?.startsWith('Quota associativa')).map((m) => m.amountCents)).toEqual([-5000]);
+  });
+
+  test('an addebito a ZERO-balance pilot cannot cover shows the shared requirements warning inside the panel — saldo and importo — and charges nothing; «Annulla» goes back to the form intact (story 19.10, AC 38)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 5000 } });
 
@@ -195,20 +228,31 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     await combobox.fill(pilot.lastName);
     await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();
 
-    // ADMIN sees the override checkbox (same `settings.manage` gate as "Invia promemoria") — left UNCHECKED.
-    await expect(panel.getByTestId('membership-fee-override-checkbox')).not.toBeChecked();
+    // The checkbox of the old override is gone: the deroga is the warning's «Procedi comunque».
+    await expect(panel.getByTestId('membership-fee-override-checkbox')).toHaveCount(0);
     await panel.getByTestId('membership-fee-submit').click();
 
-    await expect(panel.getByTestId('membership-fee-error')).toBeVisible();
+    const warning = panel.getByTestId('requirements-warning');
+    await expect(warning).toBeVisible();
+    await expect(warning.getByTestId('requirements-warning-item')).toHaveText([
+      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — Saldo insufficiente: saldo 0,00 €, costo 50,00 €`,
+    ]);
+    await expect(panel.getByTestId('membership-fee-error')).toHaveCount(0);
     await expect(panel.getByTestId('membership-fee-success')).toHaveCount(0);
 
     // No account movement / expiry was created — the addebito never happened.
     const movementsResponse = await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`);
     const movements = (await movementsResponse.json()) as { items: { type: string; description: string | null }[] };
     expect(movements.items.filter((m) => m.type === 'ADJUSTMENT' && m.description?.startsWith('Quota associativa'))).toHaveLength(0);
+
+    await warning.getByTestId('requirements-cancel').click();
+    await expect(panel.getByTestId('requirements-warning')).toHaveCount(0);
+    await expect(combobox).toHaveValue(personOptionLabel(pilot));
+    await expect(panel.getByTestId('membership-fee-amount')).toHaveValue('50.00');
+    await expect(panel.getByTestId('membership-fee-submit')).toBeFocused();
   });
 
-  test('an ADMIN checking "Forza addebito" charges a ZERO-balance pilot below zero successfully (review F3 override)', async ({ page }) => {
+  test('«Procedi comunque» on that warning charges the ZERO-balance pilot below zero: −50,00 € and the fee renewed for 12 months (story 19.10, AC 38)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 5000 } });
 
@@ -223,15 +267,23 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     await combobox.click();
     await combobox.fill(pilot.lastName);
     await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();
-
-    await panel.getByTestId('membership-fee-override-checkbox').check();
     await panel.getByTestId('membership-fee-submit').click();
-    await expect(panel.getByTestId('membership-fee-success')).toBeVisible();
+
+    await panel.getByTestId('requirements-warning').getByTestId('requirements-proceed').click();
+    const success = panel.getByTestId('membership-fee-success');
+    await expect(success).toBeVisible();
+    await expect(success).toContainText('-50,00 €');
+    await expect(panel.getByTestId('requirements-warning')).toHaveCount(0);
 
     const movementsResponse = await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`);
     const movements = (await movementsResponse.json()) as { items: { type: string; amountCents: number; description: string | null }[] };
     const adjustment = movements.items.find((m) => m.type === 'ADJUSTMENT' && m.description?.startsWith('Quota associativa'));
-    expect(adjustment?.amountCents).toBe(-5000); // balance now -5000, below zero — allowed by the override.
+    expect(adjustment?.amountCents).toBe(-5000); // balance now -5000, below zero — allowed by the deroga.
+
+    const expiriesResponse = await page.request.get(`/api/v1/people/${pilot.personId}/expiries`);
+    const fee = ((await expiriesResponse.json()) as { typeName: string; expiresAt: string }[]).find((e) => e.typeName === 'Quota associativa');
+    const now = new Date();
+    expect(fee?.expiresAt.slice(0, 4)).toBe(String(now.getFullYear() + 1));
   });
 
   test('setting the fee to 0 disables the button on the Scadenze page, with a hint', async ({ page }) => {

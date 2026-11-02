@@ -18,6 +18,7 @@
  * PLACEMENT changes, in CSS.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { RequirementsWarning } from '@/components/dashboard/requirements-warning';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
@@ -31,6 +32,7 @@ import { expiryCardSubLine, expiryDaysLabel, expirySheetSub } from '@/lib/mobile
 import { formatCents, parseCents } from '@/lib/money';
 import { randomIdempotencyKey } from '@/lib/use-idempotency-key';
 import type { ExpiryDashboardItemDto, ExpiryWindowDto, RegistryCategoryDto } from '@/lib/schemas/expiries';
+import type { RequirementFailure } from '@/lib/schemas/requirements';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { formatDateOnly } from '@/lib/time';
 
@@ -118,8 +120,6 @@ export type ScadenzeConsoleLabels = {
     invalidAmount: string;
     success: string;
     genericError: string;
-    insufficientBalance: string;
-    overrideCheckbox: string;
   };
   pagination: { prev: string; next: string };
   /**
@@ -156,6 +156,8 @@ export type ScadenzeConsoleProps = {
   typeOptions: TypeOption[];
   personOptions: PersonOption[];
   canTriggerReminders: boolean;
+  /** Story 19.10 (AD-10): `requirements.force` — the membership fee's «Procedi comunque» on an insufficient balance. */
+  canForce: boolean;
   canChargeMembershipFee: boolean;
   membershipFeeCents: number;
   exportHref: string;
@@ -230,6 +232,7 @@ export function ScadenzeConsole({
   typeOptions,
   personOptions,
   canTriggerReminders,
+  canForce,
   canChargeMembershipFee,
   membershipFeeCents,
   exportHref,
@@ -699,7 +702,7 @@ export function ScadenzeConsole({
           defaultAmountCents={membershipFeeCents}
           moneyLocale={locale}
           labels={labels.membershipFee}
-          canOverride={canTriggerReminders}
+          canForce={canForce}
           onClose={() => setFeeModalOpen(false)}
           onCharged={() => router.refresh()}
         />
@@ -846,8 +849,8 @@ type MembershipFeeModalProps = {
   defaultAmountCents: number;
   moneyLocale: 'it' | 'en';
   labels: ScadenzeConsoleLabels['membershipFee'];
-  /** ADMIN-only (review F3): same `settings.manage` gate as `canTriggerReminders` — shows the "Forza addebito" override checkbox. */
-  canOverride: boolean;
+  /** Story 19.10 (AD-10): `requirements.force` — whether the insufficient-balance warning offers «Procedi comunque». */
+  canForce: boolean;
   onClose: () => void;
   onCharged: () => void;
 };
@@ -858,15 +861,20 @@ type MembershipFeeModalProps = {
  * editable) firing `POST /api/v1/people/{id}/membership-fee`
  * (`Idempotency-Key` mandatory). Feedback shows the new balance and expiry.
  *
- * PO decision (2026-07-17, review F3): an addebito that would take the
- * balance below zero is refused (422 `MEMBERSHIP_FEE_INSUFFICIENT_BALANCE`)
- * unless an ADMIN checks "Forza addebito" (`canOverride`, unchecked by
- * default — a deliberate action, never the default path).
+ * PO decision (2026-07-17, review F3; the one deroga pattern since story
+ * 19.10, CR §4.6): an addebito the balance does not cover is refused with the
+ * 422 `REQUIREMENTS_NOT_MET` of flights and bookings, and the modal shows the
+ * shared `RequirementsWarning` (the balance and the amount) — «Procedi
+ * comunque» (`canForce`) resends the same body with `force: true` and a NEW
+ * `Idempotency-Key` (the 422 freed the old one anyway, `handler.ts`); its
+ * «Annulla» goes back to the form with the values intact, and a change to the
+ * pilot or the amount closes it (never derogate a body other than the one
+ * listed).
  *
  * Story 15.7 (ratifica R-15.7-g): on a phone the SAME node becomes a
  * full-screen panel (title on top, action row pinned to the bottom), because
- * at 375px this modal measured 335x385 with a 35px submit and a 13x13
- * checkbox. It is a CSS mode of the one node, not a second tree: a second
+ * at 375px this modal measured 335x385 with a 35px submit. It is a CSS mode
+ * of the one node, not a second tree: a second
  * tree would duplicate `membership-fee-panel`, `membership-fee-submit`, the
  * combobox's DOM `id` and its network path — all four read PAGE-LEVEL by
  * `membership-fee.spec.ts`. Same reasoning `SlideOver`'s own full-screen mode
@@ -882,11 +890,15 @@ function parseAmountCents(value: string): number | null {
   }
 }
 
-function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, labels, canOverride, onClose, onCharged }: MembershipFeeModalProps) {
+function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, labels, canForce, onClose, onCharged }: MembershipFeeModalProps) {
   const [personId, setPersonId] = useState('');
   const [amount, setAmount] = useState(() => (defaultAmountCents / 100).toFixed(2));
-  const [override, setOverride] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Story 19.10 (AD-10): the failures of the 422 `REQUIREMENTS_NOT_MET` and
+  // the body they refused; `null` while the warning is closed.
+  const [requirements, setRequirements] = useState<{ failures: RequirementFailure[]; personId: string; amountCents: number } | null>(null);
+  const [proceedError, setProceedError] = useState(false);
+  const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ balanceCents: number; expiresAt: string } | null>(null);
   // Review 14.2 F3.4 — per-field markers instead of one shared bottom string:
@@ -896,37 +908,69 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
   const pilotMissing = submitAttempted && !personId;
   const amountInvalid = submitAttempted && parseAmountCents(amount) === null;
 
+  function dismissRequirements(): void {
+    setRequirements(null);
+    setProceedError(false);
+  }
+
+  /** The charge itself — `force` only from «Procedi comunque»; a new `Idempotency-Key` per attempt, as always. */
+  function charge(targetPersonId: string, amountCents: number, force: boolean): Promise<Response> {
+    return fetch(`/api/v1/people/${targetPersonId}/membership-fee`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': randomIdempotencyKey() },
+      body: JSON.stringify(force ? { amountCents, force: true } : { amountCents }),
+    });
+  }
+
+  async function charged(response: Response): Promise<void> {
+    const body = (await response.json()) as { balanceCents: number; expiresAt: string };
+    setResult(body);
+    onCharged();
+  }
+
   async function submit(): Promise<void> {
     setError(null);
+    dismissRequirements();
     setSubmitAttempted(true);
     const parsedAmount = parseAmountCents(amount);
     if (!personId || parsedAmount === null) return;
 
     setSubmitting(true);
-    const response = await fetch(`/api/v1/people/${personId}/membership-fee`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': randomIdempotencyKey() },
-      body: JSON.stringify({ amountCents: parsedAmount, override }),
-    });
+    const response = await charge(personId, parsedAmount, false);
     setSubmitting(false);
 
     if (!response.ok) {
-      const errorBody = (await response.json().catch(() => null)) as { error?: { code?: string; details?: { balanceCents?: number; amountCents?: number } } } | null;
-      if (errorBody?.error?.code === 'MEMBERSHIP_FEE_INSUFFICIENT_BALANCE') {
-        const details = errorBody.error.details;
-        setError(
-          labels.insufficientBalance
-            .replace('{balance}', formatCents(details?.balanceCents ?? 0, moneyLocale))
-            .replace('{amount}', formatCents(details?.amountCents ?? 0, moneyLocale)),
-        );
+      const errorBody = (await response.json().catch(() => null)) as { error?: { code?: string; details?: { failures?: RequirementFailure[] } } } | null;
+      if (response.status === 422 && errorBody?.error?.code === 'REQUIREMENTS_NOT_MET') {
+        setRequirements({ failures: errorBody.error.details?.failures ?? [], personId, amountCents: parsedAmount });
       } else {
         setError(labels.genericError);
       }
       return;
     }
-    const body = (await response.json()) as { balanceCents: number; expiresAt: string };
-    setResult(body);
-    onCharged();
+    await charged(response);
+  }
+
+  /** «Procedi comunque» — the refused body plus `force: true`. Any refusal but a network error closes the warning with the generic message (as every other error of this modal). */
+  async function proceed(): Promise<void> {
+    if (!requirements) return;
+    setProceedError(false);
+    setSubmitting(true);
+    let response: Response;
+    try {
+      response = await charge(requirements.personId, requirements.amountCents, true);
+    } catch {
+      setSubmitting(false);
+      setProceedError(true);
+      return;
+    }
+    setSubmitting(false);
+    dismissRequirements();
+    if (!response.ok) {
+      setError(labels.genericError);
+      return;
+    }
+    await charged(response);
   }
 
   return (
@@ -949,7 +993,10 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
               id="membership-fee-person"
               label={labels.pilot}
               value={personId}
-              onChange={setPersonId}
+              onChange={(next) => {
+                if (next !== personId) dismissRequirements();
+                setPersonId(next);
+              }}
               fetchOptions={searchPersonFilter}
               initialOptions={personOptions.filter((option) => option.id !== '')}
               placeholder=""
@@ -964,7 +1011,10 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
               className="input"
               inputMode="decimal"
               value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              onChange={(event) => {
+                dismissRequirements();
+                setAmount(event.target.value);
+              }}
               aria-invalid={amountInvalid || undefined}
               aria-describedby={amountInvalid ? 'membership-fee-amount-error' : undefined}
               data-testid="membership-fee-amount"
@@ -975,14 +1025,23 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
               </p>
             ) : null}
             <p style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>{labels.amountHint}</p>
-            {canOverride ? (
-              <label className="fld-label membership-fee-override-label">
-                <input type="checkbox" checked={override} onChange={(event) => setOverride(event.target.checked)} data-testid="membership-fee-override-checkbox" />
-                {labels.overrideCheckbox}
-              </label>
-            ) : null}
           </>
         )}
+
+        {requirements && !result ? (
+          <RequirementsWarning
+            failures={requirements.failures}
+            canProceed={canForce}
+            onProceed={() => void proceed()}
+            onCancel={() => {
+              submitButtonRef.current?.focus();
+              dismissRequirements();
+            }}
+            submitting={submitting}
+            error={proceedError}
+            moneyLocale={moneyLocale}
+          />
+        ) : null}
 
         {error ? (
           <p role="alert" data-testid="membership-fee-error" style={{ marginTop: 8, fontSize: 12.5, color: 'var(--bad)' }}>
@@ -999,7 +1058,7 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
             {labels.cancel}
           </button>
           {!result ? (
-            <button type="button" className="btn primary" disabled={submitting} onClick={() => void submit()} data-testid="membership-fee-submit">
+            <button ref={submitButtonRef} type="button" className="btn primary" disabled={submitting} onClick={() => void submit()} data-testid="membership-fee-submit">
               {labels.submit}
             </button>
           ) : null}

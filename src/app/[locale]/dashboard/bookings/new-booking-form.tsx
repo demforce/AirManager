@@ -1,11 +1,13 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useLocale } from 'next-intl';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
+import { RequirementsWarning } from '@/components/dashboard/requirements-warning';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input } from '@/components/ui/field';
@@ -13,6 +15,7 @@ import { Icon } from '@/components/ui/icons';
 import { Segmented } from '@/components/ui/segmented';
 import { SlideOver } from '@/components/ui/slide-over';
 import { focusFirstInvalid } from '@/lib/dom-focus';
+import type { RequirementFailure } from '@/lib/schemas/requirements';
 import { formatDateOnly } from '@/lib/time';
 
 export type NewBookingFormMode = 'staff' | 'instructor' | 'pilot';
@@ -60,30 +63,24 @@ export type NewBookingFormLabels = {
     AIRCRAFT_OUT_OF_SERVICE_UNTIL: string;
     BOOKING_IN_PAST: string;
     PERSON_NOT_BOOKABLE: string;
-    /** `{documents}` placeholder, client-filled with the comma-joined blocking document type names (story 7.4, AC 1) — same `t.raw` pattern as `outOfServiceSuffix`. */
-    EXPIRED_DOCUMENTS: string;
     /** Story 15.4 (ratifica R-15.4-g): already interpolated server-side with the airfield's own window — the settings live on the page, not in this component. */
     BOOKING_OUTSIDE_WINDOW: string;
     /** Story 16.3 (ops F2): the booked PERSON already has an approved booking over the interval, on any aircraft. */
     PERSON_BUSY: string;
     /** Story 16.3 (ops F2): the indicated INSTRUCTOR already has an approved booking over the interval, on any aircraft. */
     INSTRUCTOR_BUSY: string;
+    /** Story 19.10 (D-8): staff indicated the person themself as the instructor. */
+    INSTRUCTOR_SAME_AS_PILOT: string;
     overlap: string;
     generic: string;
   };
   success: string;
   /** Success banner text when the booking was created but non-blocking documents are expiring (story 7.4, AC 1) — the list itself renders separately, this is just the intro line. */
   successWithWarnings: string;
-  /** "Forza prenotazione" (story 7.4, AC 2) — only ever rendered for `mode === 'staff'`. */
-  force: {
-    title: string;
-    description: string;
-    reasonLabel: string;
-    submit: string;
-    cancel: string;
-    requiredReason: string;
-    generic: string;
-  };
+  /** The form's «Annulla» and the panel's close label. */
+  cancel: string;
+  /** Story 19.10: the requirements warning's title — with «Procedi comunque» (`title`) or blocked, for whoever cannot derogate (`blockedTitle`). */
+  requirements: { title: string; blockedTitle: string };
 };
 
 type NewBookingFormProps = {
@@ -99,6 +96,8 @@ type NewBookingFormProps = {
   ownPersonId: string | null;
   /** The actor's own ACTIVE `InstructorProfile.id` — required for the `instructor` mode's "for a student" branch. */
   ownInstructorProfileId: string | null;
+  /** Story 19.10: whether the requirements warning offers «Procedi comunque» (`requirements.force`, computed by the page); the real gate is server-side (AD-5). */
+  canForce: boolean;
   labels: NewBookingFormLabels;
 };
 
@@ -168,13 +167,13 @@ function buildFormSchema(mode: NewBookingFormMode, bookingTarget: 'self' | 'stud
   });
 }
 
-/** Story 7.4: `details` also carries `documents` on an `EXPIRED_DOCUMENTS` 422 (`{ typeName, expiresAt }[]`, `bookings.service.ts#createBooking`'s doc-comment). */
+/** Story 19.10: `details.failures` on a 422 `REQUIREMENTS_NOT_MET` (`schemas/requirements.ts`). */
 type ApiErrorBody = {
   error?: {
     code?: string;
     message?: string;
     /** Story AOG-1a — `outOfServiceUntil` is additive on the SAME `AIRCRAFT_OUT_OF_SERVICE` details all four guards now share (`aircraft-status.ts#outOfServiceDetails`). */
-    details?: { reason?: string; outOfServiceUntil?: string | null; documents?: Array<{ typeName: string; expiresAt: string }> };
+    details?: { reason?: string; outOfServiceUntil?: string | null; failures?: RequirementFailure[] };
   };
 };
 
@@ -189,13 +188,20 @@ export function aircraftOptionLabel(aircraft: AircraftOption, outOfServiceSuffix
 
 /**
  * "Nuova prenotazione" (story 12.3, AC 4) — the SAME 7.1/7.3/7.4 mechanics
- * (mode-scoped picker, expiry block + staff "Forza prenotazione", success/
- * warning banners) as the legacy `new-booking-form.tsx`, re-skinned inside a
+ * (mode-scoped picker, success/warning banners) as the legacy
+ * `new-booking-form.tsx`, re-skinned inside a
  * `SlideOver` with `Field`/`Input` (12.1 primitives) instead of the legacy
  * Tailwind markup, and with one `SearchCombobox` per choice field since story
  * 19.5 (A15/A18: the flight form's own dropdown) — Contesto: "parità
  * funzionale COMPLETA col form legacy".
- * `data-testid="new-booking-form"`/`booking-form-*`/`force-booking-*`
+ * Requirements (story 19.10, R-19-h): a 422 `REQUIREMENTS_NOT_MET` opens the
+ * shared `RequirementsWarning` inside the form — every failure listed, and
+ * «Procedi comunque» (no motivo) for whoever holds `requirements.force`
+ * (`canForce`), resending the very body just refused plus `force: true`;
+ * everyone else gets the same list in its blocked mode. Any change to the form
+ * closes it (the stale-body guard of the flight form, story 19.9 D-12): the
+ * deroga is never sent for a body other than the one listed.
+ * `data-testid="new-booking-form"`/`booking-form-*`
  * are kept UNCHANGED (Contesto: "per minimizzare il churn e2e") — which is
  * why the submit/cancel buttons stay INSIDE this `<form>` element rather
  * than `SlideOver`'s separate `footer` slot: e2e locates them via
@@ -222,6 +228,7 @@ export function NewBookingForm({
   studentOptions,
   ownPersonId,
   ownInstructorProfileId,
+  canForce,
   labels,
 }: NewBookingFormProps) {
   const router = useRouter();
@@ -233,18 +240,15 @@ export function NewBookingForm({
   const [warnings, setWarnings] = useState<Array<{ typeName: string; expiresAt: string }>>([]);
   const [bookingTarget, setBookingTarget] = useState<'self' | 'student'>('self');
 
-  // --- Expiry block / staff force (story 7.4, AC 1/2) ---------------------
-  // `blockedDocuments` is non-null ONLY right after a 422 `EXPIRED_DOCUMENTS`
-  // — its presence (for `mode === 'staff'`) is what renders the "Forza
-  // prenotazione" section below. `pendingForceBody` is the EXACT body that
-  // just got rejected, kept so "Forza prenotazione" can resend it unchanged
-  // plus `force`/`forceReason` — the user never re-fills the form.
-  const [blockedDocuments, setBlockedDocuments] = useState<string[] | null>(null);
-  const [pendingForceBody, setPendingForceBody] = useState<Record<string, unknown> | null>(null);
-  const [forceReason, setForceReason] = useState('');
-  const [forceReasonTouched, setForceReasonTouched] = useState(false);
-  const [forceSubmitting, setForceSubmitting] = useState(false);
-  const [forceError, setForceError] = useState<string | null>(null);
+  // --- Requirements warning (story 19.10, AD-6) ----------------------------
+  // `requirements` is non-null ONLY right after a 422 `REQUIREMENTS_NOT_MET`:
+  // its `failures` are what the warning lists, its `body` the EXACT request
+  // just refused, resent unchanged plus `force: true` by «Procedi comunque».
+  const [requirements, setRequirements] = useState<{ failures: RequirementFailure[]; body: Record<string, unknown> } | null>(null);
+  const [proceedSubmitting, setProceedSubmitting] = useState(false);
+  const [proceedError, setProceedError] = useState(false);
+  const submitButtonRef = useRef<HTMLButtonElement | null>(null);
+  const formErrorRef = useRef<HTMLParagraphElement | null>(null);
 
   const resolver = useMemo(() => zodResolver(buildFormSchema(mode, bookingTarget)), [mode, bookingTarget]);
 
@@ -259,8 +263,40 @@ export function NewBookingForm({
     control,
     handleSubmit,
     reset,
+    subscribe,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver, defaultValues: DEFAULT_VALUES, shouldFocusError: false });
+
+  /** Closes the warning and forgets its body — «Annulla», a new submit, a close, and ANY change to the form (the stale-body guard). */
+  function dismissRequirements(): void {
+    setRequirements(null);
+    setProceedError(false);
+  }
+
+  // The stale-body guard for the RHF fields: a value subscription (not
+  // `watch()`, which the React Compiler cannot memoize) — the flight form's
+  // own (story 19.9, D-12). `bookingTarget` closes it in its change handler.
+  useEffect(() => subscribe({ formState: { values: true }, callback: () => dismissRequirements() }), [subscribe]);
+
+  function handleBookingTargetChange(next: 'self' | 'student'): void {
+    if (next !== bookingTarget) dismissRequirements();
+    setBookingTarget(next);
+  }
+
+  /** «Annulla» of the warning — the focus goes back to the submit that opened it (review 19.9 F3), never to the page body. */
+  function cancelRequirements(): void {
+    submitButtonRef.current?.focus();
+    dismissRequirements();
+  }
+
+  /** A resend that closes the warning hands the focus to the banner saying why (rendered first, hence `flushSync`; review 19.9 F3). */
+  function closeRequirementsWithError(message: string): void {
+    flushSync(() => {
+      dismissRequirements();
+      setFormError(message);
+    });
+    formErrorRef.current?.focus();
+  }
 
   // Story 19.5 (D-4): static mode — the comboboxes filter these server-rendered
   // lists locally (no `fetchOptions`): a pilot or an instructor cannot call the
@@ -304,33 +340,64 @@ export function NewBookingForm({
     setFormError(null);
     setSuccess(false);
     setWarnings([]);
-    setBlockedDocuments(null);
-    setPendingForceBody(null);
-    setForceReason('');
-    setForceReasonTouched(false);
-    setForceSubmitting(false);
-    setForceError(null);
+    dismissRequirements();
+    setProceedSubmitting(false);
     onClose();
   }
 
-  /** A 409 names what is busy (story 16.3): the person or the instructor by their own code, the aircraft for every other 409 — shared by the primary and the force path. */
-  function conflictMessage(code: string | undefined): string {
-    return code === 'PERSON_BUSY' || code === 'INSTRUCTOR_BUSY' ? labels.errors[code] : labels.errors.overlap;
+  /**
+   * The message of a refusal this form knows, or `null` — shared by the submit
+   * and «Procedi comunque» (story 19.10: on the resend a known 409/422 closes
+   * the warning and takes the banner, since forcing can no longer help — review
+   * 16.3 MAJOR-1; only an unknown one keeps the warning open with its retry).
+   * A 409 names what is busy (story 16.3): the person or the instructor by
+   * their own code, the aircraft for every other 409.
+   */
+  function knownErrorMessage(status: number, errorBody: ApiErrorBody | null): string | null {
+    const code = errorBody?.error?.code;
+    if (status === 409) {
+      return code === 'PERSON_BUSY' || code === 'INSTRUCTOR_BUSY' ? labels.errors[code] : labels.errors.overlap;
+    }
+    switch (code) {
+      case 'AIRCRAFT_OUT_OF_SERVICE': {
+        // Story AOG-1a, AC 7 (precedente R-15.4-g: a 422 must SAY the
+        // constraint it hit). With a date on file the message adds the fermo
+        // clause in the INCLUSIVE wording R-AOG-a fixed; WITHOUT one it is
+        // byte-identical to what it has always been — an absent return date is
+        // a legitimate state (invariant [b]), not a blank to announce.
+        const until = errorBody?.error?.details?.outOfServiceUntil ?? null;
+        const template = until === null ? labels.errors.AIRCRAFT_OUT_OF_SERVICE : labels.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL;
+        return template.replace('{reason}', errorBody?.error?.details?.reason ?? '').replace('{date}', until === null ? '' : formatDateOnly(until, displayLocale));
+      }
+      case 'BOOKING_IN_PAST':
+      case 'PERSON_NOT_BOOKABLE':
+      case 'INSTRUCTOR_SAME_AS_PILOT':
+        return labels.errors[code];
+      case 'BOOKING_OUTSIDE_WINDOW':
+        // Ratifica R-15.4-g: this used to fall through to the generic
+        // "Riprova", which is the one thing that cannot work — the slot is
+        // outside the airfield's window and retrying it fails again. The
+        // message now states the window (interpolated server-side).
+        return labels.errors.BOOKING_OUTSIDE_WINDOW;
+      default:
+        return null;
+    }
   }
 
-  /** Clears every force-related state — used both on a successful bypass and on "Annulla" (Task 4: "annulla che torna al form pulito dallo stato force"). */
-  function resetForceState(): void {
-    setBlockedDocuments(null);
-    setPendingForceBody(null);
-    setForceReason('');
-    setForceReasonTouched(false);
-    setForceError(null);
+  function bookingCreated(created: CreateBookingResponseBody): void {
+    reset(DEFAULT_VALUES);
+    setBookingTarget('self');
+    setFormError(null);
+    dismissRequirements();
+    setSuccess(true);
+    setWarnings(created.warnings);
+    router.refresh();
   }
 
   async function onSubmit(values: FormValues): Promise<void> {
     setFormError(null);
     setSuccess(false);
-    resetForceState();
+    dismissRequirements();
 
     let personId: string;
     let instructorProfileId: string | undefined;
@@ -363,115 +430,61 @@ export function NewBookingForm({
 
     if (!response.ok) {
       const errorBody = (await response.json().catch(() => null)) as ApiErrorBody | null;
-      const code = errorBody?.error?.code;
-      // 409 (overlap) is never conflated with a 422 domain code (Dev Notes).
-      // Story 16.3: the body is read FIRST, because a 409 is no longer always
-      // about the aircraft — a busy person/instructor says so; every other 409
-      // keeps the aircraft message.
-      if (response.status === 409) {
-        setFormError(conflictMessage(code));
+      // Story 19.10: the list goes in the warning only — never also in the
+      // banner, or a screen reader would read it twice (`formError` stays null).
+      if (response.status === 422 && errorBody?.error?.code === 'REQUIREMENTS_NOT_MET') {
+        setRequirements({ failures: errorBody.error.details?.failures ?? [], body });
         return;
       }
-      if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
-        // Story AOG-1a, AC 7 (precedente R-15.4-g: a 422 must SAY the
-        // constraint it hit). With a date on file the message adds the fermo
-        // clause in the INCLUSIVE wording R-AOG-a fixed; WITHOUT one it is
-        // byte-identical to what it has always been — an absent return date is
-        // a legitimate state (invariant [b]), not a blank to announce.
-        const until = errorBody?.error?.details?.outOfServiceUntil ?? null;
-        const template = until === null ? labels.errors.AIRCRAFT_OUT_OF_SERVICE : labels.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL;
-        setFormError(
-          template.replace('{reason}', errorBody?.error?.details?.reason ?? '').replace('{date}', until === null ? '' : formatDateOnly(until, displayLocale)),
-        );
-      } else if (code === 'BOOKING_IN_PAST') {
-        setFormError(labels.errors.BOOKING_IN_PAST);
-      } else if (code === 'PERSON_NOT_BOOKABLE') {
-        setFormError(labels.errors.PERSON_NOT_BOOKABLE);
-      } else if (code === 'BOOKING_OUTSIDE_WINDOW') {
-        // Ratifica R-15.4-g: this used to fall through to the generic
-        // "Riprova", which is the one thing that cannot work — the slot is
-        // outside the airfield's window and retrying it fails again. The
-        // message now states the window (interpolated server-side).
-        setFormError(labels.errors.BOOKING_OUTSIDE_WINDOW);
-      } else if (code === 'EXPIRED_DOCUMENTS') {
-        // Story 7.4, AC 1/2: the message lists the blocking document names
-        // (from `details.documents`, never the server's English-only
-        // message — AD-8: messages are for logs, codes+details drive the UI).
-        const documentNames = (errorBody?.error?.details?.documents ?? []).map((document) => document.typeName);
-        setFormError(labels.errors.EXPIRED_DOCUMENTS.replace('{documents}', documentNames.join(', ')));
-        // Only staff (`mode === 'staff'`, Contesto's exact gate) ever gets a
-        // bypass affordance — everyone else just sees the message above.
-        if (mode === 'staff') {
-          setBlockedDocuments(documentNames);
-          setPendingForceBody(body);
-        }
-      } else {
-        setFormError(labels.errors.generic);
-      }
+      // 409 (overlap) is never conflated with a 422 domain code (Dev Notes).
+      setFormError(knownErrorMessage(response.status, errorBody) ?? labels.errors.generic);
       return;
     }
 
-    const created = (await response.json()) as CreateBookingResponseBody;
-    reset(DEFAULT_VALUES);
-    setBookingTarget('self');
-    setSuccess(true);
-    setWarnings(created.warnings);
-    router.refresh();
+    bookingCreated((await response.json()) as CreateBookingResponseBody);
   }
 
-  async function onForceSubmit(): Promise<void> {
-    const trimmedReason = forceReason.trim();
-    setForceReasonTouched(true);
-    if (trimmedReason.length === 0) {
-      setForceError(labels.force.requiredReason);
+  /**
+   * «Procedi comunque» (story 19.10, AD-6) — the refused body unchanged plus
+   * `force: true`. The deroga is decided last on the server (AD-3), so what can
+   * still fail here is a race: a known 409/422 closes the warning and says why
+   * in the banner; a network error or an unknown answer keeps it open with its
+   * retry message.
+   */
+  async function onProceed(): Promise<void> {
+    if (!requirements) return;
+    setProceedSubmitting(true);
+    setProceedError(false);
+
+    let response: Response;
+    try {
+      response = await fetch('/api/v1/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...requirements.body, force: true }),
+      });
+    } catch {
+      setProceedSubmitting(false);
+      setProceedError(true);
       return;
     }
-    if (!pendingForceBody) {
-      return;
-    }
-
-    setForceSubmitting(true);
-    setForceError(null);
-
-    const response = await fetch('/api/v1/bookings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...pendingForceBody, force: true, forceReason: trimmedReason }),
-    });
-
-    setForceSubmitting(false);
+    setProceedSubmitting(false);
 
     if (!response.ok) {
-      // Review 16.3 MAJOR-1: a 409 is NOT a transient failure here. The
-      // expiry block runs before the overlap check, so when the person has a
-      // blocking document the primary path above never sees an overlap — it
-      // surfaces only HERE, and `force` bypasses the expiry block, never the
-      // overlap (R-16-a): "Riprova" is the one thing that cannot work. The
-      // overlap replaces the expiry message in the main banner, and the force
-      // section closes because forcing can no longer help.
-      if (response.status === 409) {
-        const errorBody = (await response.json().catch(() => null)) as ApiErrorBody | null;
-        setFormError(conflictMessage(errorBody?.error?.code));
-        resetForceState();
+      const message = knownErrorMessage(response.status, (await response.json().catch(() => null)) as ApiErrorBody | null);
+      if (message === null) {
+        setProceedError(true);
         return;
       }
-      // Anything else (e.g. the reason rejected as too long) — the generic message is enough here.
-      setForceError(labels.force.generic);
+      closeRequirementsWithError(message);
       return;
     }
 
-    const created = (await response.json()) as CreateBookingResponseBody;
-    reset(DEFAULT_VALUES);
-    setBookingTarget('self');
-    setFormError(null);
-    resetForceState();
-    setSuccess(true);
-    setWarnings(created.warnings);
-    router.refresh();
+    bookingCreated((await response.json()) as CreateBookingResponseBody);
   }
 
   return (
-    <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.force.cancel}>
+    <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel}>
       <form
         ref={formRef}
         onSubmit={(event) => void handleSubmit(onSubmit, () => setTimeout(() => focusFirstInvalid(formRef.current), 0))(event)}
@@ -579,7 +592,7 @@ export function NewBookingForm({
                       { value: 'student', label: labels.bookForStudent },
                     ]}
                     value={bookingTarget}
-                    onChange={setBookingTarget}
+                    onChange={handleBookingTargetChange}
                   />
                 </span>
               </div>
@@ -622,61 +635,24 @@ export function NewBookingForm({
         </div>
 
         {formError ? (
-          <p role="alert" data-testid="booking-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
+          <p ref={formErrorRef} tabIndex={-1} role="alert" data-testid="booking-form-error" className="fld-label req-error-banner" style={{ color: 'var(--bad)', marginTop: 14 }}>
             {formError}
           </p>
         ) : null}
 
-        {/* "Forza prenotazione" (story 7.4, AC 2) — staff-only bypass of a real
-            blocking-expiry check; the actual `bookings.manage.any` gate is
-            server-side (AD-5), `mode === 'staff'` is this component's own
-            mirror of that permission (page.tsx only sets it for staff/admin). */}
-        {blockedDocuments && mode === 'staff' ? (
-          <div data-testid="force-booking-section" style={{ marginTop: 14, padding: 14, borderRadius: 8, background: 'var(--warn-soft)', border: '1px solid color-mix(in oklch, var(--warn) 40%, transparent)' }}>
-            <div>
-              <h4 className="fld-label" style={{ color: 'var(--accent-ink)' }}>
-                {labels.force.title}
-              </h4>
-              <p style={{ marginTop: 4, fontSize: 13 }}>{labels.force.description}</p>
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <label className="fld-label" htmlFor="booking-force-reason">
-                {labels.force.reasonLabel}
-              </label>
-              <textarea
-                id="booking-force-reason"
-                rows={2}
-                maxLength={500}
-                value={forceReason}
-                onChange={(event) => setForceReason(event.target.value)}
-                aria-invalid={forceReasonTouched && forceReason.trim().length === 0}
-                data-testid="force-booking-reason"
-                className="input"
-                style={{ marginTop: 6 }}
-              />
-            </div>
-            {forceError ? (
-              <p role="alert" data-testid="force-booking-error" className="fld-error" style={{ marginTop: 6 }}>
-                {forceError}
-              </p>
-            ) : null}
-            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              <button type="button" disabled={forceSubmitting} onClick={() => void onForceSubmit()} data-testid="force-booking-submit" className="btn primary">
-                {labels.force.submit}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  resetForceState();
-                  setFormError(null);
-                }}
-                data-testid="force-booking-cancel"
-                className="btn"
-              >
-                {labels.force.cancel}
-              </button>
-            </div>
-          </div>
+        {/* Story 19.10 (AD-6): the ONE requirements warning of the app, in its
+            blocked mode (the list, no buttons) for whoever cannot derogate. */}
+        {requirements ? (
+          <RequirementsWarning
+            failures={requirements.failures}
+            canProceed={canForce}
+            onProceed={() => void onProceed()}
+            onCancel={cancelRequirements}
+            submitting={proceedSubmitting}
+            error={proceedError}
+            moneyLocale={displayLocale}
+            title={canForce ? labels.requirements.title : labels.requirements.blockedTitle}
+          />
         ) : null}
 
         {success && warnings.length === 0 ? (
@@ -704,14 +680,14 @@ export function NewBookingForm({
             full-screen mode uses to pin the PRIMARY action to the bottom of
             the panel (`airops.css`, inside `@media (max-width: 640px)` — inert
             on the desktop, where this row keeps its exact geometry). It goes
-            on THIS row only: the "Forza prenotazione" row above keeps
-            scrolling with its own amber section, because two stacked sticky
-            bars are the defect review 15.2 F3 deferred to story 15.5. */}
+            on THIS row only: the requirements warning above keeps scrolling
+            with its own amber panel, because two stacked sticky bars are the
+            defect review 15.2 F3 deferred to story 15.5. */}
         <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
           <button type="button" className="btn" onClick={handleClose}>
-            {labels.force.cancel}
+            {labels.cancel}
           </button>
-          <button type="submit" disabled={isSubmitting} className="btn primary">
+          <button ref={submitButtonRef} type="submit" disabled={isSubmitting} className="btn primary">
             <Icon.check /> {labels.submit}
           </button>
         </div>

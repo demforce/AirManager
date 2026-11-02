@@ -1,10 +1,10 @@
-import { Prisma, type AircraftStatus, type BookingStatus } from '@/generated/prisma/client';
+import { Prisma, type AircraftPriceCategory, type AircraftStatus, type BookingStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, TransitionBookingInput, UpdateBookingInput } from '@/lib/schemas/bookings';
 import { APP_TIMEZONE } from '@/lib/time';
-import { dateOnlyInZone, zonedWallTime } from '@/lib/zoned-time';
+import { dateOnlyInZone, todayDateOnlyInZone, zonedWallTime } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildBookingDeniedEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -12,7 +12,7 @@ import { prisma } from '@/server/db/prisma';
 import { outOfServiceDetails } from './aircraft-status';
 import { getSchedulingSettings } from './app-settings.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
-import { getMedicalRequirementFailure } from './expiries.service';
+import { evaluateRequirements, throwRequirementsNotMet, type RequirementFailure } from './requirements.service';
 
 /**
  * Aircraft bookings (epic 7, story 7.1; FR-18) — see `Booking`'s Prisma
@@ -43,57 +43,64 @@ import { getMedicalRequirementFailure } from './expiries.service';
  *
  * **Verification order** (no state leak, pattern story 6.2/5.4): authorize
  * 403 → own-rules 403 (before any target-person query, where noted above)
- * → `force` 403 without `bookings.manage.any` (story 7.4, AC 2 — before any
- * further query) → target person 404/409/422 `PERSON_NOT_BOOKABLE` →
- * expiry-based block 422 `EXPIRED_DOCUMENTS`/force bypass (story 7.4, AC 1/2)
- * → `startsAt` in the past 422 `BOOKING_IN_PAST` → scheduling-window 422
- * `BOOKING_OUTSIDE_WINDOW` (story 12.11, AC 4) → [transaction: aircraft
- * lock + 404/409/422 `AIRCRAFT_OUT_OF_SERVICE` → person/instructor locks →
- * overlap pre-check 409 (`CONFLICT` aircraft → `PERSON_BUSY` →
- * `INSTRUCTOR_BUSY`, story 16.3) → create]. Person/instructor RESOLUTION
- * (404/409/422) runs OUTSIDE the transaction: it keeps the error order above
- * (a state 422 before a conflict 409) and the 403-before-target-query rule,
- * and it reads nothing the overlap invariant depends on. What the invariant
- * DOES depend on — that no other booking of the same person/instructor gets
- * approved in between — is guarded by their row LOCKS, taken inside the
- * transaction (story 16.3, below). The aircraft is resolved and validated
- * INSIDE the transaction, on the SAME locked row the overlap pre-check reads
- * — a single `SELECT ... FOR UPDATE` serves both purposes with one fetch (no
- * TOCTOU).
+ * → `force` 403 without `requirements.force` (story 19.10 — before any
+ * further query) → target person 404/409/422 `PERSON_NOT_BOOKABLE` → the
+ * indicated instructor 404/409, 422 `INSTRUCTOR_SAME_AS_PILOT` (story 19.10,
+ * D-8) → `startsAt` in the past 422 `BOOKING_IN_PAST` → scheduling-window 422
+ * `BOOKING_OUTSIDE_WINDOW` (story 12.11, AC 4) → the requirements EVALUATED
+ * (story 19.10, below) → [transaction: aircraft lock + 404/409/422
+ * `AIRCRAFT_OUT_OF_SERVICE` → person locks → overlap pre-check 409
+ * (`CONFLICT` aircraft → `PERSON_BUSY` → `INSTRUCTOR_BUSY`, story 16.3) →
+ * the requirements DECIDED: 422 `REQUIREMENTS_NOT_MET` or the deroga →
+ * create]. Person/instructor RESOLUTION (404/409/422) runs OUTSIDE the
+ * transaction: it keeps the error order above (a state 422 before a
+ * conflict 409) and the 403-before-target-query rule, and it reads nothing
+ * the overlap invariant depends on. What the invariant DOES depend on — that
+ * no other booking of the same person/instructor gets approved in between —
+ * is guarded by their row LOCKS, taken inside the transaction (story 16.3,
+ * below). The aircraft is resolved and validated INSIDE the transaction, on
+ * the SAME locked row the overlap pre-check reads — a single `SELECT ... FOR
+ * UPDATE` serves both purposes with one fetch (no TOCTOU).
  *
- * **Concurrency (AC 2; three subjects since story 16.3)**: the overlap
- * invariant has three subjects — the aircraft, the person, the instructor
- * (`findBookingConflict`, the ONE implementation of the three predicates) —
- * and each is serialized by a row lock inside `prisma.$transaction`, the
- * pattern of `flights.service.ts#registerFlight` (`SELECT ... FOR UPDATE` on
- * the aircraft, `FOR NO KEY UPDATE` on the two people — see
- * `lockBookingPeople`). The `Aircraft` lock is the FIRST statement of
- * `createBooking`; `updateBooking` and `transitionBooking` lock the `Booking`
- * row they write before it. The aircraft lock serializes the writers of the SAME aircraft. The `Person` lock and, when
- * the booking has one, the `InstructorProfile` lock (`lockBookingPeople`)
- * serialize the writers of the same person/instructor on DIFFERENT aircraft,
- * which the aircraft lock alone never did (ops F2): without them the person
- * predicate would be a check-then-write. The global lock order is the same on
- * all three paths — `Booking` (move and transition: the ONE row they write) →
- * `Aircraft` (one row, or N `ORDER BY id`) → `Person` → `InstructorProfile`.
- * Each transaction locks at most ONE booking (a create inserts a row nobody
- * else can hold yet), ONE person and ONE instructor (both immutable on a
- * booking); the guarded `updateMany` that ends a move or a transition locks
- * the booking row it already holds; `cancelBooking` takes a single lock (its
- * `updateMany`'s row), which cannot close a cycle. So two booking writers can
- * never wait on each other in a cycle; no other service locks `Booking`
- * rows, and the two other `Person` locks — `people.service.ts#upsertProfile`
- * (story 19.3) and the person composite `people.service.ts#updatePerson`
- * (story 19.4), same `FOR NO KEY UPDATE` — are the FIRST statement of their
- * transaction and are followed only by that SAME person's own rows (profiles,
- * `Account`, expiries, its `InstructorProfile` and rates, the `Person` update
- * last), in the same `Person → InstructorProfile` order as these paths, so
- * they cannot close a cycle with them, and no table references `Booking` by
- * foreign key, so its `FOR UPDATE` blocks no FK check (census in the story
- * 16.3 file). The implicit row lock of that guarded `updateMany` is what the
- * first census missed (review 16.3 MAJOR-2): `updateBooking` took it AFTER
- * the aircraft, and deadlocked against an approval of the same booking
- * (40P01, a 500).
+ * **Concurrency (AC 2; three subjects since story 16.3, one human in two
+ * roles since story 19.10)**: the overlap invariant has three subjects — the
+ * aircraft, the person, the instructor (`findBookingConflict`, the ONE
+ * implementation of the three predicates) — and each is serialized by a row
+ * lock inside `prisma.$transaction`, the pattern of
+ * `flights.service.ts#registerFlight` (`SELECT ... FOR UPDATE` on the
+ * aircraft, `FOR NO KEY UPDATE` on the people — see `lockBookingPeople`). The
+ * `Aircraft` lock is the FIRST statement of `createBooking`; `updateBooking`
+ * and `transitionBooking` lock the `Booking` row they write before it. The
+ * aircraft lock serializes the writers of the SAME aircraft. The `Person`
+ * locks (`lockBookingPeople`: the booking's person and, when it has one, the
+ * instructor's own person — R-19-o, one human is busy in EITHER role) serialize
+ * the writers of the same people on DIFFERENT aircraft, which the aircraft
+ * lock alone never did (ops F2): without them the person predicate would be a
+ * check-then-write. The global lock order is the same on all three paths —
+ * `Booking` (move and transition: the ONE row they write) → `Aircraft` (one
+ * row, or N `ORDER BY id`) → `Person` (one or two rows, in ONE statement
+ * `ORDER BY id`, so two writers locking the same two people in opposite roles
+ * take them in the same order). Each transaction locks at most ONE booking (a
+ * create inserts a row nobody else can hold yet) and the TWO people of that
+ * booking (both immutable on a booking); the guarded `updateMany` that ends a
+ * move or a transition locks the booking row it already holds;
+ * `cancelBooking` takes a single lock (its `updateMany`'s row), which cannot
+ * close a cycle. So two booking writers can never wait on each other in a
+ * cycle; no other service locks `Booking` rows, and the two other `Person`
+ * locks — `people.service.ts#upsertProfile` (story 19.3) and the person
+ * composite `people.service.ts#updatePerson` (story 19.4), same `FOR NO KEY
+ * UPDATE` — lock ONE row as the FIRST statement of their transaction and are
+ * followed only by that SAME person's own rows (profiles, `Account`, expiries,
+ * its `InstructorProfile` and rates, the `Person` update last), never an
+ * `Aircraft`, a `Booking` or another person, so they cannot close a cycle
+ * with these paths, and no table references `Booking` by foreign key, so its
+ * `FOR UPDATE` blocks no FK check (census in the story 16.3 and 19.10 files).
+ * The `InstructorProfile` lock of story 16.3 is gone (story 19.10, AD-5):
+ * `InstructorProfile.personId` is unique, so the `Person` lock of its holder
+ * serializes every writer the profile lock did. The implicit row lock of that
+ * guarded `updateMany` is what the first census missed (review 16.3
+ * MAJOR-2): `updateBooking` took it AFTER the aircraft, and deadlocked
+ * against an approval of the same booking (40P01, a 500).
  * The pre-check immediately followed by the write, inside the same locked
  * transaction, is therefore airtight against two concurrent requests both
  * seeing "no overlap". No Postgres exclusion constraint (`btree_gist`) —
@@ -102,7 +109,7 @@ import { getMedicalRequirementFailure } from './expiries.service';
  * already violates, would surface as one SQL error code to be told apart by
  * constraint NAME, and would not remove the aircraft lock, which also guards
  * the aircraft's STATE read. The person re-checks of an approval (archived,
- * profile) stay check-then-act, exactly like the expiry block and the
+ * profile) stay check-then-act, exactly like the requirements and the
  * scheduling window: the locks close the OVERLAP race, nothing more (TD
  * 16.3-d).
  *
@@ -123,17 +130,23 @@ import { getMedicalRequirementFailure } from './expiries.service';
  * `cancelBooking` are now permitted from BOTH `PENDING` and `APPROVED` (was
  * `ACTIVE` only) — see `Booking`'s Prisma doc-comment for the full picture.
  *
- * **Expiry-based booking block (story 7.4, AC 1/2; FR-21; extended by TD-5,
- * AC 5)**: `createBooking` runs the full rule unconditionally (see its own
- * doc-comment for ordering/force/warning semantics). `updateBooking` reruns
- * the SAME partition (`findBlockingExpiredDocuments`, the shared helper) but
- * ONLY when the edit actually changes the flight DAY (`APP_TIMEZONE`
- * date-only) — a same-day edit (time/aircraft/notes) never re-checks, so a
- * booking created with `force` past a blocking document stays editable
- * within that day. There is no `force` on `updateBooking` (deferred,
- * Contesto: staff who must deliberately move past a scadenza cancels and
- * recreates with `force`) — any blocking document on the NEW day is a hard
- * 422, no bypass.
+ * **Requirements (story 19.10, CR §4.4, punto PO 15; was the story 7.4
+ * expiry block)**: creating, moving and approving a booking judge the SAME
+ * four requirements as registering a flight, with the ONE evaluation of
+ * story 19.9 (`requirements.service.ts#evaluateRequirements`, policy in
+ * `evaluateBookingRequirements` below): the blocking documents (expired or
+ * missing, of the person and of the instructor), the membership fee of both,
+ * the currency of a booking WITHOUT an instructor (a solo, R-19-l), and the
+ * balance against the ESTIMATED cost (`estimateBookingCostCents`, A9). Any
+ * failure is ONE 422 `REQUIREMENTS_NOT_MET` with every failure listed;
+ * only an admin (`requirements.force`) derogates, resending the same request
+ * with `force: true` — no motivo — and the write is stamped
+ * `forcedAt`/`forcedByUserId`. Everyone else is blocked with the same list.
+ * The deroga is decided LAST, inside the transaction, after every check it
+ * cannot derogate (the past, the window, the aircraft, the overlaps — TD
+ * 16.3-g): the warning only appears when the request would otherwise pass,
+ * and «Procedi comunque» fails only to a race. Every move re-judges them on
+ * the MERGED booking (D-3, the rule of the scheduling window).
  */
 
 export type BookingListItem = {
@@ -150,7 +163,7 @@ export type BookingListItem = {
   notes: string | null;
   status: BookingStatus;
   cancelledAt: Date | null;
-  /** Set only when staff bypassed a blocking expired document at creation time (story 7.4, AC 2) — see `Booking.forcedAt`'s doc-comment. */
+  /** Set only when an admin derogated a failed requirement (story 19.10) — see `Booking.forcedAt`'s doc-comment. */
   forcedAt: Date | null;
   /** Set only after a DENIED decision (story 12.2, AC 3) — see `Booking.denyReason`'s doc-comment. */
   denyReason: string | null;
@@ -262,10 +275,15 @@ function maskBookingNames(actor: Actor, canReadNames: boolean, ownInstructorProf
 
 type TargetPerson = {
   id: string;
+  firstName: string;
+  lastName: string;
   archivedAt: Date | null;
   pilotProfile: { deactivatedAt: Date | null } | null;
   studentProfile: { deactivatedAt: Date | null } | null;
-  instructorProfile: { deactivatedAt: Date | null } | null;
+  /** `id` (story 19.10, R-19-o): the person predicate finds the bookings where this person is the instructor through it. */
+  instructorProfile: { id: string; deactivatedAt: Date | null } | null;
+  /** Story 19.10 (D-6): `null` for an instructor-only person, who never gets one — and whose balance is then never judged. */
+  account: { id: string } | null;
 };
 
 function isActivePilot(person: TargetPerson): boolean {
@@ -280,13 +298,16 @@ function isActiveInstructor(person: TargetPerson): boolean {
   return person.instructorProfile !== null && person.instructorProfile.deactivatedAt === null;
 }
 
-/** The `select` both paths load the booking's target person with (story 16.3, AD-4): `createBooking` for every actor, `transitionBooking` on approval — one shape, two loads. */
+/** The `select` the three write paths load the booking's person with (story 16.3, AD-4; story 19.10 adds the name and the account the requirements read): `createBooking` for every actor, `transitionBooking` on approval, `updateBooking` nested in its booking — one shape, three loads. */
 const BOOKABLE_PERSON_SELECT = {
   id: true,
+  firstName: true,
+  lastName: true,
   archivedAt: true,
   pilotProfile: { select: { deactivatedAt: true } },
   studentProfile: { select: { deactivatedAt: true } },
-  instructorProfile: { select: { deactivatedAt: true } },
+  instructorProfile: { select: { id: true, deactivatedAt: true } },
+  account: { select: { id: true } },
 } as const;
 
 /**
@@ -309,11 +330,14 @@ function assertPersonHasActiveFlyingProfile(person: TargetPerson): void {
   }
 }
 
-/** The indicated instructor's 404/409 — staff `createBooking` and the approval re-check (story 16.3, ops F4) — returning the id `createBooking` writes. */
-async function assertActiveInstructorProfile(client: Prisma.TransactionClient, instructorProfileId: string): Promise<string> {
+/** A booking's instructor as the write paths need it: the profile written on the row, the person who holds it (the lock and the R-19-o predicates, story 19.10) and the name a requirement of theirs is labelled with. */
+type BookingInstructor = { profileId: string; personId: string; name: string };
+
+/** The indicated instructor's 404/409 — staff `createBooking` and the approval re-check (story 16.3, ops F4) — returning the instructor `createBooking` writes. */
+async function assertActiveInstructorProfile(client: Prisma.TransactionClient, instructorProfileId: string): Promise<BookingInstructor> {
   const instructorProfile = await client.instructorProfile.findUnique({
     where: { id: instructorProfileId },
-    select: { id: true, deactivatedAt: true },
+    select: { id: true, deactivatedAt: true, personId: true, person: { select: { firstName: true, lastName: true } } },
   });
   if (!instructorProfile) {
     throw new NotFoundError('Instructor profile not found.');
@@ -321,37 +345,58 @@ async function assertActiveInstructorProfile(client: Prisma.TransactionClient, i
   if (instructorProfile.deactivatedAt !== null) {
     throw new ConflictError('This instructor profile is deactivated.');
   }
-  return instructorProfile.id;
+  return {
+    profileId: instructorProfile.id,
+    personId: instructorProfile.personId,
+    name: `${instructorProfile.person.firstName} ${instructorProfile.person.lastName}`,
+  };
+}
+
+/**
+ * Story 19.10 (D-8): the instructor of a booking cannot be its own person —
+ * the code and message of the flights (`flights.service.ts`), raised on the
+ * staff create and on the approval re-check, never derogable. It is the
+ * degenerate case of R-19-o: the person predicate excludes the booking being
+ * written, so without this the most absurd case of all would pass.
+ */
+function assertInstructorIsNotThePerson(instructor: BookingInstructor | null, personId: string): void {
+  if (instructor !== null && instructor.personId === personId) {
+    throw new ValidationError('The instructor cannot be the same person as the pilot/student.', undefined, 'INSTRUCTOR_SAME_AS_PILOT');
+  }
 }
 
 // --- The overlap invariant on its three subjects (story 16.3, ops F2) -------
 
 /**
- * Row locks on the booking's PERSON and, when it has one, its INSTRUCTOR
- * (story 16.3, AD-2) — taken by the three write paths inside their
- * transaction, AFTER their `Aircraft` lock(s) and BEFORE
- * {@link findBookingConflict}. The `Aircraft` lock serializes only the writers
- * of the SAME aircraft: two approvals of the same person on two DIFFERENT
- * aircraft would serialize on nothing, and the person predicate alone would be
- * a check-then-write (ops F2, "serve un secondo lock"). The rows exist by
- * construction (FKs on `Booking`), so there is no 404 to raise: the result is
- * never read, the effect IS the lock — same idiom as the `Account` lock of
- * `accounts.service.ts#recordAdjustment`.
+ * Row locks on the booking's PEOPLE (story 16.3, AD-2; story 19.10, AD-5) —
+ * its person and, when it has one, the person who holds its instructor
+ * profile — taken by the three write paths inside their transaction, AFTER
+ * their `Aircraft` lock(s) and BEFORE {@link findBookingConflict}. The
+ * `Aircraft` lock serializes only the writers of the SAME aircraft: two
+ * approvals of the same person on two DIFFERENT aircraft would serialize on
+ * nothing, and the person predicate alone would be a check-then-write (ops
+ * F2, "serve un secondo lock"). Since R-19-o one human is busy in EITHER
+ * role, so both people are `Person` rows: ONE statement, `ORDER BY "id"`
+ * (Postgres locks in the order the sort emits them — the idiom of the
+ * `Aircraft` multi-lock of `updateBooking`), so two writers holding the same
+ * two people in opposite roles take them in the same order and never cross.
+ * The `InstructorProfile` lock of story 16.3 is gone: `personId` is unique on
+ * it, so whoever writes a booking of that instructor locks its holder's
+ * `Person` row here — a second table to keep in the census, and nothing more.
+ * The rows exist by construction (FKs on `Booking`), so there is no 404 to
+ * raise: the result is never read, the effect IS the lock — same idiom as the
+ * `Account` lock of `accounts.service.ts#recordAdjustment`.
  *
  * `FOR NO KEY UPDATE`, not `FOR UPDATE` (decision of the main session,
  * 2026-09-27): it conflicts with itself, so two booking writers on the same
- * person/instructor still serialize, but NOT with the `FOR KEY SHARE` every
- * foreign-key check takes on its parent row. So an insert elsewhere that
- * references the same person (a flight, an expiry, an account movement) is
- * never blocked by a booking transaction — and no lock cycle can form with a
- * transaction whose FK checks visit `InstructorProfile` before `Person`
- * (today none does, but that order is decided by trigger OIDs, not by code).
+ * person still serialize, but NOT with the `FOR KEY SHARE` every foreign-key
+ * check takes on its parent row. So an insert elsewhere that references the
+ * same person (a flight, an expiry, an account movement) is never blocked by
+ * a booking transaction.
  */
-async function lockBookingPeople(tx: Prisma.TransactionClient, personId: string, instructorProfileId: string | null): Promise<void> {
-  await tx.$queryRaw`SELECT "id" FROM "Person" WHERE "id" = ${personId} FOR NO KEY UPDATE`;
-  if (instructorProfileId) {
-    await tx.$queryRaw`SELECT "id" FROM "InstructorProfile" WHERE "id" = ${instructorProfileId} FOR NO KEY UPDATE`;
-  }
+async function lockBookingPeople(tx: Prisma.TransactionClient, personId: string, instructorPersonId: string | null): Promise<void> {
+  const personIds = instructorPersonId !== null && instructorPersonId !== personId ? [personId, instructorPersonId] : [personId];
+  await tx.$queryRaw`SELECT "id" FROM "Person" WHERE "id" IN (${Prisma.join(personIds)}) ORDER BY "id" FOR NO KEY UPDATE`;
 }
 
 /** The occupied subject behind an overlap 409 (story 16.3, AD-1). */
@@ -366,25 +411,44 @@ type BookingConflict =
  * locks, never copied: the three subjects share the semi-open
  * `[startsAt, endsAt)` semantics and the `status: 'APPROVED'` filter (story
  * 12.2: only an APPROVED booking occupies a slot — two PENDING ones coexist on
- * any subject, the conflict surfaces at approval).
+ * any subject, the conflict surfacing at approval).
  *
  * Three `findFirst`s in sequence, not one `OR`: the precedence
  * AIRCRAFT -> PERSON -> INSTRUCTOR is code, not a classification of whichever
  * row an `OR` returned. The aircraft goes FIRST because it is the answer the
- * three paths gave before this story and the one the UI and the e2e read (a
+ * three paths gave before story 16.3 and the one the UI and the e2e read (a
  * request that is ALSO person-busy keeps answering "aircraft already booked"),
- * and its `where`/`select` are the pre-story ones verbatim. The instructor
- * predicate does not run for a booking without one. Each extra predicate is an
- * index scan (`Booking_personId_idx`/`Booking_instructorProfileId_idx`, story
- * file: 0.17 ms on the 40 000-booking load DB) — no new index.
+ * and its `where`/`select` are the pre-16.3 ones verbatim. The instructor
+ * predicate does not run for a booking without one.
  *
- * NOT covered, declared (TD 16.3-a): the same human as the `personId` of one
- * booking and the instructor of another — the two predicates key on different
- * columns.
+ * Story 19.10 (R-19-o): a human is busy in EITHER role. The person predicate
+ * matches a booking where the person is the PERSON or is its instructor —
+ * through the person's OWN instructor profile id (`personInstructorProfileId`,
+ * any profile it holds, deactivated included: its past bookings still name
+ * it), never a join on `InstructorProfile.personId`: the two are the same set
+ * (`personId` is unique on the profile), but the join made the `OR` a
+ * sequential scan of every booking (measured 22 ms on the 40 000-booking load
+ * DB, against 0.3 ms for two bitmap index scans — story 19.10 record, §E).
+ * The instructor predicate matches one where the instructor's PROFILE is
+ * indicated or its holder is the person. The code still names the subject OF
+ * THE REQUEST that is busy (`PERSON_BUSY` / `INSTRUCTOR_BUSY`), whatever role
+ * it has in the other booking, and `details` still names a booking that
+ * involves that very human — nothing new about a third party. Each predicate
+ * is an `OR` of the two existing index scans (`Booking_personId_idx`,
+ * `Booking_instructorProfileId_idx`) — no new index.
  */
 async function findBookingConflict(
   tx: Prisma.TransactionClient,
-  args: { aircraftId: string; personId: string; instructorProfileId: string | null; startsAt: Date; endsAt: Date; excludeBookingId?: string },
+  args: {
+    aircraftId: string;
+    personId: string;
+    /** The booking person's own instructor profile, when it holds one (the "instructor elsewhere" half of R-19-o). */
+    personInstructorProfileId: string | null;
+    instructor: { profileId: string; personId: string } | null;
+    startsAt: Date;
+    endsAt: Date;
+    excludeBookingId?: string;
+  },
 ): Promise<BookingConflict | null> {
   const excludeSelf = args.excludeBookingId === undefined ? {} : { id: { not: args.excludeBookingId } };
   const overlapping = { status: 'APPROVED' as const, startsAt: { lt: args.endsAt }, endsAt: { gt: args.startsAt } };
@@ -400,7 +464,11 @@ async function findBookingConflict(
   // The earliest conflicting booking is the one `details` names (same rule as
   // `flights.service.ts#assertNoOverlappingFlight`, story 16.2).
   const personConflict = await tx.booking.findFirst({
-    where: { personId: args.personId, ...excludeSelf, ...overlapping },
+    where: {
+      OR: [{ personId: args.personId }, ...(args.personInstructorProfileId === null ? [] : [{ instructorProfileId: args.personInstructorProfileId }])],
+      ...excludeSelf,
+      ...overlapping,
+    },
     orderBy: { startsAt: 'asc' },
     select: { id: true, startsAt: true, endsAt: true },
   });
@@ -408,11 +476,11 @@ async function findBookingConflict(
     return { subject: 'PERSON', booking: personConflict };
   }
 
-  if (!args.instructorProfileId) {
+  if (args.instructor === null) {
     return null;
   }
   const instructorConflict = await tx.booking.findFirst({
-    where: { instructorProfileId: args.instructorProfileId, ...excludeSelf, ...overlapping },
+    where: { OR: [{ instructorProfileId: args.instructor.profileId }, { personId: args.instructor.personId }], ...excludeSelf, ...overlapping },
     orderBy: { startsAt: 'asc' },
     select: { id: true, startsAt: true, endsAt: true },
   });
@@ -425,7 +493,7 @@ async function findBookingConflict(
  * message, and NO `details`: that booking belongs to someone ELSE, and putting
  * its interval on the wire would be the correlation channel the story 14.5
  * masking exists to close. `PERSON_BUSY`/`INSTRUCTOR_BUSY` name the
- * conflicting booking, which by construction of their predicate belongs to the
+ * conflicting booking, which by construction of their predicate involves the
  * very person/instructor the request names — nothing new about a third party.
  * The instants are ISO 8601 UTC written by hand (story 16.2's discipline: the
  * wire format is written down, not inferred).
@@ -440,62 +508,149 @@ function bookingConflictError(conflict: BookingConflict): ConflictError {
     : new ConflictError('This instructor already has an approved booking for an overlapping interval.', details, 'INSTRUCTOR_BUSY');
 }
 
+// --- The requirements of a booking (story 19.10, CR §4.4) -------------------
 
-/** One non-blocking expired document surfaced by a successful `createBooking` (story 7.4, AC 1) — see the function's own doc-comment. */
+/** One non-blocking expired document surfaced by a successful `createBooking` (story 7.4, AC 1) — see {@link findExpiryWarnings}. */
 export type BookingExpiryWarning = { typeName: string; expiresAt: string };
 
-/** `createBooking`'s return shape (story 7.4, AC 1/2) — REPLACES the bare `BookingListItem` this function returned before this story (see its doc-comment). */
+/** `createBooking`'s return shape (story 7.4, AC 1/2) — REPLACES the bare `BookingListItem` this function returned before that story. */
 export type CreateBookingResult = { booking: BookingListItem; warnings: BookingExpiryWarning[] };
 
-/** A single expired document surfaced by {@link findBlockingExpiredDocuments}. */
-export type ExpiredDocument = { typeName: string; expiresAt: string };
+/**
+ * The `warnings` of a successful `createBooking` (story 7.4, AC 1; D-10 of
+ * story 19.10): the person's NON-blocking ratings of an ACTIVE type, expired
+ * before `flightDateOnly` (`YYYY-MM-DD`, Rome — the expiry day itself is
+ * still valid). Information only, never a failure: what blocks is
+ * `evaluateRequirements`'s. Visits (story 19.7a) and the membership fee (a
+ * `MEMBERSHIP` requirement since story 19.10) never appear here, and a
+ * deactivated type no more than it blocks (story 16.4, R-16-c).
+ */
+async function findExpiryWarnings(personId: string, flightDateOnly: string): Promise<BookingExpiryWarning[]> {
+  const expiries = await prisma.expiry.findMany({
+    where: { personId, expiryType: { kind: 'RATING', blocksBooking: false, isActive: true } },
+    select: { expiresAt: true, expiryType: { select: { name: true } } },
+  });
+  return expiries
+    .filter((expiry) => toDateOnlyString(expiry.expiresAt) < flightDateOnly)
+    .map((expiry) => ({ typeName: expiry.expiryType.name, expiresAt: toDateOnlyString(expiry.expiresAt) }));
+}
 
 /**
- * `personId`'s REGISTERED expiries, partitioned against `flightDateOnly`
- * (`YYYY-MM-DD`, `APP_TIMEZONE`) into `blockingDocuments`
- * (`ExpiryType.blocksBooking`) and non-blocking `warnings` — the shared core
- * of `createBooking`'s expiry-based block (story 7.4, AC 1/2) and
- * `updateBooking`'s day-change recheck (story TD-5, AC 5). Identical query
- * and date-only filter as `createBooking`'s original inline logic (module
- * doc-comment: "anchored to the flight day, not today"). Deciding what to DO
- * with `blockingDocuments` — `createBooking`'s `force` bypass vs
- * `updateBooking`'s unconditional 422 — is each caller's own concern; this
- * helper never throws.
- *
- * Exported since story 14.4 for the flights, which since story 19.9 judge
- * their documents in `requirements.service.ts#evaluateRequirements` instead
- * (story 19.10 moves the bookings there too).
- *
- * Story 19.7a (R-19-j, D-4/D-5): the `blocksBooking` partition applies to the
- * NON-medical documents only (a RATING per type; the MEMBERSHIP fee stays a
- * `warning`, as before). Medical visits leave the per-type scan: the person
- * needs ONE valid visit of any class (`getMedicalRequirementFailure`), and
- * when they have only expired ones the most recent is the ONE blocking
- * document. A person with NO visit at all is NOT blocked here — this scan
- * keeps its "registered and expired" semantics (bookings: D-5). Visits no
- * longer produce `warnings`.
+ * The aircraft price column a booking is estimated with (story 19.10, D-5):
+ * the one the flight registration will charge (`flights.service.ts`, story
+ * 19.3, R-19-e) — `STUDENT` for a student-only person, `PILOT` otherwise,
+ * including an instructor-only person ("un istruttore ha la licenza",
+ * Q-19.3-c) and a legacy person with both profiles active (a pilot, as on the
+ * flights).
  */
-export async function findBlockingExpiredDocuments(
-  personId: string,
-  flightDateOnly: string,
-): Promise<{ blockingDocuments: ExpiredDocument[]; warnings: BookingExpiryWarning[] }> {
-  const expiries = await prisma.expiry.findMany({
-    where: { personId },
-    select: { expiresAt: true, expiryType: { select: { name: true, kind: true, blocksBooking: true } } },
-  });
-  const expiredDocuments = expiries
-    .filter((expiry) => expiry.expiryType.kind !== 'MEDICAL' && toDateOnlyString(expiry.expiresAt) < flightDateOnly)
-    .map((expiry) => ({ typeName: expiry.expiryType.name, expiresAt: toDateOnlyString(expiry.expiresAt), blocksBooking: expiry.expiryType.blocksBooking }));
-  const medicalFailure = await getMedicalRequirementFailure(personId, flightDateOnly);
-  const expiredMedical = medicalFailure !== null && medicalFailure.expiresAt !== null ? [{ typeName: medicalFailure.typeName, expiresAt: medicalFailure.expiresAt }] : [];
+function bookingPriceCategory(person: TargetPerson): AircraftPriceCategory {
+  return isActiveStudent(person) && !isActivePilot(person) ? 'STUDENT' : 'PILOT';
+}
 
-  return {
-    blockingDocuments: [
-      ...expiredDocuments.filter((document) => document.blocksBooking).map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt })),
-      ...expiredMedical,
-    ],
-    warnings: expiredDocuments.filter((document) => !document.blocksBooking).map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt })),
-  };
+/**
+ * The ESTIMATED cost of a booking (story 19.10, A9, R-19-g): the aircraft
+ * price of `priceCategory` × the slot's duration, plus the instructor's
+ * hourly rate × the same duration when there is one — each part
+ * `Math.round(perHour × minutes / 60)`, the formula of the flight charge. The
+ * rates are those in effect on the flight day (`validFrom` the greatest ≤ the
+ * Rome day of `startsAt`, the rate the flight will freeze), read WITHOUT an
+ * actor: `rates.service.ts#getEffectiveRate` is gated `aircraft.manage` and
+ * a pilot booking for themself would get a 403. Typed queries on the
+ * `@db.Date` column, never raw SQL (review 3.5 F1). A part with no rate in
+ * effect costs 0 — no new 422 on a booking: the registration of the flight
+ * refuses it with `NO_AIRCRAFT_RATE`/`NO_INSTRUCTOR_RATE` anyway.
+ */
+async function estimateBookingCostCents(
+  client: Prisma.TransactionClient,
+  booking: { aircraftId: string; instructorProfileId: string | null; startsAt: Date; endsAt: Date; priceCategory: AircraftPriceCategory },
+): Promise<number> {
+  const validFrom = { lte: parseDateOnlyUtc(dateOnlyInZone(booking.startsAt, APP_TIMEZONE)) };
+  const aircraftRate = await client.aircraftRate.findFirst({
+    where: { aircraftId: booking.aircraftId, validFrom },
+    orderBy: [{ validFrom: 'desc' }],
+    select: { studentPriceCents: true, pilotPriceCents: true },
+  });
+  const instructorRate =
+    booking.instructorProfileId === null
+      ? null
+      : await client.instructorRate.findFirst({
+          where: { instructorProfileId: booking.instructorProfileId, validFrom },
+          orderBy: [{ validFrom: 'desc' }],
+          select: { priceCentsPerHour: true },
+        });
+  const minutes = Math.round((booking.endsAt.getTime() - booking.startsAt.getTime()) / 60_000);
+  const aircraftPerHour = aircraftRate === null ? 0 : booking.priceCategory === 'PILOT' ? aircraftRate.pilotPriceCents : aircraftRate.studentPriceCents;
+  return Math.round((aircraftPerHour * minutes) / 60) + Math.round(((instructorRate?.priceCentsPerHour ?? 0) * minutes) / 60);
+}
+
+/**
+ * The POLICY of a booking's requirements (story 19.10, AD-1 — the evaluation
+ * itself is story 19.9's `evaluateRequirements`), the same on create, move
+ * (on the merged booking) and approval:
+ * - documents and membership fee: always, for the person and for the
+ *   instructor when there is one (R-19-j/k, Q-19.9-a); the person's MISSING
+ *   scan covers the scopes of all its active profiles;
+ * - currency: only on a booking WITHOUT an instructor — a solo by definition
+ *   (R-19-l: a self-booking never has one) — and only for a currency subject,
+ *   an active pilot or student (19.7a D-8);
+ * - balance: the current balance against {@link estimateBookingCostCents},
+ *   this booking alone (D-2); not judged for a person with no `Account`, an
+ *   instructor-only person (D-6).
+ * Two reference days (Q-19.10-a = B, PO): the documents and the rates on the
+ * Rome day of `startsAt`, the currency and the fee on TODAY in Rome — also on
+ * the approval of a booking already in the past (R-16-b, D-7).
+ *
+ * Read-only and outside any lock: the caller DECIDES on the result later
+ * ({@link decideRequirements}). Not judged again under a lock either (unlike
+ * a flight's balance, review 19.9 F2): a booking writes no movement, so two
+ * bookings racing on the same balance spend nothing — each is judged on its
+ * own cost, as D-2 wants; only a concurrent top-up or charge can move the
+ * balance, the check-then-act of every other requirement (TD 16.3-d).
+ */
+async function evaluateBookingRequirements(
+  client: Prisma.TransactionClient,
+  booking: { person: TargetPerson; instructor: BookingInstructor | null; aircraftId: string; startsAt: Date; endsAt: Date },
+): Promise<RequirementFailure[]> {
+  const { person, instructor } = booking;
+  const hasActivePilot = isActivePilot(person);
+  const hasActiveStudent = isActiveStudent(person);
+  const today = todayDateOnlyInZone(APP_TIMEZONE);
+  const costCents =
+    person.account === null
+      ? null
+      : await estimateBookingCostCents(client, {
+          aircraftId: booking.aircraftId,
+          instructorProfileId: instructor?.profileId ?? null,
+          startsAt: booking.startsAt,
+          endsAt: booking.endsAt,
+          priceCategory: bookingPriceCategory(person),
+        });
+
+  return evaluateRequirements({
+    expiryDateOnly: dateOnlyInZone(booking.startsAt, APP_TIMEZONE),
+    membershipDateOnly: today,
+    person: { id: person.id, name: `${person.firstName} ${person.lastName}`, hasActivePilot, hasActiveStudent, hasActiveInstructor: isActiveInstructor(person) },
+    instructor: instructor === null ? null : { personId: instructor.personId, name: instructor.name },
+    documents: true,
+    currency: instructor === null && (hasActivePilot || hasActiveStudent) ? { dateOnly: today, excludeFlightId: null } : null,
+    balance: costCents === null ? null : { costCents, creditCents: 0 },
+  });
+}
+
+/**
+ * The LAST gate before the write (story 19.10, AD-3; closes TD 16.3-g): the
+ * failures evaluated before the transaction, decided after every check
+ * `force` does not derogate (the aircraft state and the three overlaps, under
+ * their locks). Failures without `force` => the one 422
+ * `REQUIREMENTS_NOT_MET`; with `force` (the 403 at the top of each path
+ * already guarantees `requirements.force`) => the stamp to write. Nothing to
+ * derogate => no stamp, even with `force: true` ("scavalcato un requisito, non
+ * spuntata una checkbox", D-9).
+ */
+function decideRequirements(actor: Actor, failures: RequirementFailure[], force: boolean | undefined): { forcedAt: Date; forcedByUserId: string } | null {
+  if (failures.length === 0) return null;
+  if (!force) throwRequirementsNotMet(failures);
+  return { forcedAt: new Date(), forcedByUserId: actor.userId };
 }
 
 // --- Booking window (story 12.11, AC 4; ratifica utente 3) -----------------
@@ -567,39 +722,17 @@ async function assertWithinSchedulingWindow(startsAt: Date, endsAt: Date): Promi
  * Creates a booking (AC 1/2/3) — see the module doc-comment for the full
  * matrix/ordering rationale.
  *
- * **Expiry-based block (story 7.4, AC 1/2; FR-21)**: after the target
- * person's own checks pass, every `Expiry` REGISTERED for that person
- * (`input.personId` — the person WHO FLIES: the allievo on a school
- * booking, never the instructor/staff actor) is compared against the FLIGHT
- * DAY, not "today" — `dateOnlyInZone(startsAt, APP_TIMEZONE)` — because a
- * booking made now for a future day must be judged against THAT day's
- * validity (Contesto: prenotare per dopodomani con la medica che scade
- * stanotte DEVE bloccare). The expiry day itself is still valid (same
- * boundary as `computeExpiryStatus`/package eligibility, story 5.2/6.2):
- * `toDateOnlyString(expiry.expiresAt) < flightDateOnly` is "expired for this
- * flight". A document with no registered `Expiry` row is NEVER blocking —
- * only a REGISTERED, EXPIRED one is (missing-document enforcement is out of
- * scope, Contesto: staff's own dashboard, story 6.4, carries that picture).
- * Every expired document whose `ExpiryType.blocksBooking` is `true` is
- * BLOCKING; every other expired document is a non-blocking `warnings` entry
- * on the successful result — `details.documents`/the message list ONLY the
- * blocking ones (Task 5's decision: warnings never appear in the 422).
- *
- * `force`/`forceReason` (AC 2): a plain `force: true` from a non-staff actor
- * is REJECTED with 403 immediately after the own-rules block above — BEFORE
- * the target-person query, let alone any expiry query (own-path booking
- * never bypasses a block, full stop). For staff, a real block (≥1 blocking
- * document) is bypassed ONLY when `force` is set — the schema's own refine
- * already guarantees `forceReason` is present whenever `force` is `true` —
- * and the bypass STAMPS `forcedAt`/`forcedByUserId`/`forceReason` on the
- * created row. `force: true` with NOTHING to bypass (no blocking document)
- * creates the booking normally, stamping NOTHING (Contesto: the tracking
- * means "scavalcato un blocco", not "ha spuntato una checkbox").
- *
- * Runs AFTER every person check and BEFORE `BOOKING_IN_PAST` (module
- * doc-comment's "ordine complessivo") — scadenze participate in NEITHER the
- * overlap invariant NOR the aircraft lock, so this stays entirely outside
- * `prisma.$transaction`, same rationale as the person checks above it.
+ * **Requirements (story 19.10)**: once the person, the instructor, the past
+ * and the window have passed, the booking's requirements are EVALUATED
+ * (`evaluateBookingRequirements`: the person WHO FLIES — the allievo on a
+ * school booking, never the instructor/staff actor — and the instructor),
+ * outside the transaction; they are DECIDED last, inside it, after the
+ * aircraft and the overlaps (`decideRequirements`). `force: true` from an
+ * actor without `requirements.force` is a 403 right after the own-rules block
+ * — BEFORE the target-person query, let alone any requirement (an own-path
+ * booking never derogates, R-19-h: pilot and instructor are blocked with the
+ * same list). The non-blocking expired ratings are `warnings` of the 201
+ * (`findExpiryWarnings`, D-10).
  */
 export async function createBooking(actor: Actor, input: CreateBookingInput): Promise<CreateBookingResult> {
   const canManageAny = hasPermission(actor, 'bookings.manage.any');
@@ -612,12 +745,12 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
   // Own-rules (403) that must run BEFORE any query on the TARGET person for
   // the cross-person case (Dev Notes: never leak whether an id belongs to
   // someone by querying it before the actor's own eligibility is settled).
-  // `resolvedInstructorProfileId` is the FINAL value written on the booking
-  // for a non-staff actor — already known here for the cross-person branch
-  // (the actor's own profile id); the self-booking branch defers its
-  // eligibility check to the single shared `person` lookup below (querying
-  // "self" carries no leak risk, so there is no need for a second query).
-  let resolvedInstructorProfileId: string | null = null;
+  // `instructor` is the FINAL instructor written on the booking for a
+  // non-staff actor — already known here for the cross-person branch (the
+  // actor's own profile); the self-booking branch defers its eligibility
+  // check to the single shared `person` lookup below (querying "self" carries
+  // no leak risk, so there is no need for a second query).
+  let instructor: BookingInstructor | null = null;
 
   if (!canManageAny) {
     if (actor.personId === null) {
@@ -634,24 +767,24 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
     } else {
       const actorPerson = await prisma.person.findUnique({
         where: { id: actor.personId },
-        select: { instructorProfile: { select: { id: true, deactivatedAt: true } } },
+        select: { firstName: true, lastName: true, instructorProfile: { select: { id: true, deactivatedAt: true } } },
       });
       const actorInstructorProfile = actorPerson?.instructorProfile ?? null;
-      if (!actorInstructorProfile || actorInstructorProfile.deactivatedAt !== null) {
+      if (!actorPerson || !actorInstructorProfile || actorInstructorProfile.deactivatedAt !== null) {
         throw new ForbiddenError('Only an active instructor may book an aircraft on behalf of another person.');
       }
       if (input.instructorProfileId !== actorInstructorProfile.id) {
         throw new ForbiddenError('An instructor may only indicate their own instructorProfileId when booking for someone else.');
       }
-      resolvedInstructorProfileId = actorInstructorProfile.id;
+      instructor = { profileId: actorInstructorProfile.id, personId: actor.personId, name: `${actorPerson.firstName} ${actorPerson.lastName}` };
     }
   }
 
-  // Story 7.4, AC 2: `force` without `bookings.manage.any` is rejected
-  // BEFORE any further query (persona, let alone scadenze) — own-path
-  // booking never bypasses a block.
-  if (input.force && !canManageAny) {
-    throw new ForbiddenError('Only an admin can force a blocked booking.');
+  // Story 19.10 (P3, R-19-h): `force` without `requirements.force` is
+  // rejected BEFORE any further query (persona, let alone requirements) —
+  // only an admin derogates, an own-path booking never does.
+  if (input.force && !hasPermission(actor, 'requirements.force')) {
+    throw new ForbiddenError('Only an admin can derogate the requirements of a booking.');
   }
 
   // Target person (404/409/422) — resolved and validated OUTSIDE the
@@ -675,7 +808,8 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
     assertPersonHasActiveFlyingProfile(person);
 
     if (input.instructorProfileId) {
-      resolvedInstructorProfileId = await assertActiveInstructorProfile(prisma, input.instructorProfileId);
+      instructor = await assertActiveInstructorProfile(prisma, input.instructorProfileId);
+      assertInstructorIsNotThePerson(instructor, input.personId);
     }
   } else if (isSelf) {
     // Own-self path (Contesto): a 403, not the staff/cross-path's 422 —
@@ -695,37 +829,19 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
   const startsAt = new Date(input.startsAt);
   const endsAt = new Date(input.endsAt);
 
-  // --- Expiry-based booking block (story 7.4, AC 1/2) — see this
-  // function's own doc-comment for the full rationale. Deliberately NOT
-  // `computeExpiryStatus` (Dev Notes: that helper is anchored to "today",
-  // this rule is anchored to the FLIGHT DAY) — a direct date-only compare.
-  const flightDateOnly = dateOnlyInZone(startsAt, APP_TIMEZONE);
-  const { blockingDocuments, warnings } = await findBlockingExpiredDocuments(input.personId, flightDateOnly);
-
-  let forceStamp: { forcedAt: Date; forcedByUserId: string; forceReason: string } | null = null;
-  if (blockingDocuments.length > 0) {
-    if (input.force) {
-      // `force-403` above already guarantees `canManageAny` here, and the
-      // schema's own refine guarantees `forceReason` is a non-empty string
-      // whenever `force` is `true` — the `!` is safe.
-      forceStamp = { forcedAt: new Date(), forcedByUserId: actor.userId, forceReason: input.forceReason! };
-    } else {
-      throw new ValidationError(
-        `Cannot create this booking: the following documents are expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
-        { documents: blockingDocuments },
-        'EXPIRED_DOCUMENTS',
-      );
-    }
-  }
-
   if (startsAt.getTime() <= Date.now()) {
     throw new ValidationError('startsAt must be in the future.', undefined, 'BOOKING_IN_PAST');
   }
 
-  // Story 12.11, AC 4 (ratifica utente 3): outside the transaction, same
-  // rationale as the expiry-based block above — the scheduling window
-  // participates in neither the overlap invariant nor the aircraft lock.
+  // Story 12.11, AC 4 (ratifica utente 3): outside the transaction — the
+  // scheduling window participates in neither the overlap invariant nor the
+  // aircraft lock.
   await assertWithinSchedulingWindow(startsAt, endsAt);
+
+  // Story 19.10 (AD-3): evaluated here, outside the transaction (no lock held
+  // during their queries), DECIDED inside it, last.
+  const failures = await evaluateBookingRequirements(prisma, { person, instructor, aircraftId: input.aircraftId, startsAt, endsAt });
+  const warnings = await findExpiryWarnings(input.personId, dateOnlyInZone(startsAt, APP_TIMEZONE));
 
   const created = await prisma.$transaction(async (tx) => {
     // Row lock (FOR UPDATE) — the FIRST statement in the transaction (module
@@ -746,14 +862,15 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
     }
 
     // Overlap pre-check (AC 2) on the aircraft, the person and the instructor
-    // (story 16.3): semi-open `[startsAt, endsAt)` — two bookings that merely
-    // touch at the boundary do NOT overlap — and only an APPROVED booking
-    // occupies a slot (story 12.2), see `findBookingConflict`.
-    await lockBookingPeople(tx, input.personId, resolvedInstructorProfileId);
+    // (story 16.3; R-19-o since story 19.10): semi-open `[startsAt, endsAt)` —
+    // two bookings that merely touch at the boundary do NOT overlap — and only
+    // an APPROVED booking occupies a slot (story 12.2), see `findBookingConflict`.
+    await lockBookingPeople(tx, input.personId, instructor?.personId ?? null);
     const conflict = await findBookingConflict(tx, {
       aircraftId: input.aircraftId,
       personId: input.personId,
-      instructorProfileId: resolvedInstructorProfileId,
+      personInstructorProfileId: person.instructorProfile?.id ?? null,
+      instructor,
       startsAt,
       endsAt,
     });
@@ -761,11 +878,13 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
       throw bookingConflictError(conflict);
     }
 
+    const forceStamp = decideRequirements(actor, failures, input.force);
+
     return tx.booking.create({
       data: {
         aircraftId: input.aircraftId,
         personId: input.personId,
-        instructorProfileId: resolvedInstructorProfileId,
+        instructorProfileId: instructor?.profileId ?? null,
         startsAt,
         endsAt,
         notes: input.notes ?? null,
@@ -774,8 +893,8 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
         // never the column default — ADMIN-only (`bookings.manage.any`)
         // bookings start APPROVED, everyone else's start PENDING.
         status: canManageAny ? 'APPROVED' : 'PENDING',
-        // Story 7.4, AC 2: stamped ONLY when a real block was bypassed
-        // (`forceStamp` above) — otherwise every field stays `null`.
+        // Story 19.10 (D-9): stamped ONLY when a failed requirement was
+        // derogated — otherwise both fields stay `null`.
         ...(forceStamp ?? {}),
       },
       select: BOOKING_SELECT,
@@ -937,6 +1056,13 @@ type EditableBooking = {
   status: BookingStatus;
 };
 
+/** `updateBooking`'s read (story 19.10): the editable fields plus who the requirements and the R-19-o locks are about — the booking's person (`BOOKABLE_PERSON_SELECT`) and its instructor's holder. `cancelBooking` reads none of it. */
+const MOVABLE_BOOKING_SELECT = {
+  ...EDITABLE_BOOKING_SELECT,
+  person: { select: BOOKABLE_PERSON_SELECT },
+  instructorProfile: { select: { personId: true, person: { select: { firstName: true, lastName: true } } } },
+} as const;
+
 /**
  * Own-access + temporal gate shared by `updateBooking`/`cancelBooking`
  * (Contesto): "own" = the booking's `personId` matches the actor's own
@@ -1000,18 +1126,15 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * here, so a notes-only PATCH of a booking already outside the CURRENT window
  * is refused too — the same answer the create path gives for that interval.
  *
- * **Re-evaluates expiries on a DAY change only (story 7.4 loophole closed by
- * TD-5, AC 5)**: moving this booking to a DIFFERENT flight day reruns the
- * SAME expiry-based block `createBooking` runs at creation
- * (`findBlockingExpiredDocuments`, the shared helper) against `personId`
- * (`existing.personId`, the person who flies) and the NEW day — a blocking
- * document is a hard 422 `EXPIRED_DOCUMENTS`, same shape as the create path,
- * with NO `force` bypass on this endpoint (staff who must deliberately move
- * past a scadenza cancels and recreates with `force`). A same-day edit
- * (time/aircraft/notes only) never re-checks — a booking created with
- * `force` past a blocking document stays editable within that same day
- * (Contesto: the loophole being closed is specifically the day-move, not
- * ordinary same-day corrections).
+ * **Re-judges the requirements on EVERY edit (story 19.10, D-3)**: the
+ * merged booking — its aircraft, interval and day — goes through the same
+ * `evaluateBookingRequirements` as a create (the person and the instructor
+ * are the booking's own, immutable), unconditionally like the window above:
+ * with the balance and the currency in the picture the day alone no longer
+ * says whether anything changed (the duration and the aircraft change the
+ * cost). Decided last, inside the transaction (`decideRequirements`); `force`
+ * (`requirements.force`, 403 otherwise, checked BEFORE the booking is even
+ * read) derogates and stamps — an own-path move is blocked with the list.
  *
  * **Concurrency (same discipline as `createBooking`, AC 2)**: inside
  * `prisma.$transaction`, THIS booking's row is locked `FOR UPDATE` first
@@ -1050,8 +1173,13 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
   if (!canManageAny) {
     authorize(actor, 'bookings.manage.own');
   }
+  // Story 19.10 (P3): before ANY query — not even the booking is read for an
+  // actor who asks to derogate without the permission.
+  if (input.force && !hasPermission(actor, 'requirements.force')) {
+    throw new ForbiddenError('Only an admin can derogate the requirements of a booking.');
+  }
 
-  const existing = await prisma.booking.findUnique({ where: { id: bookingId }, select: EDITABLE_BOOKING_SELECT });
+  const existing = await prisma.booking.findUnique({ where: { id: bookingId }, select: MOVABLE_BOOKING_SELECT });
   if (!existing) {
     throw new NotFoundError('Booking not found.');
   }
@@ -1076,29 +1204,30 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     throw new ValidationError('startsAt must be in the future.', undefined, 'BOOKING_IN_PAST');
   }
 
-  // TD-5, AC 5: rerun the create's expiry-based block, but ONLY when the
-  // flight DAY actually changes (see this function's own doc-comment) —
-  // scadenze participate in neither the overlap invariant nor the aircraft
-  // lock, so this stays outside `prisma.$transaction`, same rationale as
-  // `createBooking`'s own expiry check.
-  const nextFlightDateOnly = dateOnlyInZone(nextStartsAt, APP_TIMEZONE);
-  if (nextFlightDateOnly !== dateOnlyInZone(existing.startsAt, APP_TIMEZONE)) {
-    const { blockingDocuments } = await findBlockingExpiredDocuments(existing.personId, nextFlightDateOnly);
-    if (blockingDocuments.length > 0) {
-      throw new ValidationError(
-        `Cannot move this booking: the following documents are expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
-        { documents: blockingDocuments },
-        'EXPIRED_DOCUMENTS',
-      );
-    }
-  }
-
   // Story 15.4 review (PO decision, 2026-08-03): the scheduling window is
   // re-checked HERE too — see this function's own doc-comment. Same position
-  // in the sequence as `createBooking`'s (after the expiry block, outside the
-  // transaction), so the two paths report the same code first on the same
-  // input, and on the MERGED interval like every other rule above.
+  // in the sequence as `createBooking`'s (outside the transaction), so the
+  // two paths report the same code first on the same input, and on the
+  // MERGED interval like every other rule above.
   await assertWithinSchedulingWindow(nextStartsAt, nextEndsAt);
+
+  // Story 19.10 (D-3): on the MERGED booking, evaluated before the locks and
+  // decided after them, like `createBooking`.
+  const instructor: BookingInstructor | null =
+    existing.instructorProfileId === null || existing.instructorProfile === null
+      ? null
+      : {
+          profileId: existing.instructorProfileId,
+          personId: existing.instructorProfile.personId,
+          name: `${existing.instructorProfile.person.firstName} ${existing.instructorProfile.person.lastName}`,
+        };
+  const failures = await evaluateBookingRequirements(prisma, {
+    person: existing.person,
+    instructor,
+    aircraftId: nextAircraftId,
+    startsAt: nextStartsAt,
+    endsAt: nextEndsAt,
+  });
 
   const updated = await prisma.$transaction(async (tx) => {
     // Row lock on THIS booking FIRST (review 16.3 MAJOR-2) — the same first
@@ -1136,11 +1265,12 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     // same three subjects — story 16.3): excludes THIS booking (it is moving,
     // not colliding with itself). The person and instructor are the booking's
     // own — immutable on a PATCH.
-    await lockBookingPeople(tx, existing.personId, existing.instructorProfileId);
+    await lockBookingPeople(tx, existing.personId, instructor?.personId ?? null);
     const conflict = await findBookingConflict(tx, {
       aircraftId: nextAircraftId,
       personId: existing.personId,
-      instructorProfileId: existing.instructorProfileId,
+      personInstructorProfileId: existing.person.instructorProfile?.id ?? null,
+      instructor,
       startsAt: nextStartsAt,
       endsAt: nextEndsAt,
       excludeBookingId: bookingId,
@@ -1148,6 +1278,8 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     if (conflict) {
       throw bookingConflictError(conflict);
     }
+
+    const forceStamp = decideRequirements(actor, failures, input.force);
 
     // The atomic guard+write (module doc-comment above): folds the "still
     // in the SAME status just read" precondition INTO the update itself —
@@ -1163,6 +1295,9 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
         endsAt: nextEndsAt,
         notes: nextNotes,
         updatedByUserId: actor.userId,
+        // Story 19.10 (D-9): only a real deroga writes the stamp, and nothing
+        // ever clears it — an edit without one keeps the previous stamp.
+        ...(forceStamp ?? {}),
       },
     });
     if (guard.count === 0) {
@@ -1288,18 +1423,22 @@ type LockedBookingRow = { id: string; status: BookingStatus; personId: string; i
  * `PENDING -> APPROVED` re-runs `createBooking`'s own checks against the
  * CURRENT booking, in `createBooking`'s own order and with its own codes —
  * the booking's person (409 archived, 422 `PERSON_NOT_BOOKABLE` without an
- * active flying profile) and instructor (409 deactivated), story 16.3 / ops
- * F4; the expiry-based block on the flight day (`findBlockingExpiredDocuments`,
- * no `force` bypass here, unlike create); the scheduling-window check (story
+ * active flying profile) and instructor (409 deactivated, 422
+ * `INSTRUCTOR_SAME_AS_PILOT`), story 16.3 / ops F4 and story 19.10 (D-8); the
+ * requirements evaluated (`evaluateBookingRequirements`, story 19.10 — inside
+ * the transaction, as the expiry block they replace was: the evaluation
+ * reads through `prisma`, no lock held); the scheduling-window check (story
  * 12.11, AC 4, `assertWithinSchedulingWindow`); the `Aircraft` row locked
- * `FOR UPDATE` and validated (archived/out-of-service); the `Person`/
- * `InstructorProfile` locks; and the overlap pre-check on the aircraft, the
- * person and the instructor against every OTHER `APPROVED` booking
- * (`findBookingConflict`). An approval is, in effect, "would this booking
- * still be creatable today" — with ONE exception, ratified (R-16-b): a booking
- * that has ALREADY STARTED, or is entirely in the past, can still be approved
- * (no `BOOKING_IN_PAST` here), because staff regularize bookings after the
- * fact.
+ * `FOR UPDATE` and validated (archived/out-of-service); the `Person` locks;
+ * the overlap pre-check on the aircraft, the person and the instructor
+ * against every OTHER `APPROVED` booking (`findBookingConflict`); and the
+ * requirements DECIDED last — 422 `REQUIREMENTS_NOT_MET`, or with `force`
+ * (`requirements.force`, 403 otherwise, before the transaction opens) the
+ * deroga and its stamp. An approval is, in effect, "would this booking still
+ * be creatable today" — with ONE exception, ratified (R-16-b): a booking that
+ * has ALREADY STARTED, or is entirely in the past, can still be approved (no
+ * `BOOKING_IN_PAST` here), because staff regularize bookings after the fact;
+ * its currency and fee are judged on today, like every booking's (D-7).
  *
  * `APPROVED -> FLOWN|NO_SHOW` is the mirror image of that exception, and has
  * the opposite answer (ratifica R-16-b, ops F9): a booking whose slot has not
@@ -1325,6 +1464,12 @@ type LockedBookingRow = { id: string; status: BookingStatus; personId: string; i
  */
 export async function transitionBooking(actor: Actor, bookingId: string, input: TransitionBookingInput): Promise<BookingListItem> {
   authorize(actor, 'bookings.manage.any');
+  // Story 19.10 (P3): the same distinct gate as create and move. Both are
+  // ADMIN-only today, so this is unreachable — kept for a future role holding
+  // `bookings.manage.any` without `requirements.force`.
+  if (input.force && !hasPermission(actor, 'requirements.force')) {
+    throw new ForbiddenError('Only an admin can derogate the requirements of a booking.');
+  }
 
   const to = input.to;
   if (to === 'DENIED' && !input.reason) {
@@ -1348,25 +1493,23 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
       throw new ValidationError('This booking has not started yet and cannot be closed.', undefined, 'BOOKING_NOT_STARTED');
     }
 
+    let forceStamp: { forcedAt: Date; forcedByUserId: string } | null = null;
     if (to === 'APPROVED') {
       // Re-run createBooking's own checks (this function's doc-comment), in
       // createBooking's own order: WHO is booked first (story 16.3, ops F4).
       const person = await tx.person.findUniqueOrThrow({ where: { id: existing.personId }, select: BOOKABLE_PERSON_SELECT });
       assertPersonNotArchived(person);
       assertPersonHasActiveFlyingProfile(person);
-      if (existing.instructorProfileId) {
-        await assertActiveInstructorProfile(tx, existing.instructorProfileId);
-      }
+      const instructor = existing.instructorProfileId ? await assertActiveInstructorProfile(tx, existing.instructorProfileId) : null;
+      assertInstructorIsNotThePerson(instructor, existing.personId);
 
-      const flightDateOnly = dateOnlyInZone(existing.startsAt, APP_TIMEZONE);
-      const { blockingDocuments } = await findBlockingExpiredDocuments(existing.personId, flightDateOnly);
-      if (blockingDocuments.length > 0) {
-        throw new ValidationError(
-          `Cannot approve this booking: the following documents are expired: ${blockingDocuments.map((document) => document.typeName).join(', ')}.`,
-          { documents: blockingDocuments },
-          'EXPIRED_DOCUMENTS',
-        );
-      }
+      const failures = await evaluateBookingRequirements(tx, {
+        person,
+        instructor,
+        aircraftId: existing.aircraftId,
+        startsAt: existing.startsAt,
+        endsAt: existing.endsAt,
+      });
 
       // Story 12.11, AC 4: same scheduling-window check `createBooking` runs
       // at creation — "would this booking still be creatable today", minus
@@ -1391,11 +1534,12 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
         );
       }
 
-      await lockBookingPeople(tx, existing.personId, existing.instructorProfileId);
+      await lockBookingPeople(tx, existing.personId, instructor?.personId ?? null);
       const conflict = await findBookingConflict(tx, {
         aircraftId: existing.aircraftId,
         personId: existing.personId,
-        instructorProfileId: existing.instructorProfileId,
+        personInstructorProfileId: person.instructorProfile?.id ?? null,
+        instructor,
         startsAt: existing.startsAt,
         endsAt: existing.endsAt,
         excludeBookingId: bookingId,
@@ -1403,11 +1547,14 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
       if (conflict) {
         throw bookingConflictError(conflict);
       }
+
+      forceStamp = decideRequirements(actor, failures, input.force);
     }
 
     const guard = await tx.booking.updateMany({
       where: { id: bookingId, status: existing.status },
-      data: transitionUpdateData(to, actor.userId, input.reason, new Date()),
+      // Story 19.10 (D-9): an approval that derogated stamps; nothing clears a stamp ("riapri" included).
+      data: { ...transitionUpdateData(to, actor.userId, input.reason, new Date()), ...(forceStamp ?? {}) },
     });
     if (guard.count === 0) {
       throw new ConflictError('This booking has changed status; please retry.');

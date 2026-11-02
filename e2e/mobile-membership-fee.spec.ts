@@ -4,8 +4,9 @@ import type { Page } from '@playwright/test';
 /**
  * Story 15.7, ratifica R-15.7-g — "Quota associativa" as a full-screen panel
  * on a phone (AC 8): the SAME `MembershipFeeModal` node, in a CSS mode, with
- * the typeahead over 338 people finally given room, a 44px submit (35 before)
- * and a 44px override ROW (a 13x13 checkbox in a 15px row before).
+ * the typeahead over 338 people finally given room and a 44px submit (35
+ * before). Story 19.10: the deroga of an uncovered fee is the shared warning's
+ * «Procedi comunque», inside the same panel (the checkbox row is gone).
  *
  * **Why this lives in its own SERIALIZED project** (`playwright.config.ts`,
  * after `mobile-overview-overflow`): the quota button is `disabled` while
@@ -98,9 +99,8 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     // Every control of this panel against the EPIC's floor — the same 43.5
     // threshold `mobile-expiries-movements.spec.ts` sweeps with (sub-pixel
     // layout), never one calibrated on the value obtained. Where a control is
-    // WRAPPED by its label ("Forza addebito"), the tap target is the label
-    // ROW, not the box: measured pre-fix 343x20 around a 20x20 checkbox, which
-    // is exactly what this sweep exists to catch (review 15.7 MINOR-1).
+    // WRAPPED by its label, the tap target is the label ROW, not the box
+    // (review 15.7 MINOR-1).
     const small = await page.evaluate(() => {
       const out: { testid: string | null; target: string; h: number }[] = [];
       for (const el of Array.from(document.querySelectorAll('.mini-modal button, .mini-modal input, .mini-modal select'))) {
@@ -113,15 +113,8 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     });
     expect(small).toEqual([]);
     expect(await panel.getByTestId('membership-fee-submit').evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(44);
-    // The override's own target, said out loud: the row that wraps the box —
-    // the control that decides whether a 422 from the server gets overridden.
-    const overrideTarget = await panel.getByTestId('membership-fee-override-checkbox').evaluate((el) => {
-      const row = el.closest('label');
-      const rect = (row ?? el).getBoundingClientRect();
-      return { wrapped: row !== null, h: Math.round(rect.height * 10) / 10 };
-    });
-    expect(overrideTarget.wrapped).toBe(true);
-    expect(overrideTarget.h).toBeGreaterThanOrEqual(44);
+    // Story 19.10 (AD-10): the «Forza addebito» checkbox is gone — the deroga is the shared warning's «Procedi comunque».
+    await expect(panel.getByTestId('membership-fee-override-checkbox')).toHaveCount(0);
 
     // AC 10 for the quota's own names: they exist only while this panel is
     // open with a non-zero fee, i.e. only inside this serialized project, so
@@ -131,7 +124,7 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     // widths, without navigating away (the modal keeps its state on resize).
     for (const viewport of [PHONE, DESKTOP]) {
       await page.setViewportSize(viewport);
-      for (const testid of ['scadenze-membership-fee-button', 'membership-fee-panel', 'membership-fee-amount', 'membership-fee-submit', 'membership-fee-override-checkbox']) {
+      for (const testid of ['scadenze-membership-fee-button', 'membership-fee-panel', 'membership-fee-amount', 'membership-fee-submit']) {
         await expect(page.getByTestId(testid), `${testid} @${viewport.width}`).toHaveCount(1);
       }
     }
@@ -143,7 +136,6 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     await page.getByRole('option', { name: `${pilot.lastName} ${pilot.firstName}`, exact: true }).click();
 
     await expect(panel.getByTestId('membership-fee-amount')).toHaveValue('50.00');
-    await expect(panel.getByTestId('membership-fee-override-checkbox')).not.toBeChecked();
     await panel.getByTestId('membership-fee-submit').click();
     await expect(panel.getByTestId('membership-fee-success')).toBeVisible();
 
@@ -154,7 +146,7 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     expect(adjustment?.amountCents).toBe(-5000);
   });
 
-  test('saldo insufficiente: 422 col messaggio che porta saldo e importo, nessun addebito; con "Forza addebito" passa', async ({ page }) => {
+  test('saldo insufficiente: l\'avviso condiviso dentro il pannello a tutto schermo, nessun addebito; «Procedi comunque» (>=44px, nel viewport) addebita (story 19.10, AC 39)', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await login(page, ADMIN_EMAIL);
     await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 5000 } });
@@ -169,13 +161,26 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     await page.getByRole('option', { name: `${pilot.lastName} ${pilot.firstName}`, exact: true }).click();
 
     await panel.getByTestId('membership-fee-submit').click();
-    await expect(panel.getByTestId('membership-fee-error')).toBeVisible();
-    await expect(panel.getByTestId('membership-fee-error')).toContainText('Saldo insufficiente');
+    const warning = panel.getByTestId('requirements-warning');
+    await expect(warning).toBeVisible();
+    await expect(warning.locator('[data-type="BALANCE"]')).toContainText('Saldo insufficiente: saldo 0,00 €, costo 50,00 €');
     await expect(panel.getByTestId('membership-fee-success')).toHaveCount(0);
+    const noCharge = (await (await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`)).json()) as { items: { type: string }[] };
+    expect(noCharge.items.filter((item) => item.type === 'ADJUSTMENT')).toHaveLength(0);
 
-    // The override is a deliberate act, never the default path.
-    await panel.getByTestId('membership-fee-override-checkbox').check();
-    await panel.getByTestId('membership-fee-submit').click();
+    const proceed = warning.getByTestId('requirements-proceed');
+    await proceed.scrollIntoViewIfNeeded();
+    const box = await proceed.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return { h: rect.height, top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+    });
+    expect(box.h).toBeGreaterThanOrEqual(43.5);
+    expect(box.top).toBeGreaterThanOrEqual(0);
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.bottom).toBeLessThanOrEqual(PHONE.height);
+    expect(box.right).toBeLessThanOrEqual(PHONE.width);
+
+    await proceed.click();
     await expect(panel.getByTestId('membership-fee-success')).toBeVisible();
 
     const movements = (await (await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`)).json()) as {

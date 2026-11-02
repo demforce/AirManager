@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
-import { selectFromCombobox, todayRome } from './helpers';
+import { ensureBookingRequirements, ownFailures, personIdByEmail, selectFromCombobox, todayRome, type E2eRequirementFailure } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -171,6 +171,7 @@ async function createPilotPerson(
 async function createInstructorWithLogin(
   page: Page,
   password: string,
+  options: { inRegola?: boolean } = {},
 ): Promise<{ personId: string; email: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const firstName = 'Istruttore';
@@ -184,6 +185,8 @@ async function createInstructorWithLogin(
     data: { ratings: 'FI(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 19.10 (AD-9 rule 2): own-path flows need the person "in regola".
+  if (options.inRegola) await ensureBookingRequirements(page, { personId: person.id, scope: 'INSTRUCTORS' });
 
   const email = uniqueEmail('instructor-bookings');
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['INSTRUCTOR'], personId: person.id } });
@@ -204,6 +207,7 @@ async function createInstructorWithLogin(
 async function createStudentWithLogin(
   page: Page,
   password: string,
+  options: { inRegola?: boolean } = {},
 ): Promise<{ personId: string; email: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const firstName = 'Allievo';
@@ -217,6 +221,8 @@ async function createStudentWithLogin(
     data: { courseStartDate: '2026-01-01' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 19.10: a student never books alone (no currency to build).
+  if (options.inRegola) await ensureBookingRequirements(page, { personId: person.id, scope: 'STUDENTS' });
 
   const email = uniqueEmail('student-bookings');
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['STUDENT'], personId: person.id } });
@@ -234,7 +240,11 @@ async function createStudentWithLogin(
 }
 
 /** Creates a run-unique pilot person plus a linked login user (story 7.4: a non-staff actor is needed to exercise the expiry-block from the OWN-path form, unlike `createPilotPerson` which has no login). */
-async function createPilotWithLogin(page: Page, password: string): Promise<{ personId: string; email: string; firstName: string; lastName: string }> {
+async function createPilotWithLogin(
+  page: Page,
+  password: string,
+  options: { inRegola?: boolean } = {},
+): Promise<{ personId: string; email: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const firstName = 'Pilota';
   const lastName = `Scadenze-${suffix}`;
@@ -247,6 +257,9 @@ async function createPilotWithLogin(page: Page, password: string): Promise<{ per
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 19.10 (AD-9 rule 2): own-path flows need the person "in regola";
+  // a pilot books alone, so the currency too (solo).
+  if (options.inRegola) await ensureBookingRequirements(page, { personId: person.id, scope: 'PILOTS', solo: true });
 
   const email = uniqueEmail('pilot-expiry-bookings');
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
@@ -450,7 +463,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // Story 16.3: a run-unique pilot, never the seed one — this test leaves an
     // APPROVED booking behind (see the note at `FUTURE_DAY`).
     const pilotPassword = `PilotaPrenota${uniqueSuffix()}!`;
-    const pilot = await createPilotWithLogin(page, pilotPassword);
+    const pilot = await createPilotWithLogin(page, pilotPassword, { inRegola: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
@@ -514,6 +527,8 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const pilot = await createPilotPerson(page);
+    // Story 19.10 (AD-9 rule 2): a staff UI flow that is not about the requirements.
+    await ensureBookingRequirements(page, { personId: pilot.personId, scope: 'PILOTS', solo: true });
 
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
@@ -587,9 +602,9 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
   test('an instructor books for an allievo (toggle "Per un allievo") — 201, row shows both names', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
-    const student = await createStudentWithLogin(page, 'AllievoBookings123!');
+    const student = await createStudentWithLogin(page, 'AllievoBookings123!', { inRegola: true });
     const instructorPassword = 'IstruttoreBookings123!';
-    const instructor = await createInstructorWithLogin(page, instructorPassword);
+    const instructor = await createInstructorWithLogin(page, instructorPassword, { inRegola: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, instructor.email, instructorPassword);
@@ -624,7 +639,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const instructorPassword = 'IstruttoreBookingsSelf123!';
-    const instructor = await createInstructorWithLogin(page, instructorPassword);
+    const instructor = await createInstructorWithLogin(page, instructorPassword, { inRegola: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, instructor.email, instructorPassword);
@@ -677,6 +692,8 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
         personId: pilot.personId,
         startsAt: `${tomorrow}T09:00:00.000Z`,
         endsAt: `${tomorrow}T10:00:00.000Z`,
+        // Story 19.10 (AD-9 rule 1): an admin fixture, not about the requirements.
+        force: true,
       },
     });
     expect(bookingResponse.status()).toBe(201);
@@ -748,11 +765,11 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
 
     // Two run-unique bookings via the admin API at known times (Task 4: "orari noti di DOMANI, es. 09:00Z e 14:00Z").
     const first = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${targetDay}T09:00:00.000Z`, endsAt: `${targetDay}T10:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${targetDay}T09:00:00.000Z`, endsAt: `${targetDay}T10:00:00.000Z`, force: true },
     });
     expect(first.status()).toBe(201);
     const second = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${targetDay}T14:00:00.000Z`, endsAt: `${targetDay}T15:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${targetDay}T14:00:00.000Z`, endsAt: `${targetDay}T15:00:00.000Z`, force: true },
     });
     expect(second.status()).toBe(201);
 
@@ -997,7 +1014,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     if (!tomorrow) throw new Error(`Could not extract tomorrow's date from calendar-next href: ${nextHref}`);
 
     const bookingResponse = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${tomorrow}T09:00:00.000Z`, endsAt: `${tomorrow}T10:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${tomorrow}T09:00:00.000Z`, endsAt: `${tomorrow}T10:00:00.000Z`, force: true },
     });
     expect(bookingResponse.status()).toBe(201);
 
@@ -1057,7 +1074,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     if (!tomorrow) throw new Error(`Could not extract tomorrow's date from calendar-next href: ${nextHref}`);
 
     const response = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${tomorrow}T20:45:00.000Z`, endsAt: `${tomorrow}T21:45:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${tomorrow}T20:45:00.000Z`, endsAt: `${tomorrow}T21:45:00.000Z`, force: true },
     });
     expect(response.status()).toBe(201);
 
@@ -1094,7 +1111,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // scheduling settings. 21:00Z–23:59Z lands at 22:00–00:59 (CET) or
     // 23:00–01:59 (CEST) local — past local midnight in BOTH DST regimes.
     const response = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T21:00:00.000Z`, endsAt: `${FUTURE_DAY}T23:59:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T21:00:00.000Z`, endsAt: `${FUTURE_DAY}T23:59:00.000Z`, force: true },
     });
     expect(response.status()).toBe(201);
 
@@ -1123,6 +1140,8 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
       personId: pilot.personId,
       startsAt: `${FUTURE_DAY}T17:00:00.000Z`,
       endsAt: `${FUTURE_DAY}T18:00:00.000Z`,
+      // Story 19.10 (AD-9 rule 1): the deroga is decided after the overlap, so the loser still gets the 409.
+      force: true,
     };
 
     const [first, second] = await Promise.all([
@@ -1146,7 +1165,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // that shared identity non-blocking expired documents, which turn the
     // `booking-form-success` below into `booking-form-warning`.
     const pilotPassword = `PilotaModifica${uniqueSuffix()}!`;
-    const pilot = await createPilotWithLogin(page, pilotPassword);
+    const pilot = await createPilotWithLogin(page, pilotPassword, { inRegola: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
@@ -1221,7 +1240,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // Story 16.3: a run-unique pilot, never the seed one — this test leaves an
     // APPROVED booking behind (see the note at `FUTURE_DAY`).
     const pilotPassword = `PilotaSposta${uniqueSuffix()}!`;
-    const pilot = await createPilotWithLogin(page, pilotPassword);
+    const pilot = await createPilotWithLogin(page, pilotPassword, { inRegola: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
@@ -1284,6 +1303,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    // Story 19.10 (AD-9 rule 2): the seed pilot books for themself.
+    await ensureBookingRequirements(page, { personId: await personIdByEmail(page, PILOT_EMAIL), scope: 'PILOTS', solo: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
@@ -1328,7 +1349,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const aircraft = await createAircraft(page);
     const other = await createPilotPerson(page);
     const created = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: other.personId, startsAt: `${FUTURE_DAY}T07:00:00.000Z`, endsAt: `${FUTURE_DAY}T08:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: other.personId, startsAt: `${FUTURE_DAY}T07:00:00.000Z`, endsAt: `${FUTURE_DAY}T08:00:00.000Z`, force: true },
     });
     expect(created.status()).toBe(201);
     const { booking } = (await created.json()) as { booking: { id: string } };
@@ -1354,10 +1375,10 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const pilot = await createPilotPerson(page);
 
     const bookingA = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T08:00:00.000Z`, endsAt: `${FUTURE_DAY}T09:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T08:00:00.000Z`, endsAt: `${FUTURE_DAY}T09:00:00.000Z`, force: true },
     });
     const bookingB = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T10:00:00.000Z`, endsAt: `${FUTURE_DAY}T11:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T10:00:00.000Z`, endsAt: `${FUTURE_DAY}T11:00:00.000Z`, force: true },
     });
     expect(bookingA.status()).toBe(201);
     expect(bookingB.status()).toBe(201);
@@ -1366,7 +1387,8 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const idA = createdA.id;
     const idB = createdB.id;
 
-    const targetInterval = { startsAt: `${FUTURE_DAY}T20:00:00.000Z`, endsAt: `${FUTURE_DAY}T21:00:00.000Z` };
+    // Story 19.10 (AD-9 rule 1): `force` — the deroga is decided after the overlap, the loser still gets the 409.
+    const targetInterval = { startsAt: `${FUTURE_DAY}T20:00:00.000Z`, endsAt: `${FUTURE_DAY}T21:00:00.000Z`, force: true };
     const [respA, respB] = await Promise.all([
       page.request.patch(`/api/v1/bookings/${idA}`, { data: targetInterval }),
       page.request.patch(`/api/v1/bookings/${idB}`, { data: targetInterval }),
@@ -1382,7 +1404,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     const pilot = await createPilotPerson(page);
 
     const created = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T22:00:00.000Z`, endsAt: `${FUTURE_DAY}T23:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T22:00:00.000Z`, endsAt: `${FUTURE_DAY}T23:00:00.000Z`, force: true },
     });
     expect(created.status()).toBe(201);
     const { booking } = (await created.json()) as { booking: { id: string } };
@@ -1420,6 +1442,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
           personId: pilot.personId,
           startsAt: `${FUTURE_DAY}T${hour}:00:00.000Z`,
           endsAt: `${FUTURE_DAY}T${hour}:50:00.000Z`,
+          force: true,
         },
       });
       expect(response.status()).toBe(201);
@@ -1459,14 +1482,23 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
   });
 });
 
-test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
-  test('a pilot with a run-unique BLOCKING expired document sees an error naming it, and no force section (staff-only)', async ({ page }) => {
+test.describe('Booking requirements on the forms (Story 7.4, rewritten by story 19.10 on the one warning-and-deroga contract)', () => {
+  /** A run-unique aircraft with a rate from today (the API refuses a past `validFrom`): the booking's estimated cost is no longer 0. */
+  async function createRatedAircraft(page: Page, pilotPriceCents: number): Promise<{ id: string; registration: string }> {
+    const registration = `I-BR${uniqueSuffix()}`.toUpperCase().slice(0, 20);
+    const response = await page.request.post('/api/v1/aircraft', {
+      data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', rate: { studentPriceCents: pilotPriceCents, pilotPriceCents, validFrom: todayRome() } },
+    });
+    expect(response.status()).toBe(201);
+    return { id: ((await response.json()) as { id: string }).id, registration };
+  }
+
+  test('a pilot who fails the requirements sees the same list in its blocked mode — no «Procedi comunque», nothing booked (AC 24)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
-    const blockingType = await createExpiryTypeForBooking(page, true);
-    const pilotPassword = 'PilotaBloccato123!';
+    // Fresh: no visit, no fee, no flight — fails by construction.
+    const pilotPassword = `PilotaBloccato${uniqueSuffix()}!`;
     const pilot = await createPilotWithLogin(page, pilotPassword);
-    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_EXPIRES_AT);
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
@@ -1479,19 +1511,29 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T07:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
-    await expect(page.getByTestId('booking-form-error')).toContainText(blockingType.name);
+    const warning = form.getByTestId('requirements-warning');
+    await expect(warning).toBeVisible();
+    await expect(warning).toContainText('Prenotazione non consentita: solo un amministratore può procedere comunque');
+    await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="MEMBERSHIP"]')).toHaveText(`${pilot.firstName} ${pilot.lastName} (pilota/allievo) — Quota associativa mai pagata`);
+    await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="CURRENCY"]')).toHaveCount(1);
+    await expect(form.getByTestId('requirements-proceed')).toHaveCount(0);
+    await expect(page.getByTestId('booking-form-error')).toHaveCount(0);
     await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
-    await expect(page.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const list = (await (await page.request.get(`/api/v1/bookings?aircraftId=${aircraft.id}&status=PENDING,APPROVED`)).json()) as { total: number };
+    expect(list.total).toBe(0);
   });
 
-  test('a pilot with ONLY a run-unique NON-blocking (warning) expired document: the booking is created, with an amber warning banner naming it', async ({
+  test('a pilot "in regola" with ONLY a run-unique NON-blocking (warning) expired document: the booking is created, with an amber warning banner naming it', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const warningType = await createExpiryTypeForBooking(page, false);
     const pilotPassword = 'PilotaWarning123!';
-    const pilot = await createPilotWithLogin(page, pilotPassword);
+    const pilot = await createPilotWithLogin(page, pilotPassword, { inRegola: true });
     await registerExpiry(page, pilot.personId, warningType.id, EXPIRED_EXPIRES_AT);
 
     await page.context().clearCookies();
@@ -1512,6 +1554,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
 
     await expect(page.getByTestId('booking-form-warning')).toBeVisible();
     await expect(page.getByTestId('booking-form-warning')).toContainText(warningType.name);
+    await expect(form.getByTestId('requirements-warning')).toHaveCount(0);
     // `soonestFutureSlot()` only beats nearly everything (its own doc-comment)
     // — under concurrent load another equally-imminent fixture could still
     // rank ahead of it, so this stays page-independent too.
@@ -1519,26 +1562,18 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await expect(row).toBeVisible();
   });
 
-  test('staff: a blocked person triggers 422 with the document name, "Forza prenotazione" appears, and a motivated force succeeds (201) with forcedAt tracked', async ({
+  test('staff: a person who fails the requirements gets ONE warning inside the form, and «Procedi comunque» (no motivo) books it with the silent forcedAt stamp (AC 23)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
-    const blockingType = await createExpiryTypeForBooking(page, true);
-    // Alphabetically-EARLY prefix (Dev Notes): this test picks the person
-    // from the "Pilota o allievo" `<select>` by label, which only renders
-    // `listPeople`'s FIRST `OPTIONS_PAGE_SIZE` (100) people ordered by
-    // lastName — with 169+ active people accumulated in this never-reset
-    // dev DB, a "Pilota-..." (mid-alphabet) name is no longer a safe bet.
+    // Alphabetically-EARLY prefix: the staff picker lists `listPeople`'s first 100 people by lastName.
     const pilot = await createPilotPerson(page, '0Pilota');
-    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_EXPIRES_AT);
 
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    // `soonestFutureSlot()`, not `FUTURE_DAY` — see the other row-visibility
-    // assertion above for the rationale (only "outranks everything else in
-    // the globally-sorted list" survives this DB's accumulated volume).
+    // `soonestFutureSlot()`, not `FUTURE_DAY` — the row-visibility assertion below.
     const slot = soonestFutureSlot();
     await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(form.getByLabel('Pilota o allievo'), `${pilot.lastName} ${pilot.firstName}`, `${pilot.lastName} ${pilot.firstName}`);
@@ -1546,35 +1581,32 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await form.getByLabel('Fine', { exact: true }).fill(slot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
 
-    await expect(page.getByTestId('booking-form-error')).toContainText(blockingType.name);
-    const forceSection = page.getByTestId('force-booking-section');
-    await expect(forceSection).toBeVisible();
+    const warning = form.getByTestId('requirements-warning');
+    await expect(warning).toBeVisible();
+    await expect(warning).toContainText('La prenotazione non rispetta alcuni requisiti');
+    await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="MEMBERSHIP"]')).toHaveCount(1);
+    // ONE warning: the list never goes in the banner too, and the motivo is gone.
+    await expect(page.getByTestId('booking-form-error')).toHaveCount(0);
+    await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
+    await expect(page.getByTestId('force-booking-reason')).toHaveCount(0);
 
-    // Submitting without a motivo is rejected client-side first.
-    await forceSection.getByTestId('force-booking-submit').click();
-    await expect(forceSection.getByTestId('force-booking-error')).toBeVisible();
-
-    await forceSection.getByTestId('force-booking-reason').fill('Autorizzato dal direttore per volo urgente');
-    await forceSection.getByTestId('force-booking-submit').click();
+    await warning.getByTestId('requirements-proceed').click();
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
-    await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
-    // Same `soonestFutureSlot()` caveat as the warning-document test above.
+    await expect(form.getByTestId('requirements-warning')).toHaveCount(0);
     const row = await findBookingRow(page, aircraft.registration);
     await expect(row).toBeVisible();
 
-    // The tracking (AC 2 "chi, quando") is exposed read-side on the item DTO
-    // (`bookingItemSchema.forcedAt`) — assert it is non-null on the row just created.
+    // The silent stamp (A10) is API data only.
     const listResponse = await page.request.get(`/api/v1/bookings?personId=${pilot.personId}&pageSize=50`);
     expect(listResponse.status()).toBe(200);
-    const listBody = (await listResponse.json()) as { items: Array<{ aircraftId: string; forcedAt: string | null }> };
+    const listBody = (await listResponse.json()) as { items: Array<Record<string, unknown> & { aircraftId: string; forcedAt: string | null }> };
     const forcedBooking = listBody.items.find((item) => item.aircraftId === aircraft.id);
     expect(forcedBooking?.forcedAt).not.toBeNull();
+    expect(forcedBooking).not.toHaveProperty('forceReason');
   });
 
-  test('a pilot attempting force:true directly via the API gets 403 (own-path never bypasses a block, checked before any expiry query)', async ({
-    page,
-  }) => {
+  test('a pilot attempting force:true directly via the API gets 403 (own-path never derogates, checked before any query)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
 
@@ -1584,107 +1616,95 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     const pilotPersonId = me.person.id as string;
 
     const response = await page.request.post('/api/v1/bookings', {
-      data: {
-        aircraftId: aircraft.id,
-        personId: pilotPersonId,
-        startsAt: `${FUTURE_DAY}T19:30:00.000Z`,
-        endsAt: `${FUTURE_DAY}T20:30:00.000Z`,
-        force: true,
-        forceReason: 'Tentativo non autorizzato',
-      },
+      data: { aircraftId: aircraft.id, personId: pilotPersonId, startsAt: `${FUTURE_DAY}T19:30:00.000Z`, endsAt: `${FUTURE_DAY}T20:30:00.000Z`, force: true },
     });
     expect(response.status()).toBe(403);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  test('boundary: an expiry whose expiresAt equals the flight day itself is still valid — the booking succeeds with no error and no warning', async ({
-    page,
-  }) => {
+  test('boundary: a visit whose expiresAt equals the flight day itself is still valid — 201, no warning; the day after it is the EXPIRY failure', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
-    const blockingType = await createExpiryTypeForBooking(page, true);
     const pilot = await createPilotPerson(page);
-    // FUTURE_DAY's own date, in Europe/Rome: a 09:00Z start on 2031-03-10 is
-    // 10:00 CET (before that year's DST transition) — same calendar day.
-    await registerExpiry(page, pilot.personId, blockingType.id, FUTURE_DAY);
+    const medicalTypes = (await (await page.request.get('/api/v1/expiry-types?kind=MEDICAL')).json()) as Array<{ id: string; name: string }>;
+    // FUTURE_DAY's own date in Europe/Rome: 09:00Z on 2031-03-10 is 10:00 CET.
+    // Registered FIRST: `ensureBookingRequirements` then adds no visit of its own.
+    await registerExpiry(page, pilot.personId, medicalTypes[0]!.id, FUTURE_DAY);
+    await ensureBookingRequirements(page, { personId: pilot.personId, scope: 'PILOTS', solo: true });
 
-    const response = await page.request.post('/api/v1/bookings', {
+    const onTheDay = await page.request.post('/api/v1/bookings', {
       data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` },
     });
+    expect(onTheDay.status(), await onTheDay.text()).toBe(201);
+    expect(((await onTheDay.json()) as { warnings: unknown[] }).warnings).toEqual([]);
 
-    expect(response.status()).toBe(201);
-    const body = (await response.json()) as { booking: { id: string }; warnings: unknown[] };
-    expect(body.warnings).toEqual([]);
+    const dayAfter = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: '2031-03-11T09:00:00.000Z', endsAt: '2031-03-11T10:00:00.000Z' },
+    });
+    expect(dayAfter.status()).toBe(422);
+    const failures = ((await dayAfter.json()) as { error: { code: string; details: { failures: E2eRequirementFailure[] } } }).error;
+    expect(failures.code).toBe('REQUIREMENTS_NOT_MET');
+    expect(ownFailures(failures.details.failures)).toEqual([
+      { type: 'EXPIRY', role: 'person', personName: `${pilot.firstName} ${pilot.lastName}`, typeName: medicalTypes[0]!.name, expiresAt: FUTURE_DAY },
+    ]);
   });
 
-  test('moving a booking to a DIFFERENT flight day past a blocking expired document answers 422 naming it; a same-day time-only move is unaffected (TD-5, AC 5)', async ({
+  test('every move re-judges the merged booking (D-3, was TD-5): a same-day one-hour move with a balance short of the cost is blocked for the pilot — the list, no «Procedi comunque» — and a lengthened slot is the BALANCE failure (AC 12a, AC 26)', async ({
     page,
   }) => {
-    // Deliberately NOT `FUTURE_DAY` (2031-03-10): "Prossime prenotazioni"
-    // orders `startsAt asc` GLOBALLY and shows only page 1
-    // (`BOOKINGS_PAGE_SIZE`, `soonestFutureSlot`'s own doc-comment above) —
-    // that shared, heavily-reused fixture day has accumulated far more rows
-    // across repeated runs than the page size, which would push THIS row off
-    // page 1. Two near-term, run-fresh calendar days (Europe/Rome, noon UTC —
-    // comfortably clear of any midnight/DST boundary) avoid that pile-up.
-    const romeDateOnly = (date: Date): string =>
-      new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
-    const DAY_1 = romeDateOnly(new Date(Date.now() + 24 * 3_600_000));
-    const DAY_2 = romeDateOnly(new Date(Date.now() + 48 * 3_600_000));
-
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const aircraft = await createAircraft(page);
-    const blockingType = await createExpiryTypeForBooking(page, true);
-    const pilotPassword = 'PilotaSpostaScaduto123!';
-    const pilot = await createPilotWithLogin(page, pilotPassword);
-    // Valid exactly ON DAY_1 (boundary), expired the day AFTER.
-    await registerExpiry(page, pilot.personId, blockingType.id, DAY_1);
+    // 3 000,00 €/h: one hour costs 300 000, under the 400 000 a fresh pilot holds after `ensureBookingRequirements`.
+    const aircraft = await createRatedAircraft(page, 300_000);
+    const pilotPassword = `PilotaSaldo${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword, { inRegola: true });
+    const balance = ((await (await page.request.get(`/api/v1/people/${pilot.personId}/account`)).json()) as { balanceCents: number }).balanceCents;
+    expect(balance).toBe(400_000);
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
+    const created = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: `${FUTURE_DAY}T09:00:00.000Z`, endsAt: `${FUTURE_DAY}T10:00:00.000Z` },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const { booking } = (await created.json()) as { booking: { id: string } };
 
-    await gotoBookingsAndWaitForHydration(page);
-    await page.getByTestId('new-booking-button').click();
-    const form = page.getByTestId('new-booking-form');
-    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await form.getByLabel('Inizio').fill(`${DAY_1}T12:00`);
-    await form.getByLabel('Fine', { exact: true }).fill(`${DAY_1}T13:00`);
-    await form.getByRole('button', { name: 'Prenota' }).click();
-    await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    // Twice the duration: 600 000 against 400 000.
+    const lengthened = await page.request.patch(`/api/v1/bookings/${booking.id}`, { data: { endsAt: `${FUTURE_DAY}T11:00:00.000Z` } });
+    expect(lengthened.status()).toBe(422);
+    const lengthenedError = ((await lengthened.json()) as { error: { code: string; details: { failures: E2eRequirementFailure[] } } }).error;
+    expect(lengthenedError.code).toBe('REQUIREMENTS_NOT_MET');
+    expect(lengthenedError.details.failures.filter((failure) => failure.type === 'BALANCE')).toEqual([
+      { type: 'BALANCE', role: 'person', personName: `${pilot.firstName} ${pilot.lastName}`, balanceCents: 400_000, costCents: 600_000 },
+    ]);
 
-    // Review 12.3 F1: the create SlideOver stays open after a successful
-    // submit (no auto-close) — its scrim/panel would otherwise intercept the
-    // row-action click below (`pointer-events: none` only lifts on `.open`).
-    await page.keyboard.press('Escape');
+    // The balance drops under the cost of the booking as it is.
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const adjustment = await page.request.post(`/api/v1/people/${pilot.personId}/account/adjustments`, { data: { amountCents: -200_000, reason: 'Rettifica di prova' } });
+    expect(adjustment.status(), await adjustment.text()).toBe(200);
 
-    let row = await findBookingRow(page, aircraft.registration);
-    await expect(row).toBeVisible();
-
-    // Same-day time-only move: never rechecked, succeeds even past the block.
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
+    const row = await findBookingRow(page, aircraft.registration);
     await row.getByTestId('booking-move-action').click();
-    let moveForm = page.getByTestId('move-booking-form');
-    await moveForm.getByLabel('Inizio').fill(`${DAY_1}T14:00`);
-    await moveForm.getByLabel('Fine', { exact: true }).fill(`${DAY_1}T15:00`);
+    const moveForm = page.getByTestId('move-booking-form');
+    // Same day, same duration, one hour later (local wall clock of the form).
+    const startsAtInput = moveForm.getByLabel('Inizio');
+    const endsAtInput = moveForm.getByLabel('Fine', { exact: true });
+    const [startValue, endValue] = [await startsAtInput.inputValue(), await endsAtInput.inputValue()];
+    const plusOneHour = (value: string): string => `${value.slice(0, 11)}${String(Number(value.slice(11, 13)) + 1).padStart(2, '0')}${value.slice(13)}`;
+    await startsAtInput.fill(plusOneHour(startValue));
+    await endsAtInput.fill(plusOneHour(endValue));
     await moveForm.getByTestId('move-booking-save').click();
-    // Story 12.3: toast instead of an inline `bookings-list-feedback` paragraph.
-    await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione modificata.' })).toBeVisible();
-    // Wait for the first form to fully close before reopening it — avoids a
-    // race between `onSuccess`'s `router.refresh()` and the next click.
-    await expect(page.getByTestId('move-booking-form')).toHaveCount(0);
 
-    // Review 12.3 F5: the time-only move above changed `startsAt`, which can
-    // shift this row's rank (and so its page) in the globally-sorted list —
-    // re-locate it rather than reusing the pre-move `row` locator.
-    row = await findBookingRow(page, aircraft.registration);
-
-    // Moving to the NEXT day: the document is expired relative to THAT day -> 422, naming it.
-    await row.getByTestId('booking-move-action').click();
-    moveForm = page.getByTestId('move-booking-form');
-    await moveForm.getByLabel('Inizio').fill(`${DAY_2}T12:00`);
-    await moveForm.getByLabel('Fine', { exact: true }).fill(`${DAY_2}T13:00`);
-    await moveForm.getByTestId('move-booking-save').click();
-    await expect(page.getByTestId('move-booking-form-error')).toContainText(blockingType.name);
+    const warning = moveForm.getByTestId('requirements-warning');
+    await expect(warning).toBeVisible();
+    await expect(warning).toContainText('Prenotazione non consentita: solo un amministratore può procedere comunque');
+    await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="BALANCE"]')).toHaveText(
+      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — Saldo insufficiente: saldo 2.000,00 €, costo 3.000,00 €`,
+    );
+    await expect(moveForm.getByTestId('requirements-proceed')).toHaveCount(0);
   });
 });
 
@@ -1711,7 +1731,7 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const pilotPassword = `PilotaWorkflow${uniqueSuffix()}!`;
-    const pilot = await createPilotWithLogin(page, pilotPassword);
+    const pilot = await createPilotWithLogin(page, pilotPassword, { inRegola: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
@@ -1851,15 +1871,14 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const otherPilotPassword = `PilotaAltro${uniqueSuffix()}!`;
-    // `createPilotWithLogin` ends its own set-password flow authenticated
-    // AS the new pilot (same pattern every other helper in this file
-    // relies on, e.g. the force-booking test below) — this own-path POST
-    // is genuinely `personId === actor.personId`, so it starts PENDING
-    // (story 12.2 AC 2), unlike a staff-created booking for someone else
-    // (which starts APPROVED).
+    // The OTHER pilot's booking, made by the admin (an admin fixture, story
+    // 19.10 AD-9 rule 1: `force`) — `createPilotWithLogin`'s set-password flow
+    // signs nobody in, so this session is still the admin's.
     const otherPilot = await createPilotWithLogin(page, otherPilotPassword);
+    // Story 19.10 (AD-9 rule 2): the seed pilot books for themself below.
+    await ensureBookingRequirements(page, { personId: await personIdByEmail(page, PILOT_EMAIL), scope: 'PILOTS', solo: true });
     const other = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T11:00:00.000Z`, endsAt: `${FUTURE_DAY}T12:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T11:00:00.000Z`, endsAt: `${FUTURE_DAY}T12:00:00.000Z`, force: true },
     });
     expect(other.status()).toBe(201);
 
@@ -1916,7 +1935,7 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
     // competes for anyone else's "soonest N" window, same reasoning as every
     // other table-focused test in this file that already uses it.
     const otherBookingResponse = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraftOther.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T04:00:00.000Z`, endsAt: `${FUTURE_DAY}T05:00:00.000Z` },
+      data: { aircraftId: aircraftOther.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T04:00:00.000Z`, endsAt: `${FUTURE_DAY}T05:00:00.000Z`, force: true },
     });
     expect(otherBookingResponse.status()).toBe(201);
 
@@ -1924,7 +1943,7 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
     // approves it. Story 16.3: a run-unique pilot, never the seed one — the
     // APPROVED booking stays behind (see the note at `FUTURE_DAY`).
     const pilotPassword = `PilotaPrivacy${uniqueSuffix()}!`;
-    const pilot = await createPilotWithLogin(page, pilotPassword);
+    const pilot = await createPilotWithLogin(page, pilotPassword, { inRegola: true });
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
     const me = await (await page.request.get('/api/v1/me')).json();
@@ -2017,7 +2036,7 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
     const otherPilot = await createPilotPerson(page);
 
     const bookingResponse = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T18:00:00.000Z`, endsAt: `${FUTURE_DAY}T19:00:00.000Z` },
+      data: { aircraftId: aircraft.id, personId: otherPilot.personId, startsAt: `${FUTURE_DAY}T18:00:00.000Z`, endsAt: `${FUTURE_DAY}T19:00:00.000Z`, force: true },
     });
     expect(bookingResponse.status()).toBe(201);
 
@@ -2057,8 +2076,9 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
     return ((await rateResponse.json()) as { instructorProfileId: string }).instructorProfileId;
   }
 
+  /** An ADMIN fixture (story 19.10, AD-9 rule 1): `force: true` — every 409 here is decided before the deroga, so it still answers. */
   async function postBooking(page: Page, data: { aircraftId: string; personId: string; instructorProfileId?: string; startsAt: string; endsAt: string }) {
-    return page.request.post('/api/v1/bookings', { data });
+    return page.request.post('/api/v1/bookings', { data: { ...data, force: true } });
   }
 
   // A day of its own, one week AFTER `FUTURE_DAY`: nothing here reads the
@@ -2119,13 +2139,13 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
     const aircraftA = await createAircraft(page);
     const aircraftB = await createAircraft(page);
     const pilotPassword = `PilotaOccupato${uniqueSuffix()}!`;
-    const pilot = await createPilotWithLogin(page, pilotPassword);
+    const pilot = await createPilotWithLogin(page, pilotPassword, { inRegola: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
     const bookingIds: string[] = [];
     for (const aircraft of [aircraftA, aircraftB]) {
-      const response = await postBooking(page, { aircraftId: aircraft.id, personId: pilot.personId, startsAt: at('09:00'), endsAt: at('10:00') });
+      const response = await page.request.post('/api/v1/bookings', { data: { aircraftId: aircraft.id, personId: pilot.personId, startsAt: at('09:00'), endsAt: at('10:00') } });
       // Two PENDING bookings of one person over one interval coexist by
       // design: only an APPROVED booking occupies a slot, on every subject.
       expect(response.status()).toBe(201);
@@ -2164,11 +2184,11 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
     const pendingResponse = await postBooking(page, { aircraftId: aircraftB.id, personId: pilotB.personId, instructorProfileId, startsAt: at('09:30'), endsAt: at('10:30') });
     expect(pendingResponse.status()).toBe(201);
     const { booking: pending } = (await pendingResponse.json()) as { booking: { id: string } };
-    expect((await page.request.patch(`/api/v1/bookings/${pending.id}`, { data: longPastSlot() })).status()).toBe(200);
+    expect((await page.request.patch(`/api/v1/bookings/${pending.id}`, { data: { ...longPastSlot(), force: true } })).status()).toBe(200);
     for (const to of ['FLOWN', 'PENDING'] as const) {
       expect((await page.request.post(`/api/v1/bookings/${pending.id}/transition`, { data: { to } })).status()).toBe(200);
     }
-    expect((await page.request.patch(`/api/v1/bookings/${pending.id}`, { data: { startsAt: at('09:30'), endsAt: at('10:30') } })).status()).toBe(200);
+    expect((await page.request.patch(`/api/v1/bookings/${pending.id}`, { data: { startsAt: at('09:30'), endsAt: at('10:30'), force: true } })).status()).toBe(200);
 
     // The instructor's APPROVED booking on another aircraft — the PENDING one
     // above does not stand in its way (only APPROVED occupies a slot).
@@ -2216,7 +2236,7 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
       expect(((await response.json()) as { error: { code: string } }).error.code).toBe('BOOKING_NOT_STARTED');
     }
 
-    expect((await page.request.patch(`/api/v1/bookings/${booking.id}`, { data: longPastSlot() })).status()).toBe(200);
+    expect((await page.request.patch(`/api/v1/bookings/${booking.id}`, { data: { ...longPastSlot(), force: true } })).status()).toBe(200);
     const flown = await page.request.post(`/api/v1/bookings/${booking.id}/transition`, { data: { to: 'FLOWN' } });
     expect(flown.status()).toBe(200);
     expect(((await flown.json()) as { status: string }).status).toBe('FLOWN');
@@ -2254,19 +2274,17 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
     await expect(error).not.toContainText('velivolo');
   });
 
-  test('"Forza prenotazione" on a busy PERSON names the overlap in the main banner and closes the force section — the blocking document hid it from the first submit, and forcing never bypasses it (review 16.3 MAJOR-1)', async ({
+  test('a busy PERSON who also fails the requirements gets the overlap at the FIRST submit — the requirements are decided after it, so no warning and no «Procedi comunque» towards a 409 (story 19.10, AD-3; was review 16.3 MAJOR-1)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraftA = await createAircraft(page);
     const aircraftB = await createAircraft(page);
+    // A fresh pilot fails the requirements by construction (no visit, no fee,
+    // no flight); alphabetically early for the staff picker.
     const pilot = await createPilotPerson(page, '0Pilota');
-    // Booked BEFORE the blocking document is on file, so this create is not
-    // blocked itself. Same wide UTC band as the test above.
     const approved = await postBooking(page, { aircraftId: aircraftA.id, personId: pilot.personId, startsAt: at('06:30'), endsAt: at('12:00') });
     expect(approved.status()).toBe(201);
-    const blockingType = await createExpiryTypeForBooking(page, true);
-    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_EXPIRES_AT);
 
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
@@ -2276,16 +2294,9 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
     await form.getByLabel('Inizio').fill(`${DAY}T09:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${DAY}T10:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
-    // The expiry 422 is checked before the overlap: the busy person is not visible yet.
-    const error = page.getByTestId('booking-form-error');
-    await expect(error).toContainText(blockingType.name);
 
-    const forceSection = page.getByTestId('force-booking-section');
-    await forceSection.getByTestId('force-booking-reason').fill('Autorizzato dal direttore');
-    await forceSection.getByTestId('force-booking-submit').click();
-
-    await expect(error).toContainText('Questa persona ha già una prenotazione approvata che si sovrappone a questo intervallo.');
-    await expect(error).not.toContainText(blockingType.name);
+    await expect(page.getByTestId('booking-form-error')).toContainText('Questa persona ha già una prenotazione approvata che si sovrappone a questo intervallo.');
+    await expect(form.getByTestId('requirements-warning')).toHaveCount(0);
     await expect(page.getByTestId('force-booking-section')).toHaveCount(0);
   });
 });

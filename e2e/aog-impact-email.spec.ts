@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { ensureBookingRequirements } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -136,9 +136,11 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
   });
   expect(response.status(), await response.text()).toBe(201);
   const personId = ((await response.json()) as { id: string }).id;
-  // TD 15.5: without valid blocking expiries `createBooking` answers 422
-  // EXPIRED_DOCUMENTS long before this story's own logic runs.
-  await ensureValidSeedExpiries(page, personId, 'PILOTS');
+  // TD 15.5 / story 19.10 (AD-9 rule 2): the holders book for themselves too
+  // (`book` on the pilot's own page), so they meet the requirements — else
+  // `createBooking` answers 422 REQUIREMENTS_NOT_MET long before this story's
+  // own logic runs.
+  await ensureBookingRequirements(page, { personId, scope: 'PILOTS', solo: true });
   return { personId, email, lastName };
 }
 

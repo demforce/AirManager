@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureBookingRequirements } from './helpers';
 
 /**
  * Home dashboard per ruolo (story 12.12, AC 1/4/5/6/7). The home
@@ -230,6 +231,8 @@ test.describe('Home dashboard — data-driven (story 12.12, AC 1)', () => {
     const aircraft = await createAircraft(page, 'PF');
     const password = 'PendingFirstHome123!';
     const pilot = await createPilotWithLogin(page, password, 'PendingFirst');
+    // Story 19.10 (AD-9 rule 2): the pilot books for themself below.
+    await ensureBookingRequirements(page, { personId: pilot.personId, scope: 'PILOTS', solo: true });
 
     // A pilot's own booking (no `bookings.manage.any`) defaults to PENDING
     // (`bookings.service.ts#createBooking`).

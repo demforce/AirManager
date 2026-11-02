@@ -90,6 +90,8 @@ test.describe('story 15.3 — the pending card declares its own truncation (revi
           personId,
           startsAt: new Date(startsAt).toISOString(),
           endsAt: new Date(startsAt + 25 * 60_000).toISOString(),
+          // Story 19.10 (AD-9 rule 1): an admin fixture, not about the requirements.
+          force: true,
         },
       });
       expect(created.status(), await created.text()).toBe(201);
@@ -101,10 +103,10 @@ test.describe('story 15.3 — the pending card declares its own truncation (revi
       // STARTS, so the hops run with the booking moved to the same slot
       // YESTERDAY, and it goes back to its own slot once PENDING — the card
       // measured below lists exactly the rows it listed before.
-      const slot = { startsAt: new Date(startsAt).toISOString(), endsAt: new Date(startsAt + 25 * 60_000).toISOString() };
+      const slot = { startsAt: new Date(startsAt).toISOString(), endsAt: new Date(startsAt + 25 * 60_000).toISOString(), force: true };
       const yesterdayStartsAt = startsAt - 2 * 86_400_000;
       const toYesterday = await page.request.patch(`/api/v1/bookings/${id}`, {
-        data: { startsAt: new Date(yesterdayStartsAt).toISOString(), endsAt: new Date(yesterdayStartsAt + 25 * 60_000).toISOString() },
+        data: { startsAt: new Date(yesterdayStartsAt).toISOString(), endsAt: new Date(yesterdayStartsAt + 25 * 60_000).toISOString(), force: true },
       });
       expect(toYesterday.status(), await toYesterday.text()).toBe(200);
       for (const to of ['NO_SHOW', 'PENDING'] as const) {

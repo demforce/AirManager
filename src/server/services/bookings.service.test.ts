@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   calendarBookingsQuerySchema,
   createBookingSchema,
@@ -6,7 +6,9 @@ import {
   transitionBookingSchema,
   updateBookingSchema,
 } from '@/lib/schemas/bookings';
-import type { Actor } from '@/server/auth/rbac';
+import { requirementsNotMetDetailsSchema } from '@/lib/schemas/requirements';
+import { ROLE_PERMISSIONS, type Actor } from '@/server/auth/rbac';
+import type { RequirementsInput } from './requirements.service';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
@@ -25,14 +27,15 @@ vi.mock('@/server/db/prisma', () => ({
     aircraft: {
       findMany: vi.fn(),
     },
-    // Story 19.7a: `getMedicalRequirementFailure` (inside `findBlockingExpiredDocuments`)
-    // reads the active MEDICAL types first — none by default (`beforeEach`),
-    // which switches the medical requirement off for every pre-19.7a case.
-    expiryType: {
-      findMany: vi.fn(),
-    },
     expiry: {
       findMany: vi.fn(),
+    },
+    // Story 19.10 (AD-2): the estimated cost reads the rates in effect on the flight day.
+    aircraftRate: {
+      findFirst: vi.fn(),
+    },
+    instructorRate: {
+      findFirst: vi.fn(),
     },
     booking: {
       create: vi.fn(),
@@ -64,6 +67,17 @@ vi.mock('@/server/adapters/mail/templates', () => ({
 // every PRE-EXISTING test keeps its old backward-safe "no constraint" behavior.
 vi.mock('./app-settings.service', () => ({ getSchedulingSettings: vi.fn() }));
 
+// Story 19.10 (§4.1): the ONE evaluation of the requirements is story 19.9's,
+// proved in `requirements.service.test.ts` — mocked here at module level
+// (no failure by default, `beforeEach`), so this file proves the
+// ORCHESTRATION: when it is called, with which input, where the decision
+// sits and what gets written. `throwRequirementsNotMet` stays the real helper.
+const evaluateRequirementsMock = vi.fn();
+vi.mock('./requirements.service', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./requirements.service')>()),
+  evaluateRequirements: (...args: unknown[]) => evaluateRequirementsMock(...args),
+}));
+
 const { prisma } = await import('@/server/db/prisma');
 const { buildBookingDeniedEmail } = await import('@/server/adapters/mail/templates');
 const { getSchedulingSettings } = await import('./app-settings.service');
@@ -90,7 +104,8 @@ const instructorProfileFindUniqueMock = vi.mocked(prisma.instructorProfile.findU
 const instructorProfileFindManyMock = vi.mocked(prisma.instructorProfile.findMany);
 const aircraftFindManyMock = vi.mocked(prisma.aircraft.findMany);
 const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
-const expiryTypeFindManyMock = vi.mocked(prisma.expiryType.findMany);
+const aircraftRateFindFirstMock = vi.mocked(prisma.aircraftRate.findFirst);
+const instructorRateFindFirstMock = vi.mocked(prisma.instructorRate.findFirst);
 const bookingCreateMock = vi.mocked(prisma.booking.create);
 const bookingFindFirstMock = vi.mocked(prisma.booking.findFirst);
 const bookingFindManyMock = vi.mocked(prisma.booking.findMany);
@@ -124,7 +139,8 @@ const userFindUnique = userFindUniqueMock as unknown as { mockResolvedValue: (v:
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void; mockResolvedValueOnce: (v: unknown[]) => void };
 const aircraftFindMany = aircraftFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const expiryFindMany = expiryFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
-const expiryTypeFindMany = expiryTypeFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const aircraftRateFindFirst = aircraftRateFindFirstMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const instructorRateFindFirst = instructorRateFindFirstMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const personFindMany = personFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const instructorProfileFindMany = instructorProfileFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 
@@ -168,41 +184,57 @@ function baseInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Story 19.10: `BOOKABLE_PERSON_SELECT` now also reads the name and the
+// account (the requirements label a failure with the name; no account = no
+// balance check, D-6).
 const ACTIVE_PILOT_PERSON = {
   id: 'person_pilot',
+  firstName: 'Mario',
+  lastName: 'Rossi',
   archivedAt: null,
   pilotProfile: { deactivatedAt: null },
   studentProfile: null,
   instructorProfile: null,
+  account: { id: 'account_pilot' },
 };
 
 const DEACTIVATED_PILOT_PERSON = {
-  id: 'person_pilot',
-  archivedAt: null,
+  ...ACTIVE_PILOT_PERSON,
   pilotProfile: { deactivatedAt: new Date('2025-01-01T00:00:00.000Z') },
-  studentProfile: null,
-  instructorProfile: null,
 };
 
 const ACTIVE_STUDENT_PERSON = {
   id: 'person_student',
+  firstName: 'Anna',
+  lastName: 'Bianchi',
   archivedAt: null,
   pilotProfile: null,
   studentProfile: { deactivatedAt: null },
   instructorProfile: null,
+  account: { id: 'account_student' },
 };
 
 const NO_PROFILE_PERSON = {
   id: 'person_other',
+  firstName: 'Nessun',
+  lastName: 'Profilo',
   archivedAt: null,
   pilotProfile: null,
   studentProfile: null,
   instructorProfile: null,
+  account: null,
 };
 
 const ACTIVE_INSTRUCTOR_ACTOR_PERSON = {
+  firstName: 'Ivo',
+  lastName: 'Istruttore',
   instructorProfile: { id: 'instr_profile_1', deactivatedAt: null },
 };
+
+/** `assertActiveInstructorProfile`'s row (story 19.10: the holder and its name come with it). */
+function instructorProfileRow(id = 'instr_profile_1', overrides: Record<string, unknown> = {}): Fixture {
+  return { id, deactivatedAt: null, personId: 'person_instructor', person: { firstName: 'Ivo', lastName: 'Istruttore' }, ...overrides };
+}
 
 /** Story AOG-1a: `outOfServiceUntil` joined the three `SELECT ... FOR UPDATE`s, so every locked-aircraft row literal in this file carries it (the service reads it to build the 422's `details`). */
 const LOCKED_OPERATIONAL_AIRCRAFT = [{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: null }];
@@ -242,10 +274,12 @@ beforeEach(() => {
   // "succeeded, one row" — individual race/already-cancelled tests override.
   bookingUpdateMany.mockResolvedValue({ count: 1 });
   bookingFindUniqueOrThrow.mockResolvedValue(CREATED_BOOKING_ROW);
-  // Story 7.4: no registered scadenze by default — individual expiry-block
-  // tests override with their own fixture rows.
+  // Story 7.4 / 19.10 (D-10): no expired non-blocking rating by default.
   expiryFindMany.mockResolvedValue([]);
-  expiryTypeFindMany.mockResolvedValue([]);
+  // Story 19.10: every requirement met, and no rate in effect (cost 0), by default.
+  evaluateRequirementsMock.mockResolvedValue([]);
+  aircraftRateFindFirst.mockResolvedValue(null);
+  instructorRateFindFirst.mockResolvedValue(null);
   // Story 12.2: `transitionBooking`'s post-commit deny email — a person with
   // an email and no linked `User` (locale falls back to `it`) by default;
   // individual email tests override with their own fixtures.
@@ -386,7 +420,7 @@ describe('createBooking (Story 7.1, AC 1/2/3)', () => {
 
   it('staff books for someone with an instructor indicated (any active instructor)', async () => {
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_9', deactivatedAt: null });
+    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow('instr_profile_9'));
 
     const result = await createBooking(adminActor(), baseInput({ personId: 'person_student', instructorProfileId: 'instr_profile_9' }));
 
@@ -830,7 +864,7 @@ describe('listBookings — privacy masking (Story 14.5, AC 1/2/6, ratifica R3)',
   it("treats booking.instructorProfileId === the actor's OWN active InstructorProfile as own too (review F4 — aligned with assertOwnAccessAndTiming's own definition, used by update/cancel), even for an actor without bookings.read.names", async () => {
     bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]); // instructorProfileId: 'instr_profile_1'
     bookingCount.mockResolvedValue(1);
-    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: null });
+    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow());
 
     const result = await listBookings(pilotActor('someone_else'), { page: 1, pageSize: 20 });
 
@@ -841,7 +875,7 @@ describe('listBookings — privacy masking (Story 14.5, AC 1/2/6, ratifica R3)',
   it("does NOT treat a DEACTIVATED own InstructorProfile as own (getOwnInstructorProfileId's own active-only rule applies here too)", async () => {
     bookingFindMany.mockResolvedValue([OTHERS_BOOKING_ROW]); // instructorProfileId: 'instr_profile_1'
     bookingCount.mockResolvedValue(1);
-    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: new Date('2025-01-01T00:00:00.000Z') });
+    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow('instr_profile_1', { deactivatedAt: new Date('2025-01-01T00:00:00.000Z') }));
 
     const result = await listBookings(pilotActor('someone_else'), { page: 1, pageSize: 20 });
 
@@ -991,7 +1025,7 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
     bookingFindMany.mockResolvedValue([
       { ...CREATED_BOOKING_ROW, instructorProfileId: 'instr_profile_1', instructorProfile: { person: { firstName: 'Livia', lastName: 'Bernasconi' } } },
     ]);
-    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: null });
+    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow());
 
     const result = await listCalendarBookings(pilotActor('someone_else'), { from: FROM, to: TO });
 
@@ -1022,7 +1056,15 @@ const EXISTING_OWN_BOOKING = {
   // place; individual tests override with `PENDING` where the AC 4 broadened
   // editable/cancellable set needs exercising.
   status: 'APPROVED' as 'PENDING' | 'APPROVED' | 'DENIED' | 'FLOWN' | 'NO_SHOW' | 'CANCELLED',
+  // Story 19.10: `updateBooking` reads who the requirements and the R-19-o
+  // locks are about — the person (`BOOKABLE_PERSON_SELECT`) and the holder of
+  // the instructor profile (`null` without one, the FK keeps the two in step).
+  person: ACTIVE_PILOT_PERSON as Fixture,
+  instructorProfile: null as { personId: string; person: { firstName: string; lastName: string } } | null,
 };
+
+/** The holder of `instr_profile_1` as `updateBooking` reads it with the booking. */
+const INSTRUCTOR_HOLDER = { personId: 'person_instructor', person: { firstName: 'Ivo', lastName: 'Istruttore' } };
 
 describe('updateBooking (Story 7.3, AC 1/2)', () => {
   it('a student (no bookings.manage.own) gets 403 straight from authorize() — no queries at all', async () => {
@@ -1078,8 +1120,8 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
   });
 
   it('an instructor editing a booking via a matching instructorProfileId succeeds', async () => {
-    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'person_student', instructorProfileId: 'instr_profile_1' });
-    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: null });
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'person_student', person: ACTIVE_STUDENT_PERSON, instructorProfileId: 'instr_profile_1', instructorProfile: INSTRUCTOR_HOLDER });
+    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow());
 
     const result = await updateBooking(instructorActor('person_instructor'), 'booking_1', { notes: 'x' });
 
@@ -1087,8 +1129,8 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
   });
 
   it('an instructor whose OWN instructor profile is deactivated gets 403 even when instructorProfileId matches', async () => {
-    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'person_student', instructorProfileId: 'instr_profile_1' });
-    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: new Date('2025-01-01T00:00:00.000Z') });
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'person_student', person: ACTIVE_STUDENT_PERSON, instructorProfileId: 'instr_profile_1', instructorProfile: INSTRUCTOR_HOLDER });
+    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow('instr_profile_1', { deactivatedAt: new Date('2025-01-01T00:00:00.000Z') }));
 
     await expect(updateBooking(instructorActor('person_instructor'), 'booking_1', { notes: 'x' })).rejects.toThrow(ForbiddenError);
   });
@@ -1236,18 +1278,18 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
 
     // Story 16.3 (AD-2) + review MAJOR-2: THREE `$queryRaw` now — this
     // booking's own row (next test), every Aircraft row in the ONE ordered
-    // query below, then the booking's Person row (no instructor on this
-    // booking, so no fourth lock), `FOR NO KEY UPDATE` (lead decision
-    // 2026-09-27: never blocks a foreign-key check on that person).
+    // query below, then the booking's people in ONE `Person` statement (story
+    // 19.10, AD-5; no instructor on this booking, so one id), `FOR NO KEY
+    // UPDATE` (lead decision 2026-09-27: never blocks a foreign-key check).
     expect(queryRawMock).toHaveBeenCalledTimes(3);
     const [strings, joined] = queryRawMock.mock.calls[1] as unknown as [TemplateStringsArray, { values: string[] }];
     expect(strings.join('?')).toContain('FOR UPDATE');
     expect(strings.join('?')).toContain('IN');
     expect(strings.join('?')).toContain('ORDER BY');
     expect(joined.values.slice().sort()).toEqual(['aircraft_1', 'aircraft_2']);
-    const [personStrings, personId] = queryRawMock.mock.calls[2] as unknown as [TemplateStringsArray, string];
-    expect(personStrings.join('?')).toBe('SELECT "id" FROM "Person" WHERE "id" = ? FOR NO KEY UPDATE');
-    expect(personId).toBe('person_pilot');
+    const [personStrings, personIds] = queryRawMock.mock.calls[2] as unknown as [TemplateStringsArray, { values: string[] }];
+    expect(personStrings.join('?')).toBe('SELECT "id" FROM "Person" WHERE "id" IN (?) ORDER BY "id" FOR NO KEY UPDATE');
+    expect(personIds.values).toEqual(['person_pilot']);
   });
 
   it('locks THIS booking row FIRST — before the Aircraft lock and the guarded updateMany, the order transitionBooking uses — so a move and an approval of the same booking serialize instead of deadlocking (review 16.3 MAJOR-2)', async () => {
@@ -1317,76 +1359,6 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
   });
 });
 
-describe('updateBooking — expiry-based booking block on a DAY change (Story TD-5, AC 5)', () => {
-  // EXISTING_OWN_BOOKING's startsAt (FUTURE_STARTS_AT, 2099-06-01T10:00Z) is
-  // 12:00 CEST in Rome (June, +2h, no day shift) — its flight day is
-  // 2099-06-01, same convention as the create-expiry suite above.
-  const SAME_DAY_LATER_STARTS_AT = '2099-06-01T18:00:00.000Z'; // still 2099-06-01 in Rome
-  const SAME_DAY_LATER_ENDS_AT = '2099-06-01T19:00:00.000Z';
-  const NEXT_DAY_STARTS_AT = '2099-06-02T10:00:00.000Z'; // 2099-06-02 in Rome
-  const NEXT_DAY_ENDS_AT = '2099-06-02T11:00:00.000Z';
-
-  /** Expired relative to the NEW flight day (06-02) but valid on the ORIGINAL one (06-01) — proves the recheck uses the NEW day. */
-  function expiredBeforeNextDayRow() {
-    return { expiresAt: new Date('2099-06-01T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } };
-  }
-
-  function validOnNextDayRow() {
-    return { expiresAt: new Date('2099-06-02T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } };
-  }
-
-  function nonBlockingWarningRow() {
-    return { expiresAt: new Date('2099-06-01T00:00:00.000Z'), expiryType: { name: 'Rating SEP', kind: 'RATING', blocksBooking: false } };
-  }
-
-  it('moving to a DIFFERENT flight day with a blocking expired document (relative to the NEW day) answers 422 EXPIRED_DOCUMENTS, same shape as create', async () => {
-    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
-    expiryFindMany.mockResolvedValue([expiredBeforeNextDayRow()]);
-
-    const error = await updateBooking(adminActor(), 'booking_1', { startsAt: NEXT_DAY_STARTS_AT, endsAt: NEXT_DAY_ENDS_AT }).catch(
-      (e: unknown) => e,
-    );
-
-    expect(error).toBeInstanceOf(ValidationError);
-    const validationError = error as InstanceType<typeof ValidationError>;
-    expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
-    expect(validationError.message).toContain('Rating bloccante');
-    expect(validationError.details).toEqual({ documents: [{ typeName: 'Rating bloccante', expiresAt: '2099-06-01' }] });
-    // Queried by the booking's OWN personId (`existing.personId`), not the staff actor's (null).
-    expect(expiryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_pilot' } }));
-    expect(transactionMock).not.toHaveBeenCalled();
-  });
-
-  it('moving to a DIFFERENT flight day where the document expires AFTER the new day succeeds', async () => {
-    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
-    expiryFindMany.mockResolvedValue([validOnNextDayRow()]);
-
-    const result = await updateBooking(adminActor(), 'booking_1', { startsAt: NEXT_DAY_STARTS_AT, endsAt: NEXT_DAY_ENDS_AT });
-
-    expect(result.id).toBe('booking_1');
-  });
-
-  it('changing ONLY the time within the SAME flight day never rechecks — a booking created with force past a blocking document stays editable that day', async () => {
-    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
-    // A row that WOULD block if rechecked — proves this is a genuine skip, not a lucky empty result.
-    expiryFindMany.mockResolvedValue([expiredBeforeNextDayRow()]);
-
-    const result = await updateBooking(adminActor(), 'booking_1', { startsAt: SAME_DAY_LATER_STARTS_AT, endsAt: SAME_DAY_LATER_ENDS_AT });
-
-    expect(result.id).toBe('booking_1');
-    expect(expiryFindManyMock).not.toHaveBeenCalled();
-  });
-
-  it('moving to a DIFFERENT flight day with only a non-blocking expired document never blocks', async () => {
-    bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
-    expiryFindMany.mockResolvedValue([nonBlockingWarningRow()]);
-
-    const result = await updateBooking(adminActor(), 'booking_1', { startsAt: NEXT_DAY_STARTS_AT, endsAt: NEXT_DAY_ENDS_AT });
-
-    expect(result.id).toBe('booking_1');
-  });
-});
-
 describe('cancelBooking (Story 7.3, AC 1/2)', () => {
   it('a student (no bookings.manage.own) gets 403 straight from authorize() — no queries at all', async () => {
     await expect(cancelBooking(studentActor(), 'booking_1')).rejects.toThrow(ForbiddenError);
@@ -1452,8 +1424,8 @@ describe('cancelBooking (Story 7.3, AC 1/2)', () => {
   });
 
   it('an instructor cancelling a booking via a matching instructorProfileId succeeds', async () => {
-    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'person_student', instructorProfileId: 'instr_profile_1' });
-    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: null });
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, personId: 'person_student', person: ACTIVE_STUDENT_PERSON, instructorProfileId: 'instr_profile_1', instructorProfile: INSTRUCTOR_HOLDER });
+    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow());
 
     const result = await cancelBooking(instructorActor('person_instructor'), 'booking_1');
 
@@ -1604,19 +1576,6 @@ describe('transitionBooking (Story 12.2, AC 3)', () => {
   });
 
   // --- PENDING -> APPROVED re-checks (same rules as createBooking) --------
-
-  it('a blocking expired document (relative to the flight day) answers 422 EXPIRED_DOCUMENTS, same shape as create', async () => {
-    mockBookingLock({ status: 'PENDING' });
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-01T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
-
-    const error = await transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED' }).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(ValidationError);
-    const validationError = error as InstanceType<typeof ValidationError>;
-    expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
-    expect(validationError.details).toEqual({ documents: [{ typeName: 'Rating bloccante', expiresAt: '2020-01-01' }] });
-    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
-  });
 
   it('a booking outside the configured scheduling window answers 422 BOOKING_OUTSIDE_WINDOW on APPROVE (Story 12.11, AC 4)', async () => {
     mockBookingLock({ status: 'PENDING' });
@@ -1780,9 +1739,21 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
     mockImplementation: (fn: (args: { where: Record<string, unknown> }) => Promise<Fixture>) => void;
   };
 
-  /** The three predicates are three separate `findFirst`s (AD-1), told apart by the subject key of their `where`: the ones keyed on `keys` find ELSEWHERE, every other one finds nothing. */
+  /**
+   * The three predicates are three separate `findFirst`s (AD-1), told apart by
+   * their `where`: the aircraft one by its `aircraftId`, the person and the
+   * instructor ones (story 19.10, R-19-o: an `OR` over the two roles) by the
+   * key of their FIRST branch.
+   */
+  function subjectOf(where: Record<string, unknown>): OverlapKey {
+    if ('aircraftId' in where) return 'aircraftId';
+    const [first] = where['OR'] as Array<Record<string, unknown>>;
+    return 'personId' in first! ? 'personId' : 'instructorProfileId';
+  }
+
+  /** The predicates of the subjects in `keys` find ELSEWHERE, every other one finds nothing. */
   function overlapOn(...keys: OverlapKey[]): void {
-    bookingFindFirstImpl.mockImplementation(async (args) => (keys.some((key) => key in args.where) ? ELSEWHERE : null));
+    bookingFindFirstImpl.mockImplementation(async (args) => (keys.includes(subjectOf(args.where)) ? ELSEWHERE : null));
   }
 
   type WritePath = 'create' | 'move' | 'approve';
@@ -1795,7 +1766,7 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
         personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
         return createBooking(adminActor(), baseInput({ personId: 'person_student', ...(instructorProfileId ? { instructorProfileId } : {}) }));
       case 'move':
-        bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, instructorProfileId });
+        bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, instructorProfileId, instructorProfile: instructorProfileId ? INSTRUCTOR_HOLDER : null });
         return updateBooking(adminActor(), 'booking_1', { startsAt: '2099-06-01T12:00:00.000Z', endsAt: '2099-06-01T13:00:00.000Z' });
       case 'approve':
         mockBookingLock({ status: 'PENDING', instructorProfileId });
@@ -1828,7 +1799,7 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
   }
 
   beforeEach(() => {
-    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: null });
+    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow());
   });
 
   it('A0 create (control, green before AND after): the SAME aircraft already APPROVED over the interval answers the aircraft 409 byte-identical — CONFLICT, same message, NO details', async () => {
@@ -1893,35 +1864,60 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
   });
 
   it.each(['create', 'move', 'approve'] as const)(
-    '%s: the person and instructor predicates are EXACTLY the aircraft one re-keyed — APPROVED only [I-c], semi-open [I-b], self excluded where the aircraft one excludes it, earliest first',
+    '%s: the person and instructor predicates are the aircraft one re-keyed on ONE human in either role (story 19.10, R-19-o) — APPROVED only [I-c], semi-open [I-b], self excluded where the aircraft one excludes it, earliest first',
     async (path) => {
       await runPath(path);
 
       const { startsAt, endsAt } = PATH_INTERVAL[path];
       const excludeSelf = path === 'create' ? {} : { id: { not: 'booking_1' } };
       const shared = { ...excludeSelf, status: 'APPROVED', startsAt: { lt: endsAt }, endsAt: { gt: startsAt } };
+      // The aircraft predicate is untouched by story 19.10, byte for byte.
+      expect(bookingFindFirstMock).toHaveBeenNthCalledWith(1, { where: { aircraftId: 'aircraft_1', ...shared }, select: { id: true } });
+      // The booking's person holds no instructor profile here: the R-19-o half is the next test.
       expect(bookingFindFirstMock).toHaveBeenNthCalledWith(2, {
-        where: { personId: PATH_PERSON[path], ...shared },
+        where: { OR: [{ personId: PATH_PERSON[path] }], ...shared },
         orderBy: { startsAt: 'asc' },
         select: { id: true, startsAt: true, endsAt: true },
       });
       expect(bookingFindFirstMock).toHaveBeenNthCalledWith(3, {
-        where: { instructorProfileId: 'instr_profile_1', ...shared },
+        where: { OR: [{ instructorProfileId: 'instr_profile_1' }, { personId: 'person_instructor' }], ...shared },
         orderBy: { startsAt: 'asc' },
         select: { id: true, startsAt: true, endsAt: true },
       });
     },
   );
 
-  it.each(['create', 'move', 'approve'] as const)('%s: a booking WITHOUT an instructor never runs the third predicate (2 findFirst, not 3) and takes no InstructorProfile lock', async (path) => {
+  it.each(['create', 'move', 'approve'] as const)(
+    '%s: a person who ALSO holds an instructor profile is busy as the instructor of another booking too — the predicate reads that profile id, never a join (story 19.10, R-19-o, §E)',
+    async (path) => {
+      const withProfile = (person: Fixture) => ({ ...person, instructorProfile: { id: 'ip_of_person', deactivatedAt: null } });
+      personFindUnique.mockImplementation(async () => withProfile(ACTIVE_STUDENT_PERSON));
+      personFindUniqueOrThrow.mockResolvedValue(withProfile(ACTIVE_PILOT_PERSON));
+      if (path === 'create') {
+        await createBooking(adminActor(), baseInput({ personId: 'person_student', instructorProfileId: 'instr_profile_1' }));
+      } else if (path === 'move') {
+        bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, person: withProfile(ACTIVE_PILOT_PERSON), instructorProfileId: 'instr_profile_1', instructorProfile: INSTRUCTOR_HOLDER });
+        await updateBooking(adminActor(), 'booking_1', { startsAt: '2099-06-01T12:00:00.000Z', endsAt: '2099-06-01T13:00:00.000Z' });
+      } else {
+        mockBookingLock({ status: 'PENDING', instructorProfileId: 'instr_profile_1' });
+        await transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED' });
+      }
+
+      const personWhere = (bookingFindFirstMock.mock.calls[1]![0] as { where: { OR: unknown[] } }).where.OR;
+      expect(personWhere).toEqual([{ personId: PATH_PERSON[path] }, { instructorProfileId: 'ip_of_person' }]);
+    },
+  );
+
+  it.each(['create', 'move', 'approve'] as const)('%s: a booking WITHOUT an instructor never runs the third predicate (2 findFirst, not 3) and locks ONE person', async (path) => {
     await runPath(path, false);
 
     expect(bookingFindFirstMock).toHaveBeenCalledTimes(2);
-    expect(rawSqls().some((sql) => sql.includes('"InstructorProfile"'))).toBe(false);
+    const personLock = queryRawMock.mock.calls.find((call) => (call[0] as unknown as TemplateStringsArray).join('?').includes('FROM "Person"'));
+    expect((personLock![1] as unknown as { values: string[] }).values).toEqual([PATH_PERSON[path]]);
   });
 
   it.each(['create', 'move', 'approve'] as const)(
-    '%s: Person then InstructorProfile are locked (FOR NO KEY UPDATE), right AFTER the Aircraft lock (FOR UPDATE) and BEFORE the first overlap predicate (AC 5, AD-2 global order)',
+    '%s: the booking\'s two people are locked in ONE Person statement (IN, ORDER BY id, FOR NO KEY UPDATE), right AFTER the Aircraft lock and BEFORE the first overlap predicate — no InstructorProfile lock (story 19.10, AD-5, AC 19)',
     async (path) => {
       await runPath(path);
 
@@ -1929,21 +1925,30 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
       const lockedTables = sqls.map((sql) => /FROM "(\w+)"/.exec(sql)?.[1]);
       // A move and an approval lock the booking they write FIRST (review 16.3
       // MAJOR-2); a create has no booking row yet.
-      expect(lockedTables).toEqual(path === 'create' ? ['Aircraft', 'Person', 'InstructorProfile'] : ['Booking', 'Aircraft', 'Person', 'InstructorProfile']);
+      expect(lockedTables).toEqual(path === 'create' ? ['Aircraft', 'Person'] : ['Booking', 'Aircraft', 'Person']);
+      expect(sqls.some((sql) => sql.includes('"InstructorProfile"'))).toBe(false);
       const personLock = lockedTables.indexOf('Person');
-      // The pre-existing Booking/Aircraft locks stay FOR UPDATE; the two new
-      // ones are FOR NO KEY UPDATE (lead decision 2026-09-27, `lockBookingPeople`).
+      // The Booking/Aircraft locks stay FOR UPDATE; the people one is FOR NO
+      // KEY UPDATE (lead decision 2026-09-27, `lockBookingPeople`).
       expect(sqls.slice(0, personLock).every((sql) => /FOR UPDATE$/.test(sql.trim()))).toBe(true);
-      expect(sqls.slice(personLock)).toEqual([
-        'SELECT "id" FROM "Person" WHERE "id" = ? FOR NO KEY UPDATE',
-        'SELECT "id" FROM "InstructorProfile" WHERE "id" = ? FOR NO KEY UPDATE',
-      ]);
-      expect(queryRawMock.mock.calls[personLock]![1]).toBe(PATH_PERSON[path]);
-      expect(queryRawMock.mock.calls[personLock + 1]![1]).toBe('instr_profile_1');
-      const lastLockOrder = queryRawMock.mock.invocationCallOrder[personLock + 1]!;
-      expect(lastLockOrder).toBeLessThan(bookingFindFirstMock.mock.invocationCallOrder[0]!);
+      expect(sqls[personLock]).toBe('SELECT "id" FROM "Person" WHERE "id" IN (?) ORDER BY "id" FOR NO KEY UPDATE');
+      expect((queryRawMock.mock.calls[personLock]![1] as unknown as { values: string[] }).values).toEqual([PATH_PERSON[path], 'person_instructor']);
+      expect(queryRawMock.mock.invocationCallOrder[personLock]!).toBeLessThan(bookingFindFirstMock.mock.invocationCallOrder[0]!);
     },
   );
+
+  it('move: a legacy booking whose instructor holder IS its person locks that one person once', async () => {
+    bookingFindUnique.mockResolvedValue({
+      ...EXISTING_OWN_BOOKING,
+      instructorProfileId: 'instr_profile_1',
+      instructorProfile: { personId: 'person_pilot', person: { firstName: 'Mario', lastName: 'Rossi' } },
+    });
+
+    await updateBooking(adminActor(), 'booking_1', { notes: 'x' });
+
+    const personLock = queryRawMock.mock.calls.find((call) => (call[0] as unknown as TemplateStringsArray).join('?').includes('FROM "Person"'));
+    expect((personLock![1] as unknown as { values: string[] }).values).toEqual(['person_pilot']);
+  });
 
   it("approve: the Booking row lock reads the booking's instructorProfileId (without it the INSTRUCTOR_BUSY predicate and the F4 re-check have no data — story §5)", async () => {
     await runPath('approve');
@@ -1991,7 +1996,7 @@ describe('Story 16.3 — the approval re-checks WHO is approved, with createBook
   });
 
   it('B3 approve: a DEACTIVATED instructor profile on the booking cannot be approved — 409, as on create', async () => {
-    instructorProfileFindUnique.mockResolvedValue({ id: 'instr_profile_1', deactivatedAt: new Date('2025-01-01T00:00:00.000Z') });
+    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow('instr_profile_1', { deactivatedAt: new Date('2025-01-01T00:00:00.000Z') }));
 
     const { onCreate, onApprove } = await createVsApprove(ACTIVE_PILOT_PERSON, 'instr_profile_1');
 
@@ -2010,24 +2015,27 @@ describe('Story 16.3 — the approval re-checks WHO is approved, with createBook
       where: { id: 'person_someone' },
       select: {
         id: true,
+        firstName: true,
+        lastName: true,
         archivedAt: true,
         pilotProfile: { select: { deactivatedAt: true } },
         studentProfile: { select: { deactivatedAt: true } },
-        instructorProfile: { select: { deactivatedAt: true } },
+        instructorProfile: { select: { id: true, deactivatedAt: true } },
+        account: { select: { id: true } },
       },
     });
   });
 
-  it('precedence: an archived person WITH a blocking expired document answers the 409 archived (as createBooking would), not 422 EXPIRED_DOCUMENTS — the person re-checks run FIRST', async () => {
+  it('precedence: an archived person WITH a failed requirement answers the 409 archived (as createBooking would), not 422 REQUIREMENTS_NOT_MET — the person re-checks run FIRST', async () => {
     personFindUniqueOrThrow.mockResolvedValue({ ...ACTIVE_PILOT_PERSON, archivedAt: new Date('2025-01-01T00:00:00.000Z') });
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-01T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
+    evaluateRequirementsMock.mockResolvedValue([{ type: 'MEMBERSHIP', role: 'person', personName: 'Mario Rossi', expiresAt: null }]);
     mockBookingLock({ status: 'PENDING' });
 
     const error = await transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED' }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ConflictError);
     expect((error as InstanceType<typeof ConflictError>).message).toBe('Cannot book an aircraft for an archived person.');
-    expect(expiryFindManyMock).not.toHaveBeenCalled();
+    expect(evaluateRequirementsMock).not.toHaveBeenCalled();
   });
 
   it('B4 approve (pin, green before AND after — ratifica R-16-b): approving a booking that ALREADY STARTED stays permitted — no temporal guard on APPROVED', async () => {
@@ -2106,302 +2114,451 @@ describe('createBooking on top of a CANCELLED booking (Story 7.3)', () => {
   });
 });
 
-describe('createBooking — expiry-based booking block (Story 7.4, AC 1/2)', () => {
-  // `baseInput()`'s default `startsAt` (`FUTURE_STARTS_AT`, 2099-06-01T10:00Z)
-  // is 12:00 CEST in Rome (June, +2h, no day shift) — the flight day is
-  // 2099-06-01. `EXPIRED_BEFORE_FLIGHT_DAY` is one calendar day earlier;
-  // `VALID_ON_FLIGHT_DAY` is exactly on it (the boundary: the expiry day
-  // itself is still valid, Contesto).
-  const FLIGHT_DAY_ONLY = '2099-06-01';
-  const EXPIRED_BEFORE_FLIGHT_DAY = new Date('2099-05-31T00:00:00.000Z');
-  const VALID_ON_FLIGHT_DAY = new Date(`${FLIGHT_DAY_ONLY}T00:00:00.000Z`);
+describe('Story 19.10 — the requirements of a booking on its three write paths (AC 1-5, 7-9, 12, 13, 21)', () => {
+  const FAILURE = { type: 'MEMBERSHIP' as const, role: 'person' as const, personName: 'Mario Rossi', expiresAt: null };
+  type WritePath = 'create' | 'move' | 'approve';
 
-  function expiredBlockingRatingRow() {
-    return { expiresAt: EXPIRED_BEFORE_FLIGHT_DAY, expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } };
-  }
-
-  function expiredWarningRatingRow() {
-    return { expiresAt: EXPIRED_BEFORE_FLIGHT_DAY, expiryType: { name: 'Rating SEP', kind: 'RATING', blocksBooking: false } };
-  }
-
-  it('a blocking expired document (a blocking rating) answers 422 EXPIRED_DOCUMENTS, with the type name in BOTH the message and details.documents', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
-
-    const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(ValidationError);
-    const validationError = error as InstanceType<typeof ValidationError>;
-    expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
-    expect(validationError.message).toContain('Rating bloccante');
-    expect(validationError.details).toEqual({ documents: [{ typeName: 'Rating bloccante', expiresAt: '2099-05-31' }] });
-    expect(transactionMock).not.toHaveBeenCalled();
-  });
-
-  it('a non-blocking expired document (e.g. a rating) never blocks — the booking succeeds with it listed in warnings, no force stamp', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredWarningRatingRow()]);
-
-    const result = await createBooking(adminActor(), baseInput({ personId: 'person_student' }));
-
-    expect(result.booking.id).toBe('booking_1');
-    expect(result.warnings).toEqual([{ typeName: 'Rating SEP', expiresAt: '2099-05-31' }]);
-    const createArgs = bookingCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> };
-    expect(createArgs.data).not.toHaveProperty('forcedAt');
-    expect(createArgs.data).not.toHaveProperty('forcedByUserId');
-    expect(createArgs.data).not.toHaveProperty('forceReason');
-  });
-
-  it('a blocking AND a non-blocking expired document together: the block wins (422), and details/message list ONLY the blocking document', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow(), expiredWarningRatingRow()]);
-
-    const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(ValidationError);
-    const validationError = error as InstanceType<typeof ValidationError>;
-    expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
-    expect(validationError.message).toContain('Rating bloccante');
-    expect(validationError.message).not.toContain('Rating SEP');
-    expect(validationError.details).toEqual({ documents: [{ typeName: 'Rating bloccante', expiresAt: '2099-05-31' }] });
-  });
-
-  // Story 19.7a (AC 7, R-19-j, D-4/D-5): ONE valid visit of any class is enough;
-  // only expired visits -> ONE blocking document (the most recent); no visit
-  // at all -> NOT blocked here (bookings keep "registered and expired").
-  describe('medical requirement (story 19.7a)', () => {
-    const ACTIVE_MEDICAL_TYPES = [{ name: 'Visita medica classe 1' }, { name: 'Visita medica classe 2' }, { name: 'Visita medica LAPL' }];
-
-    /** `findBlockingExpiredDocuments` reads every row of the person; `getMedicalRequirementFailure` only the MEDICAL ones. */
-    function mockPersonExpiries(rows: Array<{ name: string; kind: 'MEDICAL' | 'RATING'; blocksBooking: boolean; expiresAt: Date }>): void {
-      expiryTypeFindMany.mockResolvedValue(ACTIVE_MEDICAL_TYPES);
-      expiryFindManyMock.mockImplementation((async (args: { where: { expiryType?: { kind?: string } } }) => {
-        const selected = args.where.expiryType?.kind === 'MEDICAL' ? rows.filter((row) => row.kind === 'MEDICAL') : rows;
-        return selected.map((row) => ({ expiresAt: row.expiresAt, expiryType: { name: row.name, kind: row.kind, blocksBooking: row.blocksBooking } }));
-      }) as never);
+  /** One write per path, for the pilot `person_pilot` on `aircraft_1` (the move keeps both, shifting the slot by an hour). */
+  function runPath(path: WritePath, input: { force?: boolean; startsAt?: string; endsAt?: string } = {}, actor: Actor = adminActor()): Promise<unknown> {
+    switch (path) {
+      case 'create':
+        personFindUnique.mockImplementation(async () => ACTIVE_PILOT_PERSON);
+        return createBooking(actor, baseInput({ personId: 'person_pilot', ...input }));
+      case 'move':
+        bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+        return updateBooking(actor, 'booking_1', { startsAt: '2099-06-01T12:00:00.000Z', endsAt: '2099-06-01T13:00:00.000Z', ...input });
+      case 'approve':
+        mockBookingLock({ status: 'PENDING', ...(input.startsAt ? { startsAt: new Date(input.startsAt), endsAt: new Date(input.endsAt!) } : {}) });
+        return transitionBooking(actor, 'booking_1', { to: 'APPROVED', ...(input.force !== undefined ? { force: input.force } : {}) });
     }
+  }
 
-    it('class 2 expired + class 1 valid -> booked, no EXPIRED_DOCUMENTS and no medical warning', async () => {
-      personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-      mockPersonExpiries([
-        { name: 'Visita medica classe 2', kind: 'MEDICAL', blocksBooking: true, expiresAt: EXPIRED_BEFORE_FLIGHT_DAY },
-        { name: 'Visita medica classe 1', kind: 'MEDICAL', blocksBooking: true, expiresAt: new Date('2100-01-01T00:00:00.000Z') },
-      ]);
+  function writtenData(path: WritePath): Record<string, unknown> {
+    const call = path === 'create' ? bookingCreateMock.mock.calls[0] : bookingUpdateManyMock.mock.calls[0];
+    return (call?.[0] as unknown as { data: Record<string, unknown> }).data;
+  }
 
-      const result = await createBooking(adminActor(), baseInput({ personId: 'person_student' }));
+  function lastInput(): RequirementsInput {
+    return evaluateRequirementsMock.mock.calls.at(-1)![0] as RequirementsInput;
+  }
 
-      expect(result.booking.id).toBe('booking_1');
-      expect(result.warnings).toEqual([]);
-    });
+  async function errorOf(promise: Promise<unknown>): Promise<{ code?: string; details?: unknown; constructor: unknown }> {
+    const error = await promise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    return error as { code?: string; details?: unknown; constructor: unknown };
+  }
 
-    it('only class 2 and LAPL expired -> 422 EXPIRED_DOCUMENTS with ONE document, the most recently expired', async () => {
-      personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-      mockPersonExpiries([
-        { name: 'Visita medica classe 2', kind: 'MEDICAL', blocksBooking: true, expiresAt: new Date('2099-03-01T00:00:00.000Z') },
-        { name: 'Visita medica LAPL', kind: 'MEDICAL', blocksBooking: true, expiresAt: EXPIRED_BEFORE_FLIGHT_DAY },
-      ]);
+  function expectNothingWritten(): void {
+    expect(bookingCreateMock).not.toHaveBeenCalled();
+    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
+  }
 
-      const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
+  describe('AC 1 — one 422 REQUIREMENTS_NOT_MET, the failures in the shared shape', () => {
+    it.each(['create', 'move', 'approve'] as const)('%s: a failed requirement answers 422 REQUIREMENTS_NOT_MET whose details the flights schema validates, nothing written', async (path) => {
+      evaluateRequirementsMock.mockResolvedValue([FAILURE]);
+
+      const error = await errorOf(runPath(path));
 
       expect(error).toBeInstanceOf(ValidationError);
-      const validationError = error as InstanceType<typeof ValidationError>;
-      expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
-      expect(validationError.details).toEqual({ documents: [{ typeName: 'Visita medica LAPL', expiresAt: '2099-05-31' }] });
+      expect(error.code).toBe('REQUIREMENTS_NOT_MET');
+      expect(error.details).toEqual({ failures: [FAILURE] });
+      expect(requirementsNotMetDetailsSchema.safeParse(error.details).success).toBe(true);
+      expectNothingWritten();
+    });
+  });
+
+  describe('AC 2 — the deroga is the LAST gate (TD 16.3-g): every non-derogable answer wins, with and without force', () => {
+    const outOfService = [{ id: 'aircraft_1', status: 'OUT_OF_SERVICE', statusReason: 'Manutenzione', outOfServiceUntil: null, archivedAt: null }];
+    const archived = [{ id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: new Date('2025-01-01T00:00:00.000Z') }];
+    const window = { openTime: '08:00', closeTime: '09:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null };
+
+    beforeEach(() => {
+      evaluateRequirementsMock.mockResolvedValue([FAILURE]);
     });
 
-    it('an expired visit beside an expired blocking rating -> both blocking, the visit exactly once', async () => {
+    it.each([false, true])('create in the past (force %s): 422 BOOKING_IN_PAST', async (force) => {
+      expect((await errorOf(runPath('create', { force, startsAt: PAST_STARTS_AT, endsAt: PAST_ENDS_AT }))).code).toBe('BOOKING_IN_PAST');
+      expectNothingWritten();
+    });
+
+    it('own move into the past: 422 BOOKING_IN_PAST', async () => {
+      expect((await errorOf(runPath('move', { startsAt: PAST_STARTS_AT, endsAt: PAST_ENDS_AT }, pilotActor('person_pilot')))).code).toBe('BOOKING_IN_PAST');
+      expectNothingWritten();
+    });
+
+    it.each([
+      ['create', false],
+      ['create', true],
+      ['move', false],
+      ['move', true],
+      ['approve', false],
+      ['approve', true],
+    ] as const)('%s outside the window (force %s): 422 BOOKING_OUTSIDE_WINDOW', async (path, force) => {
+      vi.mocked(getSchedulingSettings).mockResolvedValue(window);
+
+      expect((await errorOf(runPath(path, { force }))).code).toBe('BOOKING_OUTSIDE_WINDOW');
+      expectNothingWritten();
+    });
+
+    it.each([
+      ['create', false],
+      ['create', true],
+      ['move', false],
+      ['move', true],
+      ['approve', false],
+      ['approve', true],
+    ] as const)('%s on an aircraft out of service (force %s): 422 AIRCRAFT_OUT_OF_SERVICE; on an archived one: 409', async (path, force) => {
+      queryRaw.mockResolvedValue(outOfService);
+      expect((await errorOf(runPath(path, { force }))).code).toBe('AIRCRAFT_OUT_OF_SERVICE');
+
+      queryRaw.mockResolvedValue(archived);
+      const archivedError = await errorOf(runPath(path, { force }));
+      expect(archivedError).toBeInstanceOf(ConflictError);
+      expectNothingWritten();
+    });
+
+    it.each([
+      ['create', false],
+      ['create', true],
+      ['move', false],
+      ['move', true],
+      ['approve', false],
+      ['approve', true],
+    ] as const)('%s with an overlap (force %s): the 409, never the 422 — the three predicates ran before the decision', async (path, force) => {
+      bookingFindFirst.mockResolvedValue({ id: 'booking_elsewhere', startsAt: new Date(FUTURE_STARTS_AT), endsAt: new Date(FUTURE_ENDS_AT) });
+
+      const error = await errorOf(runPath(path, { force }));
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error.code).toBe('CONFLICT');
+      expectNothingWritten();
+    });
+
+    it.each(['create', 'move'] as const)('%s: evaluated BEFORE the transaction opens (no lock held during its queries), decided after the overlap predicates', async (path) => {
+      await errorOf(runPath(path));
+
+      expect(evaluateRequirementsMock.mock.invocationCallOrder[0]!).toBeLessThan(transactionMock.mock.invocationCallOrder[0]!);
+      expect(bookingFindFirstMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('AC 3 — `force` without requirements.force is a 403 before any query', () => {
+    it('own-self create with force: 403, neither the person nor the requirements queried', async () => {
+      await expect(runPath('create', { force: true }, pilotActor('person_pilot'))).rejects.toThrow(ForbiddenError);
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(evaluateRequirementsMock).not.toHaveBeenCalled();
+    });
+
+    it('instructor for an allievo with force: 403 after the own-rules query (the actor\'s own profile), never the target person nor the requirements', async () => {
+      personFindUnique.mockImplementation(async () => ACTIVE_INSTRUCTOR_ACTOR_PERSON);
+
+      await expect(
+        createBooking(instructorActor('person_instructor'), baseInput({ personId: 'person_student', instructorProfileId: 'instr_profile_1', force: true })),
+      ).rejects.toThrow(ForbiddenError);
+      expect(personFindUniqueMock).toHaveBeenCalledTimes(1);
+      expect(personFindUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'person_instructor' } }));
+      expect(evaluateRequirementsMock).not.toHaveBeenCalled();
+    });
+
+    it('own move with force: 403 BEFORE the booking is even read', async () => {
+      await expect(runPath('move', { force: true }, pilotActor('person_pilot'))).rejects.toThrow(ForbiddenError);
+      expect(bookingFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it.each(['create', 'move', 'approve'] as const)('%s: the gate is requirements.force, not bookings.manage.any — a role holding only the latter gets the 403 before any query', async (path) => {
+      // No role has bookings.manage.any without requirements.force today (both
+      // ADMIN-only): grant it to INSTRUCTOR for this test only (the idiom of
+      // `flights.service.test.ts`).
+      const saved = ROLE_PERMISSIONS.INSTRUCTOR;
+      ROLE_PERMISSIONS.INSTRUCTOR = [...saved, 'bookings.manage.any'];
+      try {
+        await expect(runPath(path, { force: true }, instructorActor('person_instructor'))).rejects.toThrow(ForbiddenError);
+      } finally {
+        ROLE_PERMISSIONS.INSTRUCTOR = saved;
+      }
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(bookingFindUniqueMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
+      // The approval's queued lock row was never consumed: drop it, or the next test reads it as its aircraft.
+      queryRawMock.mockReset();
+    });
+  });
+
+  describe('AC 4 — the deroga and its silent stamp (D-9)', () => {
+    it.each(['create', 'move', 'approve'] as const)('%s: failures + force => written, stamped forcedAt/forcedByUserId', async (path) => {
+      evaluateRequirementsMock.mockResolvedValue([FAILURE]);
+
+      await runPath(path, { force: true });
+
+      expect(writtenData(path)).toMatchObject({ forcedAt: expect.any(Date), forcedByUserId: 'admin_1' });
+    });
+
+    it.each(['create', 'move', 'approve'] as const)('%s: force with nothing to derogate stamps NOTHING', async (path) => {
+      await runPath(path, { force: true });
+
+      expect(writtenData(path)).not.toHaveProperty('forcedAt');
+      expect(writtenData(path)).not.toHaveProperty('forcedByUserId');
+    });
+
+    it('a later move without a deroga never clears a stamp — the write does not touch it', async () => {
+      await runPath('move');
+
+      expect(writtenData('move')).not.toHaveProperty('forcedAt');
+      expect(writtenData('move')).not.toHaveProperty('forcedByUserId');
+    });
+
+    it.each(['DENIED', 'FLOWN', 'NO_SHOW'] as const)('"riapri" %s -> PENDING leaves the stamp alone', async (from) => {
+      mockBookingLock({ status: from });
+
+      await transitionBooking(adminActor(), 'booking_1', { to: 'PENDING' });
+
+      expect(writtenData('approve')).not.toHaveProperty('forcedAt');
+      expect(evaluateRequirementsMock).not.toHaveBeenCalled();
+    });
+
+    it('the retired motivo is never written', async () => {
+      evaluateRequirementsMock.mockResolvedValue([FAILURE]);
+
+      await runPath('create', { force: true });
+
+      expect(writtenData('create')).not.toHaveProperty('forceReason');
+    });
+  });
+
+  describe('AC 7 — two reference days (Q-19.10-a = B): documents on the flight day, currency and fee on today in Rome', () => {
+    // 22:59Z in summer time: already 2026-07-15 in Rome, still 07-14 in UTC.
+    const NOW = new Date('2026-07-14T22:59:00.000Z');
+    const TODAY_ROME = '2026-07-15';
+    const D = '2026-07-25';
+    const D_STARTS_AT = '2026-07-25T08:00:00.000Z';
+    const D_ENDS_AT = '2026-07-25T09:00:00.000Z';
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(NOW);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it.each(['create', 'move', 'approve'] as const)('%s: expiryDateOnly = the Rome day of the (merged) startsAt, membershipDateOnly = currency.dateOnly = today in Rome', async (path) => {
+      await runPath(path, { startsAt: D_STARTS_AT, endsAt: D_ENDS_AT });
+
+      expect(lastInput()).toMatchObject({ expiryDateOnly: D, membershipDateOnly: TODAY_ROME, currency: { dateOnly: TODAY_ROME, excludeFlightId: null } });
+    });
+
+    it('approving a booking already in the past (R-16-b, D-7): documents on its own day, currency and fee still on today', async () => {
+      await runPath('approve', { startsAt: '2026-07-01T08:00:00.000Z', endsAt: '2026-07-01T09:00:00.000Z' });
+
+      expect(lastInput()).toMatchObject({ expiryDateOnly: '2026-07-01', membershipDateOnly: TODAY_ROME, currency: { dateOnly: TODAY_ROME } });
+    });
+  });
+
+  describe('AC 8 — currency only on a booking without an instructor, for a currency subject (D-4)', () => {
+    beforeEach(() => {
+      instructorProfileFindUnique.mockResolvedValue(instructorProfileRow());
+    });
+
+    const SOLO = { dateOnly: expect.any(String), excludeFlightId: null };
+
+    it.each(['create', 'move', 'approve'] as const)('%s without an instructor: a solo, the currency is judged', async (path) => {
+      await runPath(path);
+
+      expect(lastInput().currency).toEqual(SOLO);
+      expect(lastInput().instructor).toBeNull();
+    });
+
+    it.each(['create', 'move', 'approve'] as const)('%s with an instructor: a dual, no currency — the instructor is checked instead', async (path) => {
+      if (path === 'create') {
+        personFindUnique.mockImplementation(async () => ACTIVE_PILOT_PERSON);
+        await createBooking(adminActor(), baseInput({ personId: 'person_pilot', instructorProfileId: 'instr_profile_1' }));
+      } else if (path === 'move') {
+        bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, instructorProfileId: 'instr_profile_1', instructorProfile: INSTRUCTOR_HOLDER });
+        await updateBooking(adminActor(), 'booking_1', { notes: 'x' });
+      } else {
+        mockBookingLock({ status: 'PENDING', instructorProfileId: 'instr_profile_1' });
+        await transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED' });
+      }
+
+      expect(lastInput().currency).toBeNull();
+      expect(lastInput().instructor).toEqual({ personId: 'person_instructor', name: 'Ivo Istruttore' });
+    });
+
+    it('an instructor-only person booking for themself is no currency subject (19.7a D-8)', async () => {
+      const instructorOnly = { ...NO_PROFILE_PERSON, id: 'person_instructor', instructorProfile: { deactivatedAt: null } };
+      personFindUnique.mockImplementation(async () => instructorOnly);
+
+      await createBooking(instructorActor('person_instructor'), baseInput({ personId: 'person_instructor' }));
+
+      expect(lastInput().currency).toBeNull();
+      expect(lastInput().person).toEqual({ id: 'person_instructor', name: 'Nessun Profilo', hasActivePilot: false, hasActiveStudent: false, hasActiveInstructor: true });
+    });
+
+    it('the person and instructor handed over: names, the active profiles of the person (its MISSING scopes), documents always', async () => {
       personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-      mockPersonExpiries([
-        { name: 'Visita medica classe 2', kind: 'MEDICAL', blocksBooking: true, expiresAt: EXPIRED_BEFORE_FLIGHT_DAY },
-        { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true, expiresAt: EXPIRED_BEFORE_FLIGHT_DAY },
-      ]);
 
-      const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
+      await createBooking(adminActor(), baseInput({ personId: 'person_student', instructorProfileId: 'instr_profile_1' }));
 
-      expect((error as InstanceType<typeof ValidationError>).details).toEqual({
-        documents: [
-          { typeName: 'Rating bloccante', expiresAt: '2099-05-31' },
-          { typeName: 'Visita medica classe 2', expiresAt: '2099-05-31' },
-        ],
+      expect(lastInput()).toMatchObject({
+        person: { id: 'person_student', name: 'Anna Bianchi', hasActivePilot: false, hasActiveStudent: true, hasActiveInstructor: false },
+        instructor: { personId: 'person_instructor', name: 'Ivo Istruttore' },
+        documents: true,
+      });
+    });
+  });
+
+  describe('AC 9 — the estimated cost (A9, D-5, D-6)', () => {
+    /** 90 minutes on 2099-06-01 (Rome), the default flight day. */
+    const NINETY = { startsAt: '2099-06-01T10:00:00.000Z', endsAt: '2099-06-01T11:30:00.000Z' };
+
+    it('pilot, 90 min at a pilot price of 150,00 €/h -> 22 500', async () => {
+      aircraftRateFindFirst.mockResolvedValue({ studentPriceCents: 10000, pilotPriceCents: 15000 });
+      personFindUnique.mockImplementation(async () => ACTIVE_PILOT_PERSON);
+
+      await createBooking(adminActor(), baseInput({ personId: 'person_pilot', ...NINETY }));
+
+      expect(lastInput().balance).toEqual({ costCents: 22500, creditCents: 0 });
+    });
+
+    it('student, same rate with a student price of 100,00 €/h -> 15 000; with an instructor at 40,00 €/h -> + 6 000', async () => {
+      aircraftRateFindFirst.mockResolvedValue({ studentPriceCents: 10000, pilotPriceCents: 15000 });
+      personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+      await createBooking(adminActor(), baseInput({ personId: 'person_student', ...NINETY }));
+      expect(lastInput().balance).toEqual({ costCents: 15000, creditCents: 0 });
+
+      instructorRateFindFirst.mockResolvedValue({ priceCentsPerHour: 4000 });
+      await createBooking(adminActor(), baseInput({ personId: 'person_student', instructorProfileId: 'instr_profile_1', ...NINETY }));
+      expect(lastInput().balance).toEqual({ costCents: 21000, creditCents: 0 });
+      expect(instructorRateFindFirstMock).toHaveBeenCalledWith({
+        where: { instructorProfileId: 'instr_profile_1', validFrom: { lte: new Date('2099-06-01T00:00:00.000Z') } },
+        orderBy: [{ validFrom: 'desc' }],
+        select: { priceCentsPerHour: true },
       });
     });
 
-    it('a person with NO visit at all is NOT blocked by a booking (D-5: missing documents stay the flights-only scan)', async () => {
-      personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-      mockPersonExpiries([]);
+    it('Math.round on each part: 50 min at 155,55 €/h -> 12 963', async () => {
+      aircraftRateFindFirst.mockResolvedValue({ studentPriceCents: 15555, pilotPriceCents: 15555 });
+      personFindUnique.mockImplementation(async () => ACTIVE_PILOT_PERSON);
 
-      const result = await createBooking(adminActor(), baseInput({ personId: 'person_student' }));
+      await createBooking(adminActor(), baseInput({ personId: 'person_pilot', startsAt: '2099-06-01T10:00:00.000Z', endsAt: '2099-06-01T10:50:00.000Z' }));
 
-      expect(result.booking.id).toBe('booking_1');
+      expect(lastInput().balance).toEqual({ costCents: 12963, creditCents: 0 });
+    });
+
+    it('the rate in effect on the flight day: the greatest validFrom <= D (a row dated D + 1 can never match), typed on the date column; no rate -> 0', async () => {
+      personFindUnique.mockImplementation(async () => ACTIVE_PILOT_PERSON);
+
+      await createBooking(adminActor(), baseInput({ personId: 'person_pilot', ...NINETY }));
+
+      expect(aircraftRateFindFirstMock).toHaveBeenCalledWith({
+        where: { aircraftId: 'aircraft_1', validFrom: { lte: new Date('2099-06-01T00:00:00.000Z') } },
+        orderBy: [{ validFrom: 'desc' }],
+        select: { studentPriceCents: true, pilotPriceCents: true },
+      });
+      expect(lastInput().balance).toEqual({ costCents: 0, creditCents: 0 });
+      // No instructor on the booking: the instructor rate is never read.
+      expect(instructorRateFindFirstMock).not.toHaveBeenCalled();
+    });
+
+    it('a legacy person with BOTH profiles active is estimated at the pilot price, as the flight will charge (D-5); an instructor-only one too', async () => {
+      aircraftRateFindFirst.mockResolvedValue({ studentPriceCents: 10000, pilotPriceCents: 15000 });
+      personFindUnique.mockImplementation(async () => ({ ...ACTIVE_PILOT_PERSON, studentProfile: { deactivatedAt: null } }));
+      await createBooking(adminActor(), baseInput({ personId: 'person_pilot', ...NINETY }));
+      expect(lastInput().balance).toEqual({ costCents: 22500, creditCents: 0 });
+
+      personFindUnique.mockImplementation(async () => ({ ...NO_PROFILE_PERSON, instructorProfile: { deactivatedAt: null }, account: { id: 'account_i' } }));
+      await createBooking(adminActor(), baseInput({ personId: 'person_other', ...NINETY }));
+      expect(lastInput().balance).toEqual({ costCents: 22500, creditCents: 0 });
+    });
+
+    it('a person without an account (instructor-only, D-6): the balance is not judged, no rate read', async () => {
+      personFindUnique.mockImplementation(async () => ({ ...NO_PROFILE_PERSON, instructorProfile: { deactivatedAt: null } }));
+
+      await createBooking(adminActor(), baseInput({ personId: 'person_other', ...NINETY }));
+
+      expect(lastInput().balance).toBeNull();
+      expect(aircraftRateFindFirstMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('AC 12 — every move re-judges the MERGED booking (D-3)', () => {
+    it('the requirements see the merged aircraft, interval and cost — and a notes-only move is judged too', async () => {
+      aircraftRateFindFirst.mockResolvedValue({ studentPriceCents: 10000, pilotPriceCents: 12000 });
+      bookingFindUnique.mockResolvedValue(EXISTING_OWN_BOOKING);
+      queryRaw.mockResolvedValue([
+        { id: 'aircraft_1', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: null },
+        { id: 'aircraft_2', status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null, archivedAt: null },
+      ]);
+
+      await updateBooking(adminActor(), 'booking_1', { aircraftId: 'aircraft_2', endsAt: '2099-06-01T12:00:00.000Z' });
+
+      expect(aircraftRateFindFirstMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ aircraftId: 'aircraft_2' }) }));
+      // 10:00 -> 12:00 at 120,00 €/h.
+      expect(lastInput()).toMatchObject({ expiryDateOnly: '2099-06-01', person: { id: 'person_pilot', name: 'Mario Rossi' }, balance: { costCents: 24000, creditCents: 0 } });
+
+      await updateBooking(adminActor(), 'booking_1', { notes: 'solo una nota' });
+      expect(evaluateRequirementsMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('an own move with a failed requirement is blocked, with no way to derogate', async () => {
+      evaluateRequirementsMock.mockResolvedValue([FAILURE]);
+
+      expect((await errorOf(runPath('move', {}, pilotActor('person_pilot')))).code).toBe('REQUIREMENTS_NOT_MET');
+      expectNothingWritten();
+    });
+  });
+
+  describe('AC 13 — warnings stay the non-blocking expired ratings (D-10)', () => {
+    it('reads only the active non-blocking RATINGs of the person, expired before the flight day; the expiry day itself is valid', async () => {
+      personFindUnique.mockImplementation(async () => ACTIVE_PILOT_PERSON);
+      expiryFindMany.mockResolvedValue([
+        { expiresAt: new Date('2099-05-31T00:00:00.000Z'), expiryType: { name: 'Rating SEP' } },
+        { expiresAt: new Date('2099-06-01T00:00:00.000Z'), expiryType: { name: 'Inglese ICAO' } },
+      ]);
+
+      const result = await createBooking(adminActor(), baseInput({ personId: 'person_pilot' }));
+
+      expect(expiryFindManyMock).toHaveBeenCalledWith({
+        where: { personId: 'person_pilot', expiryType: { kind: 'RATING', blocksBooking: false, isActive: true } },
+        select: { expiresAt: true, expiryType: { select: { name: true } } },
+      });
+      expect(result.warnings).toEqual([{ typeName: 'Rating SEP', expiresAt: '2099-05-31' }]);
+    });
+
+    it('the failures never travel as warnings, nor the other way round', async () => {
+      personFindUnique.mockImplementation(async () => ACTIVE_PILOT_PERSON);
+      evaluateRequirementsMock.mockResolvedValue([FAILURE]);
+
+      const result = await createBooking(adminActor(), baseInput({ personId: 'person_pilot', force: true }));
+
       expect(result.warnings).toEqual([]);
     });
   });
 
-  it('a person with NO registered Expiry rows at all is never blocked (absence != expired)', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([]);
+  describe('AC 21 — an instructor who IS the person (D-8): 422 INSTRUCTOR_SAME_AS_PILOT, never derogable', () => {
+    const selfInstructor = () => instructorProfileRow('instr_profile_1', { personId: 'person_pilot' });
 
-    const result = await createBooking(adminActor(), baseInput({ personId: 'person_student' }));
+    it.each([false, true])('staff create (force %s)', async (force) => {
+      personFindUnique.mockImplementation(async () => ACTIVE_PILOT_PERSON);
+      instructorProfileFindUnique.mockResolvedValue(selfInstructor());
 
-    expect(result.booking.id).toBe('booking_1');
-    expect(result.warnings).toEqual([]);
-  });
+      const error = await errorOf(createBooking(adminActor(), baseInput({ personId: 'person_pilot', instructorProfileId: 'instr_profile_1', force })));
 
-  it('boundary: expiresAt equal to the flight day itself is still VALID (no block, no warning) — the day before IS expired', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+      expect(error.code).toBe('INSTRUCTOR_SAME_AS_PILOT');
+      expect(evaluateRequirementsMock).not.toHaveBeenCalled();
+      expectNothingWritten();
+    });
 
-    expiryFindMany.mockResolvedValue([{ expiresAt: VALID_ON_FLIGHT_DAY, expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
-    const validResult = await createBooking(adminActor(), baseInput({ personId: 'person_student' }));
-    expect(validResult.booking.id).toBe('booking_1');
-    expect(validResult.warnings).toEqual([]);
+    it.each([false, true])('approval re-check (force %s)', async (force) => {
+      instructorProfileFindUnique.mockResolvedValue(selfInstructor());
+      mockBookingLock({ status: 'PENDING', instructorProfileId: 'instr_profile_1' });
 
-    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
-    const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(ValidationError);
-    expect((error as InstanceType<typeof ValidationError>).code).toBe('EXPIRED_DOCUMENTS');
-  });
+      const error = await errorOf(transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED', force }));
 
-  it('dateOnlyInZone boundary: an evening UTC startsAt that crosses into the next Rome day (CEST) uses the SHIFTED flight day, not the UTC calendar day', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    // 2099-07-15T22:30:00.000Z is 00:30 CEST on 2099-07-16 in Rome — the
-    // correct flight day is the 16th.
-    const startsAt = '2099-07-15T22:30:00.000Z';
-    const endsAt = '2099-07-15T23:30:00.000Z';
-
-    // Expired relative to the CORRECT (shifted) flight day 2099-07-16, even
-    // though it is dated the SAME as startsAt's own UTC calendar day — proof
-    // the rule does not naively use the UTC date.
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2099-07-15T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
-    const error = await createBooking(adminActor(), baseInput({ personId: 'person_student', startsAt, endsAt })).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(ValidationError);
-    expect((error as InstanceType<typeof ValidationError>).code).toBe('EXPIRED_DOCUMENTS');
-
-    // Valid exactly ON the correct (shifted) flight day 2099-07-16.
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2099-07-16T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
-    const result = await createBooking(adminActor(), baseInput({ personId: 'person_student', startsAt, endsAt }));
-    expect(result.booking.id).toBe('booking_1');
-  });
-
-  it('school booking: the ALLIEVO (target person)\'s expired blocking document blocks the instructor who books for them — queried by the TARGET personId, not the actor\'s', async () => {
-    personFindUnique.mockImplementation(async (args) =>
-      args.where.id === 'person_instructor' ? ACTIVE_INSTRUCTOR_ACTOR_PERSON : ACTIVE_STUDENT_PERSON,
-    );
-    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
-
-    const error = await createBooking(
-      instructorActor('person_instructor'),
-      baseInput({ personId: 'person_student', instructorProfileId: 'instr_profile_1' }),
-    ).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(ValidationError);
-    expect((error as InstanceType<typeof ValidationError>).code).toBe('EXPIRED_DOCUMENTS');
-    expect(expiryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_student' } }));
-  });
-
-  it('order: a blocking expired document is checked BEFORE BOOKING_IN_PAST — EXPIRED_DOCUMENTS wins even when startsAt is also in the past', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    // Dated before PAST_STARTS_AT's OWN flight day (2020-01-01), so it is
-    // genuinely expired relative to that (past) flight day too.
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2019-01-01T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
-
-    const error = await createBooking(
-      adminActor(),
-      baseInput({ personId: 'person_student', startsAt: PAST_STARTS_AT, endsAt: PAST_ENDS_AT }),
-    ).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(ValidationError);
-    expect((error as InstanceType<typeof ValidationError>).code).toBe('EXPIRED_DOCUMENTS');
-  });
-
-  // --- Force (AC 2) -------------------------------------------------------
-
-  it('a pilot (own-path) with force:true gets 403 BEFORE any query at all — persona included, not just scadenze', async () => {
-    await expect(
-      createBooking(pilotActor('person_pilot'), baseInput({ personId: 'person_pilot', force: true, forceReason: 'Tentativo non autorizzato' })),
-    ).rejects.toThrow(ForbiddenError);
-    expect(personFindUniqueMock).not.toHaveBeenCalled();
-    expect(expiryFindManyMock).not.toHaveBeenCalled();
-  });
-
-  it('an instructor (own-path, booking for an allievo) with force:true also gets 403 — checked right after the existing own-rules block, before any TARGET-person or scadenze query', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_INSTRUCTOR_ACTOR_PERSON);
-
-    await expect(
-      createBooking(
-        instructorActor('person_instructor'),
-        baseInput({ personId: 'person_student', instructorProfileId: 'instr_profile_1', force: true, forceReason: 'x' }),
-      ),
-    ).rejects.toThrow(ForbiddenError);
-
-    // The own-rules block's pre-existing query (7.1: the actor's OWN
-    // instructor profile, never a leak) is the only one that ran — the
-    // TARGET person ('person_student') was never queried, and neither was
-    // `prisma.expiry.findMany`.
-    expect(personFindUniqueMock).toHaveBeenCalledTimes(1);
-    expect(personFindUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'person_instructor' } }));
-    expect(expiryFindManyMock).not.toHaveBeenCalled();
-  });
-
-  it('staff without force on a real block still gets 422 EXPIRED_DOCUMENTS (force is opt-in, never automatic)', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
-
-    const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(ValidationError);
-    expect((error as InstanceType<typeof ValidationError>).code).toBe('EXPIRED_DOCUMENTS');
-  });
-
-  it('staff force + forceReason bypasses a real block, stamping forcedAt/forcedByUserId/forceReason on the created booking', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
-
-    const result = await createBooking(
-      adminActor(),
-      baseInput({ personId: 'person_student', force: true, forceReason: 'Autorizzato dal direttore' }),
-    );
-
-    expect(result.booking.id).toBe('booking_1');
-    expect(bookingCreateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          forcedAt: expect.any(Date),
-          forcedByUserId: 'admin_1',
-          forceReason: 'Autorizzato dal direttore',
-        }),
-      }),
-    );
-  });
-
-  it('force:true with NO blocking expired documents creates normally, stamping NOTHING (Contesto: a real bypass, not a checked box)', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([]);
-
-    const result = await createBooking(
-      adminActor(),
-      baseInput({ personId: 'person_student', force: true, forceReason: 'Nessun blocco da scavalcare' }),
-    );
-
-    expect(result.booking.id).toBe('booking_1');
-    const createArgs = bookingCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> };
-    expect(createArgs.data).not.toHaveProperty('forcedAt');
-    expect(createArgs.data).not.toHaveProperty('forcedByUserId');
-    expect(createArgs.data).not.toHaveProperty('forceReason');
-  });
-
-  it('force:true with only a non-blocking warning (no real block) also creates normally without stamping', async () => {
-    personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredWarningRatingRow()]);
-
-    const result = await createBooking(
-      adminActor(),
-      baseInput({ personId: 'person_student', force: true, forceReason: 'Solo per sicurezza' }),
-    );
-
-    expect(result.booking.id).toBe('booking_1');
-    expect(result.warnings).toEqual([{ typeName: 'Rating SEP', expiresAt: '2099-05-31' }]);
-    const createArgs = bookingCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> };
-    expect(createArgs.data).not.toHaveProperty('forcedAt');
+      expect(error.code).toBe('INSTRUCTOR_SAME_AS_PILOT');
+      expectNothingWritten();
+    });
   });
 });
 
@@ -2526,39 +2683,19 @@ describe('createBookingSchema (Story 7.1, Task 4)', () => {
     expect(createBookingSchema.safeParse({ ...VALID, personId: '' }).success).toBe(false);
   });
 
-  // --- force/forceReason (Story 7.4, AC 2) --------------------------------
+  // --- force (story 19.10: the deroga carries no motivo) -------------------
 
-  it('accepts a body with neither force nor forceReason (the common case)', () => {
+  it('accepts a body with or without force (story 19.10: the deroga carries no motivo)', () => {
     expect(createBookingSchema.safeParse(VALID).success).toBe(true);
-  });
-
-  it('accepts force: true WITH a non-empty forceReason', () => {
-    expect(createBookingSchema.safeParse({ ...VALID, force: true, forceReason: 'Autorizzato dal direttore' }).success).toBe(true);
-  });
-
-  it('rejects force: true WITHOUT forceReason (422 refine)', () => {
-    const result = createBookingSchema.safeParse({ ...VALID, force: true });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues.some((issue) => issue.path.includes('forceReason'))).toBe(true);
-    }
-  });
-
-  it('rejects force: true with an empty/whitespace-only forceReason (422 refine)', () => {
-    expect(createBookingSchema.safeParse({ ...VALID, force: true, forceReason: '' }).success).toBe(false);
-    expect(createBookingSchema.safeParse({ ...VALID, force: true, forceReason: '   ' }).success).toBe(false);
-  });
-
-  it('rejects forceReason over 500 chars', () => {
-    expect(createBookingSchema.safeParse({ ...VALID, force: true, forceReason: 'x'.repeat(501) }).success).toBe(false);
-  });
-
-  it('a forceReason WITHOUT force: true is accepted (harmless — the service never reads it unless force is also true)', () => {
-    expect(createBookingSchema.safeParse({ ...VALID, forceReason: 'Non necessario' }).success).toBe(true);
-  });
-
-  it('force: false with no forceReason is accepted (the refine only fires when force is true)', () => {
+    expect(createBookingSchema.safeParse({ ...VALID, force: true }).success).toBe(true);
     expect(createBookingSchema.safeParse({ ...VALID, force: false }).success).toBe(true);
+  });
+
+  it('a body still carrying the retired forceReason is accepted and the field stripped — never a 422 (story 19.10, AC 5)', () => {
+    const parsed = createBookingSchema.parse({ ...VALID, force: true, forceReason: 'vecchio client' });
+
+    expect(parsed).not.toHaveProperty('forceReason');
+    expect(parsed.force).toBe(true);
   });
 });
 
@@ -2571,6 +2708,11 @@ describe('updateBookingSchema (Story 7.3, Task 3)', () => {
     expect(
       updateBookingSchema.safeParse({ aircraftId: 'aircraft_2', startsAt: FUTURE_STARTS_AT, endsAt: FUTURE_ENDS_AT, notes: 'x' }).success,
     ).toBe(true);
+  });
+
+  it('story 19.10 (AC 5): force alone is not a change — still the empty-body 422; with a field it is accepted', () => {
+    expect(updateBookingSchema.safeParse({ force: true }).success).toBe(false);
+    expect(updateBookingSchema.safeParse({ notes: 'x', force: true }).success).toBe(true);
   });
 
   it('rejects a completely empty body', () => {
@@ -2675,6 +2817,13 @@ describe('transitionBookingSchema (Story 12.2, AC 6)', () => {
 
   it('accepts DENIED WITHOUT a reason at the schema level — the mandatory-reason rule is a SERVICE check (422 BOOKING_DENY_REASON_REQUIRED), not this shape-only schema', () => {
     expect(transitionBookingSchema.safeParse({ to: 'DENIED' }).success).toBe(true);
+  });
+
+  it('story 19.10 (AC 5): force only on an approval — refused with any other target, never ignored', () => {
+    expect(transitionBookingSchema.safeParse({ to: 'APPROVED', force: true }).success).toBe(true);
+    expect(transitionBookingSchema.safeParse({ to: 'DENIED', reason: 'x', force: true }).success).toBe(false);
+    expect(transitionBookingSchema.safeParse({ to: 'PENDING', force: true }).success).toBe(false);
+    expect(transitionBookingSchema.safeParse({ to: 'DENIED', reason: 'x', force: false }).success).toBe(true);
   });
 
   it('rejects to: CANCELLED — cancelling stays the dedicated /cancel endpoint', () => {

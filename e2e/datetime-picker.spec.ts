@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { selectFromCombobox } from './helpers';
+import { ensureBookingRequirements, selectFromCombobox } from './helpers';
 
 /**
  * Story TD-7 (`CalendarPopover` extended with a date+time mode, `DateInput`/
@@ -130,6 +130,8 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const pilot = await createPilotPerson(page);
+    // Story 19.10 (AD-9 rule 2): a staff UI flow that is not about the requirements.
+    await ensureBookingRequirements(page, { personId: pilot.personId, scope: 'PILOTS', solo: true });
 
     await page.goto('/it/dashboard/bookings');
     await page.waitForLoadState('networkidle');

@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import {
+  ensureBookingRequirements,
   ensureFlightRequirements,
   ensureValidSeedExpiries,
   ownFailures,
+  personIdByEmail,
   registerFlightOn,
   sendInRegola,
   submitPastRequirements,
@@ -285,6 +287,9 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const target = await createAircraft(page);
+    // Story 19.10 (AD-9 rule 2): the seed pilot books `target` for themself
+    // below — the grounding 422s are decided before the requirements anyway.
+    await ensureBookingRequirements(page, { personId: await personIdByEmail(page, PILOT_EMAIL), scope: 'PILOTS', solo: true });
     const until = dateOnlyFromToday(21);
     const reason = `Revisione 100h ${uniqueSuffix()}`;
     const futureDay = dateOnlyFromToday(120);

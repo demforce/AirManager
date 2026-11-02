@@ -6,14 +6,16 @@ import { z } from './zod-with-openapi';
  * scadenza in un solo gesto. `amountCents` is precompiled client-side from
  * `membership.annualFeeCents` but always sent explicit (admin-editable).
  *
- * `override` (review F3, PO decision 2026-07-17): when the addebito would
- * take the balance below zero, the request is refused UNLESS `override` is
- * `true` — which itself requires `settings.manage` (ADMIN-only, checked in
- * `membership.service.ts`).
+ * `force` (review F3, PO decision 2026-07-17; the one deroga pattern since
+ * story 19.10, CR §4.6): when the balance does not cover the addebito the
+ * request is refused with 422 `REQUIREMENTS_NOT_MET` (one `BALANCE` failure)
+ * UNLESS `force` is `true` — which requires `requirements.force`
+ * (ADMIN-only, checked in `membership.service.ts`), no motivo. A body still
+ * carrying the field it replaced is accepted and that field ignored.
  */
 export const chargeMembershipFeeSchema = z.object({
   amountCents: z.number().int().positive().max(2_147_483_647),
-  override: z.boolean().optional().default(false),
+  force: z.boolean().optional().default(false),
 });
 
 export type ChargeMembershipFeeInput = z.infer<typeof chargeMembershipFeeSchema>;

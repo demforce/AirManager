@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { APIResponse, Page } from '@playwright/test';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
-import { addDaysIso, ensureValidSeedExpiries, FAR_FUTURE_DATE, registerExpiry, registerFlightOn, todayRome } from './helpers';
+import { addDaysIso, ensureBookingRequirements, ensureValidSeedExpiries, FAR_FUTURE_DATE, registerExpiry, registerFlightOn, sendInRegola, todayRome } from './helpers';
 
 /**
  * Story 19.7a — the expiry model and rules (CR PO 2026-11-01):
@@ -128,10 +128,10 @@ async function visitFailures(response: APIResponse): Promise<BlockedBody['error'
   return body.error.details.failures.filter((failure) => failure.type === 'EXPIRY' && (failure.typeName ?? '').includes('Visita medica'));
 }
 
-/** The fee for a person with no balance: `override` (the admin holds `settings.manage`); the route requires an `Idempotency-Key`. */
+/** The fee for a person with no balance: `force` (story 19.10 — the admin holds `requirements.force`); the route requires an `Idempotency-Key`. */
 async function chargeMembershipFee(page: Page, personId: string): Promise<APIResponse> {
   return page.request.post(`/api/v1/people/${personId}/membership-fee`, {
-    data: { amountCents: 1000, override: true },
+    data: { amountCents: 1000, force: true },
     headers: { 'Idempotency-Key': `e2e-197a-${uniqueSuffix()}` },
   });
 }
@@ -299,11 +299,15 @@ test.describe('Story 19.7a — one valid visit of any class, for whoever is on b
     const pilot = await createPerson(page, `Visite-${uniqueSuffix()}-prenota`, ['pilot']);
     await registerExpiry(page, pilot.id, visits.class2, EXPIRED);
     await registerExpiry(page, pilot.id, visits.class1, FAR_FUTURE_DATE);
-    await ensureValidSeedExpiries(page, pilot.id, 'PILOTS');
+    // Story 19.10: every other requirement of a booking met (fee, balance,
+    // currency), so the 201 says what this test is about — the visits.
+    await ensureBookingRequirements(page, { personId: pilot.id, scope: 'PILOTS', solo: true });
 
-    const response = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.id, startsAt: `${BOOKING_DAY}T09:00:00.000Z`, endsAt: `${BOOKING_DAY}T10:00:00.000Z` },
-    });
+    const response = await sendInRegola(page, [{ personId: pilot.id, scope: 'PILOTS' }], () =>
+      page.request.post('/api/v1/bookings', {
+        data: { aircraftId: aircraft.id, personId: pilot.id, startsAt: `${BOOKING_DAY}T09:00:00.000Z`, endsAt: `${BOOKING_DAY}T10:00:00.000Z` },
+      }),
+    );
     expect(response.status(), await response.text()).toBe(201);
     expect(((await response.json()) as { warnings: Array<{ typeName: string }> }).warnings).toEqual([]);
   });

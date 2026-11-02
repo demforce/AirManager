@@ -22,13 +22,15 @@
  * is the sheet's `secondStep` (R-15.2-a).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { RequirementsWarning } from '@/components/dashboard/requirements-warning';
 import { Badge } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { Icon } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { postBookingTransition, type BookingTransitionErrorLabels } from './bookings/booking-transition';
+import type { RequirementFailure } from '@/lib/schemas/requirements';
+import { postBookingTransition, type BookingTransitionErrorLabels, type BookingTransitionOutcome } from './bookings/booking-transition';
 
 export type MobilePendingBookingRow = {
   id: string;
@@ -60,6 +62,8 @@ export type MobilePendingBookingsLabels = {
   reasonTitle: string;
   reasonSubmit: string;
   reasonCancel: string;
+  /** Story 19.10: the title of the shared requirements warning on an approval. */
+  requirementsTitle: string;
   /** `{count}` placeholder, client-filled — pass it with `t.raw`. */
   seeAll: string;
   errors: BookingTransitionErrorLabels;
@@ -69,6 +73,8 @@ export type MobilePendingBookingsProps = {
   rows: MobilePendingBookingRow[];
   labels: MobilePendingBookingsLabels;
   locale: AppLocale;
+  /** Story 19.10: `requirements.force` — whether the approval's warning offers «Procedi comunque». */
+  canForce: boolean;
   /**
    * How many pending bookings the head counts but this card does not list
    * (review 15.3 F3). The head shows the WINDOW's total and the card is capped
@@ -79,7 +85,7 @@ export type MobilePendingBookingsProps = {
   hiddenCount: number;
 };
 
-export function MobilePendingBookings({ rows, labels, locale, hiddenCount }: MobilePendingBookingsProps) {
+export function MobilePendingBookings({ rows, labels, locale, canForce, hiddenCount }: MobilePendingBookingsProps) {
   const router = useRouter();
   const toast = useToast();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -87,8 +93,13 @@ export function MobilePendingBookings({ rows, labels, locale, hiddenCount }: Mob
   const [denyReason, setDenyReason] = useState('');
   const [denyError, setDenyError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Story 19.10 (AD-6): the approval's requirements step — `failures` of the
+  // 422 `REQUIREMENTS_NOT_MET`, `null` while the step is closed.
+  const [failures, setFailures] = useState<RequirementFailure[] | null>(null);
+  const [proceedError, setProceedError] = useState(false);
   const rejectButtonRef = useRef<HTMLButtonElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const requirementsStepRef = useRef<HTMLDivElement>(null);
 
   /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
   const closeSheet = useCallback((): void => {
@@ -96,6 +107,8 @@ export function MobilePendingBookings({ rows, labels, locale, hiddenCount }: Mob
     setDenying(false);
     setDenyReason('');
     setDenyError(null);
+    setFailures(null);
+    setProceedError(false);
   }, []);
 
   /**
@@ -108,17 +121,39 @@ export function MobilePendingBookings({ rows, labels, locale, hiddenCount }: Mob
    */
   useEffect(() => {
     if (denying) reasonRef.current?.focus();
+    // Story 19.10: the first button of the requirements step.
+    else if (failures !== null) requirementsStepRef.current?.querySelector('button')?.focus();
     else rejectButtonRef.current?.focus();
-  }, [denying]);
+  }, [denying, failures]);
 
   const openRow = rows.find((row) => row.id === openId) ?? null;
 
-  async function handleApprove(id: string): Promise<void> {
+  /** «Approva», and (story 19.10) «Procedi comunque» with `force` — a 422 `REQUIREMENTS_NOT_MET` opens the requirements step instead of a toast. */
+  async function handleApprove(id: string, force?: boolean): Promise<void> {
     setBusyId(id);
-    const outcome = await postBookingTransition(id, 'APPROVED', labels.errors);
+    setProceedError(false);
+    let outcome: BookingTransitionOutcome;
+    try {
+      outcome = await postBookingTransition(id, 'APPROVED', labels.errors, undefined, force);
+    } catch (error) {
+      setBusyId(null);
+      // A network error on «Procedi comunque» keeps the step open with its retry message.
+      if (force) {
+        setProceedError(true);
+        return;
+      }
+      throw error;
+    }
     setBusyId(null);
 
+    if (!outcome.ok && 'failures' in outcome) {
+      setFailures(outcome.failures);
+      return;
+    }
     if (!outcome.ok) {
+      // Every other refusal of «Procedi comunque» closes the step and is told
+      // like any approval's (forcing again cannot help).
+      setFailures(null);
       toast.show(outcome.message, 'bad');
       // Review 15.2 F4's lesson: when the server says this booking is no longer
       // the one on screen, the row has to go, or the card keeps re-opening a
@@ -153,6 +188,7 @@ export function MobilePendingBookings({ rows, labels, locale, hiddenCount }: Mob
     setBusyId(null);
 
     if (!outcome.ok) {
+      if ('failures' in outcome) return;
       toast.show(outcome.message, 'bad');
       if (outcome.stale) {
         closeSheet();
@@ -315,6 +351,22 @@ export function MobilePendingBookings({ rows, labels, locale, hiddenCount }: Mob
                     {labels.reasonSubmit}
                   </button>
                 </div>
+              </div>
+            ) : failures !== null ? (
+              <div className="bottom-sheet-step" ref={requirementsStepRef} data-testid="mobile-overview-requirements">
+                <RequirementsWarning
+                  failures={failures}
+                  canProceed={canForce}
+                  onProceed={() => void handleApprove(openRow.id, true)}
+                  onCancel={() => {
+                    setFailures(null);
+                    setProceedError(false);
+                  }}
+                  submitting={busyId === openRow.id}
+                  error={proceedError}
+                  moneyLocale={locale === 'en' ? 'en' : 'it'}
+                  title={labels.requirementsTitle}
+                />
               </div>
             ) : undefined
           }

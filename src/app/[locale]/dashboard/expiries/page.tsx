@@ -152,6 +152,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           typeOptions={typeOptions}
           personOptions={personOptions}
           canTriggerReminders={canTriggerReminders}
+          canForce={hasPermission(actor, 'requirements.force')}
           canChargeMembershipFee={canChargeMembershipFee}
           membershipFeeCents={membershipFeeCents}
           exportHref={exportHref}
@@ -237,9 +238,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               // `t.raw`: `{balance}`/`{expires}` interpolated CLIENT-SIDE (same rationale as `shown` above).
               success: t.raw('registry.membershipFee.success') as string,
               genericError: t('registry.membershipFee.genericError'),
-              // `t.raw`: `{balance}`/`{amount}` interpolated CLIENT-SIDE, same reason as `success` above.
-              insufficientBalance: t.raw('registry.membershipFee.insufficientBalance') as string,
-              overrideCheckbox: t('registry.membershipFee.overrideCheckbox'),
             },
             pagination: { prev: '←', next: '→' },
             mobile: {

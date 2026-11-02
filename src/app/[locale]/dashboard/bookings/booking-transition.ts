@@ -18,6 +18,7 @@
  * their own busy/toast/refresh state, which is the part that legitimately
  * differs (a table row disables its buttons, a bottom sheet closes itself).
  */
+import type { RequirementFailure } from '@/lib/schemas/requirements';
 
 /** Every `to` the transition endpoint accepts. `CANCELLED` is a different route (`/cancel`). */
 export type BookingTransitionTarget = 'PENDING' | 'APPROVED' | 'DENIED' | 'FLOWN' | 'NO_SHOW';
@@ -27,12 +28,12 @@ export type BookingTransitionErrorLabels = {
   BOOKING_ALREADY_STARTED: string;
   BOOKING_TRANSITION_INVALID: string;
   BOOKING_DENY_REASON_REQUIRED: string;
-  /** `{documents}` placeholder, client-filled. */
-  EXPIRED_DOCUMENTS: string;
   /** `{reason}` placeholder, client-filled. */
   AIRCRAFT_OUT_OF_SERVICE: string;
   /** Story 16.3 (ops F9): FLOWN/NO_SHOW on a booking whose slot has not started yet. */
   BOOKING_NOT_STARTED: string;
+  /** Story 19.10 (D-8): the approval of a booking whose instructor is its own person — the create form's own string. */
+  INSTRUCTOR_SAME_AS_PILOT: string;
   /** Story 16.3 (ops F2): the two 409s that are NOT about this booking's row — another booking of the same person/instructor overlaps. */
   PERSON_BUSY: string;
   INSTRUCTOR_BUSY: string;
@@ -40,7 +41,8 @@ export type BookingTransitionErrorLabels = {
   generic: string;
 };
 
-export type BookingApiErrorBody = { error?: { code?: string; details?: { reason?: string; documents?: Array<{ typeName: string }> } } };
+/** Story 19.10: `failures` travels on a 422 `REQUIREMENTS_NOT_MET` (`schemas/requirements.ts`). */
+export type BookingApiErrorBody = { error?: { code?: string; details?: { reason?: string; failures?: RequirementFailure[] } } };
 
 export async function readBookingApiError(response: Response): Promise<BookingApiErrorBody | null> {
   return (await response.json().catch(() => null)) as BookingApiErrorBody | null;
@@ -54,16 +56,14 @@ export function bookingErrorMessage(code: string | undefined, body: BookingApiEr
       return labels.BOOKING_TRANSITION_INVALID;
     case 'BOOKING_DENY_REASON_REQUIRED':
       return labels.BOOKING_DENY_REASON_REQUIRED;
-    case 'EXPIRED_DOCUMENTS': {
-      const documentNames = (body?.error?.details?.documents ?? []).map((document) => document.typeName);
-      return labels.EXPIRED_DOCUMENTS.replace('{documents}', documentNames.join(', '));
-    }
     case 'AIRCRAFT_OUT_OF_SERVICE':
       return labels.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', body?.error?.details?.reason ?? '');
     case 'BOOKING_NOT_STARTED':
       // Story 16.3: without this case the 422 fell to "Riprova", which is the
       // one thing that cannot work until the slot starts (lesson R-15.4-g).
       return labels.BOOKING_NOT_STARTED;
+    case 'INSTRUCTOR_SAME_AS_PILOT':
+      return labels.INSTRUCTOR_SAME_AS_PILOT;
     default:
       return labels.generic;
   }
@@ -86,30 +86,42 @@ export type BookingTransitionOutcome =
    * scenario it was written for: the sheet stayed open over a dead row and
    * every further tap produced the same error.
    */
-  | { ok: false; conflict: boolean; stale: boolean; message: string };
+  | { ok: false; conflict: boolean; stale: boolean; message: string }
+  /**
+   * Story 19.10: an approval's requirements failed (422
+   * `REQUIREMENTS_NOT_MET`). Not a message for a toast: the caller shows the
+   * shared warning with these `failures` — and «Procedi comunque», resending
+   * with `force`, for whoever holds `requirements.force`. The row is alive.
+   */
+  | { ok: false; stale: false; failures: RequirementFailure[] };
 
 /**
  * `reason` is only sent when present — the schema keeps it optional at the type
  * level but the domain REQUIRES it for `to: 'DENIED'`
  * (`lib/schemas/bookings.ts`), which is why both callers collect it in a second
- * step instead of deciding in one tap.
+ * step instead of deciding in one tap. `force` (story 19.10: the admin's
+ * «Procedi comunque» on an approval) is only sent when passed.
  */
 export async function postBookingTransition(
   id: string,
   to: BookingTransitionTarget,
   labels: BookingTransitionErrorLabels,
   reason?: string,
+  force?: boolean,
 ): Promise<BookingTransitionOutcome> {
   const response = await fetch(`/api/v1/bookings/${id}/transition`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(reason ? { to, reason } : { to }),
+    body: JSON.stringify({ to, ...(reason ? { reason } : {}), ...(force ? { force: true } : {}) }),
   });
 
   if (response.ok) return { ok: true };
 
   const body = await readBookingApiError(response);
   const code = body?.error?.code;
+  if (response.status === 422 && code === 'REQUIREMENTS_NOT_MET') {
+    return { ok: false, stale: false, failures: body?.error?.details?.failures ?? [] };
+  }
   if (response.status === 409) {
     // Story 16.3: `PERSON_BUSY`/`INSTRUCTOR_BUSY` say that ANOTHER booking of
     // the same person/instructor is in the way — the row on screen is alive,
@@ -123,8 +135,8 @@ export async function postBookingTransition(
     conflict: false,
     // 422 `BOOKING_TRANSITION_INVALID` = the booking is no longer in a state
     // this transition applies to, i.e. the caller's row is stale (review 15.3
-    // F2). Every other 4xx here is about THIS request (missing reason, expired
-    // documents, aircraft out of service): the row is fine, the input is not.
+    // F2). Every other 4xx here is about THIS request (missing reason, aircraft
+    // out of service): the row is fine, the input is not.
     stale: code === 'BOOKING_TRANSITION_INVALID',
     message: bookingErrorMessage(code, body, labels),
   };

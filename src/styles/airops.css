@@ -2874,7 +2874,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 .scadenze-search{ width: 190px; }
 .scadenze-kpi-row{ grid-template-columns: repeat(4, 1fr); }
 .membership-fee-actions{ display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
-.membership-fee-override-label{ display: flex; align-items: center; gap: 6px; margin-top: 10px; font-weight: 400; }
 
 @media (max-width: 640px){
   .scadenze-desktop-body,
@@ -2995,17 +2994,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* The typeahead over 338 people and the amount: 36.8px each without this. */
   .membership-fee-modal .input{ min-height: 44px; }
   .membership-fee-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
-  /* A 13x13 checkbox is the smallest target on either page, and this one
-     decides whether a refusal from the server gets overridden. The TAP TARGET
-     is the label ROW, which wraps the input: enlarging the box alone left the
-     row at 343x20 (measured), i.e. the only control of this full-screen panel
-     still under the 44px floor its submit and its two fields already meet. The
-     floor goes on the row — the box can stay 20x20, since a click anywhere on
-     the row toggles it. Anchored to THIS modal's class: the desktop
-     `.mini-modal` is untouched (measured pre/post at 1280px — label 382x15.2,
-     checkbox 13x13, card 420x385.3, identical). */
-  .membership-fee-modal .membership-fee-override-label{ min-height: 44px; }
-  .membership-fee-override-label > input[type="checkbox"]{ width: 20px; height: 20px; flex-shrink: 0; }
 }
 
 /* ---------- contabilità mobile + export menu (story 15.8a, epic 15 R1-R4) ----------
@@ -3450,7 +3438,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 
   /* The checkbox row of the expiry-type panel: `blocksBooking` is the
      manoeuvre that feeds the 7.4/14.4 guards, and it was a 13px box in a 15px
-     row. Same idiom as `.membership-fee-override-label` (15.7): the `<label>`
+     row. The `<label> around the box` idiom of story 15.7: the `<label>`
      around it is the real target and carries the 44px floor, the box itself
      is 24px — the WCAG 2.2 minimum for a control that is not its own target
      (review MINOR-2, PO decision 2026-08-05). The label's own `align-items`

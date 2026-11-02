@@ -3,10 +3,11 @@ import { MEMBERSHIP_FEE_TYPE_NAME } from '@/lib/expiry-scope';
 import type { ChargeMembershipFeeInput } from '@/lib/schemas/membership';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
-import { authorize, type Actor } from '@/server/auth/rbac';
+import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { hasNegativeBalanceAlert } from './accounts.service';
-import { NotFoundError, ValidationError } from './errors';
+import { ForbiddenError, NotFoundError } from './errors';
+import { balanceFailure, throwRequirementsNotMet } from './requirements.service';
 
 /** The fee type is the one `ExpiryTypeKind.MEMBERSHIP` row (story 19.7a, D-1): found by that kind, like every reader; `MEMBERSHIP_FEE_TYPE_NAME` (`@/lib/expiry-scope`) is only the key it is created (or realigned) under when absent, and the seeds' key. Validity: fixed 12 months from the payment (R-19-k), not configurable. */
 const MEMBERSHIP_FEE_VALIDITY_MONTHS = 12;
@@ -20,9 +21,9 @@ export type ChargeMembershipFeeResult = {
    * signal as every other debit-creating surface
    * (`accounts.service.ts#hasNegativeBalanceAlert`). This writer already
    * REFUSES a charge that would take the balance below zero unless an ADMIN
-   * `override`s it (this file's own doc-comment), so in practice this is
-   * only ever `true` on an overridden charge — never the email (this surface
-   * sends none, UNCHANGED).
+   * derogates it with `force` (this file's own doc-comment), so in practice
+   * this is only ever `true` on a derogated charge — never the email (this
+   * surface sends none, UNCHANGED).
    */
   balanceAlert: boolean;
 };
@@ -71,23 +72,31 @@ export type ChargeMembershipFeeResult = {
  * `settings.manage` (reserved for changing the DEFAULT fee amount itself,
  * `setMembershipFeeCents`).
  *
- * **Insufficient-balance guard (PO decision 2026-07-17, review F3)**: an
- * addebito that would take the balance BELOW zero is refused (`422
- * MEMBERSHIP_FEE_INSUFFICIENT_BALANCE`) unless `input.override` is set,
- * which requires `settings.manage` — a permission distinct from `finance.manage`
- * (story 14.9: both are ADMIN-only today, but the gate stays on this specific
- * permission, not a role literal, same proxy-permission pattern as the
- * "Invia promemoria" trigger, ratifica utente 4). Landing EXACTLY on zero is
- * allowed. The balance is read with a `SELECT ... FOR UPDATE` lock on the
- * `Account` row (same pattern as `recordAdjustment`, `accounts.service.ts`,
- * review 2.5 F1) so two concurrent addebiti can never both read the same
- * pre-charge balance — this also closes review F7 (stale balance in the
- * response): the final balance returned is read under the SAME lock.
+ * **Insufficient-balance guard (PO decision 2026-07-17, review F3; the one
+ * warning-and-deroga pattern since story 19.10, CR §4.4/§4.6)**: an addebito
+ * the balance does not cover — `balance < amount`, so landing EXACTLY on zero
+ * is allowed — is refused with the 422 `REQUIREMENTS_NOT_MET` of flights and
+ * bookings, ONE `BALANCE` failure (`requirements.service.ts#balanceFailure`:
+ * the balance before the charge, the amount as the cost), unless `input.force`
+ * is set — which requires `requirements.force` (ADMIN-only), checked BEFORE
+ * any query, the single gate of every deroga; no motivo. The balance is read
+ * with a `SELECT ... FOR UPDATE` lock on the `Account` row (same pattern as
+ * `recordAdjustment`, `accounts.service.ts`, review 2.5 F1) and judged on
+ * THAT read, inside the transaction — never by `evaluateRequirements`, which
+ * would read it before the lock (review 19.9 F2's race) — so two concurrent
+ * addebiti can never both read the same pre-charge balance; this also closes
+ * review F7 (stale balance in the response): the final balance returned is
+ * read under the SAME lock. The 422 rolls back and, for the mandatory
+ * `Idempotency-Key`, frees the key: the resend with `force` is a new attempt.
  */
 export async function chargeMembershipFee(actor: Actor, personId: string, input: ChargeMembershipFeeInput): Promise<ChargeMembershipFeeResult> {
   authorize(actor, 'finance.manage');
+  // Story 19.10 (P8): before ANY query, like every other deroga.
+  if (input.force && !hasPermission(actor, 'requirements.force')) {
+    throw new ForbiddenError('Only an admin can derogate the balance of a membership fee charge.');
+  }
 
-  const person = await prisma.person.findUnique({ where: { id: personId }, select: { id: true } });
+  const person = await prisma.person.findUnique({ where: { id: personId }, select: { id: true, firstName: true, lastName: true } });
   if (!person) {
     throw new NotFoundError('Person not found.');
   }
@@ -107,26 +116,12 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
 
     const balanceBeforeCents = (await tx.accountMovement.aggregate({ where: { accountId: account.id }, _sum: { amountCents: true } }))._sum.amountCents ?? 0;
 
-    // PO decision (2026-07-17, review F3): refuse an addebito that would
-    // take the balance below zero, unless an ADMIN explicitly overrides it.
-    // Landing EXACTLY on zero is allowed.
-    if (balanceBeforeCents - input.amountCents < 0) {
-      if (input.override) {
-        // Review 14.9 F5: since 14.9, `finance.manage` is ADMIN-only, and
-        // ADMIN always also holds `settings.manage` — no role can pass the
-        // guard at the top of this function and fail this one, so this
-        // branch is structurally unreachable today. Kept for a future role
-        // holding `finance.manage` without `settings.manage`; coverage for
-        // it is no longer expressible (an adjacent test can only reach the
-        // OUTER `finance.manage` gate).
-        authorize(actor, 'settings.manage');
-      } else {
-        throw new ValidationError(
-          `Charging ${input.amountCents} cents would take the balance below zero (current balance: ${balanceBeforeCents} cents).`,
-          { balanceCents: balanceBeforeCents, amountCents: input.amountCents },
-          'MEMBERSHIP_FEE_INSUFFICIENT_BALANCE',
-        );
-      }
+    // PO decision (2026-07-17, review F3; story 19.10, D-11): an addebito the
+    // balance does not cover is refused — the shared BALANCE rule, on the
+    // balance read under the lock — unless an ADMIN derogates it.
+    const shortfall = balanceFailure(`${person.firstName} ${person.lastName}`, balanceBeforeCents, input.amountCents);
+    if (shortfall !== null && !input.force) {
+      throwRequirementsNotMet([shortfall]);
     }
 
     await tx.accountMovement.create({

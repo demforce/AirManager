@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureBookingRequirements } from './helpers';
 
 /**
  * Story 15.4 — the phone faces of `/dashboard/bookings`: the agenda of "Voli
@@ -178,8 +179,9 @@ function slotAroundNow(startOffsetMinutes: number, endOffsetMinutes: number): { 
   };
 }
 
+/** An ADMIN fixture (story 19.10, AD-9 rule 1): `force: true`, so its requirements never refuse it. */
 async function createBooking(page: Page, aircraftId: string, personId: string, slot: { startsAt: string; endsAt: string }): Promise<string> {
-  const response = await page.request.post('/api/v1/bookings', { data: { aircraftId, personId, ...slot } });
+  const response = await page.request.post('/api/v1/bookings', { data: { aircraftId, personId, ...slot, force: true } });
   expect(response.status(), await response.text()).toBe(201);
   return ((await response.json()) as { booking: { id: string } }).booking.id;
 }
@@ -192,7 +194,7 @@ async function createBooking(page: Page, aircraftId: string, personId: string, s
  */
 async function moveBooking(page: Page, id: string, startsAtMs: number, endsAtMs: number): Promise<void> {
   const response = await page.request.patch(`/api/v1/bookings/${id}`, {
-    data: { startsAt: new Date(startsAtMs).toISOString(), endsAt: new Date(endsAtMs).toISOString() },
+    data: { startsAt: new Date(startsAtMs).toISOString(), endsAt: new Date(endsAtMs).toISOString(), force: true },
   });
   expect(response.status(), await response.text()).toBe(200);
 }
@@ -428,6 +430,8 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page, 'SH');
     const pilot = await createPilot(page, 'SH');
+    // Story 19.10 (AD-9 rule 2): the approval from the sheet is not about the requirements.
+    await ensureBookingRequirements(page, { personId: pilot.id, scope: 'PILOTS', solo: true });
     const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
     const approved = await createBooking(page, aircraft.id, pilot.id, {
       startsAt: `${tomorrow}T08:00:00.000Z`,

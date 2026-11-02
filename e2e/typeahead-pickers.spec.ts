@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries, selectFromCombobox, submitPastRequirements } from './helpers';
+import { ensureBookingRequirements, ensureValidSeedExpiries, selectFromCombobox, submitPastRequirements } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -327,7 +327,7 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
    * identity non-blocking expired documents, which turn a booking's
    * `booking-form-success` into `booking-form-warning`.
    */
-  async function createPilotWithLogin(page: Page, password: string): Promise<{ email: string }> {
+  async function createPilotWithLogin(page: Page, password: string): Promise<{ personId: string; email: string }> {
     const suffix = uniqueSuffix();
     const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Pilota', lastName: `Combobox-${suffix}` } });
     expect(personResponse.status()).toBe(201);
@@ -346,7 +346,7 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
     await page.getByLabel('Conferma password').fill(password);
     await page.getByRole('button', { name: 'Imposta password' }).click();
     await expect(page.getByTestId('set-password-success')).toBeVisible();
-    return { email };
+    return { personId: person.id, email };
   }
 
   test('the first Escape on an open popup closes only the popup — the panel stays open, the value unchanged — and the second closes the panel, in the booking form AND the flight form (AC 20)', async ({
@@ -393,6 +393,8 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
     const aircraft = await createAircraft(page);
     const pilotPassword = `PilotaCombobox${uniqueSuffix()}!`;
     const pilot = await createPilotWithLogin(page, pilotPassword);
+    // Story 19.10 (AD-9 rule 2): the pilot books for themself below.
+    await ensureBookingRequirements(page, { personId: pilot.personId, scope: 'PILOTS', solo: true });
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
 

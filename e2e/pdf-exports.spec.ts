@@ -176,6 +176,8 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
         personId: pilot.personId,
         startsAt: `${FUTURE_BOOKING_DAY}T09:00:00.000Z`,
         endsAt: `${FUTURE_BOOKING_DAY}T10:00:00.000Z`,
+        // Story 19.10 (AD-9 rule 1): an admin fixture, not about the requirements.
+        force: true,
       },
     });
     expect(bookingCreateResponse.status()).toBe(201);
@@ -328,7 +330,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     const aircraft = await createAircraftWithRate(page, 7000);
     const pilot = await createPilotPerson(page, 'UiBookingsPdfClick');
     const createResponse = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, ...soonestFutureBookingSlot() },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, ...soonestFutureBookingSlot(), force: true },
     });
     expect(createResponse.status()).toBe(201);
 

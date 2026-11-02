@@ -279,3 +279,74 @@ export async function submitPastRequirements(page: Page): Promise<void> {
   await expect(warning).toBeVisible();
   await warning.getByTestId('requirements-proceed').click();
 }
+
+/** Story 19.10 (AD-9): the balance under which `ensureBookingRequirements` tops an account up — above every booking estimate the suite builds. */
+const BOOKING_BALANCE_FLOOR_CENTS = 200_000;
+
+/**
+ * A person "in regola" for a BOOKING's requirements (story 19.10, AD-9 rule
+ * 2): for the own-path flows (a pilot or an instructor who books or moves,
+ * from the API or the form) and the admin UI flows that are NOT about the
+ * requirements — whose bookings, unlike an admin API fixture, cannot simply
+ * carry `force: true`. Idempotent, and safe on the long-lived seed people:
+ * - every active blocking document (`ensureValidSeedExpiries`, scope of the
+ *   person's profile);
+ * - the membership fee, REGISTERED through `POST /api/v1/expiries` on the
+ *   `MEMBERSHIP` type with a far-future date (a 409 = already there): no
+ *   charge, no movement in the statement;
+ * - the balance, topped up when an account exists and sits under
+ *   `BOOKING_BALANCE_FLOOR_CENTS` (a negative balance fails even a booking
+ *   that costs 0; a person without an account is never judged);
+ * - with `solo: true` (a booking without an instructor — every
+ *   self-booking), the currency: when the pilot has no flight in the last 90
+ *   days (X = 1, Y = 90, the defaults), one flight TODAY, no charge, forced,
+ *   on a run-unique aircraft created with a rate from today and archived
+ *   right after (today, so the rate API needs no past `validFrom`, and the
+ *   fleet pickers never see it).
+ * Not atomic (trap 9 of the story): two specs covering the seed pilot at once
+ * may both top up or both fly. Never assert absolute counts of its flights or
+ * movements.
+ */
+export async function ensureBookingRequirements(
+  page: Page,
+  person: { personId: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS'; solo?: boolean },
+): Promise<void> {
+  await ensureValidSeedExpiries(page, person.personId, person.scope);
+
+  const feeTypes = (await (await page.request.get('/api/v1/expiry-types?kind=MEMBERSHIP')).json()) as Array<{ id: string }>;
+  const fee = await page.request.post('/api/v1/expiries', { data: { personId: person.personId, expiryTypeId: feeTypes[0]!.id, expiresAt: FAR_FUTURE_DATE } });
+  expect([201, 409], await fee.text()).toContain(fee.status());
+
+  const overview = (await (await page.request.get(`/api/v1/people/${person.personId}/account`)).json()) as { account: unknown; balanceCents: number };
+  if (overview.account !== null && overview.balanceCents < BOOKING_BALANCE_FLOOR_CENTS) {
+    const topUp = await page.request.post(`/api/v1/people/${person.personId}/account/top-ups`, {
+      data: { amountCents: 2 * BOOKING_BALANCE_FLOOR_CENTS - overview.balanceCents, paymentMethod: 'CASH', effectiveDate: todayRome() },
+    });
+    expect(topUp.status(), await topUp.text()).toBe(200);
+  }
+
+  if (!person.solo) return;
+  if (person.scope !== 'PILOTS') throw new Error('ensureBookingRequirements: the solo currency is built for pilots only (a student logs SCHOOL flights).');
+  const today = todayRome();
+  const recent = await page.request.get(`/api/v1/flights?personId=${person.personId}&dateFrom=${addDaysIso(today, -89)}&pageSize=1`);
+  expect(recent.status()).toBe(200);
+  if (((await recent.json()) as { total: number }).total > 0) return;
+
+  const registration = `I-CUR${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase().slice(0, 20);
+  const aircraftResponse = await page.request.post('/api/v1/aircraft', {
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Currency', rate: { studentPriceCents: 10000, pilotPriceCents: 10000, validFrom: today } },
+  });
+  expect(aircraftResponse.status(), await aircraftResponse.text()).toBe(201);
+  const aircraftId = ((await aircraftResponse.json()) as { id: string }).id;
+  await registerFlightOn(page, { aircraftId, personId: person.personId, flightType: 'TOURISM', date: today, noCharge: true });
+  expect((await page.request.post(`/api/v1/aircraft/${aircraftId}/archive`)).status()).toBe(200);
+}
+
+/** The `Person.id` of a seed login (`pilot@airmanager.local`, …) from an admin session — `GET /api/v1/people?q=` matches the email. */
+export async function personIdByEmail(page: Page, email: string): Promise<string> {
+  const response = await page.request.get(`/api/v1/people?q=${encodeURIComponent(email)}&pageSize=10`);
+  expect(response.status()).toBe(200);
+  const person = ((await response.json()) as { items: Array<{ id: string; email: string | null }> }).items.find((item) => item.email === email);
+  if (!person) throw new Error(`personIdByEmail: no person with email ${email}.`);
+  return person.id;
+}

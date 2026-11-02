@@ -309,7 +309,8 @@ test.describe('Story 19.7b — the membership fee in the registry (AC 4)', () =>
     expect(class2, 'seeded visit «Visita medica classe 2»').toBeTruthy();
     await registerExpiry(page, archived.id, class2!.id, addDaysIso(TODAY, -30));
     const charge = await page.request.post(`/api/v1/people/${paid.id}/membership-fee`, {
-      data: { amountCents: 1000, override: true },
+      // Story 19.10 (AD-10): the deroga of an uncovered fee is `force`.
+      data: { amountCents: 1000, force: true },
       headers: { 'Idempotency-Key': `e2e-197b-${uniqueSuffix()}` },
     });
     expect(charge.status(), await charge.text()).toBe(200);

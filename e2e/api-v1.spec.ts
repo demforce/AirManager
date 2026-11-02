@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureBookingRequirements, personIdByEmail } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -148,6 +149,8 @@ test.describe('Booking approval workflow — API (Story 12.2)', () => {
   test('pilot creates a self-booking (PENDING); staff moves it into the past, approves it (re-checking create-time rules, R-16-b: a past booking stays approvable) then marks it FLOWN', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    // Story 19.10 (AD-9 rule 2): the seed pilot books for themself below.
+    await ensureBookingRequirements(page, { personId: await personIdByEmail(page, PILOT_EMAIL), scope: 'PILOTS', solo: true });
 
     // The seeded demo pilot (`prisma/seed.ts`) already has an active
     // PilotProfile and a login — no signup flow needed for this actor.
@@ -206,6 +209,8 @@ test.describe('Booking approval workflow — API (Story 12.2)', () => {
   test('staff denies a PENDING booking with a reason — the pilot receives the denial email (AC 5)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    // Story 19.10 (AD-9 rule 2): the seed pilot books for themself below.
+    await ensureBookingRequirements(page, { personId: await personIdByEmail(page, PILOT_EMAIL), scope: 'PILOTS', solo: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);

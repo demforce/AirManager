@@ -1395,8 +1395,6 @@
         "invalidAmount": "Inserisci un importo valido.",
         "success": "Addebitato. Nuovo saldo: {balance} · scadenza rinnovata al {expires}.",
         "genericError": "Operazione non riuscita. Riprova.",
-        "insufficientBalance": "Saldo insufficiente: il conto è a {balance}, l'addebito di {amount} lo porterebbe sotto zero. Un admin può forzare l'addebito con la casella qui sotto.",
-        "overrideCheckbox": "Forza addebito (saldo insufficiente)",
         "requiredPilot": "Seleziona un pilota."
       },
       "mobile": {
@@ -1519,11 +1517,11 @@
         "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Il velivolo è fuori servizio: {reason}. Fermo fino al {date} compreso.",
         "BOOKING_IN_PAST": "L'orario di inizio deve essere nel futuro.",
         "PERSON_NOT_BOOKABLE": "Questa persona non ha un profilo attivo idoneo alla prenotazione.",
-        "EXPIRED_DOCUMENTS": "Impossibile creare la prenotazione: risultano scaduti i seguenti documenti: {documents}.",
         "BOOKING_OUTSIDE_WINDOW": "Orario fuori dalla finestra di prenotazione ({window}).",
         "overlap": "Il velivolo è già prenotato per un intervallo che si sovrappone a questo.",
         "PERSON_BUSY": "Questa persona ha già una prenotazione approvata che si sovrappone a questo intervallo.",
         "INSTRUCTOR_BUSY": "L'istruttore indicato ha già una prenotazione approvata che si sovrappone a questo intervallo.",
+        "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può essere la stessa persona prenotata.",
         "generic": "Impossibile creare la prenotazione. Riprova."
       },
       "schedulingWindow": {
@@ -1532,15 +1530,12 @@
       },
       "success": "Prenotazione creata.",
       "successWithWarnings": "Prenotazione creata. Attenzione: i seguenti documenti risultano scaduti (non bloccanti):",
-      "force": {
-        "title": "Forza prenotazione",
-        "description": "Solo un amministratore può creare comunque questa prenotazione, indicando un motivo. La forzatura resta tracciata.",
-        "reasonLabel": "Motivo",
-        "submit": "Forza prenotazione",
-        "cancel": "Annulla",
-        "requiredReason": "Il motivo è obbligatorio.",
-        "generic": "Impossibile forzare la prenotazione. Riprova."
-      }
+      "cancel": "Annulla"
+    },
+    "requirements": {
+      "title": "La prenotazione non rispetta alcuni requisiti",
+      "approveTitle": "L'approvazione non rispetta alcuni requisiti",
+      "blockedTitle": "Prenotazione non consentita: solo un amministratore può procedere comunque"
     },
     "list": {
       "cardTitle": "Prenotazioni",
@@ -1594,7 +1589,6 @@
           "BOOKING_ALREADY_STARTED": "La prenotazione è già iniziata: non può più essere modificata o cancellata.",
           "BOOKING_TRANSITION_INVALID": "Questa prenotazione è già stata aggiornata da un altro operatore. Ricarica la pagina e riprova.",
           "BOOKING_DENY_REASON_REQUIRED": "Il motivo del rifiuto è obbligatorio.",
-          "EXPIRED_DOCUMENTS": "Impossibile completare l'operazione: risultano scaduti i seguenti documenti: {documents}.",
           "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo è fuori servizio: {reason}.",
           "BOOKING_NOT_STARTED": "La prenotazione non è ancora iniziata: può essere segnata come effettuata o assente solo dopo l'orario di inizio.",
           "conflict": "Il velivolo è già prenotato per questo intervallo, oppure la prenotazione non è più valida. Ricarica la pagina e riprova.",

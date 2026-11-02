@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureBookingRequirements } from './helpers';
 
 /**
  * Story 15.3 — the phone Panoramica and the two personal landings.
@@ -105,6 +106,7 @@ function safeSlotTomorrow(offsetMinutes: number, durationMinutes: number): { sta
   return { startsAtMs: start, endsAtMs: start + durationMinutes * 60_000 };
 }
 
+/** An ADMIN fixture (story 19.10, AD-9 rule 1): `force: true`, so its requirements never refuse it. */
 async function createBooking(page: Page, seed: BookingSeed): Promise<string> {
   const response = await page.request.post('/api/v1/bookings', {
     data: {
@@ -112,6 +114,7 @@ async function createBooking(page: Page, seed: BookingSeed): Promise<string> {
       personId: seed.personId,
       startsAt: new Date(seed.startsAtMs).toISOString(),
       endsAt: new Date(seed.endsAtMs).toISOString(),
+      force: true,
     },
   });
   expect(response.status(), await response.text()).toBe(201);
@@ -128,7 +131,7 @@ async function createBooking(page: Page, seed: BookingSeed): Promise<string> {
  */
 async function moveBooking(page: Page, id: string, startsAtMs: number, endsAtMs: number): Promise<void> {
   const response = await page.request.patch(`/api/v1/bookings/${id}`, {
-    data: { startsAt: new Date(startsAtMs).toISOString(), endsAt: new Date(endsAtMs).toISOString() },
+    data: { startsAt: new Date(startsAtMs).toISOString(), endsAt: new Date(endsAtMs).toISOString(), force: true },
   });
   expect(response.status(), await response.text()).toBe(200);
 }
@@ -278,6 +281,8 @@ test.describe('story 15.3 — deciding a booking from the phone', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page, 'AP');
     const pilot = await createPilot(page, 'Ap');
+    // Story 19.10 (AD-9 rule 2): the approval from the sheet is not about the requirements.
+    await ensureBookingRequirements(page, { personId: pilot.id, scope: 'PILOTS', solo: true });
     const bookingId = await createPendingBooking(page, { aircraftId: aircraft.id, personId: pilot.id, ...safeSlotTomorrow(0, 30) });
 
     await page.setViewportSize(PHONE);
@@ -607,7 +612,7 @@ test.describe('story 15.3 — review fixes', () => {
     // Somebody else decides it — out of band, exactly as a second operator would.
     const decided = await page.request.get(`/api/v1/bookings?aircraftId=${aircraft.id}&status=PENDING&pageSize=5`);
     const pending = (await decided.json()) as { items: Array<{ id: string }> };
-    const outOfBand = await page.request.post(`/api/v1/bookings/${pending.items[0]!.id}/transition`, { data: { to: 'APPROVED' } });
+    const outOfBand = await page.request.post(`/api/v1/bookings/${pending.items[0]!.id}/transition`, { data: { to: 'APPROVED', force: true } });
     expect(outOfBand.status()).toBe(200);
 
     await page.getByTestId('mobile-overview-approve').click();

@@ -32,10 +32,18 @@ vi.mock('@/server/adapters/mail', () => ({
 vi.mock('@/server/adapters/mail/templates', () => ({
   buildNegativeBalanceAlertEmail: vi.fn(async () => ({ subject: 'Alert subject', text: 'Alert text' })),
 }));
+// Story 19.10 (D-11): the insufficient-balance refusal is the shared BALANCE
+// rule of `./requirements.service` (REAL here: `balanceFailure` and the 422
+// helper are what this file proves), whose own imports reach
+// `./app-settings.service` -> `@/lib/env` (eager validation, CLAUDE.md) —
+// mocked, never called on this path.
+vi.mock('./app-settings.service', () => ({ getCurrencySettings: vi.fn() }));
 
 const { prisma } = await import('@/server/db/prisma');
 const { chargeMembershipFee, getMembershipStatus } = await import('./membership.service');
 const { ForbiddenError, NotFoundError, ValidationError } = await import('./errors');
+const { requirementsNotMetDetailsSchema } = await import('@/lib/schemas/requirements');
+const { ROLE_PERMISSIONS } = await import('@/server/auth/rbac');
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const accountUpsertMock = vi.mocked(prisma.account.upsert);
@@ -107,7 +115,7 @@ beforeEach(() => {
   transactionMock.mockReset();
 
   mockTransaction();
-  personFindUnique.mockResolvedValue({ id: 'person_1' });
+  personFindUnique.mockResolvedValue({ id: 'person_1', firstName: 'Lucia', lastName: 'Verdi' });
   accountUpsert.mockResolvedValue({ id: 'account_1' });
   accountMovementCreateMock.mockResolvedValue({} as never);
   expiryTypeUpsert.mockResolvedValue({ id: 'expirytype_membership' });
@@ -124,13 +132,13 @@ afterEach(() => {
 
 describe('chargeMembershipFee (story 12.11, AC 7)', () => {
   it('is gated finance.manage — a pilot is forbidden, no transaction runs', async () => {
-    await expect(chargeMembershipFee(pilotActor(), 'person_1', { amountCents: 5000, override: false })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(chargeMembershipFee(pilotActor(), 'person_1', { amountCents: 5000, force: false })).rejects.toBeInstanceOf(ForbiddenError);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
   it('an unknown person answers 404, checked BEFORE the transaction opens', async () => {
     personFindUnique.mockResolvedValue(null);
-    await expect(chargeMembershipFee(adminActor(), 'ghost', { amountCents: 5000, override: false })).rejects.toBeInstanceOf(NotFoundError);
+    await expect(chargeMembershipFee(adminActor(), 'ghost', { amountCents: 5000, force: false })).rejects.toBeInstanceOf(NotFoundError);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
@@ -138,7 +146,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_1', expiresAt: new Date('2028-03-10') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(accountMovementCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -157,7 +165,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_1', expiresAt: new Date('2028-03-10') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(expiryTypeFindFirstMock).toHaveBeenCalledWith({ where: { kind: 'MEMBERSHIP' }, select: { id: true } });
     expect(expiryTypeUpsertMock).toHaveBeenCalledWith(
@@ -175,7 +183,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_1', expiresAt: new Date('2028-03-10') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(expiryTypeUpsertMock).not.toHaveBeenCalled();
     expect(expiryCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ expiryTypeId: 'expirytype_found_by_kind' }) }));
@@ -185,7 +193,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
-    const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(expiryCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -206,7 +214,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryFindUnique.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2027-09-01T00:00:00.000Z') });
     expiryUpdate.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2028-09-01') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(expiryUpdateMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -220,7 +228,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryFindUnique.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2026-01-01T00:00:00.000Z') });
     expiryUpdate.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2028-03-10') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(expiryUpdateMock).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ expiresAt: new Date('2028-03-10T00:00:00.000Z') }) }),
@@ -231,7 +239,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryFindUnique.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2027-09-01T00:00:00.000Z') });
     expiryUpdate.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2028-09-01') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(sentAlertDeleteManyMock).toHaveBeenCalledWith({ where: { expiryId: 'expiry_existing' } });
   });
@@ -241,7 +249,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryUpdate.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2028-09-01T00:00:00.000Z') });
     mockBalances(1_000_000, -12000);
 
-    const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     // Story 14.4 review F7: post-charge balance (-12000) is negative -> in-app alert.
     expect(result).toEqual({ balanceCents: -12000, expiryId: 'expiry_existing', expiresAt: '2028-09-01', balanceAlert: true });
@@ -251,7 +259,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(accountUpsertMock).toHaveBeenCalledWith(
       expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' }, update: {} }),
@@ -262,46 +270,98 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(queryRawMock).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('chargeMembershipFee — insufficient-balance guard (PO decision 2026-07-17, review F3)', () => {
-  it('refuses (422 MEMBERSHIP_FEE_INSUFFICIENT_BALANCE) an addebito that would take the balance below zero, no override', async () => {
-    mockBalances(4999); // 4999 - 5000 = -1 < 0
+describe('chargeMembershipFee — insufficient-balance guard and its deroga (PO decision 2026-07-17, review F3; story 19.10, AC 36)', () => {
+  function expectChargeWritten(): void {
+    expect(accountMovementCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: 'ADJUSTMENT', amountCents: -5000 }) }));
+  }
 
-    const error = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false }).catch((e: unknown) => e);
+  it('refuses with the shared 422 REQUIREMENTS_NOT_MET — ONE BALANCE failure (balance before, amount as cost) — and writes nothing, without force', async () => {
+    mockBalances(3000);
+
+    const error = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ValidationError);
-    expect((error as InstanceType<typeof ValidationError>).code).toBe('MEMBERSHIP_FEE_INSUFFICIENT_BALANCE');
+    const validation = error as InstanceType<typeof ValidationError>;
+    expect(validation.code).toBe('REQUIREMENTS_NOT_MET');
+    expect(validation.details).toEqual({ failures: [{ type: 'BALANCE', role: 'person', personName: 'Lucia Verdi', balanceCents: 3000, costCents: 5000 }] });
+    expect(requirementsNotMetDetailsSchema.safeParse(validation.details).success).toBe(true);
     expect(accountMovementCreateMock).not.toHaveBeenCalled();
+    expect(expiryCreateMock).not.toHaveBeenCalled();
+    expect(expiryUpdateMock).not.toHaveBeenCalled();
   });
 
-  it('allows an addebito that lands EXACTLY on zero', async () => {
-    mockBalances(5000, 0); // 5000 - 5000 = 0, not below zero
+  it('judges the balance read under the Account lock: lock, then the read, then the decision (D-11)', async () => {
+    mockBalances(4999);
+
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false }).catch(() => undefined);
+
+    expect(queryRawMock.mock.invocationCallOrder[0]!).toBeLessThan(accountMovementAggregateMock.mock.invocationCallOrder[0]!);
+  });
+
+  it('allows an addebito that lands EXACTLY on zero (equal = covered, the shared rule)', async () => {
+    mockBalances(5000, 0);
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
-    const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(result.balanceCents).toBe(0);
-    expect(accountMovementCreateMock).toHaveBeenCalled();
+    expectChargeWritten();
     // Story 14.4 review F7: 5000 -> 0, neither side negative -> no in-app alert.
     expect(result.balanceAlert).toBe(false);
   });
 
-  it('an ADMIN override lets the addebito proceed below zero — this is exactly the case the in-app alert (F7) exists for', async () => {
-    mockBalances(0, -5000); // 0 - 5000 = -5000 < 0, but overridden
+  it('force from an actor holding finance.manage but NOT requirements.force: 403 BEFORE the person query and the transaction', async () => {
+    // No role has finance.manage without requirements.force today (both
+    // ADMIN-only): grant it to INSTRUCTOR for this test only (the idiom of
+    // `flights.service.test.ts`).
+    const saved = ROLE_PERMISSIONS.INSTRUCTOR;
+    ROLE_PERMISSIONS.INSTRUCTOR = [...saved, 'finance.manage'];
+    const instructor: Actor = { userId: 'instructor_1', personId: 'person_instructor', roles: ['INSTRUCTOR'] };
+    try {
+      await expect(chargeMembershipFee(instructor, 'person_1', { amountCents: 5000, force: true })).rejects.toBeInstanceOf(ForbiddenError);
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+      // The same actor WITHOUT force reaches the reads: the 403 above is the `force` gate, not `finance.manage`.
+      expiryFindUnique.mockResolvedValue(null);
+      expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
+      await chargeMembershipFee(instructor, 'person_1', { amountCents: 5000, force: false });
+      expect(personFindUniqueMock).toHaveBeenCalledTimes(1);
+    } finally {
+      ROLE_PERMISSIONS.INSTRUCTOR = saved;
+    }
+  });
+
+  it('an ADMIN force at balance 0 charges below zero — exactly the case the in-app alert (F7) exists for', async () => {
+    mockBalances(0, -5000);
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
-    const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: true });
+    const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: true });
 
     expect(result.balanceCents).toBe(-5000);
-    expect(accountMovementCreateMock).toHaveBeenCalled();
+    expectChargeWritten();
     expect(result.balanceAlert).toBe(true);
+  });
+
+  it('force with a balance that covers the amount charges exactly as without it', async () => {
+    expiryFindUnique.mockResolvedValue(null);
+    expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
+
+    const forced = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: true });
+    const forcedWrites = accountMovementCreateMock.mock.calls.map((call) => call[0]);
+    accountMovementCreateMock.mockClear();
+    mockBalances(1_000_000, -5000);
+    const plain = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
+
+    expect(forced).toEqual(plain);
+    expect(accountMovementCreateMock.mock.calls.map((call) => call[0])).toEqual(forcedWrites);
   });
 });
 
@@ -315,7 +375,7 @@ describe('chargeMembershipFee — Europe/Rome "today" at a midnight boundary (st
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2027-09-01') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(accountMovementCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -331,7 +391,7 @@ describe('chargeMembershipFee — Europe/Rome "today" at a midnight boundary (st
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-01-01') });
 
-    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
     expect(accountMovementCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({

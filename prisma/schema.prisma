@@ -988,18 +988,21 @@ model Flight {
 /// overlapping — `startsAt`/`endsAt` are full instants (`DateTime`
 /// timestamptz), the first datetime fields in this codebase (wire format
 /// ISO 8601 UTC, AD-8). The overlap invariant has THREE subjects since
-/// story 16.3 (ops F2): the aircraft, the person (`personId`) and the
-/// instructor (`instructorProfileId`) — none of them may hold two APPROVED
-/// bookings over overlapping intervals (409 `CONFLICT` / `PERSON_BUSY` /
-/// `INSTRUCTOR_BUSY`, `bookings.service.ts#findBookingConflict`). The
-/// concurrency guard is a row lock per subject inside `prisma.$transaction`,
-/// in one global order on every write path — the `Booking` row being written
-/// `FOR UPDATE` (a move or a transition; review 16.3 MAJOR-2) → `Aircraft`
-/// `FOR UPDATE` (the
-/// exact pattern of `flights.service.ts#registerFlight`; story 7.3 locks N of
-/// them `ORDER BY id` for a MOVE) → `Person` → `InstructorProfile`, the last
-/// two `FOR NO KEY UPDATE` so that no foreign-key check elsewhere ever waits
-/// on them (`bookings.service.ts#lockBookingPeople`) — which makes the
+/// story 16.3 (ops F2): the aircraft, the person and the instructor — none
+/// of them may hold two APPROVED bookings over overlapping intervals (409
+/// `CONFLICT` / `PERSON_BUSY` / `INSTRUCTOR_BUSY`,
+/// `bookings.service.ts#findBookingConflict`). Since story 19.10 (R-19-o) a
+/// person is one human in either ROLE: the person of one booking and the
+/// instructor of another (the holder of its `instructorProfileId`) may not
+/// overlap either. The concurrency guard is a row lock per subject inside
+/// `prisma.$transaction`, in one global order on every write path — the
+/// `Booking` row being written `FOR UPDATE` (a move or a transition; review
+/// 16.3 MAJOR-2) → `Aircraft` `FOR UPDATE` (the exact pattern of
+/// `flights.service.ts#registerFlight`; story 7.3 locks N of them
+/// `ORDER BY id` for a MOVE) → `Person` (the booking's person and the
+/// instructor's own person, one or two rows `ORDER BY id`, `FOR NO KEY
+/// UPDATE` so that no foreign-key check elsewhere ever waits on them —
+/// `bookings.service.ts#lockBookingPeople`) — which makes the
 /// pre-check-overlap + write airtight.
 /// Deliberately NOT a Postgres exclusion constraint (`btree_gist`), a choice
 /// first made with one subject and RE-EVALUATED with three in story 16.3:
@@ -1027,7 +1030,7 @@ model Flight {
 /// always stamps it explicitly, this field's own `@default` is schema
 /// coherence only. `bookings.service.ts#transitionBooking` (staff-only,
 /// `bookings.manage.any`) moves it through the rest of the matrix: `PENDING
-/// -> APPROVED` (re-runs the create-time expiry/overlap/aircraft-state
+/// -> APPROVED` (re-runs the create-time requirements/overlap/aircraft-state
 /// checks, stamps `decidedAt`/`decidedByUserId`) or `PENDING -> DENIED`
 /// (`denyReason` mandatory, stamps `decidedAt`/`decidedByUserId`, fires a
 /// best-effort email to the booking-holder); `APPROVED -> FLOWN | NO_SHOW`
@@ -1037,15 +1040,16 @@ model Flight {
 /// bookings may legitimately coexist on the same aircraft/interval, the
 /// conflict surfacing only when one of them is approved.
 ///
-/// **Expiry-based creation block (epic 7, story 7.4; FR-21)**: `createBooking`
-/// blocks a NEW booking (422 `EXPIRED_DOCUMENTS`) when the TARGET person
-/// (`personId`) has a registered `Expiry` past its `expiresAt` on the
-/// FLIGHT DAY (`startsAt`'s date in `APP_TIMEZONE`, not "today") whose
-/// `ExpiryType.blocksBooking` is `true`; a non-blocking expired document is
-/// only a `warnings` entry in the creation response, never persisted here.
-/// Staff (`bookings.manage.any`) may bypass a real block with `force` +
-/// `forceReason`, stamping `forcedAt`/`forcedByUserId`/`forceReason` — see
-/// those fields' own doc-comments and `bookings.service.ts#createBooking`.
+/// **Requirements (story 19.10, CR §4.4; was the story 7.4 expiry block)**:
+/// creating, moving and approving a booking judge the four requirements of
+/// a flight (`requirements.service.ts#evaluateRequirements`: documents and
+/// membership fee of the person and the instructor, currency of a booking
+/// without an instructor, balance against the estimated cost) — any failure
+/// is ONE 422 `REQUIREMENTS_NOT_MET` that only an admin
+/// (`requirements.force`) may derogate with `force: true`, no motivo. A
+/// non-blocking expired rating is only a `warnings` entry in the creation
+/// response, never persisted here. See `forcedAt`'s doc-comment and
+/// `bookings.service.ts`.
 model Booking {
   id                  String             @id @default(cuid())
   aircraftId          String
@@ -1071,19 +1075,18 @@ model Booking {
   updatedByUserId   String?
   updatedByUser     User?         @relation("BookingUpdatedBy", fields: [updatedByUserId], references: [id])
 
-  /// Staff force-bypass tracking (epic 7, story 7.4, AC 2) — set TOGETHER,
-  /// exactly once, ONLY when `createBooking` actually bypassed a blocking
-  /// expired document (`bookings.manage.any` + `force: true` +
-  /// `forceReason`); `null` on every normal booking, INCLUDING a
-  /// `force: true` request that had nothing to bypass (Contesto: the
-  /// tracking says "scavalcato un blocco", not "spuntato una checkbox").
-  /// Never touched by `updateBooking`/`cancelBooking` — the force decision
-  /// is a creation-time fact, not re-evaluated on edit (see `createBooking`'s
-  /// doc-comment for the deferred re-check rationale).
+  /// The admin's deroga (story 7.4; since story 19.10 on every write path,
+  /// R-19-h, A10) — set TOGETHER by the create, move or approval that
+  /// actually derogated at least one failed requirement (`force: true`, held
+  /// by `requirements.force`); `null` on every normal booking, INCLUDING a
+  /// `force: true` request that had nothing to derogate (the stamp says
+  /// "scavalcato un requisito", not "spuntata una checkbox"). Overwritten
+  /// only by a later deroga, NEVER cleared (neither by an edit without a
+  /// deroga nor by "riapri"): it is the one trace of a past deroga. A silent
+  /// stamp: in the API item, never shown by the UI, and no motivo.
   forcedAt       DateTime?
   forcedByUserId String?
   forcedByUser   User?     @relation("BookingForcedBy", fields: [forcedByUserId], references: [id])
-  forceReason    String?
 
   /// Approval-workflow decision tracking (story 12.2, AC 3): set TOGETHER
   /// on `PENDING -> APPROVED` and `PENDING -> DENIED`; ALL reset to `null`
@@ -1232,11 +1235,10 @@ model ExpiryType {
   /// `types-manager.tsx`'s checkbox) — the migration backfills `true` on the
   /// 4 standard blocking types by exact seed name
   /// (`prisma/migrations/20260709120000_add_booking_expiry_block`). Consumed
-  /// by `bookings.service.ts#findBlockingExpiredDocuments` — shared by
-  /// `createBooking`/`updateBooking` (bookings) and, since story 14.4,
-  /// `flights.service.ts#resolveFlightInput` (flights) — see those
-  /// functions' doc-comments for the flight-day comparison and force/warning
-  /// semantics.
+  /// by `requirements.service.ts#evaluateRequirements` — shared by the
+  /// flights (story 19.9) and the bookings (story 19.10) — see its
+  /// doc-comment for the flight-day comparison and the deroga; a
+  /// non-blocking expired rating is only a booking's `warnings` entry.
   blocksBooking  Boolean        @default(false)
   /// Validity window in months, used to PRECOMPILE `Expiry.expiresAt` at
   /// registration time (story 12.11, ratifica utente 2) — `null`/`0` means

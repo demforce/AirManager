@@ -9,9 +9,8 @@ import { toDateOnlyString } from '@/lib/date-only';
  * future Flutter app: different shapes for one fact would be the defect, not
  * the economy.
  *
- * It lives in its OWN module rather than inside `bookings.service.ts` (where
- * `findBlockingExpiredDocuments`, the other flights↔bookings shared helper,
- * does live) for one concrete reason: `flights.service.test.ts` mocks
+ * It lives in its OWN module rather than inside `bookings.service.ts` for
+ * one concrete reason: `flights.service.test.ts` mocks
  * `./bookings.service` wholesale — importing the real one there would drag
  * `@/server/adapters/mail` and `@/lib/env`'s EAGER validation into a unit test
  * (the 3-occurrence failure class recorded in `CLAUDE.md`). With the helper

@@ -114,7 +114,7 @@ export type ScheduleLabels = {
   clampedEndHint: string;
   /** Story 14.5 (ratifica R3): shown instead of `block.personName` when it's `null` (masked, non-own booking, actor lacks `bookings.read.names`). */
   occupied: string;
-  /** Raw (`t.raw`) `"{count} …"` template — client-interpolated (see `weekBookingsLabel` below), same pattern as `new-booking-form.tsx`'s `outOfServiceSuffix`/`EXPIRED_DOCUMENTS`: the per-day count changes with the client-only aircraft/instructor filter, so it cannot be pre-formatted server-side. */
+  /** Raw (`t.raw`) `"{count} …"` template — client-interpolated (see `weekBookingsLabel` below), same pattern as `new-booking-form.tsx`'s `outOfServiceSuffix`: the per-day count changes with the client-only aircraft/instructor filter, so it cannot be pre-formatted server-side. */
   weekBookingsCountTemplate: string;
   /** Story 15.4 — labels of the phone surfaces only (agenda, chips, week list, detail sheet). */
   mobile: {

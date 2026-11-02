@@ -236,6 +236,8 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
         personId: person.id,
         startsAt: new Date(now + 3_000).toISOString(),
         endsAt: new Date(now + 3_600_000).toISOString(),
+        // Story 19.10 (AD-9 rule 1): an admin fixture, not about the requirements.
+        force: true,
       },
     });
     expect(bookingResponse.status()).toBe(201);

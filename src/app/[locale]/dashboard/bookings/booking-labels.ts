@@ -125,24 +125,17 @@ export function buildNewBookingFormLabels(t: Translator, schedulingWindowSummary
       AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL') as string,
       BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
       PERSON_NOT_BOOKABLE: t('form.errors.PERSON_NOT_BOOKABLE'),
-      EXPIRED_DOCUMENTS: t.raw('form.errors.EXPIRED_DOCUMENTS') as string,
       BOOKING_OUTSIDE_WINDOW: outsideWindowMessage(t, schedulingWindowSummary, 'form.errors.generic'),
       PERSON_BUSY: t('form.errors.PERSON_BUSY'),
       INSTRUCTOR_BUSY: t('form.errors.INSTRUCTOR_BUSY'),
+      INSTRUCTOR_SAME_AS_PILOT: t('form.errors.INSTRUCTOR_SAME_AS_PILOT'),
       overlap: t('form.errors.overlap'),
       generic: t('form.errors.generic'),
     },
     success: t('form.success'),
     successWithWarnings: t('form.successWithWarnings'),
-    force: {
-      title: t('form.force.title'),
-      description: t('form.force.description'),
-      reasonLabel: t('form.force.reasonLabel'),
-      submit: t('form.force.submit'),
-      cancel: t('form.force.cancel'),
-      requiredReason: t('form.force.requiredReason'),
-      generic: t('form.force.generic'),
-    },
+    cancel: t('form.cancel'),
+    requirements: { title: t('requirements.title'), blockedTitle: t('requirements.blockedTitle') },
   };
 }
 
@@ -166,13 +159,13 @@ export function buildEditBookingFormLabels(t: Translator, schedulingWindowSummar
       AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
       // Story AOG-1a, AC 7 — same pair as the create form (both are `form.errors.*` keys; the move form has always reused them).
       AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL') as string,
-      EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
       BOOKING_OUTSIDE_WINDOW: outsideWindowMessage(t, schedulingWindowSummary, 'list.actions.errors.generic'),
       PERSON_BUSY: t('form.errors.PERSON_BUSY'),
       INSTRUCTOR_BUSY: t('form.errors.INSTRUCTOR_BUSY'),
       conflict: t('list.actions.errors.conflict'),
       generic: t('list.actions.errors.generic'),
     },
+    requirements: { title: t('requirements.title'), blockedTitle: t('requirements.blockedTitle') },
   };
 }
 
@@ -227,9 +220,10 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
         BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
         BOOKING_TRANSITION_INVALID: t('list.actions.errors.BOOKING_TRANSITION_INVALID'),
         BOOKING_DENY_REASON_REQUIRED: t('list.actions.errors.BOOKING_DENY_REASON_REQUIRED'),
-        EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
         AIRCRAFT_OUT_OF_SERVICE: t.raw('list.actions.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
         BOOKING_NOT_STARTED: t('list.actions.errors.BOOKING_NOT_STARTED'),
+        // Story 19.10 (D-8): the create form's own string.
+        INSTRUCTOR_SAME_AS_PILOT: t('form.errors.INSTRUCTOR_SAME_AS_PILOT'),
         // Story 16.3: the create form's own two strings — the same sentence whichever surface raised the 409.
         PERSON_BUSY: t('form.errors.PERSON_BUSY'),
         INSTRUCTOR_BUSY: t('form.errors.INSTRUCTOR_BUSY'),
@@ -237,6 +231,8 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
         generic: t('list.actions.errors.generic'),
       },
     },
+    /** Story 19.10: the title of the shared requirements warning on an approval (desktop modal, phone sheet). */
+    requirementsApproveTitle: t('requirements.approveTitle'),
     denyModal: {
       title: t('list.denyModal.title'),
       subtitle: t('list.denyModal.subtitle'),
