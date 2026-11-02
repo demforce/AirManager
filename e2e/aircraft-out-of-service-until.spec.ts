@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { ensureFlightRequirements, ensureValidSeedExpiries, ownFailures, registerFlightOn, submitPastRequirements, type E2eRequirementFailure } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -14,7 +14,9 @@ if (!SEED_PASSWORD) {
 /**
  * Story AOG-1a — `Aircraft.outOfServiceUntil`, its two ratified surfaces
  * (the Disponibilità editor and the three enriched `AIRCRAFT_OUT_OF_SERVICE`
- * 422s) and the flight-registration guard with its admin deroga.
+ * 422s of the bookings) and the grounding on a flight registration with its
+ * admin deroga — since story 19.9 the FIRST failure of the one
+ * `REQUIREMENTS_NOT_MET` warning.
  *
  * **Isolation (AC 17)**: grounding an aircraft is GLOBAL state, but every test
  * here creates its OWN run-unique aircraft and grounds THAT one — the exact
@@ -97,13 +99,13 @@ async function createPilotPerson(page: Page, withValidExpiries = true): Promise<
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
-  // TD 15.5: without this, `POST /api/v1/flights` answers FLIGHT_BLOCKED_BY_EXPIRY
-  // long before it ever reaches the guard under test.
+  // TD 15.5: without this, every flight of this person also lists the
+  // documents a fresh person misses (story 19.9: one list).
   if (withValidExpiries) await ensureValidSeedExpiries(page, person.id, 'PILOTS');
   return { personId: person.id, firstName, lastName };
 }
 
-/** `POST /api/v1/flights` for a plain past-dated tourism flight — the shape both 422s under test answer to. */
+/** `POST /api/v1/flights` for a plain past-dated tourism flight, without `force` — its requirements are what the caller asserts. */
 async function postFlight(page: Page, aircraftId: string, personId: string, flightDay: string) {
   return page.request.post('/api/v1/flights', {
     data: {
@@ -370,8 +372,10 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
   });
 });
 
-test.describe('The flight-registration guard and its admin deroga (story AOG-1a, AC 8/9/10/11/12)', () => {
-  test('the picker NAMES the grounded aircraft and still lets it be picked; the 422 names aircraft, reason and fermo; the deroga registers the flight with a Deroga badge (both FlightEditor call sites)', async ({
+type RequirementsBody = { error: { code: string; details: { failures: E2eRequirementFailure[] } } };
+
+test.describe('The grounding on a flight: the first failure of the one warning, and its admin deroga (story AOG-1a AC 8-12, story 19.9 AC 9)', () => {
+  test('the picker NAMES the grounded aircraft and still lets it be picked; the warning names aircraft, reason and fermo; «Procedi comunque» registers it with no badge (both FlightEditor call sites)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -381,6 +385,7 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
     const reason = `Revisione 100h ${uniqueSuffix()}`;
     await ground(page, aircraft.id, reason, until);
     const flightDay = dateOnlyFromToday(-3);
+    const groundedText = `Velivolo ${aircraft.registration} fuori servizio fino al ${formatDateOnly(until, 'it')} compreso: ${reason}`;
 
     await page.goto('/it/dashboard/logbook');
     await page.getByTestId('logbook-new-button').click();
@@ -404,47 +409,35 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
-    // AC 11: never `labels.errors.generic` — the message names the airframe,
-    // the reason and the fermo, in the inclusive wording.
-    const formError = page.getByTestId('flight-form-error');
-    await expect(formError).toContainText(aircraft.registration);
-    await expect(formError).toContainText(reason);
-    await expect(formError).toContainText(`Fermo fino al ${formatDateOnly(until, 'it')} compreso.`);
-    await expect(formError).not.toContainText('Riprova');
+    // Story 19.9 (AC 9, D-2): the grounding is the FIRST item of the one
+    // warning — airframe, reason and the inclusive fermo — and the banner stays empty.
+    const warning = page.getByTestId('requirements-warning');
+    await expect(warning).toBeVisible();
+    const firstItem = warning.getByTestId('requirements-warning-item').first();
+    await expect(firstItem).toHaveAttribute('data-type', 'AIRCRAFT_OUT_OF_SERVICE');
+    await expect(firstItem).toHaveText(groundedText);
+    await expect(page.getByTestId('flight-form-error')).toHaveCount(0);
 
-    // AC 10: the SECOND trigger of the shared "Forza registrazione" section.
-    const forceSection = page.getByTestId('force-flight-section');
-    await expect(forceSection).toBeVisible();
-    await forceSection.getByTestId('force-flight-submit').click();
-    await expect(forceSection.getByTestId('force-flight-error')).toBeVisible();
-    const forceReason = `Volo che ha causato il fermo ${uniqueSuffix()}`;
-    await forceSection.getByTestId('force-flight-reason').fill(forceReason);
-    await forceSection.getByTestId('force-flight-submit').click();
+    await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
 
-    // The override is tracked and shown: the registry's own "Deroga" badge.
+    // A10: the deroga leaves no trace on screen — no badge, no motivo.
     await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
-    const flightRow = page.getByTestId('flight-row').first();
-    await expect(flightRow).toContainText('Deroga');
+    await expect(page.getByTestId('flight-row')).toHaveCount(1);
+    await expect(page.getByTestId('flight-row').first()).not.toContainText('Deroga');
 
     // AC 10(g), inherited from the 14.4 BLOCKER: the OTHER call site of the very
     // same FlightEditor — the Panoramica CTA — remounts between opens, so no
-    // `pendingForceBody` survives a close.
+    // pending deroga body survives a close.
     await page.goto('/it/dashboard');
     await page.getByTestId('dispatch-flight-button').click();
     await expect(page.getByTestId('flight-form')).toBeVisible();
-    await expect(page.getByTestId('force-flight-section')).toHaveCount(0);
+    await expect(page.getByTestId('requirements-warning')).toHaveCount(0);
     const ctaCombo = page.getByTestId('flight-form').getByLabel('Velivolo');
     await ctaCombo.click();
     await ctaCombo.fill(aircraft.registration);
     await page.getByRole('listbox').getByRole('option', { name: new RegExp(`${aircraft.registration} — ${reason} \\(fuori servizio\\)`) }).click();
 
-    // Review LOW-1 — the record claimed AC 11 was proved "on BOTH call sites"
-    // while only the registro voli one actually SUBMITTED and read the message.
-    // It is proved here: the CTA form is driven to the very same 422 and the
-    // very same named message (the reason and the inclusive fermo clause are
-    // asserted as CONTENT, so an appended documents sentence — review MAJOR-1 —
-    // can never make this a photo of someone else's fixtures).
     // Every field scoped to the flight form: the Panoramica also renders the
     // embedded Schedule and its booking panels, so a page-level label would be
     // ambiguous here in a way it is not on /dashboard/logbook.
@@ -460,59 +453,42 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
     const ctaPanel = page.getByRole('dialog').filter({ has: page.getByTestId('flight-form') });
     await ctaPanel.getByRole('button', { name: 'Registra volo' }).click();
 
-    const ctaError = page.getByTestId('flight-form-error');
-    await expect(ctaError).toContainText(aircraft.registration);
-    await expect(ctaError).toContainText(reason);
-    await expect(ctaError).toContainText(`Fermo fino al ${formatDateOnly(until, 'it')} compreso.`);
-    await expect(ctaError).not.toContainText('Riprova');
-    await expect(page.getByTestId('force-flight-section')).toBeVisible();
+    const ctaFirst = page.getByTestId('requirements-warning').getByTestId('requirements-warning-item').first();
+    await expect(ctaFirst).toHaveAttribute('data-type', 'AIRCRAFT_OUT_OF_SERVICE');
+    await expect(ctaFirst).toHaveText(groundedText);
+    await expect(page.getByTestId('requirements-warning').getByTestId('requirements-proceed')).toBeVisible();
   });
 
-  test('a grounded aircraft AND missing documents: the out-of-service 422 NAMES the documents its ONE deroga would also bypass (review MAJOR-1)', async ({ page }) => {
+  test('a grounded aircraft AND missing documents: ONE list — the grounding first, then the very documents the same flight lists when operational (review MAJOR-1, by construction)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page, true);
     // No `ensureValidSeedExpiries` on purpose: this is the review's own
-    // reproduction — a person every blocking document is missing for.
+    // reproduction — a person every blocking document is missing for (at
+    // least the medical visit, on any catalogue).
     const pilot = await createPilotPerson(page, false);
     const flightDay = dateOnlyFromToday(-5);
 
-    // Precondition, verified rather than assumed (same discipline as the AC 13
-    // guard): without an applicable blocking type on this DB there is nothing
-    // for the 422 to name and the guard would not discriminate.
-    const typesResponse = await page.request.get('/api/v1/expiry-types');
-    expect(typesResponse.status()).toBe(200);
-    const types = (await typesResponse.json()) as { scope: string; blocksBooking: boolean }[];
-    const applicable = types.filter((type) => type.blocksBooking && (type.scope === 'ALL' || type.scope === 'PILOTS'));
-    console.log(`[MAJOR-1] applicable blocking expiry types for a PILOT: ${applicable.length}`);
-    expect(applicable.length).toBeGreaterThan(0);
-
-    // CONTROL, aircraft still OPERATIONAL: the expiry 422 names every blocking
-    // document. This list is MEASURED in this run, never hard-coded — which
-    // blocking types exist is a property of the DB, not of this test.
+    // CONTROL, aircraft still OPERATIONAL: the list MEASURED in this run.
     const controlResponse = await postFlight(page, aircraft.id, pilot.personId, flightDay);
     expect(controlResponse.status()).toBe(422);
-    const controlBody = (await controlResponse.json()) as { error: { code: string; details: { documents: { typeName: string }[] } } };
-    expect(controlBody.error.code).toBe('FLIGHT_BLOCKED_BY_EXPIRY');
-    const expectedNames = controlBody.error.details.documents.map((document) => document.typeName).sort();
-    expect(expectedNames.length).toBeGreaterThan(0);
+    const control = ownFailures(((await controlResponse.json()) as RequirementsBody).error.details.failures);
+    expect(control.filter((failure) => failure.type === 'EXPIRY').length).toBeGreaterThan(0);
 
-    // SAME person, SAME flight, aircraft now grounded: before this fix the 422
-    // carried `{reason, outOfServiceUntil}` and NOTHING else, so an admin
-    // derogated "solo per il fermo" and scavalcava these documents unseen.
+    // SAME person, SAME flight, aircraft now grounded: the grounding is
+    // prepended, nothing else changes — one deroga, everything on screen.
     const until = dateOnlyFromToday(20);
     const reason = `Revisione con documenti ${uniqueSuffix()}`;
     await ground(page, aircraft.id, reason, until);
     const groundedResponse = await postFlight(page, aircraft.id, pilot.personId, flightDay);
     expect(groundedResponse.status()).toBe(422);
-    const groundedBody = (await groundedResponse.json()) as {
-      error: { code: string; details: { reason: string; outOfServiceUntil: string | null; documents?: { typeName: string; role: string; personName: string }[] } };
-    };
-    expect(groundedBody.error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
-    expect(groundedBody.error.details.outOfServiceUntil).toBe(until);
-    expect((groundedBody.error.details.documents ?? []).map((document) => document.typeName).sort()).toEqual(expectedNames);
+    const groundedBody = (await groundedResponse.json()) as RequirementsBody;
+    expect(groundedBody.error.code).toBe('REQUIREMENTS_NOT_MET');
+    expect(ownFailures(groundedBody.error.details.failures)).toEqual([
+      { type: 'AIRCRAFT_OUT_OF_SERVICE', registration: aircraft.registration, reason, outOfServiceUntil: until },
+      ...control,
+    ]);
 
-    // And the operator READS them: the message names the grounding first, then
-    // every document the same single confirmation would bypass.
+    // And the operator READS them: one item per failure, the grounding first.
     await page.goto('/it/dashboard/logbook');
     await page.getByTestId('logbook-new-button').click();
     await expect(page.getByTestId('flight-form')).toBeVisible();
@@ -524,18 +500,17 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
     await page.getByLabel('Data volo').fill(flightDay);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
+    const answered = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/flights' && response.request().method() === 'POST');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    const uiFailures = ((await (await answered).json()) as RequirementsBody).error.details.failures;
 
-    const formError = page.getByTestId('flight-form-error');
-    await expect(formError).toContainText(reason);
-    await expect(formError).toContainText(`Fermo fino al ${formatDateOnly(until, 'it')} compreso.`);
-    for (const typeName of expectedNames) {
-      await expect(formError).toContainText(typeName);
-    }
-    await expect(page.getByTestId('force-flight-section')).toBeVisible();
+    const items = page.getByTestId('requirements-warning').getByTestId('requirements-warning-item');
+    await expect(items).toHaveCount(uiFailures.length);
+    expect(await items.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-type')))).toEqual(uiFailures.map((failure) => failure.type));
+    await expect(items.first()).toContainText(reason);
   });
 
-  test('a grounding whose date is already PAST still blocks both a booking and a flight — the date never returns an aircraft to service (invariant [a], AC 2c)', async ({
+  test('a grounding whose date is already PAST still blocks a booking and is still listed on a flight — the date never returns an aircraft to service (invariant [a], AC 2c)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -557,86 +532,65 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
     expect(bookingBody.error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
     expect(bookingBody.error.details.outOfServiceUntil).toBe(yesterday);
 
-    const flightDay = dateOnlyFromToday(-2);
-    const flightResponse = await page.request.post('/api/v1/flights', {
-      data: {
-        aircraftId: aircraft.id,
-        personId: pilot.personId,
-        departureAirfield: 'Base Airfield',
-        arrivalAirfield: 'Base Airfield',
-        flightType: 'TOURISM',
-        takeoffAt: `${flightDay}T10:00:00.000Z`,
-        landingAt: `${flightDay}T10:30:00.000Z`,
-      },
-    });
+    const flightResponse = await postFlight(page, aircraft.id, pilot.personId, dateOnlyFromToday(-2));
     expect(flightResponse.status()).toBe(422);
-    const flightBody = (await flightResponse.json()) as { error: { code: string; details: { reason: string; outOfServiceUntil: string | null } } };
-    expect(flightBody.error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
-    expect(flightBody.error.details.reason).toBe(reason);
-    expect(flightBody.error.details.outOfServiceUntil).toBe(yesterday);
+    const flightBody = (await flightResponse.json()) as RequirementsBody;
+    expect(flightBody.error.code).toBe('REQUIREMENTS_NOT_MET');
+    expect(flightBody.error.details.failures[0]).toEqual({ type: 'AIRCRAFT_OUT_OF_SERVICE', registration: aircraft.registration, reason, outOfServiceUntil: yesterday });
   });
 
-  test('AD-4 perimeter over the API: an edit that KEEPS the grounded aircraft passes, one that MOVES a flight onto it is blocked, and a delete is never blocked', async ({
+  test('AD-4 perimeter over the API: an edit that KEEPS the grounded aircraft passes unstamped, one that MOVES a flight onto it is warned about the grounding only, and a delete is never blocked', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const flown = await createAircraft(page, true);
     const grounded = await createAircraft(page, true);
-    const pilot = await createPilotPerson(page);
     const flightDay = dateOnlyFromToday(-5);
+    // A pilot "in regola" (story 19.9, E-R5): documents, fee, balance, and a
+    // currency from a no-charge fixture flight in the window — so the flight
+    // under test meets every requirement and is registered WITHOUT `force`.
+    const pilot = await createPilotPerson(page, false);
+    await ensureFlightRequirements(page, { personId: pilot.personId, scope: 'PILOTS', topUpCents: 50_000 });
+    await registerFlightOn(page, { aircraftId: flown.id, personId: pilot.personId, flightType: 'TOURISM', date: dateOnlyFromToday(-15), noCharge: true });
 
-    const registered = await page.request.post('/api/v1/flights', {
-      data: {
-        aircraftId: flown.id,
-        personId: pilot.personId,
-        departureAirfield: 'Base Airfield',
-        arrivalAirfield: 'Base Airfield',
-        flightType: 'TOURISM',
-        takeoffAt: `${flightDay}T10:00:00.000Z`,
-        landingAt: `${flightDay}T11:00:00.000Z`,
-      },
+    const body = (aircraftId: string, landing: string) => ({
+      aircraftId,
+      personId: pilot.personId,
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      flightType: 'TOURISM',
+      takeoffAt: `${flightDay}T10:00:00.000Z`,
+      landingAt: `${flightDay}T${landing}:00.000Z`,
     });
-    expect(registered.status()).toBe(201);
-    const flightId = ((await registered.json()) as { flight: { id: string } }).flight.id;
+    const registered = await page.request.post('/api/v1/flights', { data: body(flown.id, '11:00') });
+    expect(registered.status(), await registered.text()).toBe(201);
+    const registeredFlight = ((await registered.json()) as { flight: { id: string; forcedAt: string | null } }).flight;
+    expect(registeredFlight.forcedAt).toBeNull();
+    const flightId = registeredFlight.id;
 
     // The airframe it flew on goes into maintenance TODAY.
     await ground(page, flown.id, `Atterraggio duro ${uniqueSuffix()}`, dateOnlyFromToday(14));
-    await ground(page, grounded.id, `Revisione ${uniqueSuffix()}`, dateOnlyFromToday(14));
+    const groundedReason = `Revisione ${uniqueSuffix()}`;
+    await ground(page, grounded.id, groundedReason, dateOnlyFromToday(14));
 
-    // (a) edit that KEEPS the same aircraft: allowed — correcting is not
-    // registering anew (R-14.4-b), and the guard must not create the dead end.
-    // Story 19.6: an edit in place, `PUT`, same flight.
-    const keepSame = await page.request.put(`/api/v1/flights/${flightId}`, {
-      data: {
-        aircraftId: flown.id,
-        personId: pilot.personId,
-        departureAirfield: 'Base Airfield',
-        arrivalAirfield: 'Base Airfield',
-        flightType: 'TOURISM',
-        takeoffAt: `${flightDay}T10:00:00.000Z`,
-        landingAt: `${flightDay}T11:15:00.000Z`,
-      },
-    });
-    expect(keepSame.status()).toBe(200);
+    // (a) edit that KEEPS the same aircraft: no warning — correcting is not
+    // registering anew (R-14.4-b), and the grounding must not create the dead end.
+    const keepSame = await page.request.put(`/api/v1/flights/${flightId}`, { data: body(flown.id, '11:15') });
+    expect(keepSame.status(), await keepSame.text()).toBe(200);
     const corrected = (await keepSame.json()) as { flight: { id: string; forcedAt: string | null } };
     expect(corrected.flight.id).toBe(flightId);
     // ...and it is not an override either.
     expect(corrected.flight.forcedAt).toBeNull();
 
-    // (b) edit that MOVES the flight onto a grounded airframe: blocked.
-    const moveOntoGrounded = await page.request.put(`/api/v1/flights/${flightId}`, {
-      data: {
-        aircraftId: grounded.id,
-        personId: pilot.personId,
-        departureAirfield: 'Base Airfield',
-        arrivalAirfield: 'Base Airfield',
-        flightType: 'TOURISM',
-        takeoffAt: `${flightDay}T10:00:00.000Z`,
-        landingAt: `${flightDay}T11:15:00.000Z`,
-      },
-    });
+    // (b) edit that MOVES the flight onto a grounded airframe: warned, and
+    // about that alone (person, instructor and date unchanged, balance covered).
+    const moveOntoGrounded = await page.request.put(`/api/v1/flights/${flightId}`, { data: body(grounded.id, '11:15') });
     expect(moveOntoGrounded.status()).toBe(422);
-    expect(((await moveOntoGrounded.json()) as { error: { code: string } }).error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
+    const moveBody = (await moveOntoGrounded.json()) as RequirementsBody;
+    expect(moveBody.error.code).toBe('REQUIREMENTS_NOT_MET');
+    expect(moveBody.error.details.failures).toEqual([
+      { type: 'AIRCRAFT_OUT_OF_SERVICE', registration: grounded.registration, reason: groundedReason, outOfServiceUntil: dateOnlyFromToday(14) },
+    ]);
 
     // (c) a delete is ALWAYS possible, grounded airframe or not (story 19.6, AC 5).
     const deleted = await page.request.delete(`/api/v1/flights/${flightId}`);
@@ -646,8 +600,9 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
   test('an actor without flights.manage gets no logbook affordance at all — no promise of a bypass it cannot use (AC 11)', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
     await page.goto('/it/dashboard/logbook');
-    // The editor (and with it the "Forza registrazione" section) is never
-    // mounted for a non-manage actor, so there is no dead end to fall into.
+    // The editor (and with it the requirements warning and its «Procedi
+    // comunque») is never mounted for a non-manage actor, so there is no dead
+    // end to fall into.
     await expect(page.getByTestId('logbook-new-button')).toHaveCount(0);
     await expect(page.getByTestId('flight-form')).toHaveCount(0);
   });

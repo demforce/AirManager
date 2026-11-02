@@ -127,6 +127,7 @@ async function registerFlight(page: Page, params: RegisterFlightParams): Promise
       takeoffAt,
       landingAt,
       flightType: params.flightType,
+      force: true,
     },
   });
   expect(response.status()).toBe(201);

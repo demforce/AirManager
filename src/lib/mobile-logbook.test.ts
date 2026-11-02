@@ -1,15 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { flightBadgeKind, flightCardSubLine, flightRouteLabel, flightSheetSub } from './mobile-logbook';
-
-describe('flightBadgeKind', () => {
-  it('gives an ordinary flight no badge at all (ratifica R-15.6-b: a clean row stays clean)', () => {
-    expect(flightBadgeKind({ forcedAt: null })).toBeNull();
-  });
-
-  it('flags an admin override', () => {
-    expect(flightBadgeKind({ forcedAt: '2026-01-02T10:00:00.000Z' })).toBe('forced');
-  });
-});
+import { flightCardSubLine, flightRouteLabel, flightSheetSub } from './mobile-logbook';
 
 describe('flightRouteLabel', () => {
   it('is the template\'s own DEP→ARR when both airfields are there', () => {

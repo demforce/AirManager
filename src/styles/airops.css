@@ -1269,6 +1269,34 @@ html[data-theme="dark"] .fld-error{ color: var(--bad); }
   .toggle, .toggle-thumb{ transition: none; }
 }
 
+/* Story 19.9 (AD-6): the ONE requirements warning (`dashboard/requirements-
+   warning.tsx`) — the same warn panel the flight deroga it replaces wore
+   inline (warn-soft fill, warn border at 40%), now shared with the booking
+   forms of story 19.10. Items wrap (a long type name must never widen the
+   full-screen phone panel); the who is the scannable part of each line. It
+   takes the focus when it appears, so it gets a keyboard-style ring. */
+.req-warning{
+  margin-top: 14px; padding: 14px;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in oklch, var(--warn) 40%, transparent);
+  color: var(--ink);
+  font-size: 13px;
+}
+.req-warning:focus-visible{ outline: 2px solid var(--ink); outline-offset: 2px; }
+.req-warning-title{ color: var(--accent-ink); }
+.req-warning-list{
+  margin: 8px 0 0; padding-left: 18px;
+  display: flex; flex-direction: column; gap: 6px;
+  line-height: 1.45; overflow-wrap: anywhere;
+}
+.req-warning-who{ font-weight: 600; }
+.req-warning .fld-error{ margin-top: 10px; }
+.req-warning-actions{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+@media (max-width: 640px){
+  .req-warning-actions .btn{ flex: 1 1 auto; justify-content: center; min-height: 44px; }
+}
+
 .segmented{
   display: inline-flex; padding: 2px; border-radius: var(--radius-xs);
   background: var(--bg-sunken); border: 1px solid var(--border);
@@ -2784,7 +2812,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* --- the flight card (template 289-296) ---
      `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, chip
      + ellipsised name on the left, two stacked values on the right). Only the
-     placement of the badge row is new, so this is a MODIFIER, not a family.
+     two-track layout is new, so this is a MODIFIER, not a family.
      `minmax(0, 1fr)`, not the bare `1fr` of `.mobile-row`: `1fr` is
      `minmax(auto, 1fr)`, and a long pilot name would push its own track wider
      than the card (the 13.10 F1 idiom, re-measured in 15.5). */
@@ -2792,22 +2820,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   /* `.mobile-row-side` carries `grid-column: 3` for the three-track person row
      of 15.5; here the right column is the second track. */
   .mobile-row-flight > .mobile-row-side{ grid-column: 2; }
-  /* The status chip gets its OWN row, in column 1 only (never spanning: an
-     item that SPANS tracks contributes its max-content to all of them, the
-     defect 15.5 measured). In the right-hand slot a "Annullato" pill would eat
-     the pilot's name, which is the card's own identifier. */
-  .mobile-row-flight > .mobile-row-flag{ grid-row: 2; grid-column: 1; }
-  /* Review 15.6 MINOR-2 — the dot, painted here too. `.mobile-row-flag .badge`
-     (15.5) is `display: block` so `text-overflow` can work on a bare string,
-     and inside a block the `.b-dot` span falls back to INLINE, where its 6x6
-     never applies: measured 0x13 on the card while the SAME `Badge` painted a
-     real 6x6 dot in the sheet and on the desktop row. The 15.5 rule stays as
-     it is — its own chips ask for no dot; only the flight card, whose two
-     anomaly chips DO (`tone="bad" dot` / `tone="warn" dot`), gets the inline
-     box back, with the 5px the base `.badge`'s own `gap` would have given it.
-     Ellipsis is untouched: the pill stays a block, the dot is just its first
-     inline child. */
-  .mobile-row-flight > .mobile-row-flag .badge .b-dot{ display: inline-block; vertical-align: middle; margin-right: 5px; }
 
   /* --- the "Filtri" panel ---
      `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed

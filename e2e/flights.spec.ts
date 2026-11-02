@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ensureValidSeedExpiries, registerExpiry, todayRome } from './helpers';
+import { ensureFlightRequirements, ensureValidSeedExpiries, registerExpiry, registerFlightOn, submitPastRequirements, todayRome } from './helpers';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -238,6 +238,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora atterraggio').fill('11:20');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:20');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitPastRequirements(page);
 
     // 80' @ 150,00 €/h -> 200,00 € (the PRD-testable 80'x150 case) — ratifica 1: the breakdown/nuovo saldo stays INSIDE the slide-over on success.
     const resultPanel = page.getByTestId('flight-result-panel');
@@ -297,6 +298,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitPastRequirements(page);
 
     // 60' @ 120,00 €/h -> 120,00 €; 60' @ 40,00 €/h -> 40,00 €; total 160,00 €.
     const resultPanel = page.getByTestId('flight-result-panel');
@@ -402,6 +404,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora atterraggio').fill('00:10');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('0:40');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitPastRequirements(page);
 
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel).toContainText('0:40');
@@ -426,6 +429,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
         flightType: 'TOURISM',
         takeoffAt: '2020-01-05T23:30:00.000Z',
         landingAt: '2020-01-06T00:10:00.000Z',
+        force: true,
       },
     });
     expect(response.status()).toBe(201);
@@ -481,6 +485,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
         landingAt,
         takeoffs: 2,
         landings: 3,
+        force: true,
       },
     });
     expect(response.status()).toBe(201);
@@ -511,6 +516,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
         isSolo: true,
         takeoffAt: `${PAST_DATE}T12:00:00.000Z`,
         landingAt: `${PAST_DATE}T12:30:00.000Z`,
+        force: true,
       },
     });
     expect(soloResponse.status()).toBe(201);
@@ -575,6 +581,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora decollo').fill('09:00');
     await page.getByLabel('Ora atterraggio').fill('10:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitPastRequirements(page);
 
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
   });
@@ -596,6 +603,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
         arrivalAirfield: 'Base',
         flightType: 'TOURISM',
         ...flightTimes(PAST_DATE, 60),
+        force: true,
       },
     });
     expect(flightResponse.status()).toBe(201);
@@ -668,6 +676,8 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // "Ora atterraggio" contains "atterraggi" (getByLabel is substring).
     await page.getByLabel('Atterraggi', { exact: true }).fill('2');
     await page.getByRole('button', { name: 'Salva modifiche' }).click();
+    // Story 19.9: the balance is re-checked on every edit (Q-19.9-b) — 0 € once the charge is credited back.
+    await submitPastRequirements(page);
 
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
 
@@ -682,26 +692,22 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
   });
 });
 
-test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3/4; ratifica R4)', () => {
-  // Story 14.4 blast-radius fixture fix: 3 of the 4 tests below each create
+test.describe('Requirements warning & admin deroga from the form (Story 14.4 rewritten by story 19.9, E-R4; AC 13/17)', () => {
+  // Story 14.4 blast-radius fixture fix: 2 of the 4 tests below each create
   // their OWN active, scope: 'ALL', blocksBooking: true `ExpiryType` (active
-  // until `deactivateBlockingType` runs at that test's end) — under `fullyParallel: true` a SIBLING test in
-  // this SAME describe block could otherwise run concurrently on a
-  // different worker and have its fresh pilot's `ensureValidSeedExpiries`
-  // dynamic scan (e2e/helpers.ts) land BEFORE one of these types is
-  // created, then get blocked by it once it goes active mid-test (observed:
-  // "a flight that pushes the pilot balance negative..." failing on a
-  // SIBLING test's just-created custom type). Serial mode makes this
-  // describe block race-free against itself, the only source of these
-  // ALL-scope types in this file.
+  // until `deactivateBlockingType` runs at that test's end) — under
+  // `fullyParallel: true` a SIBLING test in this SAME describe block could
+  // otherwise run concurrently on a different worker and see it as a MISSING
+  // document of its own fresh pilot. Serial mode makes this describe block
+  // race-free against itself.
   test.describe.configure({ mode: 'serial' });
 
-  test('ADMIN: a blocked pilot triggers 422 naming the document, "Forza registrazione" appears, empty motivo is rejected client-side, and a motivated force succeeds (201) with forcedAt/forceReason tracked and shown as a badge in the registry', async ({
+  test('ADMIN: a pilot with a blocking expired document gets ONE warning naming document, date and owner — no motivo field — and «Procedi comunque» registers it (201) with the silent stamp and no badge', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
-    // Ordering: see the sibling test above / `ensureValidSeedExpiries`'s own doc-comment.
+    // Ordering: see `ensureValidSeedExpiries`'s own doc-comment.
     const pilot = await createPilotWithLogin(page, 'PilotForce123!');
     const blockingType = await createExpiryTypeForFlights(page, true);
     await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
@@ -715,55 +721,46 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
-    await expect(page.getByTestId('flight-form-error')).toContainText(blockingType.name);
-    const forceSection = page.getByTestId('force-flight-section');
-    await expect(forceSection).toBeVisible();
+    const warning = page.getByTestId('requirements-warning');
+    await expect(warning).toBeVisible();
+    await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="EXPIRY"]', { hasText: blockingType.name })).toHaveText(
+      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — ${blockingType.name}: scaduto il 01/06/2019`,
+    );
+    // R-19-h: no motivo anywhere, and the list is not repeated in the banner.
+    await expect(page.getByTestId('flight-form').locator('textarea')).toHaveCount(0);
+    await expect(page.getByTestId('flight-form-error')).toHaveCount(0);
 
-    // Submitting without a motivo is rejected client-side first.
-    await forceSection.getByTestId('force-flight-submit').click();
-    await expect(forceSection.getByTestId('force-flight-error')).toBeVisible();
-
-    await forceSection.getByTestId('force-flight-reason').fill('Autorizzato dal direttore per volo urgente');
-    await forceSection.getByTestId('force-flight-submit').click();
-
+    await warning.getByTestId('requirements-proceed').click();
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
 
-    // The tracking (AC 2 "chi, quando, perché") is exposed read-side on the item DTO.
+    // The silent stamp (A10) is API data only: forcedAt set, no motivo field at all.
     const listResponse = await page.request.get(`/api/v1/flights?personId=${pilot.personId}&pageSize=10`);
     expect(listResponse.status()).toBe(200);
-    const listBody = (await listResponse.json()) as { items: { forcedAt: string | null; forceReason: string | null }[] };
+    const listBody = (await listResponse.json()) as { items: Array<Record<string, unknown> & { forcedAt: string | null }> };
     expect(listBody.items[0]?.forcedAt).not.toBeNull();
-    expect(listBody.items[0]?.forceReason).toBe('Autorizzato dal direttore per volo urgente');
+    expect(listBody.items[0]).not.toHaveProperty('forceReason');
 
-    // Visible in the registry too (AC 2 "persistita e visibile"), not just on the wire.
-    // Scoped via the run-unique person free-text filter (same pattern as the
-    // review F1/F2 test below, lezione 6.3 F1) rather than trusting default
-    // page-1 ordering: `PAST_DATE` (2020-01-01) is reused by many specs across
-    // this whole (never-reset) suite, so `flightDate desc` pagination alone
-    // does not guarantee this run-unique flight lands on page 1.
+    // ...and never shown: the registry row looks like any other.
+    // Scoped via the run-unique person free-text filter (lezione 6.3 F1).
     await page.getByTestId('flight-result-close').click();
     await page.getByTestId('flight-filter-person').fill(pilot.lastName);
     await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(pilot.lastName)}`));
     const row = page.getByTestId('flight-row');
     await expect(row).toHaveCount(1);
-    await expect(row.getByTestId('flight-forced-badge')).toBeVisible();
+    await expect(row).not.toContainText('Deroga');
+    await expect(row).not.toContainText('Motivo');
     await deactivateBlockingType(page, blockingType.id);
   });
 
   // Review 14.9 F4: this proves the `flights.manage` gate rejects a pilot
-  // (403) on a direct POST /api/v1/flights, force included in the payload —
-  // it does NOT exercise `flights.forceExpiry` specifically. Post-14.9,
-  // `flights.manage` is ADMIN-only by construction, so no actor can reach
-  // `registerFlight` with `flights.manage` but without `flights.forceExpiry`
-  // — that deeper gate (`flights.service.ts`'s own force check) is
-  // structurally unreachable and has no test of its own (see its doc-comment).
+  // (403) on a direct POST /api/v1/flights, force included in the payload.
+  // The deeper `requirements.force` gate (an actor WITH `flights.manage` and
+  // WITHOUT it) cannot be built from the seeded roles: it is proved by the
+  // unit tests (`flights.service.test.ts`), which grant the permission.
   test('a pilot gets 403 from POST /api/v1/flights (flights.manage gate) — force: true included in the payload', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
-    // Ordering: see the first test in this describe block / `ensureValidSeedExpiries`'s own doc-comment.
     const pilot = await createPilotWithLogin(page, 'PilotForceApi123!');
-    const blockingType = await createExpiryTypeForFlights(page, true);
-    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, 'PilotForceApi123!');
@@ -776,22 +773,20 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
         arrivalAirfield: 'Base Airfield',
         flightType: 'TOURISM',
         force: true,
-        forceReason: 'Tentativo non autorizzato',
         ...flightTimes(PAST_DATE, 30),
       },
     });
     expect(response.status()).toBe(403);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe('FORBIDDEN');
-    await deactivateBlockingType(page, blockingType.id);
   });
 
-  test('an instructor with a blocking expired document (pilot clear) is rejected naming the instructor\'s document, and an ADMIN override succeeds', async ({
+  test('an instructor with a blocking expired document (pilot clear) is listed as the instructor\'s, and «Procedi comunque» registers the flight', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
-    // Ordering: see the first test in this describe block / `ensureValidSeedExpiries`'s own doc-comment.
+    // Ordering: see `ensureValidSeedExpiries`'s own doc-comment.
     const pilot = await createPilotWithLogin(page, 'PilotInstrBlock123!');
     const instructor = await createInstructorWithRate(page, 4000);
     const blockingType = await createExpiryTypeForFlights(page, true);
@@ -807,16 +802,19 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
 
-    await expect(page.getByTestId('flight-form-error')).toContainText(blockingType.name);
-    const forceSection = page.getByTestId('force-flight-section');
-    await forceSection.getByTestId('force-flight-reason').fill('Autorizzato dal direttore');
-    await forceSection.getByTestId('force-flight-submit').click();
+    // The type is `scope: 'ALL'` and created after the pilot's documents, so
+    // the pilot lists it too, as MISSING: the instructor's item is the expired one.
+    const warning = page.getByTestId('requirements-warning');
+    await expect(
+      warning.locator('[data-testid="requirements-warning-item"][data-type="EXPIRY"]', { hasText: blockingType.name }).filter({ hasText: '(istruttore)' }),
+    ).toHaveText(`${instructor.firstName} ${instructor.lastName} (istruttore) — ${blockingType.name}: scaduto il 01/06/2019`);
+    await warning.getByTestId('requirements-proceed').click();
 
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     await deactivateBlockingType(page, blockingType.id);
   });
 
-  test('a flight that pushes the pilot balance negative shows an in-app warning to the operator, without blocking the registration (AC 3, decision D1)', async ({
+  test('a flight the balance does not cover is a BALANCE item with both amounts; after «Procedi comunque» the summary still flags the negative balance (AC 17, D-11)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -834,6 +832,12 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+
+    const warning = page.getByTestId('requirements-warning');
+    await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="BALANCE"]')).toHaveText(
+      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — Saldo insufficiente: saldo 0,00 €, costo 100,00 €`,
+    );
+    await warning.getByTestId('requirements-proceed').click();
 
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel).toBeVisible();
@@ -854,19 +858,13 @@ test.describe('Blocking expiry guard-rail & admin override (Story 14.4, AC 1/2/3
  * the review, MINOR-1): GLOBAL active `scope: 'ALL'`, `blocksBooking: true`
  * `ExpiryType`s created by specs running in parallel — the 4 of
  * `bookings.spec.ts` ("Booking expiry block", story 7.4) stay ACTIVE for
- * good, the 3 of the "Blocking expiry guard-rail" describe below are active
+ * good, the ones of the "Requirements warning" describe above are active
  * for the duration of the test that creates each (`deactivateBlockingType`
  * runs at its end). Under `fullyParallel` a type that goes active AFTER a
- * fresh person's `ensureValidSeedExpiries` scan blocks that person's later
- * flight registration with **422 FLIGHT_BLOCKED_BY_EXPIRY** — so the
- * symptom here is always the FIRST `POST /api/v1/flights` of a test
- * answering 422 instead of 201, never an assertion about the overlap guard
- * itself. Deactivating at the end of a test cannot close that window; a
- * PER-PERSON block on a seed type (as `createPilotPerson`'s
- * `expiredSeedType` does) or moving those describes into the serialized
- * chain would. `createPilotPerson` below keeps the exposed window to four
- * sequential API calls instead of the ~5 seconds `createPilotWithLogin`
- * spends waiting on the Mailpit invite.
+ * fresh person's `ensureValidSeedExpiries` scan adds a MISSING document to
+ * that person's requirements (story 19.9: `REQUIREMENTS_NOT_MET`). The API
+ * fixtures here pass `force` and never meet it; only the UI test that needs
+ * a pilot "in regola" (E6) keeps a small window open.
  */
 test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', () => {
   /** The registry's own view of one aircraft's flights (admin scope) — how a refused registration is proved to have written nothing. */
@@ -880,18 +878,14 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
   /**
    * A pilot PERSON (active pilot profile -> an `Account` exists), without a
    * login: every test in this block acts as ADMIN, so the invite/set-password
-   * round-trip of `createPilotWithLogin` buys nothing here — and it costs ~5
-   * seconds between `ensureValidSeedExpiries` and the first flight POST.
-   * That window is what makes a fixture vulnerable to the GLOBAL, active,
-   * `scope: 'ALL'`, `blocksBooking: true` `ExpiryType`s other specs create
-   * while this block runs (TD 16.2-g, block doc-comment above): a type that
-   * goes active AFTER the scan blocks the later registration with 422
-   * `FLIGHT_BLOCKED_BY_EXPIRY`. Four sequential API calls shrink that window
-   * by ~two orders of magnitude; they do not CLOSE it.
+   * round-trip of `createPilotWithLogin` buys nothing here. The API fixtures
+   * of this block pass `force` (`flightBody`), so the GLOBAL catalogue other
+   * specs dirty (TD 16.2-g) never refuses them; the UI tests that must NOT
+   * meet the requirements warning make their pilot "in regola" first.
    *
    * `expiredSeedType` (review MAJOR-1): registers that SEED type EXPIRED for
-   * this person BEFORE the scan (which then skips it) — a PER-PERSON block
-   * that mutates no catalogue row, so it adds nothing to the flake class.
+   * this person BEFORE the scan (which then skips it) — a PER-PERSON failure
+   * that mutates no catalogue row.
    */
   async function createPilotPerson(page: Page, expiredSeedType?: string): Promise<{ personId: string; firstName: string; lastName: string }> {
     const suffix = uniqueSuffix();
@@ -918,6 +912,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     return { personId: person.id, firstName, lastName };
   }
 
+  /** `force: true` (story 19.9, E-R1): the overlap guard is this block's subject, never the requirements — and `force` never derogates the 409. */
   function flightBody(aircraftId: string, personId: string, takeoffAt: string, landingAt: string): Record<string, unknown> {
     return {
       aircraftId,
@@ -927,6 +922,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
       flightType: 'TOURISM',
       takeoffAt,
       landingAt,
+      force: true,
     };
   }
 
@@ -1088,6 +1084,13 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
     const pilot = await createPilotPerson(page);
+    // Story 19.9: the pilot is "in regola" (E-R5) so that no submit below meets
+    // the requirements warning first — every 422 precedes the 409. The currency
+    // comes from a no-charge fixture flight on ANOTHER aircraft, two weeks before.
+    await ensureFlightRequirements(page, { personId: pilot.personId, scope: 'PILOTS', topUpCents: 100_000 });
+    const currencyAircraft = await createAircraftWithRate(page, 12000);
+    await seedAircraftRate(currencyAircraft.id, { studentPriceCents: 12000, pilotPriceCents: 12000, validFrom: '2019-12-01' });
+    await registerFlightOn(page, { aircraftId: currencyAircraft.id, personId: pilot.personId, flightType: 'TOURISM', date: '2019-12-18', noCharge: true });
     const spareDeparture = `Spare-${uniqueSuffix()}`;
     const conflictText = 'ha già un volo registrato il 01/01/2020 dalle 10:00 alle 11:00';
 
@@ -1147,19 +1150,19 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await expect(correctionError).not.toContainText('rettificato a mano');
   });
 
-  // E8 — review MAJOR-1: every 422 precedes the 409 (AD-4), so a request that
-  // is BOTH blocked by a document AND overlapping meets FLIGHT_OVERLAP only
-  // on the "Forza registrazione" submit. `force` does not derogate the
-  // guard: the force section must close and the banner must name the
-  // conflicting flight — never the endless «Riprova».
-  test('E8: on the FORCE submit a 409 FLIGHT_OVERLAP closes the force section and names the conflicting flight, in registration AND in an edit', async ({
+  // E8 — review MAJOR-1, rewritten by story 19.9 (AC 14): every 422 precedes
+  // the 409 (AD-4), so a request that fails a requirement AND overlaps meets
+  // FLIGHT_OVERLAP only on «Procedi comunque». `force` does not derogate the
+  // guard: the warning must close and the banner must name the conflicting
+  // flight — never the endless «Riprova».
+  test('E8: a 409 FLIGHT_OVERLAP on «Procedi comunque» closes the warning and names the conflicting flight, in registration AND in an edit', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
-    const cleanPilot = await createPilotPerson(page);
-    // Story 19.7a: an expired class 2 as the ONLY visit (R-19-j) — "Licenza" is no longer an expiry.
-    const blockedPilot = await createPilotPerson(page, 'Visita medica classe 2');
+    // Two fresh pilots: both fail the fee and the balance, so EVERY submit below shows the warning.
+    const firstPilot = await createPilotPerson(page);
+    const secondPilot = await createPilotPerson(page);
     const spareDeparture = `Spare-${uniqueSuffix()}`;
     const conflictText = 'ha già un volo registrato il 01/01/2020 dalle 10:00 alle 11:00';
 
@@ -1169,64 +1172,63 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
       await page.getByLabel('Data volo').fill(PAST_DATE);
     }
 
-    async function forceAndExpectOverlap(reason: string): Promise<void> {
-      await expect(page.getByTestId('flight-form-error')).toContainText('Visita medica classe 2');
-      const forceSection = page.getByTestId('force-flight-section');
-      await expect(forceSection).toBeVisible();
-      await forceSection.getByTestId('force-flight-reason').fill(reason);
-      await forceSection.getByTestId('force-flight-submit').click();
+    async function proceedAndExpectOverlap(): Promise<void> {
+      const warning = page.getByTestId('requirements-warning');
+      await expect(warning).toBeVisible();
+      await warning.getByTestId('requirements-proceed').click();
 
       const formError = page.getByTestId('flight-form-error');
       await expect(formError).toContainText(conflictText);
-      await expect(forceSection).toHaveCount(0);
+      await expect(warning).toHaveCount(0);
     }
 
-    // The flight that will be conflicted with (clean pilot): 10:00 -> 11:00
-    // local, registered through the form so the message's clock times are
+    // The flight that will be conflicted with: 10:00 -> 11:00 local,
+    // registered through the form so the message's clock times are
     // independent of the host's TZ (same reasoning as E6).
     await page.goto('/it/dashboard/logbook');
     await openNewEntryForm(page);
-    await fillCommonFields(cleanPilot);
+    await fillCommonFields(firstPilot);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     await page.getByTestId('flight-result-close').click();
 
-    // Registration: blocked pilot, overlapping window -> 422 (document), then
-    // the forced resend -> 409.
+    // Registration: overlapping window -> 422 (requirements), then «Procedi comunque» -> 409.
     await openNewEntryForm(page);
-    await fillCommonFields(blockedPilot);
+    await fillCommonFields(secondPilot);
     await page.getByLabel('Ora decollo').fill('10:30');
     await page.getByLabel('Ora atterraggio').fill('11:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
-    await forceAndExpectOverlap('Verifica del 409 forzato in registrazione');
+    await proceedAndExpectOverlap();
     expect(await countFlights(page, aircraft.id)).toBe(1);
 
-    // Edit: a spare flight of the clean pilot in a free window, then edited
-    // onto the blocked pilot AND the first flight's window.
+    // Edit: a spare flight of the first pilot in a free window, then edited
+    // onto the second pilot AND the first flight's window.
     await page.goto('/it/dashboard/logbook');
     await openNewEntryForm(page);
-    await fillCommonFields(cleanPilot);
+    await fillCommonFields(firstPilot);
     await page.getByLabel('Ora decollo').fill('20:00');
     await page.getByLabel('Ora atterraggio').fill('20:30');
     await page.getByLabel('Aeroporto di partenza').fill(spareDeparture);
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     await page.getByTestId('flight-result-close').click();
 
-    await page.getByTestId('flight-filter-person').fill(cleanPilot.lastName);
-    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(cleanPilot.lastName)}`));
+    await page.getByTestId('flight-filter-person').fill(firstPilot.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(firstPilot.lastName)}`));
     const spareRow = page.getByTestId('flight-row').filter({ hasText: spareDeparture });
     await expect(spareRow).toHaveCount(1);
     await spareRow.getByTestId('flight-correct-action').click();
     await expect(page.getByTestId('flight-form')).toBeVisible();
 
-    await selectFromCombobox(page.getByLabel('Pilota o allievo'), blockedPilot.lastName, `${blockedPilot.lastName} ${blockedPilot.firstName}`);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), secondPilot.lastName, `${secondPilot.lastName} ${secondPilot.firstName}`);
     await page.getByLabel('Ora decollo').fill('10:30');
     await page.getByLabel('Ora atterraggio').fill('11:30');
     await page.getByRole('button', { name: 'Salva modifiche' }).click();
-    await forceAndExpectOverlap('Verifica del 409 forzato in modifica');
+    await proceedAndExpectOverlap();
     expect(await countFlights(page, aircraft.id)).toBe(2);
   });
 
@@ -1312,7 +1314,8 @@ test.describe('Aircraft price from the profile, frozen on the flight (Story 19.3
   type Breakdown = { aircraftRateCentsPerHour: number; aircraftAmountCents: number; aircraftPriceCategory: 'STUDENT' | 'PILOT' };
 
   async function postFlight(page: Page, data: Record<string, unknown>): Promise<Breakdown> {
-    const response = await page.request.post('/api/v1/flights', { data: { departureAirfield: 'Base', arrivalAirfield: 'Base', ...data } });
+    // `force` (story 19.9, E-R1): the price is the subject, never the requirements of the flight.
+    const response = await page.request.post('/api/v1/flights', { data: { departureAirfield: 'Base', arrivalAirfield: 'Base', force: true, ...data } });
     expect(response.status(), await response.text()).toBe(201);
     return ((await response.json()) as { flight: { breakdown: Breakdown } }).flight.breakdown;
   }
@@ -1462,6 +1465,7 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
 
     // AC 16: the value sent is the switch's own state, and the PIC follows it.
@@ -1532,7 +1536,13 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
     const answered = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/flights' && response.request().method() === 'POST');
     await page.getByRole('button', { name: 'Registra volo' }).click();
     expect((await posted).postDataJSON()).toMatchObject({ personId: pilot.id, flightType: 'TOURISM', isSolo: false });
-    expect((await answered).status()).toBe(201);
+    // Story 19.9: the fresh pilot meets the requirements warning — a 422 of
+    // the shared contract, never the 422 SOLO_REQUIRES_SCHOOL a hidden switch
+    // would have caused (that hard guard answers first).
+    const firstAnswer = await answered;
+    expect(firstAnswer.status()).toBe(422);
+    expect(((await firstAnswer.json()) as { error: { code: string } }).error.code).toBe('REQUIREMENTS_NOT_MET');
+    await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
   });
 
@@ -1551,6 +1561,7 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
         flightType: 'SCHOOL',
         isSolo: true,
         ...flightTimes(PAST_DATE, 30),
+        force: true,
       },
     });
     expect(response.status()).toBe(201);
@@ -1579,7 +1590,7 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
     const pilot = await createPilotWithLogin(page, 'PilotFlightsAerial195!');
-    const body = { aircraftId: aircraft.id, personId: pilot.personId, departureAirfield: 'Base', arrivalAirfield: 'Base', ...flightTimes(PAST_DATE, 30) };
+    const body = { aircraftId: aircraft.id, personId: pilot.personId, departureAirfield: 'Base', arrivalAirfield: 'Base', force: true, ...flightTimes(PAST_DATE, 30) };
 
     const register = await page.request.post('/api/v1/flights', { data: { ...body, flightType: 'AERIAL_WORK' } });
     expect(register.status()).toBe(422);

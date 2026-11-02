@@ -434,7 +434,7 @@ model User {
   bookingsCancelled                   Booking[]                     @relation("BookingCancelledBy")
   /// Bookings this user FORCED past a blocking expired document (epic 7, story 7.4, AC 2) — `Booking.forcedByUserId`.
   bookingsForced                      Booking[]                     @relation("BookingForcedBy")
-  /// Flights this user FORCED past a blocking expired document (epic 14, story 14.4, AC 2) — `Flight.forcedByUserId`.
+  /// Flights on which this user derogated the requirements warning (story 19.9, A10) — `Flight.forcedByUserId`.
   flightsForced                       Flight[]                      @relation("FlightForcedBy")
   /// Bookings this user APPROVED or DENIED (epic 12, story 12.2, AC 3) — `Booking.decidedByUserId`.
   bookingsDecided                     Booking[]                     @relation("BookingDecidedBy")
@@ -945,18 +945,18 @@ model Flight {
   actorUserId String
   actorUser   User   @relation(fields: [actorUserId], references: [id])
 
-  /// Admin force-bypass tracking for a blocking expired document at
-  /// registration/correction time (story 14.4, AC 2; ratifica R4) — set
-  /// TOGETHER, exactly once, ONLY when `resolveFlightInput` actually
-  /// bypassed a blocking expired document (`flights.forceExpiry` + `force:
-  /// true` + `forceReason`); `null` on every normal flight, INCLUDING a
-  /// `force: true` request that had nothing to bypass — same "scavalcato un
-  /// blocco, non spuntata una checkbox" convention as `Booking.forcedAt`
-  /// (story 7.4).
+  /// Silent stamp of a deroga (story 19.9, A10): `forcedAt`/`forcedByUserId`
+  /// are set TOGETHER, only when `resolveFlightInput` derogated at least one
+  /// requirement (`REQUIREMENTS_NOT_MET`) with `force: true` and the
+  /// `requirements.force` permission; `null` on every normal flight,
+  /// INCLUDING a `force: true` request that had nothing to derogate — same
+  /// "scavalcato un blocco, non spuntata una checkbox" convention as
+  /// `Booking.forcedAt` (story 7.4). Never shown in the UI (it stays in the
+  /// DTO as API data). An edit overwrites it only when the edit itself
+  /// derogates.
   forcedAt       DateTime?
   forcedByUserId String?
   forcedByUser   User?     @relation("FlightForcedBy", fields: [forcedByUserId], references: [id])
-  forceReason    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

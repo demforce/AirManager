@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
-import { ensureValidSeedExpiries, selectFromCombobox } from './helpers';
+import { ensureValidSeedExpiries, selectFromCombobox, submitPastRequirements } from './helpers';
 
 /**
  * Story 19.6 (P1 — R-19-d; Q-19.6-a = B): the admin's «Senza addebito»
@@ -73,8 +73,9 @@ async function createAircraft(page: Page, priceCents: number | null): Promise<{ 
   return { id: aircraft.id, registration };
 }
 
+/** `force: true` (story 19.9, E-R1): the flag is this spec's subject, never the flight's requirements (a fresh person has no fee). */
 function flightBody(aircraftId: string, personId: string, dateOnly: string, minutes: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return { aircraftId, personId, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', flightType: 'TOURISM', ...flightTimes(dateOnly, minutes), ...extra };
+  return { aircraftId, personId, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', flightType: 'TOURISM', ...flightTimes(dateOnly, minutes), force: true, ...extra };
 }
 
 async function readAccount(page: Page, personId: string): Promise<{ balanceCents: number; flightCharges: Array<{ id: string; amountCents: number; description: string | null }> }> {
@@ -197,6 +198,8 @@ test.describe('Flight «senza addebito» (Story 19.6, P1 — R-19-d)', () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    // Story 19.9: no balance check on a no-charge flight, but the fee and the currency still apply.
+    await submitPastRequirements(page);
 
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel.getByTestId('flight-result-total')).toHaveText(/^0,00\s€$/);
@@ -221,6 +224,7 @@ test.describe('Flight «senza addebito» (Story 19.6, P1 — R-19-d)', () => {
     await noChargeRow.getByTestId('flight-correct-action').click();
     await expect(page.getByTestId('flight-form').getByTestId('flight-no-charge-toggle')).toHaveAttribute('aria-checked', 'true');
     await page.getByTestId('flight-form').getByLabel('Ora atterraggio').fill('10:45');
+    // No warning: same person and date (documents, fee and currency exempt, D-8) and no charge (no balance).
     await page.getByRole('button', { name: 'Salva modifiche' }).click();
     await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-no-charge')).toBeVisible();
     await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toHaveText(/^0,00\s€$/);

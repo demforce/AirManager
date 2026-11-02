@@ -185,6 +185,7 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
         flightType: 'TOURISM',
         takeoffAt: '2026-06-15T10:00:00.000Z',
         landingAt: '2026-06-15T11:30:00.000Z',
+        force: true,
       },
     });
     expect(flightResponse.status()).toBe(201);

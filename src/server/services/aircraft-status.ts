@@ -3,10 +3,11 @@ import { toDateOnlyString } from '@/lib/date-only';
 /**
  * The `details` payload of EVERY `AIRCRAFT_OUT_OF_SERVICE` 422 (story AOG-1a,
  * AD-3) — ONE shape for all four call sites (`bookings.service.ts`'s create /
- * move / approve guards, plus `flights.service.ts#resolveFlightInput`), because
- * they are the same domain error and this API is also consumed by the future
- * Flutter app: three different shapes for one code would be the defect, not the
- * economy.
+ * move / approve guards, plus the flights' `AIRCRAFT_OUT_OF_SERVICE`
+ * requirement failure, `flights.service.ts#resolveFlightInput`, story 19.9),
+ * because they are the same domain fact and this API is also consumed by the
+ * future Flutter app: different shapes for one fact would be the defect, not
+ * the economy.
  *
  * It lives in its OWN module rather than inside `bookings.service.ts` (where
  * `findBlockingExpiredDocuments`, the other flights↔bookings shared helper,

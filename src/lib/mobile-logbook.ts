@@ -1,6 +1,6 @@
 /**
- * Pure derivations of the mobile logbook (story 15.6, AD-5) — the phone card,
- * its status badge and the detail sheet's over-line. They live here, outside
+ * Pure derivations of the mobile logbook (story 15.6, AD-5) — the phone card
+ * and the detail sheet's over-line. They live here, outside
  * the console, for the same reason `mobile-registries.ts`/`mobile-agenda.ts`
  * do: they encode edge cases that are invisible on a happy-path screenshot
  * (a historical flight with no airfields) and are cheaper to prove with a
@@ -10,18 +10,6 @@
  * into the test (CLAUDE.md's eager-env rule).
  */
 import { joinSegments } from './mobile-sub-line';
-
-/**
- * The one status a row is allowed to shout about (ratifica R-15.6-b): "deroga"
- * — an admin bypassed a blocking document. The only one left since story
- * 19.6 removed cancelled flights and correction chains (story 19.9 owns the
- * deroga's own future).
- */
-export type FlightBadgeKind = 'forced';
-
-export function flightBadgeKind(flight: { forcedAt: string | null }): FlightBadgeKind | null {
-  return flight.forcedAt !== null ? 'forced' : null;
-}
 
 /**
  * `DEP→ARR`, the template's own form (script 666), or `null` when the flight

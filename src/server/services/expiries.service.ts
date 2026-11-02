@@ -670,7 +670,9 @@ export type BlockingExpiryItem = { typeName: string; daysUntil: number };
  * The BLOCKING documents of `personIds` that are already expired or due
  * within {@link BLOCKING_FLAG_HORIZON_DAYS} days — story 15.5, ratifica
  * R-15.5-c: the data behind the pilot row's flag chip. Blocking means a
- * RATING with `ExpiryType.blocksBooking`, plus — story 19.7a, D-13 — the
+ * RATING with `ExpiryType.blocksBooking` of an ACTIVE type (story 19.9, D-13:
+ * a deactivated type no longer blocks — 16.4, R-16-c — so it no longer flags
+ * either), plus — story 19.7a, D-13 — the
  * person's BEST medical visit (the latest `expiresAt`): one valid visit of any
  * class covers them (R-19-j), so an expired class 2 beside a valid class 1 is
  * no signal at all. The visits are therefore read WHOLE and reduced to the
@@ -704,7 +706,7 @@ export async function listBlockingExpiriesByPerson(actor: Actor, personIds: stri
 
   const horizon = new Date(today.getTime() + BLOCKING_FLAG_HORIZON_DAYS * MS_PER_DAY);
   const ratingRows = await prisma.expiry.findMany({
-    where: { personId: { in: personIds }, expiresAt: { lte: horizon }, expiryType: { kind: 'RATING', blocksBooking: true } },
+    where: { personId: { in: personIds }, expiresAt: { lte: horizon }, expiryType: { kind: 'RATING', blocksBooking: true, isActive: true } },
     select: { personId: true, expiresAt: true, expiryType: { select: { name: true } } },
   });
   const medicalRows = await prisma.expiry.findMany({

@@ -281,6 +281,24 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     });
   });
 
+  it('documents the shared requirements warning (story 19.9, AC 21): its components, the code on both flight writes, no motivo left', () => {
+    const schemas = doc.components?.schemas as Record<string, { oneOf?: unknown[]; properties?: Record<string, unknown> }> | undefined;
+    expect(schemas?.['RequirementFailure']?.oneOf).toHaveLength(5);
+    expect(schemas?.['RequirementsNotMetDetails']?.properties).toHaveProperty('failures');
+
+    const flightList = schemas?.['FlightList']?.properties?.['items'] as { items?: { properties?: Record<string, unknown> } } | undefined;
+    expect(schemas?.['RegisterFlightRequest']?.properties).toHaveProperty('force');
+    expect(schemas?.['RegisterFlightRequest']?.properties).not.toHaveProperty('forceReason');
+    expect(flightList?.items?.properties).toHaveProperty('forcedAt');
+    expect(flightList?.items?.properties).not.toHaveProperty('forceReason');
+
+    const paths = doc.paths as Record<string, Record<string, { description?: string }>>;
+    for (const operation of [paths['/api/v1/flights']?.['post'], paths['/api/v1/flights/{id}']?.['put']]) {
+      expect(operation?.description).toContain('REQUIREMENTS_NOT_MET');
+      expect(operation?.description).not.toMatch(/FLIGHT_BLOCKED_BY_EXPIRY|forceReason|flights\.forceExpiry/);
+    }
+  });
+
   it('documents blocksBooking on the ExpiryType schema (story 7.4)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
     expect(schemas?.['ExpiryType']?.properties).toHaveProperty('blocksBooking');

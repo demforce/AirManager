@@ -120,7 +120,7 @@ async function registerTourismFlight(page: Page, aircraftId: string, personId: s
   const takeoffAt = `${dateOnly}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
-    data: { aircraftId, personId, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', flightType: 'TOURISM', takeoffAt, landingAt },
+    data: { aircraftId, personId, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', flightType: 'TOURISM', takeoffAt, landingAt, force: true },
   });
   expect(response.status()).toBe(201);
 }

@@ -47,20 +47,17 @@ export type Permission =
   // `listCalendarBookings`). Granted to ADMIN/INSTRUCTOR, never
   // PILOT/STUDENT.
   | 'bookings.read.names'
-  // Story 14.4 (ratifica R4): forces a flight registration/correction past a
-  // BLOCKING expired document (pilot's or instructor's) with a mandatory
-  // motivo — `flights.service.ts#resolveFlightInput`'s `FLIGHT_BLOCKED_BY_EXPIRY`
-  // bypass. Deliberately a permission distinct from `flights.manage` itself —
-  // the gate lives on THIS permission, not on a role literal, so ADMIN being
-  // (since story 14.9) the only role holding either is incidental, not the
-  // reason the split exists.
-  // Story AOG-1a (ratifica R-AOG-c): this permission now covers TWO blocks —
-  // the blocking expired document above AND the out-of-service aircraft
-  // (`AIRCRAFT_OUT_OF_SERVICE`), with ONE `force` scavalcando both and
-  // producing ONE stamp. The name stays `forceExpiry` DELIBERATELY: renaming it
-  // would touch UI, i18n and tests without changing a single semantic — the
-  // same call story 14.4 F3 made on `ExpiryType.blocksBooking`.
-  | 'flights.forceExpiry';
+  // Story 19.9 (R-19-h, CR §4.4): derogates the ONE requirements warning —
+  // 422 `REQUIREMENTS_NOT_MET` (documents, fee, currency, balance and, on a
+  // flight, the grounded aircraft) — by resending the same request with
+  // `force: true`, no motivo; ADMIN-only. It replaces story 14.4's
+  // flight-only "expired document" permission, whose name was already false
+  // since story AOG-1a. A permission distinct from
+  // `flights.manage`/`bookings.manage.any` because story 19.10 gates the
+  // bookings' (and the membership fee's) `force` on it too, where
+  // `bookings.manage.own` must never derogate — the gate lives on THIS
+  // permission, not on a role literal.
+  | 'requirements.force';
 
 const ALL_PERMISSIONS: Permission[] = [
   'people.read',
@@ -76,7 +73,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'self.read',
   'payouts.manage',
   'bookings.read.names',
-  'flights.forceExpiry',
+  'requirements.force',
 ];
 
 /**

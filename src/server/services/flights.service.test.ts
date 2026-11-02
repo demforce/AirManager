@@ -41,17 +41,6 @@ vi.mock('@/server/db/prisma', () => ({
       count: vi.fn(),
       aggregate: vi.fn(),
     },
-    // Review F5 (ratifica R-14.4-a) — `findMissingBlockingDocuments`'s own
-    // direct queries (never routed through the mocked `bookings.service`
-    // below, module doc-comment on that function): `expiryType.findMany`
-    // (the applicable blocksBooking catalogue) and `expiry.findMany` (which
-    // of those the person already has registered).
-    expiryType: {
-      findMany: vi.fn(),
-    },
-    expiry: {
-      findMany: vi.fn(),
-    },
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
   },
@@ -95,29 +84,26 @@ vi.mock('./instructor-rates.service', () => ({
   getEffectiveInstructorRate: (...args: unknown[]) => getEffectiveInstructorRateMock(...args),
 }));
 
-// Story 14.4 (AC 1) — `flights.service.ts` reuses `bookings.service.ts`'s
-// `findBlockingExpiredDocuments` verbatim (never reimplements the scan).
-// Mocked at the module boundary, same rationale as `rates.service`/
-// `instructor-rates.service` above: `bookings.service.ts` itself has its own
-// dedicated test suite for the ACTUAL date-comparison logic
-// (`bookings.service.test.ts`) — this file only needs to verify flights.service
-// CALLS it correctly (which person(s), which date) and handles its result.
-const findBlockingExpiredDocumentsMock = vi.fn();
-vi.mock('./bookings.service', () => ({
-  findBlockingExpiredDocuments: (...args: unknown[]) => findBlockingExpiredDocumentsMock(...args),
-}));
-
-// Story 19.7a (R-19-j): the medical requirement (`expiries.service.ts`) is
-// mocked at the module boundary like `findBlockingExpiredDocuments` above —
-// its own rule is proved by `medical-requirement.test.ts`/`expiries.service.test.ts`;
-// here only WHO is asked, for WHICH day, and where its answer lands.
-const getMedicalRequirementFailureMock = vi.fn();
-vi.mock('./expiries.service', () => ({
-  getMedicalRequirementFailure: (...args: unknown[]) => getMedicalRequirementFailureMock(...args),
-}));
+// Story 19.9 — the requirements are evaluated by `requirements.service.ts`,
+// mocked at the module boundary (its own rules: `requirements.service.test.ts`;
+// importing it would drag currency/membership/expiries and `@/lib/env` in).
+// This file proves the POLICY flights.service asks for — which blocks, for
+// whom, on which day — and what it does with the answer. The 422 is the real
+// `ValidationError` of the shared contract.
+const evaluateRequirementsMock = vi.fn();
+vi.mock('./requirements.service', async () => {
+  const { ValidationError } = await import('./errors');
+  return {
+    evaluateRequirements: (...args: unknown[]) => evaluateRequirementsMock(...args),
+    throwRequirementsNotMet: (failures: unknown[]) => {
+      throw new ValidationError('Requirements not met.', { failures }, 'REQUIREMENTS_NOT_MET');
+    },
+  };
+});
 
 const { prisma } = await import('@/server/db/prisma');
 const { listFlights, getFlightTotals, registerFlight, deleteFlight, updateFlight } = await import('./flights.service');
+const { ROLE_PERMISSIONS } = await import('@/server/auth/rbac');
 const { NotFoundError, ConflictError } = await import('./errors');
 
 const aircraftFindUniqueMock = vi.mocked(prisma.aircraft.findUnique);
@@ -137,8 +123,6 @@ const flightUpdateMock = vi.mocked(prisma.flight.update);
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const flightCountMock = vi.mocked(prisma.flight.count);
 const flightAggregateMock = vi.mocked(prisma.flight.aggregate);
-const expiryTypeFindManyMock = vi.mocked(prisma.expiryType.findMany);
-const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
 const transactionMock = vi.mocked(prisma.$transaction);
 const queryRawMock = vi.mocked(prisma.$queryRaw);
 
@@ -182,11 +166,6 @@ const queryRaw = queryRawMock as unknown as {
     mockResolvedValueOnce: (v: unknown[]) => { mockResolvedValueOnce: (v: unknown[]) => void };
   };
 };
-const expiryTypeFindMany = expiryTypeFindManyMock as unknown as {
-  mockResolvedValue: (v: Array<{ id: string; name: string }>) => void;
-  mockResolvedValueOnce: (v: Array<{ id: string; name: string }>) => { mockResolvedValueOnce: (v: Array<{ id: string; name: string }>) => void };
-};
-const expiryFindMany = expiryFindManyMock as unknown as { mockResolvedValue: (v: Array<{ expiryTypeId: string }>) => void };
 
 /** Same batch/interactive `$transaction` stand-in as `accounts.service.test.ts`. */
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
@@ -233,10 +212,8 @@ const PILOT_PERSON = {
   pilotProfile: { deactivatedAt: null },
   studentProfile: null,
 };
-// Review F6 — `firstName`/`lastName` added (previously absent) so a test can
-// assert the instructor's NAME on a blocked document (`FlightBlockingDocument.personName`)
-// without it silently rendering "undefined undefined"; every PRE-EXISTING
-// test using this fixture ignores these two fields, so adding them is safe.
+// `firstName`/`lastName`: the instructor's NAME travels to the requirements
+// (story 19.9) — every other test using this fixture ignores them.
 const INSTRUCTOR_PROFILE_ROW = {
   firstName: 'Anna',
   lastName: 'Bianchi',
@@ -273,14 +250,17 @@ const CREATED_FLIGHT_ROW = {
 
 // Story 19.6 — `updateFlight`'s pre-read of the flight being edited: the
 // identity its exemptions key on (type R-14.3-a, person/instructor/date
-// R-14.4-b, aircraft AOG-1a, price category Q-19.3-b).
+// R-14.4-b, aircraft AOG-1a, price category Q-19.3-b) and, since story 19.9,
+// `isSolo` and the current charge (currency and balance of an edit).
 const ORIGINAL_FLIGHT_ROW = {
   aircraftId: 'aircraft_1',
   personId: 'person_1',
   flightDate: new Date('2020-01-15T00:00:00.000Z'),
   flightType: 'TOURISM' as const,
+  isSolo: false,
   aircraftPriceCategory: 'PILOT' as const,
   instructorProfile: null as { personId: string } | null,
+  charge: { amountCents: -20000 } as { amountCents: number } | null,
   updatedAt: new Date('2020-01-15T12:00:00.000Z'),
 };
 
@@ -335,8 +315,6 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     flightFindManyMock.mockReset();
     flightCountMock.mockReset();
     flightAggregateMock.mockReset();
-    expiryTypeFindManyMock.mockReset();
-    expiryFindManyMock.mockReset();
     transactionMock.mockReset();
     queryRawMock.mockReset();
     getAccountOverviewMock.mockReset();
@@ -344,25 +322,15 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     sendNegativeBalanceAlertMock.mockReset();
     getEffectiveRateMock.mockReset();
     getEffectiveInstructorRateMock.mockReset();
-    findBlockingExpiredDocumentsMock.mockReset();
-    getMedicalRequirementFailureMock.mockReset();
+    evaluateRequirementsMock.mockReset();
 
     getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
     getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
-    // Story 14.4 default: no blocking document — every PRE-EXISTING test in
-    // this file (none of which cares about this guard) keeps passing
-    // unmodified; the dedicated describe block below overrides this per test.
-    findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
-    // Review F5 default: no APPLICABLE blocksBooking type at all -> nothing
-    // ever reported missing (`findMissingBlockingDocuments` short-circuits on
-    // `applicableTypes.length === 0`, so `expiry.findMany`'s own default here
-    // is never even reached by most tests) — same "every pre-existing test
-    // keeps passing unmodified" rationale as the mock above.
-    expiryTypeFindMany.mockResolvedValue([]);
-    expiryFindMany.mockResolvedValue([]);
-    // Story 19.7a default: the medical requirement is satisfied for everybody.
-    getMedicalRequirementFailureMock.mockResolvedValue(null);
+    // Story 19.9 default: every requirement met — the tests that do not care
+    // about them keep passing unmodified; the dedicated describe blocks
+    // below override it per test.
+    evaluateRequirementsMock.mockResolvedValue([]);
     // Story 16.2 default: no overlapping flight — every PRE-EXISTING test in
     // this file keeps passing unmodified; the dedicated describe block below
     // overrides it per test.
@@ -407,63 +375,34 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    // --- story AOG-1a, P2 (ratifica R-AOG-c): the out-of-service guard -------
-    // Before this story `registerFlight` on a grounded aircraft succeeded: the
-    // select did not even read `status` (measured at runtime — the only thing
-    // that stopped such a flight was its DATE).
+    // --- story AOG-1a (ratifica R-AOG-c), story 19.9 (D-2/D-3) ------------------
+    // A grounded aircraft is no longer a 422 of its own on a flight: it is the
+    // FIRST failure of `REQUIREMENTS_NOT_MET`, evaluated AFTER every hard guard.
 
-    it('throws a 422 AIRCRAFT_OUT_OF_SERVICE for a grounded aircraft, with reason and date in details (AC 8)', async () => {
-      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-
-      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
-        code: 'AIRCRAFT_OUT_OF_SERVICE',
-        // The SAME `details` shape the three booking guards carry — one domain
-        // error, one contract (AD-3).
-        details: { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' },
-      });
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it('carries outOfServiceUntil: null when the grounding has no expected return date (invariant [b])', async () => {
-      aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, outOfServiceUntil: null });
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-
-      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
-        code: 'AIRCRAFT_OUT_OF_SERVICE',
-        details: { reason: 'Revisione 100h', outOfServiceUntil: null },
-      });
-    });
-
-    it('a grounding whose outOfServiceUntil is in the PAST still blocks — invariant [a] (AC 2)', async () => {
-      // The date never returns the aircraft to service by itself: only `status`
-      // decides, and the guard reads nothing else.
-      aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, outOfServiceUntil: new Date(Date.UTC(2020, 0, 1)) });
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-
-      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
-        code: 'AIRCRAFT_OUT_OF_SERVICE',
-        details: { reason: 'Revisione 100h', outOfServiceUntil: '2020-01-01' },
-      });
-    });
-
-    it('an aircraft that is BOTH archived and grounded answers AIRCRAFT_ARCHIVED — state before domain (AC 9)', async () => {
+    it('an aircraft that is BOTH archived and grounded answers AIRCRAFT_ARCHIVED — state before requirements', async () => {
       aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, archivedAt: new Date('2026-01-01T00:00:00.000Z') });
       personFindUnique.mockResolvedValue(PILOT_PERSON);
 
       await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+      expect(evaluateRequirementsMock).not.toHaveBeenCalled();
     });
 
-    it('the grounding is checked BEFORE the flight date — a FUTURE-dated flight on a grounded aircraft answers AIRCRAFT_OUT_OF_SERVICE (AC 8, the story probe)', async () => {
-      // This IS the story's own runtime probe, as a unit test: pre-fix the
-      // service answered `FLIGHT_DATE_IN_FUTURE` (measured), because no
-      // out-of-service guard existed anywhere on this path.
+    it('a grounded aircraft for an archived person answers PERSON_ARCHIVED — the hard guard first (AC 7)', async () => {
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      personFindUnique.mockResolvedValue({ ...PILOT_PERSON, archivedAt: new Date('2026-01-01T00:00:00.000Z') });
+
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'PERSON_ARCHIVED' });
+      expect(evaluateRequirementsMock).not.toHaveBeenCalled();
+    });
+
+    it('a FUTURE-dated flight on a grounded aircraft answers FLIGHT_DATE_IN_FUTURE — «Procedi comunque» never lands on an error it cannot cover (AC 7, D-3)', async () => {
       aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
       personFindUnique.mockResolvedValue(PILOT_PERSON);
       const future = new Date(Date.now() + 400 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes(future, 60) });
 
-      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'AIRCRAFT_OUT_OF_SERVICE' });
+      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_DATE_IN_FUTURE' });
+      expect(evaluateRequirementsMock).not.toHaveBeenCalled();
     });
 
     it('throws a 422 PERSON_ARCHIVED for an archived person', async () => {
@@ -1273,368 +1212,162 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
   });
 
-  describe('registerFlight — blocking expiry guard-rail (story 14.4, AC 1/2/6; ratifica R4)', () => {
+  describe('registerFlight — requirements (story 19.9, CR §4.4; AC 7-10, 12)', () => {
     beforeEach(() => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
       getEffectiveRateMock.mockResolvedValue({ studentPriceCents: 15000, pilotPriceCents: 15000 });
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
       flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
       queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
     });
 
-    it('a blocking document expired at the FLIGHT DATE (not "today") -> 422 FLIGHT_BLOCKED_BY_EXPIRY, transaction never opens', async () => {
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({
-        blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }],
-        warnings: [],
+    const EXPIRED = { type: 'EXPIRY', role: 'person', personName: 'Mario Rossi', typeName: 'Rating bloccante', expiresAt: '2020-01-14' } as const;
+    const LOW_BALANCE = { type: 'BALANCE', role: 'person', personName: 'Mario Rossi', balanceCents: 0, costCents: 20000 } as const;
+
+    function askedFor(): Record<string, unknown> {
+      return evaluateRequirementsMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    }
+
+    function createdData(): Record<string, unknown> {
+      return (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+    }
+
+    it('ONE 422 REQUIREMENTS_NOT_MET carrying the whole list, and the transaction never opens (AC 7)', async () => {
+      evaluateRequirementsMock.mockResolvedValue([EXPIRED, LOW_BALANCE]);
+
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'REQUIREMENTS_NOT_MET', details: { failures: [EXPIRED, LOW_BALANCE] } });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('a failing requirement on a flight with no aircraft rate answers NO_AIRCRAFT_RATE — the requirements come after the rates (AC 7, D-3)', async () => {
+      evaluateRequirementsMock.mockResolvedValue([EXPIRED]);
+      getEffectiveRateMock.mockResolvedValue(null);
+
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'NO_AIRCRAFT_RATE' });
+      expect(evaluateRequirementsMock).not.toHaveBeenCalled();
+    });
+
+    it('a registration asks for everything, all on the flight day, the cost being the very total the FLIGHT_CHARGE debits (AC 8, D-6)', async () => {
+      await registerFlight(adminActor(), BASE_INPUT);
+
+      expect(askedFor()).toEqual({
+        expiryDateOnly: '2020-01-15',
+        membershipDateOnly: '2020-01-15',
+        person: { id: 'person_1', name: 'Mario Rossi', hasActivePilot: true, hasActiveStudent: false, hasActiveInstructor: false },
+        instructor: null,
+        documents: true,
+        currency: { dateOnly: '2020-01-15', excludeFlightId: null },
+        balance: { costCents: 20000, creditCents: 0 },
       });
+      const charge = (accountMovementCreateMock.mock.calls[0]?.[0] as { data: { amountCents: number } }).data;
+      expect(charge.amountCents).toBe(-20000);
+    });
+
+    it('a 00:30 Rome takeoff (23:30Z the day before) is judged on that Rome day (AC 8)', async () => {
+      await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, ...buildTimes('2020-01-14', 60, '23:30') }));
+
+      expect(askedFor()).toMatchObject({ expiryDateOnly: '2020-01-15', membershipDateOnly: '2020-01-15', currency: { dateOnly: '2020-01-15' } });
+    });
+
+    it('a SCHOOL solo is a solo flight — currency asked — and its instructor is NOT on board: no documents nor fee of theirs (R-19-i/R-19-j «a bordo»)', async () => {
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+      await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', isSolo: true, instructorPersonId: 'person_instructor' }));
+
+      expect(askedFor()).toMatchObject({ instructor: null, currency: { dateOnly: '2020-01-15', excludeFlightId: null } });
+    });
+
+    it.each([
+      ['a SCHOOL dual flight', { flightType: 'SCHOOL' }],
+      ['a TOURISM flight with an instructor (A5, e.g. a checkride)', { flightType: 'TOURISM' }],
+    ])('%s: no currency, and the instructor on board is checked by name', async (_label, overrides) => {
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+      await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, ...overrides, instructorPersonId: 'person_instructor' }));
+
+      expect(askedFor()).toMatchObject({ instructor: { personId: 'person_instructor', name: 'Anna Bianchi' }, currency: null, documents: true });
+    });
+
+    it('a no-charge flight skips the balance: balance null (AC 12, A9)', async () => {
+      await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, noCharge: true }));
+
+      expect(askedFor()).toMatchObject({ balance: null });
+    });
+
+    it('a grounded aircraft is the FIRST failure, before the evaluated ones, with registration, reason and return date (AC 9)', async () => {
+      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
+      evaluateRequirementsMock.mockResolvedValue([EXPIRED]);
 
       await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
-        code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-        details: { documents: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }] },
+        code: 'REQUIREMENTS_NOT_MET',
+        details: { failures: [{ type: 'AIRCRAFT_OUT_OF_SERVICE', registration: 'I-ABCD', reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' }, EXPIRED] },
       });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    // AC 6: "valido alla data del volo ma scaduto oggi -> OK (la data conta)".
-    // The date-comparison arithmetic itself lives in, and is tested by,
-    // `bookings.service.test.ts` (the shared helper is mocked here, module
-    // doc-comment) — this asserts the CALLER side of that contract: flights.service
-    // asks the helper about `flightDate` (2020-01-15, `BASE_INPUT`'s own date),
-    // never "today" (the real server clock, wildly different in a test run).
-    it('is anchored to the FLIGHT DATE, never "today" — succeeds when the shared helper reports nothing blocking for that date', async () => {
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
-
-      await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
-
-      expect(findBlockingExpiredDocumentsMock).toHaveBeenCalledWith('person_1', '2020-01-15');
-    });
-
-    it('an instructor with a blocking document (pilot clear) -> 422 FLIGHT_BLOCKED_BY_EXPIRY, naming the instructor\'s document', async () => {
-      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
-      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
-      findBlockingExpiredDocumentsMock
-        .mockResolvedValueOnce({ blockingDocuments: [], warnings: [] }) // pilot: clear
-        .mockResolvedValueOnce({ blockingDocuments: [{ typeName: 'Visita medica classe 1', expiresAt: '2019-06-01' }], warnings: [] }); // instructor: blocked
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
-
-      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({
-        code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-        details: { documents: [{ typeName: 'Visita medica classe 1', expiresAt: '2019-06-01' }] },
+    it('a grounding with no expected return date carries outOfServiceUntil: null, and one whose date is PAST still counts (only status decides)', async () => {
+      aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, outOfServiceUntil: null });
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
+        details: { failures: [{ type: 'AIRCRAFT_OUT_OF_SERVICE', registration: 'I-ABCD', reason: 'Revisione 100h', outOfServiceUntil: null }] },
       });
-      expect(findBlockingExpiredDocumentsMock).toHaveBeenCalledWith('person_1', '2020-01-15');
-      expect(findBlockingExpiredDocumentsMock).toHaveBeenCalledWith('person_instructor', '2020-01-15');
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
 
-    it('an ADMIN forcing past a real block succeeds and stamps forcedAt/forcedByUserId/forceReason on the Flight row', async () => {
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({
-        blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }],
-        warnings: [],
+      aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, outOfServiceUntil: new Date(Date.UTC(2020, 0, 1)) });
+      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
+        details: { failures: [{ type: 'AIRCRAFT_OUT_OF_SERVICE', outOfServiceUntil: '2020-01-01' }] },
       });
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Autorizzato dal direttore per volo urgente' });
-
-      const result = await registerFlight(adminActor(), input);
-
-      expect(result).toBeDefined();
-      expect(flightCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            forcedByUserId: 'admin_1',
-            forceReason: 'Autorizzato dal direttore per volo urgente',
-            forcedAt: expect.any(Date),
-          }),
-        }),
-      );
     });
 
-    it('force: true from an ADMIN with NOTHING to bypass registers normally and stamps NOTHING (Dev Notes: "scavalcato un blocco", not "spuntata una checkbox")', async () => {
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Non necessario ma fornito' });
+    it('an admin derogating (failures + force) registers the flight with the silent stamp — no motivo anywhere (AC 10, A10)', async () => {
+      evaluateRequirementsMock.mockResolvedValue([EXPIRED]);
 
-      await registerFlight(adminActor(), input);
+      await expect(registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, force: true }))).resolves.toBeDefined();
 
-      const data = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
-      expect(data['forcedAt']).toBeUndefined();
-      expect(data['forcedByUserId']).toBeUndefined();
-      expect(data['forceReason']).toBeUndefined();
+      expect(createdData()).toMatchObject({ forcedByUserId: 'admin_1', forcedAt: expect.any(Date) });
+      expect(createdData()).not.toHaveProperty('forceReason');
     });
 
-    // Schema-level guard (the ONE body schema of `POST /flights` and, since
-    // story 19.6, `PUT /flights/{id}`): `forceReason` is required
-    // UNCONDITIONALLY whenever `force` is `true`, same convention as
-    // `createBookingSchema`. A stale `reason` key no longer rescues anything.
-    it('registerFlightSchema rejects force: true without a forceReason (POST and PUT share it)', () => {
-      expect(() => registerFlightSchema.parse({ ...BASE_INPUT, force: true })).toThrow();
-      expect(() => registerFlightSchema.parse({ ...BASE_INPUT, force: true, reason: 'Motivo correzione' })).toThrow();
-    });
-
-    // --- story AOG-1a, AC 10 (ratifica R-AOG-c): ONE force, TWO blocks -------
-
-    it('force without flights.forceExpiry is a 403, BEFORE any query — the grounded aircraft is never even read (AC 10a)', async () => {
-      // `pilotActor` holds neither `flights.manage` nor `flights.forceExpiry`;
-      // the ordering guarantee is what this asserts (no query ran at all).
+    it('ONE force covers a grounded aircraft AND a failing requirement together, leaving ONE stamp (R-AOG-c)', async () => {
       aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Provo comunque' });
+      evaluateRequirementsMock.mockResolvedValue([EXPIRED]);
 
-      await expect(registerFlight(pilotActor(), input)).rejects.toThrow(ForbiddenError);
-      expect(aircraftFindUniqueMock).not.toHaveBeenCalled();
-    });
+      await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, force: true }));
 
-    it('an ADMIN derogating a grounded aircraft registers the flight and stamps the override (AC 10c)', async () => {
-      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Volo che ha causato il fermo' });
-
-      const result = await registerFlight(adminActor(), input);
-
-      expect(result).toBeDefined();
-      // AD-5's dead end (the flight that CAUSED the grounding) has a way out,
-      // and it leaves a trace: the registro's "Deroga" badge reads this stamp.
-      expect(flightCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ forcedByUserId: 'admin_1', forceReason: 'Volo che ha causato il fermo', forcedAt: expect.any(Date) }),
-        }),
-      );
-    });
-
-    it('ONE force covers a grounded aircraft AND a blocking document together, leaving exactly ONE stamp (AC 10d)', async () => {
-      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({
-        blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }],
-        warnings: [],
-      });
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Autorizzato dal direttore' });
-
-      await registerFlight(adminActor(), input);
-
-      const data = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
-      expect(data['forceReason']).toBe('Autorizzato dal direttore');
-      // ONE `Flight` row, therefore ONE stamp — there is no second override
-      // record, and the operator confirmed once.
       expect(flightCreateMock).toHaveBeenCalledTimes(1);
+      expect(createdData()).toMatchObject({ forcedByUserId: 'admin_1', forcedAt: expect.any(Date) });
     });
 
-    it('WITHOUT force, a grounded aircraft AND a blocking document answers the STATE error first — and NAMES the document it would also bypass (AC 9 + review MAJOR-1)', async () => {
-      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({
-        blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }],
-        warnings: [],
-      });
-      // A MISSING blocking document too (review F5's own class), so the 422
-      // proves it reports BOTH scans, not just the expired one.
-      expiryTypeFindMany.mockResolvedValue([{ id: 'type_rating', name: 'Rating bloccante' }]);
-      expiryFindMany.mockResolvedValue([]);
+    it('force: true with NOTHING to derogate registers normally and stamps NOTHING ("scavalcato un requisito", not "spuntata una checkbox")', async () => {
+      await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, force: true }));
 
-      // Documented order: existence 404 -> state 422 -> domain 422. The
-      // aircraft's state is checked next to `AIRCRAFT_ARCHIVED`, well before
-      // the expiry scan runs — but since review MAJOR-1 the scan runs FOR it,
-      // because the ONE `force` (R-AOG-c) that lifts the grounding lifts these
-      // documents too: the admin must read them before writing the reason.
-      await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
-        code: 'AIRCRAFT_OUT_OF_SERVICE',
-        details: {
-          reason: 'Revisione 100h',
-          outOfServiceUntil: '2031-05-12',
-          documents: [
-            { typeName: 'Visita medica classe 2', expiresAt: '2019-12-31', role: 'person', personName: 'Mario Rossi' },
-            { typeName: 'Rating bloccante', expiresAt: null, role: 'person', personName: 'Mario Rossi' },
-          ],
-        },
-      });
+      expect(createdData()).not.toHaveProperty('forcedAt');
+      expect(createdData()).not.toHaveProperty('forcedByUserId');
     });
 
-    it('a grounded flight whose "instructor" IS the pilot reports no instructor document — that slot is the input the guard below rejects (review MAJOR-1)', async () => {
-      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
-      // A person who holds BOTH profiles: without the same-as-pilot check the
-      // scan would list their instructor-scoped documents as a second, phantom
-      // person on the very same flight.
-      personFindUnique.mockResolvedValue({ ...PILOT_PERSON, instructorProfile: { id: 'instr_profile_1', deactivatedAt: null } });
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }], warnings: [] });
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_1' });
-
-      const error = (await registerFlight(adminActor(), input).catch((caught: unknown) => caught)) as { code: string; details: { documents: unknown[] } };
-      expect(error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
-      expect(error.details.documents).toEqual([
-        { typeName: 'Visita medica classe 2', expiresAt: '2019-12-31', role: 'person', personName: 'Mario Rossi' },
-      ]);
+    it('force by an actor holding flights.manage but NOT requirements.force is a 403 BEFORE any query — aircraft never read, requirements never asked (AC 10, P5)', async () => {
+      // No role has flights.manage without requirements.force today (both
+      // ADMIN-only): grant it to INSTRUCTOR for this test only.
+      const saved = ROLE_PERMISSIONS.INSTRUCTOR;
+      ROLE_PERMISSIONS.INSTRUCTOR = [...saved, 'flights.manage'];
+      try {
+        await expect(registerFlight(instructorActor(), registerFlightSchema.parse({ ...BASE_INPUT, force: true }))).rejects.toThrow(ForbiddenError);
+        // The same actor WITHOUT force reaches the reads: the 403 above is the `force` gate, not `flights.manage`.
+        await registerFlight(instructorActor(), BASE_INPUT);
+      } finally {
+        ROLE_PERMISSIONS.INSTRUCTOR = saved;
+      }
+      expect(aircraftFindUniqueMock).toHaveBeenCalledTimes(1);
+      expect(evaluateRequirementsMock).toHaveBeenCalledTimes(1);
     });
 
-    it('a grounding with NOTHING else blocking carries NO documents key at all — the pre-MAJOR-1 shape, unchanged (review MAJOR-1)', async () => {
-      // The complement of the test above, and the guarantee that the sentence
-      // the operator reads for a plain grounding is byte-identical to the one
-      // this app has always shown: an empty list is never reported as one.
-      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
+    it('a stale forceReason key in the body is stripped by the schema, never a 422 (AD-4)', () => {
+      const parsed = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'vecchio client' });
 
-      const error = (await registerFlight(adminActor(), BASE_INPUT).catch((caught: unknown) => caught)) as { code: string; details: Record<string, unknown> };
-      expect(error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
-      expect(error.details).toEqual({ reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' });
-      expect('documents' in error.details).toBe(false);
-    });
-
-    it('the instructor of a grounded flight is scanned too — the out-of-service 422 is never PARTIAL (review MAJOR-1)', async () => {
-      aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
-      // Person lookup first, instructor lookup second — the SAME order
-      // `resolveFlightInput` uses on its own (unblocked) path.
-      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
-      findBlockingExpiredDocumentsMock.mockImplementation((personId: string) =>
-        Promise.resolve({
-          blockingDocuments: personId === 'person_instructor' ? [{ typeName: 'Visita medica classe 1', expiresAt: '2019-11-30' }] : [],
-          warnings: [],
-        }),
-      );
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
-
-      await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({
-        code: 'AIRCRAFT_OUT_OF_SERVICE',
-        details: {
-          documents: [{ typeName: 'Visita medica classe 1', expiresAt: '2019-11-30', role: 'instructor', personName: 'Anna Bianchi' }],
-        },
-      });
-    });
-
-    it('force: true on an OPERATIONAL aircraft with nothing to bypass still stamps NOTHING (AC 10e)', async () => {
-      // The grounding guard must not turn `force` into "spuntata una
-      // checkbox": with no block of EITHER kind the stamp stays absent.
-      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      personFindUnique.mockResolvedValue(PILOT_PERSON);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, force: true, forceReason: 'Non necessario ma fornito' });
-
-      await registerFlight(adminActor(), input);
-
-      const data = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
-      expect(data['forcedAt']).toBeUndefined();
-      expect(data['forcedByUserId']).toBeUndefined();
-      expect(data['forceReason']).toBeUndefined();
-    });
-
-    // Review F5 (ratifica R-14.4-a, verbatim): "un pilota/istruttore per cui
-    // NON esiste alcuna Expiry per un ExpiryType bloccante a lui applicabile
-    // ⇒ 422 FLIGHT_BLOCKED_BY_EXPIRY" — a SEPARATE predicate from the expired
-    // scan above (`findMissingBlockingDocuments`, never folded into the
-    // mocked `findBlockingExpiredDocuments`). Review F6: the reported
-    // document is tagged with WHOSE it is (`role`/`personName`), and a MISSING
-    // one carries `expiresAt: null` (distinguishing "mancante" from "scaduto").
-    describe('review F5/F6 — missing (never-registered) blocking document, tagged by role/personName', () => {
-      it('a person with an APPLICABLE blocksBooking type but no Expiry row at all -> 422, tagged MISSING (expiresAt: null)', async () => {
-        personFindUnique.mockResolvedValue(PILOT_PERSON);
-        expiryTypeFindMany.mockResolvedValue([{ id: 'type_rating', name: 'Rating bloccante' }]);
-        expiryFindMany.mockResolvedValue([]);
-
-        await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
-          code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-          details: { documents: [{ typeName: 'Rating bloccante', expiresAt: null, role: 'person', personName: 'Mario Rossi' }] },
-        });
-        expect(transactionMock).not.toHaveBeenCalled();
-        // The applicability scan asked about THIS person's own active
-        // profiles (`hasActivePilot`/`hasActiveStudent`), never re-derived.
-        expect(expiryTypeFindManyMock).toHaveBeenCalledWith(
-          expect.objectContaining({ where: expect.objectContaining({ kind: 'RATING', blocksBooking: true, scope: { in: ['ALL', 'PILOTS'] } }) }),
-        );
-      });
-
-      it('a person who HAS registered the applicable type is never reported missing, even with nothing expired', async () => {
-        personFindUnique.mockResolvedValue(PILOT_PERSON);
-        expiryTypeFindMany.mockResolvedValue([{ id: 'type_rating', name: 'Rating bloccante' }]);
-        expiryFindMany.mockResolvedValue([{ expiryTypeId: 'type_rating' }]);
-
-        await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
-      });
-
-      it('no applicable blocksBooking type at all -> never even reads the registered Expiry rows (short-circuits)', async () => {
-        personFindUnique.mockResolvedValue(PILOT_PERSON);
-        expiryTypeFindMany.mockResolvedValue([]);
-
-        await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
-        expect(expiryFindManyMock).not.toHaveBeenCalled();
-      });
-
-      it('an instructor with an applicable type but no Expiry row -> 422, tagged MISSING with role "instructor" and the INSTRUCTOR\'S OWN name', async () => {
-        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
-        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
-        // Only the INSTRUCTOR scan (second call, scope INSTRUCTORS) reports
-        // anything — the pilot's own (first call, scope PILOTS) is clear.
-        expiryTypeFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'type_rating_fi', name: 'Rating istruttore' }]);
-        expiryFindMany.mockResolvedValue([]);
-        const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
-
-        await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({
-          code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-          details: { documents: [{ typeName: 'Rating istruttore', expiresAt: null, role: 'instructor', personName: 'Anna Bianchi' }] },
-        });
-      });
-    });
-
-    // Story 19.7a (AC 6, R-19-j, D-4): ONE valid visit of any class for whoever
-    // is on board. The MISSING visit is this scan's document; an EXPIRED one is
-    // `findBlockingExpiredDocuments`' — never both for the same person.
-    describe('story 19.7a — the medical requirement inside the flight scan', () => {
-      const MISSING_VISIT = { typeName: 'Visita medica classe 1 / Visita medica classe 2 / Visita medica LAPL', expiresAt: null };
-
-      it('asks the requirement for the pilot AND the instructor, on the flight day', async () => {
-        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
-        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
-
-        await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' }));
-
-        expect(getMedicalRequirementFailureMock.mock.calls).toEqual([
-          [BASE_INPUT.personId, '2020-01-15'],
-          ['person_instructor', '2020-01-15'],
-        ]);
-      });
-
-      it('a pilot with NO visit at all -> 422 with ONE missing document (expiresAt null), role person', async () => {
-        personFindUnique.mockResolvedValue(PILOT_PERSON);
-        getMedicalRequirementFailureMock.mockResolvedValue(MISSING_VISIT);
-
-        await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
-          code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-          details: { documents: [{ ...MISSING_VISIT, role: 'person', personName: 'Mario Rossi' }] },
-        });
-        expect(transactionMock).not.toHaveBeenCalled();
-      });
-
-      it('a pilot with only an EXPIRED visit: the missing scan adds nothing — the expired scan carries it, exactly once', async () => {
-        personFindUnique.mockResolvedValue(PILOT_PERSON);
-        getMedicalRequirementFailureMock.mockResolvedValue({ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' });
-        findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }], warnings: [] });
-
-        await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
-          code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-          details: { documents: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31', role: 'person', personName: 'Mario Rossi' }] },
-        });
-      });
-
-      it('an instructor with NO visit -> ONE missing document tagged instructor, beside a pilot who is covered', async () => {
-        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
-        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
-        getMedicalRequirementFailureMock.mockImplementation(async (personId: string) => (personId === 'person_instructor' ? MISSING_VISIT : null));
-
-        await expect(registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' }))).rejects.toMatchObject({
-          code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-          details: { documents: [{ ...MISSING_VISIT, role: 'instructor', personName: 'Anna Bianchi' }] },
-        });
-      });
-
-      it('the missing visit is reported even when no RATING type is applicable (the rating scan short-circuits, the medical one does not)', async () => {
-        personFindUnique.mockResolvedValue(PILOT_PERSON);
-        expiryTypeFindMany.mockResolvedValue([]);
-        getMedicalRequirementFailureMock.mockResolvedValue(MISSING_VISIT);
-
-        await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'FLIGHT_BLOCKED_BY_EXPIRY' });
-        expect(expiryFindManyMock).not.toHaveBeenCalled();
-      });
+      expect(parsed).not.toHaveProperty('forceReason');
+      expect(parsed.force).toBe(true);
     });
   });
 
@@ -1969,35 +1702,27 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     // AC 15 — D-7 (A10): the force stamp is the minimum of audit.
-    it('an edit that bypasses nothing passes NO forced* field to flight.update — the stamp already on the row stays (AC 15, D-7)', async () => {
+    it('an edit that derogates nothing passes NO forced* field to flight.update — the stamp already on the row stays (AC 10, D-7)', async () => {
       await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
 
       const data = updatedFlightData();
       expect(data).not.toHaveProperty('forcedAt');
       expect(data).not.toHaveProperty('forcedByUserId');
-      expect(data).not.toHaveProperty('forceReason');
     });
 
-    // Story 14.4 (AC 1) — "tutti i 422 di 5.1 si applicano ai DATI NUOVI".
-    // Review F4 (ratifica R-14.4-b) carves out the opposite case (describe
-    // below), so these tests change the flight DATE to stay on the "identity
-    // changed" side of that line.
-    const UPDATE_INPUT_NEW_DATE = registerFlightSchema.parse({ ...UPDATE_INPUT, ...buildTimes('2020-02-20', 30) });
+    it('an edit that derogates (failures + force) rewrites the stamp on the SAME flight row (AC 10, D-7)', async () => {
+      evaluateRequirementsMock.mockResolvedValue([{ type: 'BALANCE', role: 'person', personName: 'Mario Rossi', balanceCents: 0, costCents: 7500 }]);
 
-    it('422 FLIGHT_BLOCKED_BY_EXPIRY when the edited (NEW) data targets a person with a blocking expired document', async () => {
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Rating bloccante', expiresAt: '2019-12-31' }], warnings: [] });
+      await expect(updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, force: true }))).resolves.toBeDefined();
 
-      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT_NEW_DATE)).rejects.toMatchObject({ code: 'FLIGHT_BLOCKED_BY_EXPIRY' });
+      expect(updatedFlightData()).toMatchObject({ forcedByUserId: 'admin_1', forcedAt: expect.any(Date) });
+    });
+
+    it('a failing requirement on an edit is the same 422, nothing written', async () => {
+      evaluateRequirementsMock.mockResolvedValue([{ type: 'BALANCE', role: 'person', personName: 'Mario Rossi', balanceCents: 0, costCents: 7500 }]);
+
+      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).rejects.toMatchObject({ code: 'REQUIREMENTS_NOT_MET' });
       expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it('an ADMIN forcing an edit past a real block stamps forcedAt/forcedByUserId/forceReason on the SAME flight row (AC 15, D-7)', async () => {
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Rating bloccante', expiresAt: '2019-12-31' }], warnings: [] });
-      const input = registerFlightSchema.parse({ ...UPDATE_INPUT_NEW_DATE, force: true, forceReason: 'Autorizzato dal direttore' });
-
-      await expect(updateFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
-
-      expect(updatedFlightData()).toMatchObject({ forcedByUserId: 'admin_1', forceReason: 'Autorizzato dal direttore', forcedAt: expect.any(Date) });
     });
 
     it('422 AIRCRAFT_ARCHIVED when the edited data targets an archived aircraft — re-validates the NEW data, transaction never opens', async () => {
@@ -2008,37 +1733,122 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    // --- story AOG-1a, AD-4/AC 9: the edit perimeter -------------------------
+    // --- story AOG-1a, AD-4 (AC 9 of story 19.9): the grounding on an edit ----
 
-    it('422 AIRCRAFT_OUT_OF_SERVICE when the edit MOVES the flight onto a grounded aircraft (AOG-1a AC 9)', async () => {
+    it('an edit that MOVES the flight onto a grounded aircraft lists it as the first failure', async () => {
       aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, id: 'aircraft_2', registration: 'I-AOGX' });
       const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2' });
 
       await expect(updateFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
-        code: 'AIRCRAFT_OUT_OF_SERVICE',
-        details: { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' },
+        code: 'REQUIREMENTS_NOT_MET',
+        details: { failures: [{ type: 'AIRCRAFT_OUT_OF_SERVICE', registration: 'I-AOGX', reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' }] },
       });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    it('an edit that KEEPS the same aircraft is NOT blocked, even though that aircraft is grounded TODAY (AOG-1a AC 9)', async () => {
+    it('an edit that KEEPS the same aircraft is NOT warned, even though that aircraft is grounded TODAY', async () => {
       aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
 
       await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).resolves.toBeDefined();
       expect(updatedFlightData()).not.toHaveProperty('forcedAt');
     });
 
-    it('an ADMIN can derogate an edit that moves the flight onto a grounded aircraft (AOG-1a AC 10)', async () => {
+    it('an ADMIN can derogate an edit that moves the flight onto a grounded aircraft — stamped', async () => {
       aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, id: 'aircraft_2', registration: 'I-AOGX' });
       queryRawMock.mockReset();
       queryRaw
         .mockResolvedValueOnce([LOCKED_FLIGHT])
         .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
-      const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2', force: true, forceReason: 'Velivolo corretto a posteriori' });
+      const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2', force: true });
 
       await expect(updateFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
-      expect(updatedFlightData()).toMatchObject({ forcedByUserId: 'admin_1', forceReason: 'Velivolo corretto a posteriori', forcedAt: expect.any(Date) });
+      expect(updatedFlightData()).toMatchObject({ forcedByUserId: 'admin_1', forcedAt: expect.any(Date) });
+    });
+
+    // --- story 19.9, D-8 (AC 11): the policy of an edit -----------------------
+
+    describe('requirements of an edit (story 19.9, D-8, Q-19.9-b)', () => {
+      function askedFor(): Record<string, unknown> {
+        return evaluateRequirementsMock.mock.calls[0]?.[0] as Record<string, unknown>;
+      }
+
+      it('(a) same person, instructor and date: documents and fee skipped (R-14.4-b)', async () => {
+        await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+        expect(askedFor()).toMatchObject({ documents: false });
+      });
+
+      it.each([
+        ['the date', { ...buildTimes('2020-02-20', 30) }],
+        ['the person', { personId: 'person_2' }],
+      ])('(a) changing %s brings documents and fee back', async (_label, overrides) => {
+        await updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, ...overrides }));
+
+        expect(askedFor()).toMatchObject({ documents: true });
+      });
+
+      it('(a) adding an instructor brings documents and fee back — the instructor checked by name', async () => {
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+
+        await updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, instructorPersonId: 'person_instructor' }));
+
+        expect(askedFor()).toMatchObject({ documents: true, instructor: { personId: 'person_instructor', name: 'Anna Bianchi' }, currency: null });
+      });
+
+      it('(b) an original solo kept solo, same person and date: currency skipped', async () => {
+        await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+        expect(askedFor()).toMatchObject({ currency: null });
+      });
+
+      it('(b) an original DUAL made solo: currency asked, without the flight itself', async () => {
+        flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, flightType: 'SCHOOL', instructorProfile: { personId: 'person_instructor' } });
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+
+        await updateFlight(
+          adminActor(),
+          'flight_orig',
+          registerFlightSchema.parse({ ...UPDATE_INPUT, flightType: 'SCHOOL', isSolo: true, instructorPersonId: 'person_instructor' }),
+        );
+
+        expect(askedFor()).toMatchObject({ currency: { dateOnly: '2020-01-15', excludeFlightId: 'flight_orig' }, instructor: null });
+      });
+
+      it('(b) a solo moved to another date: currency asked on the NEW date, without the flight itself', async () => {
+        await updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, ...buildTimes('2020-01-10', 30) }));
+
+        expect(askedFor()).toMatchObject({ currency: { dateOnly: '2020-01-10', excludeFlightId: 'flight_orig' } });
+      });
+
+      it('(c) [Q-19.9-b = SEMPRE] same person: balance ALWAYS asked, crediting the current charge back — even when the edit lowers the cost', async () => {
+        // The original charge is 20000; the edit (30 minutes) costs 7500.
+        await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+        expect(askedFor()).toMatchObject({ balance: { costCents: 7500, creditCents: 20000 } });
+      });
+
+      it('(c) a no-charge original credits 0 back', async () => {
+        flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, charge: { amountCents: 0 } });
+
+        await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+        expect(askedFor()).toMatchObject({ balance: { costCents: 7500, creditCents: 0 } });
+      });
+
+      it('(c) another person: nothing credited (the charge moves to their account)', async () => {
+        await updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, personId: 'person_2' }));
+
+        expect(askedFor()).toMatchObject({ balance: { costCents: 7500, creditCents: 0 } });
+      });
+
+      it('(c) a no-charge edit skips the balance', async () => {
+        await updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, noCharge: true }));
+
+        expect(askedFor()).toMatchObject({ balance: null });
+      });
     });
 
     // Story 19.3 (Q-19.3-b), ported: editing is not registering anew — an
@@ -2090,20 +1900,6 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
       await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).rejects.toMatchObject({ code: 'STUDENT_FLIGHT_MUST_BE_SCHOOL' });
       expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    // Review F4 (ratifica R-14.4-b), ported.
-    describe('review F4 — unchanged-identity edit exemption', () => {
-      it('an unchanged-identity edit (same person, no instructor, same flight date) skips the guard entirely, even with a real blocking document', async () => {
-        findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Rating bloccante', expiresAt: '2019-12-31' }], warnings: [] });
-        expiryTypeFindMany.mockResolvedValue([{ id: 'type_rating', name: 'Rating bloccante' }]);
-        expiryFindMany.mockResolvedValue([]);
-
-        await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).resolves.toBeDefined();
-
-        expect(findBlockingExpiredDocumentsMock).not.toHaveBeenCalled();
-        expect(expiryTypeFindManyMock).not.toHaveBeenCalled();
-      });
     });
 
     // AC 20 — turning the flag on or off on an edit.
@@ -2391,14 +2187,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
 
     // U7 / AC 11 — `force` does NOT derogate this 409 (ratifica del piano
-    // 16-18), unlike FLIGHT_BLOCKED_BY_EXPIRY/AIRCRAFT_OUT_OF_SERVICE.
-    it('U7: force: true + forceReason on an overlapping request is STILL a 409 — no flight row, so no forcedAt either', async () => {
+    // 16-18), unlike the requirements of REQUIREMENTS_NOT_MET (story 19.9).
+    it('U7: force: true on an overlapping request is STILL a 409 — no flight row, so no forcedAt either', async () => {
       stubOverlapStore([EXISTING_09_10]);
       const input = registerFlightSchema.parse({
         ...BASE_INPUT,
         ...window('09:30', '10:30'),
         force: true,
-        forceReason: 'Autorizzato dal direttore',
       });
 
       await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({ code: 'FLIGHT_OVERLAP' });
@@ -2571,22 +2366,15 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(result.items[0]?.breakdown.totalAmountCents).toBe(20000);
     });
 
-    // Review F2 (ratifica R-14.4-c): `forceReason` can name another
-    // person's medical/document — masked to `null` for anyone WITHOUT
-    // `flights.manage`, even on their OWN flight (`self.read`); `forcedAt`
-    // (the "Deroga" FACT) stays visible to everyone with access to the row.
-    it('review F2: a self-access actor sees forcedAt but NEVER forceReason on their own flight — a flights.manage actor sees both', async () => {
-      const forcedFlight = { ...CREATED_FLIGHT_ROW, forcedAt: new Date('2026-01-01T00:00:00.000Z'), forceReason: 'Motivo riservato' };
-      flightFindMany.mockResolvedValue([forcedFlight]);
+    // Story 19.9 (A10, D-10): the silent stamp stays API data; the motivo is gone from the select and the DTO.
+    it('the DTO carries forcedAt and no forceReason, and the select no longer reads one', async () => {
+      flightFindMany.mockResolvedValue([{ ...CREATED_FLIGHT_ROW, forcedAt: new Date('2026-01-01T00:00:00.000Z') }]);
       flightCount.mockResolvedValue(1);
 
-      const selfResult = await listFlights(pilotActor(), baseQuery());
-      expect(selfResult.items[0]?.forcedAt).not.toBeNull();
-      expect(selfResult.items[0]?.forceReason).toBeNull();
-
-      const manageResult = await listFlights(adminActor(), baseQuery());
-      expect(manageResult.items[0]?.forcedAt).not.toBeNull();
-      expect(manageResult.items[0]?.forceReason).toBe('Motivo riservato');
+      const result = await listFlights(adminActor(), baseQuery());
+      expect(result.items[0]?.forcedAt).toEqual(new Date('2026-01-01T00:00:00.000Z'));
+      expect(result.items[0]).not.toHaveProperty('forceReason');
+      expect((flightFindManyMock.mock.calls[0]?.[0] as { select: Record<string, unknown> }).select).not.toHaveProperty('forceReason');
     });
 
     it('staff: builds the where clause from combined filters (period gte/lte date-only, aircraftId, personId, flightType) — no status clause (story 19.6)', async () => {

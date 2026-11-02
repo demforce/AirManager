@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries, selectFromCombobox } from './helpers';
+import { ensureValidSeedExpiries, selectFromCombobox, submitPastRequirements } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -171,6 +171,8 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:45');
     await page.getByRole('button', { name: 'Registra volo' }).click();
+    // Story 19.9 (E-R2): a fresh person fails the fee and the balance — the picker, not the warning, is the subject.
+    await submitPastRequirements(page);
 
     // 45' @ 90,00 €/h -> 67,50 €.
     const resultPanel = page.getByTestId('flight-result-panel');

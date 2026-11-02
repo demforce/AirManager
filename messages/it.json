@@ -1187,8 +1187,6 @@
       "noCharge": "Senza addebito",
       "cancelAction": "Annulla",
       "correctAction": "Modifica",
-      "forcedBadge": "Deroga",
-      "forcedDetail": "Motivo: {reason}",
       "empty": "Nessun volo registrato."
     },
     "filters": {
@@ -1266,14 +1264,6 @@
         "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
         "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
         "FLIGHT_OVERLAP": "Questo velivolo ha già un volo registrato il {date} dalle {from} alle {to}. Annulla o correggi quel volo, oppure cambia gli orari.",
-        "AIRCRAFT_OUT_OF_SERVICE": "Il velivolo {registration} è fuori servizio: {reason}.",
-        "AIRCRAFT_OUT_OF_SERVICE_UNTIL": "Il velivolo {registration} è fuori servizio: {reason}. Fermo fino al {date} compreso.",
-        "AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS": "Inoltre, la registrazione è bloccata da questi documenti mancanti o scaduti: {documents}.",
-        "FLIGHT_BLOCKED_BY_EXPIRY": "Impossibile registrare il volo: risultano mancanti o scaduti i seguenti documenti: {documents}.",
-        "documentExpiredOn": "scaduto il {date}",
-        "documentMissing": "mancante",
-        "documentRolePerson": "pilota/allievo",
-        "documentRoleInstructor": "istruttore",
         "generic": "Impossibile registrare il volo. Riprova."
       },
       "result": {
@@ -1287,17 +1277,7 @@
         "instructorAmount": "Costo istruttore",
         "total": "Totale addebitato",
         "newBalance": "Nuovo saldo",
-        "balanceAlert": "Attenzione: il saldo del pilota risulta negativo (o è peggiorato oltre la soglia configurata). Il volo è comunque stato registrato.",
-        "forcedNotice": "Registrato in deroga — {reason}"
-      },
-      "force": {
-        "title": "Forza registrazione",
-        "description": "Solo un admin può registrare comunque questo volo, indicando un motivo. La forzatura resta tracciata.",
-        "reasonLabel": "Motivo",
-        "submit": "Forza registrazione",
-        "cancel": "Annulla",
-        "requiredReason": "Il motivo è obbligatorio.",
-        "generic": "Impossibile forzare la registrazione. Riprova."
+        "balanceAlert": "Attenzione: il saldo del pilota risulta negativo (o è peggiorato oltre la soglia configurata). Il volo è comunque stato registrato."
       }
     },
     "mobile": {
@@ -1650,6 +1630,28 @@
       "noAircraft": "Nessun velivolo disponibile.",
       "clampedStartHint": "Inizia prima di questa finestra oraria",
       "clampedEndHint": "Continua oltre questa finestra oraria"
+    }
+  },
+  "Requirements": {
+    "title": "Requisiti non soddisfatti",
+    "proceed": "Procedi comunque",
+    "cancel": "Annulla",
+    "proceedError": "Impossibile completare l'operazione. Riprova.",
+    "who": "{name} ({role})",
+    "role": {
+      "person": "pilota/allievo",
+      "instructor": "istruttore"
+    },
+    "failure": {
+      "expiryExpired": "{typeName}: scaduto il {date}",
+      "expiryMissing": "{typeName}: mancante",
+      "membershipExpired": "Quota associativa scaduta il {date}",
+      "membershipMissing": "Quota associativa mai pagata",
+      "currency": "Currency scaduta: {flightsInWindow, plural, one {# volo} other {# voli}} negli ultimi {windowDays} giorni (minimo {minFlights}); ultimo volo il {date}, {days, plural, one {# giorno} other {# giorni}} fa",
+      "currencyNever": "Currency scaduta: nessun volo registrato (minimo {minFlights, plural, one {# volo} other {# voli}} negli ultimi {windowDays} giorni)",
+      "balance": "Saldo insufficiente: saldo {balance}, costo {cost}",
+      "outOfService": "Velivolo {registration} fuori servizio: {reason}",
+      "outOfServiceUntil": "Velivolo {registration} fuori servizio fino al {date} compreso: {reason}"
     }
   },
   "UsersPage": {

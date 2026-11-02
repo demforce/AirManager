@@ -447,7 +447,7 @@ export type BookingExpiryWarning = { typeName: string; expiresAt: string };
 /** `createBooking`'s return shape (story 7.4, AC 1/2) — REPLACES the bare `BookingListItem` this function returned before this story (see its doc-comment). */
 export type CreateBookingResult = { booking: BookingListItem; warnings: BookingExpiryWarning[] };
 
-/** A single expired document surfaced by {@link findBlockingExpiredDocuments} — exported (story 14.4) so `flights.service.ts` can share its return shape without redeclaring it. */
+/** A single expired document surfaced by {@link findBlockingExpiredDocuments}. */
 export type ExpiredDocument = { typeName: string; expiresAt: string };
 
 /**
@@ -462,12 +462,9 @@ export type ExpiredDocument = { typeName: string; expiresAt: string };
  * `updateBooking`'s unconditional 422 — is each caller's own concern; this
  * helper never throws.
  *
- * Exported (story 14.4, AC 1; ratifica R4) — `flights.service.ts#resolveFlightInput`
- * reuses this EXACT function (called once for the pilot/student, once more
- * for the instructor when present) rather than reimplementing the
- * `ExpiryType.blocksBooking` scan a second time. The flight side only ever
- * consumes `blockingDocuments` (flights have no `warnings` concept, AC 1/2
- * of that story).
+ * Exported since story 14.4 for the flights, which since story 19.9 judge
+ * their documents in `requirements.service.ts#evaluateRequirements` instead
+ * (story 19.10 moves the bookings there too).
  *
  * Story 19.7a (R-19-j, D-4/D-5): the `blocksBooking` partition applies to the
  * NON-medical documents only (a RATING per type; the MEMBERSHIP fee stays a
@@ -475,9 +472,8 @@ export type ExpiredDocument = { typeName: string; expiresAt: string };
  * needs ONE valid visit of any class (`getMedicalRequirementFailure`), and
  * when they have only expired ones the most recent is the ONE blocking
  * document. A person with NO visit at all is NOT blocked here — this scan
- * keeps its "registered and expired" semantics (bookings: D-5); the missing
- * visit is the flights-only `findMissingBlockingDocuments`'s job, so a person
- * never gets two medical documents. Visits no longer produce `warnings`.
+ * keeps its "registered and expired" semantics (bookings: D-5). Visits no
+ * longer produce `warnings`.
  */
 export async function findBlockingExpiredDocuments(
   personId: string,

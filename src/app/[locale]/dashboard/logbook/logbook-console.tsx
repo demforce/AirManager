@@ -23,7 +23,7 @@
  * the prototype's own 10 columns, needed to satisfy this exact assertion
  * (flights.spec.ts).
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
@@ -34,7 +34,7 @@ import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { flightPicPerson } from '@/lib/flight-pic';
-import { flightBadgeKind, flightCardSubLine, flightRouteLabel, flightSheetSub } from '@/lib/mobile-logbook';
+import { flightCardSubLine, flightRouteLabel, flightSheetSub } from '@/lib/mobile-logbook';
 import { formatCents } from '@/lib/money';
 import type { FlightListItemDto, FlightTypeDto } from '@/lib/schemas/flights';
 import { formatDateOnly, formatMinutes, formatTimeOfDay } from '@/lib/time';
@@ -117,10 +117,6 @@ export type LogbookConsoleLabels = {
     noCharge: string;
     cancelAction: string;
     correctAction: string;
-    /** Story 14.4, AC 2 — lineage chip shown when `Flight.forcedAt` is set (an admin bypassed a blocking expired document). */
-    forcedBadge: string;
-    /** Review F10 — `{reason}` placeholder, rendered as visible text (never title-only, unreachable by keyboard/screen reader) right under the badge above. Only ever present when `flight.forceReason` itself is non-null — review F2's own masking already hides it from a non-`flights.manage` viewer, so this line simply never renders for them. */
-    forcedDetail: string;
   };
   filters: {
     dateFrom: string;
@@ -181,8 +177,8 @@ export type LogbookTotals = {
 
 export type LogbookConsoleProps = {
   canManage: boolean;
-  /** Story 14.4, AC 2 (ratifica R4) — `flights.forceExpiry` (ADMIN-only, unlike `canManage`/`flights.manage`); forwarded to `FlightEditor` as its own `canForce`. */
-  canForceExpiry: boolean;
+  /** Story 19.9 — `requirements.force` (ADMIN-only); forwarded to `FlightEditor` as its own `canForce`. */
+  canForce: boolean;
   items: FlightListItemDto[];
   /** TRUE totals over the whole filtered set (review fix 12.8, MAJOR) — `flights.service.ts#getFlightTotals`. Renders the table's own "Totali" row; NOT derived from `items` (the current page). */
   totals: LogbookTotals;
@@ -215,7 +211,7 @@ const COLS = '92px 150px minmax(150px,1.5fr) 110px 130px 64px 55px 55px 100px mi
 
 export function LogbookConsole({
   canManage,
-  canForceExpiry,
+  canForce,
   items,
   totals,
   page,
@@ -337,58 +333,18 @@ export function LogbookConsole({
     })),
   ];
 
-  /**
-   * The only lineage a row still carries (story 19.6 removed cancellation and
-   * correction chains): story 14.4's deroga chip, AC 2 "persistita e
-   * visibile", so an admin's override is discoverable in the registry, not
-   * just on the wire. Review F10: the motivo is rendered as VISIBLE text
-   * (never title-only, unreachable by keyboard/screen reader) — review F2's
-   * own server-side masking already nulls `forceReason` for a viewer without
-   * `flights.manage`, so that line simply never renders for them.
-   */
-  function forcedLineage(flight: FlightListItemDto) {
-    if (!flight.forcedAt) return null;
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {/* `Badge` (`@/components/ui/badge`) never forwards unknown props onto its `<span>` — a thin wrapper carries the testid instead. */}
-        <span data-testid="flight-forced-badge">
-          <Badge tone="warn" dot>
-            {labels.table.forcedBadge}
-          </Badge>
-        </span>
-        {flight.forceReason ? (
-          <span data-testid="flight-forced-reason" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-            {labels.table.forcedDetail.replace('{reason}', flight.forceReason)}
-          </span>
-        ) : null}
-      </div>
-    );
-  }
-
   /** The card's mono sub-line and the sheet's rows share this: `CFI ⟨nome⟩`, the desktop's own second line under the pilot. */
   function instructorLabel(flight: FlightListItemDto): string | null {
     return flight.instructor ? `CFI ${personLabel(flight.instructor)}` : null;
   }
 
-  /** The row's one chip (`flightBadgeKind`): the deroga, the only status left to shout about. */
-  function forcedChip(): ReactNode {
-    return (
-      <Badge tone="warn" dot>
-        {labels.table.forcedBadge}
-      </Badge>
-    );
-  }
-
   /**
    * Parity of the sheet with the desktop row (AC 2, lesson 15.5 F2): the 11
-   * columns, what the row shows OUTSIDE a column (deroga + motivo, the
-   * no-charge sub-line of the Costo cell) and what the DTO carries that the
-   * desktop table has no room for (orari — ratifica
-   * R-15.6-b: the phone may show MORE, never less).
-   *
-   * `forceReason` is printed only when the server actually sent it: it is
-   * masked for a viewer without `flights.manage` (`flights.service.ts`'s
-   * `toListItem`), and a masked value is never invented here.
+   * columns, what the row shows OUTSIDE a column (the no-charge sub-line of
+   * the Costo cell) and what the DTO carries that the desktop table has no
+   * room for (orari — ratifica R-15.6-b: the phone may show MORE, never
+   * less). No deroga row: story 19.9 (A10) shows a derogated flight like any
+   * other.
    */
   function sheetRows(flight: FlightListItemDto): BottomSheetRow[] {
     const pic = flightPicPerson(flight);
@@ -422,8 +378,6 @@ export function LogbookConsole({
       },
     ];
 
-    if (flight.forceReason) rows.push({ k: labels.table.forcedBadge, v: flight.forceReason });
-
     return rows;
   }
 
@@ -445,7 +399,6 @@ export function LogbookConsole({
 
   /** Re-read from `items` on every render: after an edit the very same row comes back changed, and the sheet must not keep showing the stale copy it was opened with. */
   const sheetFlight = items.find((flight) => flight.id === sheetId) ?? null;
-  const sheetBadgeKind = sheetFlight ? flightBadgeKind(sheetFlight) : null;
 
   /**
    * Opening the panel takes the pending search OVER (review 15.6 MINOR-1).
@@ -656,7 +609,6 @@ export function LogbookConsole({
             </div>
             {items.map((flight) => {
               const pic = flightPicPerson(flight);
-              const lineage = forcedLineage(flight);
               const typeTone: BadgeTone = flight.flightType === 'SCHOOL' ? 'info' : '';
               return (
                 <div key={flight.id} className="lb-row" data-testid="flight-row" style={{ gridTemplateColumns: COLS }}>
@@ -701,8 +653,7 @@ export function LogbookConsole({
                   </div>
                   <div data-testid="flight-pic-cell">{pic ? personLabel(pic) : labels.table.noValue}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {/* Every flight can be deleted or edited (story 19.6): the deroga
-                        chip, when any, sits under the two actions. */}
+                    {/* Every flight can be deleted or edited (story 19.6). */}
                     {canManage ? (
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         <button
@@ -726,7 +677,6 @@ export function LogbookConsole({
                         </button>
                       </div>
                     ) : null}
-                    {lineage}
                   </div>
                 </div>
               );
@@ -771,7 +721,6 @@ export function LogbookConsole({
               </p>
             ) : (
               items.map((flight) => {
-                const kind = flightBadgeKind(flight);
                 const pilotName = personLabel(flight.person);
                 const dateLabel = formatDateOnly(flight.flightDate, moneyLocale);
                 return (
@@ -810,10 +759,6 @@ export function LogbookConsole({
                         <span className="mobile-row-note">{formatCents(flight.breakdown.totalAmountCents, moneyLocale)}</span>
                       )}
                     </span>
-                    {/* Only when the row is NOT ordinary (ratifica R-15.6-b), and
-                        on its own line: measured in 15.5, a `Badge` beside an
-                        identifier on a 317px card eats the identifier. */}
-                    {kind ? <span className="mobile-row-flag">{forcedChip()}</span> : null}
                   </button>
                 );
               })
@@ -859,7 +804,7 @@ export function LogbookConsole({
           instructorOptions={instructorOptions}
           airfieldName={airfieldName}
           moneyLocale={moneyLocale}
-          canForce={canForceExpiry}
+          canForce={canForce}
           labels={labels.editor}
         />
       ) : null}
@@ -1014,8 +959,8 @@ export function LogbookConsole({
           row's, under the SAME gate (`canManage`); "Modifica"
           CLOSES the sheet before opening the panel rather than stacking a z-50
           panel on a z-40 sheet (AD-9), and passes through the SAME
-          `editorTarget` — the `key` that wipes a stale force payload stays the
-          only one (review 14.4 F1). */}
+          `editorTarget` — the `key` that wipes a stale requirements body stays
+          the only one (review 14.4 F1). */}
       {sheetFlight ? (
         <BottomSheet
           open
@@ -1030,7 +975,6 @@ export function LogbookConsole({
           // placeholder here would land in the dialog's accessible name
           // (review 15.5 F1). The pilot always exists, so the fallback is real.
           title={flightRouteLabel(sheetFlight.departureAirfield, sheetFlight.arrivalAirfield) ?? personLabel(sheetFlight.person)}
-          badge={sheetBadgeKind ? forcedChip() : undefined}
           rows={sheetRows(sheetFlight)}
           closeLabel={labels.mobile.close}
           actions={

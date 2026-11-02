@@ -102,7 +102,7 @@ async function createAircraft(page: Page, rateSince: string): Promise<{ id: stri
   return { id, registration };
 }
 
-/** A flight POST whose outcome the caller asserts (the 422 cases); `registerFlightOn` is the 201 path. */
+/** A flight POST without `force`, whose requirements the caller asserts (story 19.9: every fresh person fails at least the fee and the balance, so the medical rule is read off the EXPIRY failures); `registerFlightOn` is the fixture path. */
 async function postFlight(page: Page, body: { aircraftId: string; personId: string; instructorPersonId?: string; flightType: 'TOURISM' | 'SCHOOL'; date: string }): Promise<APIResponse> {
   return page.request.post('/api/v1/flights', {
     data: {
@@ -118,7 +118,15 @@ async function postFlight(page: Page, body: { aircraftId: string; personId: stri
   });
 }
 
-type BlockedBody = { error: { code: string; details: { documents: Array<{ typeName: string; expiresAt: string | null; role: string }> } } };
+type BlockedBody = { error: { code: string; details: { failures: Array<{ type: string; typeName?: string; expiresAt?: string | null; role?: string }> } } };
+
+/** The medical-visit documents among a flight's requirements failures (story 19.9) — the only EXPIRY this test is about. */
+async function visitFailures(response: APIResponse): Promise<BlockedBody['error']['details']['failures']> {
+  expect(response.status()).toBe(422);
+  const body = (await response.json()) as BlockedBody;
+  expect(body.error.code).toBe('REQUIREMENTS_NOT_MET');
+  return body.error.details.failures.filter((failure) => failure.type === 'EXPIRY' && (failure.typeName ?? '').includes('Visita medica'));
+}
 
 /** The fee for a person with no balance: `override` (the admin holds `settings.manage`); the route requires an `Idempotency-Key`. */
 async function chargeMembershipFee(page: Page, personId: string): Promise<APIResponse> {
@@ -226,22 +234,19 @@ test.describe('Story 19.7a — one valid visit of any class, for whoever is on b
     const visits = await visitTypeIds(page);
     const aircraft = await createAircraft(page, addDaysIso(TODAY, -60));
 
-    // (a) class 2 expired + class 1 valid -> 201 (before this story: 422, the class 2).
+    // (a) class 2 expired + class 1 valid -> no visit among the failures (before story 19.7a: the class 2).
     const covered = await createPerson(page, `Visite-${suffix}-a`, ['pilot']);
     await registerExpiry(page, covered.id, visits.class2, EXPIRED);
     await registerExpiry(page, covered.id, visits.class1, FAR_FUTURE_DATE);
     await ensureValidSeedExpiries(page, covered.id, 'PILOTS');
-    await registerFlightOn(page, { aircraftId: aircraft.id, personId: covered.id, flightType: 'TOURISM', date: YESTERDAY });
+    expect(await visitFailures(await postFlight(page, { aircraftId: aircraft.id, personId: covered.id, flightType: 'TOURISM', date: YESTERDAY }))).toEqual([]);
 
     // (b) the class 2 alone, expired -> ONE document, that visit.
     const expiredOnly = await createPerson(page, `Visite-${suffix}-b`, ['pilot']);
     await registerExpiry(page, expiredOnly.id, visits.class2, EXPIRED);
     await ensureValidSeedExpiries(page, expiredOnly.id, 'PILOTS');
     const expiredResponse = await postFlight(page, { aircraftId: aircraft.id, personId: expiredOnly.id, flightType: 'TOURISM', date: addDaysIso(TODAY, -2) });
-    expect(expiredResponse.status()).toBe(422);
-    const expiredBody = (await expiredResponse.json()) as BlockedBody;
-    expect(expiredBody.error.code).toBe('FLIGHT_BLOCKED_BY_EXPIRY');
-    expect(expiredBody.error.details.documents).toEqual([expect.objectContaining({ typeName: 'Visita medica classe 2', expiresAt: EXPIRED, role: 'person' })]);
+    expect(await visitFailures(expiredResponse)).toEqual([expect.objectContaining({ typeName: 'Visita medica classe 2', expiresAt: EXPIRED, role: 'person' })]);
 
     // (c) NO visit at all (the helper is deliberately NOT called): ONE missing
     // document naming the active visits; any other document is an ambient
@@ -251,13 +256,11 @@ test.describe('Story 19.7a — one valid visit of any class, for whoever is on b
     const namesBefore = await activeVisitNames(page);
     const missingResponse = await postFlight(page, { aircraftId: aircraft.id, personId: noVisit.id, flightType: 'TOURISM', date: addDaysIso(TODAY, -3) });
     const namesAfter = await activeVisitNames(page);
-    expect(missingResponse.status()).toBe(422);
-    const missingDocuments = ((await missingResponse.json()) as BlockedBody).error.details.documents;
-    const missingVisits = missingDocuments.filter((document) => document.typeName.includes('Visita medica classe 2'));
+    const missingVisits = await visitFailures(missingResponse);
     expect(missingVisits).toHaveLength(1);
     expect(missingVisits[0]!.expiresAt).toBeNull();
     expect([namesBefore, namesAfter]).toContain(missingVisits[0]!.typeName);
-    expect(missingVisits[0]!.typeName.split(' / ')).toEqual(expect.arrayContaining(['Visita medica classe 1', 'Visita medica classe 2', 'Visita medica LAPL']));
+    expect(missingVisits[0]!.typeName!.split(' / ')).toEqual(expect.arrayContaining(['Visita medica classe 1', 'Visita medica classe 2', 'Visita medica LAPL']));
 
     // (d) SCHOOL: the student is covered, the instructor's only visit is expired -> ONE document, role instructor.
     const student = await createPerson(page, `Visite-${suffix}-d-allievo`, ['student']);
@@ -274,10 +277,7 @@ test.describe('Story 19.7a — one valid visit of any class, for whoever is on b
       flightType: 'SCHOOL',
       date: addDaysIso(TODAY, -4),
     });
-    expect(instructorResponse.status()).toBe(422);
-    expect(((await instructorResponse.json()) as BlockedBody).error.details.documents).toEqual([
-      expect.objectContaining({ typeName: 'Visita medica classe 1', expiresAt: EXPIRED, role: 'instructor' }),
-    ]);
+    expect(await visitFailures(instructorResponse)).toEqual([expect.objectContaining({ typeName: 'Visita medica classe 1', expiresAt: EXPIRED, role: 'instructor' })]);
 
     // (e) the student's class 2 and the instructor's LAPL: any class, for anyone -> 201.
     const student2 = await createPerson(page, `Visite-${suffix}-e-allievo`, ['student']);
@@ -287,7 +287,9 @@ test.describe('Story 19.7a — one valid visit of any class, for whoever is on b
     await registerExpiry(page, instructorLapl.id, visits.lapl, FAR_FUTURE_DATE);
     await ensureValidSeedExpiries(page, instructorLapl.id, 'INSTRUCTORS');
     await seedInstructorRate(instructorLapl.id, { priceCentsPerHour: 4000, validFrom: addDaysIso(TODAY, -60) });
-    await registerFlightOn(page, { aircraftId: aircraft.id, personId: student2.id, instructorPersonId: instructorLapl.id, flightType: 'SCHOOL', date: addDaysIso(TODAY, -5) });
+    expect(
+      await visitFailures(await postFlight(page, { aircraftId: aircraft.id, personId: student2.id, instructorPersonId: instructorLapl.id, flightType: 'SCHOOL', date: addDaysIso(TODAY, -5) })),
+    ).toEqual([]);
   });
 
   test('bookings: an expired class 2 beside a valid class 1 neither blocks nor warns', async ({ page }) => {

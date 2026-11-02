@@ -70,12 +70,11 @@ export type ListFlightsQuery = z.infer<typeof listFlightsQuerySchema>;
  * `InstructorProfile.id` directly (consistent with
  * `.../people/{id}/instructor-rates`).
  *
- * `force`/`forceReason` (story 14.4, AC 2; ratifica R4): an ADMIN-only bypass
- * (`flights.forceExpiry`, checked SERVICE-side — AD-5) of a blocking expired
- * document (`flights.service.ts#resolveFlightInput`'s `FLIGHT_BLOCKED_BY_EXPIRY`
- * 422) — same shape/refine as `createBookingSchema`'s own `force`/
- * `forceReason` (story 7.4, AC 2): `forceReason` is required UNCONDITIONALLY
- * whenever `force` is `true`, not only when a real block is found.
+ * `force` (story 19.9, R-19-h): the admin's deroga of the requirements
+ * warning — 422 `REQUIREMENTS_NOT_MET` (`schemas/requirements.ts`) — resent
+ * with the same body, NO motivo; gated SERVICE-side on `requirements.force`
+ * (AD-5: 403 otherwise, before any query). The motivo key of older clients
+ * is stripped like any unknown key (no 422).
  *
  * `noCharge` (story 19.6, R-19-d — "senza addebito", `flights.manage` like
  * every field here): the flight is registered with both amounts and its
@@ -105,11 +104,6 @@ export const registerFlightSchema = z
     takeoffs: z.number().int().min(1).max(500).optional(),
     landings: z.number().int().min(1).max(500).optional(),
     force: z.boolean().optional(),
-    forceReason: z.string().trim().min(1).max(500).optional(),
-  })
-  .refine((value) => !value.force || (value.forceReason !== undefined && value.forceReason.length > 0), {
-    message: 'forceReason is required when force is true',
-    path: ['forceReason'],
   });
 
 export type RegisterFlightInput = z.infer<typeof registerFlightSchema>;
@@ -172,10 +166,8 @@ export const flightListItemSchema = z.object({
   breakdown: flightBreakdownSchema,
   actorEmail: z.string().optional(),
   createdAt: z.iso.datetime(),
-  /** Story 14.4, AC 2 — set together, exactly once, ONLY when an admin bypassed a blocking expired document (`Flight.forcedAt`'s doc-comment). `null` on every normal flight. Same additive/backward-compatible shape as `bookingItemSchema.forcedAt` (story 7.4). */
+  /** Story 19.9 (A10) — the silent stamp of a deroga of `REQUIREMENTS_NOT_MET` (`Flight.forcedAt`'s doc-comment), `null` otherwise. API data, never shown in the UI. Same shape as `bookingItemSchema.forcedAt` (story 7.4). */
   forcedAt: z.iso.datetime().nullable(),
-  /** Story 14.4, AC 2 — the mandatory motivo behind a `forcedAt` bypass, `null` otherwise. Unlike `Booking`'s own DTO (which omits it), exposed here so the operator sees WHY a flight was forced, not just that it was. */
-  forceReason: z.string().nullable(),
 });
 
 export type FlightListItemDto = z.infer<typeof flightListItemSchema>;

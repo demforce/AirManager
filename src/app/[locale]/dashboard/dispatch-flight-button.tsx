@@ -26,7 +26,7 @@ export type DispatchFlightButtonProps = {
   instructorOptions: PersonOption[];
   airfieldName: string;
   moneyLocale: 'it' | 'en';
-  /** Story 14.4, AC 2 (ratifica R4) — forwarded to `FlightEditor` as-is; see that component's own doc-comment. */
+  /** Story 19.9 — `requirements.force`, forwarded to `FlightEditor` as-is; see that component's own doc-comment. */
   canForce: boolean;
   labels: FlightEditorLabels;
 };
@@ -42,10 +42,10 @@ export function DispatchFlightButton({ label, aircraftOptions, personOptions, in
       </button>
       {/* Review F1 (BLOCKER): unlike `logbook-console.tsx` (`key={editorTarget
           === null ? 'closed' : ...}`), this single always-mounted `FlightEditor`
-          used to carry `pendingForceBody`/`blockedDocuments` (and every other
-          form field) across a close+reopen — "Forza registrazione" could
-          resend a STALE body for the person shown in a PREVIOUS blocked
-          attempt after the operator picked a different, clean pilot. Same
+          used to carry the pending deroga body (and every other form field)
+          across a close+reopen — the deroga could resend a STALE body for the
+          person shown in a PREVIOUS blocked attempt after the operator picked
+          a different, clean pilot. Same
           `key` idiom as the sibling console: a fresh `open`/`closed` key
           forces a full remount (fresh state) on every open. */}
       <FlightEditor

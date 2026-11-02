@@ -248,17 +248,15 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     const pilot = await createPilot(page, tag);
 
     // A flight of TODAY (inside the bar's window: the current calendar month),
-    // registered with the ADMIN override of story 14.4.
+    // registered with the admin deroga (story 19.9, E-R1: a fixture).
     //
-    // `force` is not a shortcut here, it is the only DETERMINISTIC way: a flight
-    // requires EVERY blocking `ExpiryType` of the person's active profiles to be
-    // registered and valid (`findMissingBlockingDocuments`), and the catalogue is
-    // GLOBAL — `bookings.spec.ts`/`flights.spec.ts` create their own blocking
-    // types ("Tipo prenotazioni …", "Tipo voli …") and never remove them, so a
-    // fresh person is blocked by however many of them happen to exist when this
-    // test runs. Measured on a post-suite DB: 11 blocking types, 7 of them left
-    // by other specs. This test is about the hours BAR, not about the guardrail
-    // (which `flights.spec.ts` owns).
+    // `force` is not a shortcut here, it is the only DETERMINISTIC way: a fresh
+    // person fails the flight's requirements by construction (no fee, no
+    // balance), and the blocking `ExpiryType` catalogue is GLOBAL —
+    // `bookings.spec.ts`/`flights.spec.ts` create their own blocking types
+    // ("Tipo prenotazioni …", "Tipo voli …") and never remove them. This test
+    // is about the hours BAR, not about the requirements (which
+    // `flight-requirements.spec.ts` owns).
     const today = addDaysUtc(0);
     const flight = await page.request.post('/api/v1/flights', {
       data: {
@@ -270,7 +268,6 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
         takeoffAt: `${today}T10:00:00.000Z`,
         landingAt: `${today}T11:00:00.000Z`,
         force: true,
-        forceReason: 'Fixture 15.5 — barra ore',
       },
     });
     expect(flight.status(), await flight.text()).toBe(201);
@@ -516,8 +513,8 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
 
     // A SCHOOL flight of TODAY flown by this instructor: it is what makes the
     // three facts the desktop panel shows non-empty (review F2). `force` for the
-    // same reason as the hours-bar test — the blocking `ExpiryType` catalogue is
-    // global and this test is not about that guardrail.
+    // same reason as the hours-bar test — this test is not about the
+    // requirements of the flight.
     const aircraft = await createAircraft(page, tag);
     await addRate(page, aircraft.id);
     // A SCHOOL flight also needs the instructor's CHARGE rate in force (the
@@ -537,7 +534,6 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
         takeoffAt: `${today}T10:00:00.000Z`,
         landingAt: `${today}T11:00:00.000Z`,
         force: true,
-        forceReason: 'Fixture 15.5 — dettaglio istruttore',
       },
     });
     expect(flight.status(), await flight.text()).toBe(201);

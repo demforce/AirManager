@@ -137,7 +137,7 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
   expect(response.status(), await response.text()).toBe(201);
   const personId = ((await response.json()) as { id: string }).id;
   // TD 15.5: without valid blocking expiries `createBooking` answers 422
-  // FLIGHT_BLOCKED_BY_EXPIRY-style long before this story's own logic runs.
+  // EXPIRED_DOCUMENTS long before this story's own logic runs.
   await ensureValidSeedExpiries(page, personId, 'PILOTS');
   return { personId, email, lastName };
 }

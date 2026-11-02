@@ -254,6 +254,7 @@ async function createFlownAircraft(page: Page, minutes: number): Promise<{ id: s
       takeoffAt,
       landingAt: new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString(),
       flightType: 'TOURISM',
+      force: true,
     },
   });
   expect(flight.status()).toBe(201);

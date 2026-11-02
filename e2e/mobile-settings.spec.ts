@@ -582,7 +582,7 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await expect(page.getByTestId('rating-row-error-mobile')).toHaveCount(0);
   });
 
-  test('AC 6: un tipo BLOCCANTE creato dal telefono (e salvato dal Salva unico) produce il 422 FLIGHT_BLOCKED_BY_EXPIRY sulla registrazione di un volo', async ({ page }) => {
+  test('AC 6: un tipo BLOCCANTE creato dal telefono (e salvato dal Salva unico) entra nei requisiti del volo: 422 REQUIREMENTS_NOT_MET con quel documento', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
     await gotoSettings(page);
@@ -604,7 +604,7 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       expect(blockingTypeId).not.toBeNull();
       await expect(page.getByTestId('rating-row-mobile').filter({ hasText: name })).toContainText('Blocca prenotazioni');
 
-      // A pilot without that document, and a flight that the 14.4 guard must refuse.
+      // A pilot without that document, and a flight whose requirements must name it (story 19.9).
       const person = await page.request.post('/api/v1/people', { data: { firstName: 'Bloccato', lastName: `Mobile-${uniqueSuffix()}` } });
       expect(person.status()).toBe(201);
       const personId = ((await person.json()) as { id: string }).id;
@@ -628,9 +628,9 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
         },
       });
       expect(flight.status()).toBe(422);
-      const body = (await flight.json()) as { error: { code: string; details?: { documents?: { typeName: string }[] } } };
-      expect(body.error.code).toBe('FLIGHT_BLOCKED_BY_EXPIRY');
-      expect((body.error.details?.documents ?? []).map((d) => d.typeName)).toContain(name);
+      const body = (await flight.json()) as { error: { code: string; details?: { failures?: { type: string; typeName?: string; expiresAt?: string | null }[] } } };
+      expect(body.error.code).toBe('REQUIREMENTS_NOT_MET');
+      expect(body.error.details?.failures ?? []).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'EXPIRY', typeName: name, expiresAt: null })]));
     } finally {
       // A blocking type left behind fails every other spec's `POST /flights`
       // (TD already registered): this one is deleted, always.

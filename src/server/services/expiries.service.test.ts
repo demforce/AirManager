@@ -933,7 +933,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     }
     const medical = (personId: string, expiresAt: string, name: string) => ({ personId, expiresAt: parseDateOnlyUtc(expiresAt), expiryType: { name } });
 
-    it('asks for blocking RATINGs at most 30 days out and for EVERY medical visit, batched over the page ids', async () => {
+    it('asks for blocking RATINGs of an ACTIVE type (story 19.9, D-13: a deactivated type no longer flags) at most 30 days out and for EVERY medical visit, batched over the page ids', async () => {
       expiryFindManyMock.mockResolvedValue([] as never);
       const today = parseDateOnlyUtc('2026-08-03');
 
@@ -943,7 +943,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
         where: {
           personId: { in: ['person_1', 'person_2'] },
           expiresAt: { lte: parseDateOnlyUtc('2026-09-02') },
-          expiryType: { kind: 'RATING', blocksBooking: true },
+          expiryType: { kind: 'RATING', blocksBooking: true, isActive: true },
         },
         select: { personId: true, expiresAt: true, expiryType: { select: { name: true } } },
       });

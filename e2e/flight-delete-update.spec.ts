@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { ensureValidSeedExpiries, submitPastRequirements } from './helpers';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -119,7 +119,7 @@ async function createPilotPerson(page: Page): Promise<{ personId: string; firstN
   return { personId: person.id, firstName, lastName };
 }
 
-/** The registration body every API call below reuses. */
+/** The registration body every API call below reuses — `force: true` (story 19.9, E-R1): delete and edit are this spec's subject, never the requirements of the flight (a fresh pilot has no fee nor balance). */
 function flightBody(aircraftId: string, personId: string, dateOnly: string, minutes: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     aircraftId,
@@ -128,6 +128,7 @@ function flightBody(aircraftId: string, personId: string, dateOnly: string, minu
     arrivalAirfield: 'Base Airfield',
     flightType: 'TOURISM',
     ...flightTimes(dateOnly, minutes),
+    force: true,
     ...extra,
   };
 }
@@ -273,6 +274,8 @@ test.describe('Flight delete and edit in place (Story 19.6, P2/P3 — R-19-c)', 
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     await page.getByRole('button', { name: 'Salva modifiche' }).click();
+    // Story 19.9: the balance is re-checked on every edit (Q-19.9-b) — 0 € after crediting the 150,00 € back, against 75,00 €.
+    await submitPastRequirements(page);
 
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel).toContainText('Addebito aggiornato');

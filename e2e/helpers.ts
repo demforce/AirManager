@@ -13,8 +13,8 @@ export async function registerExpiry(page: Page, personId: string, expiryTypeId:
 /**
  * Story 14.4 (review F5, ratifica R-14.4-a): a person with NO `Expiry` row at
  * all for an ACTIVE blocking RATING applicable to their role (`scope` ALL or
- * their own) is rejected from flight registration exactly like an expired one
- * (`flights.service.ts#findMissingBlockingDocuments`). Several OTHER specs
+ * their own) fails the flight's documents exactly like an expired one
+ * (`requirements.service.ts#evaluateRequirements`, story 19.9). Several OTHER specs
  * (`bookings.spec.ts#createExpiryTypeForBooking`, `flights.spec.ts`'s custom
  * types) create run-unique `scope: 'ALL'` blocking ratings for their own
  * purposes and never deactivate them, so on this suite's long-lived,
@@ -93,14 +93,24 @@ function romeWallClockIso(date: string, hhmm: string): string {
  * 10:00 Rome on `date` — so its `flightDate` is `date` whatever the season
  * (story 19.7a, AD-9; reused by story 19.7b). The aircraft needs a rate in
  * effect on `date` (`db-fixtures.ts#seedAircraftRate`), the instructor one too
- * (`seedInstructorRate`), and everyone on board their blocking documents
- * (`ensureValidSeedExpiries`). `isSolo` marks a SCHOOL flight the student
- * flies alone (the instructor supervises, not on board). Returns the created
- * flight's id.
+ * (`seedInstructorRate`). A FIXTURE (story 19.9, E-R1): sent with `force:
+ * true`, so the requirements of the flight (documents, fee, currency,
+ * balance) never refuse it — a test that is ABOUT them posts its own body.
+ * `isSolo` marks a SCHOOL flight the student flies alone (the instructor
+ * supervises, not on board); `noCharge` leaves the balance untouched (E-R5:
+ * the way to build a currency). Returns the created flight's id.
  */
 export async function registerFlightOn(
   page: Page,
-  flight: { aircraftId: string; personId: string; instructorPersonId?: string; flightType: 'TOURISM' | 'SCHOOL'; date: string; isSolo?: boolean },
+  flight: {
+    aircraftId: string;
+    personId: string;
+    instructorPersonId?: string;
+    flightType: 'TOURISM' | 'SCHOOL';
+    date: string;
+    isSolo?: boolean;
+    noCharge?: boolean;
+  },
 ): Promise<string> {
   const takeoffAt = romeWallClockIso(flight.date, '10:00');
   const response = await page.request.post('/api/v1/flights', {
@@ -109,11 +119,13 @@ export async function registerFlightOn(
       personId: flight.personId,
       ...(flight.instructorPersonId !== undefined ? { instructorPersonId: flight.instructorPersonId } : {}),
       ...(flight.isSolo !== undefined ? { isSolo: flight.isSolo } : {}),
+      ...(flight.noCharge !== undefined ? { noCharge: flight.noCharge } : {}),
       departureAirfield: 'Base Airfield',
       arrivalAirfield: 'Base Airfield',
       flightType: flight.flightType,
       takeoffAt,
       landingAt: new Date(new Date(takeoffAt).getTime() + 30 * 60_000).toISOString(),
+      force: true,
     },
   });
   expect(response.status(), await response.text()).toBe(201);
@@ -147,4 +159,69 @@ export async function selectFromCombobox(combobox: Locator, query: string, optio
   await combobox.click();
   await combobox.fill(query);
   await combobox.page().getByRole('listbox').getByRole('option', { name: optionLabel, exact: true }).click();
+}
+
+/** The membership fee `ensureFlightRequirements` charges (any positive amount: the fee setting only precompiles the UI field). */
+export const E2E_MEMBERSHIP_FEE_CENTS = 1000;
+
+/**
+ * A person "in regola" for a flight's requirements (story 19.9, E-R5 — reused
+ * by story 19.10): every currently active blocking document
+ * (`ensureValidSeedExpiries`), then a top-up of `topUpCents`, then the
+ * membership fee (`E2E_MEMBERSHIP_FEE_CENTS`, charged AFTER the top-up so the
+ * fee needs no deroga of its own — `topUpCents` must cover it). Returns the
+ * balance left. The currency is NOT built here: the test registers its own
+ * flight in the window (`registerFlightOn` with `noCharge: true`, which leaves
+ * the balance as it is).
+ */
+export async function ensureFlightRequirements(
+  page: Page,
+  person: { personId: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS'; topUpCents: number },
+): Promise<{ balanceCents: number }> {
+  await ensureValidSeedExpiries(page, person.personId, person.scope);
+  const topUp = await page.request.post(`/api/v1/people/${person.personId}/account/top-ups`, {
+    data: { amountCents: person.topUpCents, paymentMethod: 'CASH', effectiveDate: todayRome() },
+  });
+  expect(topUp.status(), await topUp.text()).toBe(200);
+  const fee = await page.request.post(`/api/v1/people/${person.personId}/membership-fee`, {
+    data: { amountCents: E2E_MEMBERSHIP_FEE_CENTS },
+    headers: { 'Idempotency-Key': `e2e-fee-${person.personId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` },
+  });
+  expect(fee.status(), await fee.text()).toBe(200);
+  return { balanceCents: ((await fee.json()) as { balanceCents: number }).balanceCents };
+}
+
+/** One entry of a 422 `REQUIREMENTS_NOT_MET`'s `details.failures` (story 19.9) — the e2e view of `src/lib/schemas/requirements.ts`. */
+export type E2eRequirementFailure = { type: string; role?: string; personName?: string; typeName?: string; expiresAt?: string | null; [key: string]: unknown };
+
+/**
+ * Story 19.9 (E-R6): the failures that belong to the test. The e2e catalogue
+ * is GLOBAL and shared by parallel specs, which create blocking RATINGs of
+ * their own (scope `ALL` included, TD 16.2-g): on any fresh person they show
+ * up as MISSING documents (`expiresAt: null`). Those are dropped here; kept
+ * are every non-EXPIRY failure, every expired document (a fresh person has
+ * only the ones the test registered), the medical requirement and the types
+ * the test itself names.
+ */
+export function ownFailures<T extends E2eRequirementFailure>(failures: T[], ownTypeNames: string[] = []): T[] {
+  return failures.filter(
+    (failure) =>
+      failure.type !== 'EXPIRY' ||
+      failure.expiresAt !== null ||
+      ownTypeNames.includes(failure.typeName ?? '') ||
+      (failure.typeName ?? '').includes('Visita medica'),
+  );
+}
+
+/**
+ * Story 19.9 (E-R2): a registration or edit from the flight form whose
+ * subject is NOT the requirements warning — asserts the warning IS there (a
+ * fixture person fails at least the fee and the balance by construction) and
+ * clicks «Procedi comunque». Deliberately NOT conditional: a "click it if it
+ * shows" helper would hide a regression of the warning itself.
+ */
+export async function submitPastRequirements(page: Page): Promise<void> {
+  const warning = page.getByTestId('requirements-warning');
+  await expect(warning).toBeVisible();
+  await warning.getByTestId('requirements-proceed').click();
 }

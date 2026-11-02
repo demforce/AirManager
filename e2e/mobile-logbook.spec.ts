@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
+import { submitPastRequirements } from './helpers';
 
 /**
  * Story 15.6 — the phone face of the flight registry: the widest table of the
@@ -33,12 +34,13 @@ import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
  * fixture is on page 1" of a 20-row list. Nothing here writes AppSettings, so
  * the file stays in the `fullyParallel` project.
  *
- * Flight fixtures are created with the admin override `force`/`forceReason`
- * (14.4 AC 2): `POST /api/v1/flights` is coupled to the GLOBAL `ExpiryType`
- * catalogue, which other specs dirty, and the override is deterministic
- * whatever the catalogue holds — the medicine 15.5 already used. The guard-rail
- * itself keeps being tested where it lives (`flights.spec.ts`) plus, at 375px,
- * by the two tests below that deliberately do NOT pass the override.
+ * Flight fixtures are created with the admin deroga `force` (story 19.9,
+ * E-R1): a fresh person fails the flight's requirements by construction (no
+ * fee, no balance, and the GLOBAL `ExpiryType` catalogue other specs dirty),
+ * and the deroga is deterministic whatever they hold — the medicine 15.5
+ * already used. The requirements themselves are tested where they live
+ * (`flight-requirements.spec.ts`) plus, at 375px, by the tests below that
+ * deliberately do NOT pass it. A derogated flight looks like any other (A10).
  *
  * Fixture budget per full run: 6 aircraft, 8 people, 1 invited user, 14 flights.
  *
@@ -152,7 +154,7 @@ type FlightOverrides = {
   minutes?: number;
 };
 
-/** `force`/`forceReason` on every fixture: the guard-rail's own catalogue is global and dirty (see the file header). */
+/** `force` on every fixture: the requirements are not what these tests are about (see the file header). */
 async function registerFlight(page: Page, aircraftId: string, personId: string, flightDate: string, overrides: FlightOverrides = {}): Promise<{ id: string }> {
   const takeoffAt = `${flightDate}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + (overrides.minutes ?? 95) * 60_000).toISOString();
@@ -167,7 +169,6 @@ async function registerFlight(page: Page, aircraftId: string, personId: string, 
       landingAt,
       flightType: 'TOURISM',
       force: true,
-      forceReason: 'Fixture e2e 15.6',
       ...rest,
     },
   });
@@ -327,8 +328,8 @@ test.describe('Registro voli mobile — lista a card (story 15.6, AC 1)', () => 
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
-    // Deliberately long: a real registration plus a long name plus the
-    // deroga chip (every fixture is forced) is the widest a row can get.
+    // Deliberately long: a real registration plus a long name plus long
+    // airfields is the widest a row can get (story 19.9: no chip any more).
     const student = await createStudent(page, tag);
     const instructor = await createInstructor(page, tag);
     await registerFlight(page, aircraft.id, student.id, '2020-03-04', {
@@ -366,111 +367,26 @@ test.describe('Registro voli mobile — lista a card (story 15.6, AC 1)', () => 
     expect(escaping, 'a child growing past its own card').toEqual([]);
   });
 
-  test('the only chip a row can carry is «Deroga», one per row — no cancelled state survives (story 19.6)', async ({ page }) => {
+  test('a derogated flight carries NO chip at all on its card — no «Deroga», no cancelled state (story 19.9 A10, story 19.6)', async ({ page }) => {
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
     const pilot = await createPilot(page, tag);
+    // Both registered with `force` over real failures (no fee, no balance): stamped, never shown.
     await registerFlight(page, aircraft.id, pilot.id, '2020-03-05');
     await registerFlight(page, aircraft.id, pilot.id, '2020-03-06');
+    const stamped = ((await (await page.request.get(`/api/v1/flights?aircraftId=${aircraft.id}&pageSize=10`)).json()) as { items: Array<{ forcedAt: string | null }> }).items;
+    expect(stamped.map((flight) => flight.forcedAt !== null)).toEqual([true, true]);
 
     await page.setViewportSize(PHONE);
     await gotoLogbook(page, aircraft.id);
 
-    // Every fixture flight is forced (see the header), so each row carries
-    // exactly the "Deroga" chip; the "Annullato" state no longer exists.
     const rows = page.getByTestId('flight-row-mobile');
     await expect(rows).toHaveCount(2);
-    for (const date of ['05/03/2020', '06/03/2020']) {
-      const row = rows.filter({ hasText: date });
-      await expect(row.locator('.mobile-row-flag')).toHaveCount(1);
-      await expect(row.locator('.mobile-row-flag')).toHaveText('Deroga');
-    }
+    await expect(rows.locator('.mobile-row-flag')).toHaveCount(0);
+    await expect(rows.locator('.badge')).toHaveCount(0);
+    await expect(rows.filter({ hasText: 'Deroga' })).toHaveCount(0);
     await expect(rows.filter({ hasText: 'Annullato' })).toHaveCount(0);
-  });
-
-  test('the anomaly chip PAINTS its dot on the card too, readable in both themes (review 15.6 MINOR-2)', async ({ page }) => {
-    const tag = uniqueSuffix();
-    await login(page, ADMIN_EMAIL);
-    const aircraft = await createAircraftWithRate(page, tag);
-    const pilot = await createPilot(page, tag);
-    await registerFlight(page, aircraft.id, pilot.id, '2020-03-07');
-    await registerFlight(page, aircraft.id, pilot.id, '2020-03-08');
-
-    await page.setViewportSize(PHONE);
-    await gotoLogbook(page, aircraft.id);
-    await expect(page.getByTestId('flight-row-mobile')).toHaveCount(2);
-
-    // `Badge` is asked for `dot` on the anomaly chip (warn "Deroga" — the only
-    // one since story 19.6), and 15.5's `.mobile-row-flag .badge{ display: block }` used
-    // to make that dot an INLINE box, where width/height simply do not apply:
-    // measured 0x13 on the card while the SAME badge painted a 6x6 dot in the
-    // sheet and on the desktop row. The guard measures the painted object, and
-    // its contrast against its own pill (dot ink at `opacity: .7` composited
-    // over the pill's background) — the review's own lesson: never report a
-    // contrast for something that is not painted.
-    for (const theme of ['light', 'dark'] as const) {
-      const dots = await page.evaluate((wanted) => {
-        document.documentElement.dataset['theme'] = wanted;
-        const canvas = document.createElement('canvas');
-        canvas.width = 1;
-        canvas.height = 1;
-        const ctx = canvas.getContext('2d')!;
-        // Chromium reports `oklch(...)` verbatim: rasterising through a 1x1
-        // canvas is the only honest way back to 0-255 sRGB (idiom of
-        // `login.spec.ts`, and of the review's own probes).
-        const toRgb = (color: string): number[] => {
-          ctx.clearRect(0, 0, 1, 1);
-          ctx.fillStyle = color;
-          ctx.fillRect(0, 0, 1, 1);
-          return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
-        };
-        const luminance = (rgb: number[]): number => {
-          const channel = (value: number): number => {
-            const c = value / 255;
-            return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-          };
-          return 0.2126 * channel(rgb[0]!) + 0.7152 * channel(rgb[1]!) + 0.0722 * channel(rgb[2]!);
-        };
-        const ratio = (a: number[], b: number[]): number => {
-          const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
-          return (high + 0.05) / (low + 0.05);
-        };
-        return [...document.querySelectorAll<HTMLElement>('[data-testid="flight-row-mobile"] .mobile-row-flag .badge .b-dot')].map((dot) => {
-          const badge = dot.parentElement!;
-          const rect = dot.getBoundingClientRect();
-          const pill = toRgb(getComputedStyle(badge).backgroundColor);
-          const ink = toRgb(getComputedStyle(dot).backgroundColor);
-          const alpha = Number(getComputedStyle(dot).opacity);
-          const painted = ink.map((channel, index) => channel * alpha + pill[index]! * (1 - alpha));
-          return {
-            label: (badge.textContent ?? '').trim(),
-            width: Math.round(rect.width * 100) / 100,
-            height: Math.round(rect.height * 100) / 100,
-            contrast: Math.round(ratio(painted, pill) * 100) / 100,
-          };
-        });
-      }, theme);
-
-      expect(dots.map((dot) => dot.label).sort(), `the anomaly chip of both rows in ${theme}`).toEqual(['Deroga', 'Deroga']);
-      for (const dot of dots) {
-        expect(dot.width, `${dot.label} dot width in ${theme} (${JSON.stringify(dot)})`).toBeGreaterThanOrEqual(5);
-        expect(dot.height, `${dot.label} dot height in ${theme} (${JSON.stringify(dot)})`).toBeGreaterThanOrEqual(5);
-        expect(dot.contrast, `${dot.label} dot contrast in ${theme} (${JSON.stringify(dot)})`).toBeGreaterThanOrEqual(3);
-      }
-    }
-
-    // Parity with the surface the same badge already painted it on: the sheet.
-    await page.getByTestId('flight-row-mobile').filter({ hasText: '08/03/2020' }).click();
-    const sheetDot = await page
-      .locator('[data-testid="mobile-flight-sheet"] .badge .b-dot')
-      .first()
-      .evaluate((dot) => {
-        const rect = dot.getBoundingClientRect();
-        return { width: Math.round(rect.width * 100) / 100, height: Math.round(rect.height * 100) / 100 };
-      });
-    expect(sheetDot.width, 'the sheet dot the card must now match').toBeGreaterThanOrEqual(5);
-    expect(sheetDot.height, 'the sheet dot the card must now match').toBeGreaterThanOrEqual(5);
   });
 });
 
@@ -524,8 +440,9 @@ test.describe('Registro voli mobile — sheet di dettaglio (story 15.6, AC 2/3)'
     // Story 19.2: these two rows no longer exist, on any face.
     expect(rows['Contaore']).toBeUndefined();
     expect(rows['Note']).toBeUndefined();
-    // The admin sees the motivo of the override; the row is forced by fixture.
-    expect(rows['Deroga']).toBe('Fixture e2e 15.6');
+    // Story 19.9 (A10): the fixture is derogated, and the sheet says nothing of it — no row, no badge.
+    expect(rows['Deroga']).toBeUndefined();
+    await expect(sheet.locator('.badge')).toHaveCount(0);
 
     // The accessible name is asserted as a PROPERTY. `split(' — ').length` was
     // GREEN on the very case it was meant to forbid (review 15.5 F1).
@@ -884,12 +801,11 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     expect(geometry.soActions).toBe(0);
   });
 
-  test('the expiry guard names document, state and owner at 375px, and the deroga needs a real motivo before any request', async ({ page }) => {
+  test('the requirements warning at 375px: under the form, in view and focused, wrapping without overflow, 44px buttons; «Procedi comunque» registers with ONE request (story 19.9, AC 16)', async ({ page }) => {
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
-    // NO `ensureValidSeedExpiries`: a brand-new person has none of the blocking
-    // documents, so the guard-rail of 14.4 must refuse the registration.
+    // A brand-new person: no visit, no fee, no balance, no flight — the warning has several items.
     const pilot = await createPilot(page, tag);
 
     await page.setViewportSize(PHONE);
@@ -906,40 +822,52 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     // Data, tratta e movimenti arrivano gia' compilati dai default del form.
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
 
-    const error = page.getByTestId('flight-form-error');
-    await expect(error).toBeVisible();
-    // The banner must name the document, its state and WHOSE it is (review 14.4 F5/F6).
-    await expect(error).toContainText('pilota');
-    expect((await error.textContent()) ?? '').toMatch(/assente|scadut/i);
-    // The server composes the owner as "firstName lastName" while the registry
-    // labels a person "lastName firstName" — the assertion is on the two parts,
-    // not on one arbitrary order.
-    expect((await error.textContent()) ?? '').toContain(pilot.lastName);
-    expect((await error.textContent()) ?? '').toContain(pilot.firstName);
-
-    // The deroga only exists for `flights.forceExpiry`, and only after a 422.
-    const force = page.getByTestId('force-flight-section');
-    await expect(force).toBeVisible();
-
-    let flightRequests = 0;
+    let flightPosts = 0;
     await page.route('**/api/v1/flights', async (route) => {
-      if (route.request().method() === 'POST') flightRequests += 1;
+      if (route.request().method() === 'POST') flightPosts += 1;
       await route.continue();
     });
-    await page.getByTestId('force-flight-submit').click();
-    await expect(page.getByTestId('force-flight-error')).toBeVisible();
-    expect(flightRequests, 'an empty forceReason must never reach the network').toBe(0);
+    await page.getByRole('button', { name: 'Registra volo' }).click();
 
-    await page.getByTestId('force-flight-reason').fill(`Deroga dal telefono ${tag}`);
-    await page.getByTestId('force-flight-submit').click();
+    const warning = page.getByTestId('requirements-warning');
+    await expect(warning).toBeVisible();
+    await expect(warning).toBeFocused();
+    await expect(warning).toBeInViewport();
+    await expect(page.getByTestId('flight-form-error')).toHaveCount(0);
+    // The medical document names WHOSE it is, server-side "firstName lastName".
+    const visit = warning.locator('[data-testid="requirements-warning-item"][data-type="EXPIRY"]', { hasText: 'Visita medica' });
+    await expect(visit).toContainText(`${pilot.firstName} ${pilot.lastName} (pilota/allievo)`);
+    await expect(visit).toContainText(': mancante');
+    await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="MEMBERSHIP"]')).toHaveText(
+      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — Quota associativa mai pagata`,
+    );
+
+    const geometry = await page.evaluate(() => {
+      const panel = document.querySelector('.slideover.open .so-body')!;
+      const items = [...document.querySelectorAll('[data-testid="requirements-warning-item"]')];
+      const buttons = [...document.querySelectorAll('[data-testid="requirements-warning"] .btn')];
+      return {
+        panelOverflow: panel.scrollWidth - panel.clientWidth,
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        itemsPastPanel: items.filter((item) => item.getBoundingClientRect().right > panel.getBoundingClientRect().right + 0.5).length,
+        buttonHeights: buttons.map((button) => button.getBoundingClientRect().height),
+      };
+    });
+    expect(geometry.panelOverflow).toBeLessThanOrEqual(0);
+    expect(geometry.pageOverflow).toBeLessThanOrEqual(0);
+    expect(geometry.itemsPastPanel).toBe(0);
+    expect(geometry.buttonHeights).toHaveLength(2);
+    for (const height of geometry.buttonHeights) expect(height).toBeGreaterThanOrEqual(44);
+
+    await warning.getByTestId('requirements-proceed').click();
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
-    await expect(page.getByTestId('flight-forced-result')).toBeVisible();
-    expect(flightRequests).toBe(1);
+    // No deroga notice in the summary (A10): nothing but the breakdown, and no "deroga" wording.
+    await expect(page.getByTestId('flight-result-panel')).not.toContainText(/deroga/i);
+    expect(flightPosts, 'the submit, then ONE resend').toBe(2);
   });
 
-  test('closing and reopening the panel wipes the pending force payload (review 14.4 F1)', async ({ page }) => {
+  test('closing and reopening the panel wipes the pending requirements body (review 14.4 F1)', async ({ page }) => {
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
@@ -958,7 +886,7 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
-    await expect(page.getByTestId('force-flight-section')).toBeVisible();
+    await expect(page.getByTestId('requirements-warning')).toBeVisible();
 
     // Close and reopen: the panel is rebuilt (`key`), so nothing of the refused
     // payload survives — the defect F1 shipped was a flight registered for the
@@ -970,7 +898,7 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     await expect(page.locator('.slideover.open')).toHaveCount(0);
     await page.getByTestId('logbook-new-button').click();
     await expect(page.locator('.slideover.open')).toHaveCount(1);
-    await expect(page.getByTestId('force-flight-section')).toHaveCount(0);
+    await expect(page.getByTestId('requirements-warning')).toHaveCount(0);
     await expect(page.getByTestId('flight-form-error')).toHaveCount(0);
     await expect(page.getByTestId('flight-person')).toHaveValue('');
   });
@@ -1094,12 +1022,10 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await page.getByRole('button', { name: 'Registra volo' }).click();
-    await expect(page.getByTestId('force-flight-section')).toBeVisible();
-    await page.getByTestId('force-flight-reason').fill(`Deroga idempotente ${tag}`);
-    await page.getByTestId('force-flight-submit').click();
+    await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
 
-    expect(keys.length, 'first submit + force re-send').toBe(2);
+    expect(keys.length, 'first submit + «Procedi comunque» re-send').toBe(2);
     expect(keys[0]).toBeTruthy();
     expect(keys[1]).toBeTruthy();
     // CORRECTION to the story's own §a.5 n.6: the key is regenerated after ANY
@@ -1108,7 +1034,8 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     // Key()` right after the fetch resolves, and it is the SAFE behaviour: the
     // rejected attempt already owns the old key server-side, so reusing it
     // could replay the rejection instead of registering the flight. Only a
-    // NETWORK failure (no response at all) keeps the key.
+    // NETWORK failure (no response at all) keeps the key. Story 19.9: the
+    // resend after the 422 carries the NEW key — one record, one flight.
     expect(keys[1]).not.toBe(keys[0]);
 
     // An edit is not an idempotent creation and must NOT carry one (story
@@ -1118,9 +1045,10 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     await page.getByTestId('flight-row-mobile').first().click();
     await page.getByTestId('flight-correct-action-mobile').click();
     await page.getByRole('button', { name: 'Salva modifiche' }).click();
+    // The balance is re-checked on every edit (Q-19.9-b): 0 € once the charge is credited back.
+    await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
-    expect(correctKeys.length).toBe(1);
-    expect(correctKeys[0]).toBeUndefined();
+    expect(correctKeys, 'the PUT and its «Procedi comunque» resend, neither with a key').toEqual([undefined, undefined]);
   });
 });
 
@@ -1270,7 +1198,7 @@ test.describe('Registro voli mobile — le due facce (story 15.6, AC 12)', () =>
     await expect(page.getByTestId('mobile-flight-sheet').locator('.bottom-sheet-actions')).toHaveCount(0);
     await expect(page.getByTestId('flight-cancel-action-mobile'), 'the admin gets this one inside the very same sheet').toHaveCount(0);
     await expect(page.getByTestId('flight-correct-action-mobile'), 'the admin gets this one inside the very same sheet').toHaveCount(0);
-    await expect(page.getByTestId('mobile-flight-sheet')).not.toContainText('Fixture e2e 15.6');
+    await expect(page.getByTestId('mobile-flight-sheet')).not.toContainText('Deroga');
     // ...but the panel of the filters it DOES have is still reachable, and it
     // is there — panel OPEN — that the velivolo filter is proven absent.
     await page.keyboard.press('Escape');
@@ -1333,7 +1261,7 @@ test.describe('Registro voli mobile — le due facce (story 15.6, AC 12)', () =>
     await expect(page.getByTestId('flight-correct-action')).toHaveCount(0);
   });
 
-  test('an allievo gets their own SCHOOL flight, the CFI in the sub-line, no action, no motivo of the deroga — at 375 and at 1280 (review LOW-2)', async ({ page }) => {
+  test('an allievo gets their own SCHOOL flight, the CFI in the sub-line, no action, no trace of the deroga — at 375 and at 1280 (review LOW-2)', async ({ page }) => {
     const tag = uniqueSuffix();
     const password = `Mobile156s-${tag}!`;
     await login(page, ADMIN_EMAIL);
@@ -1358,10 +1286,8 @@ test.describe('Registro voli mobile — le due facce (story 15.6, AC 12)', () =>
     // and the sub-line carries the instructor who signed the lesson.
     await expect(card).toContainText(student.label);
     await expect(card).toContainText(`CFI ${instructor.label}`);
-    // The badge of the deroga stays (the server masks the MOTIVO, not the fact
-    // — parity with the desktop), the motivo never appears.
-    await expect(card).toContainText('Deroga');
-    await expect(card).not.toContainText('Fixture e2e 15.6');
+    // Story 19.9 (A10): the fixture is derogated, and nothing says so — no badge, no motivo.
+    await expect(card).not.toContainText('Deroga');
     for (const testId of ['flight-form', 'flight-cancel-action', 'flight-correct-action', 'flight-filter-aircraft', 'flight-filter-person', 'logbook-new-button']) {
       await expect(page.getByTestId(testId), testId).toHaveCount(0);
     }
@@ -1371,7 +1297,7 @@ test.describe('Registro voli mobile — le due facce (story 15.6, AC 12)', () =>
     await expect(page.getByTestId('mobile-flight-sheet').locator('.bottom-sheet-actions')).toHaveCount(0);
     await expect(page.getByTestId('flight-cancel-action-mobile')).toHaveCount(0);
     await expect(page.getByTestId('flight-correct-action-mobile')).toHaveCount(0);
-    await expect(page.getByTestId('mobile-flight-sheet')).not.toContainText('Fixture e2e 15.6');
+    await expect(page.getByTestId('mobile-flight-sheet')).not.toContainText('Deroga');
     await page.keyboard.press('Escape');
 
     // AC 9 measured on a NON-admin face too (review LOW-2): fewer controls in
@@ -1387,7 +1313,7 @@ test.describe('Registro voli mobile — le due facce (story 15.6, AC 12)', () =>
     const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
     await expect(row).toHaveCount(1);
     await expect(row).toContainText(student.label);
-    await expect(row).not.toContainText('Fixture e2e 15.6');
+    await expect(row).not.toContainText('Deroga');
     await expect(page.getByTestId('mobile-flights-list')).toBeHidden();
     await expect(page.getByTestId('flight-cancel-action')).toHaveCount(0);
     await expect(page.getByTestId('flight-correct-action')).toHaveCount(0);

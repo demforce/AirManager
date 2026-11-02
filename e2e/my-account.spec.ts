@@ -134,7 +134,7 @@ async function registerFlight(page: Page, aircraftId: string, personId: string, 
   const takeoffAt = `${dateOnly}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
-    data: { aircraftId, personId, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', flightType: 'TOURISM', takeoffAt, landingAt },
+    data: { aircraftId, personId, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', flightType: 'TOURISM', takeoffAt, landingAt, force: true },
   });
   expect(response.status()).toBe(201);
 }
@@ -249,6 +249,7 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
         flightType: 'SCHOOL',
         takeoffAt,
         landingAt: new Date(new Date(takeoffAt).getTime() + 30 * 60_000).toISOString(),
+        force: true,
       },
     });
     expect(flightResponse.status()).toBe(201); // 30 min: 50,00 € aircraft (student price) + 20,00 € instructor = -70,00 €

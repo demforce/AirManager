@@ -80,7 +80,7 @@ async function registerFlight(page: Page, params: RegisterFlightParams): Promise
   const takeoffAt = `${flightDate}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
-    data: { ...rest, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', takeoffAt, landingAt },
+    data: { ...rest, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', takeoffAt, landingAt, force: true },
   });
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { flight: { id: string } };

@@ -78,10 +78,9 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     redirect({ href: '/dashboard', locale });
     return;
   }
-  // Story 14.4, AC 2 (ratifica R4) — `flights.forceExpiry` (ADMIN-only), the
-  // client-side mirror of the "Forza registrazione" gate (AD-5, `FlightEditor`'s
-  // own doc-comment for the real server-side check).
-  const canForceExpiry = hasPermission(actor, 'flights.forceExpiry');
+  // Story 19.9 — `requirements.force` (ADMIN-only), the client-side mirror of
+  // «Procedi comunque» (AD-5: the real check is server-side).
+  const canForce = hasPermission(actor, 'requirements.force');
 
   const dateFrom = sanitizeDateParam(sp.dateFrom);
   const dateTo = sanitizeDateParam(sp.dateTo);
@@ -157,7 +156,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     createdAt: flight.createdAt.toISOString(),
     takeoffAt: flight.takeoffAt ? flight.takeoffAt.toISOString() : null,
     landingAt: flight.landingAt ? flight.landingAt.toISOString() : null,
-    // Story 14.4, AC 2 — same ISO-serialize treatment as the other `Date` fields.
+    // Same ISO-serialize treatment as the other `Date` fields (API data, never shown — A10).
     forcedAt: flight.forcedAt ? flight.forcedAt.toISOString() : null,
   }));
 
@@ -230,7 +229,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
       <LogbookConsole
         key={JSON.stringify({ page, ...exportFilters })}
         canManage={canManage}
-        canForceExpiry={canForceExpiry}
+        canForce={canForce}
         items={items}
         totals={totals}
         page={page}
@@ -272,10 +271,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             noCharge: t('table.noCharge'),
             cancelAction: t('table.cancelAction'),
             correctAction: t('table.correctAction'),
-            forcedBadge: t('table.forcedBadge'),
-            // `t.raw`: the {reason} placeholder is filled CLIENT-side (same
-            // reasoning as `editor.fields.studentOnlyCorrectionHint` below).
-            forcedDetail: t.raw('table.forcedDetail'),
           },
           filters: {
             dateFrom: t('filters.dateFrom'),
@@ -345,19 +340,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               FLIGHT_DATE_IN_FUTURE: t('editor.errors.FLIGHT_DATE_IN_FUTURE'),
               // Story 16.2, AC 18 — `{date}`/`{from}`/`{to}` filled CLIENT-side (the conflicting flight's own instants), same reasoning.
               FLIGHT_OVERLAP: t.raw('editor.errors.FLIGHT_OVERLAP'),
-              // Story AOG-1a, AC 11 — `{registration}`/`{reason}`/`{date}` filled CLIENT-side, same reasoning.
-              AIRCRAFT_OUT_OF_SERVICE: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE'),
-              AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL'),
-              // Review MAJOR-1 — appended to either template above when documents block the same request; `{documents}` filled CLIENT-side.
-              AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS'),
-              // `t.raw`: the {documents} placeholder is filled CLIENT-side
-              // (same reasoning as `fields.studentOnlyCorrectionHint` above).
-              FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
-              // Review F5/F6 — `{date}` filled CLIENT-side, same reasoning.
-              documentExpiredOn: t.raw('editor.errors.documentExpiredOn'),
-              documentMissing: t('editor.errors.documentMissing'),
-              documentRolePerson: t('editor.errors.documentRolePerson'),
-              documentRoleInstructor: t('editor.errors.documentRoleInstructor'),
               generic: t('editor.errors.generic'),
             },
             result: {
@@ -372,21 +354,10 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               total: t('editor.result.total'),
               newBalance: t('editor.result.newBalance'),
               balanceAlert: t('editor.result.balanceAlert'),
-              // Review F11 — `{reason}` filled CLIENT-side, same reasoning.
-              forcedNotice: t.raw('editor.result.forcedNotice'),
             },
             // Story AOG-1a, AC 12: the SAME key the booking form uses — one string, so the two forms can never drift apart on the same fact.
             outOfServiceSuffix: tBookings.raw('form.outOfServiceSuffix') as string,
             picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
-            force: {
-              title: t('editor.force.title'),
-              description: t('editor.force.description'),
-              reasonLabel: t('editor.force.reasonLabel'),
-              submit: t('editor.force.submit'),
-              cancel: t('editor.force.cancel'),
-              requiredReason: t('editor.force.requiredReason'),
-              generic: t('editor.force.generic'),
-            },
           },
           mobile: {
             openDetail: t('mobile.openDetail'),
@@ -399,7 +370,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             times: t('mobile.times'),
             filters: t('mobile.filters'),
             // `t.raw`: the {count} placeholder is filled CLIENT-side (same
-            // reasoning as `table.forcedDetail` above).
+            // reasoning as `editor.fields.studentOnlyCorrectionHint` above).
             filtersCount: t.raw('mobile.filtersCount'),
             filtersTitle: t('mobile.filtersTitle'),
             apply: t('mobile.apply'),
@@ -407,7 +378,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
           cancelModal: {
             title: t('cancelModal.title'),
             // `t.raw`: the {person} placeholder is filled CLIENT-side (same
-            // reasoning as `table.forcedDetail` above).
+            // reasoning as `editor.fields.studentOnlyCorrectionHint` above).
             warning: t.raw('cancelModal.warning') as string,
             submit: t('cancelModal.submit'),
             close: t('cancelModal.close'),

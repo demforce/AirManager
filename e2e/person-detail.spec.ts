@@ -171,6 +171,7 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
         flightType: 'TOURISM',
         takeoffAt: '2020-01-01T10:00:00.000Z',
         landingAt: '2020-01-01T10:40:00.000Z',
+        force: true,
       },
     });
     expect(flightResponse.status()).toBe(201);

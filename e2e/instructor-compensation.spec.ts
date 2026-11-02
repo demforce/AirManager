@@ -111,6 +111,7 @@ async function registerSchoolFlight(
       arrivalAirfield: 'Base Airfield',
       takeoffAt,
       landingAt,
+      force: true,
     },
   });
   expect(response.status()).toBe(201);

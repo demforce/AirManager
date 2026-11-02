@@ -527,7 +527,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
             instructorOptions={dispatchInstructorOptions}
             airfieldName={branding.name}
             moneyLocale={displayLocale}
-            canForce={hasPermission(actor, 'flights.forceExpiry')}
+            canForce={hasPermission(actor, 'requirements.force')}
             labels={buildFlightEditorLabels(tLogbook, tBookings)}
           />
         </div>
@@ -811,17 +811,6 @@ function buildFlightEditorLabels(
       FLIGHT_DATE_IN_FUTURE: t('editor.errors.FLIGHT_DATE_IN_FUTURE'),
       // Story 16.2, AC 18 — `{date}`/`{from}`/`{to}` filled CLIENT-side (the conflicting flight's own instants), same reasoning.
       FLIGHT_OVERLAP: t.raw('editor.errors.FLIGHT_OVERLAP'),
-      // Story AOG-1a, AC 11 — `{registration}`/`{reason}`/`{date}` filled CLIENT-side, same reasoning.
-      AIRCRAFT_OUT_OF_SERVICE: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE'),
-      AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL'),
-      // Review MAJOR-1 — appended to either template above when documents block the same request; `{documents}` filled CLIENT-side.
-      AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS: t.raw('editor.errors.AIRCRAFT_OUT_OF_SERVICE_DOCUMENTS'),
-      FLIGHT_BLOCKED_BY_EXPIRY: t.raw('editor.errors.FLIGHT_BLOCKED_BY_EXPIRY'),
-      // Review F5/F6 — `{date}` filled CLIENT-side, same reasoning as above.
-      documentExpiredOn: t.raw('editor.errors.documentExpiredOn'),
-      documentMissing: t('editor.errors.documentMissing'),
-      documentRolePerson: t('editor.errors.documentRolePerson'),
-      documentRoleInstructor: t('editor.errors.documentRoleInstructor'),
       generic: t('editor.errors.generic'),
     },
     result: {
@@ -836,21 +825,10 @@ function buildFlightEditorLabels(
       total: t('editor.result.total'),
       newBalance: t('editor.result.newBalance'),
       balanceAlert: t('editor.result.balanceAlert'),
-      // Review F11 — `{reason}` filled CLIENT-side, same reasoning.
-      forcedNotice: t.raw('editor.result.forcedNotice'),
     },
     // Story AOG-1a, AC 12: the SAME `BookingsPage` key the booking form uses.
     outOfServiceSuffix: tBookings.raw('form.outOfServiceSuffix') as string,
     picker: { placeholder: t('picker.placeholder'), noResults: t('picker.noResults') },
-    force: {
-      title: t('editor.force.title'),
-      description: t('editor.force.description'),
-      reasonLabel: t('editor.force.reasonLabel'),
-      submit: t('editor.force.submit'),
-      cancel: t('editor.force.cancel'),
-      requiredReason: t('editor.force.requiredReason'),
-      generic: t('editor.force.generic'),
-    },
   };
 }
 

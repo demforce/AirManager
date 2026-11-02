@@ -425,7 +425,11 @@ async function main(): Promise<void> {
   }
   console.log(`Seed: ${TOP_UPS.length} top-ups recorded.`);
 
-  // Flights (through the service: charges and balances all real).
+  // Flights (through the service: charges and balances all real). `force`
+  // (story 19.9, D-15): demo history, not operations — without it the first
+  // solo of every demo pilot would fail its currency by construction, and a
+  // balance or fee shortfall would refuse the rest. A derogated flight only
+  // gets the silent stamp, never shown.
   for (const f of FLIGHTS) {
     const takeoffAt = daysFromNow(-f.daysAgo, f.takeoffHour);
     const landingAt = new Date(takeoffAt.getTime() + f.durationMin * 60_000);
@@ -442,6 +446,7 @@ async function main(): Promise<void> {
       noCharge: f.noCharge ?? false,
       takeoffs: f.touchAndGo ?? 1,
       landings: f.touchAndGo ?? 1,
+      force: true,
     });
   }
   console.log(`Seed: ${FLIGHTS.length} flights registered.`);

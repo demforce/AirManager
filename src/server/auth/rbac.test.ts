@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ForbiddenError } from '@/server/services/errors';
-import { authorize, getPermissions, hasPermission, type Actor } from './rbac';
+import { authorize, getPermissions, hasPermission, ROLE_PERMISSIONS, type Actor } from './rbac';
 
 function actorWith(roles: Actor['roles']): Actor {
   return { userId: 'user_1', personId: 'person_1', roles };
@@ -21,6 +21,7 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     'self.read',
     'payouts.manage',
     'bookings.read.names',
+    'requirements.force',
   ] as const;
 
   it('grants admin every permission in the catalogue', () => {
@@ -86,6 +87,13 @@ describe('rbac permission matrix (Story 1.3 AC 1, 2, 3)', () => {
     // Story 14.5 (ratifica R3): same "Occupato" masking as a pilot.
     expect(hasPermission(student, 'bookings.read.names')).toBe(false);
     expect(() => authorize(student, 'bookings.manage.own')).toThrow(ForbiddenError);
+  });
+
+  it('requirements.force (story 19.9, R-19-h: only an admin derogates the requirements warning) is ADMIN-only, every other role unchanged', () => {
+    expect(ROLE_PERMISSIONS.ADMIN).toContain('requirements.force');
+    expect(ROLE_PERMISSIONS.INSTRUCTOR).toEqual(['self.read', 'bookings.manage.own', 'bookings.read.names']);
+    expect(ROLE_PERMISSIONS.PILOT).toEqual(['self.read', 'bookings.manage.own']);
+    expect(ROLE_PERMISSIONS.STUDENT).toEqual(['self.read']);
   });
 
   it('a dual-role pilot+student actor keeps bookings.manage.own via the PILOT union (AC 2 of story 1.3)', () => {
