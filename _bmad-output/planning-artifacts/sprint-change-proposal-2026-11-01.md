@@ -309,6 +309,7 @@ AD-6 — Consumo pacchetti: già storico dalla 12.13; le PackageConsumption resi
 | Q-19.7-a | 19.7 | Le righe currency compaiono **mescolate ai documenti** nella pagina Scadenze, contatori inclusi (contro la raccomandazione). |
 | Q-19.7-b | 19.7 | Chi non ha mai pagato la quota compare come «Mancante» (una riga per persona tenuta alla quota). |
 | Q-19.7-c | 19.7 | Anche chi non ha **nessuna** visita medica registrata compare come «Mancante» (conta come scaduta). |
+| **Q-19.7-b/c ribaltate** | 19.7b | **PO, 2026-11-02**: nessuna riga «Mancante» nel registro Scadenze (tabella, contatori, Panoramica, export, API) — quota mai pagata, visita mai registrata e currency senza data non compaiono; restano documenti e currency con una data. I check bloccanti di voli e prenotazioni (19.9/19.10) non cambiano. |
 | Split | 19.7 | La 19.7 è divisa in **19.7a** (modello, regole, quota, currency) e **19.7b** (registro Scadenze unificato) — decisione della sessione principale per dimensione. |
 | Q-19.9-a | 19.9/19.10 | La quota si controlla anche sull'istruttore a bordo (sessione principale, per R-19-k). |
 | Q-19.9-b | 19.9 | In modifica di un volo il check sul saldo si rifà **sempre** (al netto dell'addebito attuale), non solo se l'addebito aumenta (contro la raccomandazione). |
