@@ -865,6 +865,21 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       expect(result.get('person_1')).toEqual([{ typeName: 'Visita medica classe 1', daysUntil: 20 }]);
     });
 
+    it('two visits expiring the SAME day -> the smaller type name, whatever order the rows come in (review 19.7a F5)', async () => {
+      const class1 = medical('person_1', '2026-08-20', 'Visita medica classe 1');
+      const class2 = medical('person_1', '2026-08-20', 'Visita medica classe 2');
+      for (const medicals of [
+        [class1, class2],
+        [class2, class1],
+      ]) {
+        mockBadgeRows({ ratings: [], medicals });
+
+        const result = await listBlockingExpiriesByPerson(adminActor(), ['person_1'], parseDateOnlyUtc('2026-08-03'));
+
+        expect(result.get('person_1')).toEqual([{ typeName: 'Visita medica classe 1', daysUntil: 17 }]);
+      }
+    });
+
     it('the reduction is per person: one person\'s valid visit never covers another', async () => {
       mockBadgeRows({ ratings: [], medicals: [medical('person_1', '2027-01-01', 'Visita medica classe 1'), medical('person_2', '2026-07-30', 'Visita medica LAPL')] });
 

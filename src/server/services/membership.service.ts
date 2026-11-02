@@ -8,7 +8,7 @@ import { prisma } from '@/server/db/prisma';
 import { hasNegativeBalanceAlert } from './accounts.service';
 import { NotFoundError, ValidationError } from './errors';
 
-/** The fee type is upserted by NAME (`MEMBERSHIP_FEE_TYPE_NAME`, `@/lib/expiry-scope` — the key of the upsert and of the seeds) and is the one `ExpiryTypeKind.MEMBERSHIP` row (story 19.7a, D-1): every reader tells it apart by that kind, never by name. Validity: fixed 12 months from the payment (R-19-k), not configurable. */
+/** The fee type is the one `ExpiryTypeKind.MEMBERSHIP` row (story 19.7a, D-1): found by that kind, like every reader; `MEMBERSHIP_FEE_TYPE_NAME` (`@/lib/expiry-scope`) is only the key it is created (or realigned) under when absent, and the seeds' key. Validity: fixed 12 months from the payment (R-19-k), not configurable. */
 const MEMBERSHIP_FEE_VALIDITY_MONTHS = 12;
 
 export type ChargeMembershipFeeResult = {
@@ -31,11 +31,13 @@ export type ChargeMembershipFeeResult = {
  * "Quota associativa" (story 12.11, AC 7; ratifiche utente 1/1a/1b) — an
  * addebito + renewal in ONE gesture, ALL THREE writes in a SINGLE
  * `prisma.$transaction`: (i) an `ADJUSTMENT` account movement (negative
- * `amountCents` = addebito, AD-3), (ii) an upsert-by-NAME of the "Quota
- * associativa" `ExpiryType` (created on first use — kind `MEMBERSHIP` since
- * story 19.7a, `ALL` scope, non-blocking, 12-month validity — `update: {}`
- * leaves an existing row alone, same pattern as `prisma/seed.ts#seedExpiryTypes`;
- * the name's uniqueness keeps it to ONE row), and
+ * `amountCents` = addebito, AD-3), (ii) the "Quota associativa" `ExpiryType`,
+ * found by kind `MEMBERSHIP` (review 19.7a F4) and only when absent upserted
+ * by NAME (created on first use — `ALL` scope, non-blocking, 12-month
+ * validity; a row already holding the name, e.g. a RATING an admin created
+ * on an unseeded installation, is realigned to the fee exactly like the
+ * 19.7a migration's step 3 — so the charge never lands on a rating, and the
+ * name's uniqueness keeps the fee to ONE row), and
  * (iii) a create-or-renew of the person's "Quota associativa" `Expiry`
  * (the type's `@@unique([personId, expiryTypeId])` guarantees at most one).
  *
@@ -138,12 +140,14 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
       },
     });
 
-    const expiryType = await tx.expiryType.upsert({
-      where: { name: MEMBERSHIP_FEE_TYPE_NAME },
-      update: {},
-      create: { name: MEMBERSHIP_FEE_TYPE_NAME, kind: 'MEMBERSHIP', scope: 'ALL', blocksBooking: false, validityMonths: MEMBERSHIP_FEE_VALIDITY_MONTHS },
-      select: { id: true },
-    });
+    const expiryType =
+      (await tx.expiryType.findFirst({ where: { kind: 'MEMBERSHIP' }, select: { id: true } })) ??
+      (await tx.expiryType.upsert({
+        where: { name: MEMBERSHIP_FEE_TYPE_NAME },
+        update: { kind: 'MEMBERSHIP', scope: 'ALL', blocksBooking: false, isActive: true },
+        create: { name: MEMBERSHIP_FEE_TYPE_NAME, kind: 'MEMBERSHIP', scope: 'ALL', blocksBooking: false, validityMonths: MEMBERSHIP_FEE_VALIDITY_MONTHS },
+        select: { id: true },
+      }));
 
     const existingExpiry = await tx.expiry.findUnique({
       where: { personId_expiryTypeId: { personId, expiryTypeId: expiryType.id } },

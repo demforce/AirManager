@@ -14,9 +14,11 @@ import { getCurrencySettings } from './app-settings.service';
  *
  * "On board" (D-7) = the flight's `personId` OR the person behind its
  * instructor profile: a flight flown as instructor counts like one flown as
- * pilot, and a dual flight counts for the student. A flight counts ONCE per
- * person. Every `Flight` row is a registered flight (story 19.6 removed the
- * cancelled state).
+ * pilot, and a dual flight counts for both. A SOLO (`isSolo`, a SCHOOL flight
+ * the student flies alone) counts for the student only: its instructor
+ * supervises from the ground, not on board (CR §4.5, review 19.7a F2). A
+ * flight counts ONCE per person. Every `Flight` row is a registered flight
+ * (story 19.6 removed the cancelled state).
  */
 
 /**
@@ -52,7 +54,7 @@ export async function loadOnBoardFlightDates(
       SELECT f."id", ip."personId", f."flightDate"
       FROM "Flight" f
       JOIN "InstructorProfile" ip ON ip."id" = f."instructorProfileId"
-      WHERE ip."personId" IN (${Prisma.join(personIds)}) AND f."flightDate" <= ${atDate}::date ${excluded}
+      WHERE ip."personId" IN (${Prisma.join(personIds)}) AND f."isSolo" = false AND f."flightDate" <= ${atDate}::date ${excluded}
     ),
     ranked AS (
       SELECT "personId", "flightDate", ROW_NUMBER() OVER (PARTITION BY "personId" ORDER BY "flightDate" DESC, "id" DESC) AS "rank"

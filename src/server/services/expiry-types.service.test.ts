@@ -3,8 +3,8 @@ import { createExpiryTypeSchema, listExpiryTypesQuerySchema, updateExpiryTypeSch
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
-vi.mock('@/server/db/prisma', () => ({
-  prisma: {
+vi.mock('@/server/db/prisma', () => {
+  const prisma = {
     expiryType: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -13,8 +13,12 @@ vi.mock('@/server/db/prisma', () => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
-  },
-}));
+    $queryRaw: vi.fn(),
+    // Review 19.7a F3: `updateExpiryType` runs in a transaction — the callback gets the same delegates as `tx`.
+    $transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma)),
+  };
+  return { prisma };
+});
 
 const { prisma } = await import('@/server/db/prisma');
 const { createExpiryType, deleteExpiryType, listExpiryTypes, updateExpiryType } = await import('./expiry-types.service');
@@ -26,6 +30,7 @@ const findUniqueMock = vi.mocked(prisma.expiryType.findUnique);
 const createMock = vi.mocked(prisma.expiryType.create);
 const updateMock = vi.mocked(prisma.expiryType.update);
 const deleteMock = vi.mocked(prisma.expiryType.delete);
+const queryRawMock = vi.mocked(prisma.$queryRaw);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as every other `*.service.test.ts`).
@@ -76,6 +81,8 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
     createMock.mockReset();
     updateMock.mockReset();
     deleteMock.mockReset();
+    queryRawMock.mockReset();
+    vi.mocked(prisma.$transaction).mockClear();
   });
 
   describe('listExpiryTypes (Task 2, AC 1)', () => {
@@ -410,6 +417,20 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
       expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { kind: 'RATING' }, select: expect.anything() });
       expect(findFirstMock).not.toHaveBeenCalled();
+    });
+
+    it('validates against the row read UNDER a FOR UPDATE lock taken first in the transaction (review 19.7a F3)', async () => {
+      // The concurrent `{ kind: MEDICAL }` committed while this PATCH waited on the lock: the read after it sees MEDICAL.
+      findUnique.mockResolvedValue({ id: 'et_1', kind: 'MEDICAL', scope: 'ALL', blocksBooking: true });
+
+      await expect(updateExpiryType(adminActor(), 'et_1', updateExpiryTypeSchema.parse({ scope: 'PILOTS' }))).rejects.toMatchObject({ code: 'MEDICAL_TYPE_FIELDS' });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      const [strings, ...values] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+      expect(strings.join('?')).toMatch(/SELECT "id" FROM "ExpiryType" WHERE "id" = \? FOR UPDATE/);
+      expect(values).toEqual(['et_1']);
+      expect(queryRawMock.mock.invocationCallOrder[0]).toBeLessThan(findUniqueMock.mock.invocationCallOrder[0]!);
+      expect(updateMock).not.toHaveBeenCalled();
     });
   });
 

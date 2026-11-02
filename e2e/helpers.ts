@@ -90,11 +90,13 @@ function romeWallClockIso(date: string, hhmm: string): string {
  * (story 19.7a, AD-9; reused by story 19.7b). The aircraft needs a rate in
  * effect on `date` (`db-fixtures.ts#seedAircraftRate`), the instructor one too
  * (`seedInstructorRate`), and everyone on board their blocking documents
- * (`ensureValidSeedExpiries`). Returns the created flight's id.
+ * (`ensureValidSeedExpiries`). `isSolo` marks a SCHOOL flight the student
+ * flies alone (the instructor supervises, not on board). Returns the created
+ * flight's id.
  */
 export async function registerFlightOn(
   page: Page,
-  flight: { aircraftId: string; personId: string; instructorPersonId?: string; flightType: 'TOURISM' | 'SCHOOL'; date: string },
+  flight: { aircraftId: string; personId: string; instructorPersonId?: string; flightType: 'TOURISM' | 'SCHOOL'; date: string; isSolo?: boolean },
 ): Promise<string> {
   const takeoffAt = romeWallClockIso(flight.date, '10:00');
   const response = await page.request.post('/api/v1/flights', {
@@ -102,6 +104,7 @@ export async function registerFlightOn(
       aircraftId: flight.aircraftId,
       personId: flight.personId,
       ...(flight.instructorPersonId !== undefined ? { instructorPersonId: flight.instructorPersonId } : {}),
+      ...(flight.isSolo !== undefined ? { isSolo: flight.isSolo } : {}),
       departureAirfield: 'Base Airfield',
       arrivalAirfield: 'Base Airfield',
       flightType: flight.flightType,

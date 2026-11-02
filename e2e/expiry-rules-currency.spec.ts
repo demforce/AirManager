@@ -373,7 +373,7 @@ test.describe('Story 19.7a — the membership fee has its own category (AC 11, A
 });
 
 test.describe('Story 19.7a — currency on the pilot rows (AC 15)', () => {
-  test('X=1, Y=90: a flight at today−90 ends today, at today−91 it is over, a flight as instructor counts, an instructor has none', async ({ page }) => {
+  test('X=1, Y=90: a flight at today−90 ends today, at today−91 it is over, a flight as instructor counts, a supervised solo does not, an instructor has none', async ({ page }) => {
     await loginExpectingDashboard(page);
     const tag = `Cur-${uniqueSuffix()}`;
     const aircraft = await createAircraft(page, addDaysIso(TODAY, -100));
@@ -384,22 +384,29 @@ test.describe('Story 19.7a — currency on the pilot rows (AC 15)', () => {
     const d = await createPerson(page, `${tag}-D`, ['pilot', 'instructor']);
     const e = await createPerson(page, `${tag}-E`, ['instructor']);
     const pupil = await createPerson(page, `${tag}-F`, ['student']);
+    const g = await createPerson(page, `${tag}-G`, ['pilot', 'instructor']);
+    const soloist = await createPerson(page, `${tag}-H`, ['student']);
     await ensureValidSeedExpiries(page, a.id, 'PILOTS');
     await ensureValidSeedExpiries(page, b.id, 'STUDENTS');
     await ensureValidSeedExpiries(page, d.id, 'PILOTS');
     await ensureValidSeedExpiries(page, d.id, 'INSTRUCTORS');
     await ensureValidSeedExpiries(page, e.id, 'INSTRUCTORS');
     await ensureValidSeedExpiries(page, pupil.id, 'STUDENTS');
+    await ensureValidSeedExpiries(page, g.id, 'PILOTS');
+    await ensureValidSeedExpiries(page, g.id, 'INSTRUCTORS');
+    await ensureValidSeedExpiries(page, soloist.id, 'STUDENTS');
     await seedInstructorRate(d.id, { priceCentsPerHour: 4000, validFrom: addDaysIso(TODAY, -100) });
     await seedInstructorRate(e.id, { priceCentsPerHour: 4000, validFrom: addDaysIso(TODAY, -100) });
+    await seedInstructorRate(g.id, { priceCentsPerHour: 4000, validFrom: addDaysIso(TODAY, -100) });
 
     await registerFlightOn(page, { aircraftId: aircraft.id, personId: a.id, flightType: 'TOURISM', date: addDaysIso(TODAY, -90) });
     await registerFlightOn(page, { aircraftId: aircraft.id, personId: b.id, instructorPersonId: e.id, flightType: 'SCHOOL', date: addDaysIso(TODAY, -91) });
     await registerFlightOn(page, { aircraftId: aircraft.id, personId: pupil.id, instructorPersonId: d.id, flightType: 'SCHOOL', date: addDaysIso(TODAY, -10) });
+    await registerFlightOn(page, { aircraftId: aircraft.id, personId: soloist.id, instructorPersonId: g.id, flightType: 'SCHOOL', isSolo: true, date: addDaysIso(TODAY, -20) });
 
     await page.setViewportSize(DESKTOP);
     await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(tag)}`);
-    for (const person of [a, b, c, d, e]) {
+    for (const person of [a, b, c, d, e, g, soloist]) {
       await expect(page.getByTestId(`pilot-row-${person.id}`)).toBeVisible();
     }
     await expect(page.getByTestId(`pilot-currency-${a.id}`)).toHaveText('Currency 0gg');
@@ -408,6 +415,10 @@ test.describe('Story 19.7a — currency on the pilot rows (AC 15)', () => {
     // D's only flight is one they INSTRUCTED, 10 days ago: 80 days left, no badge.
     await expect(page.getByTestId(`pilot-currency-${d.id}`)).toHaveCount(0);
     await expect(page.getByTestId(`pilot-currency-${pupil.id}`)).toHaveCount(0);
+    // G's only flight is a SOLO they supervised from the ground (review 19.7a F2, CR §4.5
+    // "a bordo"): it counts for the student flying it, never for G.
+    await expect(page.getByTestId(`pilot-currency-${g.id}`)).toHaveText('Non current');
+    await expect(page.getByTestId(`pilot-currency-${soloist.id}`)).toHaveCount(0);
     // E flew (as B's instructor) but has no pilot/student profile: no currency at all.
     await expect(page.getByTestId(`pilot-currency-${e.id}`)).toHaveCount(0);
 

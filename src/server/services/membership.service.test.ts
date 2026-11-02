@@ -13,7 +13,7 @@ vi.mock('@/server/db/prisma', () => ({
     person: { findUnique: vi.fn() },
     account: { upsert: vi.fn() },
     accountMovement: { create: vi.fn(), aggregate: vi.fn() },
-    expiryType: { upsert: vi.fn() },
+    expiryType: { findFirst: vi.fn(), upsert: vi.fn() },
     expiry: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
     sentAlert: { deleteMany: vi.fn() },
     $queryRaw: vi.fn(),
@@ -41,6 +41,7 @@ const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const accountUpsertMock = vi.mocked(prisma.account.upsert);
 const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
 const accountMovementAggregateMock = vi.mocked(prisma.accountMovement.aggregate);
+const expiryTypeFindFirstMock = vi.mocked(prisma.expiryType.findFirst);
 const expiryTypeUpsertMock = vi.mocked(prisma.expiryType.upsert);
 const expiryFindUniqueMock = vi.mocked(prisma.expiry.findUnique);
 const expiryUpdateMock = vi.mocked(prisma.expiry.update);
@@ -96,6 +97,7 @@ beforeEach(() => {
   accountUpsertMock.mockReset();
   accountMovementCreateMock.mockReset();
   accountMovementAggregateMock.mockReset();
+  expiryTypeFindFirstMock.mockReset();
   expiryTypeUpsertMock.mockReset();
   expiryFindUniqueMock.mockReset();
   expiryUpdateMock.mockReset();
@@ -151,19 +153,32 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     );
   });
 
-  it('upserts the "Quota associativa" ExpiryType by NAME (kind MEMBERSHIP, ALL scope, non-blocking, 12 months) — update: {} leaves an existing row alone', async () => {
+  it('no MEMBERSHIP type yet: upserts "Quota associativa" by NAME (kind MEMBERSHIP, ALL scope, non-blocking, 12 months), realigning a row that already holds the name (review 19.7a F4)', async () => {
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_1', expiresAt: new Date('2028-03-10') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
 
+    expect(expiryTypeFindFirstMock).toHaveBeenCalledWith({ where: { kind: 'MEMBERSHIP' }, select: { id: true } });
     expect(expiryTypeUpsertMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { name: 'Quota associativa' },
-        update: {},
+        // A RATING an admin named "Quota associativa" on an unseeded installation becomes the fee, never the other way round.
+        update: { kind: 'MEMBERSHIP', scope: 'ALL', blocksBooking: false, isActive: true },
         create: { name: 'Quota associativa', kind: 'MEMBERSHIP', scope: 'ALL', blocksBooking: false, validityMonths: 12 },
       }),
     );
+  });
+
+  it('the MEMBERSHIP type exists: found by KIND, never upserted nor modified (review 19.7a F4)', async () => {
+    expiryTypeFindFirstMock.mockResolvedValue({ id: 'expirytype_found_by_kind' } as never);
+    expiryFindUnique.mockResolvedValue(null);
+    expiryCreate.mockResolvedValue({ id: 'expiry_1', expiresAt: new Date('2028-03-10') });
+
+    await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, override: false });
+
+    expect(expiryTypeUpsertMock).not.toHaveBeenCalled();
+    expect(expiryCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ expiryTypeId: 'expirytype_found_by_kind' }) }));
   });
 
   it('FIRST charge (no existing Expiry): creates one, expiresAt = today+12mo, NO SentAlert wipe (nothing to wipe)', async () => {

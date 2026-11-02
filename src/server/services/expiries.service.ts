@@ -622,10 +622,15 @@ export async function listBlockingExpiriesByPerson(actor: Actor, personIds: stri
     select: { personId: true, expiresAt: true, expiryType: { select: { name: true } } },
   });
 
+  // A TOTAL order (review 19.7a F5): latest `expiresAt`, then the smaller type
+  // name — unique per type, one row per (person, type) — so two visits expiring
+  // the same day always yield the same chip, whatever order the rows come in.
   const bestMedicalByPerson = new Map<string, (typeof medicalRows)[number]>();
   for (const row of medicalRows) {
     const best = bestMedicalByPerson.get(row.personId);
-    if (best === undefined || row.expiresAt.getTime() > best.expiresAt.getTime()) bestMedicalByPerson.set(row.personId, row);
+    const later = best === undefined || row.expiresAt.getTime() > best.expiresAt.getTime();
+    const tieWins = best !== undefined && row.expiresAt.getTime() === best.expiresAt.getTime() && row.expiryType.name < best.expiryType.name;
+    if (later || tieWins) bestMedicalByPerson.set(row.personId, row);
   }
   const bestMedicalsInHorizon = [...bestMedicalByPerson.values()].filter((row) => row.expiresAt.getTime() <= horizon.getTime());
 

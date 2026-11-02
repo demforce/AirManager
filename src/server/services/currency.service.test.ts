@@ -68,6 +68,17 @@ describe('currency.service (story 19.7a, R-19-i)', () => {
       expect(sql).toMatch(/"rank" <= \? OR "flightDate" >= \?::date/);
     });
 
+    it('a SOLO counts for the student only: the instructor seat skips it, the person seat keeps it (review 19.7a F2)', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await loadOnBoardFlightDates(['person_1'], '2026-06-15', { minFlights: 1, windowDays: 90 });
+
+      const { sql } = rawCall();
+      const [personSeat, instructorSeat] = sql.split(/\bUNION\b/) as [string, string];
+      expect(instructorSeat).toMatch(/WHERE ip\."personId" IN \(\?\) AND f\."isSolo" = false AND/);
+      expect(personSeat).not.toMatch(/isSolo/);
+    });
+
     it('excludeFlightId leaves that flight out of BOTH seats', async () => {
       queryRawMock.mockResolvedValue([] as never);
 

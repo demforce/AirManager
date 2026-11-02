@@ -1114,7 +1114,10 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
       segmentedHeights: [...document.querySelectorAll('.segmented')].map((s) => Math.round(s.getBoundingClientRect().height * 100) / 100),
       // The COUNT of the bars is data (one per aircraft / per instructor); the
       // invariant is their WIDTH — a rule reaching `.util-*` would move it.
-      utilBarWidths: [...new Set([...document.querySelectorAll('.util-bar')].map((s) => Math.round(s.getBoundingClientRect().width)))],
+      // Sorted, because their ORDER is data too (review 19.7a F1, TD 19.1-g):
+      // whether the first-registered aircraft is among the top-8 visible rows
+      // depends on how many aircraft other specs flew this year.
+      utilBarWidths: [...new Set([...document.querySelectorAll('.util-bar')].map((s) => Math.round(s.getBoundingClientRect().width)))].sort((a, b) => b - a),
       dateInputs: [...document.querySelectorAll('.date-input')].map((s) => Math.round(s.getBoundingClientRect().width)),
     });
     await page.setViewportSize(PHONE);
