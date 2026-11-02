@@ -63,7 +63,12 @@ function formatDateOnly(dateOnly: string, locale: 'it' | 'en'): string {
 }
 
 async function createAircraft(page: Page, withRate = false): Promise<{ id: string; registration: string }> {
-  const registration = `I-AOG${uniqueSuffix()}`.toUpperCase().slice(0, 20);
+  // Base-36 time + 6 random chars, so the random part survives the 20-char
+  // registration cap: `I-AOG` + 13-digit `Date.now()` used to fill the cap on
+  // its own, and two aircraft created in the same millisecond collided (409).
+  const registration = `I-AOG${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+    .toUpperCase()
+    .slice(0, 20);
   const response = await page.request.post('/api/v1/aircraft', {
     data: { registration, type: 'Ultraleggero 3 assi', model: 'AOG Test' },
   });

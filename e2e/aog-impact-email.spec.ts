@@ -104,7 +104,12 @@ function groundingSubjects(registration: string): string[] {
 }
 
 async function createAircraft(page: Page): Promise<{ id: string; registration: string }> {
-  const registration = `I-AOGB${uniqueSuffix()}`.toUpperCase().slice(0, 20);
+  // Base-36 time + 6 random chars, so the random part survives the 20-char
+  // registration cap: `I-AOGB` + 13-digit `Date.now()` used to fill the cap on
+  // its own, and two aircraft created in the same millisecond collided (409).
+  const registration = `I-AOGB${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+    .toUpperCase()
+    .slice(0, 20);
   const response = await page.request.post('/api/v1/aircraft', {
     data: { registration, type: 'Ultraleggero 3 assi', model: 'AOG impact' },
   });
