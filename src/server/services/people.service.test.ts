@@ -1520,7 +1520,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expect(flightGroupByMock).toHaveBeenCalledWith(
         expect.objectContaining({
           by: ['personId'],
-          where: { personId: { in: ['person_a', 'person_b'] }, status: 'REGISTERED' },
+          where: { personId: { in: ['person_a', 'person_b'] } },
           _max: { flightDate: true },
         }),
       );

@@ -6,8 +6,9 @@ import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
  * Story 15.6 — the phone face of the flight registry: the widest table of the
  * app (measured 317/1344 at 375px, 1027px of it off screen) becomes one card
  * per flight, its detail and its two decisions live in a bottom sheet, the
- * seven header controls become a chip strip + a search + a "Filtri" panel, and
- * the registra/correggi/storna behaviours stay IDENTICAL to the desktop.
+ * header controls become a search + a "Filtri" panel (story 19.6 removed the
+ * status chip strip with the status itself), and the registra/modifica/elimina
+ * behaviours stay IDENTICAL to the desktop.
  *
  * Each test guards ONE rule introduced for a MEASURED defect (AC 10), written
  * on the side the rule LIBERATES — never on "the new thing exists":
@@ -70,7 +71,6 @@ const DESKTOP_SINGLETONS = [
   'flight-filter-aircraft',
   'flight-filter-person',
   'flight-filter-type',
-  'flight-filter-status',
   'logbook-new-button',
   'flight-form',
   'flight-type-select',
@@ -176,19 +176,12 @@ async function registerFlight(page: Page, aircraftId: string, personId: string, 
   return body.flight;
 }
 
-async function cancelFlight(page: Page, id: string, reason: string): Promise<void> {
-  const response = await page.request.post(`/api/v1/flights/${id}/cancel`, { data: { reason } });
-  expect(response.status(), await response.text()).toBe(200);
-}
-
-/** Reads a flight back through the FILTERED API, never through "the list has N rows" (trappola 12.11 F1 / Billing-2 F4). */
-async function readFlight(page: Page, aircraftId: string, id: string): Promise<{ status: string; cancelReason: string | null }> {
+/** Whether a flight still exists, read through the FILTERED API — never through "the list has N rows" (trappola 12.11 F1 / Billing-2 F4). */
+async function flightExists(page: Page, aircraftId: string, id: string): Promise<boolean> {
   const response = await page.request.get(`/api/v1/flights?aircraftId=${aircraftId}&pageSize=100`);
   expect(response.ok(), await response.text()).toBe(true);
-  const body = (await response.json()) as { items: Array<{ id: string; status: string; cancelReason: string | null }> };
-  const flight = body.items.find((item) => item.id === id);
-  expect(flight, `flight ${id} in the filtered list`).toBeTruthy();
-  return flight!;
+  const body = (await response.json()) as { items: Array<{ id: string }> };
+  return body.items.some((item) => item.id === id);
 }
 
 /**
@@ -334,17 +327,16 @@ test.describe('Registro voli mobile — lista a card (story 15.6, AC 1)', () => 
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
-    // Deliberately long: a real registration plus a long name plus a cancelled
-    // badge is the widest a row can get.
+    // Deliberately long: a real registration plus a long name plus the
+    // deroga chip (every fixture is forced) is the widest a row can get.
     const student = await createStudent(page, tag);
     const instructor = await createInstructor(page, tag);
-    const school = await registerFlight(page, aircraft.id, student.id, '2020-03-04', {
+    await registerFlight(page, aircraft.id, student.id, '2020-03-04', {
       flightType: 'SCHOOL',
       instructorPersonId: instructor.id,
       departureAirfield: 'Aviosuperficie di Collina Lunga',
       arrivalAirfield: 'Campo Volo Molto Lungo',
     });
-    await cancelFlight(page, school.id, `Errore di trascrizione ${tag}`);
 
     await page.setViewportSize(PHONE_NARROW);
     await gotoLogbook(page, aircraft.id);
@@ -374,27 +366,27 @@ test.describe('Registro voli mobile — lista a card (story 15.6, AC 1)', () => 
     expect(escaping, 'a child growing past its own card').toEqual([]);
   });
 
-  test('the badge appears only on a row that is NOT ordinary, with cancellation winning over an override', async ({ page }) => {
+  test('the only chip a row can carry is «Deroga», one per row — no cancelled state survives (story 19.6)', async ({ page }) => {
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
     const pilot = await createPilot(page, tag);
-    const ordinary = await registerFlight(page, aircraft.id, pilot.id, '2020-03-05');
-    const cancelled = await registerFlight(page, aircraft.id, pilot.id, '2020-03-06');
-    await cancelFlight(page, cancelled.id, `Doppia registrazione ${tag}`);
+    await registerFlight(page, aircraft.id, pilot.id, '2020-03-05');
+    await registerFlight(page, aircraft.id, pilot.id, '2020-03-06');
 
     await page.setViewportSize(PHONE);
     await gotoLogbook(page, aircraft.id);
 
-    // Every fixture flight is forced (see the header), so an ordinary row here
-    // carries the "Deroga" chip and the cancelled one carries "Annullato" —
-    // cancellation wins, exactly as the pure derivation says.
-    const ordinaryRow = page.getByTestId('flight-row-mobile').filter({ hasText: '05/03/2020' });
-    const cancelledRow = page.getByTestId('flight-row-mobile').filter({ hasText: '06/03/2020' });
-    await expect(ordinaryRow).toContainText('Deroga');
-    await expect(cancelledRow).toContainText('Annullato');
-    await expect(cancelledRow).not.toContainText('Deroga');
-    expect(ordinary.id).not.toBe(cancelled.id);
+    // Every fixture flight is forced (see the header), so each row carries
+    // exactly the "Deroga" chip; the "Annullato" state no longer exists.
+    const rows = page.getByTestId('flight-row-mobile');
+    await expect(rows).toHaveCount(2);
+    for (const date of ['05/03/2020', '06/03/2020']) {
+      const row = rows.filter({ hasText: date });
+      await expect(row.locator('.mobile-row-flag')).toHaveCount(1);
+      await expect(row.locator('.mobile-row-flag')).toHaveText('Deroga');
+    }
+    await expect(rows.filter({ hasText: 'Annullato' })).toHaveCount(0);
   });
 
   test('the anomaly chip PAINTS its dot on the card too, readable in both themes (review 15.6 MINOR-2)', async ({ page }) => {
@@ -403,15 +395,14 @@ test.describe('Registro voli mobile — lista a card (story 15.6, AC 1)', () => 
     const aircraft = await createAircraftWithRate(page, tag);
     const pilot = await createPilot(page, tag);
     await registerFlight(page, aircraft.id, pilot.id, '2020-03-07');
-    const cancelled = await registerFlight(page, aircraft.id, pilot.id, '2020-03-08');
-    await cancelFlight(page, cancelled.id, `Riga doppia ${tag}`);
+    await registerFlight(page, aircraft.id, pilot.id, '2020-03-08');
 
     await page.setViewportSize(PHONE);
     await gotoLogbook(page, aircraft.id);
     await expect(page.getByTestId('flight-row-mobile')).toHaveCount(2);
 
-    // `Badge` is asked for `dot` on BOTH anomalies (warn "Deroga", bad
-    // "Annullato"), and 15.5's `.mobile-row-flag .badge{ display: block }` used
+    // `Badge` is asked for `dot` on the anomaly chip (warn "Deroga" — the only
+    // one since story 19.6), and 15.5's `.mobile-row-flag .badge{ display: block }` used
     // to make that dot an INLINE box, where width/height simply do not apply:
     // measured 0x13 on the card while the SAME badge painted a 6x6 dot in the
     // sheet and on the desktop row. The guard measures the painted object, and
@@ -461,7 +452,7 @@ test.describe('Registro voli mobile — lista a card (story 15.6, AC 1)', () => 
         });
       }, theme);
 
-      expect(dots.map((dot) => dot.label).sort(), `the two anomaly chips in ${theme}`).toEqual(['Annullato', 'Deroga']);
+      expect(dots.map((dot) => dot.label).sort(), `the anomaly chip of both rows in ${theme}`).toEqual(['Deroga', 'Deroga']);
       for (const dot of dots) {
         expect(dot.width, `${dot.label} dot width in ${theme} (${JSON.stringify(dot)})`).toBeGreaterThanOrEqual(5);
         expect(dot.height, `${dot.label} dot height in ${theme} (${JSON.stringify(dot)})`).toBeGreaterThanOrEqual(5);
@@ -580,23 +571,25 @@ test.describe('Registro voli mobile — sheet di dettaglio (story 15.6, AC 2/3)'
     await expect(page.getByTestId('flight-row-mobile').first()).not.toContainText('CFI');
   });
 
-  test('the admin gets both decisions, a cancelled row gets none but keeps its motivo, and "Modifica" closes the sheet before opening the panel', async ({ page }) => {
+  test('the admin gets both decisions on EVERY row, and "Modifica" closes the sheet before opening the panel', async ({ page }) => {
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
     const pilot = await createPilot(page, tag);
     await registerFlight(page, aircraft.id, pilot.id, '2020-03-09');
-    const cancelled = await registerFlight(page, aircraft.id, pilot.id, '2020-03-10');
-    await cancelFlight(page, cancelled.id, `Motivo leggibile ${tag}`);
+    await registerFlight(page, aircraft.id, pilot.id, '2020-03-10');
 
     await page.setViewportSize(PHONE);
     await gotoLogbook(page, aircraft.id);
 
+    // Story 19.6: no row is ever out of reach of the two decisions (there is
+    // no cancelled state left to gate them on), and the sheet carries no
+    // "Annullato"/"Storico" line.
     await page.getByTestId('flight-row-mobile').filter({ hasText: '10/03/2020' }).click();
     await expect(page.getByTestId('mobile-flight-sheet')).toBeVisible();
-    await expect(page.getByTestId('flight-correct-action-mobile')).toHaveCount(0);
-    await expect(page.getByTestId('flight-cancel-action-mobile')).toHaveCount(0);
-    await expect(page.getByTestId('mobile-flight-sheet')).toContainText(`Motivo leggibile ${tag}`);
+    await expect(page.getByTestId('flight-correct-action-mobile')).toBeVisible();
+    await expect(page.getByTestId('flight-cancel-action-mobile')).toBeVisible();
+    await expect(page.getByTestId('mobile-flight-sheet').locator('.bottom-sheet-kv').filter({ hasText: /Annullato|Storico/ })).toHaveCount(0);
     await page.keyboard.press('Escape');
 
     await page.getByTestId('flight-row-mobile').filter({ hasText: '09/03/2020' }).click();
@@ -614,8 +607,8 @@ test.describe('Registro voli mobile — sheet di dettaglio (story 15.6, AC 2/3)'
   });
 });
 
-test.describe('Registro voli mobile — storno nello sheet (story 15.6, AC 4)', () => {
-  test('an empty motivo makes ZERO requests, a real one cancels the flight and the row says so', async ({ page }) => {
+test.describe('Registro voli mobile — eliminazione nello sheet (story 15.6, AC 4; story 19.6)', () => {
+  test('the second step warns, lands the focus on «Indietro», and ONE request deletes the flight from both trees', async ({ page }) => {
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
@@ -626,52 +619,52 @@ test.describe('Registro voli mobile — storno nello sheet (story 15.6, AC 4)', 
     await gotoLogbook(page, aircraft.id);
 
     // Counted on the wire, not inferred from the absence of a toast.
-    let cancelRequests = 0;
-    await page.route('**/api/v1/flights/*/cancel', async (route) => {
-      cancelRequests += 1;
+    let deleteRequests = 0;
+    await page.route('**/api/v1/flights/*', async (route) => {
+      if (route.request().method() === 'DELETE') deleteRequests += 1;
       await route.continue();
     });
 
     await page.getByTestId('flight-row-mobile').first().click();
     await page.getByTestId('flight-cancel-action-mobile').click();
 
-    // The second step lives in the SAME dialog, and the focus follows it there.
+    // The second step lives in the SAME dialog: no motivo any more (D-1), a
+    // warning naming the person instead, and the focus on «Indietro» — never
+    // on the destructive button (review 15.2 F1: without a target it would
+    // fall on <body>).
     await expect(page.getByTestId('mobile-flight-sheet')).toHaveCount(1);
-    await expect(page.getByTestId('flight-cancel-reason-mobile')).toBeFocused();
+    await expect(page.getByTestId('mobile-flight-sheet').locator('textarea')).toHaveCount(0);
+    await expect(page.getByTestId('flight-cancel-warning-mobile')).toContainText(pilot.label);
+    await expect(page.getByTestId('flight-cancel-dismiss-mobile')).toBeFocused();
     await expect(page.getByTestId('mobile-flight-sheet').locator('.bottom-sheet-kv')).toHaveCount(0);
-
-    await page.getByTestId('flight-cancel-confirm-mobile').click();
-    await expect(page.getByTestId('flight-cancel-required-mobile')).toBeVisible();
-    expect(cancelRequests, 'an empty motivo must never reach the network').toBe(0);
-    expect((await readFlight(page, aircraft.id, flight.id)).status).toBe('REGISTERED');
+    expect(deleteRequests, 'opening the step must never reach the network').toBe(0);
 
     // Going back returns the focus to the button that opened the step.
     await page.getByTestId('flight-cancel-dismiss-mobile').click();
     await expect(page.getByTestId('flight-correct-action-mobile')).toBeFocused();
+    expect(await flightExists(page, aircraft.id, flight.id)).toBe(true);
 
     await page.getByTestId('flight-cancel-action-mobile').click();
-    await page.getByTestId('flight-cancel-reason-mobile').fill(`Storno dal telefono ${tag}`);
+    await expect(page.getByTestId('flight-cancel-confirm-mobile')).toHaveText('Elimina volo');
     await page.getByTestId('flight-cancel-confirm-mobile').click();
 
     await expect(page.getByTestId('mobile-flight-sheet')).toHaveCount(0);
-    await expect(page.getByTestId('toast')).toContainText('Volo annullato');
-    expect(cancelRequests).toBe(1);
+    await expect(page.getByTestId('toast')).toContainText('Volo eliminato');
+    expect(deleteRequests).toBe(1);
 
     // The truth is read from the API on the run-unique flight, never from "the
     // list has N rows" (trappola 12.11 F1 / Billing-2 F4).
-    const after = await readFlight(page, aircraft.id, flight.id);
-    expect(after.status).toBe('CANCELLED');
-    expect(after.cancelReason).toBe(`Storno dal telefono ${tag}`);
+    expect(await flightExists(page, aircraft.id, flight.id)).toBe(false);
 
-    // ...and both trees show it.
-    await expect(page.getByTestId('flight-row-mobile').first()).toContainText('Annullato');
+    // ...and neither tree shows it.
+    await expect(page.getByTestId('flight-row-mobile')).toHaveCount(0);
     await page.setViewportSize(DESKTOP);
-    await expect(page.getByTestId('flight-status-badge')).toHaveCount(1);
+    await expect(page.getByTestId('flight-row')).toHaveCount(0);
   });
 });
 
 test.describe('Registro voli mobile — filtri in linguaggio mobile (story 15.6, AC 5/7)', () => {
-  test('the head shrinks under its pre-fix height while every control grows to 44px, in both locales', async ({ page }) => {
+  test('the head stays under its pre-fix height while every control grows to 44px, in both locales', async ({ page }) => {
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
@@ -682,9 +675,10 @@ test.describe('Registro voli mobile — filtri in linguaggio mobile (story 15.6,
     for (const path of [`/it/dashboard/logbook?aircraftId=${aircraft.id}`, `/en/dashboard/logbook?aircraftId=${aircraft.id}`]) {
       await page.goto(path);
       await expect(page.getByTestId('mobile-flights-list')).toBeVisible();
+      // Story 19.6: the status chip strip that used to sit under the head is
+      // gone with the status itself — the head alone is measured.
       const head = await page.locator('.logbook-head').evaluate((element) => Math.round(element.getBoundingClientRect().height));
-      const chips = await page.getByTestId('mobile-flight-status-chips').evaluate((element) => Math.round(element.getBoundingClientRect().height));
-      expect(head + chips, `head + chips at ${path}`).toBeLessThanOrEqual(HEAD_PRE_FIX_PX);
+      expect(head, `head at ${path}`).toBeLessThanOrEqual(HEAD_PRE_FIX_PX);
 
       const targets = await page.evaluate(() => {
         const heights: Record<string, number> = {};
@@ -694,12 +688,9 @@ test.describe('Registro voli mobile — filtri in linguaggio mobile (story 15.6,
         }
         const exportTrigger = document.querySelector('.logbook-head > div > .btn');
         if (exportTrigger) heights['export'] = Math.round(exportTrigger.getBoundingClientRect().height);
-        for (const chip of document.querySelectorAll('.mobile-chip-strip > .btn')) {
-          heights[chip.getAttribute('data-testid') ?? 'chip'] = Math.round(chip.getBoundingClientRect().height);
-        }
         return heights;
       });
-      expect(Object.keys(targets).length).toBeGreaterThanOrEqual(6);
+      expect(Object.keys(targets).length).toBe(4);
       for (const [name, height] of Object.entries(targets)) {
         expect(height, `${name} at ${path}`).toBeGreaterThanOrEqual(44);
       }
@@ -805,34 +796,6 @@ test.describe('Registro voli mobile — filtri in linguaggio mobile (story 15.6,
     await expect(page.getByTestId('flight-row-mobile')).toContainText(other.label);
   });
 
-  test('the status chips are the one filter left in plain sight, and they round-trip through the URL', async ({ page }) => {
-    const tag = uniqueSuffix();
-    await login(page, ADMIN_EMAIL);
-    const aircraft = await createAircraftWithRate(page, tag);
-    const pilot = await createPilot(page, tag);
-    await registerFlight(page, aircraft.id, pilot.id, '2020-03-15');
-    const cancelled = await registerFlight(page, aircraft.id, pilot.id, '2020-03-16');
-    await cancelFlight(page, cancelled.id, `Storno per chip ${tag}`);
-
-    await page.setViewportSize(PHONE);
-    await gotoLogbook(page, aircraft.id);
-    await expect(page.getByTestId('flight-row-mobile')).toHaveCount(2);
-    await expect(page.getByTestId('mobile-flight-status-chip-all')).toHaveAttribute('aria-current', 'true');
-
-    await page.getByTestId('mobile-flight-status-chip-CANCELLED').click();
-    await expect(page).toHaveURL(/status=CANCELLED/);
-    await expect(page).toHaveURL(new RegExp(`aircraftId=${aircraft.id}`));
-    await expect(page.getByTestId('flight-row-mobile')).toHaveCount(1);
-    await expect(page.getByTestId('mobile-flight-status-chip-CANCELLED')).toHaveAttribute('aria-current', 'true');
-    // The desktop `<select>` reads the same state — one source of truth.
-    await expect(page.getByTestId('flight-filter-status')).toHaveValue('CANCELLED');
-
-    await page.getByTestId('mobile-flight-status-chip-REGISTERED').click();
-    await expect(page).toHaveURL(/status=REGISTERED/);
-    await expect(page.getByTestId('flight-row-mobile')).toHaveCount(1);
-    await expect(page.getByTestId('flight-row-mobile')).toContainText('15/03/2020');
-  });
-
   test('the person search stays on the head and the export href keeps carrying the list filters', async ({ page }) => {
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
@@ -871,8 +834,12 @@ test.describe('Registro voli mobile — filtri in linguaggio mobile (story 15.6,
     await expect(page.getByTestId('flight-row-mobile')).toHaveCount(1);
     await expect(page.getByTestId('flight-row-mobile')).toContainText(pilot.label);
 
-    // A chip tap keeps the deep-link scope (the desktop `<select>` does the same).
-    await page.getByTestId('mobile-flight-status-chip-REGISTERED').click();
+    // A panel filter keeps the deep-link scope (the desktop `<select>` does the
+    // same) — story 19.6 retired the status chip this used to be proved with.
+    await page.getByTestId('mobile-flight-filters-button').click();
+    await page.getByTestId('flight-filter-type-mobile').selectOption('TOURISM');
+    await page.getByTestId('mobile-flight-filters-apply').click();
+    await expect(page).toHaveURL(/flightType=TOURISM/);
     await expect(page).toHaveURL(new RegExp(`personId=${pilot.id}`));
     await expect(page.getByTestId('flight-row-mobile')).toHaveCount(1);
   });
@@ -1100,7 +1067,7 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     await phone.close();
   });
 
-  test('the Idempotency-Key travels on the registration only, never on a correction, and is regenerated after every response', async ({ page }) => {
+  test('the Idempotency-Key travels on the registration only, never on an edit (PUT), and is regenerated after every response', async ({ page }) => {
     const tag = uniqueSuffix();
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, tag);
@@ -1109,10 +1076,9 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     const keys: Array<string | undefined> = [];
     const correctKeys: Array<string | undefined> = [];
     page.on('request', (request) => {
-      if (request.method() !== 'POST') return;
       const url = new URL(request.url());
-      if (url.pathname === '/api/v1/flights') keys.push(request.headers()['idempotency-key']);
-      if (url.pathname.endsWith('/correct')) correctKeys.push(request.headers()['idempotency-key']);
+      if (request.method() === 'POST' && url.pathname === '/api/v1/flights') keys.push(request.headers()['idempotency-key']);
+      if (request.method() === 'PUT' && url.pathname.startsWith('/api/v1/flights/')) correctKeys.push(request.headers()['idempotency-key']);
     });
 
     await page.setViewportSize(PHONE);
@@ -1145,13 +1111,13 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     // NETWORK failure (no response at all) keeps the key.
     expect(keys[1]).not.toBe(keys[0]);
 
-    // A correction is not an idempotent creation and must NOT carry one.
+    // An edit is not an idempotent creation and must NOT carry one (story
+    // 19.6: a `PUT`, idempotent by HTTP semantics).
     await page.getByTestId('flight-result-close').click();
     await gotoLogbook(page, aircraft.id);
     await page.getByTestId('flight-row-mobile').first().click();
     await page.getByTestId('flight-correct-action-mobile').click();
-    await page.getByLabel('Motivo della correzione').fill(`Correzione ${tag}`);
-    await page.getByRole('button', { name: 'Conferma correzione' }).click();
+    await page.getByRole('button', { name: 'Salva modifiche' }).click();
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     expect(correctKeys.length).toBe(1);
     expect(correctKeys[0]).toBeUndefined();

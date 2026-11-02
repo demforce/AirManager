@@ -71,8 +71,6 @@ import {
   updateExpiryTypeSchema,
 } from './expiry-types';
 import {
-  cancelFlightSchema,
-  correctFlightSchema,
   flightListResponseSchema,
   listFlightsQuerySchema,
   registerFlightResponseSchema,
@@ -273,8 +271,6 @@ registry.register('CashReport', cashReportResponseSchema);
 registry.register('RegisterFlightRequest', registerFlightSchema);
 registry.register('RegisterFlightResponse', registerFlightResponseSchema);
 registry.register('FlightList', flightListResponseSchema);
-registry.register('CancelFlightRequest', cancelFlightSchema);
-registry.register('CorrectFlightRequest', correctFlightSchema);
 registry.register('User', userListItemSchema);
 registry.register('CreateUserRequest', createUserSchema);
 registry.register('UpdateUserRequest', updateUserSchema);
@@ -918,7 +914,7 @@ registry.registerPath({
   path: '/api/v1/flights',
   summary: 'List flights (paginated, most recent first, own-access or all with filters)',
   description:
-    'Story 5.1/5.4, AC 1/2/3/4; story 9.3, AC 4 — `flights.manage` (ADMIN-only) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`instructorPersonId`/`flightType`/`status`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard (CANCELLED included). A non-admin `personId`/`instructorPersonId` filter for anyone but themselves answers 403 (this is how the logbook\'s own-instructor drill-down reaches the registry as a non-admin instructor). `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for an admin.',
+    'Story 5.1/5.4, AC 1/2/3/4; story 9.3, AC 4 — `flights.manage` (ADMIN-only) sees every flight with all filters (`dateFrom`/`dateTo`/`aircraftId`/`personId`/`instructorPersonId`/`flightType`, AND-combined); otherwise `self.read` and the scope is forced to the flights where the actor is the person OR the instructor aboard. Story 19.6: no `status` filter anymore (a deleted flight no longer exists) — a stale `?status=` is ignored, never a 422. A non-admin `personId`/`instructorPersonId` filter for anyone but themselves answers 403 (this is how the logbook\'s own-instructor drill-down reaches the registry as a non-admin instructor). `breakdown.totalAmountCents` is always computed (aircraft + optional instructor cost), never a persisted column; `actorEmail` is present only for an admin.',
   tags: ['Flights'],
   security,
   request: { query: listFlightsQuerySchema },
@@ -951,7 +947,7 @@ registry.registerPath({
   path: '/api/v1/flights',
   summary: 'Register a flight and its automatic charge (FR-9/FR-14/FR-15)',
   description:
-    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`; story 19.3: the aircraft price is the column of the person\'s profile — student-only → `studentPriceCents`, otherwise `pilotPriceCents`, also on a SCHOOL flight — frozen with `breakdown.aircraftPriceCategory`) and the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block). `minutes` and `flightDate` are derived from `takeoffAt`/`landingAt` (story 11.1). `isSolo` (story 9.4) is only meaningful on a `SCHOOL` flight (dual/false vs solo/true — a solo still carries and bills the instructor, the student is PIC) and defaults to `false`. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid takeoff/landing pair, a SCHOOL flight without an instructor, `isSolo` on a non-SCHOOL flight, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Story 14.4 (ratifica R4): a blocking expired document (`ExpiryType.blocksBooking`) on the pilot/student OR the instructor, valid at `flightDate`, answers 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents`) — bypassable ONLY with `force: true` + a mandatory `forceReason`, and only by an actor holding `flights.forceExpiry` (ADMIN, 403 otherwise). Story AOG-1a (P2, ratifica R-AOG-c): a grounded aircraft answers 422 `AIRCRAFT_OUT_OF_SERVICE` (`details.reason`/`outOfServiceUntil`, plus `details.documents` in the same shape when that same request is ALSO blocked by a document — review MAJOR-1: the ONE `force` covers both blocks, so both are reported before it is given), checked right after `AIRCRAFT_ARCHIVED` and therefore BEFORE the flight-date guard; a correction that KEEPS the same aircraft is exempt. Story 16.2 (F3): a `REGISTERED` flight on the SAME aircraft whose `[takeoffAt, landingAt)` interval OVERLAPS the requested one answers **409 `FLIGHT_OVERLAP`**, with `details.flightId`/`details.takeoffAt`/`details.landingAt` (ISO 8601 UTC) naming the earliest conflicting flight. The interval is SEMI-OPEN, exactly like a `Booking`\'s: two flights that merely touch (`landingAt` of one equal to `takeoffAt` of the other) do NOT overlap. Only `REGISTERED` flights occupy an interval — a `CANCELLED` one frees it. The check runs INSIDE the transaction, under an `Aircraft` `FOR UPDATE` lock, so two concurrent identical requests answer exactly one 201 and one 409. It is NOT derogable by `force`/`forceReason` (unlike `FLIGHT_BLOCKED_BY_EXPIRY`/`AIRCRAFT_OUT_OF_SERVICE`): the way out is to cancel or correct the flight the 409 names. This is the server-side second line of defence behind the opt-in `Idempotency-Key`: the same request sent twice WITHOUT the header gets 201 then 409 (one flight, one charge), while WITH the header the second call replays the first response (`Idempotency-Replayed: true`, contract unchanged). Story 16.2 (F14) also tightens two declared bounds: `takeoffs`/`landings` are `[1, 500]` (a `0` is a 422 at the Zod boundary — the schema has always documented "at least one of each"), and a flight shorter than ONE minute answers 422 `FLIGHT_TIMES_INVALID` instead of being rounded up to a 1-minute flight (the 1440-minute ceiling answers with that same code, as before). The response\'s `balanceAlert` flags a worsened balance band (story 3.3/14.4) without blocking the registration. Requires `flights.manage` (FR-14: only an admin registers a flight). Accepts the opt-in `Idempotency-Key` header (story TD-2) — NOT `/flights/{id}/cancel`/`/correct`, already protected by `reversalOfId`.',
+    'Story 5.1, AC 1/2/3 — in one transaction: creates the `Flight` (AD-4 rate snapshot at `flightDate`; story 19.3: the aircraft price is the column of the person\'s profile — student-only → `studentPriceCents`, otherwise `pilotPriceCents`, also on a SCHOOL flight — frozen with `breakdown.aircraftPriceCategory`) and the `FLIGHT_CHARGE` `AccountMovement` (amount NEGATIVE — aircraft cost + optional instructor cost, no insufficient-balance block). `minutes` and `flightDate` are derived from `takeoffAt`/`landingAt` (story 11.1). `isSolo` (story 9.4) is only meaningful on a `SCHOOL` flight (dual/false vs solo/true — a solo still carries and bills the instructor, the student is PIC) and defaults to `false`. `noCharge` (story 19.6, R-19-d — "senza addebito") defaults to `false`: when `true` the rates are still required and frozen on the flight (422 `NO_AIRCRAFT_RATE`/`NO_INSTRUCTOR_RATE` exactly as without it), while both amounts, the total and the `FLIGHT_CHARGE` are 0, and the charge description starts with "Volo senza addebito"; the instructor\'s compensation still accrues. Domain-state failures (archived aircraft/person, missing pilot/student profile, future date, invalid takeoff/landing pair, a SCHOOL flight without an instructor, `isSolo` on a non-SCHOOL flight, an instructor without an active profile, no rate in effect) all answer 422 with a SPECIFIC stable code (AC 3) rather than the generic `VALIDATION_ERROR`. Story 14.4 (ratifica R4): a blocking expired document (`ExpiryType.blocksBooking`) on the pilot/student OR the instructor, valid at `flightDate`, answers 422 `FLIGHT_BLOCKED_BY_EXPIRY` (`details.documents`) — bypassable ONLY with `force: true` + a mandatory `forceReason`, and only by an actor holding `flights.forceExpiry` (ADMIN, 403 otherwise). Story AOG-1a (P2, ratifica R-AOG-c): a grounded aircraft answers 422 `AIRCRAFT_OUT_OF_SERVICE` (`details.reason`/`outOfServiceUntil`, plus `details.documents` in the same shape when that same request is ALSO blocked by a document — review MAJOR-1: the ONE `force` covers both blocks, so both are reported before it is given), checked right after `AIRCRAFT_ARCHIVED` and therefore BEFORE the flight-date guard; an edit (`PUT /api/v1/flights/{id}`) that KEEPS the same aircraft is exempt. Story 16.2 (F3): a flight on the SAME aircraft whose `[takeoffAt, landingAt)` interval OVERLAPS the requested one answers **409 `FLIGHT_OVERLAP`**, with `details.flightId`/`details.takeoffAt`/`details.landingAt` (ISO 8601 UTC) naming the earliest conflicting flight. The interval is SEMI-OPEN, exactly like a `Booking`\'s: two flights that merely touch (`landingAt` of one equal to `takeoffAt` of the other) do NOT overlap. Every existing flight occupies its interval — a deleted one frees it. The check runs INSIDE the transaction, under an `Aircraft` `FOR UPDATE` lock, so two concurrent identical requests answer exactly one 201 and one 409. It is NOT derogable by `force`/`forceReason` (unlike `FLIGHT_BLOCKED_BY_EXPIRY`/`AIRCRAFT_OUT_OF_SERVICE`): the way out is to delete or edit the flight the 409 names (`DELETE`/`PUT /api/v1/flights/{id}`). This is the server-side second line of defence behind the opt-in `Idempotency-Key`: the same request sent twice WITHOUT the header gets 201 then 409 (one flight, one charge), while WITH the header the second call replays the first response (`Idempotency-Replayed: true`, contract unchanged). Story 16.2 (F14) also tightens two declared bounds: `takeoffs`/`landings` are `[1, 500]` (a `0` is a 422 at the Zod boundary — the schema has always documented "at least one of each"), and a flight shorter than ONE minute answers 422 `FLIGHT_TIMES_INVALID` instead of being rounded up to a 1-minute flight (the 1440-minute ceiling answers with that same code, as before). The response\'s `balanceAlert` flags a worsened balance band (story 3.3/14.4) without blocking the registration. Requires `flights.manage` (FR-14: only an admin registers a flight). Accepts the opt-in `Idempotency-Key` header (story TD-2): a replay after the flight was deleted answers the ORIGINAL 201 (`Idempotency-Replayed: true`) and never re-creates it (story 19.6). `PUT`/`DELETE /api/v1/flights/{id}` take no such header — both are idempotent by HTTP semantics.',
   tags: ['Flights'],
   security,
   request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(registerFlightSchema), required: true } },
@@ -962,32 +958,32 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'post',
-  path: '/api/v1/flights/{id}/cancel',
-  summary: 'Cancel (storno) a registered flight (FR-16)',
+  method: 'put',
+  path: '/api/v1/flights/{id}',
+  summary: 'Edit a flight in place, together with its charge (FR-16, R-19-c)',
   description:
-    'Story 5.3, AC 1/3/4 — in one transaction: the flight becomes CANCELLED (cancelledAt/cancelReason set), an opposite-signed FLIGHT_CHARGE_REVERSAL movement is created (linked via reversalOfId to the original FLIGHT_CHARGE), and package minutes become available again (via a status-filtered SUM, no PackageConsumption row is touched). Always allowed, even if the person/aircraft is now archived. Already-cancelled -> 409. Requires `flights.manage`.',
+    'Story 19.6 (R-19-c) — FULL replacement with the `POST /api/v1/flights` body: in one transaction the SAME flight (same `id`) and its SAME `FLIGHT_CHARGE` movement are rewritten (amount = -(new total), account of the new person, regenerated description, value date = the new `flightDate`) — nothing is created, nothing is reversed. The new data goes through every 404/422 of the registration, with the exemptions keyed on the flight\'s own recorded data: its type (R-14.3-a), its person/instructor/date for the document guard (R-14.4-b), its aircraft for the out-of-service guard (AOG-1a) and, with the person unchanged, its `aircraftPriceCategory` (Q-19.3-b, at the rate in effect on the new `flightDate`). An omitted `noCharge` turns the flag OFF (full replacement). 409 `FLIGHT_OVERLAP` when the new interval overlaps ANOTHER flight on the new aircraft (this flight is excluded; same `details` as the registration; nothing is written); 409 `CONFLICT` when a manual adjustment already points at the flight\'s charge (the books were settled by hand); 404 when the flight does not exist (or was deleted concurrently). The negative-balance alert follows the registration\'s rule on the new person\'s balance before and after the edit. No `Idempotency-Key`: a second identical `PUT` rewrites the same values. Requires `flights.manage`.',
   tags: ['Flights'],
   security,
-  request: { params: flightIdParams, body: { content: jsonContent(cancelFlightSchema), required: true } },
+  request: { params: flightIdParams, body: { content: jsonContent(registerFlightSchema), required: true } },
   responses: {
-    200: { description: 'The cancelled flight, plus the refreshed account overview.', content: jsonContent(registerFlightResponseSchema) },
+    200: { description: 'The edited flight (same id), plus the refreshed account overview of its person.', content: jsonContent(registerFlightResponseSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });
 
 registry.registerPath({
-  method: 'post',
-  path: '/api/v1/flights/{id}/correct',
-  summary: 'Correct a registered flight: storno + new registration (FR-16)',
+  method: 'delete',
+  path: '/api/v1/flights/{id}',
+  summary: 'Delete a flight together with its charge (FR-16, R-19-c)',
   description:
-    'Story 5.3, AC 2/3/4 — in one transaction: storno of the original flight (identical to /cancel) followed immediately by a brand-new registration with the given data, re-validated from scratch (the same 404/422 guards as POST /flights apply to the NEW data) — linked via Flight.correctionOfId. Story 19.3 (Q-19.3-b): a correction that keeps the person keeps the original `aircraftPriceCategory` (at the rate in effect on the new `flightDate`); one that changes the person takes the new person\'s profile. If the new registration fails, the whole transaction (storno included) rolls back. Already-cancelled -> 409. Story 16.2: the overlap guard of `POST /api/v1/flights` applies to the CORRECTED data too, on the corrected data\'s aircraft (a correction that MOVES the flight onto another airframe is checked THERE) — 409 `FLIGHT_OVERLAP` with the same `details` shape, before the storno, so nothing at all is written. The flight being corrected is EXCLUDED from the check, so a correction that keeps its own slot (changed cycles or airfields) is never a conflict with itself; `force` does not derogate it. The tightened `takeoffs`/`landings` `[1, 500]` and one-minute minimum duration apply here as well. Requires `flights.manage`.',
+    'Story 19.6 (R-19-c) — in one transaction the flight\'s `FLIGHT_CHARGE` movement and the flight itself are deleted: the flight disappears from the registry and from the person\'s account statement, and the balance is recomputed. Always allowed (archived person or aircraft, grounded aircraft, any date, a no-charge flight). A second `DELETE` of the same flight answers 404; 409 `CONFLICT` when a manual adjustment already points at the flight\'s charge (nothing is deleted). A training note linked to the flight keeps its row, unlinked. Requires `flights.manage`.',
   tags: ['Flights'],
   security,
-  request: { params: flightIdParams, body: { content: jsonContent(correctFlightSchema), required: true } },
+  request: { params: flightIdParams },
   responses: {
-    201: { description: 'The new flight, plus the refreshed account overview (of the corrected data\'s person).', content: jsonContent(registerFlightResponseSchema) },
-    ...errorResponses(401, 403, 404, 409, 422),
+    204: { description: 'The flight and its charge were deleted.' },
+    ...errorResponses(401, 403, 404, 409),
   },
 });
 
@@ -1484,7 +1480,7 @@ registry.registerPath({
   path: '/api/v1/bookings/{id}/cancel',
   summary: 'Cancel (soft) a booking, freeing its slot (AC 1/2, FR-20)',
   description:
-    "No body — FR-20 tracks who/when (`cancelledAt`/`cancelledByUserId`), not why (mirrors `POST /api/v1/flights/{id}/cancel`'s shape, minus its mandatory `reason`). Same permission/temporal matrix as `PATCH /api/v1/bookings/{id}` (`bookings.manage.any` always allowed; `bookings.manage.own` only before the booking starts, 422 `BOOKING_ALREADY_STARTED` otherwise). Never locks any `Aircraft` row (cancelling can only free a slot, never create a conflict) — an atomic `updateMany` guard makes a double-cancel race answer 409 for the loser.",
+    "No body — FR-20 tracks who/when (`cancelledAt`/`cancelledByUserId`), not why (no motivo, like `DELETE /api/v1/flights/{id}`). Same permission/temporal matrix as `PATCH /api/v1/bookings/{id}` (`bookings.manage.any` always allowed; `bookings.manage.own` only before the booking starts, 422 `BOOKING_ALREADY_STARTED` otherwise). Never locks any `Aircraft` row (cancelling can only free a slot, never create a conflict) — an atomic `updateMany` guard makes a double-cancel race answer 409 for the loser.",
   tags: ['Bookings'],
   security,
   request: { params: bookingIdParams },

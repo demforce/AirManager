@@ -23,10 +23,13 @@ export type ToggleProps = {
   /** Visible state text inside the button. */
   onText: string;
   offText: string;
+  /** Optional neutral `.fld-hint` under the switch, linked through `aria-describedby` — same contract as `Field`'s and `SearchCombobox`'s own `hint` (story 19.6, «Senza addebito»). */
+  hint?: string;
 };
 
-export function Toggle({ id, label, checked, onChange, onText, offText }: ToggleProps) {
+export function Toggle({ id, label, checked, onChange, onText, offText, hint }: ToggleProps) {
   const labelId = `${id}-label`;
+  const hintId = `${id}-hint`;
   return (
     <div className="fld">
       <span id={labelId} className="fld-label">
@@ -42,6 +45,7 @@ export function Toggle({ id, label, checked, onChange, onText, offText }: Toggle
         data-testid={id}
         aria-checked={checked}
         aria-labelledby={labelId}
+        aria-describedby={hint ? hintId : undefined}
         className="toggle"
         onClick={() => onChange(!checked)}
       >
@@ -50,6 +54,11 @@ export function Toggle({ id, label, checked, onChange, onText, offText }: Toggle
         </span>
         <span className="toggle-state">{checked ? onText : offText}</span>
       </button>
+      {hint ? (
+        <span id={hintId} className="fld-hint">
+          {hint}
+        </span>
+      ) : null}
     </div>
   );
 }

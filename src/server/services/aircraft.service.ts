@@ -575,9 +575,8 @@ export async function returnToService(actor: Actor, id: string): Promise<Aircraf
  * `getStats`, a `finance.manage` service that fires 10+ queries and paginates
  * the entire fleet to expose one field.
  *
- * `REGISTERED` only, matching every other flown-minutes aggregate in this
- * codebase (`stats.service.ts`'s `kpiFlightWhere`): a cancelled flight never
- * counts as activity. Aircraft with no flights in the window are ABSENT from
+ * Every flight counts (story 19.6: a deleted flight no longer exists, so it
+ * can never count as activity). Aircraft with no flights in the window are ABSENT from
  * the map — callers read `?? 0`, so an empty bar and a missing key mean the
  * same thing.
  *
@@ -601,7 +600,6 @@ export async function sumFlightMinutesByAircraft(
     by: ['aircraftId'],
     where: {
       aircraftId: { in: aircraftIds },
-      status: 'REGISTERED',
       ...((from !== null || to !== null) && {
         flightDate: { ...(from !== null && { gte: from }), ...(to !== null && { lte: to }) },
       }),

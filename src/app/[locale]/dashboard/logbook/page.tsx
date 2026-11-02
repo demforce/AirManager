@@ -4,7 +4,7 @@ import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { formatCents } from '@/lib/money';
-import type { FlightStatusDto, FlightTypeDto } from '@/lib/schemas/flights';
+import type { FlightTypeDto } from '@/lib/schemas/flights';
 import { formatMinutes } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
@@ -25,7 +25,6 @@ type PageProps = {
     personQuery?: string;
     instructorPersonId?: string;
     flightType?: string;
-    status?: string;
   }>;
 };
 
@@ -37,7 +36,6 @@ const FLIGHTS_PAGE_SIZE = 20;
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const FLIGHT_TYPES: readonly FlightTypeDto[] = ['TOURISM', 'SCHOOL'];
-const FLIGHT_STATUSES: readonly FlightStatusDto[] = ['REGISTERED', 'CANCELLED'];
 
 /** Hand-edited URL defense (same pattern as the legacy `flights/page.tsx#sanitizeDateParam`). */
 function sanitizeDateParam(value: string | undefined): string | undefined {
@@ -48,21 +46,17 @@ function sanitizeFlightType(value: string | undefined): FlightTypeDto | undefine
   return value && (FLIGHT_TYPES as readonly string[]).includes(value) ? (value as FlightTypeDto) : undefined;
 }
 
-function sanitizeFlightStatus(value: string | undefined): FlightStatusDto | undefined {
-  return value && (FLIGHT_STATUSES as readonly string[]).includes(value) ? (value as FlightStatusDto) : undefined;
-}
-
 /**
  * Logbook (story 12.8) — AirOps-native, replaces the legacy `/dashboard/flights`
  * (deleted by this story, hard, no redirect — ratifica utente 2). Same two
  * RBAC faces as before, decided by `flights.manage` (AD-5, `hasPermission`
  * here only decides what to RENDER — `listFlights` re-authorizes/re-scopes
  * regardless): an admin gets the full manager (filters, "Nuova voce",
- * Storna/Correggi); everyone else gets a read-only own-access registry
- * (period/tipo/stato only).
+ * Annulla/Modifica); everyone else gets a read-only own-access registry
+ * (period/tipo only).
  *
  * KPI row + table "Totali" + header count (ratifica 3, review fix — MAJOR):
- * REGISTERED-only, TRUE totals over the WHOLE filtered set, via
+ * TRUE totals over the WHOLE filtered set, via
  * `flights.service.ts#getFlightTotals` (one aggregate query, same RBAC/WHERE
  * as `listFlights`) — NOT the current page's items (a page-scoped sum was
  * misleading: filtering to a month and landing on page 1 showed page 1's
@@ -92,7 +86,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   const dateFrom = sanitizeDateParam(sp.dateFrom);
   const dateTo = sanitizeDateParam(sp.dateTo);
   const flightType = sanitizeFlightType(sp.flightType);
-  const status = sanitizeFlightStatus(sp.status);
   const aircraftId = canManage ? (sp.aircraftId || undefined) : undefined;
   const personId = canManage ? (sp.personId || undefined) : undefined;
   const personQuery = canManage ? (sp.personQuery || undefined) : undefined;
@@ -140,7 +133,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     instructorOptions = instructorResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
   }
 
-  const flightsQuery = { pageSize: FLIGHTS_PAGE_SIZE, dateFrom, dateTo, aircraftId, personId, personQuery, instructorPersonId, flightType, status };
+  const flightsQuery = { pageSize: FLIGHTS_PAGE_SIZE, dateFrom, dateTo, aircraftId, personId, personQuery, instructorPersonId, flightType };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   let flightsResult = await listFlights(actor, { ...flightsQuery, page });
   const lastPage = Math.max(1, Math.ceil(flightsResult.total / FLIGHTS_PAGE_SIZE));
@@ -162,7 +155,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   const items = flightsResult.items.map((flight) => ({
     ...flight,
     createdAt: flight.createdAt.toISOString(),
-    cancelledAt: flight.cancelledAt ? flight.cancelledAt.toISOString() : null,
     takeoffAt: flight.takeoffAt ? flight.takeoffAt.toISOString() : null,
     landingAt: flight.landingAt ? flight.landingAt.toISOString() : null,
     // Story 14.4, AC 2 — same ISO-serialize treatment as the other `Date` fields.
@@ -176,7 +168,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     personId: personId ?? '',
     personQuery: personQuery ?? '',
     flightType: flightType ?? '',
-    status: status ?? '',
   };
 
   const baseFilterQuery = {
@@ -186,7 +177,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     ...(personId ? { personId } : {}),
     ...(personQuery ? { personQuery } : {}),
     ...(flightType ? { flightType } : {}),
-    ...(status ? { status } : {}),
   };
 
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
@@ -279,10 +269,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             soloSuffix: t('table.soloSuffix'),
             noInstructor: t('table.noInstructor'),
             noValue: t('table.noValue'),
-            statusCancelled: t('table.statusCancelled'),
-            cancelledDetail: t.raw('table.cancelledDetail') as string,
-            correctionOf: t('table.correctionOf'),
-            correctedBy: t('table.correctedBy'),
+            noCharge: t('table.noCharge'),
             cancelAction: t('table.cancelAction'),
             correctAction: t('table.correctAction'),
             forcedBadge: t('table.forcedBadge'),
@@ -299,9 +286,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             personSearchPlaceholder: t('filters.personSearchPlaceholder'),
             flightType: t('filters.flightType'),
             allTypes: t('filters.allTypes'),
-            status: t('filters.status'),
-            allStatuses: t('filters.allStatuses'),
-            statusOptions: { registered: t('filters.statusOptions.registered'), cancelled: t('filters.statusOptions.cancelled') },
             archivedSuffix: t('filters.archivedSuffix'),
             reset: t('filters.reset'),
           },
@@ -313,9 +297,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             cancel: t('editor.cancel'),
             submit: t('editor.submit'),
             correctSubmit: t('editor.correctSubmit'),
-            correctReason: t('editor.correctReason'),
-            requiredReason: t('editor.requiredReason'),
             conflictError: t('editor.conflictError'),
+            notFoundError: t('editor.notFoundError'),
             requiredField: t('editor.requiredField'),
             invalidCycles: t('editor.invalidCycles'),
             fields: {
@@ -329,6 +312,9 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               flightType: t('editor.fields.flightType'),
               soloMode: t('editor.fields.soloMode'),
               soloModes: { dual: t('editor.fields.soloModes.dual'), solo: t('editor.fields.soloModes.solo') },
+              noCharge: t('editor.fields.noCharge'),
+              noChargeModes: { charged: t('editor.fields.noChargeModes.charged'), noCharge: t('editor.fields.noChargeModes.noCharge') },
+              noChargeHint: t('editor.fields.noChargeHint'),
               studentOnlyHint: t('editor.fields.studentOnlyHint'),
               // `t.raw`: the {type} placeholder is filled CLIENT-side by the editor —
               // plain `t()` fails ICU formatting and renders the key path instead
@@ -375,6 +361,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             },
             result: {
               title: t('editor.result.title'),
+              updatedTitle: t('editor.result.updatedTitle'),
+              noCharge: t('editor.result.noCharge'),
               minutes: t('editor.result.minutes'),
               aircraftRate: t('editor.result.aircraftRate'),
               aircraftAmount: t('editor.result.aircraftAmount'),
@@ -408,9 +396,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             takeoffs: t('mobile.takeoffs'),
             landings: t('mobile.landings'),
             times: t('mobile.times'),
-            lineage: t('mobile.lineage'),
-            correctionBadge: t('mobile.correctionBadge'),
-            statusAll: t('mobile.statusAll'),
             filters: t('mobile.filters'),
             // `t.raw`: the {count} placeholder is filled CLIENT-side (same
             // reasoning as `table.forcedDetail` above).
@@ -420,11 +405,13 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
           },
           cancelModal: {
             title: t('cancelModal.title'),
-            reason: t('cancelModal.reason'),
-            requiredReason: t('cancelModal.requiredReason'),
+            // `t.raw`: the {person} placeholder is filled CLIENT-side (same
+            // reasoning as `table.forcedDetail` above).
+            warning: t.raw('cancelModal.warning') as string,
             submit: t('cancelModal.submit'),
             close: t('cancelModal.close'),
             conflictError: t('cancelModal.conflictError'),
+            notFoundError: t('cancelModal.notFoundError'),
             genericError: t('cancelModal.genericError'),
             success: t('cancelModal.success'),
           },

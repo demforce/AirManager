@@ -1009,7 +1009,7 @@ async function assertOwnAccessAndTiming(actor: Actor, canManageAny: boolean, boo
  * destination and,
  * if different, the CURRENT one — are locked in ONE
  * `WHERE id IN (...) ORDER BY id FOR UPDATE` query (the exact multi-lock
- * pattern of `flights.service.ts#correctFlight`, anti-deadlock against two
+ * pattern of `flights.service.ts#updateFlight`, anti-deadlock against two
  * concurrent moves crossing aircraft; a same-aircraft edit collapses to the
  * 1-element set `createBooking` already uses). Only the DESTINATION
  * aircraft's state is validated (404/409 archived/422
@@ -1098,7 +1098,7 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
 
     // ALL Aircraft ids next, ONE query, ORDER BY id FOR UPDATE — same
-    // multi-lock pattern as `flights.service.ts#correctFlight` (module
+    // multi-lock pattern as `flights.service.ts#updateFlight` (module
     // doc-comment above): the destination aircraft, plus the CURRENT one if
     // different (a 1-element set covers the common "same aircraft" edit).
     const aircraftIds = Array.from(new Set([existing.aircraftId, nextAircraftId]));

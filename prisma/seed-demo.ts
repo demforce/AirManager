@@ -182,6 +182,7 @@ type FlightPlan = {
   instructorEmail?: string;
   flightType?: FlightType;
   touchAndGo?: number; // takeoffs/landings count
+  noCharge?: boolean; // story 19.6: "senza addebito" — charge at 0, instructor still paid
 };
 
 // Chronological (oldest first) so balances evolve sensibly.
@@ -203,7 +204,7 @@ const FLIGHTS: FlightPlan[] = [
   { email: 'davide.marchetti@gmail.com', reg: 'I-B412', daysAgo: 16, takeoffHour: 16, durationMin: 70 },
   { email: 'francesca.romano@tiscali.it', reg: 'I-A661', daysAgo: 13, takeoffHour: 9, durationMin: 55 },
   { email: 'ale.greco77@gmail.com', reg: 'I-A661', daysAgo: 12, takeoffHour: 14, durationMin: 70, destination: DESTINATIONS.LILQ },
-  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 10, takeoffHour: 9, durationMin: 45, instructorEmail: 'paola.rinaldi@outlook.it', flightType: 'SCHOOL', touchAndGo: 6 },
+  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 10, takeoffHour: 9, durationMin: 45, instructorEmail: 'paola.rinaldi@outlook.it', flightType: 'SCHOOL', touchAndGo: 6, noCharge: true },
   { email: 'marco.desantis@gmail.com', reg: 'I-B412', daysAgo: 9, takeoffHour: 11, durationMin: 50 },
   { email: 'chiara.esposito88@gmail.com', reg: 'I-A661', daysAgo: 8, takeoffHour: 10, durationMin: 85, destination: DESTINATIONS.LIQS },
   { email: 'francesca.romano@tiscali.it', reg: 'I-B412', daysAgo: 6, takeoffHour: 17, durationMin: 60 },
@@ -442,6 +443,7 @@ async function main(): Promise<void> {
       landingAt: landingAt.toISOString(),
       flightType: f.flightType ?? 'TOURISM',
       isSolo: false,
+      noCharge: f.noCharge ?? false,
       takeoffs: f.touchAndGo ?? 1,
       landings: f.touchAndGo ?? 1,
     });

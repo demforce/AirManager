@@ -10,9 +10,10 @@
  * `flights-manager.tsx#RegisterFlightForm`'s business logic (composed
  * takeoff/landing instants, live-computed duration, idempotency, error
  * mapping), which this story's page replaces. SAME form doubles as the
- * "Correggi volo" editor (story 5.3 precedent) — a non-null `target.mode ===
- * 'correct'` pre-fills every field from that flight plus a mandatory motivo,
- * and posts to `/correct` instead of `/`.
+ * "Modifica" editor — a non-null `target.mode === 'correct'` pre-fills every
+ * field from that flight (the «Senza addebito» switch included) and sends the
+ * full body with `PUT /api/v1/flights/{id}`: the flight and its charge are
+ * updated in place, no motivo asked (story 19.6, R-19-c).
  *
  * Ratifica utente 1 (2026-07-15): the addebito breakdown/nuovo saldo stays
  * VISIBLE INSIDE this slide-over on success (never lost, unlike a fleeting
@@ -23,6 +24,7 @@ import { useId, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Badge } from '@/components/ui/badge';
 import { Field, Input } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
@@ -52,9 +54,10 @@ export type FlightEditorLabels = {
   cancel: string;
   submit: string;
   correctSubmit: string;
-  correctReason: string;
-  requiredReason: string;
+  /** A 409 on an edit: the flight's charge was adjusted by hand (story 19.6, D-8). */
   conflictError: string;
+  /** Story 19.6 — a 404 on an edit: the flight was deleted in the meantime. */
+  notFoundError: string;
   requiredField: string;
   /** Story 16.2 (AC 18) — the `<form>` is `noValidate`, so `min={1}` on the two cycle inputs is a hint, not a gate: this is the message a typed `0` gets, in the same bottom banner as `errors.FLIGHT_TIMES_INVALID`. */
   invalidCycles: string;
@@ -70,6 +73,10 @@ export type FlightEditorLabels = {
     /** Story 19.5 (D-1) — the `Toggle`'s label «Volo solista» (on = solo); `soloModes` are its two visible state texts. */
     soloMode: string;
     soloModes: { dual: string; solo: string };
+    /** Story 19.6 (R-19-d) — the «Senza addebito» `Toggle`'s label, its two state texts and its hint. */
+    noCharge: string;
+    noChargeModes: { charged: string; noCharge: string };
+    noChargeHint: string;
     /** Story 14.3, AC 2 — shown as a neutral hint under Tipo volo once a person with only an active student profile is selected (the combobox is also forced/disabled to SCHOOL, see `isStudentOnly`). */
     studentOnlyHint: string;
     /** Review F1 (14.3) — shown ONLY while correcting a flight whose person is student-only TODAY but whose recorded type is NOT SCHOOL (ratifica R-14.3-a: never disabled, never rewritten). Contains a `{type}` placeholder for the flight's own recorded type label. */
@@ -116,6 +123,10 @@ export type FlightEditorLabels = {
   };
   result: {
     title: string;
+    /** Story 19.6 — the summary title after an edit: the charge was updated, not generated. */
+    updatedTitle: string;
+    /** Story 19.6 — next to the total of a no-charge flight. */
+    noCharge: string;
     minutes: string;
     aircraftRate: string;
     aircraftAmount: string;
@@ -332,11 +343,10 @@ export function FlightEditor({
   const [formError, setFormError] = useState<string | null>(null);
   const [selectedFlightType, setSelectedFlightType] = useState<FlightTypeDto>(initialFlightType);
   const [isSolo, setIsSolo] = useState(correctingFlight?.isSolo ?? false);
+  const [noCharge, setNoCharge] = useState(correctingFlight?.noCharge ?? false);
   const [flightDateValue, setFlightDateValue] = useState(defaults.flightDate);
   const [takeoffTimeValue, setTakeoffTimeValue] = useState(defaults.takeoffTime);
   const [landingTimeValue, setLandingTimeValue] = useState(defaults.landingTime);
-  const [reason, setReason] = useState('');
-  const [reasonError, setReasonError] = useState(false);
   const [aircraftId, setAircraftId] = useState(initialPickers.aircraftId);
   const [personId, setPersonId] = useState(initialPickers.personId);
   const [instructorPersonId, setInstructorPersonId] = useState(initialPickers.instructorPersonId);
@@ -562,10 +572,10 @@ export function FlightEditor({
   }
 
   /**
-   * Review F2: the aircraft/person/reason checks used to live ONLY inside
+   * Review F2: the aircraft/person checks used to live ONLY inside
    * `onValid` (RHF's valid-callback) — unreachable while any RHF-tracked
    * field (`flightDate` etc.) was ALSO empty, so a totally blank submit
-   * left these three plain-state pickers mute. Extracted so BOTH
+   * left these plain-state pickers mute. Extracted so BOTH
    * `handleSubmit`'s valid and invalid branches mark them (`onInvalid`
    * below) — RHF's own `shouldFocusError` already focuses its first
    * invalid tracked field in the invalid branch, so only the valid branch
@@ -576,9 +586,7 @@ export function FlightEditor({
     const nextPersonError = personId.trim() === '';
     setAircraftError(nextAircraftError);
     setPersonError(nextPersonError);
-    const nextReasonError = isCorrecting && reason.trim() === '';
-    setReasonError(nextReasonError);
-    return nextAircraftError || nextPersonError || nextReasonError;
+    return nextAircraftError || nextPersonError;
   }
 
   function onInvalid(): void {
@@ -613,7 +621,6 @@ export function FlightEditor({
       setFormError(labels.invalidCycles);
       return;
     }
-    const trimmedReason = reason.trim();
 
     const body = {
       aircraftId,
@@ -628,15 +635,17 @@ export function FlightEditor({
       // `value`/`disabled` above, so the two can never disagree.
       flightType: effectiveFlightType,
       isSolo,
+      // Always sent, `false` included: an edit is a full replacement (`PUT`),
+      // and an omitted flag would turn it off in silence (story 19.6).
+      noCharge,
       takeoffs,
       landings,
-      ...(isCorrecting ? { reason: trimmedReason } : {}),
     };
 
     let response: Response;
     try {
-      response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight!.id}/correct` : '/api/v1/flights', {
-        method: 'POST',
+      response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight!.id}` : '/api/v1/flights', {
+        method: isCorrecting ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
@@ -654,10 +663,9 @@ export function FlightEditor({
       // own `.json()` — cloned so the FLIGHT_BLOCKED_BY_EXPIRY branch can
       // read `error.details.documents` (not part of `parseApiError`'s own,
       // narrower return shape) from the SAME response.
-      // Story 16.2: read BEFORE the `isCorrecting && 409` branch below, which
-      // used to be the FIRST thing a 409 met and answered EVERY 409 during a
-      // correction with «Questo volo è già stato annullato.» — a sentence
-      // that is simply false for the `FLIGHT_OVERLAP` this story adds.
+      // Story 16.2: read BEFORE the `isCorrecting && 409` branch below, so a
+      // `FLIGHT_OVERLAP` during an edit is never answered with the
+      // manual-adjustment sentence that branch carries.
       const blockedBody = (await response
         .clone()
         .json()
@@ -679,6 +687,10 @@ export function FlightEditor({
       } | null;
       if (response.status === 409 && blockedBody?.error?.code === 'FLIGHT_OVERLAP') {
         setFormError(overlapMessage(blockedBody.error.details));
+        return;
+      }
+      if (isCorrecting && response.status === 404) {
+        setFormError(labels.notFoundError);
         return;
       }
       if (isCorrecting && response.status === 409) {
@@ -785,8 +797,8 @@ export function FlightEditor({
 
     let response: Response;
     try {
-      response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight!.id}/correct` : '/api/v1/flights', {
-        method: 'POST',
+      response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight!.id}` : '/api/v1/flights', {
+        method: isCorrecting ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
@@ -806,7 +818,7 @@ export function FlightEditor({
       // so a request that is both blocked AND overlapping meets
       // `FLIGHT_OVERLAP` ONLY here. `force` does not derogate it: the section
       // closes (retrying could only repeat the 409) and the bottom banner
-      // names the flight to cancel or correct, as on the primary submit.
+      // names the flight to delete or edit, as on the primary submit.
       const errorBody = (await response.json().catch(() => null)) as {
         error?: { code?: string; details?: { takeoffAt?: string; landingAt?: string } };
       } | null;
@@ -866,7 +878,7 @@ export function FlightEditor({
       {lastResult !== null ? (
         <div data-testid="flight-result-panel" style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--panel-2)', padding: 14 }}>
           <div className="fld-label" style={{ marginBottom: 10 }}>
-            {labels.result.title}
+            {isCorrecting ? labels.result.updatedTitle : labels.result.title}
           </div>
           <dl style={{ display: 'grid', gridTemplateColumns: '1fr auto', rowGap: 8, columnGap: 12, fontSize: 13 }}>
             <dt style={{ color: 'var(--ink-3)' }}>{labels.result.minutes}</dt>
@@ -884,8 +896,14 @@ export function FlightEditor({
               </>
             ) : null}
             <dt style={{ fontWeight: 600, color: 'var(--ink)' }}>{labels.result.total}</dt>
-            <dd className="mono num" style={{ fontWeight: 600 }} data-testid="flight-result-total">
-              {formatCents(lastResult.flight.breakdown.totalAmountCents, moneyLocale)}
+            <dd className="mono num" style={{ fontWeight: 600 }}>
+              {/* Story 19.6 (D-10): a bare "0,00 €" would read as an error. */}
+              {lastResult.flight.noCharge ? (
+                <span data-testid="flight-result-no-charge" style={{ marginRight: 8 }}>
+                  <Badge>{labels.result.noCharge}</Badge>
+                </span>
+              ) : null}
+              <span data-testid="flight-result-total">{formatCents(lastResult.flight.breakdown.totalAmountCents, moneyLocale)}</span>
             </dd>
             <dt style={{ fontWeight: 600, color: 'var(--ink)' }}>{labels.result.newBalance}</dt>
             <dd className="mono num" style={{ fontWeight: 600 }} data-testid="flight-result-new-balance">
@@ -1029,6 +1047,19 @@ export function FlightEditor({
                 />
               </div>
             ) : null}
+            {/* Story 19.6 (R-19-d): always there, on every type — the form is
+                mounted for `flights.manage` only, which is the whole gate. */}
+            <div className="fld wide">
+              <Toggle
+                id="flight-no-charge-toggle"
+                label={labels.fields.noCharge}
+                checked={noCharge}
+                onChange={setNoCharge}
+                onText={labels.fields.noChargeModes.noCharge}
+                offText={labels.fields.noChargeModes.charged}
+                hint={labels.fields.noChargeHint}
+              />
+            </div>
             <Field label={labels.fields.departure} error={errors.departureAirfield ? labels.requiredField : undefined}>
               <Input aria-invalid={Boolean(errors.departureAirfield)} {...register('departureAirfield')} />
             </Field>
@@ -1055,19 +1086,6 @@ export function FlightEditor({
             <Field label={labels.fields.landings}>
               <Input type="number" min={1} step={1} inputMode="numeric" {...register('landings')} />
             </Field>
-            {isCorrecting ? (
-              <Field label={labels.correctReason} wide error={reasonError ? labels.requiredReason : undefined}>
-                <Input
-                  value={reason}
-                  onChange={(event) => {
-                    setReason(event.target.value);
-                    if (reasonError && event.target.value.trim() !== '') setReasonError(false);
-                  }}
-                  aria-invalid={reasonError}
-                  maxLength={500}
-                />
-              </Field>
-            ) : null}
           </div>
 
 

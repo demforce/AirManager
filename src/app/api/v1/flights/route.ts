@@ -21,12 +21,10 @@ export const GET = apiRoute({
 });
 
 // Story TD-2 (AC 5): opt-in `Idempotency-Key` header on the registration
-// POST — see `people/[id]/account/top-ups/route.ts`. `POST
-// /flights/{id}/cancel` and `/correct` (flight storno/correction) are NOT
-// covered: they are already protected by `AccountMovement.reversalOfId`'s
-// existing unique constraint (at most one storno per movement, 409 on a
-// retry) — a second idempotency layer there would duplicate protection
-// rather than add any.
+// POST — see `people/[id]/account/top-ups/route.ts`. `PUT`/`DELETE
+// /flights/{id}` (story 19.6) are NOT covered: idempotent by HTTP semantics
+// (`[id]/route.ts`). A replay after a delete answers the original 201 and
+// never re-creates the flight (story 19.6, D-9).
 export const POST = apiRoute({
   bodySchema: registerFlightSchema,
   successStatus: 201,

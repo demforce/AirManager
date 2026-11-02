@@ -571,7 +571,7 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
     expect(flightBody.error.details.outOfServiceUntil).toBe(yesterday);
   });
 
-  test('AD-4 perimeter over the API: a correction that KEEPS the grounded aircraft passes, one that MOVES a flight onto it is blocked, and a storno is never blocked', async ({
+  test('AD-4 perimeter over the API: an edit that KEEPS the grounded aircraft passes, one that MOVES a flight onto it is blocked, and a delete is never blocked', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -598,9 +598,10 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
     await ground(page, flown.id, `Atterraggio duro ${uniqueSuffix()}`, dateOnlyFromToday(14));
     await ground(page, grounded.id, `Revisione ${uniqueSuffix()}`, dateOnlyFromToday(14));
 
-    // (a) correction that KEEPS the same aircraft: allowed — correcting is not
+    // (a) edit that KEEPS the same aircraft: allowed — correcting is not
     // registering anew (R-14.4-b), and the guard must not create the dead end.
-    const keepSame = await page.request.post(`/api/v1/flights/${flightId}/correct`, {
+    // Story 19.6: an edit in place, `PUT`, same flight.
+    const keepSame = await page.request.put(`/api/v1/flights/${flightId}`, {
       data: {
         aircraftId: flown.id,
         personId: pilot.personId,
@@ -609,16 +610,16 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
         flightType: 'TOURISM',
         takeoffAt: `${flightDay}T10:00:00.000Z`,
         landingAt: `${flightDay}T11:15:00.000Z`,
-        reason: 'Minuti errati',
       },
     });
-    expect(keepSame.status()).toBe(201);
+    expect(keepSame.status()).toBe(200);
     const corrected = (await keepSame.json()) as { flight: { id: string; forcedAt: string | null } };
+    expect(corrected.flight.id).toBe(flightId);
     // ...and it is not an override either.
     expect(corrected.flight.forcedAt).toBeNull();
 
-    // (b) correction that MOVES the flight onto a grounded airframe: blocked.
-    const moveOntoGrounded = await page.request.post(`/api/v1/flights/${corrected.flight.id}/correct`, {
+    // (b) edit that MOVES the flight onto a grounded airframe: blocked.
+    const moveOntoGrounded = await page.request.put(`/api/v1/flights/${flightId}`, {
       data: {
         aircraftId: grounded.id,
         personId: pilot.personId,
@@ -627,15 +628,14 @@ test.describe('The flight-registration guard and its admin deroga (story AOG-1a,
         flightType: 'TOURISM',
         takeoffAt: `${flightDay}T10:00:00.000Z`,
         landingAt: `${flightDay}T11:15:00.000Z`,
-        reason: 'Velivolo errato',
       },
     });
     expect(moveOntoGrounded.status()).toBe(422);
     expect(((await moveOntoGrounded.json()) as { error: { code: string } }).error.code).toBe('AIRCRAFT_OUT_OF_SERVICE');
 
-    // (c) a storno is ALWAYS possible, grounded airframe or not.
-    const cancelled = await page.request.post(`/api/v1/flights/${corrected.flight.id}/cancel`, { data: { reason: 'Errore inserimento' } });
-    expect(cancelled.status()).toBe(200);
+    // (c) a delete is ALWAYS possible, grounded airframe or not (story 19.6, AC 5).
+    const deleted = await page.request.delete(`/api/v1/flights/${flightId}`);
+    expect(deleted.status()).toBe(204);
   });
 
   test('an actor without flights.manage gets no logbook affordance at all — no promise of a bypass it cannot use (AC 11)', async ({ page }) => {

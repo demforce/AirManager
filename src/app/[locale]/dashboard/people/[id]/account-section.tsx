@@ -61,9 +61,8 @@ export type AccountSectionLabels = {
    * Server→Client boundary.
    */
   table: { date: string; type: string; description: string; amount: string; recordedBy?: string; actions?: string; noValue: string };
-  movementType: { topUp: string; adjustment: string; packagePurchase: string; flightCharge: string; flightChargeReversal: string };
+  movementType: { topUp: string; adjustment: string; packagePurchase: string; flightCharge: string };
   adjustmentBadge: { ofDate: string; linked: string };
-  reversalBadge: { ofDate: string; linked: string };
   /**
    * Strings the PHONE face needs and the desktop one has no place for (story
    * 15.9). `empty` is deliberately NOT `table.empty`: the two trees are both
@@ -170,8 +169,6 @@ function movementTypeLabel(type: AccountMovementTypeDto, labels: AccountSectionL
       return labels.packagePurchase;
     case 'FLIGHT_CHARGE':
       return labels.flightCharge;
-    case 'FLIGHT_CHARGE_REVERSAL':
-      return labels.flightChargeReversal;
     default:
       return type;
   }
@@ -235,10 +232,6 @@ export function AccountSection({
 
   function adjustmentBadgeText(row: AccountMovementRow): string {
     return linkedBadgeText(labels.adjustmentBadge, originalDateLabel(row));
-  }
-
-  function reversalBadgeText(row: AccountMovementRow): string {
-    return linkedBadgeText(labels.reversalBadge, originalDateLabel(row));
   }
 
   /** Story 3.3: the row action is absent on an already-corrected movement and on a package purchase — the same gate on both faces. */
@@ -393,11 +386,6 @@ export function AccountSection({
                       {adjustmentBadgeText(row)}
                     </span>
                   ) : null}
-                  {row.type === 'FLIGHT_CHARGE_REVERSAL' && row.reversalOfId ? (
-                    <span className="badge bad" data-testid="reversal-badge">
-                      {reversalBadgeText(row)}
-                    </span>
-                  ) : null}
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {row.description ?? labels.table.noValue}
@@ -485,13 +473,6 @@ export function AccountSection({
                       </span>
                     </span>
                   ) : null}
-                  {row.type === 'FLIGHT_CHARGE_REVERSAL' && row.reversalOfId ? (
-                    <span className="mobile-row-flag">
-                      <span className="badge bad" data-testid="reversal-badge-mobile">
-                        {reversalBadgeText(row)}
-                      </span>
-                    </span>
-                  ) : null}
                 </button>
               );
             })
@@ -548,8 +529,6 @@ export function AccountSection({
           badge={
             sheetRow.reversalOfId && sheetRow.type === 'ADJUSTMENT' ? (
               <span className="badge warn">{adjustmentBadgeText(sheetRow)}</span>
-            ) : sheetRow.reversalOfId && sheetRow.type === 'FLIGHT_CHARGE_REVERSAL' ? (
-              <span className="badge bad">{reversalBadgeText(sheetRow)}</span>
             ) : undefined
           }
           rows={sheetDetailRows(sheetRow)}

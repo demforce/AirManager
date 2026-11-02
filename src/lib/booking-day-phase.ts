@@ -7,8 +7,8 @@
  * rule is that a boundary like this has exactly one implementation (the
  * precedent is `@/lib/expiry-status`'s `tierOf`).
  *
- * The app has **no notion of a flight actually being airborne** — `FlightStatus`
- * is `REGISTERED | CANCELLED` and a flight is logged AFTER the fact — so the
+ * The app has **no notion of a flight actually being airborne** — a flight
+ * has no lifecycle state at all and is logged AFTER the fact — so the
  * only honest "now" an aviosuperficie console can show is the BOOKING that
  * covers this instant (ratifica R-15.3-a: the card is called "In corso ora",
  * not "In volo ora", precisely so the number does not lie).

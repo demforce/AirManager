@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
-import {
-  cancelFlightSchema,
-  correctFlightSchema,
-  listFlightsQuerySchema,
-  registerFlightSchema,
-} from '@/lib/schemas/flights';
+import { listFlightsQuerySchema, registerFlightSchema } from '@/lib/schemas/flights';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import type { Actor } from '@/server/auth/rbac';
@@ -26,10 +21,16 @@ vi.mock('@/server/db/prisma', () => ({
     accountMovement: {
       aggregate: vi.fn(),
       create: vi.fn(),
+      // Story 19.6 — `loadFlightCharge`'s read, `updateFlight`'s rewrite and
+      // `deleteFlight`'s removal of the flight's one charge.
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     },
     flight: {
       create: vi.fn(),
       findUnique: vi.fn(),
+      delete: vi.fn(),
       // Story 16.2 — `assertNoOverlappingFlight`'s single read. Defaulted to
       // `null` in `beforeEach` below so every PRE-EXISTING test keeps passing
       // unmodified (same treatment as `expiryType.findMany` in story 14.4):
@@ -107,7 +108,7 @@ vi.mock('./bookings.service', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { listFlights, getFlightTotals, registerFlight, cancelFlight, correctFlight } = await import('./flights.service');
+const { listFlights, getFlightTotals, registerFlight, deleteFlight, updateFlight } = await import('./flights.service');
 const { NotFoundError, ConflictError } = await import('./errors');
 
 const aircraftFindUniqueMock = vi.mocked(prisma.aircraft.findUnique);
@@ -116,6 +117,10 @@ const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const accountUpsertMock = vi.mocked(prisma.account.upsert);
 const accountMovementAggregateMock = vi.mocked(prisma.accountMovement.aggregate);
 const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
+const accountMovementFindUniqueMock = vi.mocked(prisma.accountMovement.findUnique);
+const accountMovementUpdateMock = vi.mocked(prisma.accountMovement.update);
+const accountMovementDeleteMock = vi.mocked(prisma.accountMovement.delete);
+const flightDeleteMock = vi.mocked(prisma.flight.delete);
 const flightCreateMock = vi.mocked(prisma.flight.create);
 const flightFindUniqueMock = vi.mocked(prisma.flight.findUnique);
 const flightFindFirstMock = vi.mocked(prisma.flight.findFirst);
@@ -139,7 +144,11 @@ const personFindUnique = personFindUniqueMock as unknown as {
 const accountUpsert = accountUpsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const accountMovementAggregate = accountMovementAggregateMock as unknown as {
   mockResolvedValue: (v: { _sum: { amountCents: number | null } }) => void;
+  mockResolvedValueOnce: (v: { _sum: { amountCents: number | null } }) => {
+    mockResolvedValueOnce: (v: { _sum: { amountCents: number | null } }) => void;
+  };
 };
+const accountMovementFindUnique = accountMovementFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const accountMovementCreate = accountMovementCreateMock as unknown as {
   mockResolvedValue: (v: Fixture) => void;
   mockRejectedValueOnce: (v: unknown) => { mockResolvedValueOnce: (v: Fixture) => void };
@@ -160,7 +169,9 @@ const flightAggregate = flightAggregateMock as unknown as {
   }) => void;
 };
 const queryRaw = queryRawMock as unknown as {
-  mockResolvedValueOnce: (v: unknown[]) => { mockResolvedValueOnce: (v: unknown[]) => void };
+  mockResolvedValueOnce: (v: unknown[]) => {
+    mockResolvedValueOnce: (v: unknown[]) => { mockResolvedValueOnce: (v: unknown[]) => void };
+  };
 };
 const expiryTypeFindMany = expiryTypeFindManyMock as unknown as {
   mockResolvedValue: (v: Array<{ id: string; name: string }>) => void;
@@ -231,7 +242,7 @@ const CREATED_FLIGHT_ROW = {
   flightDate: new Date('2020-01-15T00:00:00.000Z'),
   flightType: 'TOURISM' as const,
   isSolo: false,
-  status: 'REGISTERED' as const,
+  noCharge: false,
   departureAirfield: 'Base Airfield',
   arrivalAirfield: 'Base Airfield',
   takeoffAt: new Date('2020-01-15T10:00:00.000Z'),
@@ -245,35 +256,26 @@ const CREATED_FLIGHT_ROW = {
   instructorRateCentsPerHour: null,
   instructorAmountCents: null,
   createdAt: new Date('2020-01-15T10:00:00.000Z'),
-  // Story 5.3: a plain `registerFlight`-created row is never cancelled and
-  // never itself a correction.
-  cancelledAt: null as Date | null,
-  cancelReason: null as string | null,
-  correctionOfId: null as string | null,
-  correctedBy: null as { id: string } | null,
   aircraft: { id: 'aircraft_1', registration: 'I-ABCD' },
   person: { id: 'person_1', firstName: 'Mario', lastName: 'Rossi' },
   instructorProfile: null,
   actorUser: { email: 'staff@airmanager.local' },
 };
 
-// Story 5.3 — a previously registered flight, still REGISTERED, with its
-// FLIGHT_CHARGE movement (`loadRegisteredFlightForReversal`'s shape).
+// Story 19.6 — `updateFlight`'s pre-read of the flight being edited: the
+// identity its exemptions key on (type R-14.3-a, person/instructor/date
+// R-14.4-b, aircraft AOG-1a, price category Q-19.3-b).
 const ORIGINAL_FLIGHT_ROW = {
-  id: 'flight_orig',
-  status: 'REGISTERED' as const,
   aircraftId: 'aircraft_1',
   personId: 'person_1',
-  minutes: 80,
   flightDate: new Date('2020-01-15T00:00:00.000Z'),
-  // Story 14.3 review F3 — the flight's OWN recorded type, needed so
-  // `correctFlight` can exempt a correction that keeps it unchanged.
   flightType: 'TOURISM' as const,
-  // Story 19.3 (Q-19.3-b) — the price column the original flight was charged.
   aircraftPriceCategory: 'PILOT' as const,
-  aircraft: { registration: 'I-ABCD' },
-  movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: null }],
+  instructorProfile: null as { personId: string } | null,
 };
+
+/** The flight's one `FLIGHT_CHARGE` (`loadFlightCharge`'s shape) — no manual adjustment points at it. */
+const CHARGE_ROW = { id: 'movement_orig', accountId: 'account_1', reversal: null as { id: string } | null };
 
 /**
  * Composes `takeoffAt`/`landingAt` ISO instants (story 11.1) that derive
@@ -309,6 +311,10 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     accountUpsertMock.mockReset();
     accountMovementAggregateMock.mockReset();
     accountMovementCreateMock.mockReset();
+    accountMovementFindUniqueMock.mockReset();
+    accountMovementUpdateMock.mockReset();
+    accountMovementDeleteMock.mockReset();
+    flightDeleteMock.mockReset();
     flightCreateMock.mockReset();
     flightFindUniqueMock.mockReset();
     flightFindFirstMock.mockReset();
@@ -1343,17 +1349,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(data['forceReason']).toBeUndefined();
     });
 
-    // Schema-level guard (both exported schemas — `registerFlightSchema` is a
-    // `.refine()`d `ZodEffects`, `correctFlightSchema` is built off the SAME
-    // shared `registerFlightFields` base via `.extend().refine()` — see
-    // `flights.ts`'s own doc-comments for why the two can't just chain):
-    // `forceReason` is required UNCONDITIONALLY whenever `force` is `true`,
-    // same convention as `createBookingSchema`.
-    it('registerFlightSchema/correctFlightSchema both reject force: true without a forceReason', () => {
+    // Schema-level guard (the ONE body schema of `POST /flights` and, since
+    // story 19.6, `PUT /flights/{id}`): `forceReason` is required
+    // UNCONDITIONALLY whenever `force` is `true`, same convention as
+    // `createBookingSchema`. A stale `reason` key no longer rescues anything.
+    it('registerFlightSchema rejects force: true without a forceReason (POST and PUT share it)', () => {
       expect(() => registerFlightSchema.parse({ ...BASE_INPUT, force: true })).toThrow();
-      expect(() =>
-        correctFlightSchema.parse({ ...BASE_INPUT, force: true, reason: 'Motivo correzione' }),
-      ).toThrow();
+      expect(() => registerFlightSchema.parse({ ...BASE_INPUT, force: true, reason: 'Motivo correzione' })).toThrow();
     });
 
     // --- story AOG-1a, AC 10 (ratifica R-AOG-c): ONE force, TWO blocks -------
@@ -1559,160 +1561,116 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
   });
 
-  describe('cancelFlight (story 5.3, AC 1/3/4)', () => {
-    const CANCEL_INPUT = cancelFlightSchema.parse({ reason: 'Errore inserimento' });
+  describe('deleteFlight (story 19.6, P2 — R-19-c; AD-2/AD-3; AC 4/5/7/8)', () => {
+    /**
+     * A transaction client DISTINCT from the global `prisma` mock: the two
+     * deletes must run on the `tx` (AC 7), never on a client outside the
+     * transaction — with `mockTransaction`'s `tx === prisma` that would be
+     * unobservable.
+     */
+    function txStub(lockedFlight: Array<{ aircraftId: string }> = [{ aircraftId: 'aircraft_1' }], charge: Fixture = CHARGE_ROW) {
+      const tx = {
+        $queryRaw: vi.fn(async (...args: [TemplateStringsArray, ...unknown[]]) => (args[0].join('?').includes('"Flight"') ? lockedFlight : [])),
+        accountMovement: { findUnique: vi.fn(async () => charge), delete: vi.fn(async () => ({})) },
+        flight: { delete: vi.fn(async () => ({})) },
+      };
+      transaction.mockImplementation((fn: unknown) => (fn as (client: unknown) => unknown)(tx));
+      return tx;
+    }
 
-    beforeEach(() => {
-      flightFindUnique.mockResolvedValue(ORIGINAL_FLIGHT_ROW);
-      accountMovementCreate.mockResolvedValue({ id: 'movement_reversal' });
-      flightUpdate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_orig', status: 'CANCELLED' });
-      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
-      getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('rejects a non-staff actor (flights.manage required), before touching the DB', async () => {
-      await expect(cancelFlight(pilotActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ForbiddenError);
-      expect(flightFindUniqueMock).not.toHaveBeenCalled();
-    });
-
-    it('throws NotFoundError for an unknown flight', async () => {
-      flightFindUnique.mockResolvedValue(null);
-
-      await expect(cancelFlight(adminActor(), 'nope', CANCEL_INPUT)).rejects.toThrow(NotFoundError);
+    it('rejects a non-admin actor with 403 BEFORE any query: no transaction, no lock (AC 4)', async () => {
+      await expect(deleteFlight(pilotActor(), 'flight_orig')).rejects.toThrow(ForbiddenError);
       expect(transactionMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictError (409) when the flight is already CANCELLED', async () => {
-      flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, status: 'CANCELLED' });
+    it('locks Flight -> Aircraft -> Account, each FOR UPDATE, in that order (AC 8)', async () => {
+      const tx = txStub();
 
-      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ConflictError);
-      expect(transactionMock).not.toHaveBeenCalled();
+      await deleteFlight(adminActor(), 'flight_orig');
+
+      const sql = tx.$queryRaw.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join('?'));
+      expect(sql).toHaveLength(3);
+      expect(sql[0]).toMatch(/FROM "Flight" WHERE "id" = \? FOR UPDATE/);
+      expect(sql[1]).toMatch(/FROM "Aircraft" WHERE "id" = \? FOR UPDATE/);
+      expect(sql[2]).toMatch(/FROM "Account" WHERE "id" = \? FOR UPDATE/);
+      // The Aircraft locked is the one the Flight lock RETURNED, the Account
+      // the one the charge lives on — never values read outside the transaction.
+      expect(tx.$queryRaw.mock.calls[1]?.[1]).toBe('aircraft_1');
+      expect(tx.$queryRaw.mock.calls[2]?.[1]).toBe('account_1');
     });
 
-    it('story AOG-1a, AC 9: a storno is NEVER blocked by the aircraft being out of service', async () => {
-      // `cancelFlight` does not go through `resolveFlightInput` at all — this
-      // pins the fourth row of AD-4's table so a future refactor that routes
-      // the storno through the shared resolver trips here.
+    it('deletes the charge BEFORE the flight, both on the tx — the RESTRICT FK makes the reverse order fail by design (AC 7)', async () => {
+      const tx = txStub();
+
+      await expect(deleteFlight(adminActor(), 'flight_orig')).resolves.toBeUndefined();
+
+      expect(tx.accountMovement.delete).toHaveBeenCalledWith({ where: { id: 'movement_orig' } });
+      expect(tx.flight.delete).toHaveBeenCalledWith({ where: { id: 'flight_orig' } });
+      expect(tx.accountMovement.delete.mock.invocationCallOrder[0]!).toBeLessThan(tx.flight.delete.mock.invocationCallOrder[0]!);
+      expect(accountMovementDeleteMock).not.toHaveBeenCalled();
+      expect(flightDeleteMock).not.toHaveBeenCalled();
+    });
+
+    it('a Flight lock with 0 rows (unknown, already deleted, or deleted concurrently) answers 404 and writes nothing (AC 4, AC 8)', async () => {
+      const tx = txStub([]);
+
+      await expect(deleteFlight(adminActor(), 'flight_orig')).rejects.toThrow(NotFoundError);
+      await expect(deleteFlight(adminActor(), 'flight_orig')).rejects.toThrow('Flight not found.');
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(tx.accountMovement.delete).not.toHaveBeenCalled();
+      expect(tx.flight.delete).not.toHaveBeenCalled();
+    });
+
+    it("409 with today's message when a manual adjustment points at the charge — nothing deleted (D-8, AC 4)", async () => {
+      const tx = txStub(undefined, { ...CHARGE_ROW, reversal: { id: 'adj_1' } });
+
+      await expect(deleteFlight(adminActor(), 'flight_orig')).rejects.toThrow(ConflictError);
+      await expect(deleteFlight(adminActor(), 'flight_orig')).rejects.toThrow(/already been reversed by a manual adjustment/);
+      expect(tx.accountMovement.delete).not.toHaveBeenCalled();
+      expect(tx.flight.delete).not.toHaveBeenCalled();
+    });
+
+    it('a flight without its charge is a broken invariant: a plain Error, never a half-done delete', async () => {
+      const tx = txStub(undefined, null);
+
+      await expect(deleteFlight(adminActor(), 'flight_orig')).rejects.toThrow('Flight flight_orig has no FLIGHT_CHARGE movement.');
+      expect(tx.accountMovement.delete).not.toHaveBeenCalled();
+      expect(tx.flight.delete).not.toHaveBeenCalled();
+    });
+
+    it('is always allowed: no re-validation of person, aircraft (archived, grounded) or date — the resolver is never reached (AC 5)', async () => {
+      txStub();
       aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
 
-      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).resolves.toBeDefined();
+      await expect(deleteFlight(adminActor(), 'flight_orig')).resolves.toBeUndefined();
+      expect(aircraftFindUniqueMock).not.toHaveBeenCalled();
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(getEffectiveRateMock).not.toHaveBeenCalled();
     });
 
-    it("throws ConflictError naming the manual adjustment when the charge's reversal slot is already taken on a still-REGISTERED flight (review 5.3 M1)", async () => {
-      flightFindUnique.mockResolvedValue({
-        ...ORIGINAL_FLIGHT_ROW,
-        movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: { id: 'adj_1' } }],
-      });
+    it('reads no balance and sends no alert: deleting a flight only ever gives money back', async () => {
+      txStub();
 
-      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(
-        /already been reversed by a manual adjustment/,
-      );
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it('P2002 on reversalOfId (concurrent double-cancel) surfaces as ConflictError (backstop for the pre-check)', async () => {
-      accountMovementCreate.mockRejectedValueOnce({ code: 'P2002' });
-
-      await expect(cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT)).rejects.toThrow(ConflictError);
-    });
-
-    // Story 14.4, AC 3 — module doc-comment: a storno only ever improves or
-    // holds the balance band, so there is never a worsening signal here.
-    it('balanceAlert is always false (a storno never worsens the band)', async () => {
-      const result = await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(result.balanceAlert).toBe(false);
-    });
-
-    it('creates the FLIGHT_CHARGE_REVERSAL movement: +|original amount|, reversalOfId, flightId, description with the reason', async () => {
-      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(accountMovementCreateMock).toHaveBeenCalledWith({
-        data: {
-          accountId: 'account_1',
-          type: 'FLIGHT_CHARGE_REVERSAL',
-          amountCents: 20000,
-          reversalOfId: 'movement_orig',
-          flightId: 'flight_orig',
-          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
-          description: 'Storno volo I-ABCD 2020-01-15 — Errore inserimento',
-          actorUserId: 'admin_1',
-        },
-      });
-    });
-
-    // Story 16.1, AC 4 — discriminant: this writer used to date the storno on
-    // the UTC calendar day, one day BEHIND the Roma day the ledger's month
-    // aggregates (`currentMonthRange`) delimit on (ledger-audit MAJOR-3).
-    it('story 16.1, AC 4: at 00:30 Rome on the 1st (CEST), the reversal is dated on the NEW (Roma) month', async () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep in Rome
-
-      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(accountMovementCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ effectiveDate: parseDateOnlyUtc('2026-09-01') }) }),
-      );
-    });
-
-    it('sets status CANCELLED, cancelledAt and cancelReason on the flight', async () => {
-      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(flightUpdateMock).toHaveBeenCalledWith({
-        where: { id: 'flight_orig' },
-        data: { status: 'CANCELLED', cancelledAt: expect.any(Date), cancelReason: 'Errore inserimento' },
-        select: expect.anything(),
-      });
-    });
-
-    it('never writes the Aircraft row: the cancelled minutes leave the total through the status alone (story 19.2, R-19-b)', async () => {
-      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(aircraftUpdateMock).not.toHaveBeenCalled();
-    });
-
-    it('sends NO negative-balance alert (a storno only ever adds money back)', async () => {
-      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
+      await deleteFlight(adminActor(), 'flight_orig');
 
       expect(getNegativeBalanceThresholdCentsMock).not.toHaveBeenCalled();
+      expect(accountMovementAggregateMock).not.toHaveBeenCalled();
       expect(sendNegativeBalanceAlertMock).not.toHaveBeenCalled();
-    });
-
-    it('returns the updated flight DTO plus the refreshed account overview', async () => {
-      const result = await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(result.flight.status).toBe('CANCELLED');
-      expect(result.account).toEqual(ACCOUNT_OVERVIEW);
-      expect(getAccountOverviewMock).toHaveBeenCalledWith(adminActor(), 'person_1');
-    });
-
-    it('locks the Aircraft row then the Account row (FOR UPDATE, same macro order as registerFlight)', async () => {
-      await cancelFlight(adminActor(), 'flight_orig', CANCEL_INPUT);
-
-      expect(queryRawMock).toHaveBeenCalledTimes(2);
-      const [firstStrings] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray];
-      expect(firstStrings.join('?')).toContain('FOR UPDATE');
-      expect(firstStrings.join('?')).toContain('Aircraft');
-      const [secondStrings] = queryRawMock.mock.calls[1] as unknown as [TemplateStringsArray];
-      expect(secondStrings.join('?')).toContain('FOR UPDATE');
-      expect(secondStrings.join('?')).toContain('Account');
+      expect(aircraftUpdateMock).not.toHaveBeenCalled();
     });
   });
 
-  describe('correctFlight (story 5.3, AC 2/3/4)', () => {
-    const CORRECT_INPUT = correctFlightSchema.parse({
+  describe('updateFlight (story 19.6, P3 — R-19-c; AD-2/AD-4; AC 9-15)', () => {
+    const UPDATE_INPUT = registerFlightSchema.parse({
       aircraftId: 'aircraft_1',
       personId: 'person_1',
       departureAirfield: 'Base Airfield',
       arrivalAirfield: 'Base Airfield',
       flightType: 'TOURISM',
       ...buildTimes('2020-01-15', 30),
-      reason: 'Errore minuti',
     });
+    const UPDATED_ROW = { ...CREATED_FLIGHT_ROW, id: 'flight_orig', minutes: 30, aircraftAmountCents: 7500 };
 
     beforeEach(() => {
       flightFindUnique.mockResolvedValue(ORIGINAL_FLIGHT_ROW);
@@ -1722,156 +1680,268 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
-      accountMovementCreate.mockResolvedValue({ id: 'movement_x' });
-      flightUpdate.mockResolvedValue({});
-      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 30, aircraftAmountCents: 7500 });
-      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
+      accountMovementFindUnique.mockResolvedValue(CHARGE_ROW);
+      flightUpdate.mockResolvedValue(UPDATED_ROW);
+      queryRaw.mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }]).mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     });
 
-    afterEach(() => {
-      vi.useRealTimers();
-    });
+    function updatedFlightData(): Record<string, unknown> {
+      return (flightUpdateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+    }
 
-    it('rejects a non-staff actor (flights.manage required), before touching the DB', async () => {
-      await expect(correctFlight(pilotActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(ForbiddenError);
+    function rawSql(): string[] {
+      return queryRawMock.mock.calls.map(([strings]) => (strings as unknown as TemplateStringsArray).join('?'));
+    }
+
+    it('rejects a non-admin actor (flights.manage required), before touching the DB', async () => {
+      await expect(updateFlight(pilotActor(), 'flight_orig', UPDATE_INPUT)).rejects.toThrow(ForbiddenError);
       expect(flightFindUniqueMock).not.toHaveBeenCalled();
-    });
-
-    // Story 14.4 (AC 1) — "tutti i 422 di 5.1 si applicano ai DATI NUOVI"
-    // (`resolveFlightInput`'s own doc-comment) extends to the blocking-expiry
-    // guard: a correction that changes person/instructor/flight date
-    // re-validates the NEW identity from scratch, exactly like
-    // `registerFlight`. Review F4 (ratifica R-14.4-b) carves out the OPPOSITE
-    // case — a correction that changes NONE of the three is exempt entirely
-    // (dedicated describe block below) — so these two tests deliberately
-    // change the flight DATE (`CORRECT_INPUT_NEW_DATE`, same person) to stay
-    // on the "identity changed" side of that line.
-    const CORRECT_INPUT_NEW_DATE = correctFlightSchema.parse({ ...CORRECT_INPUT, ...buildTimes('2020-02-20', 30) });
-
-    it('422 FLIGHT_BLOCKED_BY_EXPIRY when the corrected (NEW) data targets a person with a blocking expired document', async () => {
-      findBlockingExpiredDocumentsMock.mockResolvedValue({
-        blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }],
-        warnings: [],
-      });
-
-      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT_NEW_DATE)).rejects.toMatchObject({ code: 'FLIGHT_BLOCKED_BY_EXPIRY' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    it('an ADMIN forcing a correction past a real block succeeds and stamps forcedAt/forcedByUserId/forceReason on the NEW flight row', async () => {
-      findBlockingExpiredDocumentsMock.mockResolvedValue({
-        blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }],
-        warnings: [],
-      });
-      const input = correctFlightSchema.parse({ ...CORRECT_INPUT_NEW_DATE, force: true, forceReason: 'Autorizzato dal direttore' });
-
-      const result = await correctFlight(adminActor(), 'flight_orig', input);
-
-      expect(result).toBeDefined();
-      expect(flightCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ forcedByUserId: 'admin_1', forceReason: 'Autorizzato dal direttore', forcedAt: expect.any(Date) }),
-        }),
-      );
-    });
-
-    it('throws NotFoundError for an unknown flight', async () => {
+    it('throws NotFoundError for an unknown flight (pre-read), transaction never opens', async () => {
       flightFindUnique.mockResolvedValue(null);
 
-      await expect(correctFlight(adminActor(), 'nope', CORRECT_INPUT)).rejects.toThrow(NotFoundError);
+      await expect(updateFlight(adminActor(), 'nope', UPDATE_INPUT)).rejects.toThrow(NotFoundError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictError (409) when the flight is already CANCELLED', async () => {
-      flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, status: 'CANCELLED' });
+    // AC 9 — the heart of P3: the SAME rows, nothing created.
+    it('rewrites the SAME flight and the SAME charge, creates nothing, and answers with the same id (AC 9)', async () => {
+      const result = await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
 
-      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(ConflictError);
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it("throws ConflictError naming the manual adjustment when the charge's reversal slot is already taken on a still-REGISTERED flight (review 5.3 M1)", async () => {
-      flightFindUnique.mockResolvedValue({
-        ...ORIGINAL_FLIGHT_ROW,
-        movements: [{ id: 'movement_orig', amountCents: -20000, accountId: 'account_1', reversal: { id: 'adj_1' } }],
+      expect(flightCreateMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
+      expect(flightUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'flight_orig' } }));
+      expect(accountMovementUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'movement_orig' },
+        data: { accountId: 'account_1', amountCents: -7500, description: 'Volo I-ABCD 2020-01-15 — 0:30', effectiveDate: new Date('2020-01-15T00:00:00.000Z') },
       });
+      expect(result.flight.id).toBe('flight_orig');
+      expect(getAccountOverviewMock).toHaveBeenCalledWith(adminActor(), 'person_1');
+    });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(
-        /already been reversed by a manual adjustment/,
-      );
+    it('writes every input and snapshot column on the flight, noCharge and category included — no actor change, no force stamp (AC 9, D-13)', async () => {
+      await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+      expect(updatedFlightData()).toEqual({
+        aircraftId: 'aircraft_1',
+        personId: 'person_1',
+        instructorProfileId: null,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        takeoffAt: new Date('2020-01-15T10:00:00.000Z'),
+        landingAt: new Date('2020-01-15T10:30:00.000Z'),
+        flightDate: new Date('2020-01-15T00:00:00.000Z'),
+        flightType: 'TOURISM',
+        isSolo: false,
+        noCharge: false,
+        minutes: 30,
+        takeoffs: 1,
+        landings: 1,
+        aircraftRateCentsPerHour: 15000,
+        aircraftPriceCategory: 'PILOT',
+        aircraftAmountCents: 7500,
+        instructorRateCentsPerHour: null,
+        instructorAmountCents: null,
+      });
+      expect(aircraftUpdateMock).not.toHaveBeenCalled();
+    });
+
+    // AC 13 — AD-2: the order that makes edit-vs-delete and edit-vs-edit safe.
+    it('locks Flight -> Aircraft IN (...) ORDER BY id -> Account IN (...) ORDER BY id, all FOR UPDATE (AC 13)', async () => {
+      await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+      const sql = rawSql();
+      expect(sql).toHaveLength(3);
+      expect(sql[0]).toMatch(/FROM "Flight" WHERE "id" = \? FOR UPDATE/);
+      expect(sql[1]).toMatch(/FROM "Aircraft" WHERE "id" IN \(\?\) ORDER BY "id" FOR UPDATE/);
+      expect(sql[2]).toMatch(/FROM "Account" WHERE "id" IN \(\?\) ORDER BY "id" FOR UPDATE/);
+    });
+
+    it('ONE transaction, in order: locks -> overlap guard -> charge read -> account upsert -> Account lock -> saldo-prima -> flight.update -> charge update -> saldo-dopo', async () => {
+      await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+      const order = (mock: { mock: { invocationCallOrder: number[] } }, index = 0) => mock.mock.invocationCallOrder[index]!;
+      expect(order(queryRawMock, 1)).toBeLessThan(order(flightFindFirstMock));
+      expect(order(flightFindFirstMock)).toBeLessThan(order(accountMovementFindUniqueMock));
+      expect(order(accountMovementFindUniqueMock)).toBeLessThan(order(accountUpsertMock));
+      expect(order(accountUpsertMock)).toBeLessThan(order(queryRawMock, 2));
+      expect(order(queryRawMock, 2)).toBeLessThan(order(accountMovementAggregateMock, 0));
+      expect(order(accountMovementAggregateMock, 0)).toBeLessThan(order(flightUpdateMock));
+      expect(order(flightUpdateMock)).toBeLessThan(order(accountMovementUpdateMock));
+      expect(order(accountMovementUpdateMock)).toBeLessThan(order(accountMovementAggregateMock, 1));
+    });
+
+    it('a concurrent delete (Flight lock with 0 rows) answers 404 and writes nothing — never a P2025/500 from the update (AC 13)', async () => {
+      queryRawMock.mockReset();
+      queryRaw.mockResolvedValueOnce([]);
+
+      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).rejects.toThrow('Flight not found.');
+      expect(flightFindFirstMock).not.toHaveBeenCalled();
+      expect(flightUpdateMock).not.toHaveBeenCalled();
+      expect(accountMovementUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('an aircraft gone under the lock answers 404 and writes nothing (AC 13)', async () => {
+      queryRawMock.mockReset();
+      queryRaw.mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }]).mockResolvedValueOnce([]);
+
+      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).rejects.toThrow('Aircraft not found.');
+      expect(flightUpdateMock).not.toHaveBeenCalled();
+      expect(accountMovementUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it("409 with today's message when a manual adjustment points at the charge — nothing written (D-8)", async () => {
+      accountMovementFindUnique.mockResolvedValue({ ...CHARGE_ROW, reversal: { id: 'adj_1' } });
+
+      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).rejects.toThrow(/already been reversed by a manual adjustment/);
+      expect(flightUpdateMock).not.toHaveBeenCalled();
+      expect(accountMovementUpdateMock).not.toHaveBeenCalled();
+    });
+
+    // AC 12 — a change of person moves the SAME movement to the new account.
+    it('a change of person moves the SAME charge to the new account and locks both accounts in ONE IN (...) query (AC 12)', async () => {
+      personFindUnique.mockResolvedValue({ ...PILOT_PERSON, id: 'person_2' });
+      accountUpsert.mockResolvedValue({ id: 'account_2' });
+      const input = registerFlightSchema.parse({ ...UPDATE_INPUT, personId: 'person_2' });
+
+      await updateFlight(adminActor(), 'flight_orig', input);
+
+      const accountLock = queryRawMock.mock.calls[2] as unknown as [TemplateStringsArray, ...unknown[]];
+      expect(accountLock[0].join('?')).toMatch(/"Account" WHERE "id" IN \(\?\) ORDER BY "id" FOR UPDATE/);
+      expect(JSON.stringify(accountLock.slice(1))).toContain('account_1');
+      expect(JSON.stringify(accountLock.slice(1))).toContain('account_2');
+      expect(accountMovementUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'movement_orig' }, data: expect.objectContaining({ accountId: 'account_2' }) }));
+      // Before/after are read on the NEW account (AC 14).
+      expect(accountMovementAggregateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'account_2' } }));
+      expect(getAccountOverviewMock).toHaveBeenCalledWith(adminActor(), 'person_2');
+    });
+
+    it('a move onto another aircraft locks BOTH aircraft in ONE IN (...) ORDER BY id query (AC 13)', async () => {
+      aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-WXYZ' });
+      queryRawMock.mockReset();
+      queryRaw
+        .mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }])
+        .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
+        .mockResolvedValueOnce([]);
+      const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2' });
+
+      await updateFlight(adminActor(), 'flight_orig', input);
+
+      const aircraftLock = queryRawMock.mock.calls[1] as unknown as [TemplateStringsArray, ...unknown[]];
+      expect(aircraftLock[0].join('?')).toMatch(/"Aircraft" WHERE "id" IN \(\?\) ORDER BY "id" FOR UPDATE/);
+      expect(JSON.stringify(aircraftLock.slice(1))).toContain('aircraft_1');
+      expect(JSON.stringify(aircraftLock.slice(1))).toContain('aircraft_2');
+    });
+
+    // AC 14 — the alert compares the real balance before and after the edit.
+    it('sends the email when more minutes push the new balance band past the threshold, and flags balanceAlert (AC 14)', async () => {
+      accountMovementAggregate.mockResolvedValueOnce({ _sum: { amountCents: 5000 } }).mockResolvedValueOnce({ _sum: { amountCents: -45000 } });
+      getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: -45000 });
+      const input = registerFlightSchema.parse({ ...UPDATE_INPUT, ...buildTimes('2020-01-15', 200) });
+
+      const result = await updateFlight(adminActor(), 'flight_orig', input);
+
+      expect(sendNegativeBalanceAlertMock).toHaveBeenCalledTimes(1);
+      expect(sendNegativeBalanceAlertMock).toHaveBeenCalledWith('person_1', expect.objectContaining({ firstName: 'Mario', lastName: 'Rossi' }), -45000);
+      expect(result.balanceAlert).toBe(true);
+    });
+
+    it('sends nothing when the edit leaves the amount (hence the band) unchanged (AC 14)', async () => {
+      accountMovementAggregate.mockResolvedValueOnce({ _sum: { amountCents: -7500 } }).mockResolvedValueOnce({ _sum: { amountCents: -7500 } });
+
+      const result = await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+      expect(sendNegativeBalanceAlertMock).not.toHaveBeenCalled();
+      // `hasNegativeBalanceAlert`: already red before => the in-app signal stays on, exactly like a registration.
+      expect(result.balanceAlert).toBe(true);
+    });
+
+    // AC 15 — D-7 (A10): the force stamp is the minimum of audit.
+    it('an edit that bypasses nothing passes NO forced* field to flight.update — the stamp already on the row stays (AC 15, D-7)', async () => {
+      await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+      const data = updatedFlightData();
+      expect(data).not.toHaveProperty('forcedAt');
+      expect(data).not.toHaveProperty('forcedByUserId');
+      expect(data).not.toHaveProperty('forceReason');
+    });
+
+    // Story 14.4 (AC 1) — "tutti i 422 di 5.1 si applicano ai DATI NUOVI".
+    // Review F4 (ratifica R-14.4-b) carves out the opposite case (describe
+    // below), so these tests change the flight DATE to stay on the "identity
+    // changed" side of that line.
+    const UPDATE_INPUT_NEW_DATE = registerFlightSchema.parse({ ...UPDATE_INPUT, ...buildTimes('2020-02-20', 30) });
+
+    it('422 FLIGHT_BLOCKED_BY_EXPIRY when the edited (NEW) data targets a person with a blocking expired document', async () => {
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }], warnings: [] });
+
+      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT_NEW_DATE)).rejects.toMatchObject({ code: 'FLIGHT_BLOCKED_BY_EXPIRY' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    it('422 AIRCRAFT_ARCHIVED when the corrected data targets an archived aircraft — re-validates the NEW data from scratch, transaction never opens', async () => {
+    it('an ADMIN forcing an edit past a real block stamps forcedAt/forcedByUserId/forceReason on the SAME flight row (AC 15, D-7)', async () => {
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }], warnings: [] });
+      const input = registerFlightSchema.parse({ ...UPDATE_INPUT_NEW_DATE, force: true, forceReason: 'Autorizzato dal direttore' });
+
+      await expect(updateFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
+
+      expect(updatedFlightData()).toMatchObject({ forcedByUserId: 'admin_1', forceReason: 'Autorizzato dal direttore', forcedAt: expect.any(Date) });
+    });
+
+    it('422 AIRCRAFT_ARCHIVED when the edited data targets an archived aircraft — re-validates the NEW data, transaction never opens', async () => {
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_2', registration: 'I-ARCH', archivedAt: new Date('2026-01-01T00:00:00.000Z') });
-      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2' });
+      const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2' });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+      await expect(updateFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    // --- story AOG-1a, AD-4/AC 9: the correction perimeter -------------------
-    // Two of the four rows of AD-4's table live here. The line is the AIRCRAFT:
-    // moving a flight ONTO a grounded airframe is a registration on it;
-    // correcting a flight that STAYS on its own airframe is not.
+    // --- story AOG-1a, AD-4/AC 9: the edit perimeter -------------------------
 
-    it('422 AIRCRAFT_OUT_OF_SERVICE when the correction MOVES the flight onto a grounded aircraft (AC 9)', async () => {
+    it('422 AIRCRAFT_OUT_OF_SERVICE when the edit MOVES the flight onto a grounded aircraft (AOG-1a AC 9)', async () => {
       aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, id: 'aircraft_2', registration: 'I-AOGX' });
-      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2' });
+      const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2' });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
+      await expect(updateFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
         code: 'AIRCRAFT_OUT_OF_SERVICE',
         details: { reason: 'Revisione 100h', outOfServiceUntil: '2031-05-12' },
       });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    it('a correction that KEEPS the same aircraft is NOT blocked, even though that aircraft is grounded TODAY (AC 9 — the dead end R-14.4-b already closed once)', async () => {
-      // `ORIGINAL_FLIGHT_ROW.aircraftId === 'aircraft_1'` and the correction
-      // keeps it: fixing the minutes/cycles of a HISTORICAL flight must not
-      // become impossible the day its airframe goes into maintenance.
+    it('an edit that KEEPS the same aircraft is NOT blocked, even though that aircraft is grounded TODAY (AOG-1a AC 9)', async () => {
       aircraftFindUnique.mockResolvedValue(AOG_AIRCRAFT);
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).resolves.toBeDefined();
-      // ...and it is not an override either: no "Deroga" stamp on a correction
-      // that never scavalcò anything.
-      const data = (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
-      expect(data['forcedAt']).toBeUndefined();
+      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).resolves.toBeDefined();
+      expect(updatedFlightData()).not.toHaveProperty('forcedAt');
     });
 
-    it('an ADMIN can derogate a correction that moves the flight onto a grounded aircraft (AC 10)', async () => {
+    it('an ADMIN can derogate an edit that moves the flight onto a grounded aircraft (AOG-1a AC 10)', async () => {
       aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, id: 'aircraft_2', registration: 'I-AOGX' });
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [], warnings: [] });
-      // The shared `beforeEach` already queued a ONE-aircraft lock row; this
-      // correction locks TWO airframes (original + destination), so the queue
-      // is rebuilt rather than appended to.
       queryRawMock.mockReset();
       queryRaw
+        .mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }])
         .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
-      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2', force: true, forceReason: 'Velivolo corretto a posteriori' });
+      const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2', force: true, forceReason: 'Velivolo corretto a posteriori' });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
-
-      expect(flightCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ forcedByUserId: 'admin_1', forceReason: 'Velivolo corretto a posteriori', forcedAt: expect.any(Date) }),
-        }),
-      );
+      await expect(updateFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
+      expect(updatedFlightData()).toMatchObject({ forcedByUserId: 'admin_1', forceReason: 'Velivolo corretto a posteriori', forcedAt: expect.any(Date) });
     });
 
-    // Story 19.3 (Q-19.3-b, AC 11): correcting is not registering anew — a
-    // correction that keeps the person keeps the price column the original
-    // flight was charged, even if the person took the licence since.
-    describe('price category on a correction (story 19.3, Q-19.3-b, AC 11)', () => {
+    // Story 19.3 (Q-19.3-b), ported: editing is not registering anew — an
+    // edit that keeps the person keeps the price column the flight was charged.
+    describe('price category on an edit (story 19.3, Q-19.3-b)', () => {
       const STUDENT_ORIGINAL = {
         ...ORIGINAL_FLIGHT_ROW,
         flightType: 'SCHOOL' as const,
         aircraftPriceCategory: 'STUDENT' as const,
-        instructorProfile: { person: { id: 'person_instructor' } },
+        instructorProfile: { personId: 'person_instructor' },
       };
-      const SCHOOL_CORRECTION = correctFlightSchema.parse({ ...CORRECT_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
+      const SCHOOL_EDIT = registerFlightSchema.parse({ ...UPDATE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
 
       beforeEach(() => {
         flightFindUnique.mockResolvedValue(STUDENT_ORIGINAL);
@@ -1879,211 +1949,136 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 4000 });
       });
 
-      function createdData(): Record<string, unknown> {
-        return (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
-      }
-
-      it('same person, now a pilot (student deactivated, pilot activated): the corrected flight stays STUDENT at the student price of the flight-date rate', async () => {
+      it('same person, now a pilot: the edited flight stays STUDENT at the student price of the flight-date rate', async () => {
         personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
 
-        await correctFlight(adminActor(), 'flight_orig', SCHOOL_CORRECTION);
+        await updateFlight(adminActor(), 'flight_orig', SCHOOL_EDIT);
 
         expect(getEffectiveRateMock).toHaveBeenCalledWith(expect.anything(), 'aircraft_1', new Date('2020-01-15T00:00:00.000Z'));
-        expect(createdData()).toMatchObject({ aircraftPriceCategory: 'STUDENT', aircraftRateCentsPerHour: 10000, aircraftAmountCents: 5000 });
+        expect(updatedFlightData()).toMatchObject({ aircraftPriceCategory: 'STUDENT', aircraftRateCentsPerHour: 10000, aircraftAmountCents: 5000 });
       });
 
-      it('a correction that CHANGES the person to a pilot takes the new person\'s profile: PILOT', async () => {
+      it("an edit that CHANGES the person to a pilot takes the new person's profile: PILOT", async () => {
         personFindUnique.mockResolvedValueOnce({ ...PILOT_PERSON, id: 'person_2' }).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
-        const input = correctFlightSchema.parse({ ...SCHOOL_CORRECTION, personId: 'person_2' });
+        const input = registerFlightSchema.parse({ ...SCHOOL_EDIT, personId: 'person_2' });
 
-        await correctFlight(adminActor(), 'flight_orig', input);
+        await updateFlight(adminActor(), 'flight_orig', input);
 
-        expect(createdData()).toMatchObject({ aircraftPriceCategory: 'PILOT', aircraftRateCentsPerHour: 15000, aircraftAmountCents: 7500 });
+        expect(updatedFlightData()).toMatchObject({ aircraftPriceCategory: 'PILOT', aircraftRateCentsPerHour: 15000, aircraftAmountCents: 7500 });
       });
     });
 
-    // Review F3 (ratifica R-14.3-a): correcting a flight while KEEPING its
-    // OWN recorded type is ALWAYS allowed, even for a person who is
-    // student-only TODAY (the profile may have changed SINCE the flight was
-    // flown) — this is exactly what lets a cycles/times-only correction go
-    // through without ever rewriting the flight's type. `ORIGINAL_FLIGHT_ROW`
-    // and `CORRECT_INPUT` both carry `flightType: 'TOURISM'` — unchanged.
-    it("a correction that keeps the flight's OWN recorded flightType is allowed for a person who is student-only today (R-14.3-a: correcting is not registering anew)", async () => {
+    // Review F3 (ratifica R-14.3-a), ported.
+    it("an edit that keeps the flight's OWN recorded flightType is allowed for a person who is student-only today (R-14.3-a)", async () => {
       personFindUnique.mockResolvedValue({ ...PILOT_PERSON, pilotProfile: null, studentProfile: { deactivatedAt: null } });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).resolves.toBeDefined();
+      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).resolves.toBeDefined();
     });
 
-    // Review F3 (ratifica R-14.3-a): the exemption above is narrow — it
-    // protects an UNCHANGED type only. A correction that CHANGES the type
-    // away from what is on file (here: the original flight was SCHOOL, the
-    // correction asks for TOURISM) for a student-only person is rejected
-    // exactly like a brand-new registration would be.
-    it('422 STUDENT_FLIGHT_MUST_BE_SCHOOL when a correction CHANGES the flightType to a non-SCHOOL type for a person who is student-only today', async () => {
+    it('422 STUDENT_FLIGHT_MUST_BE_SCHOOL when an edit CHANGES the flightType to a non-SCHOOL type for a person who is student-only today', async () => {
       flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, flightType: 'SCHOOL' });
       personFindUnique.mockResolvedValue({ ...PILOT_PERSON, pilotProfile: null, studentProfile: { deactivatedAt: null } });
 
-      // CORRECT_INPUT.flightType is 'TOURISM' — a change from the original SCHOOL.
-      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).rejects.toMatchObject({ code: 'STUDENT_FLIGHT_MUST_BE_SCHOOL' });
+      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).rejects.toMatchObject({ code: 'STUDENT_FLIGHT_MUST_BE_SCHOOL' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    it('P2002 on reversalOfId (concurrent double-cancel/-correct) surfaces as ConflictError (backstop for the pre-check)', async () => {
-      accountMovementCreate.mockRejectedValueOnce({ code: 'P2002' });
-
-      await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).rejects.toThrow(ConflictError);
-    });
-
-    it('ONE transaction, in order: lock -> storno (status + REVERSAL movement) -> saldo-prima -> nuova registrazione', async () => {
-      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
-
-      // Lock (both queryRaw calls) before the storno write.
-      expect(queryRawMock.mock.invocationCallOrder[1]).toBeLessThan(flightUpdateMock.mock.invocationCallOrder[0]);
-      // Storno: status update, then the REVERSAL movement (first accountMovement.create call).
-      expect(flightUpdateMock.mock.invocationCallOrder[0]).toBeLessThan(accountMovementCreateMock.mock.invocationCallOrder[0]);
-      expect(accountMovementCreateMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ data: expect.objectContaining({ type: 'FLIGHT_CHARGE_REVERSAL' }) }));
-      // Saldo-prima (registerFlightCore's own aggregate) happens AFTER the storno's movement.
-      expect(accountMovementCreateMock.mock.invocationCallOrder[0]).toBeLessThan(accountMovementAggregateMock.mock.invocationCallOrder[0]);
-      // Nuova registrazione (Flight.create) happens AFTER the saldo-prima read.
-      expect(accountMovementAggregateMock.mock.invocationCallOrder[0]).toBeLessThan(flightCreateMock.mock.invocationCallOrder[0]);
-      // The second accountMovement.create call is the new FLIGHT_CHARGE.
-      expect(accountMovementCreateMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ data: expect.objectContaining({ type: 'FLIGHT_CHARGE' }) }));
-    });
-
-    it('sets Flight.correctionOfId on the new flight to the ORIGINAL flight id', async () => {
-      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
-
-      expect(flightCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ correctionOfId: 'flight_orig' }) }));
-    });
-
-    it("storno's reversal movement carries the ORIGINAL amount and links to the original flight/movement", async () => {
-      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
-
-      expect(accountMovementCreateMock).toHaveBeenNthCalledWith(1, {
-        data: {
-          accountId: 'account_1',
-          type: 'FLIGHT_CHARGE_REVERSAL',
-          amountCents: 20000,
-          reversalOfId: 'movement_orig',
-          flightId: 'flight_orig',
-          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
-          description: 'Storno volo I-ABCD 2020-01-15 — Errore minuti',
-          actorUserId: 'admin_1',
-        },
-      });
-    });
-
-    // Story 16.1, AC 4 — discriminant, same reasoning as the cancelFlight
-    // twin above: this writer used to date the storno of the ORIGINAL flight
-    // on the UTC calendar day.
-    it('story 16.1, AC 4: at 00:30 Rome on the 1st (CEST), the reversal is dated on the NEW (Roma) month', async () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep in Rome
-
-      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
-
-      expect(accountMovementCreateMock).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ data: expect.objectContaining({ effectiveDate: parseDateOnlyUtc('2026-09-01') }) }),
-      );
-    });
-
-    it('the ORIGINAL flight is stornoed (status CANCELLED + cancelledAt/cancelReason) and no Aircraft row is ever written (story 19.2)', async () => {
-      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
-
-      expect(flightUpdateMock).toHaveBeenCalledWith({
-        where: { id: 'flight_orig' },
-        data: { status: 'CANCELLED', cancelledAt: expect.any(Date), cancelReason: 'Errore minuti' },
-      });
-      expect(aircraftUpdateMock).not.toHaveBeenCalled();
-    });
-
-    it('fires the negative-balance alert when the (post-storno) balance band worsens', async () => {
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 5000 } });
-      getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: -15000 });
-      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', minutes: 200, aircraftAmountCents: 50000 });
-      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, ...buildTimes('2020-01-15', 200) });
-
-      await correctFlight(adminActor(), 'flight_orig', input);
-
-      expect(sendNegativeBalanceAlertMock).toHaveBeenCalledTimes(1);
-      expect(sendNegativeBalanceAlertMock).toHaveBeenCalledWith(
-        'person_1',
-        expect.objectContaining({ firstName: 'Mario', lastName: 'Rossi', email: 'mario@example.com' }),
-        -15000,
-      );
-    });
-
-    it('does NOT send when the band is unchanged', async () => {
-      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 1_000_000 } });
-      getAccountOverviewMock.mockResolvedValue({ ...ACCOUNT_OVERVIEW, balanceCents: 980_000 });
-
-      await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
-
-      expect(sendNegativeBalanceAlertMock).not.toHaveBeenCalled();
-    });
-
-    it('returns the NEW flight DTO plus the corrected data\'s account overview', async () => {
-      const result = await correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT);
-
-      expect(result.flight.id).toBe('flight_new');
-      expect(result.flight.correctionOfId).toBe('flight_orig');
-      expect(getAccountOverviewMock).toHaveBeenCalledWith(adminActor(), 'person_1');
-    });
-
-    it('locks ALL involved Aircraft ids in ONE IN (...) ORDER BY id query, then ALL involved Account ids the same way (deterministic order, Aircraft before Account)', async () => {
-      const secondAircraft = { id: 'aircraft_2', registration: 'I-WXYZ', archivedAt: null };
-      aircraftFindUnique.mockResolvedValue(secondAircraft);
-      queryRawMock.mockReset();
-      queryRaw
-        .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
-        .mockResolvedValueOnce([]);
-      accountUpsert.mockResolvedValue({ id: 'account_2' });
-      const input = correctFlightSchema.parse({ ...CORRECT_INPUT, aircraftId: 'aircraft_2', personId: 'person_2' });
-      personFindUnique.mockResolvedValue({ ...PILOT_PERSON, id: 'person_2' });
-      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig', aircraft: secondAircraft });
-
-      await correctFlight(adminActor(), 'flight_orig', input);
-
-      expect(queryRawMock).toHaveBeenCalledTimes(2);
-      const [aircraftStrings] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray];
-      expect(aircraftStrings.join('?')).toContain('FOR UPDATE');
-      expect(aircraftStrings.join('?')).toContain('Aircraft');
-      expect(aircraftStrings.join('?')).toContain('IN');
-      expect(aircraftStrings.join('?')).toContain('ORDER BY');
-      const [accountStrings] = queryRawMock.mock.calls[1] as unknown as [TemplateStringsArray];
-      expect(accountStrings.join('?')).toContain('FOR UPDATE');
-      expect(accountStrings.join('?')).toContain('Account');
-      expect(accountStrings.join('?')).toContain('IN');
-      expect(accountStrings.join('?')).toContain('ORDER BY');
-      // Aircraft lock strictly before Account lock (module doc-comment's macro order).
-      expect(queryRawMock.mock.invocationCallOrder[0]).toBeLessThan(queryRawMock.mock.invocationCallOrder[1]);
-    });
-
-    // Review F4 (ratifica R-14.4-b): a correction that changes NEITHER
-    // person, NOR instructor, NOR flight date is exempt from the expiry
-    // guard ENTIRELY — a cycles-only correction of a historical
-    // flight must never dead-end on a document that only expired (or was
-    // only ever required) AFTER the flight was flown.
-    describe('review F4 — unchanged-identity correction exemption', () => {
-      it('an unchanged-identity correction (same person, no instructor, same flight date) skips the guard entirely, even with a real blocking document', async () => {
-        // If the guard ran, THIS would 422 — proving the skip, not a
-        // coincidentally-clear fixture.
-        findBlockingExpiredDocumentsMock.mockResolvedValue({
-          blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }],
-          warnings: [],
-        });
+    // Review F4 (ratifica R-14.4-b), ported.
+    describe('review F4 — unchanged-identity edit exemption', () => {
+      it('an unchanged-identity edit (same person, no instructor, same flight date) skips the guard entirely, even with a real blocking document', async () => {
+        findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }], warnings: [] });
         expiryTypeFindMany.mockResolvedValue([{ id: 'type_licenza', name: 'Licenza' }]);
         expiryFindMany.mockResolvedValue([]);
 
-        await expect(correctFlight(adminActor(), 'flight_orig', CORRECT_INPUT)).resolves.toBeDefined();
+        await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).resolves.toBeDefined();
 
         expect(findBlockingExpiredDocumentsMock).not.toHaveBeenCalled();
         expect(expiryTypeFindManyMock).not.toHaveBeenCalled();
       });
     });
+
+    // AC 20 — turning the flag on or off on an edit.
+    it('an edit that turns noCharge ON brings the SAME charge to 0 (AC 20)', async () => {
+      const input = registerFlightSchema.parse({ ...UPDATE_INPUT, noCharge: true });
+
+      await updateFlight(adminActor(), 'flight_orig', input);
+
+      expect(updatedFlightData()).toMatchObject({ noCharge: true, aircraftRateCentsPerHour: 15000, aircraftAmountCents: 0 });
+      const movementData = (accountMovementUpdateMock.mock.calls[0]?.[0] as { data: { amountCents: number; description: string } }).data;
+      expect(Object.is(movementData.amountCents, 0)).toBe(true);
+      expect(movementData.description).toBe('Volo senza addebito I-ABCD 2020-01-15 — 0:30');
+    });
   });
 
+  describe('senza addebito — noCharge (story 19.6, P1 — R-19-d; Q-19.6-a = B; AC 18/19)', () => {
+    const SCHOOL_NO_CHARGE = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor', noCharge: true });
+
+    beforeEach(() => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 4000 });
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, noCharge: true, aircraftAmountCents: 0, instructorRateCentsPerHour: 4000, instructorAmountCents: 0 });
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
+    });
+
+    function createdData(): Record<string, unknown> {
+      return (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+    }
+
+    function chargeData(): { amountCents: number; description: string } {
+      return (accountMovementCreateMock.mock.calls[0]?.[0] as { data: { amountCents: number; description: string } }).data;
+    }
+
+    it('the rates are STILL looked up and frozen as information; both amounts are 0, the instructor amount 0 and not null (Q-19.6-a = B)', async () => {
+      await registerFlight(adminActor(), SCHOOL_NO_CHARGE);
+
+      expect(getEffectiveRateMock).toHaveBeenCalledTimes(1);
+      expect(getEffectiveInstructorRateMock).toHaveBeenCalledTimes(1);
+      expect(createdData()).toMatchObject({
+        noCharge: true,
+        aircraftRateCentsPerHour: 15000,
+        aircraftPriceCategory: 'PILOT',
+        aircraftAmountCents: 0,
+        instructorRateCentsPerHour: 4000,
+        instructorAmountCents: 0,
+      });
+    });
+
+    it('the FLIGHT_CHARGE always exists and is a POSITIVE zero, with the no-charge wording at the head of its description', async () => {
+      await registerFlight(adminActor(), SCHOOL_NO_CHARGE);
+
+      expect(accountMovementCreateMock).toHaveBeenCalledTimes(1);
+      expect(Object.is(chargeData().amountCents, 0)).toBe(true);
+      expect(chargeData().description).toBe('Volo senza addebito I-ABCD 2020-01-15 — 1:20');
+    });
+
+    it('a normal flight keeps its description byte-identical (`Volo …`)', async () => {
+      personFindUniqueMock.mockReset();
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+
+      await registerFlight(adminActor(), BASE_INPUT);
+
+      expect(createdData()).toMatchObject({ noCharge: false, aircraftAmountCents: 20000 });
+      expect(chargeData()).toMatchObject({ amountCents: -20000, description: 'Volo I-ABCD 2020-01-15 — 1:20' });
+    });
+
+    it('without an aircraft rate the no-charge flight is refused exactly like any flight: 422 NO_AIRCRAFT_RATE (Q-19.6-a = B)', async () => {
+      getEffectiveRateMock.mockResolvedValue(null);
+
+      await expect(registerFlight(adminActor(), SCHOOL_NO_CHARGE)).rejects.toMatchObject({ code: 'NO_AIRCRAFT_RATE' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('the response DTO carries noCharge and a 0 breakdown with the frozen rates', async () => {
+      const result = await registerFlight(adminActor(), SCHOOL_NO_CHARGE);
+
+      expect(result.flight.noCharge).toBe(true);
+      expect(result.flight.breakdown).toMatchObject({ aircraftRateCentsPerHour: 15000, aircraftAmountCents: 0, instructorAmountCents: 0, totalAmountCents: 0 });
+    });
+  });
 
   // ==========================================================================
   // Story 16.2 (ops-audit F3/F13) — no duplicate, no overlap, and no minute
@@ -2093,12 +2088,11 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
   /** The `where` shape `assertNoOverlappingFlight` passes to `flight.findFirst` — read back by the stand-in below AND asserted verbatim by AC 4/AC 6. */
   type OverlapWhere = {
     aircraftId?: string;
-    status?: string;
     takeoffAt?: Record<string, Date>;
     landingAt?: Record<string, Date>;
     id?: { not?: string };
   };
-  type StoredFlight = { id: string; aircraftId: string; status: string; takeoffAt: Date; landingAt: Date };
+  type StoredFlight = { id: string; aircraftId: string; takeoffAt: Date; landingAt: Date };
 
   /**
    * Evaluates ONE comparison clause the way Postgres would, INTERPRETING the
@@ -2130,15 +2124,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
    * guard's own `where` (this file mocks prisma entirely — there is no DB
    * where two flights could coexist). Every clause is honoured ONLY when the
    * guard actually passes it, which is exactly what makes the discriminances
-   * of §4.3 bite: drop `status: 'REGISTERED'` and a cancelled flight starts
-   * conflicting; drop `id: { not }` and a conservative correction conflicts
-   * with itself. `orderBy takeoffAt asc` is reproduced too (AC 5).
+   * of §4.3 bite: drop `id: { not }` and a conservative edit conflicts with
+   * itself. `orderBy takeoffAt asc` is reproduced too (AC 5).
    */
   function findFirstOverlapping(where: OverlapWhere, rows: StoredFlight[]): StoredFlight | null {
     const matching = rows
       .filter((row) => {
         if (where.aircraftId !== undefined && row.aircraftId !== where.aircraftId) return false;
-        if (where.status !== undefined && row.status !== where.status) return false;
         if (where.id?.not !== undefined && row.id === where.id.not) return false;
         return matchesInstant(row.takeoffAt, where.takeoffAt) && matchesInstant(row.landingAt, where.landingAt);
       })
@@ -2167,7 +2159,6 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
   const EXISTING_09_10: StoredFlight = {
     id: 'flight_existing',
     aircraftId: 'aircraft_1',
-    status: 'REGISTERED',
     takeoffAt: new Date('2020-01-15T09:00:00.000Z'),
     landingAt: new Date('2020-01-15T10:00:00.000Z'),
   };
@@ -2241,15 +2232,6 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(flightCreateMock).toHaveBeenCalledTimes(1);
     });
 
-    // U5 — only a REGISTERED flight occupies an interval.
-    it('U5: a CANCELLED flight on the very same interval does not conflict (only REGISTERED occupies a slot)', async () => {
-      stubOverlapStore([{ ...EXISTING_09_10, status: 'CANCELLED' }]);
-      const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:00', '10:00') });
-
-      await expect(registerFlight(adminActor(), input)).resolves.toBeDefined();
-      expect(flightCreateMock).toHaveBeenCalledTimes(1);
-    });
-
     // AC 5 — among several conflicts, the NAMED one is deterministic.
     it('AC 5: with two conflicting flights, the 409 names the one with the EARLIEST takeoffAt (explicit orderBy)', async () => {
       const store = stubOverlapStore([
@@ -2268,7 +2250,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     // the API, so the property is verified here, on the `where`: no clause
     // can match a NULL, and `select` asks for exactly the three fields the
     // `details` needs (no `FLIGHT_SELECT`, no join, no mask).
-    it('AC 4/AC 6: the where has aircraftId + status + the two instant comparisons and NOTHING that could catch a NULL instant; no id filter on a plain registration', async () => {
+    it('AC 4/AC 6: the where has aircraftId + the two instant comparisons and NOTHING that could catch a NULL instant — no status clause (story 19.6: every existing flight occupies its slot); no id filter on a plain registration', async () => {
       const store = stubOverlapStore([]);
       const input = registerFlightSchema.parse({ ...BASE_INPUT, ...window('09:30', '10:30') });
 
@@ -2276,7 +2258,6 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
 
       expect(store.lastWhere()).toEqual({
         aircraftId: 'aircraft_1',
-        status: 'REGISTERED',
         takeoffAt: { lt: new Date('2020-01-15T10:30:00.000Z') },
         landingAt: { gt: new Date('2020-01-15T09:30:00.000Z') },
       });
@@ -2330,7 +2311,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       );
       asImpl<[{ data: { takeoffAt: Date; landingAt: Date } }]>(flightCreateMock).mockImplementation((args) => {
         const id = `flight_${registered.length + 1}`;
-        registered.push({ id, aircraftId: 'aircraft_1', status: 'REGISTERED', takeoffAt: args.data.takeoffAt, landingAt: args.data.landingAt });
+        registered.push({ id, aircraftId: 'aircraft_1', takeoffAt: args.data.takeoffAt, landingAt: args.data.landingAt });
         return Promise.resolve({ ...CREATED_FLIGHT_ROW, id, minutes: 60, aircraftAmountCents: 15000 });
       });
 
@@ -2350,20 +2331,18 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
   });
 
-  describe('correctFlight — the overlap guard (story 16.2, P3)', () => {
-    const CORRECT_BASE = {
+  describe('updateFlight — the overlap guard (story 16.2, P3; story 19.6, AC 11)', () => {
+    const EDIT_BASE = {
       aircraftId: 'aircraft_1',
       personId: 'person_1',
       departureAirfield: 'Base Airfield',
       arrivalAirfield: 'Base Airfield',
       flightType: 'TOURISM' as const,
-      reason: 'Errore atterraggi',
     };
-    /** The ORIGINAL flight, still REGISTERED at guard time — `loadRegisteredFlightForReversal` returns `ORIGINAL_FLIGHT_ROW` (id `flight_orig`). */
+    /** The flight being edited, on its own slot (`updateFlight`'s pre-read returns `ORIGINAL_FLIGHT_ROW`, id `flight_orig`). */
     const ORIGINAL_IN_STORE: StoredFlight = {
       id: 'flight_orig',
       aircraftId: 'aircraft_1',
-      status: 'REGISTERED',
       takeoffAt: new Date('2020-01-15T09:00:00.000Z'),
       landingAt: new Date('2020-01-15T10:00:00.000Z'),
     };
@@ -2375,96 +2354,73 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
       accountUpsert.mockResolvedValue({ id: 'account_1' });
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
-      accountMovementCreate.mockResolvedValue({ id: 'movement_x' });
-      flightUpdate.mockResolvedValue({});
-      flightCreate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_new', correctionOfId: 'flight_orig' });
-      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
+      accountMovementFindUnique.mockResolvedValue(CHARGE_ROW);
+      flightUpdate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_orig' });
+      queryRaw.mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }]).mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     });
 
-    // U8 — the clause that carries this whole call site: the guard runs
-    // BEFORE the storno, so the original is still REGISTERED and every
-    // conservative correction would be a 409 without `id: { not }`.
-    it('U8: a correction that KEEPS its own slot (same aircraft, same instants, changed landings) is accepted — the original is excluded by id', async () => {
+    // U8 — the clause that carries this whole call site: the edited flight is
+    // still on its own slot, so every conservative edit would be a 409
+    // without `id: { not }`.
+    it('U8: an edit that KEEPS its own slot (same aircraft, same instants, changed landings) is accepted — the flight is excluded by id', async () => {
       const store = stubOverlapStore([ORIGINAL_IN_STORE]);
-      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('09:00', '10:00'), landings: 2 });
+      const input = registerFlightSchema.parse({ ...EDIT_BASE, ...window('09:00', '10:00'), landings: 2 });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
+      await expect(updateFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
       expect(store.lastWhere()).toMatchObject({ id: { not: 'flight_orig' } });
-      expect(flightCreateMock).toHaveBeenCalledTimes(1);
+      expect(flightUpdateMock).toHaveBeenCalledTimes(1);
     });
 
-    it('U9a: a correction that MOVES the flight onto a slot occupied by ANOTHER flight on the SAME aircraft is a 409 — the storno never happens', async () => {
+    it('U9a: an edit that MOVES the flight onto a slot occupied by ANOTHER flight on the SAME aircraft is a 409 naming it — flight and charge untouched (AC 11)', async () => {
       stubOverlapStore([
         ORIGINAL_IN_STORE,
         { ...EXISTING_09_10, id: 'flight_other', takeoffAt: new Date('2020-01-15T14:00:00.000Z'), landingAt: new Date('2020-01-15T15:00:00.000Z') },
       ]);
-      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('14:30', '15:30') });
+      const input = registerFlightSchema.parse({ ...EDIT_BASE, ...window('14:30', '15:30') });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
+      await expect(updateFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
         code: 'FLIGHT_OVERLAP',
         details: { flightId: 'flight_other' },
       });
-      // The whole transaction is a no-op: no status flip, no reversal
-      // movement, no re-registration.
       expect(flightUpdateMock).not.toHaveBeenCalled();
+      expect(accountMovementUpdateMock).not.toHaveBeenCalled();
       expect(accountMovementCreateMock).not.toHaveBeenCalled();
-      expect(flightCreateMock).not.toHaveBeenCalled();
     });
 
-    it('U9b: a correction that moves the flight onto ANOTHER aircraft is checked on THAT aircraft (resolved, never the original)', async () => {
+    it('U9b: an edit that moves the flight onto ANOTHER aircraft is checked on THAT aircraft (resolved, never the current one)', async () => {
       aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-ZZZZ' });
       queryRawMock.mockReset();
       queryRaw
+        .mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }])
         .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       const store = stubOverlapStore([
         ORIGINAL_IN_STORE,
-        { id: 'flight_on_two', aircraftId: 'aircraft_2', status: 'REGISTERED', takeoffAt: new Date('2020-01-15T09:00:00.000Z'), landingAt: new Date('2020-01-15T10:00:00.000Z') },
+        { id: 'flight_on_two', aircraftId: 'aircraft_2', takeoffAt: new Date('2020-01-15T09:00:00.000Z'), landingAt: new Date('2020-01-15T10:00:00.000Z') },
       ]);
-      const input = correctFlightSchema.parse({ ...CORRECT_BASE, aircraftId: 'aircraft_2', ...window('09:30', '10:30') });
+      const input = registerFlightSchema.parse({ ...EDIT_BASE, aircraftId: 'aircraft_2', ...window('09:30', '10:30') });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
+      await expect(updateFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({
         code: 'FLIGHT_OVERLAP',
         details: { flightId: 'flight_on_two' },
       });
       expect(store.lastWhere()).toMatchObject({ aircraftId: 'aircraft_2' });
-      expect(accountMovementCreateMock).not.toHaveBeenCalled();
+      expect(flightUpdateMock).not.toHaveBeenCalled();
     });
 
     it('U9b (mirror): the same move onto a FREE slot on the other aircraft succeeds — the guard interrogates aircraft_2 and finds nothing', async () => {
       aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-ZZZZ' });
       queryRawMock.mockReset();
       queryRaw
+        .mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }])
         .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       const store = stubOverlapStore([ORIGINAL_IN_STORE]);
-      const input = correctFlightSchema.parse({ ...CORRECT_BASE, aircraftId: 'aircraft_2', ...window('09:30', '10:30') });
+      const input = registerFlightSchema.parse({ ...EDIT_BASE, aircraftId: 'aircraft_2', ...window('09:30', '10:30') });
 
-      await expect(correctFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
+      await expect(updateFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
       expect(store.lastWhere()).toMatchObject({ aircraftId: 'aircraft_2', id: { not: 'flight_orig' } });
-    });
-
-    // Review LOW-1 — two concurrent corrections of the SAME flight: the loser
-    // passed the pre-check while the original was still REGISTERED, then
-    // waited on the aircraft lock while the winner reversed it and wrote its
-    // own correction on the same slot.
-    it('LOW-1: a correction whose original was reversed while it waited on the aircraft lock answers CONFLICT, never FLIGHT_OVERLAP naming the winner', async () => {
-      flightFindUniqueMock.mockReset();
-      flightFindUniqueMock
-        .mockResolvedValueOnce(ORIGINAL_FLIGHT_ROW as never)
-        .mockResolvedValueOnce({ status: 'CANCELLED' } as never);
-      stubOverlapStore([
-        { ...ORIGINAL_IN_STORE, status: 'CANCELLED' },
-        { ...EXISTING_09_10, id: 'flight_winner' },
-      ]);
-      const input = correctFlightSchema.parse({ ...CORRECT_BASE, ...window('09:00', '10:00'), landings: 2 });
-
-      await expect(correctFlight(adminActor(), 'flight_orig', input)).rejects.toMatchObject({ code: 'CONFLICT' });
-      expect(flightFindFirstMock).not.toHaveBeenCalled();
-      expect(flightUpdateMock).not.toHaveBeenCalled();
-      expect(accountMovementCreateMock).not.toHaveBeenCalled();
-      expect(flightCreateMock).not.toHaveBeenCalled();
     });
   });
 
@@ -2524,13 +2480,13 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(manageResult.items[0]?.forceReason).toBe('Motivo riservato');
     });
 
-    it('staff: builds the where clause from combined filters (period gte/lte date-only, aircraftId, personId, flightType, status)', async () => {
+    it('staff: builds the where clause from combined filters (period gte/lte date-only, aircraftId, personId, flightType) — no status clause (story 19.6)', async () => {
       flightFindMany.mockResolvedValue([]);
       flightCount.mockResolvedValue(0);
 
       await listFlights(
         adminActor(),
-        baseQuery({ dateFrom: '2026-01-01', dateTo: '2026-01-31', aircraftId: 'aircraft_9', personId: 'person_9', flightType: 'SCHOOL', status: 'REGISTERED' }),
+        baseQuery({ dateFrom: '2026-01-01', dateTo: '2026-01-31', aircraftId: 'aircraft_9', personId: 'person_9', flightType: 'SCHOOL' }),
       );
 
       const expectedWhere = {
@@ -2538,7 +2494,6 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         aircraftId: 'aircraft_9',
         personId: 'person_9',
         flightType: 'SCHOOL',
-        status: 'REGISTERED',
       };
       expect(flightFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: expectedWhere }));
       expect(flightCountMock).toHaveBeenCalledWith({ where: expectedWhere });
@@ -2698,23 +2653,26 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(result).toEqual({ count: 0, minutes: 0, takeoffs: 0, landings: 0, revenueCents: 0 });
     });
 
-    it('forces status: REGISTERED in the WHERE even when the query filters status: CANCELLED', async () => {
+    it('forces no status at all (story 19.6): a stale ?status= is stripped by the schema and the WHERE is empty for an unfiltered admin', async () => {
       flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
 
-      await getFlightTotals(adminActor(), baseQuery({ status: 'CANCELLED' }));
+      await getFlightTotals(adminActor(), listFlightsQuerySchema.parse({ page: 1, pageSize: 20, status: 'CANCELLED' }));
 
-      expect(flightAggregateMock).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ status: 'REGISTERED' }) }));
+      expect(flightAggregateMock).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
     });
 
-    it('forces status: REGISTERED even with no status filter at all (query.status undefined)', async () => {
-      flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
+    it('a window holding only a no-charge flight counts it with 0 revenue (story 19.6, AC 22: snapshot amounts at 0, no reader change)', async () => {
+      flightAggregate.mockResolvedValue({
+        _count: { _all: 1 },
+        _sum: { minutes: 45, takeoffs: 6, landings: 6, aircraftAmountCents: 0, instructorAmountCents: 0 },
+      });
 
-      await getFlightTotals(adminActor(), baseQuery());
+      const result = await getFlightTotals(adminActor(), baseQuery({ aircraftId: 'aircraft_9' }));
 
-      expect(flightAggregateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'REGISTERED' } }));
+      expect(result).toEqual({ count: 1, minutes: 45, takeoffs: 6, landings: 6, revenueCents: 0 });
     });
 
-    it('forwards the filter args (dateFrom/dateTo/aircraftId/flightType) into the WHERE, alongside the forced status', async () => {
+    it('forwards the filter args (dateFrom/dateTo/aircraftId/flightType) into the WHERE, and nothing else', async () => {
       flightAggregate.mockResolvedValue(AGGREGATE_FIXTURE);
 
       await getFlightTotals(
@@ -2728,7 +2686,6 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
             flightDate: { gte: parseDateOnlyUtc('2026-01-01'), lte: parseDateOnlyUtc('2026-01-31') },
             aircraftId: 'aircraft_9',
             flightType: 'SCHOOL',
-            status: 'REGISTERED',
           },
         }),
       );
@@ -2744,7 +2701,6 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         expect.objectContaining({
           where: {
             OR: [{ personId: 'person_1' }, { instructorProfile: { personId: 'person_1' } }],
-            status: 'REGISTERED',
           },
         }),
       );
@@ -2816,10 +2772,16 @@ describe('registerFlightSchema (story 11.1, AC 1/2/3 — logbook fields, no more
     expect(parsed).not.toHaveProperty('hourMeterStart');
     expect(parsed).not.toHaveProperty('hourMeterEnd');
     expect(parsed).not.toHaveProperty('notes');
-    const corrected = correctFlightSchema.parse({ ...VALID, reason: 'Errore', hourMeterStart: 100, hourMeterEnd: 160, notes: 'Nota' });
-    expect(corrected).not.toHaveProperty('hourMeterStart');
-    expect(corrected).not.toHaveProperty('hourMeterEnd');
-    expect(corrected).not.toHaveProperty('notes');
+  });
+
+  it('noCharge defaults to false (POST and PUT: an omitted flag on a full replacement turns it OFF) and accepts true (story 19.6, AC 18)', () => {
+    expect(registerFlightSchema.parse(VALID).noCharge).toBe(false);
+    expect(registerFlightSchema.parse({ ...VALID, noCharge: true }).noCharge).toBe(true);
+    expect(registerFlightSchema.safeParse({ ...VALID, noCharge: 'yes' }).success).toBe(false);
+  });
+
+  it('drops a stale reason key (the retired /correct body) instead of rejecting it (story 19.6, D-1)', () => {
+    expect(registerFlightSchema.parse({ ...VALID, reason: 'Errore' })).not.toHaveProperty('reason');
   });
 
   it('rejects an invalid flightType', () => {
@@ -2868,7 +2830,6 @@ describe('listFlightsQuerySchema (story 5.4, Task 1 — all six filters optional
       personId: 'person_1',
       instructorPersonId: 'person_2',
       flightType: 'SCHOOL',
-      status: 'CANCELLED',
     });
     expect(result.success).toBe(true);
   });
@@ -2895,7 +2856,8 @@ describe('listFlightsQuerySchema (story 5.4, Task 1 — all six filters optional
     expect(listFlightsQuerySchema.safeParse({ flightType: 'JOYRIDE' }).success).toBe(false);
   });
 
-  it('rejects an invalid status', () => {
-    expect(listFlightsQuerySchema.safeParse({ status: 'DELETED' }).success).toBe(false);
+  it('strips a stale status key instead of rejecting it: no 422, the key never reaches the service (story 19.6, AC 25)', () => {
+    const parsed = listFlightsQuerySchema.parse({ status: 'CANCELLED' });
+    expect(parsed).not.toHaveProperty('status');
   });
 });

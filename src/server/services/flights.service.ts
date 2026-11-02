@@ -1,7 +1,7 @@
-import { Prisma, type AircraftPriceCategory, type ExpiryScope, type FlightStatus, type FlightType } from '@/generated/prisma/client';
+import { Prisma, type AircraftPriceCategory, type ExpiryScope, type FlightType } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
-import type { CancelFlightInput, CorrectFlightInput, ListFlightsQuery, RegisterFlightInput } from '@/lib/schemas/flights';
+import type { ListFlightsQuery, RegisterFlightInput } from '@/lib/schemas/flights';
 import { APP_TIMEZONE, formatMinutes } from '@/lib/time';
 import { dateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -47,79 +47,66 @@ import { getEffectiveRate } from './rates.service';
  * so this is intentional, not an oversight.
  *
  * **No more package consumption (story 12.13, ratifica utente 4a)**: the
- * hour-packages feature (`HourPackage`/`PackageConsumption`, epic 5, story
- * 5.2) is retired from UI and API — every flight charges the aircraft
- * component at the full rate on the full duration, always
- * `Math.round(rate * minutes / 60)`, computed the same way as the
- * instructor component in `resolveFlightInput`. The `HourPackage`/
- * `PackageConsumption` tables stay in the schema (no destructive migration,
- * §9) purely as historical rows for packages sold/consumed before this
- * story — this service never reads or writes them anymore.
+ * hour-packages feature (epic 5, story 5.2) is retired from UI and API —
+ * every flight charges the aircraft component at the full rate on the full
+ * duration, always `Math.round(rate * minutes / 60)`, computed the same way
+ * as the instructor component (`buildFlightWrite`). The `HourPackage` rows
+ * stay purely as historical sales; their per-flight consumption table was
+ * dropped by story 19.6 — this service never reads or writes packages.
  *
- * **Storno/correction (epic 5, story 5.3; FR-16) — `cancelFlight`/
- * `correctFlight`**: a flight is NEVER edited in place or physically
- * deleted; "correcting" one is always a STORNO of the original followed by
- * a brand-new registration (AD-3). The storno is a NEW, opposite-signed
- * `AccountMovement` (`FLIGHT_CHARGE_REVERSAL`, `amountCents` = the ORIGINAL
- * `FLIGHT_CHARGE.amountCents` negated, NEVER recalculated — AD-4, same
- * `reversalOfId`-linking pattern as `accounts.service.ts#recordAdjustment`)
- * plus `Flight.status -> CANCELLED` (`cancelledAt`/`cancelReason` set
- * together). Nothing is written on the `Aircraft` row: since story 19.2
- * (R-19-b) an aircraft's hours are the sum of its `REGISTERED` flights, so
- * the status change alone takes the cancelled minutes out of the total.
+ * **Edit in place, delete together with the charge (story 19.6, R-19-c —
+ * AD-3's `FLIGHT_CHARGE` exception) — `updateFlight`/`deleteFlight`**: a
+ * flight's `FLIGHT_CHARGE` lives and dies with it. `updateFlight` rewrites
+ * the `Flight` row AND its charge (the SAME movement: new amount, account,
+ * description and value date) in one transaction, creating nothing;
+ * `deleteFlight` deletes the charge, then the flight. `AccountMovement.flightId`
+ * is `@unique` with `ON DELETE RESTRICT`, so the reverse order fails by
+ * construction and no movement is ever orphaned. Every OTHER movement stays
+ * append-only with storno: a charge a manual rettifica already points at
+ * (`reversalOfId`) makes its flight neither editable nor deletable (409),
+ * because deleting the charge would turn that rettifica into a stray credit.
+ * Nothing is written on the `Aircraft` row: since story 19.2 (R-19-b) an
+ * aircraft's hours are the sum of its flights, so the flight row alone moves
+ * them.
  *
  * **No duplicate, no overlap (story 16.2, F3)**: `registerFlight` and
- * `correctFlight` both call `assertNoOverlappingFlight` INSIDE their
- * transaction, right under the `Aircraft` `FOR UPDATE` lock they open it
- * with (the lock that serializes this guard, and the first step of the
- * `Aircraft -> Account` order below) — 409 `FLIGHT_OVERLAP`, with the
- * conflicting flight's id and instants in `details`, not derogable by
- * `force`. See that function's own doc-comment for the semi-open interval
- * semantics (the bookings' own), why only `REGISTERED` occupies an interval,
- * and why `correctFlight` must exclude the flight it is replacing.
+ * `updateFlight` both call `assertNoOverlappingFlight` INSIDE their
+ * transaction, right under the `Aircraft` `FOR UPDATE` lock that serializes
+ * this guard — 409 `FLIGHT_OVERLAP`, with the conflicting flight's id and
+ * instants in `details`, not derogable by `force`. See that function's own
+ * doc-comment for the semi-open interval semantics (the bookings' own) and
+ * why `updateFlight` must exclude the flight it is editing.
  *
- * **`registerFlightCore` (the mandatory refactor, Task 2)**: `registerFlight`
- * (story 5.1) and `correctFlight` (story 5.3) both end in the exact
- * same in-transaction work — `Flight.create`, the `FLIGHT_CHARGE`
- * movement — so that logic lives in ONE place, `registerFlightCore`, which
- * ASSUMES every lock it needs is ALREADY held by its caller and takes none
- * itself. `registerFlight` opens its own transaction, takes the same two
- * locks as before (Aircraft, then Account — UNCHANGED, story 5.1's tests
- * still pass unmodified), and calls the core once. `correctFlight` does the storno FIRST (inside its own
- * transaction) and calls the SAME core immediately after, so the "new"
- * flight is registered against data the storno has already refunded.
+ * **One write builder (story 19.6, AD-4)**: `buildFlightWrite` is the ONLY
+ * place that turns a resolved input into the snapshot columns, the total and
+ * the charge's description. `registerFlightCore` (create) and `updateFlight`
+ * (update in place) both use it, so a registration and an edit of the same
+ * data can never diverge — the no-charge flag included.
  *
- * **Deterministic lock ordering (Contesto, mandatory) — avoiding deadlocks
- * between concurrent corrections**: `correctFlight` can touch up to TWO
- * `Aircraft` rows (the original flight's, and the corrected one's, if
- * different) and up to TWO `Account` rows (same, for a changed person). To
- * make two concurrent, crossing corrections (`correctFlight(A -> B)` and
- * `correctFlight(B -> A)` at once) provably deadlock-free, ALL the
- * `Aircraft` ids involved are resolved first, then locked in ONE
- * `SELECT ... WHERE id IN (...) ORDER BY id FOR UPDATE` (never one query per
- * row) — then the SAME shape for `Account` ids. Aircraft locks ALWAYS
- * precede Account locks (the same macro order `registerFlight` already used
- * in 5.1 — verified in its code, preserved here): as long as every writer
- * that can touch more than one row of a table locks ALL of them, in the
- * SAME order, in ONE statement, two transactions can never hold-and-wait on
- * each other in a cycle. `cancelFlight` (exactly one Aircraft, one Account)
- * follows the identical order for consistency, even though — lacking a
- * balance-band alert (see below) — it does not strictly need the Account
- * lock for its own correctness today.
+ * **Deterministic lock ordering — Flight -> Aircraft -> Account (story 19.6,
+ * AD-2)**: `registerFlight` locks the `Aircraft` row, then the `Account` row
+ * (UNCHANGED since 5.1). `updateFlight`/`deleteFlight` first lock the
+ * `Flight` row itself (`SELECT ... FOR UPDATE`), which hands them the
+ * flight's CURRENT aircraft rather than one read outside the transaction —
+ * an edit can move a flight onto another aircraft, and a concurrent delete
+ * would otherwise lock the wrong one — and serializes edit-vs-edit and
+ * edit-vs-delete of the same flight (0 rows => 404: a race lost to a delete
+ * never surfaces as a 500). Then the `Aircraft` rows involved (the current
+ * one and, on an edit, the new one) in ONE `SELECT ... WHERE id IN (...)
+ * ORDER BY id FOR UPDATE`, then the `Account` rows (the charge's and, on an
+ * edit, the new person's) in the same shape. No path locks an `Aircraft` and
+ * THEN a `Flight`: `registerFlight` reads the aircraft's flights in the
+ * overlap guard WITHOUT a lock (MVCC: it never waits on them), and bookings
+ * (`Booking -> Aircraft -> Person -> InstructorProfile`, story 16.3) never
+ * touch `Flight` — so no cycle, hence no deadlock.
  *
- * **No alert on cancel, alert-after-storno on correct (FR-27)**: cancelling
- * a flight only ever ADDS money back — the balance band can improve or stay
- * put, never worsen (same reasoning as `accounts.service.ts#recordTopUp`'s
- * own "no alert wiring" choice) — so `cancelFlight` reads no pre-movement
- * balance and fires no alert. `correctFlight` CAN worsen the net balance
- * (e.g. more minutes on re-registration), so it reuses the exact same
- * lock-read-compare-send dance as `registerFlight`/`recordAdjustment` — the
- * critical ordering point is that the "saldo-prima" read (inside
- * `registerFlightCore`) happens AFTER the storno write, in the SAME
- * transaction: read-your-own-writes means that SUM already includes the
- * refund, so the "before" balance being compared is the TRUE pre-correction
- * one, not a stale pre-storno one that would over-count the apparent
- * worsening.
+ * **Alerts (FR-27)**: deleting a flight only ever gives money back — no
+ * balance read, no alert (same reasoning as `accounts.service.ts#recordTopUp`).
+ * `registerFlight` and `updateFlight` reuse `recordAdjustment`'s
+ * lock-read-compare-send dance; `updateFlight` reads the NEW person's balance
+ * under its lock before and after its two writes (read-your-own-writes), so
+ * with the person unchanged "before" still holds the old charge: the
+ * comparison is between the real balance before and after the edit.
  */
 
 export type FlightBreakdown = {
@@ -142,7 +129,8 @@ export type FlightListItem = {
   flightType: FlightType;
   /** Story 9.4 — dual/solo distinction, meaningful only when `flightType === 'SCHOOL'`. */
   isSolo: boolean;
-  status: FlightStatus;
+  /** Story 19.6 (R-19-d) — "senza addebito": both amounts and the charge are 0. */
+  noCharge: boolean;
   /** Story 11.1 — `null` on a historical (pre-11.1) flight only. */
   departureAirfield: string | null;
   arrivalAirfield: string | null;
@@ -161,13 +149,6 @@ export type FlightListItem = {
   /** Story 5.4 — CONDITIONAL: present only when the caller has `people.read` (ADMIN-only), same pattern as `AccountStatementItem` (3.2). */
   actorEmail?: string;
   createdAt: Date;
-  /** Story 5.3 — set together, exactly once, when `status` becomes `CANCELLED`. Both `null` while `REGISTERED`. */
-  cancelledAt: Date | null;
-  cancelReason: string | null;
-  /** Story 5.3 — the ORIGINAL flight this one replaces, when this flight IS a correction. `null` for a plain registration. */
-  correctionOfId: string | null;
-  /** Story 5.3 — the NEW flight that replaced THIS one, from the inverse `correctedBy` relation. `null` unless this flight was corrected. */
-  correctedByFlightId: string | null;
   /** Story 14.4, AC 2 — set together, exactly once, ONLY when an admin bypassed a blocking expired document. `null` on every normal flight. */
   forcedAt: Date | null;
   /** Review F2 (ratifica R-14.4-c) — MASKED to `null` for an actor without `flights.manage` (`toListItem`'s own `includeForceReason` param), even when `forcedAt` is set: the motivo can name another person's medical/document, so a pilot/student/instructor reading their OWN registry (`self.read`) sees the "Deroga" fact (`forcedAt`) but never the WHY. Unlike `Booking`'s own DTO (which omits the field entirely), an admin gets the real value — audit trail, not blanket omission. */
@@ -185,9 +166,7 @@ export type RegisterFlightResult = {
    * (`accounts.service.ts#hasNegativeBalanceAlert`: balance negative BEFORE
    * the charge OR negative AFTER it) — deliberately NOT the same condition as
    * `sendNegativeBalanceAlert` below (still band-gated, UNCHANGED, email
-   * only). `cancelFlight` (module doc-comment: a storno only ever improves or
-   * holds the balance, and it is a CREDIT, not a debit — outside F7's own
-   * scope) always returns `false`.
+   * only).
    */
   balanceAlert: boolean;
 };
@@ -197,7 +176,7 @@ const FLIGHT_SELECT = {
   flightDate: true,
   flightType: true,
   isSolo: true,
-  status: true,
+  noCharge: true,
   departureAirfield: true,
   arrivalAirfield: true,
   takeoffAt: true,
@@ -211,17 +190,11 @@ const FLIGHT_SELECT = {
   instructorRateCentsPerHour: true,
   instructorAmountCents: true,
   createdAt: true,
-  cancelledAt: true,
-  cancelReason: true,
-  correctionOfId: true,
   // Story 14.4, AC 2 — `forcedByUserId` deliberately NOT selected (same
   // omission as `Booking`'s own `BOOKING_SELECT`): the DTO only needs
   // "was this forced, and why", not "by whom".
   forcedAt: true,
   forceReason: true,
-  // The inverse self-relation (story 5.3) — `id` only, just enough to
-  // populate `correctedByFlightId` without an extra query.
-  correctedBy: { select: { id: true } },
   aircraft: { select: { id: true, registration: true } },
   person: { select: { id: true, firstName: true, lastName: true } },
   instructorProfile: { select: { person: { select: { id: true, firstName: true, lastName: true } } } },
@@ -233,7 +206,7 @@ type SelectedFlight = {
   flightDate: Date;
   flightType: FlightType;
   isSolo: boolean;
-  status: FlightStatus;
+  noCharge: boolean;
   departureAirfield: string | null;
   arrivalAirfield: string | null;
   takeoffAt: Date | null;
@@ -247,12 +220,8 @@ type SelectedFlight = {
   instructorRateCentsPerHour: number | null;
   instructorAmountCents: number | null;
   createdAt: Date;
-  cancelledAt: Date | null;
-  cancelReason: string | null;
-  correctionOfId: string | null;
   forcedAt: Date | null;
   forceReason: string | null;
-  correctedBy: { id: string } | null;
   aircraft: { id: string; registration: string };
   person: { id: string; firstName: string; lastName: string };
   instructorProfile: { person: { id: string; firstName: string; lastName: string } } | null;
@@ -268,8 +237,8 @@ type SelectedFlight = {
  * (`hasPermission(actor, 'flights.manage')`) — masks `forceReason` to `null`
  * for a non-manage viewer while leaving `forcedAt` visible to everyone with
  * access to the flight (see `FlightListItem.forceReason`'s own doc-comment).
- * Every admin-only entrypoint in this file (`registerFlight`/`cancelFlight`/
- * `correctFlight`, all gated on `flights.manage`) always passes `true` for
+ * Every admin-only entrypoint in this file (`registerFlight`/`updateFlight`,
+ * both gated on `flights.manage`) always passes `true` for
  * BOTH — the actor calling them already holds `flights.manage` by
  * definition (the `authorize` call at the top of each).
  */
@@ -280,7 +249,7 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean, includeF
     flightDate: toDateOnlyString(flight.flightDate),
     flightType: flight.flightType,
     isSolo: flight.isSolo,
-    status: flight.status,
+    noCharge: flight.noCharge,
     departureAirfield: flight.departureAirfield,
     arrivalAirfield: flight.arrivalAirfield,
     takeoffAt: flight.takeoffAt,
@@ -311,10 +280,6 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean, includeF
     },
     ...(includeActorEmail ? { actorEmail: flight.actorUser.email } : {}),
     createdAt: flight.createdAt,
-    cancelledAt: flight.cancelledAt,
-    cancelReason: flight.cancelReason,
-    correctionOfId: flight.correctionOfId,
-    correctedByFlightId: flight.correctedBy?.id ?? null,
     forcedAt: flight.forcedAt,
     // Review F2 (ratifica R-14.4-c): `forcedAt` (the "Deroga" fact) stays
     // visible to everyone with access to this flight; the motivo — which can
@@ -343,11 +308,11 @@ export type FlightBlockingDocument = {
 };
 
 /**
- * The ORIGINAL flight's identity fields, supplied ONLY by `correctFlight`
+ * The ORIGINAL flight's identity fields, supplied ONLY by `updateFlight`
  * (review F4, ratifica R-14.4-b) — see `resolveFlightInput`'s own
  * doc-comment for what this exempts. `aircraftPriceCategory` (story 19.3,
- * Q-19.3-b) is the price column the original flight was charged: a
- * correction that keeps the person keeps it.
+ * Q-19.3-b) is the price column the original flight was charged: an edit
+ * that keeps the person keeps it.
  */
 type OriginalFlightIdentity = {
   aircraftId: string;
@@ -372,7 +337,7 @@ type ResolvedFlightInput = {
   instructorRateCentsPerHour: number | null;
   /** Already rounded on the FULL duration. */
   instructorAmountCents: number | null;
-  /** Story 14.4, AC 2 — set ONLY when an admin bypassed a real blocking expired document; `null` on every normal registration/correction, INCLUDING a `force: true` request with nothing to bypass. */
+  /** Story 14.4, AC 2 — set ONLY when an admin bypassed a real blocking expired document; `null` on every normal registration/edit, INCLUDING a `force: true` request with nothing to bypass. */
   forceStamp: { forcedAt: Date; forcedByUserId: string; forceReason: string } | null;
 };
 
@@ -497,13 +462,13 @@ function deriveFlightDate(takeoffAtIso: string): Date {
 }
 
 /**
- * Review F4 (ratifica R-14.4-b) — a correction that changes NEITHER the
+ * Review F4 (ratifica R-14.4-b) — an edit that changes NEITHER the
  * person, NOR the instructor, NOR the flight date is exempt from the expiry
  * guard entirely: same "correcting is not registering anew" principle as
  * R-14.3-a's flightType exemption. `original` is only ever supplied by
- * `correctFlight` (its own recorded identity); a brand-new `registerFlight`
+ * `updateFlight` (its own recorded identity); a brand-new `registerFlight`
  * call never passes it, so it is always fully checked. Without this, a
- * cycles-only correction of a HISTORICAL flight becomes a permanent
+ * cycles-only edit of a HISTORICAL flight becomes a permanent
  * dead end (422, no legitimate bypass) the moment a document expires AFTER the
  * flight was flown, and forces the ADMIN force-override path to stamp a fake
  * "Deroga" on a flight that was never an operational override.
@@ -528,7 +493,7 @@ function isIdentityUnchanged(
 
 /**
  * All of `registerFlight`'s pre-transaction guards and rate lookups (AC 1/2/
- * 3/4), extracted (story 5.3, Task 2) so `correctFlight` can re-run the
+ * 3/4), extracted (story 5.3, Task 2) so `updateFlight` can re-run the
  * EXACT same validation on its NEW data ("tutti i 422 di 5.1 si applicano ai
  * DATI NUOVI", Contesto) without a second, drifting copy. Guard order
  * (consolidated pattern: existence 404 -> state 422 -> domain 422): aircraft
@@ -546,7 +511,7 @@ function isIdentityUnchanged(
  * a `SCHOOL` flight AND not already the flight's OWN recorded type (story
  * 14.3, AC 1; review F3 + ratifica R-14.3-a: correcting a historical flight
  * while KEEPING its type is always allowed — the ban is on REGISTERING a new
- * non-SCHOOL flight, or on CHANGING a correction's type away from what is on
+ * non-SCHOOL flight, or on CHANGING an edit's type away from what is on
  * file, for a student-only person, never on leaving it untouched) ->
  * `STUDENT_FLIGHT_MUST_BE_SCHOOL`;
  * `takeoffAt`/`landingAt` resolution (story 11.1, AC 2/3 — the ONLY source
@@ -570,14 +535,15 @@ function isIdentityUnchanged(
  * PROFILE (story 19.3, R-19-e): student-only -> `studentPriceCents`,
  * otherwise -> `pilotPriceCents` — a pilot on a `SCHOOL` flight pays the
  * pilot price, and a person with both profiles active (legacy data, D-4) is a
- * pilot, the same reading `STUDENT_FLIGHT_MUST_BE_SCHOOL` makes. A correction
+ * pilot, the same reading `STUDENT_FLIGHT_MUST_BE_SCHOOL` makes. An edit
  * that keeps the person keeps the ORIGINAL category (Q-19.3-b, same
  * "correcting is not registering anew" principle as below), at the rate in
  * effect at the new `flightDate`. The instructor amount is rounded here,
  * `Math.round(rate * minutes / 60)` on the FULL duration (AD-2/NFR-5) — the
- * aircraft amount is computed the SAME way, but inside `registerFlightCore`
- * (module doc-comment), which stayed the single place that writes it after
- * story 12.13 retired package consumption.
+ * aircraft amount is computed the SAME way, but inside `buildFlightWrite`
+ * (module doc-comment), which also zeroes both on a no-charge flight. The
+ * rates are looked up on a no-charge flight too (story 19.6, Q-19.6-a = B):
+ * frozen on the row as information, never charged.
  *
  * **Blocking-expiry guard-rail (story 14.4, AC 1/2; ratifica R4) — since story
  * AOG-1a the SAME `force` also covers the out-of-service block above
@@ -600,11 +566,11 @@ function isIdentityUnchanged(
  * spuntata una checkbox" convention as `Booking.forcedAt`) — `null` on every
  * normal flight, INCLUDING a `force: true` request with nothing to bypass.
  *
- * **Unchanged-identity correction exemption (review F4, ratifica
- * R-14.4-b)**: when `original` is supplied (`correctFlight` only) and the
+ * **Unchanged-identity edit exemption (review F4, ratifica
+ * R-14.4-b)**: when `original` is supplied (`updateFlight` only) and the
  * NEW `personId`/`instructorPersonId`/`flightDate` are IDENTICAL to the
  * flight's own recorded ones, the ENTIRE expiry guard above is skipped — a
- * cycles/times-only correction of a historical flight is never
+ * cycles/times-only edit of a historical flight is never
  * blocked (nor does it need a "Deroga" stamp) by a document that expired, or
  * was only ever required, AFTER the flight was flown. Same
  * "correcting-is-not-registering-anew" principle as `originalFlightType`'s
@@ -675,13 +641,13 @@ async function resolveFlightInput(
   // aircraft is rejected BEFORE `FLIGHT_DATE_IN_FUTURE`, which is exactly what
   // makes the story's own runtime probe discriminant.
   //
-  // Perimeter (AD-4): `registerFlight` always (`original` undefined); a
-  // correction that MOVES the flight onto a different aircraft (that aircraft
-  // is a new registration for it); NEVER a correction that keeps the same
+  // Perimeter (AD-4): `registerFlight` always (`original` undefined); an
+  // edit that MOVES the flight onto a different aircraft (that aircraft
+  // is a new registration for it); NEVER an edit that keeps the same
   // aircraft — same "correcting is not registering anew" principle as
-  // R-14.4-b/R-14.3-a, because blocking a cycles-only correction of a
+  // R-14.4-b/R-14.3-a, because blocking a cycles-only edit of a
   // HISTORICAL flight just because its aircraft is grounded TODAY is a
-  // permanent dead end. `cancelFlight` never comes through here at all.
+  // permanent dead end. `deleteFlight` never comes through here at all.
   //
   // AD-5, declared: `Aircraft` has NO grounding START date (`updatedAt` changes
   // on every write to the row), so this guard can only see
@@ -744,8 +710,8 @@ async function resolveFlightInput(
   // the ACTIVE PROFILE (never the role), so a student who ALSO holds an
   // active pilot profile (both active — took the license) is unrestricted,
   // same as a plain pilot. Review F3 (ratifica R-14.3-a): `originalFlightType`
-  // is only ever set by `correctFlight` (the flight's OWN recorded type,
-  // never re-derived from the person's CURRENT profile) — a correction that
+  // is only ever set by `updateFlight` (the flight's OWN recorded type,
+  // never re-derived from the person's CURRENT profile) — an edit that
   // keeps that exact type is exempt from this guard, because the person's
   // profile status may have changed (e.g. lost/deactivated a license) SINCE
   // the flight was flown, and the historical record must stay correctable
@@ -911,7 +877,7 @@ async function resolveFlightInput(
 
 /**
  * The ONE overlap predicate of the flight registry (story 16.2, P1; AD-1/
- * AD-2) — two call sites (`registerFlight`, `correctFlight`), never two
+ * AD-2) — two call sites (`registerFlight`, `updateFlight`), never two
  * implementations. Until this story the registry had NO second line of
  * defence at all: request idempotency (TD-2) is opt-in on a header, so a
  * double click or a reload after a timeout registered the SAME flight twice,
@@ -930,13 +896,11 @@ async function resolveFlightInput(
  * landingAt)` is SEMI-OPEN, so two flights that merely TOUCH (a landing at
  * 10:00 and the next takeoff at 10:00) do NOT overlap — one runway instant,
  * not a conflict. An app with two different interval rules would itself be
- * the defect. Only a `REGISTERED` flight occupies an interval (a `CANCELLED`
- * one freed it, exactly like a cancelled booking), which also makes the
- * guard independent of WHEN `correctFlight` writes its storno.
- * `excludeFlightId` is load-bearing there, not decorative: the guard runs
- * BEFORE that storno, so the original is still `REGISTERED` and every
- * conservative correction (cycles, airfields) would answer
- * 409 without it.
+ * the defect. Every existing flight occupies its interval: a deleted flight
+ * no longer exists, so it frees the slot by construction (story 19.6).
+ * `excludeFlightId` is load-bearing for `updateFlight`, not decorative: the
+ * edited flight is still on its own slot, so every conservative edit
+ * (cycles, airfields) would answer 409 without it.
  *
  * `orderBy takeoffAt asc` makes the flight NAMED in `details` deterministic
  * when several overlap — an e2e assertion on a non-deterministic id would be
@@ -952,7 +916,7 @@ async function resolveFlightInput(
  * NOT derogable by `force`/`forceReason` (ratifica del piano 16-18), unlike
  * `FLIGHT_BLOCKED_BY_EXPIRY`/`AIRCRAFT_OUT_OF_SERVICE`: there is no dead end
  * to escape (lezione 14.6 F2) because the 409 NAMES the conflicting flight,
- * and the way out is to cancel or correct THAT one — an action the app
+ * and the way out is to delete or edit THAT one — an action the app
  * already offers on every row of the registry.
  *
  * Error ordering, for the record: `resolveFlightInput` runs before the
@@ -969,7 +933,6 @@ async function assertNoOverlappingFlight(
   const conflict = await tx.flight.findFirst({
     where: {
       aircraftId: params.aircraftId,
-      status: 'REGISTERED',
       takeoffAt: { lt: params.landingAt },
       landingAt: { gt: params.takeoffAt },
       ...(params.excludeFlightId === null ? {} : { id: { not: params.excludeFlightId } }),
@@ -996,35 +959,90 @@ async function assertNoOverlappingFlight(
   );
 }
 
-type RegisterFlightCoreInput = {
-  actorUserId: string;
-  aircraftId: string;
-  aircraftRegistration: string;
-  accountId: string;
-  personId: string;
-  instructorProfileId: string | null;
-  departureAirfield: string;
-  arrivalAirfield: string;
-  takeoffAt: Date;
-  landingAt: Date;
-  flightDate: Date;
-  /** `YYYY-MM-DD`, exactly `toDateOnlyString(flightDate)` — for the auto-generated movement description. */
-  flightDateDisplay: string;
-  flightType: FlightType;
-  /** Story 9.4 — dual/solo distinction, already validated by `resolveFlightInput` against `flightType`. */
-  isSolo: boolean;
-  minutes: number;
-  takeoffs: number;
-  landings: number;
-  aircraftRateCentsPerHour: number;
-  aircraftPriceCategory: AircraftPriceCategory;
-  instructorRateCentsPerHour: number | null;
-  instructorAmountCents: number | null;
-  /** `Flight.correctionOfId` (story 5.3) — the ORIGINAL flight this one replaces, or `null` for a plain `registerFlight` call. */
-  correctionOfId: string | null;
-  /** Story 14.4, AC 2 — `resolveFlightInput`'s own force-stamp, spread onto `Flight.create`'s data verbatim (`null` on every normal flight). */
-  forceStamp: { forcedAt: Date; forcedByUserId: string; forceReason: string } | null;
+/**
+ * What `buildFlightWrite` produces: the `Flight` columns a registration and
+ * an edit both write (everything but `actorUserId`, creation-only, and the
+ * force stamp — `updateFlight` writes it only when the edit itself derogates,
+ * D-7), the total the charge debits, and the charge's description.
+ */
+type FlightWrite = {
+  flightData: {
+    aircraftId: string;
+    personId: string;
+    instructorProfileId: string | null;
+    departureAirfield: string;
+    arrivalAirfield: string;
+    takeoffAt: Date;
+    landingAt: Date;
+    flightDate: Date;
+    flightType: FlightType;
+    isSolo: boolean;
+    noCharge: boolean;
+    minutes: number;
+    takeoffs: number;
+    landings: number;
+    aircraftRateCentsPerHour: number;
+    aircraftPriceCategory: AircraftPriceCategory;
+    aircraftAmountCents: number;
+    instructorRateCentsPerHour: number | null;
+    instructorAmountCents: number | null;
+  };
+  totalAmountCents: number;
+  description: string;
 };
+
+/**
+ * The ONE place that turns a resolved input into the flight's snapshot
+ * columns, its total and its charge's description (story 19.6, AD-4) — used
+ * by `registerFlightCore` and `updateFlight`, so a registration and an edit
+ * of the same data can never diverge. Pure: no I/O.
+ *
+ * Full duration, full rate (story 12.13: package consumption retired). On a
+ * `noCharge` flight (R-19-d) both amounts are `0` while the rates stay frozen
+ * as information (Q-19.6-a = B); the instructor amount is `0`, never `null`,
+ * because `null` is what says "no instructor on this flight" (`toListItem`).
+ * The description starts with the no-charge wording so it survives the
+ * statement card's end-truncation on a phone; a normal flight's is unchanged.
+ */
+function buildFlightWrite(resolved: ResolvedFlightInput, input: RegisterFlightInput): FlightWrite {
+  const aircraftAmountCents = input.noCharge ? 0 : Math.round((resolved.aircraftRateCentsPerHour * resolved.minutes) / 60);
+  const instructorAmountCents = resolved.instructorAmountCents === null ? null : input.noCharge ? 0 : resolved.instructorAmountCents;
+  const label = input.noCharge ? 'Volo senza addebito' : 'Volo';
+  return {
+    flightData: {
+      aircraftId: resolved.aircraft.id,
+      personId: resolved.person.id,
+      instructorProfileId: resolved.instructorProfileId,
+      departureAirfield: resolved.departureAirfield,
+      arrivalAirfield: resolved.arrivalAirfield,
+      takeoffAt: resolved.takeoffAt,
+      landingAt: resolved.landingAt,
+      flightDate: resolved.flightDate,
+      flightType: input.flightType,
+      isSolo: input.isSolo,
+      noCharge: input.noCharge,
+      minutes: resolved.minutes,
+      takeoffs: input.takeoffs ?? 1,
+      landings: input.landings ?? 1,
+      aircraftRateCentsPerHour: resolved.aircraftRateCentsPerHour,
+      aircraftPriceCategory: resolved.aircraftPriceCategory,
+      aircraftAmountCents,
+      instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
+      instructorAmountCents,
+    },
+    totalAmountCents: aircraftAmountCents + (instructorAmountCents ?? 0),
+    description: `${label} ${resolved.aircraft.registration} ${toDateOnlyString(resolved.flightDate)} — ${formatMinutes(resolved.minutes)}`,
+  };
+}
+
+/** `SUM(AccountMovement.amountCents)` of one account (AD-3: the balance is never a stored value). */
+async function readBalanceCents(tx: Prisma.TransactionClient, accountId: string): Promise<number> {
+  const aggregate = await tx.accountMovement.aggregate({
+    where: { accountId },
+    _sum: { amountCents: true },
+  });
+  return aggregate._sum.amountCents ?? 0;
+}
 
 type RegisterFlightCoreResult = {
   flight: SelectedFlight;
@@ -1033,63 +1051,33 @@ type RegisterFlightCoreResult = {
 };
 
 /**
- * The shared in-transaction core of a flight registration (story 5.1),
- * extracted (story 5.3, Task 2 — the mandatory refactor) so `registerFlight`
- * (a brand-new flight, its own transaction) and `correctFlight` (a storno
- * immediately followed by a brand-new flight, SAME transaction) run ONE
- * implementation of the charge logic instead of two copies that
- * could drift. ASSUMES every lock its own writes need is ALREADY held by the
- * caller (the `Aircraft` row behind `aircraftId`, the `Account` row behind
- * `accountId`) — it takes none of its own; that is exactly what lets
- * `correctFlight` slot its own multi-row locking in front of this same
- * function (module doc-comment).
+ * The in-transaction work of a flight registration (story 5.1). ASSUMES
+ * every lock its writes need is ALREADY held by the caller (the `Aircraft`
+ * row behind the flight, the `Account` row behind `accountId`) — it takes
+ * none of its own.
  *
- * 1. Reads the pre-movement balance (`SUM(AccountMovement.amountCents)`,
- *    AD-3) — this doubles as `correctFlight`'s "saldo-prima" (Contesto): when
- *    called AFTER that function's storno write in the SAME transaction, this
- *    SUM already reflects the refund (read-your-own-writes), so the balance
- *    it returns is the TRUE pre-correction one.
- * 2. Writes, in order: `Flight.create` (full AD-4 snapshot, including
- *    `correctionOfId`), the `FLIGHT_CHARGE` `AccountMovement`
- *    (`amountCents: -(total)`, linked via `flightId`). Nothing is written on
+ * 1. Reads the pre-movement balance (`readBalanceCents`, AD-3).
+ * 2. Writes, in order: `Flight.create` (the `buildFlightWrite` snapshot, plus
+ *    the actor and the force stamp), the `FLIGHT_CHARGE` `AccountMovement`
+ *    (`amountCents: -(total)`, linked via `flightId` — always created, `0` on
+ *    a no-charge flight: one charge per flight, AD-7). Nothing is written on
  *    the `Aircraft` row (story 19.2: its hours are the sum of its flights).
  */
-async function registerFlightCore(tx: Prisma.TransactionClient, params: RegisterFlightCoreInput): Promise<RegisterFlightCoreResult> {
-  const aggregate = await tx.accountMovement.aggregate({
-    where: { accountId: params.accountId },
-    _sum: { amountCents: true },
-  });
-  const balanceBeforeCents = aggregate._sum.amountCents ?? 0;
-
-  // Full duration, full rate (story 12.13: package consumption retired —
-  // the aircraft component is no longer pro-rated against anything). The
-  // instructor amount (computed by `resolveFlightInput`) is unaffected.
-  const aircraftAmountCents = Math.round((params.aircraftRateCentsPerHour * params.minutes) / 60);
-  const totalAmountCents = aircraftAmountCents + (params.instructorAmountCents ?? 0);
-
-  const description = `Volo ${params.aircraftRegistration} ${params.flightDateDisplay} — ${formatMinutes(params.minutes)}`;
+async function registerFlightCore(
+  tx: Prisma.TransactionClient,
+  params: {
+    actorUserId: string;
+    accountId: string;
+    write: FlightWrite;
+    /** Story 14.4, AC 2 — `resolveFlightInput`'s own force-stamp, spread onto `Flight.create`'s data verbatim (`null` on every normal flight). */
+    forceStamp: ResolvedFlightInput['forceStamp'];
+  },
+): Promise<RegisterFlightCoreResult> {
+  const balanceBeforeCents = await readBalanceCents(tx, params.accountId);
 
   const created = await tx.flight.create({
     data: {
-      aircraftId: params.aircraftId,
-      personId: params.personId,
-      instructorProfileId: params.instructorProfileId,
-      departureAirfield: params.departureAirfield,
-      arrivalAirfield: params.arrivalAirfield,
-      takeoffAt: params.takeoffAt,
-      landingAt: params.landingAt,
-      flightDate: params.flightDate,
-      flightType: params.flightType,
-      isSolo: params.isSolo,
-      minutes: params.minutes,
-      takeoffs: params.takeoffs,
-      landings: params.landings,
-      aircraftRateCentsPerHour: params.aircraftRateCentsPerHour,
-      aircraftPriceCategory: params.aircraftPriceCategory,
-      aircraftAmountCents,
-      instructorRateCentsPerHour: params.instructorRateCentsPerHour,
-      instructorAmountCents: params.instructorAmountCents,
-      correctionOfId: params.correctionOfId,
+      ...params.write.flightData,
       actorUserId: params.actorUserId,
       // Story 14.4, AC 2: stamped ONLY when a real block was bypassed
       // (`forceStamp`) — otherwise every field stays `null`, same convention
@@ -1103,25 +1091,19 @@ async function registerFlightCore(tx: Prisma.TransactionClient, params: Register
     data: {
       accountId: params.accountId,
       type: 'FLIGHT_CHARGE',
-      // `0 - totalAmountCents`, NOT unary `-totalAmountCents` (same `-0`
-      // guard as `cancelFlight`'s reversal below): unary negation of `0`
-      // produces `-0`, a distinct (if numerically equal) value that a
-      // strict `Object.is`-based comparison downstream (e.g. `toBe`) could
-      // trip on.
-      amountCents: 0 - totalAmountCents,
-      description,
-      effectiveDate: params.flightDate,
+      // `0 - totalAmountCents`, NOT unary `-totalAmountCents`: unary negation
+      // of `0` (a no-charge flight, story 19.6) produces `-0`, a distinct (if
+      // numerically equal) value that a strict `Object.is`-based comparison
+      // downstream (e.g. `toBe`) could trip on.
+      amountCents: 0 - params.write.totalAmountCents,
+      description: params.write.description,
+      effectiveDate: params.write.flightData.flightDate,
       actorUserId: params.actorUserId,
       flightId: created.id,
     },
   });
 
-  return { flight: created, balanceBeforeCents, balanceAfterCents: balanceBeforeCents - totalAmountCents };
-}
-
-/** Prisma unique-constraint violation (same pattern as `accounts.service.ts`/`cash.service.ts`). */
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2002';
+  return { flight: created, balanceBeforeCents, balanceAfterCents: balanceBeforeCents - params.write.totalAmountCents };
 }
 
 /**
@@ -1134,16 +1116,16 @@ function isUniqueViolation(error: unknown): boolean {
  * `recordAdjustment`'s doc-comment — revisit if that ever decouples).
  *
  * Guards and rate lookups: `resolveFlightInput` (story 5.3's extraction —
- * unchanged behavior/error codes from 5.1).
+ * unchanged behavior/error codes from 5.1); the columns, total and charge
+ * description: `buildFlightWrite` (story 19.6, shared with `updateFlight`).
  *
  * ONE `prisma.$transaction`: `FOR UPDATE` locks on the `Aircraft` row (raw
  * SQL — Prisma has no select-for-update) and, after the
  * `Account` get-or-create upsert, on the `Account` row (same pattern as
  * `recordAdjustment`) so the pre-movement balance never races a concurrent
  * top-up/adjustment/flight on the same account. This lock shape is
- * UNCHANGED from 5.1 (story 5.3, Task 2: no contract change) — only the
- * in-transaction WORK after it now lives in the shared `registerFlightCore`
- * (module doc-comment). Story 16.2 adds ONE read under that same aircraft
+ * UNCHANGED from 5.1 — the in-transaction WORK after it lives in
+ * `registerFlightCore`. Story 16.2 adds ONE read under that same aircraft
  * lock, before any write: `assertNoOverlappingFlight` (409 `FLIGHT_OVERLAP`).
  *
  * Returns the created flight plus the refreshed account overview. POST-commit
@@ -1155,6 +1137,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
   authorize(actor, 'flights.manage');
 
   const resolved = await resolveFlightInput(actor, input);
+  const write = buildFlightWrite(resolved, input);
 
   // Threshold read BEFORE the transaction (same pattern as `recordAdjustment`).
   const thresholdCents = await getNegativeBalanceThresholdCents();
@@ -1203,27 +1186,8 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
 
     const core = await registerFlightCore(tx, {
       actorUserId: actor.userId,
-      aircraftId: resolved.aircraft.id,
-      aircraftRegistration: resolved.aircraft.registration,
       accountId: account.id,
-      personId: resolved.person.id,
-      instructorProfileId: resolved.instructorProfileId,
-      departureAirfield: resolved.departureAirfield,
-      arrivalAirfield: resolved.arrivalAirfield,
-      takeoffAt: resolved.takeoffAt,
-      landingAt: resolved.landingAt,
-      flightDate: resolved.flightDate,
-      flightDateDisplay: toDateOnlyString(resolved.flightDate),
-      flightType: input.flightType,
-      isSolo: input.isSolo,
-      minutes: resolved.minutes,
-      takeoffs: input.takeoffs ?? 1,
-      landings: input.landings ?? 1,
-      aircraftRateCentsPerHour: resolved.aircraftRateCentsPerHour,
-      aircraftPriceCategory: resolved.aircraftPriceCategory,
-      instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
-      instructorAmountCents: resolved.instructorAmountCents,
-      correctionOfId: null,
+      write,
       forceStamp: resolved.forceStamp,
     });
     return { ...core, accountId: account.id, accountCreatedAt: account.createdAt };
@@ -1260,379 +1224,190 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
   // Review F7: deliberately NOT `bandWorsened` (see `RegisterFlightResult.balanceAlert`'s own doc-comment).
   const balanceAlert = hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents);
 
-  // `true, true`: registerFlight/cancelFlight/correctFlight are all
+  // `true, true`: registerFlight/updateFlight are both
   // admin-only (`flights.manage`, story 5.4's own-access branch never
   // reaches here) — `actorEmail`/`forceReason` are always shown to the admin
   // actor who just acted.
   return { flight: toListItem(createdFlight, true, true), account, balanceAlert };
 }
 
-/** The `FLIGHT_CHARGE` movement a `REGISTERED` flight must always have — loaded so `cancelFlight`/`correctFlight` can reverse it. */
-type OriginalChargeMovement = { id: string; amountCents: number; accountId: string };
+/**
+ * The flight's `FLIGHT_CHARGE` — exactly one per flight (`flightId @unique`,
+ * AD-7), read under the caller's `Flight` lock. Absent => a broken invariant
+ * (`registerFlightCore` creates it in the same transaction as the flight):
+ * thrown as a plain `Error`, never a half-done delete or edit. Linked to a
+ * manual rettifica (`reversalOfId`, story 3.3) => 409, unchanged since review
+ * 5.3 M1: deleting or rewriting that charge would leave the rettifica as a
+ * stray credit or debit on the account — the books were already settled by
+ * hand (D-8).
+ */
+async function loadFlightCharge(tx: Prisma.TransactionClient, flightId: string): Promise<{ id: string; accountId: string }> {
+  const charge = await tx.accountMovement.findUnique({
+    where: { flightId },
+    select: { id: true, accountId: true, reversal: { select: { id: true } } },
+  });
+  if (!charge) {
+    throw new Error(`Flight ${flightId} has no FLIGHT_CHARGE movement.`);
+  }
+  if (charge.reversal) {
+    throw new ConflictError("This flight's charge has already been reversed by a manual adjustment.");
+  }
+  return { id: charge.id, accountId: charge.accountId };
+}
 
 /**
- * Loads a flight plus its `FLIGHT_CHARGE` movement for `cancelFlight`/
- * `correctFlight` — 404 when the flight does not exist, `ConflictError` when
- * it is already `CANCELLED` (AC 3: the pre-check half of the pre-check +
- * P2002-backstop pattern; the backstop itself lives at the write site,
- * where a concurrent double-cancel/-correct can still race past this read).
+ * Deletes a flight together with its charge (story 19.6, P2 — R-19-c; AD-3).
+ * `flights.manage` only, checked before any query. Always allowed, like the
+ * cancellation it replaces: no re-validation of an archived person/aircraft,
+ * a grounded aircraft or the date — deleting gives money back, it never
+ * needs its targets to still be "valid".
+ *
+ * ONE `prisma.$transaction`, lock order Flight -> Aircraft -> Account (module
+ * doc-comment): the `Flight` row `FOR UPDATE` (0 rows => 404 — a second
+ * delete, or a concurrent one that won), its CURRENT `Aircraft` row (kept for
+ * the macro order with `updateFlight`), the charge (`loadFlightCharge`: 409
+ * when a manual rettifica points at it), the charge's `Account` row. Then the
+ * charge is deleted BEFORE the flight: with `AccountMovement.flightId`
+ * `ON DELETE RESTRICT` the opposite order fails, by design. A `TrainingNote`
+ * linked to the flight keeps its row, its `flightId` going `NULL` (`ON DELETE
+ * SET NULL`). No balance read, no alert: the balance can only go up.
  */
-async function loadRegisteredFlightForReversal(flightId: string): Promise<{
-  id: string;
-  aircraftId: string;
-  personId: string;
-  /** Review F4 (ratifica R-14.4-b) — the ORIGINAL flight's own instructor, by PERSON id (matching `resolveFlightInput`'s own `instructorPersonId` local) so a correction that keeps every identity field unchanged can skip the expiry guard entirely. `null` <=> the original flight had no instructor. */
-  instructorPersonId: string | null;
-  flightDate: Date;
-  /** Story 14.3 review F3 (ratifica R-14.3-a) — the ORIGINAL flight's own recorded type, so `correctFlight` can let a correction keep it unchanged even for a person who is student-only TODAY. */
-  flightType: FlightType;
-  /** Story 19.3 (Q-19.3-b) — the ORIGINAL flight's price column, kept by a correction that keeps the person. */
-  aircraftPriceCategory: AircraftPriceCategory;
-  aircraft: { registration: string };
-  originalMovement: OriginalChargeMovement;
-}> {
-  const flight = await prisma.flight.findUnique({
+export async function deleteFlight(actor: Actor, flightId: string): Promise<void> {
+  authorize(actor, 'flights.manage');
+
+  await prisma.$transaction(async (tx) => {
+    const lockedFlight = await tx.$queryRaw<Array<{ aircraftId: string }>>`
+      SELECT "aircraftId" FROM "Flight" WHERE "id" = ${flightId} FOR UPDATE`;
+    if (lockedFlight.length === 0) {
+      throw new NotFoundError('Flight not found.');
+    }
+    await tx.$queryRaw`SELECT "id" FROM "Aircraft" WHERE "id" = ${lockedFlight[0]!.aircraftId} FOR UPDATE`;
+
+    const charge = await loadFlightCharge(tx, flightId);
+    await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${charge.accountId} FOR UPDATE`;
+
+    await tx.accountMovement.delete({ where: { id: charge.id } });
+    await tx.flight.delete({ where: { id: flightId } });
+  });
+}
+
+/**
+ * Edits a flight in place (story 19.6, P3 — R-19-c; AD-4): the SAME `Flight`
+ * row and the SAME `FLIGHT_CHARGE` movement are rewritten, nothing is created.
+ * `flights.manage` only. The new data goes through the FULL
+ * `resolveFlightInput` guard/rate-lookup set — every 404/422 of a
+ * registration applies — with the exemptions keyed on the flight's own
+ * recorded identity (read here, outside the transaction, 404 if missing):
+ * type (R-14.3-a), person/instructor/date (R-14.4-b), aircraft (AOG-1a) and
+ * price category with the person unchanged (Q-19.3-b). `buildFlightWrite`
+ * produces the columns, total and description exactly as a registration.
+ *
+ * ONE `prisma.$transaction`, lock order Flight -> Aircraft -> Account (module
+ * doc-comment): the `Flight` row `FOR UPDATE` (0 rows => 404: deleted in the
+ * meantime — never a P2025/500 from the update below); the current and new
+ * `Aircraft` rows in one ordered query (404 if one is gone); the overlap
+ * guard on the NEW aircraft, excluding this flight; the charge
+ * (`loadFlightCharge`, 409 with a manual rettifica); the new person's
+ * account get-or-create, then the charge's and the new person's `Account`
+ * rows in one ordered query; the new account's balance; `Flight.update`;
+ * `AccountMovement.update` of the existing charge (account, amount,
+ * description, value date = the new `flightDate`); the new account's
+ * balance, re-read. `actorUserId` on both rows stays whoever registered the
+ * flight (D-13). The force stamp is written only when THIS edit derogates —
+ * an edit that bypasses nothing keeps a stamp already on the row (A10, D-7).
+ *
+ * POST-commit: the account overview of the new person, the band-gated email
+ * when the band worsened, `balanceAlert` = `hasNegativeBalanceAlert(before,
+ * after)` — the same rule as `registerFlight`.
+ */
+export async function updateFlight(actor: Actor, flightId: string, input: RegisterFlightInput): Promise<RegisterFlightResult> {
+  authorize(actor, 'flights.manage');
+
+  const original = await prisma.flight.findUnique({
     where: { id: flightId },
     select: {
-      id: true,
-      status: true,
       aircraftId: true,
       personId: true,
       flightDate: true,
       flightType: true,
       aircraftPriceCategory: true,
-      instructorProfile: { select: { person: { select: { id: true } } } },
-      aircraft: { select: { registration: true } },
-      movements: {
-        where: { type: 'FLIGHT_CHARGE' },
-        select: { id: true, amountCents: true, accountId: true, reversal: { select: { id: true } } },
-      },
+      instructorProfile: { select: { personId: true } },
     },
   });
-  if (!flight) {
+  if (!original) {
     throw new NotFoundError('Flight not found.');
   }
-  if (flight.status === 'CANCELLED') {
-    throw new ConflictError('Flight is already cancelled.');
-  }
 
-  const originalMovement = flight.movements[0];
-  if (!originalMovement) {
-    // Cannot happen (`registerFlight`/`registerFlightCore` always create the
-    // `FLIGHT_CHARGE` movement in the SAME transaction as the `Flight`
-    // itself, AC 2) — a defensive guard against a silent, orphaned storno
-    // rather than a generic Prisma error deep in the transaction below.
-    throw new Error(`Flight ${flightId} has no FLIGHT_CHARGE movement to reverse.`);
-  }
-  if (originalMovement.reversal) {
-    // The flight is still REGISTERED but its charge's unique `reversalOfId`
-    // slot is already taken — only a manual rettifica (`recordAdjustment`,
-    // story 3.3, linkable to any movement) can have claimed it. The refusal
-    // is correct (never two reversals of one movement) but the message must
-    // not lie about the flight's status (review 5.3 M1): such a flight can
-    // no longer be cancelled/corrected through this API — the books were
-    // already settled by hand.
-    throw new ConflictError("This flight's charge has already been reversed by a manual adjustment.");
-  }
-
-  return {
-    id: flight.id,
-    aircraftId: flight.aircraftId,
-    personId: flight.personId,
-    instructorPersonId: flight.instructorProfile?.person.id ?? null,
-    flightDate: flight.flightDate,
-    flightType: flight.flightType,
-    aircraftPriceCategory: flight.aircraftPriceCategory,
-    aircraft: flight.aircraft,
-    originalMovement,
-  };
-}
-
-/**
- * Cancels (storno) a registered flight (epic 5, story 5.3; AC 1/3/4; FR-16).
- * `flights.manage` only. Guards: flight exists -> 404; already `CANCELLED`
- * -> `ConflictError` (`loadRegisteredFlightForReversal`, pre-check half of
- * the pre-check + P2002-backstop pattern — AD-8). Cancelling is ALWAYS
- * lecito (Contesto) — never re-validates the person/aircraft's CURRENT
- * archived state (a cancellation gives money back, it never needs the
- * target to still be "valid"; contrast `correctFlight`, which re-registers
- * and so DOES re-validate everything).
- *
- * ONE `prisma.$transaction`, same macro lock order as `registerFlight`
- * (Aircraft, then Account — module doc-comment): lock the flight's
- * `Aircraft` row, then its `Account` row (already guaranteed to exist — the
- * original `FLIGHT_CHARGE` could not have been created otherwise, so no
- * upsert is needed here, unlike `registerFlight`'s get-or-create). Writes:
- * `Flight.update` (`status: 'CANCELLED'`, `cancelledAt`, `cancelReason`),
- * the `FLIGHT_CHARGE_REVERSAL` `AccountMovement` (`amountCents` = the
- * ORIGINAL movement's negated, NEVER recalculated — AD-4 — linked via
- * `reversalOfId`/`flightId`, `effectiveDate` = today Europe/Rome date-only
- * (story 16.1), NOT the flight's own date — Contesto: a storno values as of
- * when it happens, same convention as `recordAdjustment`) with a P2002 catch
- * on `reversalOfId`
- * (the backstop half, for a concurrent double-cancel that raced past the
- * pre-check). Nothing is written on the `Aircraft` row (story 19.2): the
- * lock on it stays for the macro order with a concurrent `correctFlight` and
- * to serialize a cancel against a correction of the SAME flight.
- *
- * NO overlap guard here (story 16.2, AD-4): a storno creates no interval, so
- * there is nothing for it to conflict with — the same line story AOG-1a's
- * out-of-service guard draws.
- *
- * NO balance-band alert (Contesto/module doc-comment): a storno only ever
- * improves or holds the band, same reasoning as `recordTopUp`.
- */
-export async function cancelFlight(actor: Actor, flightId: string, input: CancelFlightInput): Promise<RegisterFlightResult> {
-  authorize(actor, 'flights.manage');
-
-  const flight = await loadRegisteredFlightForReversal(flightId);
-  const reason = input.reason;
-
-  const updated = await prisma.$transaction(async (tx) => {
-    const lockedAircraft = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT "id" FROM "Aircraft" WHERE "id" = ${flight.aircraftId} FOR UPDATE`;
-    if (lockedAircraft.length === 0) {
-      throw new NotFoundError('Aircraft not found.');
-    }
-
-    // Same macro lock order as `registerFlight` (Aircraft, then Account) —
-    // even without a balance read/alert here, keeping the SAME order is what
-    // keeps a concurrent `correctFlight` touching the same aircraft/account
-    // from ever deadlocking against this transaction (module doc-comment).
-    await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${flight.originalMovement.accountId} FOR UPDATE`;
-
-    const updatedFlight = await tx.flight.update({
-      where: { id: flight.id },
-      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: reason },
-      select: FLIGHT_SELECT,
-    });
-
-    try {
-      await tx.accountMovement.create({
-        data: {
-          accountId: flight.originalMovement.accountId,
-          type: 'FLIGHT_CHARGE_REVERSAL',
-          // `0 - amountCents`, not unary negation (same -0 lesson as
-          // `registerFlightCore`): the original charge can itself be
-          // exactly 0 (a pathologically low rate/short flight).
-          amountCents: 0 - flight.originalMovement.amountCents,
-          reversalOfId: flight.originalMovement.id,
-          flightId: flight.id,
-          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
-          description: `Storno volo ${flight.aircraft.registration} ${toDateOnlyString(flight.flightDate)} — ${reason}`,
-          actorUserId: actor.userId,
-        },
-      });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        // Concurrent-race backstop (TOCTOU) for the pre-checks in
-        // `loadRegisteredFlightForReversal`: a concurrent double-cancel of
-        // the SAME flight — or, rarer, a concurrent manual rettifica that
-        // claimed the charge's unique `reversalOfId` slot first (review 5.3
-        // M1) — hence the status-agnostic wording.
-        throw new ConflictError("This flight's charge has already been reversed.");
-      }
-      throw error;
-    }
-
-    return updatedFlight;
+  const resolved = await resolveFlightInput(actor, input, original.flightType, {
+    aircraftId: original.aircraftId,
+    personId: original.personId,
+    instructorPersonId: original.instructorProfile?.personId ?? null,
+    flightDate: original.flightDate,
+    aircraftPriceCategory: original.aircraftPriceCategory,
   });
-
-  const account = await getAccountOverview(actor, flight.personId);
-
-  // `balanceAlert: false` — a storno only ever improves or holds the band
-  // (module doc-comment: "No alert on cancel"), so there is never a
-  // worsening signal to surface here.
-  return { flight: toListItem(updated, true, true), account, balanceAlert: false };
-}
-
-/**
- * Corrects a registered flight (epic 5, story 5.3; AC 2/3/4; FR-16): storno
- * of the original + a brand-new registration, in ONE transaction, forever
- * linked via `Flight.correctionOfId`. `flights.manage` only. Guards: flight
- * exists -> 404; already `CANCELLED` -> `ConflictError`
- * (`loadRegisteredFlightForReversal`); the NEW data goes through the FULL
- * `resolveFlightInput` guard/rate-lookup set (Contesto: "tutti i 422 di 5.1
- * si applicano ai DATI NUOVI" — a correction IS a new registration,
- * re-validated from scratch, unlike cancellation which is always lecito).
- * If ANY of that re-validation fails, the ENTIRE transaction (storno
- * included) never even opens — no orphaned storno from a failed correction
- * (Contesto).
- *
- * Transaction order (Contesto, mandatory): lock -> overlap guard (story
- * 16.2) -> storno (movimento + status) -> saldo-prima ->
- * nuova registrazione (via `registerFlightCore`) -> alert post-commit if the
- * band worsened. The guard sits before the storno so a correction onto an
- * occupied slot leaves NOTHING behind — not even the storno.
- *
- * **Deterministic lock ordering** (module doc-comment): resolves EVERY
- * `Aircraft` id involved (the original flight's, and the corrected one's, if
- * different) and locks them in ONE `SELECT ... WHERE id IN (...) ORDER BY id
- * FOR UPDATE` — never one query per row — then the SAME shape for the
- * `Account` ids (the original flight's account, already known from its
- * `FLIGHT_CHARGE` movement, and the corrected data's account, get-or-create
- * upserted first since a brand-new person may have none yet). Aircraft locks
- * ALWAYS precede Account locks, same macro order as `registerFlight`. This
- * makes two concurrent, crossing corrections provably deadlock-free.
- *
- * The storno write is IDENTICAL in shape to `cancelFlight`'s (status +
- * cancelledAt/cancelReason + `FLIGHT_CHARGE_REVERSAL` with its P2002
- * backstop) — but on the ORIGINAL aircraft, which may
- * differ from the corrected data's aircraft. `registerFlightCore` is then
- * called with `correctionOfId` set to the original flight's id; its OWN
- * internal "saldo-prima" read (the first thing it does) happens AFTER this
- * storno write, in the SAME transaction — read-your-own-writes means that
- * SUM already includes the refund, so the post-commit band comparison is
- * against the TRUE pre-correction balance (module doc-comment).
- */
-export async function correctFlight(actor: Actor, flightId: string, input: CorrectFlightInput): Promise<RegisterFlightResult> {
-  authorize(actor, 'flights.manage');
-
-  const originalFlight = await loadRegisteredFlightForReversal(flightId);
-  const reason = input.reason;
-
-  // Review F3 (ratifica R-14.3-a): pass the ORIGINAL flight's own recorded
-  // type so `resolveFlightInput`'s student-only guard exempts a correction
-  // that keeps it unchanged. Review F4 (ratifica R-14.4-b): ALSO pass its
-  // recorded person/instructor/date so the expiry guard is skipped entirely
-  // when a correction changes none of them (see that function's own
-  // doc-comment for both).
-  // Story AOG-1a (AD-4): `aircraftId` joins the identity so the out-of-service
-  // guard exempts a correction that KEEPS the same aircraft, while a correction
-  // that MOVES the flight onto a grounded one is blocked like a registration.
-  const resolved = await resolveFlightInput(actor, input, originalFlight.flightType, {
-    aircraftId: originalFlight.aircraftId,
-    personId: originalFlight.personId,
-    instructorPersonId: originalFlight.instructorPersonId,
-    flightDate: originalFlight.flightDate,
-    aircraftPriceCategory: originalFlight.aircraftPriceCategory,
-  });
+  const write = buildFlightWrite(resolved, input);
   const thresholdCents = await getNegativeBalanceThresholdCents();
 
-  const {
-    flight: createdFlight,
-    balanceBeforeCents,
-    balanceAfterCents,
-  } = await prisma.$transaction(async (tx) => {
-    // ALL Aircraft ids first, ONE query, ORDER BY id FOR UPDATE (module
-    // doc-comment) — a 1-element set (the common case: same aircraft,
-    // corrected minutes/date/etc.) uses the identical query shape.
-    const aircraftIds = Array.from(new Set([originalFlight.aircraftId, resolved.aircraft.id]));
-    const lockedAircraftRows = await tx.$queryRaw<Array<{ id: string }>>`
+  const { flight, balanceBeforeCents, balanceAfterCents } = await prisma.$transaction(async (tx) => {
+    const lockedFlight = await tx.$queryRaw<Array<{ aircraftId: string }>>`
+      SELECT "aircraftId" FROM "Flight" WHERE "id" = ${flightId} FOR UPDATE`;
+    if (lockedFlight.length === 0) {
+      throw new NotFoundError('Flight not found.');
+    }
+
+    const aircraftIds = Array.from(new Set([lockedFlight[0]!.aircraftId, resolved.aircraft.id]));
+    const lockedAircraft = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "Aircraft" WHERE "id" IN (${Prisma.join(aircraftIds)}) ORDER BY "id" FOR UPDATE`;
-    const lockedAircraftIds = new Set(lockedAircraftRows.map((row) => row.id));
-    if (!lockedAircraftIds.has(originalFlight.aircraftId) || !lockedAircraftIds.has(resolved.aircraft.id)) {
+    if (lockedAircraft.length !== aircraftIds.length) {
       throw new NotFoundError('Aircraft not found.');
     }
 
-    // Story 16.2, review LOW-1: a concurrent correction of the SAME flight
-    // serializes on the original aircraft's lock just taken, and READ
-    // COMMITTED lets this re-read see the winner's commit. Without it the
-    // loser would meet the winner's NEW flight in the overlap guard below and
-    // answer `FLIGHT_OVERLAP` naming it, instead of the CONFLICT the
-    // pre-check (`loadRegisteredFlightForReversal`) answers sequentially.
-    const originalNow = await tx.flight.findUnique({ where: { id: originalFlight.id }, select: { status: true } });
-    if (originalNow?.status !== 'REGISTERED') {
-      throw new ConflictError('Flight is already cancelled.');
-    }
-
-    // Story 16.2 (P3): the SAME guard, on the CORRECTED data's aircraft —
-    // `resolved.aircraft.id`, never `originalFlight.aircraftId`: a correction
-    // that MOVES the flight onto another airframe must be checked THERE, and
-    // that airframe is already under lock (`aircraftIds` holds both). The
-    // original is excluded by id because the storno below has not run yet, so
-    // a correction that KEEPS its own slot must not conflict with itself.
     await assertNoOverlappingFlight(tx, {
       aircraftId: resolved.aircraft.id,
       takeoffAt: resolved.takeoffAt,
       landingAt: resolved.landingAt,
-      excludeFlightId: originalFlight.id,
+      excludeFlightId: flightId,
     });
 
+    const charge = await loadFlightCharge(tx, flightId);
+
     // Get-or-create the NEW person's account BEFORE locking (same
-    // upsert-then-lock constraint as `registerFlight`) — the ORIGINAL
-    // flight's account is already known (its own `FLIGHT_CHARGE` movement).
-    const newAccount = await tx.account.upsert({
+    // upsert-then-lock constraint as `registerFlight`).
+    const account = await tx.account.upsert({
       where: { personId: resolved.person.id },
       create: { personId: resolved.person.id },
       update: {},
       select: { id: true },
     });
-    const accountIds = Array.from(new Set([originalFlight.originalMovement.accountId, newAccount.id]));
+    const accountIds = Array.from(new Set([charge.accountId, account.id]));
     await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" IN (${Prisma.join(accountIds)}) ORDER BY "id" FOR UPDATE`;
 
-    // Storno completo del volo originale — identical write shape to
-    // `cancelFlight` (Contesto order: lock -> storno -> saldo-prima -> nuova
-    // registrazione).
-    await tx.flight.update({
-      where: { id: originalFlight.id },
-      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: reason },
-    });
-    try {
-      await tx.accountMovement.create({
-        data: {
-          accountId: originalFlight.originalMovement.accountId,
-          type: 'FLIGHT_CHARGE_REVERSAL',
-          amountCents: 0 - originalFlight.originalMovement.amountCents,
-          reversalOfId: originalFlight.originalMovement.id,
-          flightId: originalFlight.id,
-          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
-          description: `Storno volo ${originalFlight.aircraft.registration} ${toDateOnlyString(originalFlight.flightDate)} — ${reason}`,
-          actorUserId: actor.userId,
-        },
-      });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        // Same status-agnostic backstop wording as `cancelFlight` (review
-        // 5.3 M1): the racer may have been a double-correct/-cancel or a
-        // concurrent manual rettifica.
-        throw new ConflictError("This flight's charge has already been reversed.");
-      }
-      throw error;
-    }
+    const before = await readBalanceCents(tx, account.id);
 
-    return registerFlightCore(tx, {
-      actorUserId: actor.userId,
-      aircraftId: resolved.aircraft.id,
-      aircraftRegistration: resolved.aircraft.registration,
-      accountId: newAccount.id,
-      personId: resolved.person.id,
-      instructorProfileId: resolved.instructorProfileId,
-      departureAirfield: resolved.departureAirfield,
-      arrivalAirfield: resolved.arrivalAirfield,
-      takeoffAt: resolved.takeoffAt,
-      landingAt: resolved.landingAt,
-      flightDate: resolved.flightDate,
-      flightDateDisplay: toDateOnlyString(resolved.flightDate),
-      flightType: input.flightType,
-      isSolo: input.isSolo,
-      minutes: resolved.minutes,
-      takeoffs: input.takeoffs ?? 1,
-      landings: input.landings ?? 1,
-      aircraftRateCentsPerHour: resolved.aircraftRateCentsPerHour,
-      aircraftPriceCategory: resolved.aircraftPriceCategory,
-      instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
-      instructorAmountCents: resolved.instructorAmountCents,
-      correctionOfId: originalFlight.id,
-      forceStamp: resolved.forceStamp,
+    const updated = await tx.flight.update({
+      where: { id: flightId },
+      data: { ...write.flightData, ...(resolved.forceStamp ?? {}) },
+      select: FLIGHT_SELECT,
     });
+    await tx.accountMovement.update({
+      where: { id: charge.id },
+      data: {
+        accountId: account.id,
+        // `0 - total`, never unary negation (`registerFlightCore`'s -0 lesson).
+        amountCents: 0 - write.totalAmountCents,
+        description: write.description,
+        effectiveDate: write.flightData.flightDate,
+      },
+    });
+
+    return { flight: updated, balanceBeforeCents: before, balanceAfterCents: await readBalanceCents(tx, account.id) };
   });
 
   const account = await getAccountOverview(actor, resolved.person.id);
 
-  const bandBefore = balanceBand(balanceBeforeCents, thresholdCents);
-  const bandAfter = balanceBand(balanceAfterCents, thresholdCents);
-  // Story 14.4, AC 3: same in-app signal as `registerFlight` — "valutare e
-  // motivare se l'avviso va anche in correzione volo" (Contesto's own
-  // question). Answer: yes, for free — `correctFlight` already computes this
-  // exact before/after comparison to decide whether to fire the (unchanged)
-  // email alert (module doc-comment: "alert-after-storno on correct").
-  // Review F7 (ratifica R-14.4-d): the EMAIL below stays band-gated
-  // (`bandWorsened`, UNCHANGED); the IN-APP `balanceAlert` returned to the UI
-  // uses the WIDER `hasNegativeBalanceAlert` condition, same as
-  // `registerFlight` — the two are no longer the same boolean (module
-  // doc-comment on `RegisterFlightResult`).
-  if (bandWorsened(bandBefore, bandAfter)) {
+  // Band-gated email, UNCHANGED rule (`registerFlight`); the in-app signal
+  // uses the wider condition (review F7, ratifica R-14.4-d).
+  if (bandWorsened(balanceBand(balanceBeforeCents, thresholdCents), balanceBand(balanceAfterCents, thresholdCents))) {
     void sendNegativeBalanceAlert(
       resolved.person.id,
       { firstName: resolved.person.firstName, lastName: resolved.person.lastName, email: resolved.person.email },
@@ -1641,7 +1416,7 @@ export async function correctFlight(actor: Actor, flightId: string, input: Corre
   }
   const balanceAlert = hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents);
 
-  return { flight: toListItem(createdFlight, true, true), account, balanceAlert };
+  return { flight: toListItem(flight, true, true), account, balanceAlert };
 }
 
 /**
@@ -1696,7 +1471,6 @@ function buildFlightsWhere(actor: Actor, query: ListFlightsQuery, canManage: boo
       : {}),
     ...(query.instructorPersonId ? { instructorProfile: { personId: query.instructorPersonId } } : {}),
     ...(query.flightType ? { flightType: query.flightType } : {}),
-    ...(query.status ? { status: query.status } : {}),
   };
 }
 
@@ -1713,10 +1487,8 @@ function buildFlightsWhere(actor: Actor, query: ListFlightsQuery, canManage: boo
  *   `OR: [{ personId: actor.personId }, { instructorProfile: { personId:
  *   actor.personId } }]` — the titolare of the flight OR the instructor on
  *   board (the second leg alone already covers an instructor who ALSO flew
- *   as the flight's own person via the first leg) — CANCELLED flights stay
- *   visible in this scope (AC 1: "storia completa", a `status` filter can
- *   still narrow it down on request). `actorEmail` is omitted (Contesto: a
- *   titolare never learns who registered the movement).
+ *   as the flight's own person via the first leg). `actorEmail` is omitted
+ *   (Contesto: a titolare never learns who registered the movement).
  *
  * `personId`/`instructorPersonId` filter guard (AC 4, Contesto; story 9.3
  * extends the SAME guard to `instructorPersonId`): for a non-admin actor,
@@ -1733,8 +1505,8 @@ function buildFlightsWhere(actor: Actor, query: ListFlightsQuery, canManage: boo
  *
  * Filters (all optional, AND-combined): `dateFrom`/`dateTo` bound
  * `flightDate` via `parseDateOnlyUtc` (`@db.Date`, review 3.5 F1's lesson —
- * NEVER a raw timestamp comparison); `aircraftId`/`personId`/`flightType`/
- * `status` are plain exact matches; `instructorPersonId` (story 9.3, AC 4)
+ * NEVER a raw timestamp comparison); `aircraftId`/`personId`/`flightType`
+ * are plain exact matches; `instructorPersonId` (story 9.3, AC 4)
  * matches via the `instructorProfile` relation. Order/pagination unchanged
  * from 5.1 (`flightDate desc, createdAt desc, id desc`; `paginate`/
  * `paginationOffset`).
@@ -1795,10 +1567,10 @@ const ZERO_FLIGHT_TOTALS: FlightTotals = { count: 0, minutes: 0, takeoffs: 0, la
  * misleading once any filter narrows the set (e.g. a month filter on page 1
  * showed page 1's totals, not the month's). Shares `listFlights`'s exact
  * RBAC (`authorizeFlightsQuery`) and WHERE (`buildFlightsWhere`) so a
- * non-admin actor's totals can NEVER exceed their own scope — but ALWAYS
- * forces `status: 'REGISTERED'` regardless of `query.status` (Ratifica 3: a
- * CANCELLED flight stays visible in the table, never counted in totals).
- * ONE `prisma.flight.aggregate` — no page-by-page summing, no N+1.
+ * non-admin actor's totals can NEVER exceed their own scope — every flight
+ * in the filter counts (story 19.6: no cancelled flight exists anymore; a
+ * no-charge flight counts with its 0 amounts). ONE `prisma.flight.aggregate`
+ * — no page-by-page summing, no N+1.
  */
 export async function getFlightTotals(actor: Actor, query: ListFlightsQuery): Promise<FlightTotals> {
   const canManage = authorizeFlightsQuery(actor, query);
@@ -1809,7 +1581,7 @@ export async function getFlightTotals(actor: Actor, query: ListFlightsQuery): Pr
     return ZERO_FLIGHT_TOTALS;
   }
 
-  const where: Prisma.FlightWhereInput = { ...buildFlightsWhere(actor, query, canManage), status: 'REGISTERED' };
+  const where = buildFlightsWhere(actor, query, canManage);
 
   const aggregate = await prisma.flight.aggregate({
     where,

@@ -107,12 +107,10 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
       adjustment: tAccount('movementType.adjustment'),
       packagePurchase: tAccount('movementType.packagePurchase'),
       flightCharge: tAccount('movementType.flightCharge'),
-      flightChargeReversal: tAccount('movementType.flightChargeReversal'),
     },
     // `t.raw`: `{date}` is a literal placeholder the CLIENT fills in (same
-    // rationale as the scheda persona's identical usage of these two keys).
+    // rationale as the scheda persona's identical usage of this key).
     adjustmentBadge: { ofDate: tAccount.raw('adjustmentBadge.ofDate') as string, linked: tAccount('adjustmentBadge.linked') },
-    reversalBadge: { ofDate: tAccount.raw('reversalBadge.ofDate') as string, linked: tAccount('reversalBadge.linked') },
     mobile: { empty: tAccount('mobile.empty'), openDetail: tAccount('mobile.openDetail'), close: tAccount('mobile.close') },
     // `topUp`/`adjustments` deliberately omitted: `canManageFinance={false}`
     // below means their toggle buttons never render, so `AccountSection`

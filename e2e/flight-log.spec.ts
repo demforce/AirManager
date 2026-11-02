@@ -190,7 +190,7 @@ async function registerFlight(page: Page, params: RegisterFlightParams): Promise
 }
 
 test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC 1/2/3/4; FR-17)', () => {
-  test('a pilot sees ONLY their own flights (own or as instructor), including a cancelled one, in their own-access registry — no form, no actions', async ({
+  test('a pilot sees ONLY their own flights (own or as instructor) in their own-access registry — no form, no actions', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -199,18 +199,8 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     const pilot = await createPilotWithLogin(page, 'PilotOwnView123!', 'Titolare');
     const otherPerson = await createPilotPerson(page, 'AltroTitolare');
 
-    // The pilot's own flight (stays REGISTERED).
+    // The pilot's own flight.
     await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, flightDate: '2020-02-01', flightType: 'TOURISM', minutes: 30 });
-    // A second flight for the pilot, later cancelled — AC 1: "storia completa", cancelled flights stay visible in own-access scope.
-    const toCancel = await registerFlight(page, {
-      aircraftId: aircraft.id,
-      personId: pilot.personId,
-      flightDate: '2020-03-01',
-      flightType: 'TOURISM',
-      minutes: 50,
-    });
-    const cancelResponse = await page.request.post(`/api/v1/flights/${toCancel.id}/cancel`, { data: { reason: 'Errore di prova' } });
-    expect(cancelResponse.status()).toBe(200);
     // Someone else's flight on the SAME aircraft — must NEVER show up in the
     // pilot's own registry. Story 16.2: the "same aircraft" IS the point of
     // this case, so the AIRCRAFT stays and the takeoff moves to 12:00 —
@@ -240,7 +230,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page.getByTestId('flight-form')).toHaveCount(0);
     await expect(page.getByTestId('flight-cancel-action')).toHaveCount(0);
     await expect(page.getByTestId('flight-correct-action')).toHaveCount(0);
-    // Only staff filters (aircraft/persona) are absent; period/tipo/stato remain.
+    // Only staff filters (aircraft/persona) are absent; period/tipo remain.
     await expect(page.getByTestId('flight-filter-aircraft')).toHaveCount(0);
     await expect(page.getByTestId('flight-filter-person')).toHaveCount(0);
     // Story 15.6 (review LOW-1): the phone twins of these three names are NOT
@@ -251,18 +241,16 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // pilot gets the same card without any action" (sheet open ⇒ zero actions
     // where the admin has two; panel open ⇒ no velivolo filter).
 
-    // Exactly the pilot's own 2 flights (this pilot is brand new — nothing else could be theirs), never the other person's.
+    // Exactly the pilot's own flight (this pilot is brand new — nothing else could be theirs), never the other person's.
     const rows = page.getByTestId('flight-row');
-    await expect(rows).toHaveCount(2);
+    await expect(rows).toHaveCount(1);
     await expect(rows.filter({ hasText: otherPerson.lastName })).toHaveCount(0);
-    await expect(rows.filter({ hasText: 'Annullato' })).toHaveCount(1);
 
-    // TRUE totals (review fix 12.8, MAJOR), own-scoped: 2 rows show (AC 1
-    // "storia completa"), but the totals are REGISTERED-only AND scoped to
-    // this pilot ALONE — so only the 30' TOURISM flight counts (75,00 € @
-    // 150,00 €/h), never the cancelled 50' one, and NEVER otherPerson's 40'
-    // flight on the SAME aircraft (SECURITY-CRITICAL: own-access totals must
-    // never leak another person's data, same guard as the rows themselves).
+    // TRUE totals (review fix 12.8, MAJOR), own-scoped: scoped to this pilot
+    // ALONE — so only the 30' TOURISM flight counts (75,00 € @ 150,00 €/h),
+    // NEVER otherPerson's 40' flight on the SAME aircraft (SECURITY-CRITICAL:
+    // own-access totals must never leak another person's data, same guard as
+    // the rows themselves).
     await expect(page.locator('.page-title-block .sub')).toHaveText('1 voce · solo i tuoi voli');
     const kpiValues = page.locator('.kpi-row .kpi .kpi-value');
     await expect(kpiValues.nth(0)).toHaveText('1');
@@ -273,21 +261,14 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(totalsRow).toContainText('0:30');
     await expect(totalsRow).toContainText(/75,00\s€/);
 
-    // Own-access filters (period/tipo/stato) narrow the results.
-    await page.getByTestId('flight-filter-status').selectOption('CANCELLED');
-    await expect(page.getByTestId('flight-row')).toHaveCount(1);
-    await expect(page.getByTestId('flight-row').first()).toContainText('Annullato');
-
-    await page.getByTestId('flight-filter-reset').click();
-    await expect(page.getByTestId('flight-row')).toHaveCount(2);
-
-    // Story 19.5: both of this pilot's flights are TOURISM (the third type is
-    // gone), so the type filter narrows to none on SCHOOL and keeps both on
-    // TOURISM.
+    // Own-access filters (period/tipo) narrow the results. Story 19.5: the
+    // pilot's flight is TOURISM (the third type is gone), so the type filter
+    // narrows to none on SCHOOL and keeps it on TOURISM. Story 19.6: no
+    // status filter anymore — a deleted flight no longer exists.
     await page.getByTestId('flight-filter-type').selectOption('SCHOOL');
     await expect(page.getByTestId('flight-row')).toHaveCount(0);
     await page.getByTestId('flight-filter-type').selectOption('TOURISM');
-    await expect(page.getByTestId('flight-row')).toHaveCount(2);
+    await expect(page.getByTestId('flight-row')).toHaveCount(1);
     await expect(page.getByTestId('flight-row').first()).toContainText('Turismo');
   });
 

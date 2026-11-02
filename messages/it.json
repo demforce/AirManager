@@ -643,11 +643,7 @@
     "recentFlightsPanel": {
       "heading": "Ultimi voli",
       "empty": "Nessun volo registrato.",
-      "viewAll": "Vedi tutti",
-      "status": {
-        "registered": "Registrato",
-        "cancelled": "Annullato"
-      }
+      "viewAll": "Vedi tutti"
     },
     "accountPanel": {
       "heading": "Saldo conto",
@@ -661,8 +657,7 @@
         "topUp": "Ricarica",
         "adjustment": "Rettifica",
         "packagePurchase": "Acquisto pacchetto",
-        "flightCharge": "Addebito volo",
-        "flightChargeReversal": "Storno volo"
+        "flightCharge": "Addebito volo"
       },
       "topUp": {
         "action": "Registra ricarica",
@@ -748,16 +743,11 @@
       "topUp": "Ricarica",
       "adjustment": "Rettifica",
       "packagePurchase": "Acquisto pacchetto",
-      "flightCharge": "Addebito volo",
-      "flightChargeReversal": "Storno volo"
+      "flightCharge": "Addebito volo"
     },
     "adjustmentBadge": {
       "ofDate": "Rettifica del movimento del {date}",
       "linked": "Rettifica di un movimento precedente"
-    },
-    "reversalBadge": {
-      "ofDate": "Storno del movimento del {date}",
-      "linked": "Storno di un movimento precedente"
     },
     "adjustments": {
       "action": "Registra rettifica",
@@ -1125,33 +1115,8 @@
         "movements": "Decolli/Atterraggi",
         "pic": "PIC",
         "noValue": "—",
-        "status": "Stato",
-        "statusCancelled": "Annullato",
-        "cancelledDetail": "Annullato il {date} — {reason}",
-        "correctionOf": "Correzione di un volo precedente",
-        "correctedBy": "Corretto da un volo successivo",
-        "actions": "Azioni",
-        "cancelAction": "Annulla",
-        "correctAction": "Correggi"
+        "actions": "Azioni"
       }
-    },
-    "cancelPanel": {
-      "title": "Annulla volo",
-      "reason": "Motivo",
-      "requiredReason": "Il motivo è obbligatorio.",
-      "submit": "Conferma annullamento",
-      "close": "Chiudi",
-      "conflictError": "Questo volo è già stato annullato.",
-      "genericError": "Impossibile annullare il volo. Riprova.",
-      "success": "Volo annullato."
-    },
-    "correctPanel": {
-      "title": "Correggi volo",
-      "reason": "Motivo della correzione",
-      "requiredReason": "Il motivo è obbligatorio.",
-      "submit": "Conferma correzione",
-      "exit": "Annulla correzione",
-      "conflictError": "Questo volo è già stato annullato."
     },
     "filters": {
       "dateFrom": "Dal",
@@ -1162,12 +1127,6 @@
       "allPeople": "Tutte le persone",
       "flightType": "Tipo",
       "allTypes": "Tutti i tipi",
-      "status": "Stato",
-      "allStatuses": "Tutti gli stati",
-      "statusOptions": {
-        "registered": "Registrato",
-        "cancelled": "Annullato"
-      },
       "archivedSuffix": " (Archiviato)",
       "reset": "Azzera filtri",
       "instructorActive": "Filtro istruttore attivo",
@@ -1215,10 +1174,7 @@
       "soloSuffix": "solista",
       "noInstructor": "—",
       "noValue": "—",
-      "statusCancelled": "Annullato",
-      "cancelledDetail": "Annullato il {date} — {reason}",
-      "correctionOf": "Correzione di un volo precedente",
-      "correctedBy": "Corretto da un volo successivo",
+      "noCharge": "Senza addebito",
       "cancelAction": "Annulla",
       "correctAction": "Modifica",
       "forcedBadge": "Deroga",
@@ -1234,12 +1190,6 @@
       "personSearchPlaceholder": "Cerca per nome…",
       "flightType": "Tipo",
       "allTypes": "Tutti i tipi",
-      "status": "Stato",
-      "allStatuses": "Tutti gli stati",
-      "statusOptions": {
-        "registered": "Registrato",
-        "cancelled": "Annullato"
-      },
       "archivedSuffix": " (Archiviato)",
       "reset": "Azzera filtri",
       "instructorActive": "Filtro istruttore attivo",
@@ -1256,10 +1206,9 @@
       "closeLabel": "Chiudi",
       "cancel": "Annulla",
       "submit": "Registra volo",
-      "correctSubmit": "Conferma correzione",
-      "correctReason": "Motivo della correzione",
-      "requiredReason": "Il motivo è obbligatorio.",
-      "conflictError": "Questo volo è già stato annullato.",
+      "correctSubmit": "Salva modifiche",
+      "conflictError": "L'addebito di questo volo è stato rettificato a mano: il volo non si può modificare.",
+      "notFoundError": "Questo volo non esiste più: è stato eliminato.",
       "requiredField": "Campo obbligatorio.",
       "invalidCycles": "Decolli e atterraggi devono essere almeno 1.",
       "fields": {
@@ -1276,6 +1225,12 @@
           "dual": "Doppio comando",
           "solo": "Solista"
         },
+        "noCharge": "Senza addebito",
+        "noChargeModes": {
+          "charged": "Addebito normale",
+          "noCharge": "Non addebitato"
+        },
+        "noChargeHint": "Il volo non viene addebitato: in estratto conto compare a 0 €. Il compenso dell'istruttore matura comunque.",
         "studentOnlyHint": "Allievo senza brevetto: il tipo volo è sempre Scuola.",
         "studentOnlyCorrectionHint": "Questa persona ha oggi solo il profilo allievo. Il volo è registrato come {type}: puoi lasciarlo invariato o passarlo a Scuola.",
         "departure": "Aeroporto di partenza",
@@ -1312,6 +1267,8 @@
       },
       "result": {
         "title": "Addebito generato",
+        "updatedTitle": "Addebito aggiornato",
+        "noCharge": "Senza addebito",
         "minutes": "Durata",
         "aircraftRate": "Tariffa velivolo",
         "aircraftAmount": "Costo velivolo",
@@ -1341,9 +1298,6 @@
       "takeoffs": "Decolli",
       "landings": "Atterraggi",
       "times": "Orari",
-      "lineage": "Storico",
-      "correctionBadge": "Correzione",
-      "statusAll": "Tutti",
       "filters": "Filtri",
       "filtersCount": "Filtri ({count})",
       "filtersTitle": "Filtri del registro",
@@ -1351,13 +1305,13 @@
     },
     "cancelModal": {
       "title": "Annulla volo",
-      "reason": "Motivo",
-      "requiredReason": "Il motivo è obbligatorio.",
-      "submit": "Conferma storno",
+      "warning": "Il volo verrà eliminato definitivamente insieme al suo addebito: sparirà dal registro voli e dall'estratto conto di {person} e il saldo verrà ricalcolato. L'operazione non si può annullare.",
+      "submit": "Elimina volo",
       "close": "Chiudi",
-      "conflictError": "Questo volo è già stato annullato.",
-      "genericError": "Impossibile annullare il volo. Riprova.",
-      "success": "Volo annullato."
+      "conflictError": "L'addebito di questo volo è stato rettificato a mano: il volo non si può eliminare.",
+      "notFoundError": "Questo volo non esiste più: è già stato eliminato.",
+      "genericError": "Impossibile eliminare il volo. Riprova.",
+      "success": "Volo eliminato."
     }
   },
   "ExpiriesPage": {
@@ -2050,8 +2004,7 @@
         "TOP_UP": "Ricarica",
         "ADJUSTMENT": "Rettifica",
         "PACKAGE_PURCHASE": "Acquisto pacchetto",
-        "FLIGHT_CHARGE": "Addebito volo",
-        "FLIGHT_CHARGE_REVERSAL": "Storno volo"
+        "FLIGHT_CHARGE": "Addebito volo"
       },
       "methods": {
         "CASH": "Contanti",

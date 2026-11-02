@@ -3,8 +3,8 @@
  * its status badge and the detail sheet's over-line. They live here, outside
  * the console, for the same reason `mobile-registries.ts`/`mobile-agenda.ts`
  * do: they encode edge cases that are invisible on a happy-path screenshot
- * (a historical flight with no airfields, a cancelled flight that is ALSO a
- * correction) and are cheaper to prove with a unit test than with a fixture.
+ * (a historical flight with no airfields) and are cheaper to prove with a
+ * unit test than with a fixture.
  *
  * Pure by construction: no import of a service, hence no `@/lib/env` dragged
  * into the test (CLAUDE.md's eager-env rule).
@@ -12,26 +12,15 @@
 import { joinSegments } from './mobile-sub-line';
 
 /**
- * The one status a row is allowed to shout about (ratifica R-15.6-b), in
- * DECREASING gravity. A flight can be several at once — a cancelled flight
- * may also be forced and may itself be a correction — and the list has room
- * for exactly one chip, so the order is a decision, not an accident:
- * "annullato" changes what the row MEANS (it is not in the totals anymore),
- * "deroga" says an admin bypassed a blocking document, "correzione" is
- * lineage the sheet spells out in full.
+ * The one status a row is allowed to shout about (ratifica R-15.6-b): "deroga"
+ * — an admin bypassed a blocking document. The only one left since story
+ * 19.6 removed cancelled flights and correction chains (story 19.9 owns the
+ * deroga's own future).
  */
-export type FlightBadgeKind = 'cancelled' | 'forced' | 'correction';
+export type FlightBadgeKind = 'forced';
 
-export function flightBadgeKind(flight: {
-  status: 'REGISTERED' | 'CANCELLED';
-  forcedAt: string | null;
-  correctionOfId: string | null;
-  correctedByFlightId: string | null;
-}): FlightBadgeKind | null {
-  if (flight.status === 'CANCELLED') return 'cancelled';
-  if (flight.forcedAt !== null) return 'forced';
-  if (flight.correctionOfId !== null || flight.correctedByFlightId !== null) return 'correction';
-  return null;
+export function flightBadgeKind(flight: { forcedAt: string | null }): FlightBadgeKind | null {
+  return flight.forcedAt !== null ? 'forced' : null;
 }
 
 /**

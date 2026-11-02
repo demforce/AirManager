@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
-import { seedAircraftRate } from './db-fixtures';
 
 /**
  * Story 15.9 — the two self-service surfaces (the shared estratto conto of
@@ -122,43 +121,6 @@ async function createPilotPerson(page: Page, tag: string): Promise<string> {
   expect(profileResponse.status()).toBe(200);
   await ensureValidSeedExpiries(page, person.id, 'PILOTS');
   return person.id;
-}
-
-/** The date of the storno fixture's flight: safely in the past, so its `FLIGHT_CHARGE` never lands in the current month any global aggregate is summing. */
-const FLIGHT_DATE = '2020-01-01';
-
-/**
- * The ONLY shape that produces a `FLIGHT_CHARGE_REVERSAL` (the storno badge):
- * a flight charge and its cancellation. The aircraft rate is 1 cent per HOUR
- * and the flight lasts 5 minutes, so `Math.round(1 * 5 / 60)` charges ZERO
- * cents — the fixture moves no euro at all, neither on the account balance nor
- * on the global aggregates `billing.spec.ts:296` watches (TD (h)); it adds
- * exactly the two rows this test is about.
- */
-async function createReversedFlightCharge(page: Page, personId: string): Promise<void> {
-  const suffix = uniqueSuffix();
-  const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration: `I-BG${suffix}`.toUpperCase().slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Badge Test' },
-  });
-  expect(aircraftResponse.status()).toBe(201);
-  const aircraft = (await aircraftResponse.json()) as { id: string };
-  await seedAircraftRate(aircraft.id, { studentPriceCents: 1, pilotPriceCents: 1, validFrom: FLIGHT_DATE });
-
-  const flightResponse = await page.request.post('/api/v1/flights', {
-    data: {
-      aircraftId: aircraft.id,
-      personId,
-      departureAirfield: 'Base Airfield',
-      arrivalAirfield: 'Base Airfield',
-      flightType: 'TOURISM',
-      takeoffAt: `${FLIGHT_DATE}T10:00:00.000Z`,
-      landingAt: `${FLIGHT_DATE}T10:05:00.000Z`,
-    },
-  });
-  expect(flightResponse.status()).toBe(201);
-  const flight = (await flightResponse.json()) as { flight: { id: string } };
-  const cancelResponse = await page.request.post(`/api/v1/flights/${flight.flight.id}/cancel`, { data: { reason: `Storno di prova ${suffix}` } });
-  expect(cancelResponse.status()).toBe(200);
 }
 
 /** A linked rettifica on `originalMovementId` — the ADJUSTMENT badge's own fixture. */
@@ -540,7 +502,7 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     await expect(page.getByTestId('mobile-account-adjust-action')).toHaveCount(0);
   });
 
-  test('both linked badges are RENDERED on the phone card — the storno included — with the desktop text and with the `linked` fallback (AC 1/3 c)', async ({ page }) => {
+  test('the rettifica badge is RENDERED on the phone card, with the desktop text and with the `linked` fallback (AC 1/3 c)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const personId = await createPilotPerson(page, 'Badge');
 
@@ -548,15 +510,16 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     // DEPENDS on whether the original is on the rendered page (comportamento
     // 3, `rowById`). The oldest top-up is the only one that falls off page 1,
     // so its rettifica shows the `linked` fallback while the other one shows
-    // the original's date. Every top-up is 1 cent and the flight charge is
-    // ZERO, so this fixture ends at -3 cents: a NEGATIVE balance, which is
-    // worth nothing to `deposits.totalCents` (TD (h)).
+    // the original's date. Every top-up is 1 cent, so this fixture ends at
+    // -1 cent: a NEGATIVE balance, which is worth nothing to
+    // `deposits.totalCents` (TD (h)). Story 19.6: the flight charge and its
+    // storno that used to fill two of the 21 rows are two more top-ups — the
+    // flight storno and its badge no longer exist.
     const offPage = await recordTopUp(page, personId, 1, `Originale fuori pagina ${uniqueSuffix()}`);
-    for (let index = 0; index < 15; index += 1) {
+    for (let index = 0; index < 17; index += 1) {
       await recordTopUp(page, personId, 1, null);
     }
     const onPage = await recordTopUp(page, personId, 1, `Originale in pagina ${uniqueSuffix()}`);
-    await createReversedFlightCharge(page, personId);
     await recordLinkedAdjustment(page, personId, offPage, -10);
     await recordLinkedAdjustment(page, personId, onPage, -10);
 
@@ -565,13 +528,7 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     await expect(page.getByTestId('account-statement-pagination-status')).toHaveText('1 / 2');
     expect(await treeDisplays(page, '.account-desktop-body', '.account-mobile')).toEqual({ desktop: 'none', mobile: 'block' });
 
-    // The gap this closes: `reversal-badge-mobile` was rendered by NO test at
-    // any width. Both badges must sit INSIDE a card, with the desktop text.
-    const reversalBadge = page.locator('[data-testid="account-movement-row-mobile"] [data-testid="reversal-badge-mobile"]');
-    await expect(reversalBadge).toHaveCount(1);
-    await expect(reversalBadge).toHaveText('Storno del movimento del 01/01/2020');
-    await expect(page.getByTestId('reversal-badge')).toHaveText('Storno del movimento del 01/01/2020');
-
+    // The badges must sit INSIDE a card, with the desktop text.
     const adjustmentBadges = page.locator('[data-testid="account-movement-row-mobile"] [data-testid="adjustment-badge-mobile"]');
     await expect(adjustmentBadges).toHaveCount(2);
     // One of the two originals is on page 1 and one is not: the date branch
@@ -591,7 +548,7 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
 
     // The 320px phone, where the fallback string is at its most cramped.
     await page.setViewportSize({ width: 320, height: 568 });
-    await expect(reversalBadge).toBeVisible();
+    await expect(adjustmentBadges.first()).toBeVisible();
     expect(await cardOverflows(page, '[data-testid="account-movement-row-mobile"]')).toEqual([]);
   });
 

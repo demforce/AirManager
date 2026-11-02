@@ -286,7 +286,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     listReservedAircraftIds(actor, allAircraftIds, now),
     listBookings(actor, { status: ['PENDING'], page: 1, pageSize: 1 }),
     getStats(actor, { period: 'month' }),
-    getFlightTotals(actor, { dateFrom: today, dateTo: today, status: 'REGISTERED', page: 1, pageSize: 1 }),
+    getFlightTotals(actor, { dateFrom: today, dateTo: today, page: 1, pageSize: 1 }),
     listCalendarBookings(actor, { from: todayStart.toISOString(), to: tomorrowStart.toISOString() }),
     // Windowed PENDING count for the desktop card's "N in attesa" summary
     // (review 12.12 F3) AND, since story 15.3, the ROWS of the mobile
@@ -443,8 +443,8 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const bookingLabel = t('mobile.bookingLabel');
 
   // Ratifica R-15.3-a: "In corso ora", NOT the template's "In volo ora" — the
-  // app has no airborne state at all (`FlightStatus` is REGISTERED|CANCELLED,
-  // a flight is logged afterwards), so what the card can honestly show is the
+  // app has no airborne state at all (a flight has no lifecycle state and is
+  // logged afterwards), so what the card can honestly show is the
   // BOOKING covering this instant. Derived from `calendarBookingsToday`, which
   // is already in hand, with the pure boundary of `@/lib/booking-day-phase`.
   const inProgressBookings = filterInProgress(calendarBookingsToday, now);
@@ -761,9 +761,8 @@ function buildFlightEditorLabels(
     cancel: t('editor.cancel'),
     submit: t('editor.submit'),
     correctSubmit: t('editor.correctSubmit'),
-    correctReason: t('editor.correctReason'),
-    requiredReason: t('editor.requiredReason'),
     conflictError: t('editor.conflictError'),
+    notFoundError: t('editor.notFoundError'),
     requiredField: t('editor.requiredField'),
     invalidCycles: t('editor.invalidCycles'),
     fields: {
@@ -777,6 +776,9 @@ function buildFlightEditorLabels(
       flightType: t('editor.fields.flightType'),
       soloMode: t('editor.fields.soloMode'),
       soloModes: { dual: t('editor.fields.soloModes.dual'), solo: t('editor.fields.soloModes.solo') },
+      noCharge: t('editor.fields.noCharge'),
+      noChargeModes: { charged: t('editor.fields.noChargeModes.charged'), noCharge: t('editor.fields.noChargeModes.noCharge') },
+      noChargeHint: t('editor.fields.noChargeHint'),
       studentOnlyHint: t('editor.fields.studentOnlyHint'),
       // `t.raw`: the {type} placeholder is filled CLIENT-side by the editor —
               // plain `t()` fails ICU formatting and renders the key path instead
@@ -821,6 +823,8 @@ function buildFlightEditorLabels(
     },
     result: {
       title: t('editor.result.title'),
+      updatedTitle: t('editor.result.updatedTitle'),
+      noCharge: t('editor.result.noCharge'),
       minutes: t('editor.result.minutes'),
       aircraftRate: t('editor.result.aircraftRate'),
       aircraftAmount: t('editor.result.aircraftAmount'),
@@ -867,7 +871,7 @@ async function renderInstructorLanding(
   const [compensation, flightsTodayTotals, calendarBookingsToday, metarCard] = await Promise.all([
     getOwnCompensationSummary(actor),
     me.person
-      ? getFlightTotals(actor, { dateFrom: today, dateTo: today, status: 'REGISTERED', instructorPersonId: me.person.id, page: 1, pageSize: 1 })
+      ? getFlightTotals(actor, { dateFrom: today, dateTo: today, instructorPersonId: me.person.id, page: 1, pageSize: 1 })
       : Promise.resolve({ count: 0, minutes: 0, takeoffs: 0, landings: 0, revenueCents: 0 }),
     listCalendarBookings(actor, { from: todayStart.toISOString(), to: tomorrowStart.toISOString() }),
     // Parallel, not serialized after the queries — review 15.3 F6.

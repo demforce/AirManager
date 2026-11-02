@@ -1148,7 +1148,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(flightGroupByMock).not.toHaveBeenCalled();
     });
 
-    it('sums REGISTERED minutes only, inside the given date-only window, batched over the page ids', async () => {
+    it('sums every flight\'s minutes (no status filter: story 19.6), inside the given date-only window, batched over the page ids', async () => {
       flightGroupByMock.mockResolvedValue([
         { aircraftId: 'aircraft_1', _sum: { minutes: 320 } },
         { aircraftId: 'aircraft_2', _sum: { minutes: null } },
@@ -1160,7 +1160,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       expect(flightGroupByMock).toHaveBeenCalledWith({
         by: ['aircraftId'],
-        where: { aircraftId: { in: ['aircraft_1', 'aircraft_2', 'aircraft_3'] }, status: 'REGISTERED', flightDate: { gte: from, lte: to } },
+        where: { aircraftId: { in: ['aircraft_1', 'aircraft_2', 'aircraft_3'] }, flightDate: { gte: from, lte: to } },
         _sum: { minutes: true },
       });
       expect(result.get('aircraft_1')).toBe(320);
@@ -1170,14 +1170,14 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(result.has('aircraft_3')).toBe(false);
     });
 
-    it('with both bounds null sums ALL the registered minutes: no `flightDate` filter at all (story 19.2, R-19-b)', async () => {
+    it('with both bounds null sums ALL the minutes: no `flightDate` filter at all (story 19.2, R-19-b)', async () => {
       flightGroupByMock.mockResolvedValue([{ aircraftId: 'aircraft_1', _sum: { minutes: 4810 } }] as never);
 
       const result = await sumFlightMinutesByAircraft(adminActor(), ['aircraft_1'], null, null);
 
       expect(flightGroupByMock).toHaveBeenCalledWith({
         by: ['aircraftId'],
-        where: { aircraftId: { in: ['aircraft_1'] }, status: 'REGISTERED' },
+        where: { aircraftId: { in: ['aircraft_1'] } },
         _sum: { minutes: true },
       });
       expect(result.get('aircraft_1')).toBe(4810);

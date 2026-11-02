@@ -140,7 +140,6 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
       'Atterraggi',
       'PIC',
       'Addebito',
-      'Stato',
     ]);
     // Header + 2 data rows, matching the JSON total for the SAME filter (AC 1: "TUTTE le pagine").
     expect(sheet.rowCount).toBe(3);
@@ -154,7 +153,8 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     expect(amountCell.numFmt).toBe('#,##0.00 "€"');
     // Date cell: DD/MM/YYYY string (formatDateOnly), never the raw ISO date.
     expect(rows.map((row) => row.getCell(1).value)).toEqual(expect.arrayContaining(['10/03/2020', '11/03/2020']));
-    expect(rows.every((row) => row.getCell(15).value === 'Registrato')).toBe(true);
+    // Story 19.6 (AC 27): no Stato column anymore — the amount is the last cell.
+    expect(rows.every((row) => row.getCell(15).value === null)).toBe(true);
 
     // New logbook columns (story 11.3, AC 2): partenza/arrivo/orari SEPARATE, decolli/atterraggi
     // (default 1, `registerFlight` never sets them), PIC — all deterministic given the

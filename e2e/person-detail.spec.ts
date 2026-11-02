@@ -141,7 +141,7 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     expect(otherBody.error.code).toBe('FORBIDDEN');
   });
 
-  test('the "Ultimi voli" panel shows the person\'s flights (data, tratta, durata, stato) and "Vedi tutti" opens the pre-filtered registry (Story 11.2, AC 4)', async ({
+  test('the "Ultimi voli" panel shows the person\'s flights (data, tratta, durata — no status since story 19.6) and "Vedi tutti" opens the pre-filtered registry (Story 11.2, AC 4)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -182,7 +182,8 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     await expect(row).toContainText('01/01/2020');
     await expect(row).toContainText('Campo Prova → Base Prova');
     await expect(row).toContainText('0:40');
-    await expect(row).toContainText('Registrato');
+    // Story 19.6 (AC 26): every existing flight is a flown one — the row says no status.
+    await expect(row).not.toContainText('Registrato');
 
     const viewAllLink = panel.getByTestId('recent-flights-view-all');
     await expect(viewAllLink).toHaveAttribute('href', `/it/dashboard/logbook?personId=${personId}`);

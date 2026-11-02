@@ -14,12 +14,11 @@ export type PaymentMethodDto = z.infer<typeof paymentMethodSchema>;
  * sees the purchase in their estratto conto (the actual payment is external
  * to the account — see `HourPackage`'s doc-comment). `FLIGHT_CHARGE` (epic
  * 5, story 5.1) is the first REAL debit — `amountCents` is negative and the
- * balance is allowed to go negative (see `Flight`'s doc-comment).
- * `FLIGHT_CHARGE_REVERSAL` (epic 5, story 5.3) is the storno a flight
- * cancellation/correction creates — `amountCents` is POSITIVE (the original
- * `FLIGHT_CHARGE` negated, linked via `reversalOfId`).
+ * balance is allowed to go negative (see `Flight`'s doc-comment) — `0` on a
+ * no-charge flight, and rewritten or deleted together with its flight
+ * (story 19.6), so it has no reversal type of its own.
  */
-export const accountMovementTypeSchema = z.enum(['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE', 'FLIGHT_CHARGE', 'FLIGHT_CHARGE_REVERSAL']);
+export const accountMovementTypeSchema = z.enum(['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE', 'FLIGHT_CHARGE']);
 
 export type AccountMovementTypeDto = z.infer<typeof accountMovementTypeSchema>;
 

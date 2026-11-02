@@ -643,11 +643,7 @@
     "recentFlightsPanel": {
       "heading": "Recent flights",
       "empty": "No flights recorded.",
-      "viewAll": "View all",
-      "status": {
-        "registered": "Registered",
-        "cancelled": "Cancelled"
-      }
+      "viewAll": "View all"
     },
     "accountPanel": {
       "heading": "Account balance",
@@ -661,8 +657,7 @@
         "topUp": "Top-up",
         "adjustment": "Adjustment",
         "packagePurchase": "Package purchase",
-        "flightCharge": "Flight charge",
-        "flightChargeReversal": "Flight reversal"
+        "flightCharge": "Flight charge"
       },
       "topUp": {
         "action": "Record top-up",
@@ -748,16 +743,11 @@
       "topUp": "Top-up",
       "adjustment": "Adjustment",
       "packagePurchase": "Package purchase",
-      "flightCharge": "Flight charge",
-      "flightChargeReversal": "Flight reversal"
+      "flightCharge": "Flight charge"
     },
     "adjustmentBadge": {
       "ofDate": "Adjusts the movement of {date}",
       "linked": "Adjusts a previous movement"
-    },
-    "reversalBadge": {
-      "ofDate": "Reverses the movement of {date}",
-      "linked": "Reverses a previous movement"
     },
     "adjustments": {
       "action": "Record adjustment",
@@ -1125,33 +1115,8 @@
         "movements": "Takeoffs/Landings",
         "pic": "PIC",
         "noValue": "—",
-        "status": "Status",
-        "statusCancelled": "Cancelled",
-        "cancelledDetail": "Cancelled on {date} — {reason}",
-        "correctionOf": "Correction of a previous flight",
-        "correctedBy": "Corrected by a later flight",
-        "actions": "Actions",
-        "cancelAction": "Cancel",
-        "correctAction": "Correct"
+        "actions": "Actions"
       }
-    },
-    "cancelPanel": {
-      "title": "Cancel flight",
-      "reason": "Reason",
-      "requiredReason": "The reason is required.",
-      "submit": "Confirm cancellation",
-      "close": "Close",
-      "conflictError": "This flight has already been cancelled.",
-      "genericError": "Could not cancel the flight. Please try again.",
-      "success": "Flight cancelled."
-    },
-    "correctPanel": {
-      "title": "Correct flight",
-      "reason": "Correction reason",
-      "requiredReason": "The reason is required.",
-      "submit": "Confirm correction",
-      "exit": "Cancel correction",
-      "conflictError": "This flight has already been cancelled."
     },
     "filters": {
       "dateFrom": "From",
@@ -1162,12 +1127,6 @@
       "allPeople": "All people",
       "flightType": "Type",
       "allTypes": "All types",
-      "status": "Status",
-      "allStatuses": "All statuses",
-      "statusOptions": {
-        "registered": "Registered",
-        "cancelled": "Cancelled"
-      },
       "archivedSuffix": " (Archived)",
       "reset": "Clear filters",
       "instructorActive": "Instructor filter active",
@@ -1215,10 +1174,7 @@
       "soloSuffix": "solo",
       "noInstructor": "—",
       "noValue": "—",
-      "statusCancelled": "Cancelled",
-      "cancelledDetail": "Cancelled on {date} — {reason}",
-      "correctionOf": "Correction of a previous flight",
-      "correctedBy": "Corrected by a later flight",
+      "noCharge": "No charge",
       "cancelAction": "Cancel",
       "correctAction": "Edit",
       "forcedBadge": "Override",
@@ -1234,12 +1190,6 @@
       "personSearchPlaceholder": "Search by name…",
       "flightType": "Type",
       "allTypes": "All types",
-      "status": "Status",
-      "allStatuses": "All statuses",
-      "statusOptions": {
-        "registered": "Registered",
-        "cancelled": "Cancelled"
-      },
       "archivedSuffix": " (Archived)",
       "reset": "Clear filters",
       "instructorActive": "Instructor filter active",
@@ -1256,10 +1206,9 @@
       "closeLabel": "Close",
       "cancel": "Cancel",
       "submit": "Log flight",
-      "correctSubmit": "Confirm correction",
-      "correctReason": "Correction reason",
-      "requiredReason": "The reason is required.",
-      "conflictError": "This flight has already been cancelled.",
+      "correctSubmit": "Save changes",
+      "conflictError": "This flight's charge was adjusted by hand: the flight cannot be edited.",
+      "notFoundError": "This flight no longer exists: it has been deleted.",
       "requiredField": "Required field.",
       "invalidCycles": "Takeoffs and landings must be at least 1.",
       "fields": {
@@ -1276,6 +1225,12 @@
           "dual": "Dual",
           "solo": "Solo"
         },
+        "noCharge": "No charge",
+        "noChargeModes": {
+          "charged": "Normal charge",
+          "noCharge": "Not charged"
+        },
+        "noChargeHint": "The flight is not charged: it shows at €0 in the account statement. The instructor's compensation still accrues.",
         "studentOnlyHint": "Student without a pilot license: flight type is always School.",
         "studentOnlyCorrectionHint": "This person currently has only a student profile. The flight is recorded as {type}: you can leave it unchanged or switch it to School.",
         "departure": "Departure airport",
@@ -1312,6 +1267,8 @@
       },
       "result": {
         "title": "Charge generated",
+        "updatedTitle": "Charge updated",
+        "noCharge": "No charge",
         "minutes": "Duration",
         "aircraftRate": "Aircraft rate",
         "aircraftAmount": "Aircraft cost",
@@ -1341,9 +1298,6 @@
       "takeoffs": "Take-offs",
       "landings": "Landings",
       "times": "Times",
-      "lineage": "History",
-      "correctionBadge": "Correction",
-      "statusAll": "All",
       "filters": "Filters",
       "filtersCount": "Filters ({count})",
       "filtersTitle": "Logbook filters",
@@ -1351,13 +1305,13 @@
     },
     "cancelModal": {
       "title": "Cancel flight",
-      "reason": "Reason",
-      "requiredReason": "The reason is required.",
-      "submit": "Confirm cancellation",
+      "warning": "The flight and its charge will be permanently deleted: it will disappear from the flight log and from {person}'s account statement, and the balance will be recalculated. This cannot be undone.",
+      "submit": "Delete flight",
       "close": "Close",
-      "conflictError": "This flight has already been cancelled.",
-      "genericError": "Could not cancel the flight. Please try again.",
-      "success": "Flight cancelled."
+      "conflictError": "This flight's charge was adjusted by hand: the flight cannot be deleted.",
+      "notFoundError": "This flight no longer exists: it has already been deleted.",
+      "genericError": "Could not delete the flight. Please try again.",
+      "success": "Flight deleted."
     }
   },
   "ExpiriesPage": {
@@ -2050,8 +2004,7 @@
         "TOP_UP": "Top-up",
         "ADJUSTMENT": "Adjustment",
         "PACKAGE_PURCHASE": "Package purchase",
-        "FLIGHT_CHARGE": "Flight charge",
-        "FLIGHT_CHARGE_REVERSAL": "Flight charge reversal"
+        "FLIGHT_CHARGE": "Flight charge"
       },
       "methods": {
         "CASH": "Cash",

@@ -31,7 +31,7 @@ import { getLedgerRevenueCents } from './transactions.service';
  * lesson from story 12.8's `getFlightTotals`).
  *
  * **Movements (ratifica utente 1)**: a "movimento" is
- * a REGISTERED `Flight` — counted ONCE, never derived from takeoffs/landings.
+ * a `Flight` — counted ONCE, never derived from takeoffs/landings.
  * `movementMix` counts the same flights by `flightType`, in the SAME unit (a
  * count of movements).
  *
@@ -147,7 +147,7 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
   const seriesMonths = rollingMonths(ref, query.period === 'month' ? 6 : 12);
   const seriesRange: DateRange = { from: monthRangeFor(seriesMonths[0]!).from, to: monthRangeFor(seriesMonths[seriesMonths.length - 1]!).to };
 
-  const kpiFlightWhere = { status: 'REGISTERED' as const, flightDate: flightDateWindow(kpiRange) };
+  const kpiFlightWhere = { flightDate: flightDateWindow(kpiRange) };
 
   const [
     revenueSeries,
@@ -168,7 +168,7 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
       }),
     ),
     getLedgerRevenueCents(actor, kpiRange.from, kpiRange.to),
-    prisma.flight.findMany({ where: { status: 'REGISTERED', flightDate: flightDateWindow(seriesRange) }, select: { flightDate: true, minutes: true } }),
+    prisma.flight.findMany({ where: { flightDate: flightDateWindow(seriesRange) }, select: { flightDate: true, minutes: true } }),
     prisma.flight.groupBy({ by: ['flightType'], where: kpiFlightWhere, _count: { _all: true }, _sum: { minutes: true } }),
     prisma.flight.groupBy({ by: ['aircraftId'], where: kpiFlightWhere, _sum: { minutes: true, aircraftAmountCents: true } }),
     prisma.flight.groupBy({ by: ['personId'], where: kpiFlightWhere, _sum: { minutes: true, aircraftAmountCents: true, instructorAmountCents: true } }),

@@ -31,7 +31,7 @@
 // the end, and vary slightly run-to-run only through the organic/derived
 // phases — the fixed-target phases are exactly reproducible):
 //   ~5000 persons, ~2503 users, ~1500 aircraft (+ 1-3 rates each),
-//   ~60000-60600 flights (~2% cancelled, ~1% of those corrected),
+//   ~60000 flights (one FLIGHT_CHARGE each),
 //   ~40000 bookings, ~90000-140000 account movements (see the Phase 5
 //   comment for why this lands below the ~150000 originally suggested),
 //   ~29500-30500 cash movements, ~13000-16000 expiries,
@@ -56,7 +56,6 @@ import type {
   AircraftPriceCategory,
   AircraftStatus,
   BookingStatus,
-  FlightStatus,
   FlightType,
   PaymentMethod,
   Role,
@@ -199,12 +198,6 @@ const OOS_REASONS = [
   'Ispezione straordinaria post atterraggio duro.',
   'Aggiornamento avionica.',
   'Verniciatura in officina.',
-];
-const CANCEL_REASONS = [
-  'Errore di registrazione: velivolo indicato non corretto.',
-  'Volo annullato per maltempo, registrato per errore.',
-  'Duplicato: registrato due volte per lo stesso volo.',
-  'Orario di decollo/atterraggio errato, va corretto.',
 ];
 const CASH_OPERATIONAL_CATEGORIES: Array<{ name: string; descriptions: string[]; amountRangeCents: [number, number] }> = [
   { name: 'Carburante', descriptions: ['Rifornimento AVGAS', 'Rifornimento Mogas', 'Fattura carburante mensile'], amountRangeCents: [-40000, -3000] },
@@ -447,7 +440,6 @@ async function main(): Promise<void> {
     archivedAt: Date | null;
     isOutOfService: boolean;
     rates: Array<{ validFrom: Date; priceCents: number }>;
-    lastFlightDate: Date | null; // mutable, tracked in Phase 3 for correction ordering
   };
 
   function registrationForIndex(n: number): string {
@@ -513,7 +505,7 @@ async function main(): Promise<void> {
       priceCents = Math.round(priceCents * randFloat(1.03, 1.09));
     }
 
-    aircraftRecords.push({ id: aircraftId, registration, archivedAt, isOutOfService, rates, lastFlightDate: null });
+    aircraftRecords.push({ id: aircraftId, registration, archivedAt, isOutOfService, rates });
   }
 
   await batchInsert('Aircraft', (batch) => prisma.aircraft.createMany({ data: batch }), aircraftRows);
@@ -523,7 +515,7 @@ async function main(): Promise<void> {
   console.log(`Phase 2 done: ${aircraftRows.length} aircraft, ${aircraftRateRows.length} rate rows.`);
 
   // ===========================================================================
-  // PHASE 3 — Flights, FLIGHT_CHARGE (+ reversals/corrections)
+  // PHASE 3 — Flights + FLIGHT_CHARGE
   // ===========================================================================
   console.log('\nPhase 3: flights...');
 
@@ -560,10 +552,6 @@ async function main(): Promise<void> {
     flightDate: Date;
     flightType: FlightType;
     isSolo: boolean;
-    status: FlightStatus;
-    cancelledAt: Date | null;
-    cancelReason: string | null;
-    correctionOfId: string | null;
     departureAirfield: string;
     arrivalAirfield: string;
     takeoffAt: Date;
@@ -639,7 +627,6 @@ async function main(): Promise<void> {
 
       const minutes = instant.durationMin;
       const landingAt = new Date(instant.takeoffAt.getTime() + minutes * 60_000);
-      aircraft.lastFlightDate = flightDate;
 
       // Story 19.3 (R-19-e): the column of the person's profile — the pools
       // are disjoint, a SCHOOL flight is a student's, every other a pilot's.
@@ -660,10 +647,6 @@ async function main(): Promise<void> {
         flightDate,
         flightType,
         isSolo,
-        status: 'REGISTERED',
-        cancelledAt: null,
-        cancelReason: null,
-        correctionOfId: null,
         departureAirfield: AIRFIELD_NAME,
         arrivalAirfield: AIRFIELD_NAME,
         takeoffAt: instant.takeoffAt,
@@ -681,70 +664,6 @@ async function main(): Promise<void> {
     }
   }
 
-  // --- Cancellations (~2%) + a small corrected share (~40% of those) --------
-  // A correction is dated AFTER everything already generated for its aircraft
-  // (`lastFlightDate`), so it can never overlap another flight of the same
-  // aircraft.
-  const cancelCandidates = shuffled(flightRows.map((_, i) => i)).slice(0, Math.round(flightRows.length * 0.02));
-  const cancelledSet = new Set(cancelCandidates);
-  const correctionFlightRows: FlightRow[] = [];
-  const aircraftById = new Map(aircraftRecords.map((a) => [a.id, a]));
-
-  for (const idx of cancelCandidates) {
-    const original = flightRows[idx]!;
-    original.status = 'CANCELLED';
-    original.cancelledAt = addDays(original.flightDate, randInt(1, 10));
-    if (original.cancelledAt.getTime() > NOW.getTime()) original.cancelledAt = NOW;
-    original.cancelReason = choice(CANCEL_REASONS);
-
-    if (chance(0.4)) {
-      const aircraft = aircraftById.get(original.aircraftId)!;
-      const correctionDay = addDays(original.flightDate, randInt(1, 5));
-      const forcedDay = aircraft.lastFlightDate && correctionDay.getTime() <= aircraft.lastFlightDate.getTime() ? addDays(aircraft.lastFlightDate, 1) : correctionDay;
-      if (forcedDay.getTime() > TODAY.getTime()) continue; // would land in the future — skip this one's correction.
-
-      const newMinutes = Math.max(15, Math.round(original.minutes * randFloat(0.85, 1.15)));
-      const takeoffAt = atUtcTime(forcedDay, randInt(8, 18), choice([0, 15, 30, 45]));
-      const landingAt = new Date(takeoffAt.getTime() + newMinutes * 60_000);
-      aircraft.lastFlightDate = forcedDay;
-
-      // Same person, so the same category (Q-19.3-b).
-      const rate = effectiveRate(aircraft.rates, forcedDay);
-      const aircraftRateCentsPerHour = original.aircraftPriceCategory === 'STUDENT' ? rate.studentPriceCents : rate.pilotPriceCents;
-      const aircraftAmountCents = Math.round((aircraftRateCentsPerHour * newMinutes) / 60);
-      const instructorRateCentsPerHour = original.instructorProfileId ? (instructorRateByProfileId.get(original.instructorProfileId) ?? null) : null;
-      const instructorAmountCents = instructorRateCentsPerHour !== null ? Math.round((instructorRateCentsPerHour * newMinutes) / 60) : null;
-
-      correctionFlightRows.push({
-        id: id(),
-        aircraftId: original.aircraftId,
-        personId: original.personId,
-        instructorProfileId: original.instructorProfileId,
-        flightDate: forcedDay,
-        flightType: original.flightType,
-        isSolo: original.isSolo,
-        status: 'REGISTERED',
-        cancelledAt: null,
-        cancelReason: null,
-        correctionOfId: original.id,
-        departureAirfield: AIRFIELD_NAME,
-        arrivalAirfield: AIRFIELD_NAME,
-        takeoffAt,
-        landingAt,
-        minutes: newMinutes,
-        takeoffs: 1,
-        landings: 1,
-        aircraftRateCentsPerHour,
-        aircraftPriceCategory: original.aircraftPriceCategory,
-        aircraftAmountCents,
-        instructorRateCentsPerHour,
-        instructorAmountCents,
-        actorUserId: ADMIN_USER_ID,
-      });
-    }
-  }
-
-  const allFlightRows = flightRows.concat(correctionFlightRows);
   await batchInsert(
     'Flight',
     (batch) =>
@@ -757,10 +676,6 @@ async function main(): Promise<void> {
           flightDate: f.flightDate,
           flightType: f.flightType,
           isSolo: f.isSolo,
-          status: f.status,
-          cancelledAt: f.cancelledAt,
-          cancelReason: f.cancelReason,
-          correctionOfId: f.correctionOfId,
           departureAirfield: f.departureAirfield,
           arrivalAirfield: f.arrivalAirfield,
           takeoffAt: f.takeoffAt,
@@ -776,10 +691,10 @@ async function main(): Promise<void> {
           actorUserId: f.actorUserId,
         })),
       }),
-    allFlightRows,
+    flightRows,
   );
 
-  // --- FLIGHT_CHARGE (+ FLIGHT_CHARGE_REVERSAL for cancelled originals) ------
+  // --- FLIGHT_CHARGE (one per flight, story 19.6) ----------------------------
   type MovementRow = {
     id: string;
     accountId: string;
@@ -793,14 +708,11 @@ async function main(): Promise<void> {
     flightId: string | null;
   };
   const movementRows: MovementRow[] = [];
-  const flightChargeMovementIdByFlightId = new Map<string, string>();
 
-  for (const f of allFlightRows) {
+  for (const f of flightRows) {
     const accountId = accountIdByPersonId.get(f.personId)!;
-    const chargeId = id();
-    flightChargeMovementIdByFlightId.set(f.id, chargeId);
     movementRows.push({
-      id: chargeId,
+      id: id(),
       accountId,
       type: 'FLIGHT_CHARGE',
       amountCents: -(f.aircraftAmountCents + (f.instructorAmountCents ?? 0)),
@@ -812,29 +724,9 @@ async function main(): Promise<void> {
       flightId: f.id,
     });
   }
-  for (const idx of cancelledSet) {
-    const original = flightRows[idx]!;
-    const originalChargeId = flightChargeMovementIdByFlightId.get(original.id)!;
-    const accountId = accountIdByPersonId.get(original.personId)!;
-    movementRows.push({
-      id: id(),
-      accountId,
-      type: 'FLIGHT_CHARGE_REVERSAL',
-      amountCents: original.aircraftAmountCents + (original.instructorAmountCents ?? 0),
-      paymentMethod: null,
-      description: `Storno volo annullato: ${original.cancelReason}`,
-      effectiveDate: original.cancelledAt!,
-      actorUserId: ADMIN_USER_ID,
-      reversalOfId: originalChargeId,
-      flightId: original.id,
-    });
-  }
+  await batchInsert('AccountMovement (FLIGHT_CHARGE)', (batch) => prisma.accountMovement.createMany({ data: batch }), movementRows);
 
-  await batchInsert('AccountMovement (FLIGHT_CHARGE/_REVERSAL)', (batch) => prisma.accountMovement.createMany({ data: batch }), movementRows);
-
-  console.log(
-    `Phase 3 done: ${allFlightRows.length} flights (${flightRows.length} primary + ${correctionFlightRows.length} corrections, ${cancelledSet.size} cancelled), ${movementRows.length} flight-related account movements.`,
-  );
+  console.log(`Phase 3 done: ${flightRows.length} flights, ${movementRows.length} flight charges.`);
 
   // ===========================================================================
   // PHASE 4 — Bookings
@@ -1098,8 +990,8 @@ async function main(): Promise<void> {
   // Story 12.13 retired package consumption from `flights.service.ts` — no
   // live flight ever consumes a package anymore, and the "Pacchetti" cash
   // category was dropped in the same story. These rows exist ONLY as
-  // historical-shaped decorative data ("some hour packages purchased and
-  // consumed"), deliberately NOT wired into any Phase 3 flight's own
+  // historical-shaped decorative data ("some hour packages purchased" — the
+  // per-flight consumption table was dropped by story 19.6), deliberately NOT wired into any Phase 3 flight's own
   // `aircraftAmountCents` (that would require re-implementing retired
   // pro-ration logic for dead functionality) and posted under "Altro" since
   // there is no live category for a package sale anymore. Flagged for the
@@ -1109,7 +1001,6 @@ async function main(): Promise<void> {
   const altroId = cashCategoryIdByName.get('Altro');
   const packagePurchaseMovementRows: MovementRow[] = [];
   const hourPackageRows: Array<{ id: string; personId: string; packageTypeId: string | null; includedMinutes: number; pricePaidCents: number; paymentMethod: PaymentMethod; effectiveDate: Date; expiresAt: Date | null; accountMovementId: string; actorUserId: string }> = [];
-  const packageConsumptionRows: Array<{ id: string; flightId: string; hourPackageId: string; minutes: number }> = [];
 
   // A single ad-hoc PackageType so sold packages have somewhere to point (a
   // fresh install has none — story 4.3's catalogue is otherwise empty).
@@ -1118,7 +1009,6 @@ async function main(): Promise<void> {
     data: { id: packageTypeId, name: 'Pacchetto 10 ore (storico)', includedMinutes: 600, priceCents: 105000, validityMonths: 12, isActive: false },
   });
 
-  const oldFlightsForConsumption = flightRows.filter((f) => f.status === 'REGISTERED').slice(0, VOL.packagesSold);
   for (let i = 0; i < VOL.packagesSold; i++) {
     const person = choice(pilotPersons);
     const accountId = accountIdByPersonId.get(person.id);
@@ -1150,11 +1040,6 @@ async function main(): Promise<void> {
       accountMovementId: movementId,
       actorUserId: ADMIN_USER_ID,
     });
-
-    const consumedFlight = oldFlightsForConsumption[i % Math.max(1, oldFlightsForConsumption.length)];
-    if (consumedFlight && chance(0.5)) {
-      packageConsumptionRows.push({ id: id(), flightId: consumedFlight.id, hourPackageId: packageId, minutes: Math.min(consumedFlight.minutes, randInt(15, 60)) });
-    }
   }
   await batchInsert('AccountMovement (PACKAGE_PURCHASE)', (batch) => prisma.accountMovement.createMany({ data: batch }), packagePurchaseMovementRows);
   await batchInsert(
@@ -1162,18 +1047,9 @@ async function main(): Promise<void> {
     (batch) => prisma.hourPackage.createMany({ data: batch.map((r) => ({ ...r, packageTypeId: r.packageTypeId! })) }),
     hourPackageRows,
   );
-  // De-duplicate by (flightId, hourPackageId) — the schema's own `@@unique`.
-  const seenConsumptionKeys = new Set<string>();
-  const dedupedConsumptionRows = packageConsumptionRows.filter((r) => {
-    const key = `${r.flightId}:${r.hourPackageId}`;
-    if (seenConsumptionKeys.has(key)) return false;
-    seenConsumptionKeys.add(key);
-    return true;
-  });
-  await batchInsert('PackageConsumption', (batch) => prisma.packageConsumption.createMany({ data: batch }), dedupedConsumptionRows);
   void altroId;
 
-  console.log(`Phase 6 done: ${hourPackageRows.length} packages sold, ${dedupedConsumptionRows.length} consumption rows.`);
+  console.log(`Phase 6 done: ${hourPackageRows.length} packages sold.`);
 
   // ===========================================================================
   // PHASE 7 — Cash ledger: operational movements
@@ -1273,8 +1149,8 @@ async function main(): Promise<void> {
 
   const compensiCategoryId = cashCategoryIdByName.get('Compensi istruttori');
   const schoolMinutesByInstructorProfile = new Map<string, number>();
-  for (const f of allFlightRows) {
-    if (f.flightType !== 'SCHOOL' || f.status === 'CANCELLED' || !f.instructorProfileId) continue;
+  for (const f of flightRows) {
+    if (f.flightType !== 'SCHOOL' || !f.instructorProfileId) continue;
     schoolMinutesByInstructorProfile.set(f.instructorProfileId, (schoolMinutesByInstructorProfile.get(f.instructorProfileId) ?? 0) + f.minutes);
   }
 
@@ -1344,11 +1220,10 @@ async function main(): Promise<void> {
     prisma.sentAlert.count(),
     prisma.instructorPayout.count(),
     prisma.hourPackage.count(),
-    prisma.packageConsumption.count(),
   ]);
   const [
     personCount, userCount, aircraftCount, aircraftRateCount, instructorRateCount, flightCount, bookingCount,
-    accountMovementCount, cashMovementCount, expiryCount, sentAlertCount, payoutCount, hourPackageCount, packageConsumptionCount,
+    accountMovementCount, cashMovementCount, expiryCount, sentAlertCount, payoutCount, hourPackageCount,
   ] = finalCounts;
 
   console.log('\n=== seed-load summary ===');
@@ -1362,7 +1237,7 @@ async function main(): Promise<void> {
   console.log(`CashMovement: ${cashMovementCount}`);
   console.log(`Expiry: ${expiryCount}  SentAlert: ${sentAlertCount}`);
   console.log(`InstructorPayout: ${payoutCount}`);
-  console.log(`HourPackage: ${hourPackageCount}  PackageConsumption: ${packageConsumptionCount}`);
+  console.log(`HourPackage: ${hourPackageCount}`);
 }
 
 main()

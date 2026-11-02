@@ -1312,6 +1312,11 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
   display: flex; flex-direction: column; gap: 12px;
   box-shadow: 0 24px 60px -20px oklch(0.1 0.01 250 / 0.45);
 }
+/* The destructive decision of a mini modal (story 19.6, the registro voli's
+   "Elimina volo"): the colours of its table-row twin `.btn.mini.bad`, the
+   geometry of the `.btn` beside it — the same split `.bottom-sheet-actions`
+   makes on the phone. */
+.mini-modal-card .btn.mini.bad.mini-modal-danger{ padding: 7px 12px; font-size: 13px; border-radius: var(--radius-sm); gap: 6px; }
 
 /* ---------- date navigator ---------- */
 .date-nav{

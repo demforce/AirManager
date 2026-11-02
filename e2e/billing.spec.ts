@@ -83,7 +83,7 @@ async function createInstructorPerson(page: Page, tag: string): Promise<{ person
   return { personId: person.id, firstName, lastName };
 }
 
-/** Creates an aircraft with a rate in effect since a safely-past date (same pattern as `flight-reversal.spec.ts`). */
+/** Creates an aircraft with a rate in effect since a safely-past date (same pattern as `flight-delete-update.spec.ts`). */
 async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string; registration: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-BL${suffix}`.toUpperCase().slice(0, 20);

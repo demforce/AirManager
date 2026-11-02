@@ -22,7 +22,7 @@ export const statsQuerySchema = z.object({
 export type StatsQuery = z.infer<typeof statsQuerySchema>;
 
 /**
- * Top-line KPIs (AC 1) — `movements` = COUNT of REGISTERED flights in the
+ * Top-line KPIs (AC 1) — `movements` = COUNT of flights in the
  * window (ratifica utente 1: counted ONCE, never re-derived from a
  * takeoff/landing pair).
  *

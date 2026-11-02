@@ -235,7 +235,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
               ADJUSTMENT: t('table.kinds.ADJUSTMENT'),
               PACKAGE_PURCHASE: t('table.kinds.PACKAGE_PURCHASE'),
               FLIGHT_CHARGE: t('table.kinds.FLIGHT_CHARGE'),
-              FLIGHT_CHARGE_REVERSAL: t('table.kinds.FLIGHT_CHARGE_REVERSAL'),
             },
             methods: { CASH: t('table.methods.CASH'), BANK_TRANSFER: t('table.methods.BANK_TRANSFER'), POS: t('table.methods.POS') },
             bookTypes: {

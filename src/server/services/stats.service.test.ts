@@ -131,7 +131,7 @@ describe('getStats (story 12.10, AC 1)', () => {
 
     const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
-    expect(result.kpis.movements).toBe(5); // 3 + 2 REGISTERED flights
+    expect(result.kpis.movements).toBe(5); // 3 + 2 flights
     expect(result.kpis.flightMinutes).toBe(270);
     expect(result.movementMix).toEqual([
       { key: 'SCHOOL', count: 3 },

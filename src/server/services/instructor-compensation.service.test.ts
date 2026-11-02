@@ -358,7 +358,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(row?.owedMtdCents).toBe(0);
     });
 
-    it('queries flights scoped to SCHOOL, non-CANCELLED, batched (never N+1) across the whole instructor platea', async () => {
+    it('queries flights scoped to SCHOOL with no status clause (story 19.6: no-charge flights count too), batched (never N+1) across the whole instructor platea', async () => {
       personFindMany.mockResolvedValue([instructorPersonRow()]);
       stubZeroAggregates();
 
@@ -368,7 +368,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
         const args = call[0] as { by: string[]; where: Record<string, unknown> };
         expect(args.by).toEqual(['instructorProfileId']);
         expect(args.where['flightType']).toBe('SCHOOL');
-        expect(args.where['status']).toEqual({ not: 'CANCELLED' });
+        expect(args.where).not.toHaveProperty('status');
         expect(args.where['instructorProfileId']).toEqual({ in: ['profile_ines'] });
       }
     });
@@ -462,7 +462,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       const findManyArgs = flightFindManyMock.mock.calls[0]?.[0] as { where: Record<string, unknown>; take: number };
       expect(findManyArgs.where['instructorProfileId']).toBe('profile_ines');
       expect(findManyArgs.where['flightType']).toBe('SCHOOL');
-      expect(findManyArgs.where['status']).toEqual({ not: 'CANCELLED' });
+      expect(findManyArgs.where).not.toHaveProperty('status');
       expect(findManyArgs.take).toBe(5);
     });
   });

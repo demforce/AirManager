@@ -221,7 +221,7 @@ const BOOK_TYPE_TONE: Record<BookTypeDto, BadgeTone> = {
   TRANSFER: '',
 };
 
-const ACCOUNT_KIND_KEYS = new Set(['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE', 'FLIGHT_CHARGE', 'FLIGHT_CHARGE_REVERSAL']);
+const ACCOUNT_KIND_KEYS = new Set(['TOP_UP', 'ADJUSTMENT', 'PACKAGE_PURCHASE', 'FLIGHT_CHARGE']);
 
 /** The granular label (raw AccountMovementType or CashCategory name), folded into the Descrizione cell now that Tipo shows the coarse bookType instead (story Billing-2). */
 function kindLabel(row: TransactionRowDto, labels: BillingConsoleLabels): string {

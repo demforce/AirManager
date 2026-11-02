@@ -1,34 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { flightBadgeKind, flightCardSubLine, flightRouteLabel, flightSheetSub } from './mobile-logbook';
 
-const registered = { status: 'REGISTERED' as const, forcedAt: null, correctionOfId: null, correctedByFlightId: null };
-
 describe('flightBadgeKind', () => {
-  it('gives an ordinary registered flight no badge at all (ratifica R-15.6-b: a clean row stays clean)', () => {
-    expect(flightBadgeKind(registered)).toBeNull();
+  it('gives an ordinary flight no badge at all (ratifica R-15.6-b: a clean row stays clean)', () => {
+    expect(flightBadgeKind({ forcedAt: null })).toBeNull();
   });
 
-  it('flags a cancelled flight', () => {
-    expect(flightBadgeKind({ ...registered, status: 'CANCELLED' })).toBe('cancelled');
-  });
-
-  it('flags an admin override on a registered flight', () => {
-    expect(flightBadgeKind({ ...registered, forcedAt: '2026-01-02T10:00:00.000Z' })).toBe('forced');
-  });
-
-  it('flags a flight that IS a correction, and one that WAS corrected', () => {
-    expect(flightBadgeKind({ ...registered, correctionOfId: 'f1' })).toBe('correction');
-    expect(flightBadgeKind({ ...registered, correctedByFlightId: 'f2' })).toBe('correction');
-  });
-
-  it('cancellation wins over an override and over lineage (the three can hold at once)', () => {
-    expect(
-      flightBadgeKind({ status: 'CANCELLED', forcedAt: '2026-01-02T10:00:00.000Z', correctionOfId: 'f1', correctedByFlightId: 'f2' }),
-    ).toBe('cancelled');
-  });
-
-  it('an override wins over lineage on a registered flight', () => {
-    expect(flightBadgeKind({ ...registered, forcedAt: '2026-01-02T10:00:00.000Z', correctionOfId: 'f1' })).toBe('forced');
+  it('flags an admin override', () => {
+    expect(flightBadgeKind({ forcedAt: '2026-01-02T10:00:00.000Z' })).toBe('forced');
   });
 });
 

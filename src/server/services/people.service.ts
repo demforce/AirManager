@@ -251,7 +251,7 @@ export type PilotUserInfo = {
 export type PilotsPageItem = PersonListItem & {
   /** Always `SUM(AccountMovement.amountCents)` for the person's account (AD-3) — `0` when the person never activated one (same "no account" convention as `AccountOverview`). */
   balanceCents: number;
-  /** The most recent REGISTERED flight's date (`YYYY-MM-DD`), or `null` if the person never flew. */
+  /** The most recent flight's date (`YYYY-MM-DD`), or `null` if the person never flew. */
   lastFlightDate: string | null;
   user: PilotUserInfo;
 };
@@ -286,7 +286,7 @@ export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): 
   const [accounts, flightGroups, users, totalCount, suspendedCount] = await Promise.all([
     ids.length > 0 ? prisma.account.findMany({ where: { personId: { in: ids } }, select: { id: true, personId: true } }) : [],
     ids.length > 0
-      ? prisma.flight.groupBy({ by: ['personId'], where: { personId: { in: ids }, status: 'REGISTERED' }, _max: { flightDate: true } })
+      ? prisma.flight.groupBy({ by: ['personId'], where: { personId: { in: ids } }, _max: { flightDate: true } })
       : [],
     ids.length > 0
       ? prisma.user.findMany({

@@ -65,6 +65,7 @@ graph TD
 - **Binds:** FR-12, FR-13, FR-15
 - **Prevents:** implementazioni divergenti dell'ordine di consumo e della copertura.
 - **Rule:** un Volo idoneo scala minuti dal pacchetto **non esaurito e non scaduto con `purchasedAt` più vecchio**, poi dai successivi; l'eccedenza va a tariffa piena. Il pacchetto copre **solo** il costo velivolo, mai la tariffa istruttore. Il consumo è registrato per-volo (`PackageConsumption`: volo, pacchetto, minuti) per rendere reversibile lo storno (AD-3).
+- **Emendamento CR 2026-11-01 (R-19-c):** il consumo dei pacchetti è ritirato dalla story 12.13 (ogni volo paga il velivolo a tariffa piena) e la tabella `PackageConsumption` è eliminata dalla story 19.6, insieme alle righe residue: con la cancellazione e la modifica in place del volo (AD-3 emendato) non resta nessuno storno da rendere reversibile. `HourPackage` resta come riga storica della vendita.
 
 ### AD-7 — i18n obbligatoria via next-intl
 - **Binds:** all UI + email (NFR-1, FR-22)

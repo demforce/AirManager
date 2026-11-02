@@ -256,10 +256,6 @@ export async function exportFlightsXlsx(actor: Actor, query: ListFlightsQuery): 
       },
     },
     { header: t('list.table.amount'), value: (row) => row.breakdown.totalAmountCents / 100, numFmt: MONEY_NUM_FMT },
-    {
-      header: t('list.table.status'),
-      value: (row) => (row.status === 'CANCELLED' ? t('filters.statusOptions.cancelled') : t('filters.statusOptions.registered')),
-    },
   ];
 
   return toXlsxExport('flights', t('title'), columns, result.items);
@@ -309,7 +305,6 @@ const ACCOUNT_MOVEMENT_TYPE_KEYS = {
   ADJUSTMENT: 'adjustment',
   PACKAGE_PURCHASE: 'packagePurchase',
   FLIGHT_CHARGE: 'flightCharge',
-  FLIGHT_CHARGE_REVERSAL: 'flightChargeReversal',
 } as const;
 
 export async function exportAccountMovementsXlsx(actor: Actor, personId: string, query: ListAccountMovementsQuery): Promise<XlsxExport> {
@@ -631,11 +626,6 @@ export async function exportFlightsPdf(actor: Actor, query: ListFlightsQuery): P
       width: 1.1,
     },
     { header: t('list.table.amount'), value: (row) => formatCents(row.breakdown.totalAmountCents, locale), width: 1.1 },
-    {
-      header: t('list.table.status'),
-      value: (row) => (row.status === 'CANCELLED' ? t('filters.statusOptions.cancelled') : t('filters.statusOptions.registered')),
-      width: 0.9,
-    },
   ];
 
   // Totals over EVERY row this export actually carries (AC 2, Dev Notes:

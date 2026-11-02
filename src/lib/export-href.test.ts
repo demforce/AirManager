@@ -7,12 +7,12 @@ describe('buildExportHref (story 10.1, AC 1/5)', () => {
   });
 
   it('includes every non-empty filter, omitting undefined/empty ones', () => {
-    const href = buildExportHref('/api/v1/flights', { dateFrom: '2026-01-01', dateTo: '', aircraftId: undefined, status: 'CANCELLED' }, 'en');
+    const href = buildExportHref('/api/v1/flights', { dateFrom: '2026-01-01', dateTo: '', aircraftId: undefined, flightType: 'SCHOOL' }, 'en');
     const url = new URL(href, 'http://localhost');
     expect(url.searchParams.get('dateFrom')).toBe('2026-01-01');
     expect(url.searchParams.get('dateTo')).toBeNull();
     expect(url.searchParams.get('aircraftId')).toBeNull();
-    expect(url.searchParams.get('status')).toBe('CANCELLED');
+    expect(url.searchParams.get('flightType')).toBe('SCHOOL');
     expect(url.searchParams.get('format')).toBe('xlsx');
     expect(url.searchParams.get('locale')).toBe('en');
   });

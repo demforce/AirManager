@@ -100,9 +100,9 @@ type SelectedCashRow = Prisma.CashMovementGetPayload<{ select: typeof CASH_ROW_S
  * "never a second copy" discipline extended from the twin-dedup predicate to
  * this one too).
  *
- * - `ACCOUNT_REVENUE_OR`: `FLIGHT_CHARGE`/`FLIGHT_CHARGE_REVERSAL`
- *   unconditionally (a charge is always DB-negative, its reversal always
- *   DB-positive — summing both nets correctly with no sign check), a debit
+ * - `ACCOUNT_REVENUE_OR`: `FLIGHT_CHARGE` unconditionally (always DB-negative
+ *   or 0 — a flight edited or deleted rewrites or removes its own charge,
+ *   story 19.6, so no reversal type exists to net), a debit
  *   `ADJUSTMENT` (an addebito, e.g. quota associativa), or a storno OF one
  *   (`reversalOfId` set, any sign — nets that debit's revenue in the
  *   storno's OWN month, review Billing-1 F3). `PACKAGE_PURCHASE` never
@@ -128,7 +128,6 @@ type SelectedCashRow = Prisma.CashMovementGetPayload<{ select: typeof CASH_ROW_S
  */
 export const ACCOUNT_REVENUE_OR: Prisma.AccountMovementWhereInput[] = [
   { type: 'FLIGHT_CHARGE' },
-  { type: 'FLIGHT_CHARGE_REVERSAL' },
   { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
   {
     type: 'ADJUSTMENT',
@@ -178,7 +177,7 @@ export const CASH_COST_OR: Prisma.CashMovementWhereInput[] = [
  */
 function accountBookType(row: Pick<SelectedAccountRow, 'type' | 'amountCents' | 'reversalOfId' | 'reversalOf'>): BookTypeDto {
   if (row.type === 'TOP_UP') return 'DEPOSIT';
-  if (row.type === 'FLIGHT_CHARGE' || row.type === 'FLIGHT_CHARGE_REVERSAL') return 'REVENUE';
+  if (row.type === 'FLIGHT_CHARGE') return 'REVENUE';
   if (row.type === 'PACKAGE_PURCHASE') return 'TRANSFER';
   // ADJUSTMENT only from here — matches ACCOUNT_REVENUE_OR's last two clauses exactly.
   if (row.amountCents === 0 && row.reversalOfId !== null) return 'TRANSFER';
@@ -267,7 +266,7 @@ function buildCashWhere(filters: LedgerFilters): Prisma.CashMovementWhereInput {
  * own always-natural convention; the console splits it into Entrate/Uscite
  * columns instead of one signed one. Actionable (AC 3) only for a manual
  * `TOP_UP`/`ADJUSTMENT` not already reversed — every derived type
- * (`PACKAGE_PURCHASE`, `FLIGHT_CHARGE`, `FLIGHT_CHARGE_REVERSAL`) never is.
+ * (`PACKAGE_PURCHASE`, `FLIGHT_CHARGE`) never is.
  */
 function toAccountRow(row: SelectedAccountRow): InternalRow {
   return {
@@ -430,8 +429,8 @@ export async function listTransactions(actor: Actor, query: ListTransactionsQuer
  * old `sumPositive(fetchAllLedgerRows(...))`, which silently counted a
  * charge reversed in the SAME period as full revenue, since it only ever
  * summed the POSITIVE side and never subtracted a same-period storno):
- * addebiti conto (`FLIGHT_CHARGE`, `ADJUSTMENT` a debito) netti dei
- * `FLIGHT_CHARGE_REVERSAL`, PLUS cash entrate not already counted on the
+ * addebiti conto (`FLIGHT_CHARGE`, `ADJUSTMENT` a debito) netti delle
+ * rettifiche che li stornano, PLUS cash entrate not already counted on the
  * account side (rivendite, ...; see
  * `CASH_NOT_ALREADY_ON_ACCOUNT`'s doc-comment for the twin-dedup rule). Both
  * `OR` clauses are the SAME `ACCOUNT_REVENUE_OR`/`CASH_REVENUE_OR` consts the
@@ -439,9 +438,9 @@ export async function listTransactions(actor: Actor, query: ListTransactionsQuer
  * definition, never a second copy to drift (review Billing-1 F5's lesson).
  *
  * **Review Billing-1 F3** — "uno storno appartiene al libro del suo
- * originale, con segno opposto, nel mese in cui avviene" (same rule
- * `FLIGHT_CHARGE_REVERSAL` already modeled, generalized to cash and to the
- * `ADJUSTMENT` rettifica):
+ * originale, con segno opposto, nel mese in cui avviene" (the rule the
+ * flight-charge reversal of story 5.3 modeled — retired with it by story
+ * 19.6 — generalized to cash and to the `ADJUSTMENT` rettifica):
  *  - account side: the debit aggregate ALSO sums a POSITIVE `ADJUSTMENT`
  *    that is a storno (`reversalOfId != null`) — e.g. reversing a "Quota
  *    associativa" debit — so it nets that reversal's OWN month's revenue,
@@ -466,9 +465,8 @@ async function computeRevenueCents(from: string, to: string): Promise<number> {
     },
     _sum: { amountCents: true },
   });
-  // These are all raw NEGATIVE-for-a-debit amounts (a `FLIGHT_CHARGE_REVERSAL`,
-  // or a positive reversal `ADJUSTMENT`, in the same period cancels its
-  // original charge back to 0) — negate the sum to get a positive "ricavi"
+  // These are all raw NEGATIVE-for-a-debit amounts (a positive reversal
+  // `ADJUSTMENT` in the same period cancels its original charge back to 0) — negate the sum to get a positive "ricavi"
   // figure.
   const accountRevenueCents = -(debitAggregate._sum.amountCents ?? 0);
 

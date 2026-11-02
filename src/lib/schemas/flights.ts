@@ -10,11 +10,6 @@ export const flightTypeSchema = z.enum(['TOURISM', 'SCHOOL']);
 
 export type FlightTypeDto = z.infer<typeof flightTypeSchema>;
 
-/** Mirrors the Prisma `FlightStatus` enum (story 5.1) — always `REGISTERED` until story 5.3 introduces `CANCELLED`. */
-export const flightStatusSchema = z.enum(['REGISTERED', 'CANCELLED']);
-
-export type FlightStatusDto = z.infer<typeof flightStatusSchema>;
-
 /**
  * `GET /api/v1/flights` query (story 5.4, AC 1/2/3/4; story 9.3, AC 4):
  * every filter is optional and AND-combinable. `dateFrom`/`dateTo` bound
@@ -23,7 +18,7 @@ export type FlightStatusDto = z.infer<typeof flightStatusSchema>;
  * reasoning as `cashReportQuerySchema`); the `.refine` below rejects an
  * inverted range with a plain 422 `VALIDATION_ERROR` (Contesto: no custom
  * code needed for this one). `aircraftId`/`personId`/`instructorPersonId`/
- * `flightType`/`status` are exact-match filters — an id that does not exist
+ * `flightType` are exact-match filters — an id that does not exist
  * simply yields zero results (a filter, never a lookup, so never a 404).
  * `instructorPersonId` is a `Person.id`, resolved server-side to the
  * `instructorProfile` relation (story 9.3's `/dashboard/flights?instructorPersonId=…`
@@ -37,6 +32,8 @@ export type FlightStatusDto = z.infer<typeof flightStatusSchema>;
  * AND-combined with every other filter, `personId` included; it carries no
  * own-access guard (the own-access base scope already restricts the result
  * set, so it can only ever narrow further, never leak another person's row).
+ * No `status` filter since story 19.6 (every existing flight is a flown
+ * one): a stale `?status=` is stripped like any unknown key, never a 422.
  */
 export const listFlightsQuerySchema = paginationQuerySchema
   .extend({
@@ -47,7 +44,6 @@ export const listFlightsQuerySchema = paginationQuerySchema
     personQuery: z.string().trim().min(1).optional(),
     instructorPersonId: z.string().trim().min(1).optional(),
     flightType: flightTypeSchema.optional(),
-    status: flightStatusSchema.optional(),
     ...exportQuerySchema.shape,
   })
   .refine((value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, {
@@ -58,7 +54,8 @@ export const listFlightsQuerySchema = paginationQuerySchema
 export type ListFlightsQuery = z.infer<typeof listFlightsQuerySchema>;
 
 /**
- * `POST /api/v1/flights` body (story 11.1, AC 1/2/3 — replaces story 5.1's
+ * `POST /api/v1/flights` and `PUT /api/v1/flights/{id}` body (story 11.1,
+ * AC 1/2/3 — replaces story 5.1's
  * minutes-only shape). `departureAirfield`/`arrivalAirfield`
  * (free text, AC 1 defaults them to the airfield's own name for a local
  * flight) and `takeoffAt`/`landingAt` (full instants, `z.iso.datetime()`,
@@ -78,45 +75,42 @@ export type ListFlightsQuery = z.infer<typeof listFlightsQuerySchema>;
  * document (`flights.service.ts#resolveFlightInput`'s `FLIGHT_BLOCKED_BY_EXPIRY`
  * 422) — same shape/refine as `createBookingSchema`'s own `force`/
  * `forceReason` (story 7.4, AC 2): `forceReason` is required UNCONDITIONALLY
- * whenever `force` is `true`, not only when a real block is found. The base
- * object (`registerFlightFields`) is kept separate from the `.refine()`
- * below purely so `correctFlightSchema` can still `.extend()` it (`.refine()`
- * returns a `ZodEffects`, which has no `.extend()`) — both exported schemas
- * apply the identical `requireForceReason` check.
+ * whenever `force` is `true`, not only when a real block is found.
+ *
+ * `noCharge` (story 19.6, R-19-d — "senza addebito", `flights.manage` like
+ * every field here): the flight is registered with both amounts and its
+ * charge at 0, the rates still required and frozen (Q-19.6-a = B). Defaults
+ * to `false`; on a `PUT` (full replacement) an omitted `noCharge` therefore
+ * turns the flag OFF.
  */
-const registerFlightFields = z.object({
-  aircraftId: z.string().min(1),
-  personId: z.string().min(1),
-  instructorPersonId: z.string().min(1).nullish(),
-  departureAirfield: z.string().trim().min(1).max(120),
-  arrivalAirfield: z.string().trim().min(1).max(120),
-  takeoffAt: z.iso.datetime(),
-  landingAt: z.iso.datetime(),
-  flightType: flightTypeSchema,
-  // Dual/solo distinction on SCHOOL flights (story 9.4) — the service
-  // rejects `true` on a non-SCHOOL flightType (422 `SOLO_REQUIRES_SCHOOL`).
-  isSolo: z.boolean().optional().default(false),
-  // Story 16.2 (F14/AD-7): `min(1)`, not `min(0)` — the literal alignment
-  // with what `schema.prisma`'s own `Flight.takeoffs`/`landings` doc-comment
-  // has always DECLARED ("both NOT NULL DEFAULT 1 — every flight has at
-  // least one of each"). A `0` is now a 422 at the Zod boundary, with the
-  // field in `path`; the DB default stays `1`, so no migration is involved.
-  takeoffs: z.number().int().min(1).max(500).optional(),
-  landings: z.number().int().min(1).max(500).optional(),
-  force: z.boolean().optional(),
-  forceReason: z.string().trim().min(1).max(500).optional(),
-});
-
-function requireForceReason(value: { force?: boolean; forceReason?: string }): boolean {
-  return !value.force || (value.forceReason !== undefined && value.forceReason.length > 0);
-}
-
-const FORCE_REASON_REFINE_ISSUE = {
-  message: 'forceReason is required when force is true',
-  path: ['forceReason'],
-};
-
-export const registerFlightSchema = registerFlightFields.refine(requireForceReason, FORCE_REASON_REFINE_ISSUE);
+export const registerFlightSchema = z
+  .object({
+    aircraftId: z.string().min(1),
+    personId: z.string().min(1),
+    instructorPersonId: z.string().min(1).nullish(),
+    departureAirfield: z.string().trim().min(1).max(120),
+    arrivalAirfield: z.string().trim().min(1).max(120),
+    takeoffAt: z.iso.datetime(),
+    landingAt: z.iso.datetime(),
+    flightType: flightTypeSchema,
+    // Dual/solo distinction on SCHOOL flights (story 9.4) — the service
+    // rejects `true` on a non-SCHOOL flightType (422 `SOLO_REQUIRES_SCHOOL`).
+    isSolo: z.boolean().optional().default(false),
+    noCharge: z.boolean().optional().default(false),
+    // Story 16.2 (F14/AD-7): `min(1)`, not `min(0)` — the literal alignment
+    // with what `schema.prisma`'s own `Flight.takeoffs`/`landings` doc-comment
+    // has always DECLARED ("both NOT NULL DEFAULT 1 — every flight has at
+    // least one of each"). A `0` is now a 422 at the Zod boundary, with the
+    // field in `path`; the DB default stays `1`, so no migration is involved.
+    takeoffs: z.number().int().min(1).max(500).optional(),
+    landings: z.number().int().min(1).max(500).optional(),
+    force: z.boolean().optional(),
+    forceReason: z.string().trim().min(1).max(500).optional(),
+  })
+  .refine((value) => !value.force || (value.forceReason !== undefined && value.forceReason.length > 0), {
+    message: 'forceReason is required when force is true',
+    path: ['forceReason'],
+  });
 
 export type RegisterFlightInput = z.infer<typeof registerFlightSchema>;
 
@@ -131,6 +125,9 @@ export type RegisterFlightInput = z.infer<typeof registerFlightSchema>;
  * 19.3, R-19-e) says which of the aircraft rate's two prices
  * `aircraftRateCentsPerHour` is: the flying person's profile at registration
  * (`STUDENT` = student-only, otherwise `PILOT`), frozen with the price.
+ * The rates stay `positive()` on a no-charge flight too (story 19.6,
+ * Q-19.6-a = B: rates required and frozen as information) while both
+ * amounts and the total are 0.
  */
 export const flightBreakdownSchema = z.object({
   aircraftRateCentsPerHour: z.number().int().positive(),
@@ -157,7 +154,8 @@ export const flightListItemSchema = z.object({
   flightType: flightTypeSchema,
   /** Story 9.4 — dual/solo distinction, meaningful only when `flightType === 'SCHOOL'`. */
   isSolo: z.boolean(),
-  status: flightStatusSchema,
+  /** Story 19.6 (R-19-d) — "senza addebito": both amounts, the total and the `FLIGHT_CHARGE` are 0. */
+  noCharge: z.boolean(),
   /** Story 11.1 — `null` on a historical (pre-11.1) flight only; required on every new registration/correction. */
   departureAirfield: z.string().nullable(),
   arrivalAirfield: z.string().nullable(),
@@ -174,13 +172,6 @@ export const flightListItemSchema = z.object({
   breakdown: flightBreakdownSchema,
   actorEmail: z.string().optional(),
   createdAt: z.iso.datetime(),
-  /** Story 5.3 — set together, exactly once, when `status` becomes `CANCELLED`. Both `null` while `REGISTERED`. */
-  cancelledAt: z.iso.datetime().nullable(),
-  cancelReason: z.string().nullable(),
-  /** Story 5.3 — the ORIGINAL flight this one replaces, when this flight IS a correction. `null` for a plain registration. */
-  correctionOfId: z.string().nullable(),
-  /** Story 5.3 — the NEW flight that replaced THIS one (inverse relation). `null` unless this flight was corrected. */
-  correctedByFlightId: z.string().nullable(),
   /** Story 14.4, AC 2 — set together, exactly once, ONLY when an admin bypassed a blocking expired document (`Flight.forcedAt`'s doc-comment). `null` on every normal flight. Same additive/backward-compatible shape as `bookingItemSchema.forcedAt` (story 7.4). */
   forcedAt: z.iso.datetime().nullable(),
   /** Story 14.4, AC 2 — the mandatory motivo behind a `forcedAt` bypass, `null` otherwise. Unlike `Booking`'s own DTO (which omits it), exposed here so the operator sees WHY a flight was forced, not just that it was. */
@@ -195,7 +186,8 @@ export const flightListResponseSchema = paginatedResponseSchema(flightListItemSc
 export type FlightListResponseDto = z.infer<typeof flightListResponseSchema>;
 
 /**
- * `POST /api/v1/flights` response (AC 1/2) — the created flight plus the
+ * `POST /api/v1/flights` (201) and `PUT /api/v1/flights/{id}` (200, the SAME
+ * `flight.id`, story 19.6) response (AC 1/2) — the flight plus the
  * refreshed account overview (same "return the fresh overview directly"
  * pattern as `sellPackage`'s response), so the UI shows the new balance
  * without a second round-trip. `balanceAlert` (story 14.4, AC 3; decision
@@ -211,34 +203,3 @@ export const registerFlightResponseSchema = z.object({
 });
 
 export type RegisterFlightResponseDto = z.infer<typeof registerFlightResponseSchema>;
-
-// --- Cancellation and correction with reversal (story 5.3, Task 3, AC 1/2/3/4) --
-
-/**
- * `POST /api/v1/flights/{id}/cancel` body (story 5.3, AC 1). `reason` is
- * mandatory (Contesto: "il motivo è OBBLIGATORIO nell'input", same convention
- * as `recordAdjustment`'s `reason` and `setOutOfServiceSchema`'s).
- */
-export const cancelFlightSchema = z.object({
-  reason: z.string().trim().min(1).max(500),
-});
-
-export type CancelFlightInput = z.infer<typeof cancelFlightSchema>;
-
-/**
- * `POST /api/v1/flights/{id}/correct` body (story 5.3, AC 2): exactly the
- * same fields as `registerFlightSchema` (Dev Notes: `registerFlightSchema`
- * itself is NEVER changed for `registerFlight`'s own input) plus the
- * mandatory `reason` — `.extend()` off the SHARED `registerFlightFields`
- * base (story 14.4: `registerFlightSchema` itself is a `.refine()`d
- * `ZodEffects`, which has no `.extend()` — see that schema's own
- * doc-comment), then the SAME `requireForceReason` check re-applied. Story
- * 11.1 removed the former minutes XOR `superRefine`; the cross-field checks
- * on this shape (`FLIGHT_TIMES_INVALID`, ...) live in `resolveFlightInput`,
- * shared by both `registerFlight`/`correctFlight`.
- */
-export const correctFlightSchema = registerFlightFields
-  .extend({ reason: z.string().trim().min(1).max(500) })
-  .refine(requireForceReason, FORCE_REASON_REFINE_ISSUE);
-
-export type CorrectFlightInput = z.infer<typeof correctFlightSchema>;

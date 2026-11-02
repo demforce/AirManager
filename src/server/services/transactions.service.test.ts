@@ -221,10 +221,10 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
   });
 
   describe('bookType classification (story Billing-2, AC 2 — mirrors ACCOUNT_REVENUE_OR/CASH_REVENUE_OR/CASH_COST_OR exactly)', () => {
-    it('ACCOUNT: FLIGHT_CHARGE and FLIGHT_CHARGE_REVERSAL are always REVENUE regardless of sign', async () => {
+    it('ACCOUNT: FLIGHT_CHARGE is always REVENUE, at 0 too (a no-charge flight, story 19.6)', async () => {
       accountFindMany.mockResolvedValue([
         { ...baseAccountRow, id: 'am_charge', type: 'FLIGHT_CHARGE', amountCents: -12000 },
-        { ...baseAccountRow, id: 'am_reversal', type: 'FLIGHT_CHARGE_REVERSAL', amountCents: 12000, reversalOfId: 'am_charge' },
+        { ...baseAccountRow, id: 'am_no_charge', type: 'FLIGHT_CHARGE', amountCents: 0 },
       ]);
       accountCount.mockResolvedValue(2);
       cashFindMany.mockResolvedValue([]);
@@ -339,7 +339,6 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       expect(whereArg(accountFindManyMock).AND).toContainEqual({
         OR: [
           { type: 'FLIGHT_CHARGE' },
-          { type: 'FLIGHT_CHARGE_REVERSAL' },
           { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
           {
             type: 'ADJUSTMENT',
@@ -547,7 +546,6 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
         effectiveDate: { gte: new Date('2026-07-01'), lte: new Date('2026-07-31') },
         OR: [
           { type: 'FLIGHT_CHARGE' },
-          { type: 'FLIGHT_CHARGE_REVERSAL' },
           { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
           {
             type: 'ADJUSTMENT',
@@ -570,8 +568,8 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     });
   });
 
-  it('a FLIGHT_CHARGE reversed in the SAME period nets to ZERO revenue (storno annulla il ricavo — the bug the old Σ-positivi definition had: it only ever summed the positive side and never subtracted a same-period storno)', async () => {
-    // -18500 (the original FLIGHT_CHARGE) + 18500 (its FLIGHT_CHARGE_REVERSAL, same period) = 0.
+  it('a FLIGHT_CHARGE reversed by a rettifica in the SAME period nets to ZERO revenue (storno annulla il ricavo — the bug the old Σ-positivi definition had: it only ever summed the positive side and never subtracted a same-period storno)', async () => {
+    // -18500 (the original FLIGHT_CHARGE) + 18500 (its reversal ADJUSTMENT, same period) = 0.
     accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: -18500 + 18500 } }));
     cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: null } }));
 

@@ -92,7 +92,7 @@ export function addDaysIso(date: string, days: number): string {
 /**
  * Types into a `SearchCombobox` and clicks the matching option (story 19.5:
  * the booking forms' choice fields became comboboxes) — same body as the
- * local copies in `flights.spec.ts`/`flight-reversal.spec.ts`. `combobox`
+ * local copy in `flights.spec.ts`. `combobox`
  * must already resolve to the specific `<input>`; the option lookup is scoped
  * to the popup (`role=listbox`) with `exact: true`, never page-level.
  */

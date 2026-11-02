@@ -188,7 +188,7 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           flightDate: '2026-07-10',
           flightType: 'SCHOOL',
           isSolo: true,
-          status: 'CANCELLED',
+          noCharge: false,
           departureAirfield: 'Campo Sud',
           arrivalAirfield: 'Campo Nord',
           takeoffAt: new Date('2026-07-10T09:00:00Z'),
@@ -205,10 +205,6 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
             totalAmountCents: 12345,
           },
           createdAt: new Date('2026-07-10T10:00:00Z'),
-          cancelledAt: new Date('2026-07-10T11:00:00Z'),
-          cancelReason: 'test',
-          correctionOfId: null,
-          correctedByFlightId: null,
         },
       ],
     } as never);
@@ -231,7 +227,9 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
     expect(row.getCell(13).value).toBe('Rossi Mario'); // PIC: SCHOOL flown solo -> the flight's own person
     expect(row.getCell(14).value).toBe(123.45); // amount, numeric cents/100
     expect(row.getCell(14).numFmt).toBe('#,##0.00 "€"');
-    expect(row.getCell(15).value).toBe('Annullato'); // status, IT
+    // Story 19.6 (AC 27): no Stato column anymore — the amount is the last one.
+    expect(sheet.getRow(1).cellCount).toBe(14);
+    expect(row.getCell(15).value).toBeNull();
   });
 
   it('exports null cells for the airfield/time columns on a historical (pre-11.1) flight, keeping takeoffs/landings as real numbers', async () => {
@@ -245,7 +243,7 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           flightDate: '2020-01-01',
           flightType: 'TOURISM',
           isSolo: false,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: null,
           arrivalAirfield: null,
           takeoffAt: null,
@@ -262,10 +260,6 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
             totalAmountCents: 5000,
           },
           createdAt: new Date('2020-01-01T10:00:00Z'),
-          cancelledAt: null,
-          cancelReason: null,
-          correctionOfId: null,
-          correctedByFlightId: null,
         },
       ],
     } as never);
@@ -293,7 +287,7 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           flightDate: '2026-07-03',
           flightType: 'SCHOOL',
           isSolo: false,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: 'Campo Sud',
           arrivalAirfield: 'Campo Nord',
           takeoffAt: new Date('2026-07-03T09:00:00Z'),
@@ -310,10 +304,6 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
             totalAmountCents: 4000,
           },
           createdAt: new Date('2026-07-03T10:00:00Z'),
-          cancelledAt: null,
-          cancelReason: null,
-          correctionOfId: null,
-          correctedByFlightId: null,
         },
       ],
     } as never);
@@ -685,7 +675,7 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact
           flightDate: '2026-07-01',
           flightType: 'TOURISM',
           isSolo: false,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: 'Campo Sud',
           arrivalAirfield: 'Campo Nord',
           takeoffAt: new Date('2026-07-01T09:00:00Z'),
@@ -704,7 +694,7 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact
           flightDate: '2026-07-02',
           flightType: 'SCHOOL',
           isSolo: true,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: null,
           arrivalAirfield: null,
           takeoffAt: null,
@@ -749,6 +739,9 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact
     const picColumn = props.columns.find((c) => c.header === 'PIC')!;
     expect(picColumn.value(row1)).toBe('Rossi Mario'); // non-SCHOOL -> the flight's own person
     expect(picColumn.value(row2)).toBe('Verdi Luigi'); // SCHOOL flown solo -> the allievo, even with an instructor on record
+    // Story 19.6 (AC 27): no Stato column anymore — the amount is the last one.
+    expect(props.columns.map((c) => c.header).at(-1)).toBe('Addebito');
+    expect(props.columns.map((c) => c.header)).not.toContain('Stato');
     expect(props.totals).toEqual([
       { label: 'Durata totale', value: '1:30' },
       { label: 'Totale addebiti', value: '150,00 €' },
@@ -766,7 +759,7 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact
           flightDate: '2026-07-03',
           flightType: 'SCHOOL',
           isSolo: false,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: 'Campo Sud',
           arrivalAirfield: 'Campo Nord',
           takeoffAt: new Date('2026-07-03T09:00:00Z'),

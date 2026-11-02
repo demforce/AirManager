@@ -90,7 +90,7 @@ export type TransactionRowDto = z.infer<typeof transactionRowSchema>;
  * always DB-positive) — returned as-is. `ACCOUNT` rows carry the
  * pilot-account-centric raw direction (a credit to the pilot's balance is
  * positive, `amountCents`'s own doc-comment above) — for a `REVENUE`-booked
- * row (`FLIGHT_CHARGE`/`FLIGHT_CHARGE_REVERSAL`/a revenue `ADJUSTMENT`) that
+ * row (`FLIGHT_CHARGE`/a revenue `ADJUSTMENT`) that
  * is the OPPOSITE of the club's own book (a debit against the pilot IS the
  * club's ricavo — addebito volo -> Entrate; its storno -> Uscite), so it is
  * negated — the SAME negation `transactions.service.ts#computeRevenueCents`

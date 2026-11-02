@@ -555,11 +555,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // Story 19.5: a combobox — its DOM value is the option's LABEL.
     await expect(flightTypeSelect).toHaveValue('Scuola');
     await expect(flightTypeSelect).toBeDisabled();
-    // Scoped to the form (lezione 103-F1): a page-level `getByText` could
-    // also match unrelated copy elsewhere on the page.
-    await expect(page.getByTestId('flight-form').locator('.fld-hint')).toContainText('Allievo senza brevetto');
     // The disabled input's only programmatic explanation (review F4 14.3):
-    // still linked to it now that the control is a combobox (story 19.5, AC 9).
+    // still linked to it now that the control is a combobox (story 19.5, AC 9),
+    // and read by id — since story 19.6 the «Senza addebito» switch carries a
+    // `.fld-hint` too.
     await expect(flightTypeSelect).toHaveAttribute('aria-describedby', 'flight-type-select-hint');
     await expect(page.locator('#flight-type-select-hint')).toContainText('Allievo senza brevetto');
     // Story 19.5 (AC 14): with the type locked on SCHOOL the solo switch is
@@ -660,26 +659,25 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // explains the situation, naming the on-file type.
     await expect(flightTypeSelect).toHaveValue('Turismo');
     await expect(flightTypeSelect).toBeEnabled();
-    await expect(page.getByTestId('flight-form').locator('.fld-hint')).toContainText('Turismo');
+    // By id: the «Senza addebito» switch carries a `.fld-hint` too (story 19.6).
+    await expect(page.locator('#flight-type-select-hint')).toContainText('Turismo');
     await expect(flightTypeSelect).toHaveAttribute('aria-describedby', 'flight-type-select-hint');
 
     // A cycles-only correction goes through untouched: type unchanged, no
     // instructor needed (still TOURISM), no new SCHOOL charge. `exact: true`:
     // "Ora atterraggio" contains "atterraggi" (getByLabel is substring).
     await page.getByLabel('Atterraggi', { exact: true }).fill('2');
-    await page.getByLabel('Motivo della correzione').fill('Verifica review F1/F2');
-    await page.getByRole('button', { name: 'Conferma correzione' }).click();
+    await page.getByRole('button', { name: 'Salva modifiche' }).click();
 
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
 
+    // Story 19.6: edited IN PLACE — the same flight, still the only one.
     const detailResponse = await page.request.get(`/api/v1/flights?personId=${pilot.personId}&pageSize=10`);
     expect(detailResponse.status()).toBe(200);
-    const detailBody = (await detailResponse.json()) as {
-      items: { id: string; flightType: string; status: string; correctionOfId: string | null; landings: number }[];
-    };
-    const corrected = detailBody.items.find((item) => item.correctionOfId === flight.flight.id);
+    const detailBody = (await detailResponse.json()) as { items: { id: string; flightType: string; landings: number }[] };
+    expect(detailBody.items).toHaveLength(1);
+    const corrected = detailBody.items.find((item) => item.id === flight.flight.id);
     expect(corrected?.flightType).toBe('TOURISM');
-    expect(corrected?.status).toBe('REGISTERED');
     expect(corrected?.landings).toBe(2);
   });
 });
@@ -1025,8 +1023,8 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     expect(await countFlights(page, aircraft.id)).toBe(3);
   });
 
-  // E5 — the two faces of the correction guard.
-  test('E5: a correction that keeps its own slot succeeds; one that moves onto an occupied slot is a 409 and leaves the flight REGISTERED with no reversal', async ({
+  // E5 — the two faces of the guard on an edit (story 19.6, AC 11: edited in place).
+  test('E5: an edit that keeps its own slot succeeds; one that moves onto an occupied slot is a 409 and leaves the flight and its charge identical', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -1046,44 +1044,45 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     const other = (await otherResponse.json()) as { flight: { id: string } };
 
     // Same aircraft, same instants, changed landings: accepted, because the
-    // flight being corrected is excluded from the guard by id.
-    const keepSlot = await page.request.post(`/api/v1/flights/${target.flight.id}/correct`, {
-      data: {
-        ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`),
-        landings: 2,
-        reason: 'Correzione conservativa',
-      },
+    // flight being edited is excluded from the guard by id — and it is the
+    // SAME flight afterwards.
+    const keepSlot = await page.request.put(`/api/v1/flights/${target.flight.id}`, {
+      data: { ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`), landings: 2 },
     });
-    expect(keepSlot.status()).toBe(201);
-    const corrected = (await keepSlot.json()) as { flight: { id: string } };
+    expect(keepSlot.status()).toBe(200);
+    expect(((await keepSlot.json()) as { flight: { id: string } }).flight.id).toBe(target.flight.id);
+
+    async function snapshot(): Promise<{ flights: unknown; charges: unknown }> {
+      const flights = ((await (await page.request.get(`/api/v1/flights?aircraftId=${aircraft.id}&pageSize=50`)).json()) as {
+        items: Array<{ id: string; minutes: number; landings: number; takeoffAt: string; breakdown: { totalAmountCents: number } }>;
+      }).items.map(({ id, minutes, landings, takeoffAt, breakdown }) => ({ id, minutes, landings, takeoffAt, total: breakdown.totalAmountCents }));
+      const charges = ((await (await page.request.get(`/api/v1/people/${pilot.personId}/account/movements?pageSize=50`)).json()) as {
+        items: Array<{ id: string; type: string; amountCents: number; description: string | null }>;
+      }).items.filter((item) => item.type === 'FLIGHT_CHARGE');
+      return { flights, charges };
+    }
+    const before = await snapshot();
 
     // …and moving THAT flight onto the other one's window is refused.
-    const moveOntoOther = await page.request.post(`/api/v1/flights/${corrected.flight.id}/correct`, {
-      data: {
-        ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T14:30:00.000Z`, `${PAST_DATE}T15:30:00.000Z`),
-        reason: 'Spostamento su slot occupato',
-      },
+    const moveOntoOther = await page.request.put(`/api/v1/flights/${target.flight.id}`, {
+      data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T14:30:00.000Z`, `${PAST_DATE}T15:30:00.000Z`),
     });
     expect(moveOntoOther.status()).toBe(409);
     const moveError = (await moveOntoOther.json()) as { error: { code: string; details: { flightId: string } } };
     expect(moveError.error.code).toBe('FLIGHT_OVERLAP');
     expect(moveError.error.details.flightId).toBe(other.flight.id);
 
-    // Nothing happened at all: the guard runs before the storno, so both
-    // flights are still REGISTERED and no reversal was written.
-    const stillThere = await page.request.get(`/api/v1/flights?aircraftId=${aircraft.id}&status=REGISTERED&pageSize=50`);
-    expect(stillThere.status()).toBe(200);
-    const registered = ((await stillThere.json()) as { items: Array<{ id: string }> }).items.map((item) => item.id);
-    expect(registered).toContain(corrected.flight.id);
-    expect(registered).toContain(other.flight.id);
+    // Nothing happened at all: same minutes, same instants, same amounts,
+    // the same statement lines.
+    expect(await snapshot()).toEqual(before);
   });
 
-  // E6 — the UI. Before this story a 409 met during a CORRECTION read
-  // «Questo volo è già stato annullato.», false for an overlap. Both flights
+  // E6 — the UI. Story 16.2: a 409 met during an EDIT names the conflicting
+  // flight (never the other 409 of the edit, the manual-adjustment one). Both flights
   // below are registered THROUGH THE FORM, which composes its instants in the
   // browser's timezone — and so does the message it renders — which is what
   // makes the assertions independent of the host's TZ.
-  test('E6: the form names the conflicting flight on a 409, in registration AND in correction — never «già stato annullato»', async ({
+  test('E6: the form names the conflicting flight on a 409, in registration AND in an edit', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -1118,7 +1117,6 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
 
     const formError = page.getByTestId('flight-form-error');
     await expect(formError).toContainText(conflictText);
-    await expect(formError).not.toContainText('già stato annullato');
 
     // A spare flight in a FREE window, tagged by a run-unique departure so
     // its row is identifiable without ever disambiguating on an H:MM value
@@ -1130,8 +1128,8 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     await page.getByTestId('flight-result-close').click();
 
-    // Correcting the spare ONTO the first flight's window: the same 409, and
-    // still not the «già annullato» sentence.
+    // Editing the spare ONTO the first flight's window: the same 409, never
+    // the manual-adjustment sentence the edit's other 409 carries.
     await page.goto('/it/dashboard/logbook');
     await page.getByTestId('flight-filter-person').fill(pilot.lastName);
     await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(pilot.lastName)}`));
@@ -1142,12 +1140,11 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
 
     await page.getByLabel('Ora decollo').fill('10:30');
     await page.getByLabel('Ora atterraggio').fill('11:30');
-    await page.getByLabel('Motivo della correzione').fill('Verifica del 409 in correzione');
-    await page.getByRole('button', { name: 'Conferma correzione' }).click();
+    await page.getByRole('button', { name: 'Salva modifiche' }).click();
 
     const correctionError = page.getByTestId('flight-form-error');
     await expect(correctionError).toContainText(conflictText);
-    await expect(correctionError).not.toContainText('già stato annullato');
+    await expect(correctionError).not.toContainText('rettificato a mano');
   });
 
   // E8 — review MAJOR-1: every 422 precedes the 409 (AD-4), so a request that
@@ -1155,7 +1152,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
   // on the "Forza registrazione" submit. `force` does not derogate the
   // guard: the force section must close and the banner must name the
   // conflicting flight — never the endless «Riprova».
-  test('E8: on the FORCE submit a 409 FLIGHT_OVERLAP closes the force section and names the conflicting flight, in registration AND in correction', async ({
+  test('E8: on the FORCE submit a 409 FLIGHT_OVERLAP closes the force section and names the conflicting flight, in registration AND in an edit', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -1205,8 +1202,8 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await forceAndExpectOverlap('Verifica del 409 forzato in registrazione');
     expect(await countFlights(page, aircraft.id)).toBe(1);
 
-    // Correction: a spare flight of the clean pilot in a free window, then
-    // corrected onto the blocked pilot AND the first flight's window.
+    // Edit: a spare flight of the clean pilot in a free window, then edited
+    // onto the blocked pilot AND the first flight's window.
     await page.goto('/it/dashboard/logbook');
     await openNewEntryForm(page);
     await fillCommonFields(cleanPilot);
@@ -1227,15 +1224,14 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), blockedPilot.lastName, `${blockedPilot.lastName} ${blockedPilot.firstName}`);
     await page.getByLabel('Ora decollo').fill('10:30');
     await page.getByLabel('Ora atterraggio').fill('11:30');
-    await page.getByLabel('Motivo della correzione').fill('Verifica del 409 forzato in correzione');
-    await page.getByRole('button', { name: 'Conferma correzione' }).click();
-    await forceAndExpectOverlap('Verifica del 409 forzato in correzione');
+    await page.getByRole('button', { name: 'Salva modifiche' }).click();
+    await forceAndExpectOverlap('Verifica del 409 forzato in modifica');
     expect(await countFlights(page, aircraft.id)).toBe(2);
   });
 
   // Story 19.2 (AC 12/18): the removed keys are dropped on both writes — a
-  // stale client gets a 201, never a 422 — and no response carries them.
-  test('register and correct drop hourMeterStart/hourMeterEnd/notes instead of rejecting them, and the responses never carry them', async ({ page }) => {
+  // stale client gets a 201/200, never a 422 — and no response carries them.
+  test('register and edit drop hourMeterStart/hourMeterEnd/notes instead of rejecting them, and the responses never carry them', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
     const pilot = await createPilotPerson(page);
@@ -1247,10 +1243,10 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     expect(registered.status(), await registered.text()).toBe(201);
     const registeredFlight = ((await registered.json()) as { flight: Record<string, unknown> & { id: string } }).flight;
 
-    const corrected = await page.request.post(`/api/v1/flights/${registeredFlight.id}/correct`, {
-      data: { ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:30:00.000Z`), ...removed, reason: 'Durata' },
+    const corrected = await page.request.put(`/api/v1/flights/${registeredFlight.id}`, {
+      data: { ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:30:00.000Z`), ...removed },
     });
-    expect(corrected.status(), await corrected.text()).toBe(201);
+    expect(corrected.status(), await corrected.text()).toBe(200);
     const correctedFlight = ((await corrected.json()) as { flight: Record<string, unknown> }).flight;
 
     for (const flight of [registeredFlight, correctedFlight]) {
@@ -1431,7 +1427,7 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
     // AC 15d: a 44px full-cell target at the desktop width too.
     expect((await soloSwitch.boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
-    // AC 15a: Tab goes Tipo di volo -> switch -> Partenza; Space and Enter toggle it.
+    // AC 15a: Tab goes Tipo di volo -> switch -> (story 19.6: «Senza addebito») -> Partenza; Space and Enter toggle it.
     await typeCombobox.focus();
     await page.keyboard.press('Tab');
     await expect(soloSwitch).toBeFocused();
@@ -1444,6 +1440,9 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
     // the required-field errors (and no result panel ever appears).
     await expect(form.locator('.fld-error')).toHaveCount(0);
     await expect(page.getByTestId('flight-result-panel')).toHaveCount(0);
+    // Story 19.6: the «Senza addebito» switch sits right after it, then Partenza.
+    await page.keyboard.press('Tab');
+    await expect(form.getByTestId('flight-no-charge-toggle')).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(form.getByLabel('Aeroporto di partenza')).toBeFocused();
 
@@ -1573,7 +1572,7 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
     await expect(soloSwitch).toHaveText('Solista');
   });
 
-  test('the removed AERIAL_WORK type is a 422 on register, correct, list and both exports, absent from the OpenAPI; the registry page ignores it and offers two types (AC 3/4)', async ({
+  test('the removed AERIAL_WORK type is a 422 on register, edit, list and both exports, absent from the OpenAPI; the registry page ignores it and offers two types (AC 3/4)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -1588,7 +1587,7 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
     const valid = await page.request.post('/api/v1/flights', { data: { ...body, flightType: 'TOURISM' } });
     expect(valid.status()).toBe(201);
     const flightId = ((await valid.json()) as { flight: { id: string } }).flight.id;
-    const correct = await page.request.post(`/api/v1/flights/${flightId}/correct`, { data: { ...body, flightType: 'AERIAL_WORK', reason: 'Tipo rimosso' } });
+    const correct = await page.request.put(`/api/v1/flights/${flightId}`, { data: { ...body, flightType: 'AERIAL_WORK' } });
     expect(correct.status()).toBe(422);
     expect(((await correct.json()) as { error: { code: string } }).error.code).toBe('VALIDATION_ERROR');
 

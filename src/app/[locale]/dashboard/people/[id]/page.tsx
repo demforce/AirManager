@@ -213,13 +213,11 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
       adjustment: tAccount('movementType.adjustment'),
       packagePurchase: tAccount('movementType.packagePurchase'),
       flightCharge: tAccount('movementType.flightCharge'),
-      flightChargeReversal: tAccount('movementType.flightChargeReversal'),
     },
-    // `t.raw`: these carry a literal `{date}` placeholder the CLIENT fills in
+    // `t.raw`: this carries a literal `{date}` placeholder the CLIENT fills in
     // (the original movement's date lives in the row data) — `t()` would
     // fail on the missing ICU value server-side.
     adjustmentBadge: { ofDate: tAccount.raw('adjustmentBadge.ofDate') as string, linked: tAccount('adjustmentBadge.linked') },
-    reversalBadge: { ofDate: tAccount.raw('reversalBadge.ofDate') as string, linked: tAccount('reversalBadge.linked') },
     mobile: { empty: tAccount('mobile.empty'), openDetail: tAccount('mobile.openDetail'), close: tAccount('mobile.close') },
     topUp: {
       action: t('accountPanel.topUp.action'),
@@ -444,9 +442,6 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
                         {formatDateOnly(flight.flightDate, displayLocale)} · {formatMinutes(flight.minutes)}
                       </div>
                     </div>
-                    <span className="card-sub">
-                      {flight.status === 'CANCELLED' ? t('recentFlightsPanel.status.cancelled') : t('recentFlightsPanel.status.registered')}
-                    </span>
                   </div>
                 ))
               )}

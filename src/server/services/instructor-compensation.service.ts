@@ -17,7 +17,7 @@ const INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME = 'Compensi istruttori';
  * `instructor-rates.service.ts`'s `InstructorRate` (what the STUDENT is
  * charged, D8 — that one stays untouched by this story).
  *
- * `getCompensationSummary`'s minutes query (SCHOOL, non-CANCELLED, per
+ * `getCompensationSummary`'s minutes query (SCHOOL, per
  * `instructorProfileId`, ONE batched groupBy) was deliberately
  * self-contained rather than shared with the pre-12.13 school area's own
  * equivalent groupBy — that area was removed in story 12.13, and this page
@@ -118,7 +118,7 @@ async function listActiveInstructors(personId?: string): Promise<InstructorRow[]
   }));
 }
 
-/** SUM(minutes) of non-cancelled SCHOOL flights per instructor, ONE batched groupBy (never N+1). */
+/** SUM(minutes) of SCHOOL flights per instructor — no-charge flights included (story 19.6, R-19-d: the compensation still accrues) — ONE batched groupBy (never N+1). */
 async function sumMinutesByProfile(instructorProfileIds: string[], bounds: VariantBounds): Promise<Map<string, number>> {
   if (instructorProfileIds.length === 0) return new Map();
   const rows = await prisma.flight.groupBy({
@@ -126,7 +126,6 @@ async function sumMinutesByProfile(instructorProfileIds: string[], bounds: Varia
     where: {
       instructorProfileId: { in: instructorProfileIds },
       flightType: 'SCHOOL',
-      status: { not: 'CANCELLED' },
       ...(bounds ? { flightDate: { gte: bounds.from, lte: bounds.to } } : {}),
     },
     _sum: { minutes: true },
@@ -397,7 +396,7 @@ export async function getInstructorCompensationDetail(actor: Actor, personId: st
   const [row] = await computeSummaryRows([instructor]);
 
   const flights = await prisma.flight.findMany({
-    where: { instructorProfileId: instructor.instructorProfileId, flightType: 'SCHOOL', status: { not: 'CANCELLED' } },
+    where: { instructorProfileId: instructor.instructorProfileId, flightType: 'SCHOOL' },
     orderBy: [{ flightDate: 'desc' }, { id: 'desc' }],
     take: 5,
     select: { id: true, flightDate: true, minutes: true, personId: true, person: { select: { firstName: true, lastName: true } } },

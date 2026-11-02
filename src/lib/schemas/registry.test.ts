@@ -49,8 +49,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/expiry-types',
         '/api/v1/expiry-types/{id}',
         '/api/v1/flights',
-        '/api/v1/flights/{id}/cancel',
-        '/api/v1/flights/{id}/correct',
+        '/api/v1/flights/{id}',
         '/api/v1/aircraft',
         '/api/v1/aircraft/{id}',
         '/api/v1/aircraft/{id}/archive',
@@ -241,7 +240,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       const flightSchemas: Record<string, Record<string, unknown> | undefined> = {
         Flight: flightList?.items?.properties,
         RegisterFlightRequest: schemas?.['RegisterFlightRequest']?.properties,
-        CorrectFlightRequest: schemas?.['CorrectFlightRequest']?.properties,
       };
       for (const [name, properties] of Object.entries(flightSchemas)) {
         expect(properties, name).toHaveProperty('takeoffs');
@@ -378,10 +376,10 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     });
 
     it.each([
-      ['/api/v1/flights/{id}/cancel', 'post'],
-      ['/api/v1/flights/{id}/correct', 'post'],
+      ['/api/v1/flights/{id}', 'put'],
+      ['/api/v1/flights/{id}', 'delete'],
       ['/api/v1/cash-movements/{id}/reverse', 'post'],
-    ] as const)('does NOT reference it on the already-idempotent storno/correction endpoint %s (reversalOfId covers it)', (path, method) => {
+    ] as const)('does NOT reference it on the already-idempotent endpoint %s %s (HTTP semantics or reversalOfId cover it)', (path, method) => {
       const route = (doc.paths as Record<string, Record<string, { parameters?: Array<{ $ref?: string }> }>>)[path]?.[method];
       const refs = (route?.parameters ?? []).map((param) => param.$ref);
       expect(refs).not.toContain('#/components/parameters/IdempotencyKey');
@@ -390,5 +388,32 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
 
   it('no longer documents the removed AERIAL_WORK flight type anywhere (story 19.5, AC 3)', () => {
     expect(JSON.stringify(doc)).not.toContain('AERIAL_WORK');
+  });
+
+  describe('flight delete and edit in place (story 19.6, AC 18/32)', () => {
+    const paths = doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>;
+
+    it('documents PUT (200) and DELETE (204) on /api/v1/flights/{id}, with their error responses', () => {
+      expect(Object.keys(paths['/api/v1/flights/{id}']?.['put']?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
+      expect(Object.keys(paths['/api/v1/flights/{id}']?.['delete']?.responses ?? {}).sort()).toEqual(['204', '401', '403', '404', '409', '500']);
+    });
+
+    it('no longer documents the storno/correction paths, their schemas, the status filter nor the reversal type', () => {
+      expect(Object.keys(paths)).not.toContain('/api/v1/flights/{id}/cancel');
+      expect(Object.keys(paths)).not.toContain('/api/v1/flights/{id}/correct');
+      const serialized = JSON.stringify(doc);
+      for (const absent of ['CancelFlightRequest', 'CorrectFlightRequest', 'FLIGHT_CHARGE_REVERSAL', 'cancelReason', 'correctionOfId', 'correctedByFlightId']) {
+        expect(serialized, absent).not.toContain(absent);
+      }
+      const listParams = (doc.paths as Record<string, Record<string, { parameters?: Array<{ name?: string }> }>>)['/api/v1/flights']?.['get']?.parameters ?? [];
+      expect(listParams.map((param) => param.name)).not.toContain('status');
+    });
+
+    it('documents noCharge on the request body and on the flight DTO', () => {
+      const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+      expect(schemas?.['RegisterFlightRequest']?.properties).toHaveProperty('noCharge');
+      const flightList = schemas?.['FlightList']?.properties?.['items'] as { items?: { properties?: Record<string, unknown> } } | undefined;
+      expect(flightList?.items?.properties).toHaveProperty('noCharge');
+    });
   });
 });
