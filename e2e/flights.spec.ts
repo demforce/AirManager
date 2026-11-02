@@ -171,7 +171,7 @@ async function createAircraftWithRate(page: Page, priceCents: number | null): Pr
 
 /**
  * Creates a run-unique expiry TYPE via the admin API (story 14.4; same
- * "MAI riusare 'Licenza' del seed" rationale as `bookings.spec.ts`'s own
+ * "never reuse a seeded type" rationale as `bookings.spec.ts`'s own
  * `createExpiryTypeForBooking` — the catalogue is shared across parallel
  * specs). `scope: 'ALL'` (any person is eligible) — `blocksBooking` gates
  * BOTH bookings AND, since this story, flight registration (module
@@ -1158,7 +1158,8 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);
     const cleanPilot = await createPilotPerson(page);
-    const blockedPilot = await createPilotPerson(page, 'Licenza');
+    // Story 19.7a: an expired class 2 as the ONLY visit (R-19-j) — "Licenza" is no longer an expiry.
+    const blockedPilot = await createPilotPerson(page, 'Visita medica classe 2');
     const spareDeparture = `Spare-${uniqueSuffix()}`;
     const conflictText = 'ha già un volo registrato il 01/01/2020 dalle 10:00 alle 11:00';
 
@@ -1169,7 +1170,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     }
 
     async function forceAndExpectOverlap(reason: string): Promise<void> {
-      await expect(page.getByTestId('flight-form-error')).toContainText('Licenza');
+      await expect(page.getByTestId('flight-form-error')).toContainText('Visita medica classe 2');
       const forceSection = page.getByTestId('force-flight-section');
       await expect(forceSection).toBeVisible();
       await forceSection.getByTestId('force-flight-reason').fill(reason);

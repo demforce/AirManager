@@ -532,6 +532,11 @@ function ExpiryTypeForm({ expiryType, kind, labels, testIds, onCancel, onSuccess
     },
   });
 
+  // Story 19.7a (D-18, R-19-j): a medical visit has no scope and always
+  // counts toward the requirement — the server fixes both (`ALL`/`true`), so
+  // the "Visite mediche" form neither shows nor sends them.
+  const isMedical = kind === 'MEDICAL';
+
   async function onSubmit(values: ExpiryTypeFormValues): Promise<void> {
     setFormError(null);
     const validityMonths = Number(values.validityMonths);
@@ -539,8 +544,7 @@ function ExpiryTypeForm({ expiryType, kind, labels, testIds, onCancel, onSuccess
     // — set only on CREATE, an edit never re-sends/changes it.
     const body = {
       name: values.name.trim(),
-      scope: values.scope,
-      blocksBooking: values.blocksBooking,
+      ...(isMedical ? {} : { scope: values.scope, blocksBooking: values.blocksBooking }),
       validityMonths: Number.isFinite(validityMonths) && validityMonths > 0 ? validityMonths : null,
       ...(expiryType ? {} : { kind }),
     };
@@ -566,15 +570,17 @@ function ExpiryTypeForm({ expiryType, kind, labels, testIds, onCancel, onSuccess
         <Field label={labels.form.name} wide error={errors.name ? labels.form.requiredField : undefined}>
           <Input maxLength={100} aria-invalid={Boolean(errors.name)} data-testid={testIds.nameInput} {...register('name')} />
         </Field>
-        <Field label={labels.form.scope}>
-          <Select data-testid={testIds.scopeSelect} {...register('scope')}>
-            {SCOPE_VALUES.map((scope) => (
-              <option key={scope} value={scope}>
-                {labels.scope[scope]}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        {isMedical ? null : (
+          <Field label={labels.form.scope}>
+            <Select data-testid={testIds.scopeSelect} {...register('scope')}>
+              {SCOPE_VALUES.map((scope) => (
+                <option key={scope} value={scope}>
+                  {labels.scope[scope]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         <Field label={labels.form.validity}>
           <InputGroup suffix={labels.table.monthsSuffix}>
             <Input type="number" min={0} data-testid={testIds.validityInput} {...register('validityMonths')} />
@@ -585,13 +591,15 @@ function ExpiryTypeForm({ expiryType, kind, labels, testIds, onCancel, onSuccess
         {labels.form.validityHint}
       </p>
 
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12 }}>
-        <input type="checkbox" style={{ marginTop: 3 }} {...register('blocksBooking')} />
-        <span style={{ fontSize: 12.5 }}>
-          <span style={{ display: 'block', fontWeight: 600, color: 'var(--ink)' }}>{labels.form.blocksBooking}</span>
-          <span style={{ display: 'block', color: 'var(--ink-3)' }}>{labels.form.blocksBookingHint}</span>
-        </span>
-      </label>
+      {isMedical ? null : (
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12 }}>
+          <input type="checkbox" style={{ marginTop: 3 }} {...register('blocksBooking')} />
+          <span style={{ fontSize: 12.5 }}>
+            <span style={{ display: 'block', fontWeight: 600, color: 'var(--ink)' }}>{labels.form.blocksBooking}</span>
+            <span style={{ display: 'block', color: 'var(--ink-3)' }}>{labels.form.blocksBookingHint}</span>
+          </span>
+        </label>
+      )}
 
       {formError ? (
         <p role="alert" data-testid={testIds.formError} style={{ marginTop: 8, fontSize: 12.5, color: 'var(--bad)' }}>

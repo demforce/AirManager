@@ -18,7 +18,7 @@ vi.mock('@/server/db/prisma', () => ({
 
 const { prisma } = await import('@/server/db/prisma');
 const { createExpiryType, deleteExpiryType, listExpiryTypes, updateExpiryType } = await import('./expiry-types.service');
-const { ConflictError, NotFoundError } = await import('./errors');
+const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
 
 const findManyMock = vi.mocked(prisma.expiryType.findMany);
 const findFirstMock = vi.mocked(prisma.expiryType.findFirst);
@@ -188,11 +188,70 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
     it('creates with kind: MEDICAL when the request specifies it (story 13.1, AC 1/3 — the "Visite mediche" card)', async () => {
       findFirst.mockResolvedValue(null);
       create.mockResolvedValue(fixture({ name: 'Visita medica classe 3', kind: 'MEDICAL' }));
-      const input = createExpiryTypeSchema.parse({ name: 'Visita medica classe 3', scope: 'PILOTS', kind: 'MEDICAL' });
+      const input = createExpiryTypeSchema.parse({ name: 'Visita medica classe 3', kind: 'MEDICAL' });
 
       await createExpiryType(adminActor(), input);
 
       expect(createMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ kind: 'MEDICAL' }) }));
+    });
+
+    // Story 19.7a (AC 3, D-3): a medical visit has no scope and always counts.
+    it('MEDICAL with scope and flag omitted → created with ALL / blocksBooking true', async () => {
+      findFirst.mockResolvedValue(null);
+      create.mockResolvedValue(fixture({ name: 'Visita medica classe 3', kind: 'MEDICAL', scope: 'ALL', blocksBooking: true }));
+      const input = createExpiryTypeSchema.parse({ name: 'Visita medica classe 3', kind: 'MEDICAL', validityMonths: 24 });
+
+      await createExpiryType(adminActor(), input);
+
+      expect(createMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { name: 'Visita medica classe 3', scope: 'ALL', kind: 'MEDICAL', blocksBooking: true, validityMonths: 24 } }),
+      );
+    });
+
+    it('MEDICAL with explicit ALL / true (the values it would get anyway) → accepted', async () => {
+      findFirst.mockResolvedValue(null);
+      create.mockResolvedValue(fixture({ kind: 'MEDICAL', scope: 'ALL', blocksBooking: true }));
+      const input = createExpiryTypeSchema.parse({ name: 'Visita X', kind: 'MEDICAL', scope: 'ALL', blocksBooking: true });
+
+      await createExpiryType(adminActor(), input);
+
+      expect(createMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ scope: 'ALL', blocksBooking: true }) }));
+    });
+
+    it('MEDICAL with an explicit scope other than ALL → 422 MEDICAL_TYPE_FIELDS, before any query', async () => {
+      const input = createExpiryTypeSchema.parse({ name: 'Visita X', kind: 'MEDICAL', scope: 'PILOTS' });
+
+      await expect(createExpiryType(adminActor(), input)).rejects.toMatchObject({ code: 'MEDICAL_TYPE_FIELDS' });
+      await expect(createExpiryType(adminActor(), input)).rejects.toThrow(ValidationError);
+      expect(findFirstMock).not.toHaveBeenCalled();
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    it('MEDICAL with an explicit blocksBooking: false → 422 MEDICAL_TYPE_FIELDS', async () => {
+      const input = createExpiryTypeSchema.parse({ name: 'Visita X', kind: 'MEDICAL', blocksBooking: false });
+
+      await expect(createExpiryType(adminActor(), input)).rejects.toMatchObject({ code: 'MEDICAL_TYPE_FIELDS' });
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    it('a RATING with scope and flag omitted → ALL / blocksBooking false (retro-compatible loosening)', async () => {
+      findFirst.mockResolvedValue(null);
+      create.mockResolvedValue(fixture({ name: 'Rating X', kind: 'RATING', scope: 'ALL' }));
+
+      await createExpiryType(adminActor(), createExpiryTypeSchema.parse({ name: 'Rating X' }));
+
+      expect(createMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { name: 'Rating X', scope: 'ALL', kind: 'RATING', blocksBooking: false, validityMonths: null } }),
+      );
+    });
+
+    it('a RATING with an explicit scope keeps it (as before)', async () => {
+      findFirst.mockResolvedValue(null);
+      create.mockResolvedValue(fixture({ name: 'Rating I', kind: 'RATING', scope: 'INSTRUCTORS' }));
+
+      await createExpiryType(adminActor(), createExpiryTypeSchema.parse({ name: 'Rating I', scope: 'INSTRUCTORS' }));
+
+      expect(createMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ scope: 'INSTRUCTORS', kind: 'RATING', blocksBooking: false }) }));
     });
 
     it('maps a duplicate name (P2002 concurrency backstop) to ConflictError', async () => {
@@ -285,6 +344,63 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       expect(findFirstMock).not.toHaveBeenCalled();
     });
 
+    // Story 19.7a (AC 3/4): the MEMBERSHIP lock and the MEDICAL invariant, on the RESULTING state.
+    it('any PATCH of the MEMBERSHIP type (even isActive only) → 409 MEMBERSHIP_TYPE_LOCKED, nothing else checked', async () => {
+      findUnique.mockResolvedValue({ id: 'et_quota', kind: 'MEMBERSHIP', scope: 'ALL', blocksBooking: false });
+
+      for (const body of [{ isActive: false }, { name: 'Quota soci' }, { validityMonths: 6 }]) {
+        await expect(updateExpiryType(adminActor(), 'et_quota', updateExpiryTypeSchema.parse(body))).rejects.toMatchObject({ code: 'MEMBERSHIP_TYPE_LOCKED' });
+      }
+      await expect(updateExpiryType(adminActor(), 'et_quota', updateExpiryTypeSchema.parse({ isActive: false }))).rejects.toThrow(ConflictError);
+      expect(findFirstMock).not.toHaveBeenCalled();
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    it('a PATCH of an unknown id is still a 404 first (before the MEMBERSHIP lock)', async () => {
+      findUnique.mockResolvedValue(null);
+
+      await expect(updateExpiryType(adminActor(), 'missing', updateExpiryTypeSchema.parse({ isActive: false }))).rejects.toThrow(NotFoundError);
+    });
+
+    it('a medical visit patched with scope STUDENTS → 422 MEDICAL_TYPE_FIELDS', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1', kind: 'MEDICAL', scope: 'ALL', blocksBooking: true });
+
+      await expect(updateExpiryType(adminActor(), 'et_1', updateExpiryTypeSchema.parse({ scope: 'STUDENTS' }))).rejects.toMatchObject({ code: 'MEDICAL_TYPE_FIELDS' });
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    it('a medical visit patched with blocksBooking false → 422 MEDICAL_TYPE_FIELDS', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1', kind: 'MEDICAL', scope: 'ALL', blocksBooking: true });
+
+      await expect(updateExpiryType(adminActor(), 'et_1', updateExpiryTypeSchema.parse({ blocksBooking: false }))).rejects.toMatchObject({ code: 'MEDICAL_TYPE_FIELDS' });
+    });
+
+    it('a RATING scoped PILOTS moved to MEDICAL alone → 422 (the resulting state keeps PILOTS)', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1', kind: 'RATING', scope: 'PILOTS', blocksBooking: false });
+
+      await expect(updateExpiryType(adminActor(), 'et_1', updateExpiryTypeSchema.parse({ kind: 'MEDICAL' }))).rejects.toMatchObject({ code: 'MEDICAL_TYPE_FIELDS' });
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    it('a RATING scoped PILOTS moved to MEDICAL with ALL / true in the same PATCH → 200', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1', kind: 'RATING', scope: 'PILOTS', blocksBooking: false });
+      update.mockResolvedValue(fixture({ kind: 'MEDICAL', scope: 'ALL', blocksBooking: true }));
+
+      await updateExpiryType(adminActor(), 'et_1', updateExpiryTypeSchema.parse({ kind: 'MEDICAL', scope: 'ALL', blocksBooking: true }));
+
+      expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { kind: 'MEDICAL', scope: 'ALL', blocksBooking: true }, select: expect.anything() });
+    });
+
+    it('renaming a medical visit (name only) passes the invariant untouched', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1', kind: 'MEDICAL', scope: 'ALL', blocksBooking: true });
+      findFirst.mockResolvedValue(null);
+      update.mockResolvedValue(fixture({ name: 'Visita rinominata', kind: 'MEDICAL', scope: 'ALL', blocksBooking: true }));
+
+      await updateExpiryType(adminActor(), 'et_1', updateExpiryTypeSchema.parse({ name: 'Visita rinominata' }));
+
+      expect(updateMock).toHaveBeenCalledWith({ where: { id: 'et_1' }, data: { name: 'Visita rinominata' }, select: expect.anything() });
+    });
+
     it('patches kind independently of every other field (story 13.1 review F3 — a misclassified type is recoverable via PATCH)', async () => {
       findUnique.mockResolvedValue({ id: 'et_1' });
       update.mockResolvedValue(fixture({ kind: 'RATING' }));
@@ -331,6 +447,15 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       await expect(deleteExpiryType(adminActor(), 'et_1')).rejects.toThrow(ConflictError);
     });
 
+    it('the MEMBERSHIP type → 409 MEMBERSHIP_TYPE_LOCKED, before the "in use" check, never deleted (story 19.7a, AC 4)', async () => {
+      findUnique.mockResolvedValue({ id: 'et_quota', kind: 'MEMBERSHIP', _count: { expiries: 0 } });
+
+      await expect(deleteExpiryType(adminActor(), 'et_quota')).rejects.toMatchObject({ code: 'MEMBERSHIP_TYPE_LOCKED' });
+      findUnique.mockResolvedValue({ id: 'et_quota', kind: 'MEMBERSHIP', _count: { expiries: 7 } });
+      await expect(deleteExpiryType(adminActor(), 'et_quota')).rejects.toMatchObject({ code: 'MEMBERSHIP_TYPE_LOCKED' });
+      expect(deleteMock).not.toHaveBeenCalled();
+    });
+
     it('maps a concurrent double-DELETE race (P2025 — the loser of the race) to NotFoundError, not a raw 500 (TD-1, AC 1, was deferred 6.1 D1)', async () => {
       findUnique.mockResolvedValue({ id: 'et_1', _count: { expiries: 0 } });
       del.mockRejectedValue(prismaError('P2025'));
@@ -350,8 +475,21 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       expect(createExpiryTypeSchema.safeParse({ name: 'X', scope: 'EVERYONE' }).success).toBe(false);
     });
 
-    it('rejects a missing scope on create', () => {
-      expect(createExpiryTypeSchema.safeParse({ name: 'X' }).success).toBe(false);
+    it('accepts a missing scope on create — resolved by the service from kind (story 19.7a, AD-7)', () => {
+      const result = createExpiryTypeSchema.safeParse({ name: 'X' });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.scope).toBeUndefined();
+      }
+    });
+
+    it('rejects kind MEMBERSHIP on create and on update — a system type (story 19.7a, AC 4)', () => {
+      expect(createExpiryTypeSchema.safeParse({ name: 'X', kind: 'MEMBERSHIP' }).success).toBe(false);
+      expect(updateExpiryTypeSchema.safeParse({ kind: 'MEMBERSHIP' }).success).toBe(false);
+    });
+
+    it('the list filter accepts kind MEMBERSHIP (story 19.7a, AC 4)', () => {
+      expect(listExpiryTypesQuerySchema.parse({ kind: 'MEMBERSHIP' }).kind).toBe('MEMBERSHIP');
     });
 
     it('rejects an empty update body', () => {
@@ -362,11 +500,11 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       expect(updateExpiryTypeSchema.safeParse({ isActive: true }).success).toBe(true);
     });
 
-    it('blocksBooking defaults to false on create when omitted (story 7.4)', () => {
+    it('blocksBooking stays undefined on create when omitted — no Zod default, the service resolves it by kind (story 19.7a, AD-7)', () => {
       const result = createExpiryTypeSchema.safeParse({ name: 'X', scope: 'ALL' });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.blocksBooking).toBe(false);
+        expect(result.data.blocksBooking).toBeUndefined();
       }
     });
 

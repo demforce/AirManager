@@ -26,7 +26,7 @@ import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { categoryOf, tierOf } from '@/lib/expiry-status';
+import { tierOf } from '@/lib/expiry-status';
 import { expiryCardSubLine, expiryDaysLabel, expirySheetSub } from '@/lib/mobile-expiries';
 import { formatCents, parseCents } from '@/lib/money';
 import { randomIdempotencyKey } from '@/lib/use-idempotency-key';
@@ -36,7 +36,7 @@ import { formatDateOnly } from '@/lib/time';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type TypeOption = { id: string; name: string };
-type Category = 'Medico' | 'Licenza' | 'Abilitazione';
+type Category = ExpiryDashboardItemDto['category'];
 
 /** Free-text pilot filter (story 13.5, AC 9) — `personQuery` replaces the old `SearchCombobox`-driven `personId`, same idiom as `pilots-console.tsx`'s own name filter. */
 export type ScadenzeFilters = { window: ExpiryWindowDto | 'all'; expiryTypeId: string; personQuery: string };
@@ -80,6 +80,8 @@ export type ScadenzeConsoleLabels = {
   segmented: { win60: string; win30: string; win7: string; expired: string; all: string };
   filters: { allTypes: string; allPilots: string; pilot: string; personSearchPlaceholder: string; reset: string };
   table: { pilot: string; type: string; certificate: string; expiresAt: string; daysLeft: string; status: string; empty: string };
+  /** The row's category badge, by `item.category` (= the type's `kind`, story 19.7a D-12) — never deduced from the name. */
+  category: Record<Category, string>;
   statCards: { expired: string; expiredNote: string; within7: string; within7Note: string; within30: string; within30Note: string; within60: string; within60Note: string };
   status: { expired: string; within7: string; within30: string; within60: string; ok: string };
   daysAgoSuffix: string;
@@ -144,12 +146,13 @@ export type ScadenzeConsoleProps = {
   labels: ScadenzeConsoleLabels;
 };
 
-const COLS = 'minmax(140px,1.4fr) 110px minmax(150px,1.5fr) 130px 120px 130px';
+// Story 19.7a: the "Tipo" track widened 110 -> 132px for the longest category badge ("Quota associativa").
+const COLS = 'minmax(140px,1.4fr) 132px minmax(150px,1.5fr) 130px 120px 130px';
 
 const WINDOW_VALUES = ['60', '30', '7', 'expired', 'all'] as const;
 
-/** Category badge tone (Contesto: Medico=info, Licenza="", Abilitazione=warn — `ScadenzeView.jsx`'s `catTone`). `categoryOf` itself is shared, `@/lib/expiry-status` (story 12.12: reused by `ScadenzeWidget`, no second implementation). */
-const CATEGORY_TONE: Record<Category, BadgeTone> = { Medico: 'info', Licenza: '', Abilitazione: 'warn' };
+/** Category badge tone — the prototype's `catTone` (`ScadenzeView.jsx`: medico=info, abilitazione=warn), keyed on the type's `kind` since story 19.7a (D-12); the membership fee takes the neutral tone. */
+const CATEGORY_TONE: Record<Category, BadgeTone> = { MEDICAL: 'info', RATING: 'warn', MEMBERSHIP: '' };
 
 /** Tier tone (Contesto: `ScadenzeView.jsx:12-20`) — `tierOf` itself is shared, `@/lib/expiry-status` (story 12.12). */
 const TIER_TONE: Record<0 | 1 | 2 | 3 | 4, BadgeTone> = { 0: 'bad', 1: 'bad', 2: 'warn', 3: 'info', 4: '' };
@@ -485,7 +488,6 @@ export function ScadenzeConsole({
           ) : (
             items.map((item) => {
               const tier = tierOf(item.daysUntil);
-              const category = categoryOf(item.typeName);
               return (
                 <div key={item.id} className="student-row" data-testid="scadenze-row" style={{ gridTemplateColumns: COLS, background: TIER_ROW_TINT[tier] }}>
                   <div>
@@ -494,7 +496,7 @@ export function ScadenzeConsole({
                     </Link>
                   </div>
                   <div>
-                    <Badge tone={CATEGORY_TONE[category]}>{category}</Badge>
+                    <Badge tone={CATEGORY_TONE[item.category]}>{labels.category[item.category]}</Badge>
                   </div>
                   <div style={{ fontSize: 12.5 }}>{item.typeName}</div>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
@@ -693,7 +695,7 @@ export function ScadenzeConsole({
           open
           onClose={closeSheet}
           testId="mobile-scadenze-sheet"
-          sub={expirySheetSub({ category: categoryOf(sheetItem.typeName), typeName: sheetItem.typeName })}
+          sub={expirySheetSub({ category: labels.category[sheetItem.category], typeName: sheetItem.typeName })}
           title={`${sheetItem.personLastName} ${sheetItem.personFirstName}`}
           badge={
             <Badge tone={TIER_TONE[tierOf(sheetItem.daysUntil)]} dot>

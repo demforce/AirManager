@@ -162,7 +162,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
           },
           {
             personName: 'Chiara Bianchi',
-            typeName: 'Licenza PPL',
+            typeName: 'Rating SEP',
             expiresAt: new Date(Date.UTC(2026, 6, 5)),
             daysLeft: -3,
             holderStatus: 'NO_EMAIL',
@@ -185,7 +185,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
         items: [
           {
             personName: 'Chiara Bianchi',
-            typeName: 'Licenza PPL',
+            typeName: 'Rating SEP',
             expiresAt: new Date(Date.UTC(2026, 6, 5)),
             daysLeft: -3,
             holderStatus: 'NO_EMAIL',

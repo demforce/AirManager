@@ -18,6 +18,7 @@ import {
 import { outOfServiceDetails } from './aircraft-status';
 import { findBlockingExpiredDocuments, type ExpiredDocument } from './bookings.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
+import { getMedicalRequirementFailure } from './expiries.service';
 import { getEffectiveInstructorRate, type InstructorRateListItem } from './instructor-rates.service';
 import { getEffectiveRate } from './rates.service';
 
@@ -357,10 +358,18 @@ type ResolvedFlightInput = {
  * person's role on THIS flight (pilot/student for the person slot,
  * instructor for the instructor slot) — never re-derived from a second
  * profile query.
+ *
+ * Story 19.7a (R-19-j, D-4): the per-type scan reads RATINGs only; medical
+ * visits are ONE requirement for whoever is on board — a person with NO
+ * visit at all gets ONE "missing" document (`expiresAt: null`, named after the
+ * active MEDICAL types), from `getMedicalRequirementFailure`. An EXPIRED visit
+ * is `findBlockingExpiredDocuments`'s document, never this one: each failure
+ * is reported by exactly one of the two scans.
  */
 async function findMissingBlockingDocuments(
   personId: string,
   applicableProfiles: { pilot: boolean; student: boolean; instructor: boolean },
+  flightDateOnly: string,
 ): Promise<Array<{ typeName: string }>> {
   const scopes: ExpiryScope[] = ['ALL'];
   if (applicableProfiles.pilot) scopes.push('PILOTS');
@@ -368,20 +377,22 @@ async function findMissingBlockingDocuments(
   if (applicableProfiles.instructor) scopes.push('INSTRUCTORS');
 
   const applicableTypes = await prisma.expiryType.findMany({
-    where: { isActive: true, blocksBooking: true, scope: { in: scopes } },
+    where: { kind: 'RATING', isActive: true, blocksBooking: true, scope: { in: scopes } },
     select: { id: true, name: true },
   });
-  if (applicableTypes.length === 0) {
-    return [];
+
+  let missing: Array<{ typeName: string }> = [];
+  if (applicableTypes.length > 0) {
+    const registered = await prisma.expiry.findMany({
+      where: { personId, expiryTypeId: { in: applicableTypes.map((type) => type.id) } },
+      select: { expiryTypeId: true },
+    });
+    const registeredTypeIds = new Set(registered.map((expiry) => expiry.expiryTypeId));
+    missing = applicableTypes.filter((type) => !registeredTypeIds.has(type.id)).map((type) => ({ typeName: type.name }));
   }
 
-  const registered = await prisma.expiry.findMany({
-    where: { personId, expiryTypeId: { in: applicableTypes.map((type) => type.id) } },
-    select: { expiryTypeId: true },
-  });
-  const registeredTypeIds = new Set(registered.map((expiry) => expiry.expiryTypeId));
-
-  return applicableTypes.filter((type) => !registeredTypeIds.has(type.id)).map((type) => ({ typeName: type.name }));
+  const medicalFailure = await getMedicalRequirementFailure(personId, flightDateOnly);
+  return medicalFailure !== null && medicalFailure.expiresAt === null ? [...missing, { typeName: medicalFailure.typeName }] : missing;
 }
 
 /**
@@ -408,14 +419,14 @@ async function scanBlockingDocuments(
   flightDateOnly: string,
 ): Promise<FlightBlockingDocument[]> {
   const personExpired = (await findBlockingExpiredDocuments(person.id, flightDateOnly)).blockingDocuments;
-  const personMissing = await findMissingBlockingDocuments(person.id, {
-    pilot: person.hasActivePilot,
-    student: person.hasActiveStudent,
-    instructor: false,
-  });
+  const personMissing = await findMissingBlockingDocuments(
+    person.id,
+    { pilot: person.hasActivePilot, student: person.hasActiveStudent, instructor: false },
+    flightDateOnly,
+  );
   const instructorExpired = instructor === null ? [] : (await findBlockingExpiredDocuments(instructor.personId, flightDateOnly)).blockingDocuments;
   const instructorMissing =
-    instructor === null ? [] : await findMissingBlockingDocuments(instructor.personId, { pilot: false, student: false, instructor: true });
+    instructor === null ? [] : await findMissingBlockingDocuments(instructor.personId, { pilot: false, student: false, instructor: true }, flightDateOnly);
 
   return [
     ...personExpired.map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt, role: 'person' as const, personName: person.name })),

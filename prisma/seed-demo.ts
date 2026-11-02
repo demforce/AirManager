@@ -106,22 +106,22 @@ const CASH_CATEGORY_NAMES = ['Ricariche', 'Carburante', 'Assicurazione', 'Manute
 
 // Story 13.1 (AC 1): `kind` splits RATING from MEDICAL — the person editor
 // renders them as two separate chip groups, so a medical typed as a rating
-// shows up among the ratings. Mirrors `prisma/seed.ts`'s own catalogue;
-// `kind` defaults to `RATING` in the schema, hence only medicals set it.
+// shows up among the ratings. Mirrors `prisma/seed.ts`'s own catalogue
+// (story 19.7a: visits `ALL`, no "Licenza", the fee is `MEMBERSHIP`);
+// `kind` defaults to `RATING` in the schema, hence only the others set it.
 const STANDARD_EXPIRY_TYPES: Array<{
   name: string;
   scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
   blocksBooking: boolean;
   validityMonths?: number;
-  kind?: 'RATING' | 'MEDICAL';
+  kind?: 'RATING' | 'MEDICAL' | 'MEMBERSHIP';
 }> = [
-  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Licenza', scope: 'PILOTS', blocksBooking: true },
+  { name: 'Visita medica classe 1', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica classe 2', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica LAPL', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
   { name: 'Rating SEP', scope: 'PILOTS', blocksBooking: false },
   { name: 'Inglese ICAO', scope: 'PILOTS', blocksBooking: false },
-  { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12 },
+  { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12, kind: 'MEMBERSHIP' },
 ];
 
 // --- fleet ------------------------------------------------------------------
@@ -188,11 +188,14 @@ type FlightPlan = {
 // Chronological (oldest first) so balances evolve sensibly.
 const FLIGHTS: FlightPlan[] = [
   { email: 'stefano.colombo61@libero.it', reg: 'I-A661', daysAgo: 70, takeoffHour: 10, durationMin: 50 },
+  // Story 19.7a (AC 2): Stefano's two later flights sit 64-66 days back, so the
+  // demo shows a currency ending within 30 days (X=1, Y=90 -> 26 days left).
+  { email: 'stefano.colombo61@libero.it', reg: 'I-B412', daysAgo: 66, takeoffHour: 15, durationMin: 65 },
+  { email: 'stefano.colombo61@libero.it', reg: 'I-A661', daysAgo: 64, takeoffHour: 10, durationMin: 40 },
   { email: 'marco.desantis@gmail.com', reg: 'I-B412', daysAgo: 62, takeoffHour: 9, durationMin: 55, touchAndGo: 4 },
   { email: 'ale.greco77@gmail.com', reg: 'I-PDVB', daysAgo: 55, takeoffHour: 14, durationMin: 110, destination: DESTINATIONS.LIDR },
   { email: 'chiara.esposito88@gmail.com', reg: 'I-A661', daysAgo: 51, takeoffHour: 16, durationMin: 45 },
   { email: 'francesca.romano@tiscali.it', reg: 'I-B412', daysAgo: 48, takeoffHour: 10, durationMin: 75 },
-  { email: 'stefano.colombo61@libero.it', reg: 'I-B412', daysAgo: 44, takeoffHour: 15, durationMin: 65 },
   { email: 'marco.desantis@gmail.com', reg: 'I-B412', daysAgo: 41, takeoffHour: 9, durationMin: 80, destination: DESTINATIONS.LIQL },
   { email: 'davide.marchetti@gmail.com', reg: 'I-PDVB', daysAgo: 38, takeoffHour: 11, durationMin: 85, destination: DESTINATIONS.LIQL },
   { email: 'ale.greco77@gmail.com', reg: 'I-A661', daysAgo: 33, takeoffHour: 17, durationMin: 60 },
@@ -200,7 +203,6 @@ const FLIGHTS: FlightPlan[] = [
   { email: 'francesca.romano@tiscali.it', reg: 'I-B412', daysAgo: 27, takeoffHour: 10, durationMin: 90, destination: DESTINATIONS.LIDP },
   { email: 'chiara.esposito88@gmail.com', reg: 'I-B412', daysAgo: 24, takeoffHour: 15, durationMin: 60, instructorEmail: 'luca.bianchi.fi@gmail.com' },
   { email: 'marco.desantis@gmail.com', reg: 'I-A661', daysAgo: 20, takeoffHour: 18, durationMin: 65 },
-  { email: 'stefano.colombo61@libero.it', reg: 'I-A661', daysAgo: 18, takeoffHour: 10, durationMin: 40 },
   { email: 'davide.marchetti@gmail.com', reg: 'I-B412', daysAgo: 16, takeoffHour: 16, durationMin: 70 },
   { email: 'francesca.romano@tiscali.it', reg: 'I-A661', daysAgo: 13, takeoffHour: 9, durationMin: 55 },
   { email: 'ale.greco77@gmail.com', reg: 'I-A661', daysAgo: 12, takeoffHour: 14, durationMin: 70, destination: DESTINATIONS.LILQ },
@@ -226,12 +228,6 @@ const EXPIRIES: ExpiryPlan[] = [
   { email: 'luca.bianchi.fi@gmail.com', type: 'Visita medica classe 1', expiresAt: '2027-02-10' },
   { email: 'paola.rinaldi@outlook.it', type: 'Visita medica classe 1', expiresAt: dateOnly(20) },
   { email: 'matteo.fontana01@gmail.com', type: 'Visita medica LAPL', expiresAt: '2026-12-15' },
-  { email: 'marco.desantis@gmail.com', type: 'Licenza', expiresAt: '2027-05-20' },
-  { email: 'ale.greco77@gmail.com', type: 'Licenza', expiresAt: '2027-09-12' },
-  { email: 'francesca.romano@tiscali.it', type: 'Licenza', expiresAt: '2028-04-08' },
-  { email: 'stefano.colombo61@libero.it', type: 'Licenza', expiresAt: '2026-12-30' },
-  { email: 'davide.marchetti@gmail.com', type: 'Licenza', expiresAt: '2027-10-17' },
-  { email: 'chiara.esposito88@gmail.com', type: 'Licenza', expiresAt: '2029-03-25' },
   { email: 'marco.desantis@gmail.com', type: 'Rating SEP', expiresAt: '2027-05-31' },
   { email: 'ale.greco77@gmail.com', type: 'Rating SEP', expiresAt: '2026-09-30' },
   { email: 'francesca.romano@tiscali.it', type: 'Rating SEP', expiresAt: '2028-02-28' },

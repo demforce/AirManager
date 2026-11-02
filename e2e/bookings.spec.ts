@@ -265,7 +265,7 @@ async function createPilotWithLogin(page: Page, password: string): Promise<{ per
 
 /**
  * Creates a run-unique expiry TYPE via the admin API (story 7.4, Dev Notes:
- * "MAI riusare 'Licenza' del seed nei test, si inquinerebbero a vicenda" —
+ * never reuse a seeded type in the tests, they would pollute each other —
  * the catalogue is shared and tests run in parallel). `scope: 'ALL'` for
  * simplicity (any person is eligible), matching the Contesto's own e2e plan.
  */

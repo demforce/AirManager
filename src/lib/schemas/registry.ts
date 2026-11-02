@@ -1232,7 +1232,7 @@ registry.registerPath({
   path: '/api/v1/expiry-types',
   summary: 'List the expiry-type catalogue (standard + custom, FR-35)',
   description:
-    'Active types only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 6.1, AC 1). Requires `expiries.manage` (ADMIN-only — registers scadenze against this catalogue, story 6.2).',
+    'Active types only by default — pass `includeInactive=true` (the admin management page does) to also get deactivated ones (story 6.1, AC 1). `kind` filters by `RATING`, `MEDICAL` or `MEMBERSHIP` (story 19.7a: the membership fee is its own system kind, exactly one row). Requires `expiries.manage` (ADMIN-only — registers scadenze against this catalogue, story 6.2).',
   tags: ['Expiries'],
   security,
   request: { query: listExpiryTypesQuerySchema },
@@ -1247,7 +1247,7 @@ registry.registerPath({
   path: '/api/v1/expiry-types',
   summary: 'Create an expiry type',
   description:
-    'Name must be unique — conflict is a 409 (story 6.1, AC 1/2). Requires `settings.manage` (admin-only catalogue configuration, same split as `POST /api/v1/cash-categories`).',
+    'Name must be unique — conflict is a 409 (story 6.1, AC 1/2). Story 19.7a: `kind` accepts `RATING` (default) or `MEDICAL` — `MEMBERSHIP` is a system type, a 422 `VALIDATION_ERROR`. `scope` and `blocksBooking` are optional and resolved by `kind`: a MEDICAL type has no scope and always counts toward the medical requirement (one valid visit of any class, R-19-j), so it is always `ALL`/`true` — omitted means those values, explicit and different is a 422 `MEDICAL_TYPE_FIELDS`; a RATING takes `ALL`/`false` when they are omitted. Requires `settings.manage` (admin-only catalogue configuration, same split as `POST /api/v1/cash-categories`).',
   tags: ['Expiries'],
   security,
   request: { body: { content: jsonContent(createExpiryTypeSchema), required: true } },
@@ -1262,7 +1262,7 @@ registry.registerPath({
   path: '/api/v1/expiry-types/{id}',
   summary: 'Update an expiry type (partial patch)',
   description:
-    'Every field optional; `isActive` toggling the lifecycle is a plain field on this same PATCH — there is no dedicated deactivate/reactivate endpoint (story 6.1, AC 1/2). Editing a type already in use is legal (a registered scadenza, story 6.2, references it by id, never a name snapshot). Requires `settings.manage`.',
+    'Every field optional; `isActive` toggling the lifecycle is a plain field on this same PATCH — there is no dedicated deactivate/reactivate endpoint (story 6.1, AC 1/2). Editing a type already in use is legal (a registered scadenza, story 6.2, references it by id, never a name snapshot). Story 19.7a, checked in this order after the 404: the membership-fee type (`kind: MEMBERSHIP`) is a system type — any PATCH, `isActive` included, is a 409 `MEMBERSHIP_TYPE_LOCKED`; `kind` accepts only `RATING`/`MEDICAL` (422 `VALIDATION_ERROR` otherwise); the RESULTING state of a MEDICAL type must keep `scope: ALL` and `blocksBooking: true`, else 422 `MEDICAL_TYPE_FIELDS` (also for a RATING moved to MEDICAL without them). Requires `settings.manage`.',
   tags: ['Expiries'],
   security,
   request: { params: expiryTypeIdParams, body: { content: jsonContent(updateExpiryTypeSchema), required: true } },
@@ -1277,7 +1277,7 @@ registry.registerPath({
   path: '/api/v1/expiry-types/{id}',
   summary: 'Delete an expiry type (only if never used)',
   description:
-    'An expiry type referenced by a recorded scadenza cannot be deleted — 409 suggesting deactivation instead (story 6.1, AC 2; story 6.2 adds the `Expiry.expiryTypeId` FK RESTRICT this backstops). Requires `settings.manage`.',
+    'An expiry type referenced by a recorded scadenza cannot be deleted — 409 suggesting deactivation instead (story 6.1, AC 2; story 6.2 adds the `Expiry.expiryTypeId` FK RESTRICT this backstops). The membership-fee type (`kind: MEMBERSHIP`, story 19.7a) is never deleted: 409 `MEMBERSHIP_TYPE_LOCKED`, checked right after the 404. Requires `settings.manage`.',
   tags: ['Expiries'],
   security,
   request: { params: expiryTypeIdParams },
@@ -1298,7 +1298,7 @@ registry.registerPath({
   path: '/api/v1/people/{id}/expiries',
   summary: "List a person's scadenze, with computed status (AC 1/2, FR-36)",
   description:
-    'Ordered by `expiresAt asc` (soonest-expiring first), capped at 200. `status` (`ok`/`expiring`/`expired`) is always server-computed, never persisted. Readable with `expiries.manage` (any person) or own-access (`self.read` plus a matching `personId`, same rule as the account statement/packages endpoints).',
+    'Ordered by `expiresAt asc` (soonest-expiring first), capped at 200. `status` (`ok`/`expiring`/`expired`) is always server-computed, never persisted. `typeKind` (story 19.7a) is the type\'s kind — visit, rating or membership fee. Readable with `expiries.manage` (any person) or own-access (`self.read` plus a matching `personId`, same rule as the account statement/packages endpoints).',
   tags: ['Expiries'],
   security,
   request: { params: personIdParams },
@@ -1313,7 +1313,7 @@ registry.registerPath({
   path: '/api/v1/expiries',
   summary: 'The urgency dashboard: every scadenza across every person, filterable (story 6.4, AC 1, FR-38)',
   description:
-    'Ordered by `expiresAt asc, id asc` (soonest-expiring/most-overdue first, tie-broken for stable pagination). Filters `expiryTypeId`/`scope`/`status` are optional and AND-combinable; `status` maps to an `expiresAt` date range server-side (never post-filtered), always agreeing with the per-row `status` field by construction (same `today`/`EXPIRY_WARNING_DAYS` boundary as `computeExpiryStatus`). Requires `expiries.manage`.',
+    'Ordered by `expiresAt asc, id asc` (soonest-expiring/most-overdue first, tie-broken for stable pagination). Filters `expiryTypeId`/`scope`/`status` are optional and AND-combinable; `status` maps to an `expiresAt` date range server-side (never post-filtered), always agreeing with the per-row `status` field by construction (same `today`/`EXPIRY_WARNING_DAYS` boundary as `computeExpiryStatus`). Each row carries `category` (story 19.7a) = its type\'s kind (`MEDICAL`/`RATING`/`MEMBERSHIP`), the registry badge. Requires `expiries.manage`.',
   tags: ['Expiries'],
   security,
   request: { query: listAllExpiriesQuerySchema },

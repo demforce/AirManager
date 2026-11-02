@@ -21,14 +21,14 @@ describe('expiryCardSubLine', () => {
   });
 
   it('drops a blank segment instead of leaving two separators adjacent', () => {
-    expect(expiryCardSubLine({ typeName: 'Licenza PPL', dateLabel: '', daysLabel: '38 g' })).toBe('Licenza PPL · 38 g');
+    expect(expiryCardSubLine({ typeName: 'Rating SEP', dateLabel: '', daysLabel: '38 g' })).toBe('Rating SEP · 38 g');
   });
 });
 
 describe('expirySheetSub', () => {
   it('carries the two classifications, and stays well formed inside the dialog name', () => {
-    const sub = expirySheetSub({ category: 'Medico', typeName: 'Visita medica classe 2' });
-    expect(sub).toBe('Medico · Visita medica classe 2');
+    const sub = expirySheetSub({ category: 'Visita medica', typeName: 'Visita medica classe 2' });
+    expect(sub).toBe('Visita medica · Visita medica classe 2');
     const name = `${sub} — Rossi Mario`;
     expect(name).not.toMatch(/—\s*—/);
     expect(name).not.toMatch(/·\s*·/);

@@ -1,7 +1,8 @@
-import type { ExpiryProposalStatus, ExpiryScope, Prisma } from '@/generated/prisma/client';
+import type { ExpiryProposalStatus, ExpiryScope, ExpiryTypeKind, Prisma } from '@/generated/prisma/client';
 import { paginate, paginationOffset } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
 import { computeExpiryStatus, daysUntilUtc, EXPIRY_WARNING_DAYS, type ExpiryStatus } from '@/lib/expiry-status';
+import { evaluateMedicalRequirement, type MedicalRequirementFailure } from '@/lib/medical-requirement';
 import type { ExpiryWindowDto, ListAllExpiriesQuery, RegisterExpiryInput, UpdateExpiryInput } from '@/lib/schemas/expiries';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
@@ -51,6 +52,8 @@ export type ExpiryListItem = {
   expiryTypeId: string;
   typeName: string;
   typeScope: ExpiryScope;
+  /** The type's `kind` (story 19.7a, D-12) — how a reader tells a visit from a rating from the membership fee, never by name. */
+  typeKind: ExpiryTypeKind;
   expiresAt: string;
   notes: string | null;
   status: ExpiryStatus;
@@ -60,7 +63,7 @@ export type ExpiryListItem = {
 const EXPIRY_SELECT = {
   id: true,
   expiryTypeId: true,
-  expiryType: { select: { name: true, scope: true } },
+  expiryType: { select: { name: true, scope: true, kind: true } },
   expiresAt: true,
   notes: true,
   proposals: {
@@ -75,7 +78,7 @@ const EXPIRY_SELECT = {
 type SelectedExpiry = {
   id: string;
   expiryTypeId: string;
-  expiryType: { name: string; scope: ExpiryScope };
+  expiryType: { name: string; scope: ExpiryScope; kind: ExpiryTypeKind };
   expiresAt: Date;
   notes: string | null;
   proposals: Array<{ id: string; proposedIssuedAt: Date; proposedExpiresAt: Date; proposedNotes: string | null; createdAt: Date }>;
@@ -89,6 +92,7 @@ function toListItem(expiry: SelectedExpiry, today: Date): ExpiryListItem {
     expiryTypeId: expiry.expiryTypeId,
     typeName: expiry.expiryType.name,
     typeScope: expiry.expiryType.scope,
+    typeKind: expiry.expiryType.kind,
     expiresAt: toDateOnlyString(expiry.expiresAt),
     notes: expiry.notes,
     status: computeExpiryStatus(expiry.expiresAt, today),
@@ -344,6 +348,8 @@ export type ExpiryDashboardItem = {
   expiryTypeId: string;
   typeName: string;
   typeScope: ExpiryScope;
+  /** The registry row's category = its type's `kind` (story 19.7a, D-12) — additive; story 19.7b adds `'CURRENCY'` with its derived rows. */
+  category: ExpiryTypeKind;
   expiresAt: string;
   notes: string | null;
   status: ExpiryStatus;
@@ -362,7 +368,7 @@ const DASHBOARD_SELECT = {
   personId: true,
   person: { select: { firstName: true, lastName: true } },
   expiryTypeId: true,
-  expiryType: { select: { name: true, scope: true } },
+  expiryType: { select: { name: true, scope: true, kind: true } },
   expiresAt: true,
   notes: true,
 } as const;
@@ -372,7 +378,7 @@ type SelectedDashboardExpiry = {
   personId: string;
   person: { firstName: string; lastName: string };
   expiryTypeId: string;
-  expiryType: { name: string; scope: ExpiryScope };
+  expiryType: { name: string; scope: ExpiryScope; kind: ExpiryTypeKind };
   expiresAt: Date;
   notes: string | null;
 };
@@ -386,6 +392,7 @@ function toDashboardItem(expiry: SelectedDashboardExpiry, today: Date): ExpiryDa
     expiryTypeId: expiry.expiryTypeId,
     typeName: expiry.expiryType.name,
     typeScope: expiry.expiryType.scope,
+    category: expiry.expiryType.kind,
     expiresAt: toDateOnlyString(expiry.expiresAt),
     notes: expiry.notes,
     status: computeExpiryStatus(expiry.expiresAt, today),
@@ -537,13 +544,48 @@ export async function getExpiryTierCounts(actor: Actor): Promise<ExpiryTierCount
 }
 
 
+/**
+ * The medical requirement of ONE person at `dateOnly` (`YYYY-MM-DD`) — story
+ * 19.7a, R-19-j, D-4: the names of the ACTIVE MEDICAL types plus every
+ * MEDICAL row of the person, judged by the pure
+ * `src/lib/medical-requirement.ts#evaluateMedicalRequirement`. `null` =
+ * requirement off or satisfied; otherwise the ONE failing document (the most
+ * recently expired visit, or a "missing" one with `expiresAt: null`).
+ *
+ * No actor, like `bookings.service.ts#findBlockingExpiredDocuments`: it runs
+ * inside the booking/flight scans for whoever the operation names. Exported
+ * for those scans and for the checks of stories 19.9/19.10.
+ */
+export async function getMedicalRequirementFailure(personId: string, dateOnly: string): Promise<MedicalRequirementFailure | null> {
+  const activeTypes = await prisma.expiryType.findMany({ where: { kind: 'MEDICAL', isActive: true }, select: { name: true } });
+  // No active MEDICAL type: the requirement is off, whatever the person has.
+  if (activeTypes.length === 0) return null;
+  const medicals = await prisma.expiry.findMany({
+    where: { personId, expiryType: { kind: 'MEDICAL' } },
+    select: { expiresAt: true, expiryType: { select: { name: true } } },
+  });
+  return evaluateMedicalRequirement(
+    {
+      activeMedicalTypeNames: activeTypes.map((type) => type.name),
+      medicals: medicals.map((medical) => ({ typeName: medical.expiryType.name, expiresAt: toDateOnlyString(medical.expiresAt) })),
+    },
+    dateOnly,
+  );
+}
+
 /** One blocking document of one person, already reduced to whole days from "today" — the shape `pilotRowFlag` consumes. */
 export type BlockingExpiryItem = { typeName: string; daysUntil: number };
 
 /**
- * The BLOCKING documents (`ExpiryType.blocksBooking`) of `personIds` that are
- * already expired or due within {@link BLOCKING_FLAG_HORIZON_DAYS} days —
- * story 15.5, ratifica R-15.5-c: the data behind the pilot row's flag chip.
+ * The BLOCKING documents of `personIds` that are already expired or due
+ * within {@link BLOCKING_FLAG_HORIZON_DAYS} days — story 15.5, ratifica
+ * R-15.5-c: the data behind the pilot row's flag chip. Blocking means a
+ * RATING with `ExpiryType.blocksBooking`, plus — story 19.7a, D-13 — the
+ * person's BEST medical visit (the latest `expiresAt`): one valid visit of any
+ * class covers them (R-19-j), so an expired class 2 beside a valid class 1 is
+ * no signal at all. The visits are therefore read WHOLE and reduced to the
+ * best one BEFORE the horizon is applied — filtering first would drop the
+ * valid visit and keep the expired one, a false "expired" chip.
  *
  * BATCHED over the ids of the current page (one query, `personId in (…)`),
  * same N+1-avoidance rationale as `listPilotsPageData`'s own five readers it
@@ -571,13 +613,24 @@ export async function listBlockingExpiriesByPerson(actor: Actor, personIds: stri
   }
 
   const horizon = new Date(today.getTime() + BLOCKING_FLAG_HORIZON_DAYS * MS_PER_DAY);
-  const rows = await prisma.expiry.findMany({
-    where: { personId: { in: personIds }, expiresAt: { lte: horizon }, expiryType: { blocksBooking: true } },
+  const ratingRows = await prisma.expiry.findMany({
+    where: { personId: { in: personIds }, expiresAt: { lte: horizon }, expiryType: { kind: 'RATING', blocksBooking: true } },
+    select: { personId: true, expiresAt: true, expiryType: { select: { name: true } } },
+  });
+  const medicalRows = await prisma.expiry.findMany({
+    where: { personId: { in: personIds }, expiryType: { kind: 'MEDICAL' } },
     select: { personId: true, expiresAt: true, expiryType: { select: { name: true } } },
   });
 
+  const bestMedicalByPerson = new Map<string, (typeof medicalRows)[number]>();
+  for (const row of medicalRows) {
+    const best = bestMedicalByPerson.get(row.personId);
+    if (best === undefined || row.expiresAt.getTime() > best.expiresAt.getTime()) bestMedicalByPerson.set(row.personId, row);
+  }
+  const bestMedicalsInHorizon = [...bestMedicalByPerson.values()].filter((row) => row.expiresAt.getTime() <= horizon.getTime());
+
   const byPerson = new Map<string, BlockingExpiryItem[]>();
-  for (const row of rows) {
+  for (const row of [...ratingRows, ...bestMedicalsInHorizon]) {
     const list = byPerson.get(row.personId) ?? [];
     list.push({ typeName: row.expiryType.name, daysUntil: daysUntilUtc(row.expiresAt, today) });
     byPerson.set(row.personId, list);

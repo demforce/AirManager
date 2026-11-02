@@ -19,11 +19,9 @@ export function isExpiryScopeCompatible(scope: ExpiryScopeDto, profiles: Profile
 /**
  * Name of the "Quota associativa" `ExpiryType`, upserted by this exact name
  * in `membership.service.ts` (which imports it from here — single source of
- * truth). Story 13.2 review F3 (PO decision 2026-07-24): a financial
- * obligation, not a flight rating/medical, so it must never be offered as a
- * selectable chip in the person/instructor editor (create form or
- * `ExpiryDraftEditor`) — it stays managed ONLY by the Impostazioni quota card
- * + addebito flow. The Scadenze page is a different surface and keeps
- * showing an already-registered quota unaffected.
+ * truth) and seeded by the same name. Only the KEY of that upsert: since
+ * story 19.7a (D-1) the type is the one `ExpiryTypeKind.MEMBERSHIP` row, and
+ * every reader — the editor chips that must not offer it, the Ratings card,
+ * the Scadenze category — tells it apart by that kind, never by this name.
  */
 export const MEMBERSHIP_FEE_TYPE_NAME = 'Quota associativa';

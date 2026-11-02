@@ -1,3 +1,4 @@
+import { CURRENCY_LIMITS } from '@/lib/currency';
 import { env } from '@/lib/env';
 import { z } from './zod-with-openapi';
 
@@ -63,6 +64,19 @@ export const schedulingSettingsDtoSchema = z.object({
 });
 
 export type SchedulingSettingsDto = z.infer<typeof schedulingSettingsDtoSchema>;
+
+// --- Currency (story 19.7a, R-19-i, D-10) ----------------------------------
+// `currency.*` — X flights in the last Y days. The bounds (and the defaults the
+// getter falls back to) live in the PURE `@/lib/currency`, so the Impostazioni
+// mirror of story 19.8 reads the same numbers on the client. No route here:
+// story 19.8 adds `GET/PUT /api/v1/settings/currency` and its composite block.
+
+export const currencySettingsSchema = z.object({
+  minFlights: z.number().int().min(CURRENCY_LIMITS.minFlights.min).max(CURRENCY_LIMITS.minFlights.max),
+  windowDays: z.number().int().min(CURRENCY_LIMITS.windowDays.min).max(CURRENCY_LIMITS.windowDays.max),
+});
+
+export type CurrencySettingsInput = z.infer<typeof currencySettingsSchema>;
 
 // --- SMTP (story 12.11, AC 1/2) --------------------------------------------
 // `smtp.*` — the mailer's own configuration (`smtp-mail-sender.ts` reads it

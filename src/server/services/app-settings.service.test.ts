@@ -40,7 +40,11 @@ const {
   getTreasuryOpeningInternal,
   getTreasurySettings,
   setTreasurySettings,
+  getCurrencySettings,
+  setCurrencySettings,
+  writeCurrencySettingsCore,
 } = await import('./app-settings.service');
+const { currencySettingsSchema } = await import('@/lib/schemas/settings');
 
 const findManyMock = vi.mocked(prisma.appSetting.findMany);
 const findUniqueMock = vi.mocked(prisma.appSetting.findUnique);
@@ -423,6 +427,105 @@ describe('app-settings.service — membership fee default (story 12.11, AC 1)', 
     upsert.mockResolvedValue({});
     await expect(setMembershipFeeCents(adminActor(), 5000)).resolves.toBe(5000);
     expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ update: { value: '5000' } }));
+  });
+});
+
+// Story 19.7a (AC 12, R-19-i, D-10) — the contract story 19.8 consumes.
+describe('app-settings.service — currency settings (story 19.7a)', () => {
+  beforeEach(() => {
+    findManyMock.mockReset();
+    upsertMock.mockReset();
+    transactionMock.mockReset();
+  });
+
+  it('absent keys -> the defaults { minFlights: 1, windowDays: 90 }, with no gate (any caller)', async () => {
+    findMany.mockResolvedValue([]);
+
+    await expect(getCurrencySettings()).resolves.toEqual({ minFlights: 1, windowDays: 90 });
+    expect(findManyMock).toHaveBeenCalledWith({ where: { key: { in: ['currency.minFlights', 'currency.windowDays'] } }, select: { key: true, value: true } });
+  });
+
+  it('reads back stored values', async () => {
+    findMany.mockResolvedValue([
+      { key: 'currency.minFlights', value: '3' },
+      { key: 'currency.windowDays', value: '60' },
+    ]);
+
+    await expect(getCurrencySettings()).resolves.toEqual({ minFlights: 3, windowDays: 60 });
+  });
+
+  it.each([
+    ['currency.minFlights', '0', { minFlights: 1, windowDays: 45 }],
+    ['currency.minFlights', '100', { minFlights: 1, windowDays: 45 }],
+    ['currency.minFlights', '2.5', { minFlights: 1, windowDays: 45 }],
+    ['currency.minFlights', 'abc', { minFlights: 1, windowDays: 45 }],
+    ['currency.minFlights', '-3', { minFlights: 1, windowDays: 45 }],
+  ])('a stored %s of %j falls back to THAT field\'s default only, with a console.warn', async (key, value, expected) => {
+    findMany.mockResolvedValue([
+      { key, value },
+      { key: 'currency.windowDays', value: '45' },
+    ]);
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(getCurrencySettings()).resolves.toEqual(expected);
+    expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+    consoleWarnSpy.mockRestore();
+  });
+
+  it.each(['0', '3651', '30.0', ' 30'])('a stored windowDays of %j falls back to 90, minFlights kept', async (value) => {
+    findMany.mockResolvedValue([
+      { key: 'currency.minFlights', value: '2' },
+      { key: 'currency.windowDays', value },
+    ]);
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(getCurrencySettings()).resolves.toEqual({ minFlights: 2, windowDays: 90 });
+    expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('setCurrencySettings without settings.manage -> ForbiddenError before any query', async () => {
+    await expect(setCurrencySettings(pilotActor(), { minFlights: 2, windowDays: 60 })).rejects.toBeInstanceOf(ForbiddenError);
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  it('setCurrencySettings (admin) runs the core inside its own transaction and returns the values', async () => {
+    const tx = { appSetting: { upsert: vi.fn(async () => ({})) } };
+    (transactionMock as unknown as { mockImplementation: (fn: (callback: (client: unknown) => unknown) => unknown) => void }).mockImplementation((callback) => callback(tx));
+
+    await expect(setCurrencySettings(adminActor(), { minFlights: 2, windowDays: 60 })).resolves.toEqual({ minFlights: 2, windowDays: 60 });
+    expect(tx.appSetting.upsert).toHaveBeenCalledTimes(2);
+    expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  it('writeCurrencySettingsCore writes ONLY on the tx it receives, and never authorizes', async () => {
+    const tx = { appSetting: { upsert: vi.fn(async () => ({})) } };
+
+    await writeCurrencySettingsCore(tx as never, { minFlights: 4, windowDays: 120 });
+
+    expect(tx.appSetting.upsert).toHaveBeenCalledWith({ where: { key: 'currency.minFlights' }, update: { value: '4' }, create: { key: 'currency.minFlights', value: '4' } });
+    expect(tx.appSetting.upsert).toHaveBeenCalledWith({ where: { key: 'currency.windowDays' }, update: { value: '120' }, create: { key: 'currency.windowDays', value: '120' } });
+    expect(upsertMock).not.toHaveBeenCalled();
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('currencySettingsSchema rejects 0, negatives, decimals, X > 99, Y > 3650 — and accepts the bounds', () => {
+    for (const body of [
+      { minFlights: 0, windowDays: 90 },
+      { minFlights: -1, windowDays: 90 },
+      { minFlights: 1.5, windowDays: 90 },
+      { minFlights: 100, windowDays: 90 },
+      { minFlights: 1, windowDays: 0 },
+      { minFlights: 1, windowDays: -30 },
+      { minFlights: 1, windowDays: 90.5 },
+      { minFlights: 1, windowDays: 3651 },
+      { minFlights: 1 },
+    ]) {
+      expect(currencySettingsSchema.safeParse(body).success).toBe(false);
+    }
+    expect(currencySettingsSchema.safeParse({ minFlights: 1, windowDays: 1 }).success).toBe(true);
+    expect(currencySettingsSchema.safeParse({ minFlights: 99, windowDays: 3650 }).success).toBe(true);
   });
 });
 

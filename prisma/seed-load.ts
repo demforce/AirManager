@@ -1079,7 +1079,7 @@ async function main(): Promise<void> {
   console.log('\nPhase 8: expiries...');
 
   const expiryTypes = await prisma.expiryType.findMany({
-    where: { name: { in: ['Visita medica classe 1', 'Visita medica classe 2', 'Visita medica LAPL', 'Licenza', 'Rating SEP', 'Inglese ICAO', 'Quota associativa'] } },
+    where: { name: { in: ['Visita medica classe 1', 'Visita medica classe 2', 'Visita medica LAPL', 'Rating SEP', 'Inglese ICAO', 'Quota associativa'] } },
     select: { id: true, name: true },
   });
   const expiryTypeIdByName = new Map(expiryTypes.map((t) => [t.name, t.id]));
@@ -1112,7 +1112,6 @@ async function main(): Promise<void> {
 
   for (const p of pilotPersons) {
     maybeAddExpiry(p.id, 'Visita medica classe 2', 0.95);
-    maybeAddExpiry(p.id, 'Licenza', 0.95);
     maybeAddExpiry(p.id, 'Rating SEP', 0.6);
     maybeAddExpiry(p.id, 'Inglese ICAO', 0.4);
     maybeAddExpiry(p.id, 'Quota associativa', 0.8);

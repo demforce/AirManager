@@ -14,7 +14,7 @@ vi.mock('@/server/db/prisma', () => ({
     account: { upsert: vi.fn() },
     accountMovement: { create: vi.fn(), aggregate: vi.fn() },
     expiryType: { upsert: vi.fn() },
-    expiry: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+    expiry: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
     sentAlert: { deleteMany: vi.fn() },
     $queryRaw: vi.fn(),
     $transaction: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock('@/server/adapters/mail/templates', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { chargeMembershipFee } = await import('./membership.service');
+const { chargeMembershipFee, getMembershipStatus } = await import('./membership.service');
 const { ForbiddenError, NotFoundError, ValidationError } = await import('./errors');
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
@@ -151,7 +151,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
     );
   });
 
-  it('upserts the "Quota associativa" ExpiryType by NAME (ALL scope, non-blocking, 12 months) — update: {} never overwrites an admin edit', async () => {
+  it('upserts the "Quota associativa" ExpiryType by NAME (kind MEMBERSHIP, ALL scope, non-blocking, 12 months) — update: {} leaves an existing row alone', async () => {
     expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_1', expiresAt: new Date('2028-03-10') });
 
@@ -161,7 +161,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
       expect.objectContaining({
         where: { name: 'Quota associativa' },
         update: {},
-        create: { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12 },
+        create: { name: 'Quota associativa', kind: 'MEMBERSHIP', scope: 'ALL', blocksBooking: false, validityMonths: 12 },
       }),
     );
   });
@@ -331,5 +331,41 @@ describe('chargeMembershipFee — Europe/Rome "today" at a midnight boundary (st
         data: expect.objectContaining({ expiresAt: new Date('2028-01-01T00:00:00.000Z') }),
       }),
     );
+  });
+});
+
+// Story 19.7a (AC 10, R-19-k): the fee's status for the checks of 19.9/19.10.
+describe('getMembershipStatus (story 19.7a)', () => {
+  const expiryFindFirstMock = vi.mocked(prisma.expiry.findFirst);
+  const expiryFindFirst = expiryFindFirstMock as unknown as { mockResolvedValue: (v: Fixture | null) => void };
+
+  beforeEach(() => {
+    expiryFindFirstMock.mockReset();
+  });
+
+  it('reads the MEMBERSHIP row of THIS person only — a row of another type never counts', async () => {
+    expiryFindFirst.mockResolvedValue(null);
+
+    await getMembershipStatus('person_1', '2026-06-15');
+
+    expect(expiryFindFirstMock).toHaveBeenCalledWith({ where: { personId: 'person_1', expiryType: { kind: 'MEMBERSHIP' } }, select: { expiresAt: true } });
+  });
+
+  it('expiresAt === dateOnly -> valid (the expiry day itself still counts)', async () => {
+    expiryFindFirst.mockResolvedValue({ expiresAt: new Date('2026-06-15T00:00:00.000Z') });
+
+    await expect(getMembershipStatus('person_1', '2026-06-15')).resolves.toEqual({ status: 'valid', expiresAt: '2026-06-15' });
+  });
+
+  it('expired the day before -> expired', async () => {
+    expiryFindFirst.mockResolvedValue({ expiresAt: new Date('2026-06-14T00:00:00.000Z') });
+
+    await expect(getMembershipStatus('person_1', '2026-06-15')).resolves.toEqual({ status: 'expired', expiresAt: '2026-06-14' });
+  });
+
+  it('never paid -> missing', async () => {
+    expiryFindFirst.mockResolvedValue(null);
+
+    await expect(getMembershipStatus('person_1', '2026-06-15')).resolves.toEqual({ status: 'missing', expiresAt: null });
   });
 });

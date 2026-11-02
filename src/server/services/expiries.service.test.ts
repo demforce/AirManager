@@ -12,6 +12,7 @@ vi.mock('@/server/db/prisma', () => ({
     },
     expiryType: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
     },
     expiry: {
       findUnique: vi.fn(),
@@ -29,13 +30,22 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { deleteExpiry, getExpiryTierCounts, listAllExpiries, listBlockingExpiriesByPerson, listPersonExpiries, registerExpiry, updateExpiry, updateExpiryDateCore } = await import(
-  './expiries.service'
-);
+const {
+  deleteExpiry,
+  getExpiryTierCounts,
+  getMedicalRequirementFailure,
+  listAllExpiries,
+  listBlockingExpiriesByPerson,
+  listPersonExpiries,
+  registerExpiry,
+  updateExpiry,
+  updateExpiryDateCore,
+} = await import('./expiries.service');
 const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
 
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const typeFindUniqueMock = vi.mocked(prisma.expiryType.findUnique);
+const typeFindManyMock = vi.mocked(prisma.expiryType.findMany);
 const expiryFindUniqueMock = vi.mocked(prisma.expiry.findUnique);
 const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
 const expiryCountMock = vi.mocked(prisma.expiry.count);
@@ -94,7 +104,7 @@ function expiryFixture(overrides: Partial<Record<string, unknown>> = {}): Record
   return {
     id: 'exp_1',
     expiryTypeId: 'type_1',
-    expiryType: { name: 'Visita medica classe 2', scope: 'PILOTS' },
+    expiryType: { name: 'Visita medica classe 2', scope: 'ALL', kind: 'MEDICAL' },
     expiresAt: parseDateOnlyUtc('2026-12-31'),
     notes: null,
     proposals: [],
@@ -108,7 +118,7 @@ function dashboardExpiryFixture(overrides: Partial<Record<string, unknown>> = {}
     personId: 'person_1',
     person: { firstName: 'Mario', lastName: 'Rossi' },
     expiryTypeId: 'type_1',
-    expiryType: { name: 'Visita medica classe 2', scope: 'PILOTS' },
+    expiryType: { name: 'Visita medica classe 2', scope: 'ALL', kind: 'MEDICAL' },
     expiresAt: parseDateOnlyUtc('2026-12-31'),
     notes: null,
     ...overrides,
@@ -119,6 +129,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
   beforeEach(() => {
     personFindUniqueMock.mockReset();
     typeFindUniqueMock.mockReset();
+    typeFindManyMock.mockReset();
     expiryFindUniqueMock.mockReset();
     expiryFindManyMock.mockReset();
     expiryCountMock.mockReset();
@@ -221,7 +232,8 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
         personLastName: 'Rossi',
         expiryTypeId: 'type_1',
         typeName: 'Visita medica classe 2',
-        typeScope: 'PILOTS',
+        typeScope: 'ALL',
+        category: 'MEDICAL',
         expiresAt: '2020-01-01',
         status: 'expired',
       });
@@ -698,6 +710,72 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       }
     });
   });
+  // Story 19.7a (AC 16, D-12): every reader gets the type's `kind`, never a name heuristic.
+  describe('kind on the rows (story 19.7a)', () => {
+    it('listPersonExpiries carries typeKind', async () => {
+      personFindUnique.mockResolvedValue(personFixture());
+      expiryFindMany.mockResolvedValue([expiryFixture(), expiryFixture({ id: 'exp_quota', expiryType: { name: 'Quota associativa', scope: 'ALL', kind: 'MEMBERSHIP' } })]);
+
+      const result = await listPersonExpiries(adminActor(), 'person_1');
+
+      expect(result.map((row) => row.typeKind)).toEqual(['MEDICAL', 'MEMBERSHIP']);
+    });
+
+    it('listAllExpiries carries category = the type kind', async () => {
+      expiryFindMany.mockResolvedValue([
+        dashboardExpiryFixture(),
+        dashboardExpiryFixture({ id: 'exp_r', expiryType: { name: 'Rating SEP', scope: 'PILOTS', kind: 'RATING' } }),
+        dashboardExpiryFixture({ id: 'exp_q', expiryType: { name: 'Quota associativa', scope: 'ALL', kind: 'MEMBERSHIP' } }),
+      ]);
+      expiryCount.mockResolvedValue(3);
+
+      const result = await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
+
+      expect(result.items.map((item) => item.category)).toEqual(['MEDICAL', 'RATING', 'MEMBERSHIP']);
+    });
+  });
+
+  // Story 19.7a (R-19-j, D-4): the service half of the medical requirement.
+  describe('getMedicalRequirementFailure (story 19.7a)', () => {
+    const ACTIVE = [{ name: 'Visita medica LAPL' }, { name: 'Visita medica classe 1' }];
+
+    it('no active MEDICAL type -> null, without even reading the person\'s visits', async () => {
+      typeFindManyMock.mockResolvedValue([] as never);
+
+      await expect(getMedicalRequirementFailure('person_1', '2026-06-15')).resolves.toBeNull();
+      expect(typeFindManyMock).toHaveBeenCalledWith({ where: { kind: 'MEDICAL', isActive: true }, select: { name: true } });
+      expect(expiryFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('reads only the MEDICAL rows of THIS person and returns the most recently expired one', async () => {
+      typeFindManyMock.mockResolvedValue(ACTIVE as never);
+      expiryFindManyMock.mockResolvedValue([
+        { expiresAt: parseDateOnlyUtc('2026-01-10'), expiryType: { name: 'Visita medica classe 1' } },
+        { expiresAt: parseDateOnlyUtc('2026-06-14'), expiryType: { name: 'Visita medica LAPL' } },
+      ] as never);
+
+      await expect(getMedicalRequirementFailure('person_1', '2026-06-15')).resolves.toEqual({ typeName: 'Visita medica LAPL', expiresAt: '2026-06-14' });
+      expect(expiryFindManyMock).toHaveBeenCalledWith({
+        where: { personId: 'person_1', expiryType: { kind: 'MEDICAL' } },
+        select: { expiresAt: true, expiryType: { select: { name: true } } },
+      });
+    });
+
+    it('a visit expiring ON the date covers the person -> null', async () => {
+      typeFindManyMock.mockResolvedValue(ACTIVE as never);
+      expiryFindManyMock.mockResolvedValue([{ expiresAt: parseDateOnlyUtc('2026-06-15'), expiryType: { name: 'Visita medica classe 1' } }] as never);
+
+      await expect(getMedicalRequirementFailure('person_1', '2026-06-15')).resolves.toBeNull();
+    });
+
+    it('no visit at all -> ONE missing document named after the active types', async () => {
+      typeFindManyMock.mockResolvedValue(ACTIVE as never);
+      expiryFindManyMock.mockResolvedValue([] as never);
+
+      await expect(getMedicalRequirementFailure('person_1', '2026-06-15')).resolves.toEqual({ typeName: 'Visita medica classe 1 / Visita medica LAPL', expiresAt: null });
+    });
+  });
+
   describe('listBlockingExpiriesByPerson (story 15.5 — the pilot row flag)', () => {
     it('rejects an actor without people.read', async () => {
       await expect(listBlockingExpiriesByPerson(pilotActor(), ['person_1'], parseDateOnlyUtc('2026-08-03'))).rejects.toThrow(ForbiddenError);
@@ -711,7 +789,17 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       expect(expiryFindManyMock).not.toHaveBeenCalled();
     });
 
-    it('asks only for BLOCKING documents at most 30 days out, batched over the page ids', async () => {
+    /** Story 19.7a: two reads — blocking RATINGs inside the horizon, and EVERY medical visit of the page. Honours an `expiresAt.lte` filter like SQL would, so a horizon applied to the visits shows in the result. */
+    function mockBadgeRows(rows: { ratings: Array<Record<string, unknown> & { expiresAt: Date }>; medicals: Array<Record<string, unknown> & { expiresAt: Date }> }): void {
+      expiryFindManyMock.mockImplementation((async (args: { where: { expiresAt?: { lte: Date }; expiryType: { kind: string } } }) => {
+        const selected = args.where.expiryType.kind === 'MEDICAL' ? rows.medicals : rows.ratings;
+        const horizon = args.where.expiresAt?.lte;
+        return horizon === undefined ? selected : selected.filter((row) => row.expiresAt.getTime() <= horizon.getTime());
+      }) as never);
+    }
+    const medical = (personId: string, expiresAt: string, name: string) => ({ personId, expiresAt: parseDateOnlyUtc(expiresAt), expiryType: { name } });
+
+    it('asks for blocking RATINGs at most 30 days out and for EVERY medical visit, batched over the page ids', async () => {
       expiryFindManyMock.mockResolvedValue([] as never);
       const today = parseDateOnlyUtc('2026-08-03');
 
@@ -721,28 +809,69 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
         where: {
           personId: { in: ['person_1', 'person_2'] },
           expiresAt: { lte: parseDateOnlyUtc('2026-09-02') },
-          expiryType: { blocksBooking: true },
+          expiryType: { kind: 'RATING', blocksBooking: true },
         },
+        select: { personId: true, expiresAt: true, expiryType: { select: { name: true } } },
+      });
+      // No horizon on the visits: the best one is chosen FIRST (D-13, trap §5.4).
+      expect(expiryFindManyMock).toHaveBeenCalledWith({
+        where: { personId: { in: ['person_1', 'person_2'] }, expiryType: { kind: 'MEDICAL' } },
         select: { personId: true, expiresAt: true, expiryType: { select: { name: true } } },
       });
     });
 
     it('groups by person and reduces each document to whole days from today (negative = already expired)', async () => {
-      expiryFindManyMock.mockResolvedValue([
-        { personId: 'person_1', expiresAt: parseDateOnlyUtc('2026-07-24'), expiryType: { name: 'Medico classe 2' } },
-        { personId: 'person_1', expiresAt: parseDateOnlyUtc('2026-08-15'), expiryType: { name: 'Licenza PPL' } },
-        { personId: 'person_2', expiresAt: parseDateOnlyUtc('2026-08-03'), expiryType: { name: 'Licenza PPL' } },
-      ] as never);
+      mockBadgeRows({
+        ratings: [
+          { personId: 'person_1', expiresAt: parseDateOnlyUtc('2026-08-15'), expiryType: { name: 'Rating bloccante' } },
+          { personId: 'person_2', expiresAt: parseDateOnlyUtc('2026-08-03'), expiryType: { name: 'Rating bloccante' } },
+        ],
+        medicals: [medical('person_1', '2026-07-24', 'Visita medica classe 2')],
+      });
 
       const result = await listBlockingExpiriesByPerson(adminActor(), ['person_1', 'person_2', 'person_3'], parseDateOnlyUtc('2026-08-03'));
 
       expect(result.get('person_1')).toEqual([
-        { typeName: 'Medico classe 2', daysUntil: -10 },
-        { typeName: 'Licenza PPL', daysUntil: 12 },
+        { typeName: 'Rating bloccante', daysUntil: 12 },
+        { typeName: 'Visita medica classe 2', daysUntil: -10 },
       ]);
-      expect(result.get('person_2')).toEqual([{ typeName: 'Licenza PPL', daysUntil: 0 }]);
+      expect(result.get('person_2')).toEqual([{ typeName: 'Rating bloccante', daysUntil: 0 }]);
       // A person with nothing blocking is simply absent (callers read `?? []`).
       expect(result.has('person_3')).toBe(false);
+    });
+
+    // Story 19.7a (AC 9, D-13): one valid visit of any class covers the person.
+    it('class 2 expired + class 1 at +200 days -> no entry at all (the best visit is valid and far)', async () => {
+      mockBadgeRows({ ratings: [], medicals: [medical('person_1', '2026-07-22', 'Visita medica classe 2'), medical('person_1', '2027-02-19', 'Visita medica classe 1')] });
+
+      const result = await listBlockingExpiriesByPerson(adminActor(), ['person_1'], parseDateOnlyUtc('2026-08-03'));
+
+      expect(result.has('person_1')).toBe(false);
+    });
+
+    it('only class 2, expired 12 days ago -> an entry for it', async () => {
+      mockBadgeRows({ ratings: [], medicals: [medical('person_1', '2026-07-22', 'Visita medica classe 2')] });
+
+      const result = await listBlockingExpiriesByPerson(adminActor(), ['person_1'], parseDateOnlyUtc('2026-08-03'));
+
+      expect(result.get('person_1')).toEqual([{ typeName: 'Visita medica classe 2', daysUntil: -12 }]);
+    });
+
+    it('class 1 at +20 and class 2 at −5 -> ONE entry, class 1 at +20 (the best visit, inside the horizon)', async () => {
+      mockBadgeRows({ ratings: [], medicals: [medical('person_1', '2026-07-29', 'Visita medica classe 2'), medical('person_1', '2026-08-23', 'Visita medica classe 1')] });
+
+      const result = await listBlockingExpiriesByPerson(adminActor(), ['person_1'], parseDateOnlyUtc('2026-08-03'));
+
+      expect(result.get('person_1')).toEqual([{ typeName: 'Visita medica classe 1', daysUntil: 20 }]);
+    });
+
+    it('the reduction is per person: one person\'s valid visit never covers another', async () => {
+      mockBadgeRows({ ratings: [], medicals: [medical('person_1', '2027-01-01', 'Visita medica classe 1'), medical('person_2', '2026-07-30', 'Visita medica LAPL')] });
+
+      const result = await listBlockingExpiriesByPerson(adminActor(), ['person_1', 'person_2'], parseDateOnlyUtc('2026-08-03'));
+
+      expect(result.has('person_1')).toBe(false);
+      expect(result.get('person_2')).toEqual([{ typeName: 'Visita medica LAPL', daysUntil: -4 }]);
     });
   });
 });

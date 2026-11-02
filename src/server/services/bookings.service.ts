@@ -12,6 +12,7 @@ import { prisma } from '@/server/db/prisma';
 import { outOfServiceDetails } from './aircraft-status';
 import { getSchedulingSettings } from './app-settings.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
+import { getMedicalRequirementFailure } from './expiries.service';
 
 /**
  * Aircraft bookings (epic 7, story 7.1; FR-18) — see `Booking`'s Prisma
@@ -467,6 +468,16 @@ export type ExpiredDocument = { typeName: string; expiresAt: string };
  * `ExpiryType.blocksBooking` scan a second time. The flight side only ever
  * consumes `blockingDocuments` (flights have no `warnings` concept, AC 1/2
  * of that story).
+ *
+ * Story 19.7a (R-19-j, D-4/D-5): the `blocksBooking` partition applies to the
+ * NON-medical documents only (a RATING per type; the MEMBERSHIP fee stays a
+ * `warning`, as before). Medical visits leave the per-type scan: the person
+ * needs ONE valid visit of any class (`getMedicalRequirementFailure`), and
+ * when they have only expired ones the most recent is the ONE blocking
+ * document. A person with NO visit at all is NOT blocked here — this scan
+ * keeps its "registered and expired" semantics (bookings: D-5); the missing
+ * visit is the flights-only `findMissingBlockingDocuments`'s job, so a person
+ * never gets two medical documents. Visits no longer produce `warnings`.
  */
 export async function findBlockingExpiredDocuments(
   personId: string,
@@ -474,14 +485,19 @@ export async function findBlockingExpiredDocuments(
 ): Promise<{ blockingDocuments: ExpiredDocument[]; warnings: BookingExpiryWarning[] }> {
   const expiries = await prisma.expiry.findMany({
     where: { personId },
-    select: { expiresAt: true, expiryType: { select: { name: true, blocksBooking: true } } },
+    select: { expiresAt: true, expiryType: { select: { name: true, kind: true, blocksBooking: true } } },
   });
   const expiredDocuments = expiries
-    .filter((expiry) => toDateOnlyString(expiry.expiresAt) < flightDateOnly)
+    .filter((expiry) => expiry.expiryType.kind !== 'MEDICAL' && toDateOnlyString(expiry.expiresAt) < flightDateOnly)
     .map((expiry) => ({ typeName: expiry.expiryType.name, expiresAt: toDateOnlyString(expiry.expiresAt), blocksBooking: expiry.expiryType.blocksBooking }));
+  const medicalFailure = await getMedicalRequirementFailure(personId, flightDateOnly);
+  const expiredMedical = medicalFailure !== null && medicalFailure.expiresAt !== null ? [{ typeName: medicalFailure.typeName, expiresAt: medicalFailure.expiresAt }] : [];
 
   return {
-    blockingDocuments: expiredDocuments.filter((document) => document.blocksBooking).map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt })),
+    blockingDocuments: [
+      ...expiredDocuments.filter((document) => document.blocksBooking).map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt })),
+      ...expiredMedical,
+    ],
     warnings: expiredDocuments.filter((document) => !document.blocksBooking).map((document) => ({ typeName: document.typeName, expiresAt: document.expiresAt })),
   };
 }

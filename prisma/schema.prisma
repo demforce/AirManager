@@ -1151,6 +1151,11 @@ enum BookingStatus {
 /// scope↔person compatibility CHECK is deliberately NOT implemented here —
 /// it belongs to `Expiry` registration (story 6.2, its own AC); here scope
 /// is only an attribute shown/managed on the catalogue entry.
+///
+/// Story 19.7a (R-19-j, D-3): a scope is meaningful for a RATING only. A
+/// MEDICAL type is ALWAYS `ALL` (any valid visit of any class covers whoever
+/// is on board) and the MEMBERSHIP type is `ALL` too — an invariant kept by
+/// the migration and by `expiry-types.service.ts`, never a nullable column.
 enum ExpiryScope {
   PILOTS
   STUDENTS
@@ -1158,16 +1163,23 @@ enum ExpiryScope {
   ALL
 }
 
-/// Rating vs medical-visit split (story 13.1, R-13.1-a) — a SEPARATE axis
-/// from `ExpiryScope` (who it's for): `kind` is WHAT it is. Medical visits
-/// were seeded as plain `ExpiryType` rows indistinguishable from a rating
-/// (`schema.prisma` pre-13.1 comment); this enum lets Impostazioni show them
-/// in a dedicated "Visite mediche" card instead of alongside abilitazioni,
-/// with zero change to how a registered `Expiry` behaves (same table, same
-/// `blocksBooking`/derived-status logic either way).
+/// What an expiry type IS (story 13.1, R-13.1-a) — a SEPARATE axis from
+/// `ExpiryScope` (who it's for). Three values since story 19.7a:
+/// - `RATING`: an abilitazione; blocks bookings/flights only when its own
+///   `blocksBooking` says so, per type and per applicable scope.
+/// - `MEDICAL`: a medical visit. No scope and no per-type blocking (R-19-j,
+///   D-3/D-4): whoever is on board needs ONE valid visit of ANY class, as
+///   long as at least one MEDICAL type is active
+///   (`src/lib/medical-requirement.ts`).
+/// - `MEMBERSHIP`: the "Quota associativa" (R-19-k, D-1) — a SYSTEM type,
+///   exactly one row, upserted by name by `membership.service.ts`; no API
+///   creates, edits or deletes it (`expiry-types.service.ts`), and it never
+///   enters a per-type blocking scan.
+/// A registered `Expiry` is the same row whatever the kind.
 enum ExpiryTypeKind {
   RATING
   MEDICAL
+  MEMBERSHIP
 }
 
 /// Expiry-type catalogue (epic 6, story 6.1; FR-35). MUTABLE catalogue
@@ -1181,11 +1193,14 @@ enum ExpiryTypeKind {
 /// `PackageType` → `HourPackage`, story 4.3 → 4.4).
 ///
 /// Deliberately NO `isSystem` flag: the standard types seeded here (visita
-/// medica classe 1/2/LAPL, licenza, rating SEP, inglese ICAO) are plain
-/// rows — the admin can rename them, change their scope, deactivate them
-/// and (while still unused) delete them exactly like a custom type. The
-/// seed is idempotent (`update: {}`), so a re-seed never overwrites an
-/// admin's customization.
+/// medica classe 1/2/LAPL, rating SEP, inglese ICAO) are plain rows — the
+/// admin can rename them, deactivate them and (while still unused) delete
+/// them exactly like a custom type (a medical visit keeps `scope = ALL`,
+/// story 19.7a D-3). The one exception is the `MEMBERSHIP` kind (see
+/// `ExpiryTypeKind`), recognised by its kind, not by a flag. "Licenza" is no
+/// longer an expiry type (story 19.7a, R-19-k): the licence stays the
+/// informative `PilotProfile.licenseType`. The seed is idempotent
+/// (`update: {}`), so a re-seed never overwrites an admin's customization.
 ///
 /// Editing a type already IN USE is legal: a registered `Expiry` (story
 /// 6.2) references this row by id and never snapshots the name, so a
@@ -1196,16 +1211,20 @@ model ExpiryType {
   id             String         @id @default(cuid())
   name           String         @unique
   scope          ExpiryScope
-  /// RATING vs MEDICAL (story 13.1, R-13.1-a). Defaults `RATING` — every
-  /// existing type keeps behaving as an abilitazione unless the migration's
-  /// data-backfill (or an admin, going forward, via the dedicated card)
-  /// marks it MEDICAL.
+  /// RATING / MEDICAL / MEMBERSHIP (story 13.1, R-13.1-a; story 19.7a).
+  /// Defaults `RATING` — every existing type keeps behaving as an
+  /// abilitazione unless the migration's data-backfill (or an admin, going
+  /// forward, via the dedicated card) marks it MEDICAL.
   kind           ExpiryTypeKind @default(RATING)
   isActive       Boolean        @default(true)
+  /// Read for `kind = RATING` ONLY (story 19.7a, AD-3): a MEDICAL type always
+  /// carries `true` (invariant, D-3) but the medical requirement is the
+  /// "one valid visit of any class" rule, never a per-type scan; the
+  /// MEMBERSHIP type carries `false` and never blocks per type.
+  ///
   /// Whether an EXPIRED `Expiry` of this type blocks a NEW booking (epic 7,
-  /// story 7.4; FR-21 `[ASSUMPTION]`: medica/licenza block, ratings only
-  /// warn) AND a NEW flight registration/correction (epic 14, story 14.4,
-  /// AC 1; ratifica R4) — the SAME flag gates both, deliberately not
+  /// story 7.4; FR-21 `[ASSUMPTION]`) AND a NEW flight registration/edit
+  /// (epic 14, story 14.4, AC 1; ratifica R4) — the SAME flag gates both, deliberately not
   /// renamed/split (story 14.4's own AC 1 left the rename optional; the
   /// field's semantics — "an expired document of this type blocks the
   /// operation" — already generalize without one). Default `false` (a

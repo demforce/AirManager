@@ -17,24 +17,31 @@ export const expiryScopeSchema = z.enum(['PILOTS', 'STUDENTS', 'INSTRUCTORS', 'A
 export type ExpiryScopeDto = z.infer<typeof expiryScopeSchema>;
 
 /**
- * RATING vs MEDICAL (story 13.1, AC 1, R-13.1-a) — a SEPARATE axis from
- * `scope` (who it's for): `kind` is WHAT it is. Mirrors the Prisma
- * `ExpiryTypeKind` enum. Defaults `RATING` at creation (below) — the
- * "Abilitazioni" card in Impostazioni only ever creates `RATING`, the new
- * "Visite mediche" card only ever creates `MEDICAL`.
+ * RATING / MEDICAL / MEMBERSHIP (story 13.1, AC 1, R-13.1-a; story 19.7a,
+ * R-19-k) — a SEPARATE axis from `scope` (who it's for): `kind` is WHAT it
+ * is. Mirrors the Prisma `ExpiryTypeKind` enum — the shape every catalogue
+ * item and the list filter carry.
  */
-export const expiryTypeKindSchema = z.enum(['RATING', 'MEDICAL']);
+export const expiryTypeKindSchema = z.enum(['RATING', 'MEDICAL', 'MEMBERSHIP']);
 
 export type ExpiryTypeKindDto = z.infer<typeof expiryTypeKindSchema>;
+
+/**
+ * The kinds a caller may WRITE (story 19.7a, D-1): `MEMBERSHIP` is a system
+ * type upserted by `membership.service.ts`, so a create or a PATCH naming it
+ * is a 422 `VALIDATION_ERROR` at this boundary. The "Abilitazioni" card
+ * creates `RATING` (the default), the "Visite mediche" card `MEDICAL`.
+ */
+export const expiryTypeKindInputSchema = z.enum(['RATING', 'MEDICAL']);
 
 /**
  * `POST /api/v1/expiry-types` body (AC 1/2). `name` unique (enforced in the
  * service, P2002 → `Conflict`), trimmed, capped at 100 chars — same
  * defense-in-depth as `createCashCategorySchema.name`/
  * `createPackageTypeSchema.name`. `blocksBooking` (epic 7, story 7.4;
- * FR-21) defaults `false` — a brand-new/custom type never blocks a booking
- * until an admin (`settings.manage`) opts it in from `types-manager.tsx`'s
- * checkbox.
+ * FR-21) of a RATING is `false` when omitted — a brand-new/custom rating
+ * never blocks a booking until an admin (`settings.manage`) opts it in
+ * (resolved by the service since story 19.7a, see below).
  */
 /**
  * Validity window in months (story 12.11, ratifica utente 2) — precompiles
@@ -47,11 +54,19 @@ export type ExpiryTypeKindDto = z.infer<typeof expiryTypeKindSchema>;
  */
 export const expiryTypeValidityMonthsSchema = z.number().int().nonnegative().max(600).nullable();
 
+/**
+ * Story 19.7a (AD-7): `scope` and `blocksBooking` are OPTIONAL with no Zod
+ * default — `expiry-types.service.ts` resolves them by `kind`: a MEDICAL type
+ * is always `ALL`/`true` (omitted = those values, explicit and different =
+ * 422 `MEDICAL_TYPE_FIELDS`, R-19-j), a RATING takes `ALL`/`false` when they
+ * are omitted (a retro-compatible loosening: the "Abilitazioni" card always
+ * sends both).
+ */
 export const createExpiryTypeSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  scope: expiryScopeSchema,
-  kind: expiryTypeKindSchema.default('RATING'),
-  blocksBooking: z.boolean().default(false),
+  scope: expiryScopeSchema.optional(),
+  kind: expiryTypeKindInputSchema.default('RATING'),
+  blocksBooking: z.boolean().optional(),
   validityMonths: expiryTypeValidityMonthsSchema.default(null),
 });
 
@@ -76,7 +91,7 @@ export const updateExpiryTypeSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     scope: expiryScopeSchema.optional(),
-    kind: expiryTypeKindSchema.optional(),
+    kind: expiryTypeKindInputSchema.optional(),
     isActive: z.boolean().optional(),
     blocksBooking: z.boolean().optional(),
     validityMonths: expiryTypeValidityMonthsSchema.optional(),
@@ -92,7 +107,8 @@ export type UpdateExpiryTypeInput = z.infer<typeof updateExpiryTypeSchema>;
  * `listCashCategoriesQuerySchema.includeInactive` — `z.coerce.boolean()`
  * would treat the string `"false"` as truthy. `kind` (story 13.1, AC 2) is
  * an OPTIONAL filter — omitted, every existing consumer (scadenze page,
- * editor, seed/fixtures) keeps seeing every kind, unchanged.
+ * editor, seed/fixtures) keeps seeing every kind, unchanged; `MEMBERSHIP`
+ * (story 19.7a) returns the one membership-fee type.
  */
 export const listExpiryTypesQuerySchema = z.object({
   includeInactive: z.preprocess((value) => value === 'true' || value === true, z.boolean()).default(false),

@@ -34,13 +34,18 @@ export function hoursBarPercent(minutes: number, maxMinutes: number): number {
   return Math.round((bounded / maxMinutes) * 100);
 }
 
-/** A blocking document (`ExpiryType.blocksBooking`) of one person, already reduced to whole days from today. */
+/** A blocking document (a blocking RATING, or the person's best medical visit — story 19.7a) of one person, already reduced to whole days from today. */
 export type BlockingDocument = { typeName: string; daysUntil: number };
+
+/** The currency of a pilot/student (story 19.7a, R-19-i) as the row needs it: `daysUntil` = whole days to the last valid day, `null` with no qualifying flight. `null` for a person without currency (not a pilot/student). */
+export type RowCurrency = { current: boolean; daysUntil: number | null } | null;
 
 export type PilotRowFlag =
   | { kind: 'suspended' }
   | { kind: 'expired'; typeName: string }
-  | { kind: 'expiring'; typeName: string; daysUntil: number };
+  | { kind: 'expiring'; typeName: string; daysUntil: number }
+  | { kind: 'currencyExpired' }
+  | { kind: 'currencyExpiring'; daysUntil: number };
 
 /**
  * The single chip the pilot row shows on its right, or `null` (ratifica
@@ -61,8 +66,14 @@ export type PilotRowFlag =
  * Ties are broken by `typeName` so two documents expiring the same day always
  * produce the same chip (a row that flickers between two labels across renders
  * would be a heisenbug in every screenshot test).
+ *
+ * Story 19.7a (D-14) adds the currency, with the same `tierOf` thresholds:
+ * suspended → expired document → currency not current → the more urgent of
+ * "document due within 30 days" and "currency ending within 30 days" (a tie
+ * goes to the document). A current pilot with more than 30 days left gets no
+ * currency chip.
  */
-export function pilotRowFlag(input: { suspended: boolean; blockingDocuments: BlockingDocument[] }): PilotRowFlag | null {
+export function pilotRowFlag(input: { suspended: boolean; blockingDocuments: BlockingDocument[]; currency: RowCurrency }): PilotRowFlag | null {
   if (input.suspended) return { kind: 'suspended' };
 
   const mostUrgent = input.blockingDocuments.reduce<BlockingDocument | null>((best, document) => {
@@ -71,11 +82,19 @@ export function pilotRowFlag(input: { suspended: boolean; blockingDocuments: Blo
     return document.typeName < best.typeName ? document : best;
   }, null);
 
-  if (mostUrgent === null) return null;
+  const documentTier = mostUrgent === null ? null : tierOf(mostUrgent.daysUntil);
+  if (mostUrgent !== null && documentTier === 0) return { kind: 'expired', typeName: mostUrgent.typeName };
 
-  const tier = tierOf(mostUrgent.daysUntil);
-  if (tier === 0) return { kind: 'expired', typeName: mostUrgent.typeName };
-  if (tier === 1 || tier === 2) return { kind: 'expiring', typeName: mostUrgent.typeName, daysUntil: mostUrgent.daysUntil };
+  const { currency } = input;
+  if (currency !== null && !currency.current) return { kind: 'currencyExpired' };
+
+  const documentExpiring = mostUrgent !== null && (documentTier === 1 || documentTier === 2) ? mostUrgent : null;
+  const currencyDays = currency !== null && currency.daysUntil !== null && tierOf(currency.daysUntil) <= 2 ? currency.daysUntil : null;
+
+  if (documentExpiring !== null && (currencyDays === null || documentExpiring.daysUntil <= currencyDays)) {
+    return { kind: 'expiring', typeName: documentExpiring.typeName, daysUntil: documentExpiring.daysUntil };
+  }
+  if (currencyDays !== null) return { kind: 'currencyExpiring', daysUntil: currencyDays };
   return null;
 }
 

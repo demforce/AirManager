@@ -97,7 +97,7 @@ const accountMovementCreate = accountMovementCreateMock as unknown as { mockReso
 const flightCreate = flightCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryTypeFindMany = expiryTypeFindManyMock as unknown as { mockResolvedValue: (v: Array<{ id: string; name: string }>) => void };
 const expiryFindMany = expiryFindManyMock as unknown as {
-  mockResolvedValue: (v: Array<{ expiresAt: Date; expiryType: { name: string; blocksBooking: boolean } }>) => void;
+  mockResolvedValue: (v: Array<{ expiresAt: Date; expiryType: { name: string; kind: 'RATING' | 'MEDICAL'; blocksBooking: boolean } }>) => void;
 };
 const queryRaw = queryRawMock as unknown as { mockResolvedValueOnce: (v: unknown[]) => { mockResolvedValueOnce: (v: unknown[]) => void } };
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
@@ -204,19 +204,40 @@ describe('flights.service — AC 6 boundary, through the REAL findBlockingExpire
   });
 
   it('expiresAt === flightDate (2020-01-15) -> still VALID, registers normally (201)', async () => {
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-15T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-15T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
 
     await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
   });
 
   it('expiresAt === flightDate - 1 day (2020-01-14) -> 422 FLIGHT_BLOCKED_BY_EXPIRY', async () => {
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-14T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-14T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
 
     await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
       code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-      details: { documents: [{ typeName: 'Licenza', expiresAt: '2020-01-14' }] },
+      details: { documents: [{ typeName: 'Rating bloccante', expiresAt: '2020-01-14' }] },
     });
     expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  // Story 19.7a (R-19-j, D-4) through the REAL chain (`findBlockingExpiredDocuments`
+  // -> `getMedicalRequirementFailure`, and `findMissingBlockingDocuments`):
+  // an expired visit is ONE document, reported by the expired scan only.
+  it('only an expired medical visit (a day before the flight) -> ONE document, never doubled by the missing scan', async () => {
+    expiryTypeFindManyMock.mockImplementation((async (args: { where: { kind?: string } }) =>
+      args.where.kind === 'MEDICAL' ? [{ name: 'Visita medica classe 2' }, { name: 'Visita medica classe 1' }] : []) as never);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-14T00:00:00.000Z'), expiryType: { name: 'Visita medica classe 2', kind: 'MEDICAL', blocksBooking: true } }]);
+
+    await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
+      code: 'FLIGHT_BLOCKED_BY_EXPIRY',
+      details: { documents: [{ typeName: 'Visita medica classe 2', expiresAt: '2020-01-14', role: 'person' }] },
+    });
+  });
+
+  it('the visit expiring ON the flight day still covers the pilot (201)', async () => {
+    expiryTypeFindManyMock.mockImplementation((async (args: { where: { kind?: string } }) => (args.where.kind === 'MEDICAL' ? [{ name: 'Visita medica classe 2' }] : [])) as never);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-15T00:00:00.000Z'), expiryType: { name: 'Visita medica classe 2', kind: 'MEDICAL', blocksBooking: true } }]);
+
+    await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
   });
 
   it('expiresAt is AFTER the flight date but long before today (real clock) -> still VALID — anchored to flightDate, never "today"', async () => {
@@ -224,7 +245,7 @@ describe('flights.service — AC 6 boundary, through the REAL findBlockingExpire
     // date) yet, by construction, always in the PAST relative to the real
     // server clock this suite runs under — if the comparison ever drifted to
     // "today" instead of `flightDate`, this document would wrongly block.
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-06-01T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-06-01T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
 
     await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
   });

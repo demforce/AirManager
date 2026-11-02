@@ -1,6 +1,6 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { exportQuerySchema } from './common';
-import { expiryScopeSchema } from './expiry-types';
+import { expiryScopeSchema, expiryTypeKindSchema } from './expiry-types';
 import { z } from './zod-with-openapi';
 
 // --- Expiries (epic 6, story 6.2, Task 1/2/4, AC 1/2; FR-36) ----------------
@@ -48,6 +48,8 @@ export const expiryItemSchema = z.object({
   expiryTypeId: z.string(),
   typeName: z.string(),
   typeScope: z.enum(['PILOTS', 'STUDENTS', 'INSTRUCTORS', 'ALL']),
+  /** The type's `kind` (story 19.7a, D-12): what the row is — visit, rating or membership fee — never deduced from the name. */
+  typeKind: expiryTypeKindSchema,
   expiresAt: z.iso.date(),
   notes: z.string().nullable(),
   status: expiryStatusSchema,
@@ -165,6 +167,8 @@ export const expiryDashboardItemSchema = z.object({
   expiryTypeId: z.string(),
   typeName: z.string(),
   typeScope: expiryScopeSchema,
+  /** The row's category = its type's `kind` (story 19.7a, D-12) — the registry badge reads it, never the name. Additive: story 19.7b extends it with `CURRENCY` for its derived rows. */
+  category: expiryTypeKindSchema,
   expiresAt: z.iso.date(),
   notes: z.string().nullable(),
   status: expiryStatusSchema,

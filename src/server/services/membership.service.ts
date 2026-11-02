@@ -8,7 +8,7 @@ import { prisma } from '@/server/db/prisma';
 import { hasNegativeBalanceAlert } from './accounts.service';
 import { NotFoundError, ValidationError } from './errors';
 
-/** Upserted by NAME (not seeded via migration, Contesto) — also added to `prisma/seed.ts` so a fresh install's catalogue already lists it. `MEMBERSHIP_FEE_TYPE_NAME` lives in `@/lib/expiry-scope` (single source of truth, story 13.2 F3) so the create-form/inline-editor chip pickers can exclude it by the SAME name without importing this server-only service. */
+/** The fee type is upserted by NAME (`MEMBERSHIP_FEE_TYPE_NAME`, `@/lib/expiry-scope` — the key of the upsert and of the seeds) and is the one `ExpiryTypeKind.MEMBERSHIP` row (story 19.7a, D-1): every reader tells it apart by that kind, never by name. Validity: fixed 12 months from the payment (R-19-k), not configurable. */
 const MEMBERSHIP_FEE_VALIDITY_MONTHS = 12;
 
 export type ChargeMembershipFeeResult = {
@@ -32,9 +32,10 @@ export type ChargeMembershipFeeResult = {
  * addebito + renewal in ONE gesture, ALL THREE writes in a SINGLE
  * `prisma.$transaction`: (i) an `ADJUSTMENT` account movement (negative
  * `amountCents` = addebito, AD-3), (ii) an upsert-by-NAME of the "Quota
- * associativa" `ExpiryType` (created on first use — `ALL` scope,
- * non-blocking, 12-month validity — `update: {}` never overwrites an
- * admin's own edit, same pattern as `prisma/seed.ts#seedExpiryTypes`), and
+ * associativa" `ExpiryType` (created on first use — kind `MEMBERSHIP` since
+ * story 19.7a, `ALL` scope, non-blocking, 12-month validity — `update: {}`
+ * leaves an existing row alone, same pattern as `prisma/seed.ts#seedExpiryTypes`;
+ * the name's uniqueness keeps it to ONE row), and
  * (iii) a create-or-renew of the person's "Quota associativa" `Expiry`
  * (the type's `@@unique([personId, expiryTypeId])` guarantees at most one).
  *
@@ -140,7 +141,7 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
     const expiryType = await tx.expiryType.upsert({
       where: { name: MEMBERSHIP_FEE_TYPE_NAME },
       update: {},
-      create: { name: MEMBERSHIP_FEE_TYPE_NAME, scope: 'ALL', blocksBooking: false, validityMonths: MEMBERSHIP_FEE_VALIDITY_MONTHS },
+      create: { name: MEMBERSHIP_FEE_TYPE_NAME, kind: 'MEMBERSHIP', scope: 'ALL', blocksBooking: false, validityMonths: MEMBERSHIP_FEE_VALIDITY_MONTHS },
       select: { id: true },
     });
 
@@ -182,4 +183,23 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
     expiryId: result.expiryId,
     expiresAt: toDateOnlyString(result.expiresAt),
   };
+}
+
+export type MembershipStatus = { status: 'valid' | 'expired' | 'missing'; expiresAt: string | null };
+
+/**
+ * The membership fee of ONE person at `dateOnly` (`YYYY-MM-DD`) — story
+ * 19.7a (R-19-k, P6): their `Expiry` of kind `MEMBERSHIP`, `valid` while
+ * `expiresAt ≥ dateOnly` (the expiry day itself still counts), `expired`
+ * after it, `missing` when the person never paid. A plain status, no warning
+ * nor deroga (those are stories 19.9/19.10, which consume this). No actor,
+ * like `expiries.service.ts#getMedicalRequirementFailure`.
+ */
+export async function getMembershipStatus(personId: string, dateOnly: string): Promise<MembershipStatus> {
+  const expiry = await prisma.expiry.findFirst({ where: { personId, expiryType: { kind: 'MEMBERSHIP' } }, select: { expiresAt: true } });
+  if (!expiry) {
+    return { status: 'missing', expiresAt: null };
+  }
+  const expiresAt = toDateOnlyString(expiry.expiresAt);
+  return { status: expiresAt >= dateOnly ? 'valid' : 'expired', expiresAt };
 }

@@ -1,9 +1,12 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { todayDateOnlyUtc } from '@/lib/date-only';
 import { buildExportHref } from '@/lib/export-href';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { redirect } from '@/i18n/navigation';
+import { listCurrencyByPerson } from '@/server/services/currency.service';
 import { listBlockingExpiriesByPerson } from '@/server/services/expiries.service';
 import { listPilotsPageData } from '@/server/services/people.service';
 import { buildPilotEditorLabels, buildPilotEditorToastLabels } from './pilot-editor-labels';
@@ -49,11 +52,14 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
   const result = await listPilotsPageData(actor, { page, pageSize: PAGE_SIZE, q, includeArchived: false, archivedOnly });
   // Story 15.5 (R-15.5-c): the phone row's flag. One batched query over the ids
   // of THIS page, same rationale as `listPilotsPageData`'s own five readers.
-  const blockingDocumentsById = await listBlockingExpiriesByPerson(
-    actor,
-    result.items.map((item) => item.id),
-    todayDateOnlyUtc(),
-  );
+  // Story 19.7a (D-14): the currency of the pilots/students of the page, beside
+  // it — on the Rome calendar (A16), while the documents stay on the UTC one
+  // (story 16.1, the Scadenze domain).
+  const pageIds = result.items.map((item) => item.id);
+  const [blockingDocumentsById, currencyById] = await Promise.all([
+    listBlockingExpiriesByPerson(actor, pageIds, todayDateOnlyUtc()),
+    listCurrencyByPerson(actor, pageIds, todayDateOnlyInZone(APP_TIMEZONE)),
+  ]);
 
   const t = await getTranslations('PilotsPage');
   const tExport = await getTranslations('Export');
@@ -104,6 +110,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
         exportHref={exportHref}
         locale={locale as 'it' | 'en'}
         blockingDocumentsById={Object.fromEntries(blockingDocumentsById)}
+        currencyById={Object.fromEntries(currencyById)}
         labels={{
           cardTitle: t('cardTitle'),
           searchPlaceholder: t('searchPlaceholder'),
@@ -147,6 +154,16 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
               access: t('table.status'),
               documents: t('mobile.sheet.documents'),
             },
+          },
+          // `t.raw` for the three with a `{days}`/`{date}` placeholder, filled
+          // CLIENT-side — same reason as `mobile.flagExpired` above.
+          currency: {
+            label: t('currency.label'),
+            notCurrent: t('currency.notCurrent'),
+            expiring: t.raw('currency.expiring') as string,
+            until: t.raw('currency.until') as string,
+            expiredOn: t.raw('currency.expiredOn') as string,
+            never: t('currency.never'),
           },
           topUp: {
             title: t('topUp.title'),

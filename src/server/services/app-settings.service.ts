@@ -1,6 +1,9 @@
+import type { Prisma } from '@/generated/prisma/client';
+import { CURRENCY_DEFAULTS, CURRENCY_LIMITS, type CurrencySettings } from '@/lib/currency';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type {
   AirfieldBrandingDto,
+  CurrencySettingsInput,
   SchedulingSettingsDto,
   SchedulingSettingsInput,
   SmtpSecurityDto,
@@ -371,6 +374,69 @@ export async function setMembershipFeeCents(actor: Actor, cents: number): Promis
   });
 
   return cents;
+}
+
+// --- Currency (story 19.7a, R-19-i, D-10) ----------------------------------
+// `currency.*` — X (`minFlights`) flights on board in the last Y
+// (`windowDays`) days make a pilot/student current (`currency.service.ts`).
+// Absent keys mean the defaults (X=1, Y=90); story 19.8 owns the Impostazioni
+// section, its route and its composite PATCH (which calls the core below
+// inside its own transaction).
+
+const CURRENCY_MIN_FLIGHTS_KEY = 'currency.minFlights';
+const CURRENCY_WINDOW_DAYS_KEY = 'currency.windowDays';
+
+/** A stored currency value: a bare integer string inside `limits`, else the default — logged, never thrown (a broken setting must not block a flight check). */
+function parseCurrencySetting(key: string, value: string | undefined, limits: { min: number; max: number }, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = /^\d+$/.test(value) ? Number(value) : Number.NaN;
+  if (Number.isSafeInteger(parsed) && parsed >= limits.min && parsed <= limits.max) return parsed;
+  console.warn(`getCurrencySettings: stored ${key} "${value}" is not an integer in [${limits.min}, ${limits.max}] — defaulting to ${fallback}.`);
+  return fallback;
+}
+
+/**
+ * Reads the currency settings. No permission gate: the currency of a pilot
+ * is read by the Pilots page and, from stories 19.9/19.10, by the flight and
+ * booking checks of ANY actor — same reasoning as {@link getSchedulingSettings}.
+ * Each field falls back to its own default independently.
+ */
+export async function getCurrencySettings(): Promise<CurrencySettings> {
+  const rows = await prisma.appSetting.findMany({
+    where: { key: { in: [CURRENCY_MIN_FLIGHTS_KEY, CURRENCY_WINDOW_DAYS_KEY] } },
+    select: { key: true, value: true },
+  });
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+
+  return {
+    minFlights: parseCurrencySetting(CURRENCY_MIN_FLIGHTS_KEY, byKey.get(CURRENCY_MIN_FLIGHTS_KEY), CURRENCY_LIMITS.minFlights, CURRENCY_DEFAULTS.minFlights),
+    windowDays: parseCurrencySetting(CURRENCY_WINDOW_DAYS_KEY, byKey.get(CURRENCY_WINDOW_DAYS_KEY), CURRENCY_LIMITS.windowDays, CURRENCY_DEFAULTS.windowDays),
+  };
+}
+
+/**
+ * Writes both currency settings on the caller's transaction — NO
+ * `authorize` inside (contract with story 19.8: its composite PATCH checks
+ * `settings.manage` once and runs every block's core in ONE transaction).
+ * Callers validate `input` with `currencySettingsSchema` first.
+ */
+export async function writeCurrencySettingsCore(tx: Prisma.TransactionClient, input: CurrencySettingsInput): Promise<void> {
+  const entries: Array<[string, string]> = [
+    [CURRENCY_MIN_FLIGHTS_KEY, String(input.minFlights)],
+    [CURRENCY_WINDOW_DAYS_KEY, String(input.windowDays)],
+  ];
+  for (const [key, value] of entries) {
+    await tx.appSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+  }
+}
+
+/** Sets the currency settings: `settings.manage`, then the core in its own transaction. */
+export async function setCurrencySettings(actor: Actor, input: CurrencySettingsInput): Promise<CurrencySettings> {
+  authorize(actor, 'settings.manage');
+
+  await prisma.$transaction((tx) => writeCurrencySettingsCore(tx, input));
+
+  return { minFlights: input.minFlights, windowDays: input.windowDays };
 }
 
 /**

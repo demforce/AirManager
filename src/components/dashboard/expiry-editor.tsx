@@ -25,7 +25,7 @@ import { useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { DateInput } from '@/components/ui/date-input';
 import { addMonthsClampUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
-import { isExpiryScopeCompatible, MEMBERSHIP_FEE_TYPE_NAME, type ProfileFlags } from '@/lib/expiry-scope';
+import { isExpiryScopeCompatible, type ProfileFlags } from '@/lib/expiry-scope';
 import type { ExpiryScopeDto } from '@/lib/schemas/expiry-types';
 
 export type ExpiryCatalogEntry = { id: string; name: string; scope: ExpiryScopeDto; isActive: boolean; validityMonths: number | null };
@@ -40,12 +40,11 @@ function precompileExpiresAt(validityMonths: number | null): string {
 
 type PersonExpiryItem = { id: string; expiryTypeId: string; typeName: string; expiresAt: string; status: 'ok' | 'expiring' | 'expired' };
 
-/** Excludes "Quota associativa" (story 13.2 review F3): a financial obligation, never a selectable chip in this editor — it stays managed by the Impostazioni quota card + addebito flow. Filtering here (the single catalogue fetch this component uses) also drops any already-registered quota `Expiry` from the draft below, since it's derived from the catalogues. */
+/** One catalogue of `kind` — RATING or MEDICAL only, so "Quota associativa" (kind `MEMBERSHIP` since story 19.7a, D-1) is never a selectable chip here, and an already-registered quota `Expiry` never enters the draft below (it is derived from these catalogues). */
 export async function fetchExpiryTypes(kind: ExpiryKind, includeInactive = false): Promise<ExpiryCatalogEntry[]> {
   const response = await fetch(`/api/v1/expiry-types?kind=${kind}&includeInactive=${includeInactive}`);
   if (!response.ok) return [];
-  const types = (await response.json()) as ExpiryCatalogEntry[];
-  return types.filter((type) => type.name !== MEMBERSHIP_FEE_TYPE_NAME);
+  return (await response.json()) as ExpiryCatalogEntry[];
 }
 
 async function fetchPersonExpiries(personId: string): Promise<PersonExpiryItem[]> {

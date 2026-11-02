@@ -44,18 +44,19 @@ test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Sto
     await expect(medicalCard).toBeVisible();
 
     // Story 13.1 (R-13.1-a): the 3 medical-visit standard types live in the
-    // "Visite mediche" card, NOT "Abilitazioni".
+    // "Visite mediche" card, NOT "Abilitazioni". Story 19.7a (R-19-j): a visit
+    // has no scope — the column reads "Tutti" until story 19.8 drops it.
     const medicalClass2Row = page.getByTestId('medical-row').filter({ hasText: 'Visita medica classe 2' });
-    await expect(medicalClass2Row).toContainText('Piloti');
+    await expect(medicalClass2Row).toContainText('Tutti');
     await expect(medicalClass2Row).toContainText('Attivo');
 
     const medicalLapl = page.getByTestId('medical-row').filter({ hasText: 'Visita medica LAPL' });
-    await expect(medicalLapl).toContainText('Allievi');
+    await expect(medicalLapl).toContainText('Tutti');
     await expect(page.getByTestId('rating-row').filter({ hasText: 'Visita medica' })).toHaveCount(0);
 
-    // Ratifica utente 1: seeded for a fresh install too — a RATING (scope ALL), stays in "Abilitazioni".
-    const membershipRow = page.getByTestId('rating-row').filter({ hasText: 'Quota associativa' });
-    await expect(membershipRow).toContainText('12 mesi');
+    // Story 19.7a (R-19-k, D-1): the membership fee is its own kind — in NEITHER card.
+    await expect(page.getByTestId('rating-row').filter({ hasText: 'Quota associativa' })).toHaveCount(0);
+    await expect(page.getByTestId('medical-row').filter({ hasText: 'Quota associativa' })).toHaveCount(0);
 
     // AC 2 (6.1): a custom type, scope "Tutti", usable exactly like a standard one — WITH a validity in months (story 12.11, ratifica utente 2).
     const name = uniqueTypeName('Assicurazione volo');
@@ -112,13 +113,23 @@ test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Sto
 
     const name = uniqueTypeName('Visita idoneità');
     await medicalCard.getByTestId('medical-add-button').click();
+    // Story 19.7a (D-18, R-19-j): the visit form has no scope and no
+    // "Blocca prenotazioni" — the server fixes both (ALL / true).
+    await expect(page.getByTestId('medical-form')).toBeVisible();
+    await expect(page.getByTestId('medical-scope-select')).toHaveCount(0);
+    await expect(page.getByTestId('medical-form').getByRole('checkbox')).toHaveCount(0);
     await page.getByTestId('medical-name-input').fill(name);
-    await page.getByTestId('medical-scope-select').selectOption('PILOTS');
-    await page.getByTestId('medical-form-submit').click();
+    const [created] = await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith('/api/v1/expiry-types') && response.request().method() === 'POST'),
+      page.getByTestId('medical-form-submit').click(),
+    ]);
+    expect(created.status()).toBe(201);
+    expect(JSON.parse(created.request().postData()!)).toEqual({ name, validityMonths: null, kind: 'MEDICAL' });
+    expect(await created.json()).toMatchObject({ name, kind: 'MEDICAL', scope: 'ALL', blocksBooking: true });
     await expect(page.getByTestId('medical-feedback')).toBeVisible();
 
     const row = page.getByTestId('medical-row').filter({ hasText: name });
-    await expect(row).toContainText('Piloti');
+    await expect(row).toContainText('Tutti');
     await expect(row).toContainText('Attivo');
 
     // Created via the "Visite mediche" card -> kind=MEDICAL -> never shows on the "Abilitazioni" card.

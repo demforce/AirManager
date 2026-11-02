@@ -397,8 +397,10 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
       return chip.right <= box.right + 1 && chip.left >= box.left - 1;
     });
     expect(chipFits).toBe(true);
-    // The clean fixture carries NO chip: a row that always has one has no signal.
-    await expect(page.getByTestId(`mobile-pilot-row-${clean.id}`).locator('.badge')).toHaveCount(0);
+    // The clean fixture carries NO document chip: a row that always has one has
+    // no signal. Its only chip is the currency's (story 19.7a, D-14) — a pilot
+    // who never flew is genuinely not current.
+    await expect(page.getByTestId(`mobile-pilot-row-${clean.id}`).locator('.badge')).toHaveText(['Non current']);
 
     // Nothing on the page scrolls sideways behind the user's back.
     const geometry = await page.evaluate(() => ({
@@ -481,7 +483,9 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await expect(sheet.getByTestId('pilot-edit-mobile')).toBeVisible();
     await page.keyboard.press('Escape');
     await searchPilots(page, `Reg${tag}`);
-    await expect(page.getByTestId(`mobile-pilot-row-${pilot.id}`).locator('.badge')).toHaveCount(0);
+    // Still not suspended: the row's only chip is the currency of a pilot who
+    // never flew (story 19.7a, D-14), never "Sospeso".
+    await expect(page.getByTestId(`mobile-pilot-row-${pilot.id}`).locator('.badge')).toHaveText(['Non current']);
 
     await page.getByTestId(`mobile-pilot-row-${pilot.id}`).click();
     await sheet.getByTestId('pilot-suspend-toggle-mobile').click();
@@ -901,7 +905,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const tag = `D${uniqueSuffix()}`;
     const person = await createPilot(page, tag);
-    await registerBlockingExpiry(page, person.id, 'Licenza', 12);
+    await registerBlockingExpiry(page, person.id, 'Rating SEP', 12);
 
     await page.setViewportSize(PHONE);
     await page.goto(`/it/dashboard/people/${person.id}`);
@@ -933,7 +937,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
 
     // No duplicated text: the scadenze table is RE-PLACED, never mirrored.
     await expect(page.getByTestId('person-expiry-row')).toHaveCount(1);
-    await expect(page.getByText('Licenza', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('Rating SEP', { exact: true })).toHaveCount(1);
 
     // The header actions become full-width rows (R-15.3-d language).
     for (const button of await page.locator('.home-head-actions > .btn').all()) {

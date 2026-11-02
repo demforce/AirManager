@@ -167,6 +167,11 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               status: t('registry.table.status'),
               empty: t('registry.table.empty'),
             },
+            category: {
+              MEDICAL: t('registry.category.MEDICAL'),
+              RATING: t('registry.category.RATING'),
+              MEMBERSHIP: t('registry.category.MEMBERSHIP'),
+            },
             statCards: {
               expired: t('registry.statCards.expired'),
               expiredNote: t('registry.statCards.expiredNote'),

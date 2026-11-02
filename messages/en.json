@@ -359,6 +359,14 @@
         "documents": "Documents"
       }
     },
+    "currency": {
+      "label": "Currency",
+      "notCurrent": "Not current",
+      "expiring": "Currency {days}d",
+      "until": "Until {date}",
+      "expiredOn": "Expired on {date}",
+      "never": "No qualifying flight"
+    },
     "topUp": {
       "title": "Record top-up",
       "amount": "Amount (€)",
@@ -1420,6 +1428,11 @@
         "apply": "Apply",
         "empty": "No expiry in this window.",
         "noValue": "—"
+      },
+      "category": {
+        "MEDICAL": "Medical",
+        "RATING": "Rating",
+        "MEMBERSHIP": "Membership fee"
       }
     },
     "own": {

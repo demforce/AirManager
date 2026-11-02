@@ -299,7 +299,7 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
     // desktop row OPENS.
     await expect(sheet).toContainText(fixture.lastName);
     await expect(sheet).toContainText(fixture.typeName);
-    await expect(sheet).toContainText('Abilitazione');
+    await expect(sheet).toContainText('Rating · TipoMob');
     await expect(sheet).toContainText('Rinnovo gia` prenotato');
     await expect(sheet).toContainText('Ambito');
     await expect(sheet).toContainText('Giorni rimasti');

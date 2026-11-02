@@ -25,6 +25,12 @@ vi.mock('@/server/db/prisma', () => ({
     aircraft: {
       findMany: vi.fn(),
     },
+    // Story 19.7a: `getMedicalRequirementFailure` (inside `findBlockingExpiredDocuments`)
+    // reads the active MEDICAL types first — none by default (`beforeEach`),
+    // which switches the medical requirement off for every pre-19.7a case.
+    expiryType: {
+      findMany: vi.fn(),
+    },
     expiry: {
       findMany: vi.fn(),
     },
@@ -84,6 +90,7 @@ const instructorProfileFindUniqueMock = vi.mocked(prisma.instructorProfile.findU
 const instructorProfileFindManyMock = vi.mocked(prisma.instructorProfile.findMany);
 const aircraftFindManyMock = vi.mocked(prisma.aircraft.findMany);
 const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
+const expiryTypeFindManyMock = vi.mocked(prisma.expiryType.findMany);
 const bookingCreateMock = vi.mocked(prisma.booking.create);
 const bookingFindFirstMock = vi.mocked(prisma.booking.findFirst);
 const bookingFindManyMock = vi.mocked(prisma.booking.findMany);
@@ -117,6 +124,7 @@ const userFindUnique = userFindUniqueMock as unknown as { mockResolvedValue: (v:
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void; mockResolvedValueOnce: (v: unknown[]) => void };
 const aircraftFindMany = aircraftFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const expiryFindMany = expiryFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const expiryTypeFindMany = expiryTypeFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const personFindMany = personFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const instructorProfileFindMany = instructorProfileFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 
@@ -237,6 +245,7 @@ beforeEach(() => {
   // Story 7.4: no registered scadenze by default — individual expiry-block
   // tests override with their own fixture rows.
   expiryFindMany.mockResolvedValue([]);
+  expiryTypeFindMany.mockResolvedValue([]);
   // Story 12.2: `transitionBooking`'s post-commit deny email — a person with
   // an email and no linked `User` (locale falls back to `it`) by default;
   // individual email tests override with their own fixtures.
@@ -1319,15 +1328,15 @@ describe('updateBooking — expiry-based booking block on a DAY change (Story TD
 
   /** Expired relative to the NEW flight day (06-02) but valid on the ORIGINAL one (06-01) — proves the recheck uses the NEW day. */
   function expiredBeforeNextDayRow() {
-    return { expiresAt: new Date('2099-06-01T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } };
+    return { expiresAt: new Date('2099-06-01T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } };
   }
 
   function validOnNextDayRow() {
-    return { expiresAt: new Date('2099-06-02T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } };
+    return { expiresAt: new Date('2099-06-02T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } };
   }
 
   function nonBlockingWarningRow() {
-    return { expiresAt: new Date('2099-06-01T00:00:00.000Z'), expiryType: { name: 'Rating SEP', blocksBooking: false } };
+    return { expiresAt: new Date('2099-06-01T00:00:00.000Z'), expiryType: { name: 'Rating SEP', kind: 'RATING', blocksBooking: false } };
   }
 
   it('moving to a DIFFERENT flight day with a blocking expired document (relative to the NEW day) answers 422 EXPIRED_DOCUMENTS, same shape as create', async () => {
@@ -1341,8 +1350,8 @@ describe('updateBooking — expiry-based booking block on a DAY change (Story TD
     expect(error).toBeInstanceOf(ValidationError);
     const validationError = error as InstanceType<typeof ValidationError>;
     expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
-    expect(validationError.message).toContain('Licenza');
-    expect(validationError.details).toEqual({ documents: [{ typeName: 'Licenza', expiresAt: '2099-06-01' }] });
+    expect(validationError.message).toContain('Rating bloccante');
+    expect(validationError.details).toEqual({ documents: [{ typeName: 'Rating bloccante', expiresAt: '2099-06-01' }] });
     // Queried by the booking's OWN personId (`existing.personId`), not the staff actor's (null).
     expect(expiryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_pilot' } }));
     expect(transactionMock).not.toHaveBeenCalled();
@@ -1598,14 +1607,14 @@ describe('transitionBooking (Story 12.2, AC 3)', () => {
 
   it('a blocking expired document (relative to the flight day) answers 422 EXPIRED_DOCUMENTS, same shape as create', async () => {
     mockBookingLock({ status: 'PENDING' });
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-01T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-01T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
 
     const error = await transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED' }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ValidationError);
     const validationError = error as InstanceType<typeof ValidationError>;
     expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
-    expect(validationError.details).toEqual({ documents: [{ typeName: 'Licenza', expiresAt: '2020-01-01' }] });
+    expect(validationError.details).toEqual({ documents: [{ typeName: 'Rating bloccante', expiresAt: '2020-01-01' }] });
     expect(bookingUpdateManyMock).not.toHaveBeenCalled();
   });
 
@@ -2011,7 +2020,7 @@ describe('Story 16.3 — the approval re-checks WHO is approved, with createBook
 
   it('precedence: an archived person WITH a blocking expired document answers the 409 archived (as createBooking would), not 422 EXPIRED_DOCUMENTS — the person re-checks run FIRST', async () => {
     personFindUniqueOrThrow.mockResolvedValue({ ...ACTIVE_PILOT_PERSON, archivedAt: new Date('2025-01-01T00:00:00.000Z') });
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-01T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2020-01-01T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
     mockBookingLock({ status: 'PENDING' });
 
     const error = await transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED' }).catch((e: unknown) => e);
@@ -2107,25 +2116,25 @@ describe('createBooking — expiry-based booking block (Story 7.4, AC 1/2)', () 
   const EXPIRED_BEFORE_FLIGHT_DAY = new Date('2099-05-31T00:00:00.000Z');
   const VALID_ON_FLIGHT_DAY = new Date(`${FLIGHT_DAY_ONLY}T00:00:00.000Z`);
 
-  function expiredBlockingLicenseRow() {
-    return { expiresAt: EXPIRED_BEFORE_FLIGHT_DAY, expiryType: { name: 'Licenza', blocksBooking: true } };
+  function expiredBlockingRatingRow() {
+    return { expiresAt: EXPIRED_BEFORE_FLIGHT_DAY, expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } };
   }
 
   function expiredWarningRatingRow() {
-    return { expiresAt: EXPIRED_BEFORE_FLIGHT_DAY, expiryType: { name: 'Rating SEP', blocksBooking: false } };
+    return { expiresAt: EXPIRED_BEFORE_FLIGHT_DAY, expiryType: { name: 'Rating SEP', kind: 'RATING', blocksBooking: false } };
   }
 
-  it('a blocking expired document (e.g. medica/licenza) answers 422 EXPIRED_DOCUMENTS, with the type name in BOTH the message and details.documents', async () => {
+  it('a blocking expired document (a blocking rating) answers 422 EXPIRED_DOCUMENTS, with the type name in BOTH the message and details.documents', async () => {
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredBlockingLicenseRow()]);
+    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
 
     const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ValidationError);
     const validationError = error as InstanceType<typeof ValidationError>;
     expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
-    expect(validationError.message).toContain('Licenza');
-    expect(validationError.details).toEqual({ documents: [{ typeName: 'Licenza', expiresAt: '2099-05-31' }] });
+    expect(validationError.message).toContain('Rating bloccante');
+    expect(validationError.details).toEqual({ documents: [{ typeName: 'Rating bloccante', expiresAt: '2099-05-31' }] });
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
@@ -2145,16 +2154,87 @@ describe('createBooking — expiry-based booking block (Story 7.4, AC 1/2)', () 
 
   it('a blocking AND a non-blocking expired document together: the block wins (422), and details/message list ONLY the blocking document', async () => {
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredBlockingLicenseRow(), expiredWarningRatingRow()]);
+    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow(), expiredWarningRatingRow()]);
 
     const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ValidationError);
     const validationError = error as InstanceType<typeof ValidationError>;
     expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
-    expect(validationError.message).toContain('Licenza');
+    expect(validationError.message).toContain('Rating bloccante');
     expect(validationError.message).not.toContain('Rating SEP');
-    expect(validationError.details).toEqual({ documents: [{ typeName: 'Licenza', expiresAt: '2099-05-31' }] });
+    expect(validationError.details).toEqual({ documents: [{ typeName: 'Rating bloccante', expiresAt: '2099-05-31' }] });
+  });
+
+  // Story 19.7a (AC 7, R-19-j, D-4/D-5): ONE valid visit of any class is enough;
+  // only expired visits -> ONE blocking document (the most recent); no visit
+  // at all -> NOT blocked here (bookings keep "registered and expired").
+  describe('medical requirement (story 19.7a)', () => {
+    const ACTIVE_MEDICAL_TYPES = [{ name: 'Visita medica classe 1' }, { name: 'Visita medica classe 2' }, { name: 'Visita medica LAPL' }];
+
+    /** `findBlockingExpiredDocuments` reads every row of the person; `getMedicalRequirementFailure` only the MEDICAL ones. */
+    function mockPersonExpiries(rows: Array<{ name: string; kind: 'MEDICAL' | 'RATING'; blocksBooking: boolean; expiresAt: Date }>): void {
+      expiryTypeFindMany.mockResolvedValue(ACTIVE_MEDICAL_TYPES);
+      expiryFindManyMock.mockImplementation((async (args: { where: { expiryType?: { kind?: string } } }) => {
+        const selected = args.where.expiryType?.kind === 'MEDICAL' ? rows.filter((row) => row.kind === 'MEDICAL') : rows;
+        return selected.map((row) => ({ expiresAt: row.expiresAt, expiryType: { name: row.name, kind: row.kind, blocksBooking: row.blocksBooking } }));
+      }) as never);
+    }
+
+    it('class 2 expired + class 1 valid -> booked, no EXPIRED_DOCUMENTS and no medical warning', async () => {
+      personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+      mockPersonExpiries([
+        { name: 'Visita medica classe 2', kind: 'MEDICAL', blocksBooking: true, expiresAt: EXPIRED_BEFORE_FLIGHT_DAY },
+        { name: 'Visita medica classe 1', kind: 'MEDICAL', blocksBooking: true, expiresAt: new Date('2100-01-01T00:00:00.000Z') },
+      ]);
+
+      const result = await createBooking(adminActor(), baseInput({ personId: 'person_student' }));
+
+      expect(result.booking.id).toBe('booking_1');
+      expect(result.warnings).toEqual([]);
+    });
+
+    it('only class 2 and LAPL expired -> 422 EXPIRED_DOCUMENTS with ONE document, the most recently expired', async () => {
+      personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+      mockPersonExpiries([
+        { name: 'Visita medica classe 2', kind: 'MEDICAL', blocksBooking: true, expiresAt: new Date('2099-03-01T00:00:00.000Z') },
+        { name: 'Visita medica LAPL', kind: 'MEDICAL', blocksBooking: true, expiresAt: EXPIRED_BEFORE_FLIGHT_DAY },
+      ]);
+
+      const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ValidationError);
+      const validationError = error as InstanceType<typeof ValidationError>;
+      expect(validationError.code).toBe('EXPIRED_DOCUMENTS');
+      expect(validationError.details).toEqual({ documents: [{ typeName: 'Visita medica LAPL', expiresAt: '2099-05-31' }] });
+    });
+
+    it('an expired visit beside an expired blocking rating -> both blocking, the visit exactly once', async () => {
+      personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+      mockPersonExpiries([
+        { name: 'Visita medica classe 2', kind: 'MEDICAL', blocksBooking: true, expiresAt: EXPIRED_BEFORE_FLIGHT_DAY },
+        { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true, expiresAt: EXPIRED_BEFORE_FLIGHT_DAY },
+      ]);
+
+      const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
+
+      expect((error as InstanceType<typeof ValidationError>).details).toEqual({
+        documents: [
+          { typeName: 'Rating bloccante', expiresAt: '2099-05-31' },
+          { typeName: 'Visita medica classe 2', expiresAt: '2099-05-31' },
+        ],
+      });
+    });
+
+    it('a person with NO visit at all is NOT blocked by a booking (D-5: missing documents stay the flights-only scan)', async () => {
+      personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
+      mockPersonExpiries([]);
+
+      const result = await createBooking(adminActor(), baseInput({ personId: 'person_student' }));
+
+      expect(result.booking.id).toBe('booking_1');
+      expect(result.warnings).toEqual([]);
+    });
   });
 
   it('a person with NO registered Expiry rows at all is never blocked (absence != expired)', async () => {
@@ -2170,12 +2250,12 @@ describe('createBooking — expiry-based booking block (Story 7.4, AC 1/2)', () 
   it('boundary: expiresAt equal to the flight day itself is still VALID (no block, no warning) — the day before IS expired', async () => {
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
 
-    expiryFindMany.mockResolvedValue([{ expiresAt: VALID_ON_FLIGHT_DAY, expiryType: { name: 'Licenza', blocksBooking: true } }]);
+    expiryFindMany.mockResolvedValue([{ expiresAt: VALID_ON_FLIGHT_DAY, expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
     const validResult = await createBooking(adminActor(), baseInput({ personId: 'person_student' }));
     expect(validResult.booking.id).toBe('booking_1');
     expect(validResult.warnings).toEqual([]);
 
-    expiryFindMany.mockResolvedValue([expiredBlockingLicenseRow()]);
+    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
     const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ValidationError);
     expect((error as InstanceType<typeof ValidationError>).code).toBe('EXPIRED_DOCUMENTS');
@@ -2191,13 +2271,13 @@ describe('createBooking — expiry-based booking block (Story 7.4, AC 1/2)', () 
     // Expired relative to the CORRECT (shifted) flight day 2099-07-16, even
     // though it is dated the SAME as startsAt's own UTC calendar day — proof
     // the rule does not naively use the UTC date.
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2099-07-15T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2099-07-15T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
     const error = await createBooking(adminActor(), baseInput({ personId: 'person_student', startsAt, endsAt })).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ValidationError);
     expect((error as InstanceType<typeof ValidationError>).code).toBe('EXPIRED_DOCUMENTS');
 
     // Valid exactly ON the correct (shifted) flight day 2099-07-16.
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2099-07-16T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2099-07-16T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
     const result = await createBooking(adminActor(), baseInput({ personId: 'person_student', startsAt, endsAt }));
     expect(result.booking.id).toBe('booking_1');
   });
@@ -2206,7 +2286,7 @@ describe('createBooking — expiry-based booking block (Story 7.4, AC 1/2)', () 
     personFindUnique.mockImplementation(async (args) =>
       args.where.id === 'person_instructor' ? ACTIVE_INSTRUCTOR_ACTOR_PERSON : ACTIVE_STUDENT_PERSON,
     );
-    expiryFindMany.mockResolvedValue([expiredBlockingLicenseRow()]);
+    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
 
     const error = await createBooking(
       instructorActor('person_instructor'),
@@ -2222,7 +2302,7 @@ describe('createBooking — expiry-based booking block (Story 7.4, AC 1/2)', () 
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
     // Dated before PAST_STARTS_AT's OWN flight day (2020-01-01), so it is
     // genuinely expired relative to that (past) flight day too.
-    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2019-01-01T00:00:00.000Z'), expiryType: { name: 'Licenza', blocksBooking: true } }]);
+    expiryFindMany.mockResolvedValue([{ expiresAt: new Date('2019-01-01T00:00:00.000Z'), expiryType: { name: 'Rating bloccante', kind: 'RATING', blocksBooking: true } }]);
 
     const error = await createBooking(
       adminActor(),
@@ -2264,7 +2344,7 @@ describe('createBooking — expiry-based booking block (Story 7.4, AC 1/2)', () 
 
   it('staff without force on a real block still gets 422 EXPIRED_DOCUMENTS (force is opt-in, never automatic)', async () => {
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredBlockingLicenseRow()]);
+    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
 
     const error = await createBooking(adminActor(), baseInput({ personId: 'person_student' })).catch((e: unknown) => e);
 
@@ -2274,7 +2354,7 @@ describe('createBooking — expiry-based booking block (Story 7.4, AC 1/2)', () 
 
   it('staff force + forceReason bypasses a real block, stamping forcedAt/forcedByUserId/forceReason on the created booking', async () => {
     personFindUnique.mockImplementation(async () => ACTIVE_STUDENT_PERSON);
-    expiryFindMany.mockResolvedValue([expiredBlockingLicenseRow()]);
+    expiryFindMany.mockResolvedValue([expiredBlockingRatingRow()]);
 
     const result = await createBooking(
       adminActor(),

@@ -359,6 +359,14 @@
         "documents": "Documenti"
       }
     },
+    "currency": {
+      "label": "Currency",
+      "notCurrent": "Non current",
+      "expiring": "Currency {days}gg",
+      "until": "Fino al {date}",
+      "expiredOn": "Scaduta il {date}",
+      "never": "Nessun volo utile"
+    },
     "topUp": {
       "title": "Registra ricarica",
       "amount": "Importo (€)",
@@ -1420,6 +1428,11 @@
         "apply": "Applica",
         "empty": "Nessuna scadenza in questa finestra.",
         "noValue": "—"
+      },
+      "category": {
+        "MEDICAL": "Visita medica",
+        "RATING": "Rating",
+        "MEMBERSHIP": "Quota associativa"
       }
     },
     "own": {

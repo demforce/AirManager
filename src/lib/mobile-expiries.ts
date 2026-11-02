@@ -7,10 +7,11 @@
  * note, a scadenza that expired N days AGO) and are cheaper to prove with a
  * unit test than with a fixture.
  *
- * The urgency TIER and the CATEGORY are deliberately absent: `tierOf` and
- * `categoryOf` already exist in `lib/expiry-status.ts` and are shared with
- * the desktop registry and the Panoramica widget — there must never be a
- * second implementation of those boundaries (AD-6).
+ * The urgency TIER and the CATEGORY are deliberately absent: `tierOf` lives
+ * in `lib/expiry-status.ts`, shared with the desktop registry and the
+ * Panoramica widget — there must never be a second implementation of those
+ * boundaries (AD-6) — and the category is the row's own `category` (the
+ * type's `kind`, story 19.7a), translated by the caller.
  *
  * Pure by construction: no import of a service, hence no `@/lib/env` dragged
  * into the test (CLAUDE.md's eager-env rule).
@@ -40,7 +41,7 @@ export function expiryCardSubLine(parts: { typeName: string; dateLabel: string; 
 
 /**
  * The registry sheet's mono over-line: the two CLASSIFICATIONS of a scadenza
- * (category and certificate), with the person as the sheet's title. Goes
+ * (category, already translated, and certificate), with the person as the sheet's title. Goes
  * through `joinSegments` because it becomes half of the dialog's accessible
  * name (`${sub} — ${title}`, `bottom-sheet.tsx:61`).
  */

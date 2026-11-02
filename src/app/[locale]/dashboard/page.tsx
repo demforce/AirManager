@@ -13,7 +13,6 @@ import type { AppLocale } from '@/i18n/routing';
 import { dayPhaseOf, filterInProgress, type DayPhase } from '@/lib/booking-day-phase';
 import { clampToWindowPercent, formatWallClock, projectDayBlocks, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
-import { categoryOf } from '@/lib/expiry-status';
 import { formatCents } from '@/lib/money';
 import { buildOverviewAlerts } from '@/lib/overview-alerts';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
@@ -1026,11 +1025,16 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
   ]);
 
   const noValue = t('pilotLanding.noValue');
-  const medicalExpiry = myExpiries.find((expiry) => categoryOf(expiry.typeName) === 'Medico');
+  // Story 19.7a (R-19-j, D-12): one valid visit of any class covers the pilot,
+  // so "Scadenza medico" is the visit expiring LAST — by `kind`, never by name.
+  const medicalExpiry = myExpiries
+    .filter((expiry) => expiry.typeKind === 'MEDICAL')
+    .reduce<(typeof myExpiries)[number] | undefined>((latest, expiry) => (latest === undefined || expiry.expiresAt > latest.expiresAt ? expiry : latest), undefined);
   // Ratifica PO 2026-07-18: la licenza è LIFETIME (mai una data di scadenza —
   // il KPI mostra il TIPO dal PilotProfile); solo i ratings scadono, e il KPI
-  // ne mostra i NOMI, non un conteggio.
-  const ratingNames = [...new Set(myExpiries.filter((expiry) => categoryOf(expiry.typeName) === 'Abilitazione').map((expiry) => expiry.typeName))];
+  // ne mostra i NOMI, non un conteggio. Solo `kind = RATING`: la quota
+  // associativa non è un rating (story 19.7a, R-19-k).
+  const ratingNames = [...new Set(myExpiries.filter((expiry) => expiry.typeKind === 'RATING').map((expiry) => expiry.typeName))];
 
   // Review 14.6 F2: the permission alone is the ROLE; `createBooking`'s own-self
   // path requires an ACTIVE flying profile (`isActivePilot || isActiveInstructor`,

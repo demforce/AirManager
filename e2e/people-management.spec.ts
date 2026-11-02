@@ -284,8 +284,9 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     expect(ratingType).toBeDefined();
 
     const medicalTypesResponse = await page.request.get('/api/v1/expiry-types?kind=MEDICAL');
-    const medicalTypes = (await medicalTypesResponse.json()) as Array<{ id: string; scope: string }>;
-    const medicalType = medicalTypes.find((type) => type.scope === 'PILOTS');
+    // Story 19.7a (R-19-j): visits have no scope (all `ALL`) — the seeded class 2, by name.
+    const medicalTypes = (await medicalTypesResponse.json()) as Array<{ id: string; name: string }>;
+    const medicalType = medicalTypes.find((type) => type.name === 'Visita medica classe 2');
     expect(medicalType).toBeDefined();
 
     const accessEmail = `composite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
@@ -332,8 +333,8 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await createPilot(page, person);
 
     // No profile activated on this bare pilot -> only `ALL`-scoped chips are offered (the scope filter, AC 1/2).
-    // A run-unique ALL-scope type — NOT the seeded "Quota associativa" (also ALL-scope, kind=RATING), which
-    // review F3 (PO decision 2026-07-24) excludes from this picker (asserted below).
+    // A run-unique ALL-scope type — NOT the seeded "Quota associativa" (kind MEMBERSHIP since story 19.7a),
+    // which is never offered by this picker (asserted below).
     const typeName = `Rating ALL ${Date.now()}`;
     const typeResponse = await page.request.post('/api/v1/expiry-types', { data: { name: typeName, scope: 'ALL' } });
     expect(typeResponse.status()).toBe(201);
@@ -354,12 +355,14 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     // The link to the standalone Scadenze page is gone (AC 2).
     await expect(page.getByText('Gestisci in Scadenze')).toHaveCount(0);
 
-    // Regression-guard (review F3, PO decision 2026-07-24): "Quota associativa" is a financial
-    // obligation, not a rating — it must never be offered as a chip here (only in Impostazioni/Scadenze).
-    const catalogResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    // Regression-guard (review F3, PO decision 2026-07-24; story 19.7a D-1): "Quota associativa" is a
+    // financial obligation, its own MEMBERSHIP kind — never offered as a chip here, never among the ratings.
+    const catalogResponse = await page.request.get('/api/v1/expiry-types?kind=MEMBERSHIP');
     const catalog = (await catalogResponse.json()) as Array<{ id: string; name: string }>;
-    const membershipFeeType = catalog.find((type) => type.name === 'Quota associativa');
-    expect(membershipFeeType).toBeDefined();
+    expect(catalog.map((type) => type.name)).toEqual(['Quota associativa']);
+    const membershipFeeType = catalog[0];
+    const ratingsResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    expect(((await ratingsResponse.json()) as Array<{ id: string }>).some((type) => type.id === membershipFeeType!.id)).toBe(false);
     await expect(ratingsEditor.getByTestId(`expiry-chip-${membershipFeeType!.id}`)).toHaveCount(0);
     await expect(ratingsEditor.getByTestId(`expiry-row-${membershipFeeType!.id}`)).toHaveCount(0);
 

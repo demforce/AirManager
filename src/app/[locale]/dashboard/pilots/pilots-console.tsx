@@ -34,6 +34,7 @@ import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { tierOf } from '@/lib/expiry-status';
 import { avatarColorFor, initialsOf, pilotRowFlag, type BlockingDocument, type PilotRowFlag } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
 import { formatDateOnly } from '@/lib/time';
@@ -41,6 +42,9 @@ import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency
 import { PilotEditor, type PilotEditorLabels } from './pilot-editor';
 
 export type PilotUser = { id: string; email: string; roles: Role[]; isActive: boolean; passwordSet: boolean } | null;
+
+/** Story 19.7a (R-19-i): the currency of a pilot/student — `currency.service.ts#listCurrencyByPerson`'s row. */
+export type PilotCurrency = { current: boolean; expiresAt: string | null; daysUntil: number | null };
 
 export type PilotRow = {
   id: string;
@@ -82,6 +86,8 @@ export type PilotsConsoleLabels = {
     dismiss: string;
     sheet: { email: string; phone: string; balance: string; lastFlight: string; profiles: string; access: string; documents: string };
   };
+  /** Story 19.7a (D-14). `expiring`/`until`/`expiredOn` carry a `{days}`/`{date}` placeholder filled CLIENT-side — read with `t.raw`. */
+  currency: { label: string; notCurrent: string; expiring: string; until: string; expiredOn: string; never: string };
   topUp: {
     title: string;
     amount: string;
@@ -124,6 +130,8 @@ type PilotsConsoleProps = {
   locale: 'it' | 'en';
   /** Story 15.5 (R-15.5-c): blocking documents (`ExpiryType.blocksBooking`) of the people on THIS page, expired or due within 30 days. Missing key = nothing blocking. */
   blockingDocumentsById: Record<string, BlockingDocument[]>;
+  /** Story 19.7a (D-8/D-14): the currency of the pilots/students on THIS page. Missing key = no currency (not a pilot/student, or archived). */
+  currencyById: Record<string, PilotCurrency>;
   labels: PilotsConsoleLabels;
 };
 
@@ -164,6 +172,7 @@ export function PilotsConsole({
   exportHref,
   locale,
   blockingDocumentsById,
+  currencyById,
   labels,
 }: PilotsConsoleProps) {
   const router = useRouter();
@@ -286,15 +295,36 @@ export function PilotsConsole({
     await setUserActive(userId, nextActive);
   }
 
-  /** The one chip the phone row shows on its right, or `null` (R-15.5-c). */
+  /** The one chip the phone row shows on its right, or `null` (R-15.5-c; currency since story 19.7a, D-14). */
   function flagOf(pilot: PilotRow): PilotRowFlag | null {
-    return pilotRowFlag({ suspended: pilot.user !== null && !pilot.user.isActive, blockingDocuments: blockingDocumentsById[pilot.id] ?? [] });
+    return pilotRowFlag({ suspended: pilot.user !== null && !pilot.user.isActive, blockingDocuments: blockingDocumentsById[pilot.id] ?? [], currency: currencyById[pilot.id] ?? null });
+  }
+
+  /** The documents' half of the chip alone — the sheet's "Documenti" row, which the currency must not hide. */
+  function documentFlagOf(pilot: PilotRow): PilotRowFlag | null {
+    return pilotRowFlag({ suspended: pilot.user !== null && !pilot.user.isActive, blockingDocuments: blockingDocumentsById[pilot.id] ?? [], currency: null });
   }
 
   function flagLabel(flag: PilotRowFlag): string {
     if (flag.kind === 'suspended') return labels.status.suspended;
     if (flag.kind === 'expired') return labels.mobile.flagExpired.replace('{doc}', flag.typeName);
+    if (flag.kind === 'currencyExpired') return labels.currency.notCurrent;
+    if (flag.kind === 'currencyExpiring') return labels.currency.expiring.replace('{days}', String(flag.daysUntil));
     return labels.mobile.flagExpiring.replace('{doc}', flag.typeName).replace('{days}', String(flag.daysUntil));
+  }
+
+  /**
+   * The desktop "Ultimo volo" cell's currency badge (story 19.7a, D-14), same
+   * `tierOf` thresholds as the phone chip: "Non current" when not current,
+   * "Currency Ngg" when it ends within 30 days, nothing otherwise — the date
+   * above it keeps meaning "last flight".
+   */
+  function currencyBadgeOf(pilot: PilotRow): { tone: BadgeTone; label: string } | null {
+    const currency = currencyById[pilot.id];
+    if (currency === undefined) return null;
+    if (!currency.current) return { tone: 'bad', label: labels.currency.notCurrent };
+    if (currency.daysUntil !== null && tierOf(currency.daysUntil) <= 2) return { tone: 'warn', label: labels.currency.expiring.replace('{days}', String(currency.daysUntil)) };
+    return null;
   }
 
   /**
@@ -366,6 +396,7 @@ export function PilotsConsole({
             {items.map((pilot) => {
               const roles = roleBadges(pilot.profiles);
               const hasUser = pilot.user !== null;
+              const currencyBadge = currencyBadgeOf(pilot);
               return (
                 <div key={pilot.id} className="student-row" data-testid={`pilot-row-${pilot.id}`} style={{ gridTemplateColumns: cols }}>
                   <div>
@@ -387,6 +418,11 @@ export function PilotsConsole({
                   </div>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
                     {pilot.lastFlightDate ? formatDateOnly(pilot.lastFlightDate, locale) : labels.table.noValue}
+                    {currencyBadge ? (
+                      <div style={{ marginTop: 4 }} data-testid={`pilot-currency-${pilot.id}`}>
+                        <Badge tone={currencyBadge.tone}>{currencyBadge.label}</Badge>
+                      </div>
+                    ) : null}
                   </div>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {roles.length === 0 ? labels.table.noValue : roles.map((role) => <Badge key={role.key} tone={role.tone}>{role.label}</Badge>)}
@@ -498,7 +534,7 @@ export function PilotsConsole({
                   </span>
                   {flag ? (
                     <span className="mobile-row-flag">
-                      <Badge tone={flag.kind === 'expiring' ? 'warn' : 'bad'}>{flagLabel(flag)}</Badge>
+                      <Badge tone={flag.kind === 'expiring' || flag.kind === 'currencyExpiring' ? 'warn' : 'bad'}>{flagLabel(flag)}</Badge>
                     </span>
                   ) : null}
                 </button>
@@ -576,7 +612,7 @@ export function PilotsConsole({
               {statusLabel(sheetPilot.user)}
             </Badge>
           }
-          rows={pilotSheetRows(sheetPilot, flagOf(sheetPilot), flagLabel, locale, labels)}
+          rows={pilotSheetRows(sheetPilot, documentFlagOf(sheetPilot), currencyById[sheetPilot.id] ?? null, flagLabel, locale, labels)}
           closeLabel={labels.mobile.close}
           actions={
             <>
@@ -663,6 +699,7 @@ export function PilotsConsole({
 function pilotSheetRows(
   pilot: PilotRow,
   flag: PilotRowFlag | null,
+  currency: PilotCurrency | null,
   flagLabel: (flag: PilotRowFlag) => string,
   locale: 'it' | 'en',
   labels: PilotsConsoleLabels,
@@ -678,6 +715,15 @@ function pilotSheetRows(
     { k: labels.mobile.sheet.profiles, v: profiles.length > 0 ? profiles.join(' · ') : labels.table.noValue },
     { k: labels.mobile.sheet.access, v: pilot.user === null ? labels.status.none : pilot.user.isActive ? labels.status.active : labels.status.suspended },
   ];
+  // Story 19.7a (D-14): ALWAYS present for a pilot/student — unlike the row's
+  // chip, the sheet is where "current until <date>" is worth reading.
+  if (currency !== null) {
+    const value =
+      currency.expiresAt === null
+        ? labels.currency.never
+        : (currency.current ? labels.currency.until : labels.currency.expiredOn).replace('{date}', formatDateOnly(currency.expiresAt, locale));
+    rows.push({ k: labels.currency.label, v: value });
+  }
   // Only when there IS something to say: "nessun documento in scadenza" would
   // over-claim — the reader only ever looked 30 days ahead.
   if (flag !== null && flag.kind !== 'suspended') {

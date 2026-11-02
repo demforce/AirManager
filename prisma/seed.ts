@@ -333,39 +333,36 @@ async function seedPilotAccount(): Promise<void> {
 }
 
 /**
- * Story 6.1, AC 1: the six standard expiry types (visita medica classe 1/2/
- * LAPL, licenza, rating SEP, inglese ICAO), each with a sensible default
- * `scope` for a demo aviosuperficie — the admin adapts these afterwards
- * (Dev Notes: "l'admin li adatta"; `ALL` is deliberately not covered here,
- * the e2e custom-type test covers it). Idempotent like the rest of this
- * seed — `upsert` keyed on the unique `name`, `update: {}` so a re-seed
- * NEVER overwrites an admin's rename/re-scope/deactivation of a standard
- * type (same principle as `seedCashCategories`/`seedAircraft`).
+ * Story 6.1, AC 1: the standard expiry types (visita medica classe 1/2/LAPL,
+ * rating SEP, inglese ICAO, plus the membership fee), each with a sensible
+ * default for a demo aviosuperficie — the admin adapts these afterwards
+ * (Dev Notes: "l'admin li adatta"). Idempotent like the rest of this seed —
+ * `upsert` keyed on the unique `name`, `update: {}` so a re-seed NEVER
+ * overwrites an admin's rename/re-scope/deactivation of a standard type
+ * (same principle as `seedCashCategories`/`seedAircraft`).
  */
-// Story 7.4 (FR-21): `blocksBooking` marks the 4 critical (medica/licenza)
-// types — the migration's own backfill UPDATE uses these EXACT same names.
-// `update: {}` stays untouched below (existing seed pattern): an admin's own
-// `blocksBooking` toggle (`types-manager.tsx`) is never overwritten by a re-seed.
-// Story 13.1 (AC 1, R-13.1-a): `kind` defaults to `RATING` in the Prisma
-// schema, so only the 3 medical-visit types need it spelled out here —
-// same exact names the migration's own data-backfill matches on.
+// Story 19.7a (R-19-j/k, D-1/D-3): the medical visits have no scope — always
+// `ALL` + `blocksBooking: true` (an invariant `expiry-types.service.ts` keeps),
+// one valid visit of any class covers whoever is on board; "Licenza" is no
+// longer an expiry type (the licence is `PilotProfile.licenseType`); the
+// membership fee is the one `MEMBERSHIP` row. For the ratings, `blocksBooking`
+// (story 7.4) stays per type and `update: {}` never overwrites an admin's toggle.
 const STANDARD_EXPIRY_TYPES: Array<{
   name: string;
   scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
   blocksBooking: boolean;
   validityMonths?: number;
-  kind?: 'RATING' | 'MEDICAL';
+  kind?: 'RATING' | 'MEDICAL' | 'MEMBERSHIP';
 }> = [
-  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Licenza', scope: 'PILOTS', blocksBooking: true },
+  { name: 'Visita medica classe 1', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica classe 2', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica LAPL', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
   { name: 'Rating SEP', scope: 'PILOTS', blocksBooking: false },
   { name: 'Inglese ICAO', scope: 'PILOTS', blocksBooking: false },
   // Story 12.11 (ratifica utente 1): also created lazily by `membership.service.ts#chargeMembershipFee`'s
-  // own upsert-by-name on the FIRST charge — seeded here too so a fresh
-  // install's catalogue (Impostazioni "Abilitazioni") already lists it.
-  { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12 },
+  // own upsert-by-name (`MEMBERSHIP_FEE_TYPE_NAME`) on the FIRST charge —
+  // seeded here too so a fresh install's catalogue already carries it.
+  { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12, kind: 'MEMBERSHIP' },
 ];
 
 async function seedExpiryTypes(): Promise<void> {

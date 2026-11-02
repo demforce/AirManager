@@ -107,6 +107,15 @@ vi.mock('./bookings.service', () => ({
   findBlockingExpiredDocuments: (...args: unknown[]) => findBlockingExpiredDocumentsMock(...args),
 }));
 
+// Story 19.7a (R-19-j): the medical requirement (`expiries.service.ts`) is
+// mocked at the module boundary like `findBlockingExpiredDocuments` above —
+// its own rule is proved by `medical-requirement.test.ts`/`expiries.service.test.ts`;
+// here only WHO is asked, for WHICH day, and where its answer lands.
+const getMedicalRequirementFailureMock = vi.fn();
+vi.mock('./expiries.service', () => ({
+  getMedicalRequirementFailure: (...args: unknown[]) => getMedicalRequirementFailureMock(...args),
+}));
+
 const { prisma } = await import('@/server/db/prisma');
 const { listFlights, getFlightTotals, registerFlight, deleteFlight, updateFlight } = await import('./flights.service');
 const { NotFoundError, ConflictError } = await import('./errors');
@@ -336,6 +345,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     getEffectiveRateMock.mockReset();
     getEffectiveInstructorRateMock.mockReset();
     findBlockingExpiredDocumentsMock.mockReset();
+    getMedicalRequirementFailureMock.mockReset();
 
     getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     getNegativeBalanceThresholdCentsMock.mockResolvedValue(-20000);
@@ -351,6 +361,8 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     // keeps passing unmodified" rationale as the mock above.
     expiryTypeFindMany.mockResolvedValue([]);
     expiryFindMany.mockResolvedValue([]);
+    // Story 19.7a default: the medical requirement is satisfied for everybody.
+    getMedicalRequirementFailureMock.mockResolvedValue(null);
     // Story 16.2 default: no overlapping flight — every PRE-EXISTING test in
     // this file keeps passing unmodified; the dedicated describe block below
     // overrides it per test.
@@ -1419,7 +1431,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       });
       // A MISSING blocking document too (review F5's own class), so the 422
       // proves it reports BOTH scans, not just the expired one.
-      expiryTypeFindMany.mockResolvedValue([{ id: 'type_licenza', name: 'Licenza' }]);
+      expiryTypeFindMany.mockResolvedValue([{ id: 'type_rating', name: 'Rating bloccante' }]);
       expiryFindMany.mockResolvedValue([]);
 
       // Documented order: existence 404 -> state 422 -> domain 422. The
@@ -1434,7 +1446,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
           outOfServiceUntil: '2031-05-12',
           documents: [
             { typeName: 'Visita medica classe 2', expiresAt: '2019-12-31', role: 'person', personName: 'Mario Rossi' },
-            { typeName: 'Licenza', expiresAt: null, role: 'person', personName: 'Mario Rossi' },
+            { typeName: 'Rating bloccante', expiresAt: null, role: 'person', personName: 'Mario Rossi' },
           ],
         },
       });
@@ -1517,25 +1529,25 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     describe('review F5/F6 — missing (never-registered) blocking document, tagged by role/personName', () => {
       it('a person with an APPLICABLE blocksBooking type but no Expiry row at all -> 422, tagged MISSING (expiresAt: null)', async () => {
         personFindUnique.mockResolvedValue(PILOT_PERSON);
-        expiryTypeFindMany.mockResolvedValue([{ id: 'type_licenza', name: 'Licenza' }]);
+        expiryTypeFindMany.mockResolvedValue([{ id: 'type_rating', name: 'Rating bloccante' }]);
         expiryFindMany.mockResolvedValue([]);
 
         await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
           code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-          details: { documents: [{ typeName: 'Licenza', expiresAt: null, role: 'person', personName: 'Mario Rossi' }] },
+          details: { documents: [{ typeName: 'Rating bloccante', expiresAt: null, role: 'person', personName: 'Mario Rossi' }] },
         });
         expect(transactionMock).not.toHaveBeenCalled();
         // The applicability scan asked about THIS person's own active
         // profiles (`hasActivePilot`/`hasActiveStudent`), never re-derived.
         expect(expiryTypeFindManyMock).toHaveBeenCalledWith(
-          expect.objectContaining({ where: expect.objectContaining({ blocksBooking: true, scope: { in: ['ALL', 'PILOTS'] } }) }),
+          expect.objectContaining({ where: expect.objectContaining({ kind: 'RATING', blocksBooking: true, scope: { in: ['ALL', 'PILOTS'] } }) }),
         );
       });
 
       it('a person who HAS registered the applicable type is never reported missing, even with nothing expired', async () => {
         personFindUnique.mockResolvedValue(PILOT_PERSON);
-        expiryTypeFindMany.mockResolvedValue([{ id: 'type_licenza', name: 'Licenza' }]);
-        expiryFindMany.mockResolvedValue([{ expiryTypeId: 'type_licenza' }]);
+        expiryTypeFindMany.mockResolvedValue([{ id: 'type_rating', name: 'Rating bloccante' }]);
+        expiryFindMany.mockResolvedValue([{ expiryTypeId: 'type_rating' }]);
 
         await expect(registerFlight(adminActor(), BASE_INPUT)).resolves.toBeDefined();
       });
@@ -1553,14 +1565,75 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
         // Only the INSTRUCTOR scan (second call, scope INSTRUCTORS) reports
         // anything — the pilot's own (first call, scope PILOTS) is clear.
-        expiryTypeFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'type_medica1', name: 'Visita medica classe 1' }]);
+        expiryTypeFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'type_rating_fi', name: 'Rating istruttore' }]);
         expiryFindMany.mockResolvedValue([]);
         const input = registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' });
 
         await expect(registerFlight(adminActor(), input)).rejects.toMatchObject({
           code: 'FLIGHT_BLOCKED_BY_EXPIRY',
-          details: { documents: [{ typeName: 'Visita medica classe 1', expiresAt: null, role: 'instructor', personName: 'Anna Bianchi' }] },
+          details: { documents: [{ typeName: 'Rating istruttore', expiresAt: null, role: 'instructor', personName: 'Anna Bianchi' }] },
         });
+      });
+    });
+
+    // Story 19.7a (AC 6, R-19-j, D-4): ONE valid visit of any class for whoever
+    // is on board. The MISSING visit is this scan's document; an EXPIRED one is
+    // `findBlockingExpiredDocuments`' — never both for the same person.
+    describe('story 19.7a — the medical requirement inside the flight scan', () => {
+      const MISSING_VISIT = { typeName: 'Visita medica classe 1 / Visita medica classe 2 / Visita medica LAPL', expiresAt: null };
+
+      it('asks the requirement for the pilot AND the instructor, on the flight day', async () => {
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+
+        await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' }));
+
+        expect(getMedicalRequirementFailureMock.mock.calls).toEqual([
+          [BASE_INPUT.personId, '2020-01-15'],
+          ['person_instructor', '2020-01-15'],
+        ]);
+      });
+
+      it('a pilot with NO visit at all -> 422 with ONE missing document (expiresAt null), role person', async () => {
+        personFindUnique.mockResolvedValue(PILOT_PERSON);
+        getMedicalRequirementFailureMock.mockResolvedValue(MISSING_VISIT);
+
+        await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
+          code: 'FLIGHT_BLOCKED_BY_EXPIRY',
+          details: { documents: [{ ...MISSING_VISIT, role: 'person', personName: 'Mario Rossi' }] },
+        });
+        expect(transactionMock).not.toHaveBeenCalled();
+      });
+
+      it('a pilot with only an EXPIRED visit: the missing scan adds nothing — the expired scan carries it, exactly once', async () => {
+        personFindUnique.mockResolvedValue(PILOT_PERSON);
+        getMedicalRequirementFailureMock.mockResolvedValue({ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' });
+        findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31' }], warnings: [] });
+
+        await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({
+          code: 'FLIGHT_BLOCKED_BY_EXPIRY',
+          details: { documents: [{ typeName: 'Visita medica classe 2', expiresAt: '2019-12-31', role: 'person', personName: 'Mario Rossi' }] },
+        });
+      });
+
+      it('an instructor with NO visit -> ONE missing document tagged instructor, beside a pilot who is covered', async () => {
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+        getMedicalRequirementFailureMock.mockImplementation(async (personId: string) => (personId === 'person_instructor' ? MISSING_VISIT : null));
+
+        await expect(registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, instructorPersonId: 'person_instructor' }))).rejects.toMatchObject({
+          code: 'FLIGHT_BLOCKED_BY_EXPIRY',
+          details: { documents: [{ ...MISSING_VISIT, role: 'instructor', personName: 'Anna Bianchi' }] },
+        });
+      });
+
+      it('the missing visit is reported even when no RATING type is applicable (the rating scan short-circuits, the medical one does not)', async () => {
+        personFindUnique.mockResolvedValue(PILOT_PERSON);
+        expiryTypeFindMany.mockResolvedValue([]);
+        getMedicalRequirementFailureMock.mockResolvedValue(MISSING_VISIT);
+
+        await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'FLIGHT_BLOCKED_BY_EXPIRY' });
+        expect(expiryFindManyMock).not.toHaveBeenCalled();
       });
     });
   });
@@ -1912,14 +1985,14 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     const UPDATE_INPUT_NEW_DATE = registerFlightSchema.parse({ ...UPDATE_INPUT, ...buildTimes('2020-02-20', 30) });
 
     it('422 FLIGHT_BLOCKED_BY_EXPIRY when the edited (NEW) data targets a person with a blocking expired document', async () => {
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }], warnings: [] });
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Rating bloccante', expiresAt: '2019-12-31' }], warnings: [] });
 
       await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT_NEW_DATE)).rejects.toMatchObject({ code: 'FLIGHT_BLOCKED_BY_EXPIRY' });
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('an ADMIN forcing an edit past a real block stamps forcedAt/forcedByUserId/forceReason on the SAME flight row (AC 15, D-7)', async () => {
-      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }], warnings: [] });
+      findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Rating bloccante', expiresAt: '2019-12-31' }], warnings: [] });
       const input = registerFlightSchema.parse({ ...UPDATE_INPUT_NEW_DATE, force: true, forceReason: 'Autorizzato dal direttore' });
 
       await expect(updateFlight(adminActor(), 'flight_orig', input)).resolves.toBeDefined();
@@ -2022,8 +2095,8 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     // Review F4 (ratifica R-14.4-b), ported.
     describe('review F4 — unchanged-identity edit exemption', () => {
       it('an unchanged-identity edit (same person, no instructor, same flight date) skips the guard entirely, even with a real blocking document', async () => {
-        findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Licenza', expiresAt: '2019-12-31' }], warnings: [] });
-        expiryTypeFindMany.mockResolvedValue([{ id: 'type_licenza', name: 'Licenza' }]);
+        findBlockingExpiredDocumentsMock.mockResolvedValue({ blockingDocuments: [{ typeName: 'Rating bloccante', expiresAt: '2019-12-31' }], warnings: [] });
+        expiryTypeFindMany.mockResolvedValue([{ id: 'type_rating', name: 'Rating bloccante' }]);
         expiryFindMany.mockResolvedValue([]);
 
         await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).resolves.toBeDefined();
