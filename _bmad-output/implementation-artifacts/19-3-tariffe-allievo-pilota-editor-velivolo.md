@@ -4,7 +4,7 @@ baseline_commit: 72e7e1b
 
 # Story 19.3: Tariffe allievo/pilota ed editor velivolo a Salva unico
 
-Status: **review** — 2026-11-02 (dev: implementazione `2e66d40`, Dev Agent Record in fondo). Scritto **ready-for-dev** il 2026-11-01. **Le 4 domande PO qui sotto sono RATIFICATE (2026-11-01): Q-a = nessun prezzo sulle card, Q-b = A, Q-c = B (allievo esclusivo anche con istruttore), Q-d = B** (CLAUDE.md, retro Epic 9: un'assunzione di dominio si ratifica PRIMA di implementare). Gli AC sono scritti sull'opzione raccomandata e marcano con **[Q-x]** le righe che cambiano se il PO sceglie diversamente. **Modello dev: Opus 5 xhigh (UI)**: la story scrive UI su editor velivolo (modifica + creazione), card flotta desktop/mobile, sheet mobile, widget Panoramica, editor pilota (messaggio profili esclusivi) e sulla primitiva `CalendarPopover`/`DateInput`, oltre a schema, migrazione, service, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-3-tariffe-allievo-pilota-editor-velivolo`.
+Status: **review** — 2026-11-02 (dev: implementazione `2e66d40`, Dev Agent Record in fondo; fix di review `8b5a023`, Review Record in fondo — in attesa dell'arbitro). Scritto **ready-for-dev** il 2026-11-01. **Le 4 domande PO qui sotto sono RATIFICATE (2026-11-01): Q-a = nessun prezzo sulle card, Q-b = A, Q-c = B (allievo esclusivo anche con istruttore), Q-d = B** (CLAUDE.md, retro Epic 9: un'assunzione di dominio si ratifica PRIMA di implementare). Gli AC sono scritti sull'opzione raccomandata e marcano con **[Q-x]** le righe che cambiano se il PO sceglie diversamente. **Modello dev: Opus 5 xhigh (UI)**: la story scrive UI su editor velivolo (modifica + creazione), card flotta desktop/mobile, sheet mobile, widget Panoramica, editor pilota (messaggio profili esclusivi) e sulla primitiva `CalendarPopover`/`DateInput`, oltre a schema, migrazione, service, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-3-tariffe-allievo-pilota-editor-velivolo`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`72e7e1b`** (HEAD al 2026-11-01; il codice è quello di `5ca0be6` più il fix 16.3 su `bookings.*`/`new-booking-form.tsx` e 2 righe di `registry.ts`). Il dev della 19.3 parte **DOPO i commit della 19.1 (rimozione PPR) e della 19.2 (via campi velivolo e contaore)**, che toccano **gli stessi file**: `prisma/schema.prisma` + due migrazioni, `aircraft-editor.tsx` (19.2: `IdentitySection` resta a Marche/Tipo/Modello, via `BasedSegmented`, `HourMeterSection` → readout «Ore di volo» con prop `totalMinutes`), `aircraft.service.ts`, `src/lib/schemas/aircraft.ts`, `fleet-console.tsx` (righe dello sheet), `fleet/page.tsx` (`totalMinutesById`), `fleet-card.tsx` (`FleetCardItem` perde 5 campi), `dashboard/page.tsx` (KPI PPR e mapper flotta), `flights.service.ts` (lock su `"id"`, via contaore e note), `registry.ts`, `messages/*.json`, i tre seed ed e2e (`aircraft-rates.spec.ts:50,:206,:219-220` perdono il «Contaore iniziale»). Effetto atteso: righe slittate, blocchi già semplificati. **Prima di scrivere una riga**: `git log --oneline -5` (19.1 e 19.2 committate), rieseguire i **censimenti di §3** (sono comandi, non elenchi da fidarsi) e correggere le righe di questo file dove sono slittate.
 >
@@ -117,7 +117,7 @@ Oggi `AircraftRate` ha un prezzo fatturato (`priceCentsPerHour`, il «wet») e u
 
 | ID | Scelta | Riconducibile a | Alternativa scartata |
 |---|---|---|---|
-| **D-1** | Il contratto API chiede **entrambi** i prezzi (`studentPriceCents`, `pilotPriceCents`, `validFrom` tutti obbligatori). «Vuoto = invariata» è una regola della **UI**: il client riempie il campo vuoto col valore del placeholder (= tariffa in vigore **oggi**: ciò che vedi è ciò che salvi). | R-19-f parla del campo e del suo placeholder | il server riempie i mancanti: più codice server, e con una tariffa programmata in mezzo il «valore invariato» diventerebbe ambiguo (quello di oggi o quello in vigore alla nuova decorrenza?) |
+| **D-1** | ⚠️ **SUPERATA dalla review (2026-11-02, decisione della sessione principale — v. Review Record)**: vuoto = prezzo in vigore **alla decorrenza scelta**, riempito dal server nel `PATCH`. Testo originale: Il contratto API chiede **entrambi** i prezzi (`studentPriceCents`, `pilotPriceCents`, `validFrom` tutti obbligatori). «Vuoto = invariata» è una regola della **UI**: il client riempie il campo vuoto col valore del placeholder (= tariffa in vigore **oggi**: ciò che vedi è ciò che salvi). | R-19-f parla del campo e del suo placeholder | il server riempie i mancanti: più codice server, e con una tariffa programmata in mezzo il «valore invariato» diventerebbe ambiguo (quello di oggi o quello in vigore alla nuova decorrenza?) |
 | **D-2** | `GET /aircraft/{id}/rates` e `GET /people/{id}/instructor-rates` **restano** nell'API (contratto aggiornato ai due prezzi per il velivolo); l'editor velivolo **smette** di chiamarle. Resta anche `POST /aircraft/{id}/rates` (stessa semantica nuova: decorrenza ≥ oggi, riscrittura, 201). | API-first (futura app Flutter, CLAUDE.md); AD-4 emendato: «lo storico resta nel DB ma non è mostrato in UI»; è l'unico modo per un client API di vedere una tariffa programmata o verificare una riscrittura; il pannello istruttore le usa fino alla 19.4 | cancellarle: rottura di contratto non richiesta dalla CR |
 | **D-3** | Una decorrenza passata è un **422 `RATE_VALID_FROM_IN_PAST`**, verificato nel service (un solo helper condiviso dai due service), prima di ogni scrittura. | precedente `FLIGHT_DATE_IN_FUTURE` (service, codice dedicato) | refine Zod: codice generico `VALIDATION_ERROR` e «oggi» valutato nel parser |
 | **D-4** | Nella migrazione, chi ha **pilota e allievo entrambi attivi** perde l'allievo (`StudentProfile.deactivatedAt = now()`). | il codice vivo tratta già «entrambi attivi» come pilota (`flights.service.ts:740-753`: «a student who ALSO holds an active pilot profile — took the license — is unrestricted»); DB di test (R-19-a) | lasciare righe incoerenti: l'invariante varrebbe solo per i dati nuovi |
@@ -209,7 +209,7 @@ const aircraftRateCentsPerHour = aircraftPriceCategory === 'PILOT' ? aircraftRat
 | `studentPrice`, `pilotPrice` (stringhe) | placeholder = prezzo attuale formattato come valore digitabile (`132,00`, senza simbolo) se c'è una tariffa in vigore oggi, altrimenti `0,00` |
 | `validFrom` | predefinito `todayDateOnlyInZone(APP_TIMEZONE)`; `min` = lo stesso valore sul `DateInput` |
 | tariffa «toccata» | almeno un prezzo compilato. Entrambi vuoti → **nessun** blocco `rate` nel body (la data da sola non scrive nulla) |
-| campo vuoto con tariffa attuale | vale il prezzo attuale (D-1) |
+| campo vuoto con tariffa attuale | vale il prezzo attuale (D-1) — **superata dalla review**: il campo resta fuori dal body e vale il prezzo in vigore alla decorrenza scelta (v. Review Record) |
 | campo vuoto senza tariffa attuale (creazione, o velivolo senza tariffa in vigore) | obbligatorio |
 | errori client | prezzo non valido → `invalidPrice`; data mancante → `required`; forma non ISO → `invalidDate` (review 14.8 F2, invariato); `validFrom < oggi` (confronto fra stringhe ISO) → **`validFromPast`**. Nessuna richiesta parte con un errore |
 | 422 server | `RATE_VALID_FROM_IN_PAST` → errore sul campo «In vigore da» (la mezzanotte fra render e invio) |
@@ -646,3 +646,66 @@ e2e mirati: §G (77 + 224 passed; 2 rosse da DB sporco, verdi su DB fresco). L'a
 ### Change Log
 
 - 2026-11-02 — Implementazione completa della story 19.3 (`2e66d40`): modello a due prezzi e categoria sul volo, decorrenza ≥ oggi e riscrittura, profilo allievo esclusivo, PATCH composito, editor velivolo a Salva unico, primitiva calendario con minimo, card senza prezzo, seed/i18n/OpenAPI, e2e con fixture SQL. Status → review.
+- 2026-11-02 — Fix di review (`8b5a023`): F1 (filtro velivolo del registro via URL negli e2e), F2 (archivio sotto lock dell'Aircraft), F3 (409 `AIRCRAFT_ARCHIVED`), F4 (doc-comment), D-1 riletta (vuoto = prezzo in vigore alla decorrenza). Status resta review: lo chiude la sessione principale dopo l'arbitro.
+
+## Review Record — 19.3
+
+- **Review adversarial** (Opus, 2026-11-02): **NOT SHIPPABLE finché non si corregge F1**, poi SHIPPABLE dopo un arbitro verde. 1 major + 3 low + 1 decisione (D-1). Report: `19-3-review-report.md`. Arbitro del reviewer su DB fresco: 461 passed + **1 failed** (`flight-reversal.spec.ts:156`, 3/3) + 40 did not run = 502; i 40 della catena eseguiti a parte dal reviewer: 40/40 verdi.
+- **Fix** (fix-subagent Opus, commit **`8b5a023`**). Le decisioni su cosa correggere sono della sessione principale.
+
+### F1 (major) — corretto
+
+- **Causa**: `selectOption({ label })` sul filtro «Velivolo» del registro, le cui opzioni sono le prime 100 marche (`logbook/page.tsx`, `OPTIONS_PAGE_SIZE`): con più di 100 marche ordinate prima di quella della fixture, l'opzione non esiste e il retry non può che peggiorare. Il Dev Record §G l'aveva attribuito a «DB sporco»: era la suite in ordine.
+- **Fix**: navigazione diretta con `?aircraftId=` (il registro la supporta già) in `flight-reversal.spec.ts` (2 siti), `flight-log.spec.ts` (3) e `flights.spec.ts` (1). Nel test AC 3 di `flight-log` il change handler del select resta coperto dal select «Tipo», che passa dallo stesso `handleFilterChange`.
+- **Censimento**: `grep -rn "flight-filter-aircraft').selectOption" e2e/` → **0**. Stessa forma, altra classe: i `selectOption` sul «Velivolo» del form prenotazione leggono `listBookableAircraft` (nessun `take`); il picker velivolo del form volo cerca lato server (`searchAircraft`).
+- **Prova** su un DB gemello `am_fix193` (migrate + seed + **120 velivoli `I-AAAA001…120`** ordinati prima di ogni prefisso delle fixture; 266 velivoli al momento del run): spec di HEAD → `flight-reversal.spec.ts:156` **rosso 3/3** (`locator.selectOption: Test timeout of 90000ms exceeded`, riga `:213`); spec del fix → i 4 spec toccati **43 passed**, `E2E_EXIT=0`.
+
+### F2 (low) — corretto
+
+- **Fix**: `lockAircraftForRateWrite(tx, aircraftId)` in `rates.service.ts` = `SELECT "archivedAt" FROM "Aircraft" WHERE "id" = $1 FOR UPDATE` come **primo statement** della transazione di `POST /aircraft/{id}/rates` (`createAircraftRate`) e del `PATCH /aircraft/{id}` con `rate` (`updateAircraft`); archiviato → 409. Il controllo prima della transazione è stato **tolto** dai due percorsi; restano fuori il 404 (esistenza) e il 422 `RATE_VALID_FROM_IN_PAST` (AD-2: prima della transazione). Effetto collaterale dichiarato: una decorrenza passata su un velivolo archiviato risponde ora **422** invece di 409 (entrambi errori; l'editor non manda mai `rate` per un archiviato).
+- **Modo `FOR UPDATE`, non il `FOR NO KEY UPDATE` suggerito dal reviewer**: è il modo di ogni altro lock sull'`Aircraft` (`registerFlight`, scritture delle prenotazioni). In più evita che nel composito l'`UPDATE` delle marche (colonna unique) debba alzare un `NO KEY UPDATE` a `UPDATE` mentre lo tiene già.
+- **Censimento dei lock** (`grep -rn "FOR UPDATE\|FOR NO KEY UPDATE" src/server`): tariffa `Aircraft → AircraftRate`; `registerFlight`/storni `Aircraft → Account`; prenotazioni `Booking → Aircraft → Person → InstructorProfile`; `archiveAircraft` = un solo `UPDATE` (lock implicito sull'`Aircraft`); nessuna transazione blocca un `AircraftRate` e poi un `Aircraft` (il volo legge la tariffa fuori transazione) → nessuna inversione.
+- **Sonda di concorrenza** (`fix193/f2-probe.mjs`, gemello, server di produzione su quel DB). Sul gemello ci sono due trigger temporanei. Il primo è un **rilevatore**: `AFTER INSERT OR UPDATE ON "AircraftRate"` registra la riga se l'aereo risulta già archiviato (committato) quando la tariffa viene scritta. Il secondo è un **allargatore** della finestra: una scrittura a prezzo 4242 dorme 300 ms dentro la propria transazione. Per ciascun percorso, 20 coppie «archivio ‖ scrittura» in parallelo e 20 con la scrittura partita 100 ms prima:
+
+  ```
+  PRE-FIX (build di HEAD)                          POST-FIX (8b5a023)
+  PATCH parallel   409 CONFLICT 1 · 200/200 19     409 AIRCRAFT_ARCHIVED 20
+  PATCH widened    200/200 20                      200/200 20 (la tariffa committa prima: l'archivio attende il lock)
+  POST  parallel   200/201 20                      409 AIRCRAFT_ARCHIVED 20
+  POST  widened    200/201 20                      200/201 20 (idem)
+  violazioni       54 (PATCH par. 17, POST par. 17, POST wid. 20)    0 su 80 coppie
+  ```
+
+  (Il PATCH «widened» pre-fix non viola perché il composito prendeva già il lock di riga con il suo `aircraft.update` prima dell'upsert: la finestra era fra il pre-check e quell'update.) Trigger e gemello rimossi.
+- **Unit**: lock `FOR UPDATE` sull'`Aircraft` come primo statement con ordine lock < `aircraft.update` < upsert (PATCH) e lock < upsert (`POST /rates`); archiviato letto sotto lock → 409 `AIRCRAFT_ARCHIVED`, nessuna scrittura.
+
+### F3 (low) — corretto
+
+- **Fix**: il 409 dell'archivio porta il codice dedicato **`AIRCRAFT_ARCHIVED`** su entrambi i percorsi tariffa (è lo stesso nome stabile che il registro voli usa, con status 422, per «volo su velivolo archiviato»; status + codice restano univoci). OpenAPI aggiornato (`PATCH /aircraft/{id}`, `POST /aircraft/{id}/rates`). L'editor lo mappa su `FleetPage.editor.errors.aircraftArchived`: IT «Il velivolo è stato archiviato nel frattempo e non accetta nuove tariffe: nessuna modifica è stata salvata.», EN «The aircraft was archived in the meantime and cannot take new rates: nothing was saved.» (il composito è atomico: anche l'identità non è salvata). i18n **1713 → 1714**, parità IT/EN 0/0.
+- **Guardie**: e2e `aircraft-rates.spec.ts` «a Salva on an aircraft archived meanwhile names the archive…» (editor aperto, archivio via API, Salva → testo dedicato, 0 tariffe): **rosso 3/3 sul pre-fix** (`Received: "Esiste già un velivolo con queste marche."`), verde sul fix. Il test API ora asserisce `error.code === 'AIRCRAFT_ARCHIVED'` su `PATCH` **e** `POST /rates`: **rosso 3/3 sul pre-fix** (`CONFLICT`).
+
+### F4 (low, doc) — corretto
+
+- `prisma/schema.prisma`, doc di `AircraftRate`: «a row before today never changes; today's row can still be rewritten, and a flight already registered today keeps the price it froze (AD-4: both prices were legitimate at that instant)».
+
+### D-1 (decisione della sessione principale, lettura fedele di R-19-f «vuoto = invariata») — applicata
+
+- **Regola**: un prezzo lasciato vuoto vale il prezzo **in vigore alla decorrenza scelta** (variazione programmata inclusa), non quello di oggi.
+- **Meccanismo — deviazione dichiarata dalla D-1 originale** (§0.3). Il riempimento è **lato server**, non nel client: l'editor conosce solo la tariffa di oggi e la **prima** variazione programmata (Q-d). Con due variazioni programmate (+10, +30) e una decorrenza a +40, un calcolo client erediterebbe il prezzo di +10 e annullerebbe in silenzio quello di +30: lo stesso difetto. Il piano è stato comunicato alla sessione principale prima di implementare; nessuna risposta è arrivata prima del commit.
+  - **Contratto**: nel blocco `rate` del **solo** `PATCH /aircraft/{id}` un prezzo può mancare, mai entrambi (`updateAircraftRateSchema`). `POST /aircraft` e `POST /aircraft/{id}/rates` restano con i due prezzi obbligatori.
+  - **Server**: `fillOmittedRatePrices(tx, aircraftId, rate)` (`rates.service.ts`) riempie il mancante con la colonna della riga in vigore a `validFrom` (massima `validFrom' ≤ validFrom`, AD-4). Gira **sotto il lock di F2**, che tiene ogni scrittura tariffa sull'aereo, quindi la riga letta non cambia prima dell'upsert. Nessuna riga in vigore a quella data → 422 `VALIDATION_ERROR`, irraggiungibile dall'editor.
+  - **Client**: l'editor manda solo i prezzi digitati. Per aggiornare il placeholder e la riga programmata dopo il Salva (D-6) completa il prezzo mancante in locale; il valore è esatto in tutti i casi in cui la riga salvata viene mostrata. Regola «obbligatorio» invariata: entrambi i prezzi senza una tariffa in vigore oggi. È più stretta del server e non manda mai un body che il server rifiuterebbe.
+  - **19.4**: nessun impatto. `upsertAircraftRateCore` e `upsertInstructorRateCore` sono invariati; la tariffa istruttore ha un solo prezzo, quindi «vuoto» significa «nessun blocco».
+- **Guardie**:
+  - **e2e** «a price left empty keeps the one in force on "In vigore da"…». Dati: oggi 100/100, programmate +10 a 110/120 e +30 a 115/130. Si cambia solo il prezzo allievo, prima con decorrenza +20, poi con +40. Atteso pilota **12000** a +20 (lo scenario del reviewer) e **13000** a +40 (il caso con due variazioni). **Rosso 3/3 sul pre-fix** (`pilotPriceCents` ricevuto 10000 in entrambe le righe), verde sul fix.
+  - **Unit**: `updateAircraftRateSchema` (un solo prezzo sì, nessuno no, limiti); `fillOmittedRatePrices` (forma della query `lte`/`desc`, riempimento, 422); `updateAircraft` riempie sullo stesso `tx`, dopo il lock e prima dell'upsert.
+
+### Discriminanza, gate, delta
+
+- **Unit sul pre-fix**: servizi e schema di HEAD con i test nuovi → **10 failed / 97 passed**, cioè esattamente i 10 test nuovi o modificati di F2/F3/D-1.
+- **e2e sul pre-fix**: build di produzione di HEAD con l'`aircraft-rates.spec.ts` del fix e il `flight-reversal.spec.ts` di HEAD, sul gemello → **4 failed** (D-1, F3, codice API, F1) **/ 10 passed**, ognuno 3/3.
+- **Ripristino**: i 15 file del fix sono stati riportati con `sha256sum -c` → 15/15 OK.
+- `npm run gates` (sul commit): `PASS lint · PASS typecheck · PASS test — Tests 1804 passed (1804) · PASS build`. **Unit 1797 → 1804.**
+- **Delta e2e atteso per l'arbitro: 502 → 504** (+2 in `aircraft-rates.spec.ts`), senza «did not run».
+- **Non fatto**: l'e2e su «Aggiungi istruttore» con allievo attivo (nota del reviewer alla deviazione §H-4, «fix commit o 19.4») resta alla **19.4**. Non era nel perimetro deciso per questo fix.
+- **Stato macchina**: il DB `airmanager` non è stato toccato dal fix (prove tutte sul gemello `am_fix193`, poi rimosso; `airmanager_load` mai toccato). I server avviati dal fix sono stati fermati per PGID; `:3000` è libero. Ultimo run e2e: `DONE — E2E_EXIT=0`. Nessuno stash. File untracked dell'utente, `sprint-status.yaml` e story file di altre story non toccati. Log, sonde e SQL sono nello scratchpad, in `fix193/`.
