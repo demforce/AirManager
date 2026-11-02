@@ -4,7 +4,7 @@ baseline_commit: 3876e72
 
 # Story 19.6: Volo senza addebito e cancellazione definitiva
 
-Status: **ready-for-dev** — 2026-11-01. **Q-19.6-a RATIFICATA dal PO = B** (tariffe obbligatorie anche senza addebito — v. decisione sotto la domanda); la story era scritta con la raccomandazione **A**; l'alternativa B tocca solo AD-5 punto 3, AC 19 e il doc dello schema `flightBreakdownSchema`. **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI su sei superfici (form volo con il nuovo `Toggle`, conferma di cancellazione desktop, secondo passo dello sheet mobile, riga e card del registro, sheet di dettaglio, scheda persona) oltre a schema, migrazione distruttiva, service, route, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-6-volo-senza-addebito-cancellazione-definitiva`.
+Status: **review** — 2026-11-02 (dev completato dal subagent `dev-19-6`; era ready-for-dev dal 2026-11-01). **Q-19.6-a RATIFICATA dal PO = B** (tariffe obbligatorie anche senza addebito — v. decisione sotto la domanda); la story era scritta con la raccomandazione **A**; l'alternativa B tocca solo AD-5 punto 3, AC 19 e il doc dello schema `flightBreakdownSchema`. **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI su sei superfici (form volo con il nuovo `Toggle`, conferma di cancellazione desktop, secondo passo dello sheet mobile, riga e card del registro, sheet di dettaglio, scheda persona) oltre a schema, migrazione distruttiva, service, route, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-6-volo-senza-addebito-cancellazione-definitiva`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`3876e72`** (HEAD al 2026-11-01: 19.1 committata, 19.2-19.5 solo come story file). Il dev della 19.6 parte **DOPO il commit di 19.1, 19.2, 19.3, 19.4 e 19.5**, che toccano **gli stessi file**:
 > - **19.2** toglie da `flights.service.ts` il contaore (`decreaseHourMeterForReversal` `:1046-1073`, il parametro `aircraftHourMeterMinutes` del core, l'ultimo `tx.aircraft.update`) e `notes`/`hourMeterStart`/`hourMeterEnd`; il lock `Aircraft` resta ma seleziona `"id"`; cancella 5 e2e (fra cui `flights.spec.ts` **E7**, che conteneva una chiamata a `/cancel`); riscrive `seed-load.ts` nelle stesse fasi di questa story.
@@ -449,19 +449,19 @@ Mirati da far girare prima della consegna: `flight-delete-update`, `flight-no-ch
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento** (tutti gli AC): `git log --oneline -8` (19.1-19.5 committate), `scripts/e2e.sh status`, `:3000` libero; leggere l'API reale del `Toggle` (19.5) e la forma di `correctFlight` dopo la 19.3; rieseguire i comandi di §3.6 e i grep di AC 29 sul HEAD e annotare nel record gli scostamenti di riga.
-- [ ] **T1 — Schema e migrazione** (AC 1, 2): `schema.prisma` (AD-7 con i doc-comment); migrazione AD-1 con i `DELETE` in testa; verifica sul gemello con le quattro fixture (SUM prima/dopo, post-condizioni, catena da zero, `migrate diff` vuoto, psql); `npx prisma generate`.
-- [ ] **T2 — Service** (AC 3-22, 25, 28): `deleteFlight` (AD-3), `updateFlight` (AD-4) col helper di scrittura condiviso, `noCharge` in `resolveFlightInput`/core (AD-5), lock (AD-2), lettori di AD-9, D-5 in `transactions.service.ts` ed `exports.service.ts`; doc-comment del modulo riscritti.
-- [ ] **T3 — Route, Zod, OpenAPI** (AC 18, 25, 32, 33): `flights/[id]/route.ts` (PUT/DELETE), cancellare `cancel/` e `correct/`; `flights.ts`, `accounts.ts`, `registry.ts`, `registry.test.ts`.
-- [ ] **T4 — UI registro** (AC 23, 26): `logbook-console.tsx`, `logbook/page.tsx`, `mobile-logbook.ts` (AD-8 desktop e mobile).
-- [ ] **T5 — UI form** (AC 20, 23): `flight-editor.tsx` (toggle, `PUT`, via motivo, errori, riepilogo), label in `logbook/page.tsx` e `dashboard/page.tsx`.
-- [ ] **T6 — UI conti e scheda persona** (AC 26, 28): `account-section.tsx`, `people/[id]/page.tsx`, `my-account/page.tsx`, `billing/page.tsx`, `billing-console.tsx`, `mobile-self.ts`.
-- [ ] **T7 — i18n** (AC 30): §3.8 su entrambi i file; parità misurata.
-- [ ] **T8 — Seed** (AC 31): `seed-demo.ts` (un volo senza addebito), `seed-load.ts` (§3.5), `db seed` + `seed:demo` su DB fresco, `seed-load.ts` solo typecheck.
-- [ ] **T9 — Unit** (§4.1): §3.7 + le prove nuove; sonde e discriminanze §4.3 (a)-(f) con sha256.
-- [ ] **T10 — e2e** (§3.6): `git mv` + riscrittura di `flight-reversal.spec.ts`, `flight-no-charge.spec.ts` nuovo, gli spec riscritti; delta dei test.
-- [ ] **T11 — Documenti** (AC 35): emendamento di AD-6 in `ARCHITECTURE-SPINE.md`; verifica che `CLAUDE.md` non citi storni o annullamenti di volo.
-- [ ] **T12 — Verifica** (AC 29, 32, 36, 37): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato.
+- [x] **T0 — Riallineamento** (tutti gli AC): `git log --oneline -8` (19.1-19.5 committate), `scripts/e2e.sh status`, `:3000` libero; leggere l'API reale del `Toggle` (19.5) e la forma di `correctFlight` dopo la 19.3; rieseguire i comandi di §3.6 e i grep di AC 29 sul HEAD e annotare nel record gli scostamenti di riga.
+- [x] **T1 — Schema e migrazione** (AC 1, 2): `schema.prisma` (AD-7 con i doc-comment); migrazione AD-1 con i `DELETE` in testa; verifica sul gemello con le quattro fixture (SUM prima/dopo, post-condizioni, catena da zero, `migrate diff` vuoto, psql); `npx prisma generate`.
+- [x] **T2 — Service** (AC 3-22, 25, 28): `deleteFlight` (AD-3), `updateFlight` (AD-4) col helper di scrittura condiviso, `noCharge` in `resolveFlightInput`/core (AD-5), lock (AD-2), lettori di AD-9, D-5 in `transactions.service.ts` ed `exports.service.ts`; doc-comment del modulo riscritti.
+- [x] **T3 — Route, Zod, OpenAPI** (AC 18, 25, 32, 33): `flights/[id]/route.ts` (PUT/DELETE), cancellare `cancel/` e `correct/`; `flights.ts`, `accounts.ts`, `registry.ts`, `registry.test.ts`.
+- [x] **T4 — UI registro** (AC 23, 26): `logbook-console.tsx`, `logbook/page.tsx`, `mobile-logbook.ts` (AD-8 desktop e mobile).
+- [x] **T5 — UI form** (AC 20, 23): `flight-editor.tsx` (toggle, `PUT`, via motivo, errori, riepilogo), label in `logbook/page.tsx` e `dashboard/page.tsx`.
+- [x] **T6 — UI conti e scheda persona** (AC 26, 28): `account-section.tsx`, `people/[id]/page.tsx`, `my-account/page.tsx`, `billing/page.tsx`, `billing-console.tsx`, `mobile-self.ts`.
+- [x] **T7 — i18n** (AC 30): §3.8 su entrambi i file; parità misurata.
+- [x] **T8 — Seed** (AC 31): `seed-demo.ts` (un volo senza addebito), `seed-load.ts` (§3.5), `db seed` + `seed:demo` su DB fresco, `seed-load.ts` solo typecheck.
+- [x] **T9 — Unit** (§4.1): §3.7 + le prove nuove; sonde e discriminanze §4.3 (a)-(f) con sha256.
+- [x] **T10 — e2e** (§3.6): `git mv` + riscrittura di `flight-reversal.spec.ts`, `flight-no-charge.spec.ts` nuovo, gli spec riscritti; delta dei test.
+- [x] **T11 — Documenti** (AC 35): emendamento di AD-6 in `ARCHITECTURE-SPINE.md`; verifica che `CLAUDE.md` non citi storni o annullamenti di volo.
+- [x] **T12 — Verifica** (AC 29, 32, 36, 37): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato.
 
 ---
 
@@ -469,26 +469,285 @@ Mirati da far girare prima della consegna: `flight-delete-update`, `flight-no-ch
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), dev subagent `dev-19-6` (unico dev della story), 2026-11-02. Skill applicate: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` (letta: il brief è UI di prodotto dentro un design system esistente, quindi vale solo la parte di coerenza e contrasto, nessun linguaggio visivo nuovo), `ui-ux-pro-max` (`search.py "confirmation destructive action" --domain ux`: conferma prima dell'irreversibile, esito breve dopo — già il disegno di AD-8).
+
 ### §A — Riallineamento sul HEAD (T0)
+
+- HEAD `bb7a795` (19.1-19.5 committate), `scripts/e2e.sh status` = arbitro 534/534 chiuso (`E2E_EXIT=0`), `:3000` libero. `baseline_commit` del frontmatter lasciato a `3876e72` (la skill vieta di sovrascriverlo).
+- **Scostamenti di riga** (story misurata su `3876e72`): `flights.service.ts` modulo doc `:24-123`; `FlightListItem` `:138-175`; `FLIGHT_SELECT` `:195-229`; `toListItem` `:276-325`; `OriginalFlightIdentity` `:352-358`; `resolveFlightInput` `:614-910` con le tariffe a `:873-892` (story `:890-905`); guardia `:965-997` (story `:926-1012`); core `:999-1120`; `registerFlight` `:1154-1268`; `OriginalChargeMovement`/`loadRegisteredFlightForReversal`/`cancelFlight`/`correctFlight` `:1271-1645` (story `:1376-1785`); `buildFlightsWhere` `:1681-1701`; `getFlightTotals` `:1803-1829` (story `:1931-1969`). Il contaore della 19.2 era già sparito; il lock `Aircraft` selezionava già `"id"`. `schema.prisma`: `AccountMovementType` `:548-554`, `AccountMovement` `:582-629`, `HourPackage` `:782-823`, `FlightStatus` `:844-847`, `Flight` `:859-1027`, `PackageConsumption` `:1201-1230`. `logbook-console.tsx`: `statusBadgeAndLineage` `:352`, `statusChip` `:404`, `sheetRows` `:433`, `statusChipHref` `:490`, `postCancel` `:544`, select Stato `:686-697`, gate `:785`, chip `:849-877`, modal `:971-1019`, sheet `:1129-1223`. `flight-editor.tsx`: `Toggle` del solista `:1022`, motivo `:1058-1070`, i due submit `:638`/`:788`.
+- **API reale del `Toggle` (19.5)**: `{ id, label, checked, onChange, onText, offText }`, `id` = `data-testid`, `role="switch"`, nome stabile via `aria-labelledby`; **nessun** `hint` → allargato (§G, D-a).
+- **`correctFlight` dopo la 19.3**: la regola Q-19.3-b vive in `resolveFlightInput` (`original.personId === input.personId ? original.aircraftPriceCategory : …`) e arriva da `OriginalFlightIdentity.aircraftPriceCategory`: `updateFlight` la riceve invariata passando la stessa identità (unit «price category on an edit», §F).
+- **Censimento AC 29 sul HEAD**: 33 file con residui (fra cui `bookings.service.ts` ×2 commenti `#correctFlight` e `booking-day-phase.ts`, non elencati in §3); i18n al HEAD **1679** chiavi per file (non 1 760: la 19.2-19.5 le avevano già ridotte).
+- **Blast radius e2e ricensito** (comando di §3.6): `flight-reversal` 17 righe, `mobile-logbook` 44, `flights` 11, `mobile-self-public` 5, `flight-log` 4, `aircraft-out-of-service-until` 3 (le altre 4 righe del comando — `mobile-planning`, `mobile-overview-overflow` — sono i chip delle **prenotazioni**, fuori perimetro). Altri spec emersi dal run (§I): `person-detail` (stato nelle righe «Voli recenti») e il test 19.5 del Tab in `flights.spec.ts`.
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Esito | Prova |
+|---|---|---|
+| 1 | ✅ | `schema.prisma` (AD-7, doc-comment riscritti; anche `ExpiryUpdateProposal`/`IdempotencyRecord` che citavano `Flight.cancelledAt`/`cancelReason`, e `TrainingNote` «stornato» → `SET NULL`); `prisma validate` verde |
+| 2 | ✅ | §C (SUM per conto `diff` vuoto, post-condizioni, catena da zero, `migrate diff` vuoto) |
+| 3 | ✅ | e2e `flight-delete-update` «delete (desktop)»: avviso con la persona, «Elimina volo», riga sparita, API 0 voli, saldo 0, 0 `FLIGHT_CHARGE`, ore velivolo 0:00, secondo `DELETE` 404 `NOT_FOUND` |
+| 4 | ✅ | unit `deleteFlight`: 403 senza `$transaction`/`$queryRaw`; lock `Flight` vuoto → 404 senza scritture; rettifica → 409 col messaggio di oggi, nessuna delete; addebito assente → `Error` d'invariante |
+| 5 | ✅ | unit «always allowed» (resolver mai raggiunto, velivolo AOG); e2e `aircraft-out-of-service-until` AD-4 riscritto: `DELETE` su velivolo fermo → 204 |
+| 6 | ✅ | §D (a): trigger sul gemello, addebito intatto; discriminanza rossa; sha256 identico |
+| 7 | ✅ | unit: `accountMovement.delete` prima di `flight.delete`, entrambi sul `tx` distinto, global mai chiamato; psql 23503 verbatim (§C) |
+| 8 | ✅ | unit «locks Flight -> Aircraft -> Account»: SQL in ordine, valori dal lock (`aircraft_1`, `account_1`) |
+| 9 | ✅ | unit «rewrites the SAME flight and the SAME charge» (`create` mai chiamati, `accountMovement.update` sul movimento esistente con importo/descrizione/valuta); e2e «edit (desktop)»: stesso id, 1 riga, 1 `FLIGHT_CHARGE` stesso id a -75,00 € |
+| 10 | ✅ | unit portati uno per uno (mappa in §F) |
+| 11 | ✅ | unit U8/U9a/U9b; e2e E5 riscritto: 409 `FLIGHT_OVERLAP` nomina l'altro volo e la fotografia (minuti, orari, importi, righe di estratto conto) è **identica** prima/dopo |
+| 12 | ✅ | unit «a change of person moves the SAME charge…» (un `IN (…)` con i due conti, `accountId` aggiornato, saldi letti sul conto nuovo) |
+| 13 | ✅ | unit lock order, lock `Flight` vuoto → 404, velivolo sparito → 404; §D (c) rossa |
+| 14 | ✅ | unit «sends the email when more minutes push…» (+`balanceAlert`) e «sends nothing when… unchanged» |
+| 15 | ✅ | unit D-7: senza deroga nessun `forced*` in `flight.update`; con deroga il timbro è scritto |
+| 16 | ✅ | §D (b): trigger sul movimento, volo intatto; discriminanza rossa; sha256 identico |
+| 17 | ✅ | e2e «DELETE and PUT in parallel»: `DELETE` 204, `PUT` ∈ {200, 404}, 0 voli, 0 addebiti, saldo 0 |
+| 18 | ✅ | `registerFlightSchema.noCharge` default `false` (unit schema), DTO `noCharge`, OpenAPI (descrizione del `PUT`: omissione → `false`); unit registry |
+| 19 | ✅ (B) | unit «senza addebito» (tariffe cercate e congelate, importi 0, istruttore 0 non `null`, `FLIGHT_CHARGE` `Object.is(…, 0)`, descrizione `Volo senza addebito I-ABCD 2020-01-15 — 1:20`, 422 `NO_AIRCRAFT_RATE` senza tariffa); e2e AC 19 su velivolo senza tariffa: 422 `NO_AIRCRAFT_RATE` **con e senza** flag; con tariffa: breakdown `15000/0/4000/0/0`, addebito 0, descrizione in testa |
+| 20 | ✅ | e2e AC 20 (accende → saldo 0 stesso movimento; `PUT` senza flag → di nuovo -150,00 €, descrizione `Volo I-…`); unit «turns noCharge ON» |
+| 21 | ✅ | e2e AC 21: volo Scuola senza addebito 90′, payout 60,00 €/h → `totalMinutes 90`, `owedTotalCents 9000`; unit compensi: `where` senza `status` |
+| 22 | ✅ | unit `getFlightTotals` (count 1, revenue 0); e2e UI: KPI «Ricavo» filtrato sul velivolo run-unique = 0,00 € |
+| 23 | ✅ | e2e UI: switch nel form nuovo (`role=switch`, `aria-checked`), acceso, riepilogo `0,00 €` + «Senza addebito», `flight-no-charge` solo sulla riga giusta, switch precompilato in modifica, estratto conto desktop con descrizione che **inizia** con «Volo senza addebito», card mobile `data · Volo senza addebito …`, `flight-no-charge-mobile` solo sulla card giusta, switch nel form a 375 |
+| 24 | ✅ | e2e pilota: 403 su `DELETE`, su `PUT` con `noCharge: true` e su `POST` con `noCharge: true`; nessun permesso nuovo |
+| 25 | ✅ | `listFlightsQuerySchema` senza `status` (unit: chiave scartata), DTO senza i 5 campi, `getFlightTotals` senza stato (unit), grep g3 vuoto |
+| 26 | ✅ | UI: nessuna select/chip/badge/catena/riga «Annullato»/«Storico», niente stato nelle «Voli recenti»; azioni su ogni riga per l'admin; e2e `mobile-logbook`, `flight-log`, `person-detail` riscritti |
+| 27 | ✅ | `exports.service` senza colonna Stato (xlsx e pdf); unit (`cellCount 14`, ultima colonna PDF «Addebito»); e2e `exports` (intestazioni senza «Stato», cella 15 vuota) |
+| 28 | ✅ | enum Zod, classificazione contabile, etichette (billing, estratto conto), chiavi export, OpenAPI; unit transazioni riscritti (FLIGHT_CHARGE a -12000 e a 0 → REVENUE; storno via rettifica nello stesso periodo → 0) |
+| 29 | ✅ (vedi §E) | residui solo nelle asserzioni **negative** imposte da AC 32/33 e in due chiavi i18n di altri namespace |
+| 30 | ✅ | 1679 → **1642** per file (−47 di §3.8, +8 di §3.8, +2 `noChargeModes`), parità 0/0 (§E) |
+| 31 | ✅ | `seed.ts` invariato; `seed-demo.ts` con un volo Scuola senza addebito; `seed-load.ts` senza annullamenti/correzioni/storni/consumi (solo typecheck, **non** eseguito); su gemello vuoto `db seed` + `seed:demo` verdi: 24 voli, 1 `noCharge` con `12500/0/3200/0`, addebito 0, `Volo senza addebito I-B412 2026-10-23 — 0:45` |
+| 32 | ✅ | `registry.ts`: `PUT` (200/401/403/404/409/422/500) e `DELETE` (204/401/403/404/409/500) su `/api/v1/flights/{id}`, `noCharge`, descrizioni riscritte (`GET /flights`, `POST /flights`, cancel prenotazione); unit registry con asserzioni di assenza (path vecchi, `CancelFlightRequest`, `CorrectFlightRequest`, `FLIGHT_CHARGE_REVERSAL`, `cancelReason`, `correctionOfId`, `correctedByFlightId`, parametro `status`). Servito dall'app reale (`next start` sul build dei gates, `GET /api/v1/openapi.json`): `/api/v1/flights/{id}` → `['delete','put']`, `put` 200/401/403/404/409/422/500, `delete` 204/401/403/404/409/500; `/flights/{id}/cancel`, `/correct`, `CancelFlightRequest`, `CorrectFlightRequest`, `FLIGHT_CHARGE_REVERSAL`, `cancelReason`, `correctionOfId` tutti **absent**; `noCharge` in `RegisterFlightRequest` true; parametro `status` su `GET /flights` false |
+| 33 | ✅ | e2e «the retired storno/correction routes answer 404» (e il volo resta intatto) |
+| 34 | ✅ | e2e replay: 201 → `DELETE` 204 → stesso `POST` con la chiave → 201 `Idempotency-Replayed: true`, stesso id, 0 voli, 0 addebiti |
+| 35 | ✅ | `ARCHITECTURE-SPINE.md` §AD-6: emendamento CR 2026-11-01 (stile di AD-3, che non è stato toccato); `CLAUDE.md` verificato: nessun riferimento a storni/annullamenti di volo, nessuna modifica |
+| 36 | ✅ | `npm run gates` verde (§I); e2e mirati verdi (§I); delta per l'arbitro **534 → 541** |
+| 37 | ✅ | §H |
+
 ### §C — Migrazione: fixture, SUM per conto prima/dopo, post-condizioni, `migrate diff`, psql
+
+`prisma/migrations/20261102180000_flight_delete_in_place_no_charge/migration.sql`: DDL generato con `prisma migrate diff --from-config-datasource --to-schema` (Prisma 7 non accetta più `--shadow-database-url`: il gemello è passato come datasource), `DELETE` scritti a mano in testa, **una** transazione per tutto il file (§G, D-c).
+
+**Gemello `am196_mig`** = catena del HEAD (fino a `20261102120000`) + `db seed` + `seed:demo` eseguiti da un export `git archive HEAD` nello scratchpad (client Prisma del HEAD: con quello nuovo `seed-demo` non avrebbe girato sullo schema vecchio). Fixture SQL: (a) volo Scuola `cmvysk8s1…` → `CANCELLED` + `FLIGHT_CHARGE_REVERSAL` +10333; (d) `TrainingNote fx_note_d` su (a); (b) volo `cmvysk8mo…` → `CANCELLED` + storno, correzione `fx_corr_b` `REGISTERED` con `correctionOfId` e addebito -13000; (c) `PackageType`+`HourPackage fx_hp_c`+`PACKAGE_PURCHASE`+`PackageConsumption fx_pc_c` sul volo `REGISTERED` `cmvysk8nd…`.
+
+Prima (verbatim):
+```
+ REGISTERED | 23      CANCELLED | 2
+ TOP_UP 13 · PACKAGE_PURCHASE 1 · FLIGHT_CHARGE 25 · FLIGHT_CHARGE_REVERSAL 2
+ package_consumption = 1
+ orphanable_adjustments = 0   (rettifiche non-storno che puntano a movimenti di voli annullati)
+```
+`migrate deploy` → «All migrations have been successfully applied.» Dopo:
+```
+SUM per conto (7 conti): diff sum_before.txt sum_after.txt → (empty diff)
+ flights = 23
+ TOP_UP 13 · PACKAGE_PURCHASE 1 · FLIGHT_CHARGE 23
+ flights_without_charge = 0
+ charge_without_flight = 0
+ non_charge_with_flight = 0
+ fx_corr_b | minutes 60 | noCharge f        (la correzione sopravvive, senza colonna di catena)
+ fx_note_d | flightId (vuoto)               (TrainingNote sopravvive, flightId NULL)
+ fx_hp_c                                   (HourPackage resta)
+ \dt "PackageConsumption" → Did not find any relation named ""PackageConsumption"".
+ \d "Flight": nessuna status/cancelledAt/cancelReason/correctionOfId; noCharge boolean not null default false;
+   Referenced by: AccountMovement_flightId_fkey … ON UPDATE CASCADE ON DELETE RESTRICT;
+                  TrainingNote_flightId_fkey … ON DELETE SET NULL
+ \d "AccountMovement": "AccountMovement_flightId_key" UNIQUE, btree ("flightId");
+   "AccountMovement_flightId_fkey" FOREIGN KEY ("flightId") REFERENCES "Flight"(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ \dT+ "AccountMovementType": TOP_UP, ADJUSTMENT, PACKAGE_PURCHASE, FLIGHT_CHARGE
+ pg_type 'FlightStatus' | 'AccountMovementType_old' | '_new' → 0 rows
+```
+AC 7 (psql, verbatim):
+```
+DELETE FROM "Flight" WHERE id='fx_corr_b';
+ERROR:  update or delete on table "Flight" violates foreign key constraint "AccountMovement_flightId_fkey" on table "AccountMovement"
+DETAIL:  Key (id)=(fx_corr_b) is still referenced from table "AccountMovement".
+```
+`migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` sul gemello migrato → `-- This is an empty migration.`
+**Catena da zero** su `am196_zero` vuoto: 52 migrazioni applicate, ultima `20261102180000_flight_delete_in_place_no_charge`, `migrate diff` → `-- This is an empty migration.`; poi `npx prisma generate`. `airmanager` e `airmanager_load` **non toccati**; gemelli droppati a fine lavoro.
 
 ### §D — Sonde e discriminanze §4.3 (a)-(f) con sha256
 
+Script throwaway `scratchpad/probe/probe.ts` (`tsx` dalla root, `.env` caricato, `DATABASE_URL` = `am196_mig`, guard che rifiuta altri DB), funzione `probe196_fail()` + trigger **solo** sul gemello. sha256 di `flights.service.ts` prima di ogni mutante e dopo ogni ripristino: `f663ad814f35adebbf764008ed0c3cad4a316f4d2afb4e5094c1a2e8413ec62d` (identico tutte le volte).
+
+- **(a) cancellazione**: trigger `BEFORE DELETE ON "Flight" WHEN (OLD.id = 'cmvysk8o1…')`. Verde: `PROBE delete: threw -> probe196: forced failure on DELETE Flight`; addebito `cmvysk8o4…` ancora lì a -34650, volo presente. **Mutante** `tx.accountMovement.delete` → `prisma.accountMovement.delete`: stesso errore, ma `charge_rows = 0`, `flight_rows = 1` → l'addebito è sparito e il volo è rimasto (lo stato orfano che la transazione impedisce). Rosso ✓.
+- **(b) modifica**: trigger `BEFORE UPDATE ON "AccountMovement" WHEN (OLD.id = 'cmvysk8op…')`, `updateFlight` con +17 minuti. Verde: `threw -> probe196: forced failure on UPDATE AccountMovement`; volo `45 min / 14:45 / 10350`, addebito -10350, invariati. **Mutante** `tx.flight.update` → `prisma.flight.update`: la write esterna aspetta il lock `FOR UPDATE` della riga `Flight` tenuto dalla transazione, la transazione scade (5 s, `Transaction API error: … expired transaction`), la write esterna passa: volo **62 min / 15:02 / 14260** con addebito ancora -10350. Rosso ✓.
+- **(c) lock `Flight`**: mutante «niente `SELECT … "Flight" … FOR UPDATE`» (velivolo preso dalla pre-lettura) → `flights.service.test.ts` **9 rossi** (ordine dei lock, ordine della transazione, 404 concorrente, velivolo sparito, cambio persona, cambio velivolo, deroga AOG, U9b ×2). Ripristino byte-identico.
+- **(d) `RESTRICT`**: psql 23503 verbatim in §C.
+- **(e) senza addebito — letta con B**: con Q-19.6-a = B non esiste un «salto delle tariffe» da togliere; la discriminanza equivalente toglie l'azzeramento degli importi in `buildFlightWrite` → **3 rossi** (noCharge ON in modifica, importi a 0 con tariffe congelate, `FLIGHT_CHARGE` a +0 con dicitura). Ripristino byte-identico. Il ramo B «422 senza tariffa anche col flag» è provato in verde da unit ed e2e.
+- **(f) migrazione**: `diff` delle SUM per conto vuoto (§C).
+
 ### §E — Grep di AC 29 e parità i18n (verbatim)
+
+```
+== g1
+src/lib/schemas/registry.test.ts:405:      for (const absent of ['CancelFlightRequest', 'CorrectFlightRequest', 'FLIGHT_CHARGE_REVERSAL', 'cancelReason', 'corre…
+== g2
+== g3
+== g4
+src/lib/schemas/registry.test.ts:402:      expect(Object.keys(paths)).not.toContain('/api/v1/flights/{id}/cancel');
+src/lib/schemas/registry.test.ts:403:      expect(Object.keys(paths)).not.toContain('/api/v1/flights/{id}/correct');
+e2e/flight-delete-update.spec.ts:354:    expect((await page.request.post(`/api/v1/flights/${flightId}/cancel`, …)).status())…
+e2e/flight-delete-update.spec.ts:356:      (await page.request.post(`/api/v1/flights/${flightId}/correct`, …
+== g5
+== g6
+messages/en.json:832:      "reversalBadge": {
+messages/en.json:1607:        "statusAll": "All",
+messages/it.json:832:      "reversalBadge": {
+messages/it.json:1607:        "statusAll": "Tutte",
+== parity
+0/0     (1642 / 1642)
+```
+Le 5 righe di g1/g4 sono le asserzioni di **assenza** che AC 32 e AC 33 chiedono esplicitamente (non c'è modo di provare «404 su `/cancel`» senza nominarlo); g6 trova `FinancePage.cashRegister.reversalBadge` (storno di cassa) e `BookingsPage.list.mobile.statusAll` (chip delle prenotazioni), chiavi d'altri namespace che §3.8 non elenca. Nessun residuo vivo.
 
 ### §F — Delta test (unit ed e2e, prima/dopo; mappa `correctFlight` → `updateFlight`)
 
+**Unit**: 1843 → **1842** (−1). Per file: `mobile-logbook.test.ts` 16 → 12 (resta solo «nessun badge» / «deroga»), `registry.test.ts` 42 → 45 (+3: PUT/DELETE e risposte, assenze, `noCharge`), `flights.service.test.ts` 177 → 177 (−`cancelFlight` 14, −`correctFlight` 24, −overlap di `correctFlight` 5, −U5, −2 «forces status», −«rejects an invalid status»; +`deleteFlight` 8, +`updateFlight` 26, +overlap di `updateFlight` 4, +«senza addebito» 5, +2 `getFlightTotals`, +3 schema). Altri file: stesse quantità, asserzioni aggiornate (`aircraft`, `people`, `instructor-compensation`, `stats`, `exports`, `transactions`, `export-href`, `flights-expiry-boundary`).
+
+Mappa (titolo vecchio → titolo nuovo, `describe('updateFlight …')` salvo dove indicato):
+- rejects a non-staff actor → rejects a non-admin actor (flights.manage required), before touching the DB
+- throws NotFoundError for an unknown flight → idem (pre-read), transaction never opens
+- 422 FLIGHT_BLOCKED_BY_EXPIRY when the corrected (NEW) data… → … when the edited (NEW) data…
+- an ADMIN forcing a correction past a real block… on the NEW flight row → … stamps … on the SAME flight row (AC 15, D-7)
+- 422 AIRCRAFT_ARCHIVED when the corrected data… → … when the edited data…
+- 422 AIRCRAFT_OUT_OF_SERVICE when the correction MOVES… → … when the edit MOVES…
+- a correction that KEEPS the same aircraft is NOT blocked… → an edit that KEEPS…
+- an ADMIN can derogate a correction that moves… → … an edit that moves…
+- price category ×2 (same person now pilot → STUDENT; person changed → PILOT) → identici su `updateFlight`
+- a correction that keeps the flight's OWN recorded flightType… (R-14.3-a) → an edit that keeps…
+- 422 STUDENT_FLIGHT_MUST_BE_SCHOOL when a correction CHANGES the flightType… → … when an edit CHANGES…
+- review F4 — unchanged-identity correction exemption → … edit exemption
+- throws ConflictError naming the manual adjustment… (pre-check) → 409 with today's message when a manual adjustment points at the charge — nothing written (D-8)
+- ONE transaction, in order: lock -> storno -> saldo-prima -> nuova registrazione → ONE transaction, in order: locks -> overlap guard -> charge read -> account upsert -> Account lock -> saldo-prima -> flight.update -> charge update -> saldo-dopo
+- sets Flight.correctionOfId on the new flight → writes every input and snapshot column on the flight… / rewrites the SAME flight and the SAME charge, creates nothing… (AC 9)
+- storno's reversal movement carries the ORIGINAL amount… → (stessa test AC 9) l'`accountMovement.update` del movimento esistente
+- fires the negative-balance alert when the (post-storno) band worsens → sends the email when more minutes push the new balance band past the threshold… (AC 14)
+- does NOT send when the band is unchanged → sends nothing when the edit leaves the amount unchanged (AC 14)
+- returns the NEW flight DTO… → (AC 9) `result.flight.id === 'flight_orig'`
+- locks ALL involved Aircraft ids … then ALL involved Account ids → locks Flight -> Aircraft IN (...) -> Account IN (...) (AC 13) + a move onto another aircraft locks BOTH aircraft… + a change of person… locks both accounts (AC 12)
+- overlap U8/U9a/U9b/U9b mirror → identici su `updateFlight` (U9a verifica anche che `flight.update`/`accountMovement.update` non partano)
+- **senza equivalente, rimossi**: «already CANCELLED → 409» (×2), «P2002 on reversalOfId» (×2), «story 16.1 reversal dated on the Roma month» (×2: lo storno non esiste più; la valuta dell'addebito è la `flightDate`), «the ORIGINAL flight is stornoed» → sostituito da «no Aircraft row is ever written» dentro il test delle colonne, «LOW-1» → sostituito da «a concurrent delete (Flight lock with 0 rows) answers 404» (AD-2), U5 (nessun volo annullato da ignorare: l'AC 4/6 sul `where` esatto verifica che lo stato non c'è).
+
+**e2e** (per l'arbitro): **534 → 541 (+7)** = `flight-reversal` 2 → `flight-delete-update` 6 (+4: cancellazione desktop, modifica desktop, 403 PUT/DELETE, concorrenza AC 17, 404 rotte ritirate AC 33, replay AC 34), `flight-no-charge` +4 (AC 19, 20, 21, UI 22/23), `mobile-logbook` −1 (test dei chip di stato cancellato). Conteggio misurato: `npx playwright test --list` → `Total: 541 tests in 63 files`. Nessuno spec nuovo nella catena serializzata.
+
 ### §G — Deviazioni motivate
+
+- **D-a — `Toggle` con `hint` opzionale** (`toggle.tsx`): la primitiva della 19.5 non aveva hint e AD-8 chiede l'hint `noChargeHint` sotto lo switch. Allargamento additivo (`hint?`, `.fld-hint` + `aria-describedby`, stesso contratto di `Field`/`SearchCombobox`); il solista non lo usa, quindi nessun cambiamento per lui.
+- **D-b — due chiavi i18n in più** (`LogbookPage.editor.fields.noChargeModes.{charged,noCharge}` = «Addebito normale»/«Non addebitato», «Normal charge»/«Not charged»): il `Toggle` richiede `onText`/`offText` e §3.8 non li prevedeva. Totale +10 chiavi invece di +8.
+- **D-c — migrazione in una sola transazione**: il DDL generato da Prisma metteva `BEGIN/COMMIT` solo attorno al cambio d'enum; con i `DELETE` distruttivi in testa ho racchiuso **tutto** il file in un'unica transazione (un errore a metà non lascia voli cancellati con lo schema vecchio). Il `migrate diff` resta vuoto.
+- **D-d — `buildFlightWrite` calcola anche l'importo velivolo**: AD-4 chiedeva un helper unico per colonne, totale e descrizione; l'importo velivolo (prima nel core) e l'azzeramento B (importi a 0) vivono lì, `registerFlightCore` ha ora i parametri `{ actorUserId, accountId, write, forceStamp }`. `readBalanceCents` estratto perché la somma serve tre volte (core, prima/dopo dell'update).
+- **D-e — conferma desktop col bottone distruttivo**: `.btn` non ha una variante «bad» a dimensione piena; ho usato i colori di `.btn.mini.bad` con una regola scoped `.mini-modal-card .btn.mini.bad.mini-modal-danger` (geometria del `.btn` accanto), lo stesso schema che `.bottom-sheet-actions` usa sul telefono. `.mini-modal` è condiviso: la regola tocca solo chi aggiunge la classe.
+- **D-f — e2e adattati fuori dall'elenco di §3.6**: `person-detail.spec.ts` (asseriva «Registrato» nelle «Voli recenti», ora `not.toContainText`), il test 19.5 del Tab in `flights.spec.ts` (dopo il solista il Tab passa dallo switch «Senza addebito»), due `.fld-hint` di `flights.spec.ts` resi per id (`#flight-type-select-hint`: il form ha ora due hint), il test 15.6 della testata mobile (misura la sola testata, 4 target ≥ 44px invece di ≥ 6 con i chip), il deep link `?personId=` provato col pannello Filtri invece del chip. `mobile-self-public`: le due righe di storno della fixture a 21 movimenti sono diventate due ricariche da 1 cent (saldo finale -1 cent invece di -3, sempre negativo per TD (h)).
+- **D-g — conferma mobile**: il titolo del secondo passo resta «Annulla volo» (`cancelModal.title`, D-14) e l'avviso è un secondo `.fld-hint`.
+- **D-h — commenti storici riformulati** anche fuori da §3: `bookings.service.ts` (`#correctFlight` → `#updateFlight` ×2), `bookings/[id]/cancel/route.ts` (paragone con `/flights/{id}/cancel`), `e2e/helpers.ts`, `e2e/billing.spec.ts` (nome dello spec rinominato).
+
+**TD proposti per il §7 / review**:
+- **TD 19.6-a** — sulla card mobile dell'estratto conto (375px) la sottoriga è `data · descrizione`: la dicitura arriva a «Volo senza addebi…» prima dell'ellissi (screenshot 13). La dicitura in testa alla descrizione sopravvive quasi intera ma non intera; una copy più corta (19.12) o la data fuori dalla sottoriga la renderebbero completa.
+- **TD 19.6-b** — un `FLIGHT_CHARGE` a 0,00 € è colorato col tono «positivo» (verde) da `amountToneClass` (pre-esistente per gli importi a 0): si legge come un credito. Da decidere in 19.11/19.12.
+- **TD 19.6-c** — `billing.spec.ts:294` (delta di Acconti, aggregato globale) flaky 1 volta nel run mirato del pilota di seed, verde al retry: classe nota «aggregati globali sotto `fullyParallel`» (TD (h)), non toccata da questa story.
+- Fuori scope dichiarato, invariato: check sul saldo e suo salto (19.9), snapshot del compenso (16.5), 422 sulla rettifica di un `FLIGHT_CHARGE` (16.6b), `HourPackage`/`packageCoveredMinutes` (schema morto, segnalato).
 
 ### §H — Verifica UI (screenshot)
 
+Script throwaway `playwright-core` (Chromium `~/.cache/ms-playwright/chromium-1228`, `it-IT`, `Europe/Rome`) sull'app di produzione puntata al gemello e2e; PNG in `scratchpad/shots/` (fuori dal repo). Misure verbatim:
+```
+1280 registro: scrollWidth 1280 / innerWidth 1280 -> no horizontal overflow
+1280 .so-foot (new form): {"x":761,"y":840.16,"width":519,"height":59.84}
+1280 edit form switch aria-checked: true
+1280 scheda persona: scrollWidth 1280 / innerWidth 1280 -> no horizontal overflow
+375 registro: scrollWidth 375 / innerWidth 375 -> no horizontal overflow
+375 sheet second step: focus on flight-cancel-dismiss-mobile
+375 form: scrollWidth 375 / innerWidth 375 -> no horizontal overflow
+375 .so-foot (new form): {"x":0,"y":743,"width":375,"height":69}
+375 scheda persona: scrollWidth 375 / innerWidth 375 -> no horizontal overflow
+cella Costo 1280: «Senza addebito» clientWidth 100 = scrollWidth 100 (nessuna ellissi)
+```
+Visti: 01 testata desktop senza select Stato (la barra va a capo come prima, nessun buco), 02/03 form nuovo con switch spento («Addebito normale») e acceso («Non addebitato», stato accent), hint sotto lo switch, 04 riepilogo «0,00 €» con badge «Senza addebito», 05/05b riga con sottoriga «Senza addebito» sotto «0,00 €», 06 form in modifica con switch acceso, 07 conferma desktop (marche — data — importo, avviso col nome, «Chiudi» / «Elimina volo» distruttivo), 08 estratto conto desktop con `Volo senza addebito I-…` a 0,00 €, 09 testata mobile senza chip e card con «Senza addebito» al posto dell'importo, 10 secondo passo dello sheet (avviso, «Indietro» focalizzato, «Elimina volo»), 11 sheet di un volo senza addebito, 12 form a 375 con lo switch, 13 card dell'estratto conto a 375 (TD 19.6-a).
+
 ### §I — Gate ed esiti verbatim
+
+`npm run gates` (dopo l'ultima modifica a `src/`):
+```
+PASS  lint (21s)
+PASS  typecheck (2s)
+PASS  test (7s) — Tests  1842 passed (1842)
+PASS  build (29s)
+```
+e2e — build di produzione una volta (quella dei gates), `next start` con `DATABASE_URL` sul gemello `am196_e2e` (migrate deploy + `db seed`, catena della story), `JOBS_SECRET` esportato, poi `E2E_REUSE_SERVER=1 scripts/e2e.sh start …`:
+1. 31 spec (`flight-delete-update`, `flight-no-charge`, `flights`, `flight-log`, `mobile-logbook`, `mobile-self-public`, `aircraft-out-of-service-until`, `exports`, `pdf-exports`, `account-adjustments`, `billing`, `instructor-compensation`, `api-v1`, `person-detail`, `my-account`, `account-statement`, `mobile-a11y-sweep`, `mobile-ink-targets`, `typeahead-pickers`, `datetime-picker`, `home-dashboard`, `my-compensation`, `mobile-registries`, `mobile-reports`, `mobile-primitives`, `mobile-billing`, `people-management`, `login`, `expiry-dashboard`, `mobile-expiries-movements`, `idempotency`): **313 passed, 5 failed** — tutti lato test: orario d'atterraggio digitato da solo (prefill nel fuso del browser → 23h30 di volo), due `.fld-hint` ambigui, ordine del Tab 19.5, «Registrato» in `person-detail` (D-f).
+2. dopo i fix, `flight-delete-update` + `flights` + `person-detail`: 40 passed, 1 failed (forma dell'asserzione sul movimento: `objectContaining`) → `flight-delete-update` da solo: **6 passed**.
+3. spec che toccano il pilota di seed, sullo stesso DB **dopo** `expiry-dashboard` e `mobile-expiries-movements`: `exports`, `aircraft-out-of-service-until`, `mobile-self-public`, `billing` → **43 passed, 1 flaky** (`billing.spec.ts:294`, TD 19.6-c).
+4. catena, uno alla volta con `--no-deps`: `reports` **5 passed**, `billing-global` **2 passed**.
+Login: tutte le `LoginAttempt` dei 15 minuti riuscite (`succeeded = t`), lock anti-brute-force mai sfiorato. Server fermato per PID, `:3000` libero, gemelli `am196_mig`/`am196_zero`/`am196_e2e` droppati. Suite completa **non** eseguita (arbitro della sessione principale: atteso **541**).
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created (story writer, 2026-11-01, ricognizione su `3876e72`).
+- 2026-11-02 (dev-19-6): cancellazione definitiva (`DELETE /flights/{id}`, addebito cancellato prima del volo, FK `RESTRICT` + `@unique`), modifica in place (`PUT /flights/{id}`, stesso volo e stesso movimento, lock `Flight → Aircraft → Account`), volo senza addebito con Q-19.6-a = **B** (tariffe obbligatorie e congelate, importi e addebito a 0, dicitura in testa alla descrizione), via stato/filtri/badge/catene/storno/consumi da schema, API, UI, export, seed, i18n; migrazione distruttiva provata su gemello popolato con SUM per conto invariate. Nessun check sul saldo (19.9), nessuno snapshot del compenso (16.5).
 
 ### File List
+
+- `prisma/schema.prisma`
+- `prisma/migrations/20261102180000_flight_delete_in_place_no_charge/migration.sql` (nuovo)
+- `prisma/seed-demo.ts`
+- `prisma/seed-load.ts`
+- `src/server/services/flights.service.ts`
+- `src/server/services/flights.service.test.ts`
+- `src/server/services/flights-expiry-boundary.integration.test.ts`
+- `src/server/services/transactions.service.ts`
+- `src/server/services/transactions.service.test.ts`
+- `src/server/services/exports.service.ts`
+- `src/server/services/exports.service.test.ts`
+- `src/server/services/stats.service.ts`
+- `src/server/services/stats.service.test.ts`
+- `src/server/services/aircraft.service.ts`
+- `src/server/services/aircraft.service.test.ts`
+- `src/server/services/people.service.ts`
+- `src/server/services/people.service.test.ts`
+- `src/server/services/instructor-compensation.service.ts`
+- `src/server/services/instructor-compensation.service.test.ts`
+- `src/server/services/bookings.service.ts` (solo commenti)
+- `src/app/api/v1/flights/[id]/route.ts` (nuovo)
+- `src/app/api/v1/flights/[id]/cancel/route.ts` (eliminato)
+- `src/app/api/v1/flights/[id]/correct/route.ts` (eliminato)
+- `src/app/api/v1/flights/route.ts` (commento)
+- `src/app/api/v1/bookings/[id]/cancel/route.ts` (commento)
+- `src/lib/schemas/flights.ts`
+- `src/lib/schemas/accounts.ts`
+- `src/lib/schemas/transactions.ts` (doc)
+- `src/lib/schemas/stats.ts` (doc)
+- `src/lib/schemas/registry.ts`
+- `src/lib/schemas/registry.test.ts`
+- `src/lib/mobile-logbook.ts`
+- `src/lib/mobile-logbook.test.ts`
+- `src/lib/mobile-self.ts` (doc)
+- `src/lib/booking-day-phase.ts` (doc)
+- `src/lib/export-href.test.ts`
+- `src/components/ui/toggle.tsx`
+- `src/styles/airops.css`
+- `src/app/[locale]/dashboard/logbook/logbook-console.tsx`
+- `src/app/[locale]/dashboard/logbook/flight-editor.tsx`
+- `src/app/[locale]/dashboard/logbook/page.tsx`
+- `src/app/[locale]/dashboard/page.tsx`
+- `src/app/[locale]/dashboard/people/[id]/page.tsx`
+- `src/app/[locale]/dashboard/people/[id]/account-section.tsx`
+- `src/app/[locale]/dashboard/my-account/page.tsx`
+- `src/app/[locale]/dashboard/billing/page.tsx`
+- `src/app/[locale]/dashboard/billing/billing-console.tsx`
+- `messages/it.json`
+- `messages/en.json`
+- `e2e/flight-delete-update.spec.ts` (rinominato da `e2e/flight-reversal.spec.ts`, riscritto)
+- `e2e/flight-no-charge.spec.ts` (nuovo)
+- `e2e/flights.spec.ts`
+- `e2e/flight-log.spec.ts`
+- `e2e/mobile-logbook.spec.ts`
+- `e2e/mobile-self-public.spec.ts`
+- `e2e/aircraft-out-of-service-until.spec.ts`
+- `e2e/exports.spec.ts`
+- `e2e/person-detail.spec.ts`
+- `e2e/helpers.ts` (commento)
+- `e2e/billing.spec.ts` (commento)
+- `_bmad-output/planning-artifacts/architecture/architecture-AirManager-2026-07-04/ARCHITECTURE-SPINE.md` (AD-6)
+- `_bmad-output/implementation-artifacts/19-6-volo-senza-addebito-cancellazione-definitiva.md` (questo record)
+
+### Change Log
+
+- 2026-11-02 — dev 19.6: implementazione completa in `6651ec1` (schema + migrazione distruttiva, service, route, OpenAPI, UI desktop/mobile, i18n, seed, unit, e2e); Status → review.
