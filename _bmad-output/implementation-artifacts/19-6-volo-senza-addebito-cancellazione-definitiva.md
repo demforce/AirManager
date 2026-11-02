@@ -4,7 +4,7 @@ baseline_commit: 3876e72
 
 # Story 19.6: Volo senza addebito e cancellazione definitiva
 
-Status: **review** — 2026-11-02 (dev completato dal subagent `dev-19-6`; era ready-for-dev dal 2026-11-01). **Q-19.6-a RATIFICATA dal PO = B** (tariffe obbligatorie anche senza addebito — v. decisione sotto la domanda); la story era scritta con la raccomandazione **A**; l'alternativa B tocca solo AD-5 punto 3, AC 19 e il doc dello schema `flightBreakdownSchema`. **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI su sei superfici (form volo con il nuovo `Toggle`, conferma di cancellazione desktop, secondo passo dello sheet mobile, riga e card del registro, sheet di dettaglio, scheda persona) oltre a schema, migrazione distruttiva, service, route, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-6-volo-senza-addebito-cancellazione-definitiva`.
+Status: **review** — 2026-11-02 (dev completato dal subagent `dev-19-6`; era ready-for-dev dal 2026-11-01; review SHIPPABLE-WITH-FIXES, fix di F1-F3 in `2de0e8f` — Review Record in fondo —, arbitro alla sessione principale). **Q-19.6-a RATIFICATA dal PO = B** (tariffe obbligatorie anche senza addebito — v. decisione sotto la domanda); la story era scritta con la raccomandazione **A**; l'alternativa B tocca solo AD-5 punto 3, AC 19 e il doc dello schema `flightBreakdownSchema`. **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI su sei superfici (form volo con il nuovo `Toggle`, conferma di cancellazione desktop, secondo passo dello sheet mobile, riga e card del registro, sheet di dettaglio, scheda persona) oltre a schema, migrazione distruttiva, service, route, OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-6-volo-senza-addebito-cancellazione-definitiva`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`3876e72`** (HEAD al 2026-11-01: 19.1 committata, 19.2-19.5 solo come story file). Il dev della 19.6 parte **DOPO il commit di 19.1, 19.2, 19.3, 19.4 e 19.5**, che toccano **gli stessi file**:
 > - **19.2** toglie da `flights.service.ts` il contaore (`decreaseHourMeterForReversal` `:1046-1073`, il parametro `aircraftHourMeterMinutes` del core, l'ultimo `tx.aircraft.update`) e `notes`/`hourMeterStart`/`hourMeterEnd`; il lock `Aircraft` resta ma seleziona `"id"`; cancella 5 e2e (fra cui `flights.spec.ts` **E7**, che conteneva una chiamata a `/cancel`); riscrive `seed-load.ts` nelle stesse fasi di questa story.
@@ -106,7 +106,7 @@ Il volo senza addebito (R-19-d) non esiste in nessuna forma: oggi un volo offert
 | **D-5** | Il valore `FLIGHT_CHARGE_REVERSAL` esce dall'enum `AccountMovementType`, con tutto ciò che lo leggeva (classificazione contabile, etichette, badge «Storno del movimento», export, i18n). | Karpathy: «rimuovi ciò che la tua modifica ha reso inutile». Dopo questa story nessun codice lo crea e la migrazione cancella tutte le righe esistenti | lasciarlo: un tipo di movimento che il ledger non può più contenere, con UI e test che lo trattano come vivo |
 | **D-6** | `AccountMovement.flightId` diventa `@unique` con `onDelete: Restrict`. Su `Flight` la relazione passa da `movements AccountMovement[]` a `charge AccountMovement?`. | «Nessun movimento orfano» garantito dal DB, non da una convenzione: un addebito per volo, e un volo si cancella solo dopo il suo addebito | `CASCADE`: cancellerebbe righe di ledger in modo implicito. Resta l'eccezione di AD-3, ma non è più leggibile nel codice |
 | **D-7** | Su una modifica, `forcedAt`/`forcedByUserId`/`forceReason` si **sovrascrivono solo** se la modifica stessa deroga (`resolved.forceStamp` non nullo); altrimenti restano come sono. | A10 (il timbro è il minimo di audit). La 19.9 riscrive comunque quest'area | azzerarli a ogni modifica: un cambio di atterraggi cancellerebbe la traccia di una deroga reale |
-| **D-8** | Un volo il cui addebito ha già una **rettifica manuale** collegata (`reversalOfId`) resta **non cancellabile e non modificabile**: 409, con lo stesso messaggio di oggi (`flights.service.ts:1440`). | Comportamento invariato. Cancellare l'addebito lascerebbe la rettifica come credito orfano (`reversalOfId` andrebbe a `NULL` per la FK `SET NULL`), un saldo falso; la porta verso questo stato la chiude la **16.6b** (422 sulla rettifica di un `FLIGHT_CHARGE`). Sul DB di carico i casi sono 0 (misura 16.6b) | cancellare anche la rettifica: violerebbe AD-3, che fa eccezione solo per il `FLIGHT_CHARGE` |
+| **D-8** | Un volo il cui addebito ha già una **rettifica manuale** collegata (`reversalOfId`) resta **non cancellabile e non modificabile**: 409, con lo stesso messaggio di oggi (`flights.service.ts:1440`). | Comportamento invariato. Cancellare l'addebito lascerebbe la rettifica come credito orfano (`reversalOfId` andrebbe a `NULL` per la FK `SET NULL`), un saldo falso; la porta verso questo stato la chiude la **16.6b** (422 sulla rettifica di un `FLIGHT_CHARGE`) — *anticipata qui dal fix di review F1, v. Review Record: il 409 resta solo per le righe legacy*. Sul DB di carico i casi sono 0 (misura 16.6b) | cancellare anche la rettifica: violerebbe AD-3, che fa eccezione solo per il `FLIGHT_CHARGE` |
 | **D-9** | Il replay idempotente di `POST /flights` dopo una cancellazione **rigioca il 201 originale** (`Idempotency-Replayed: true`) e **non ricrea** il volo. Nessuna modifica a `IdempotencyRecord`. | Semantica standard dell'idempotenza (la risposta descrive l'esito della prima richiesta). Il client rigenera la chiave dopo ogni risposta HTTP (`use-idempotency-key.ts`), quindi il caso richiede un retry dopo un guasto di rete | cancellare i record collegati: un retry **ricreerebbe** il volo, il difetto peggiore possibile |
 | **D-10** | «Senza addebito» compare (a) in testa alla descrizione del `FLIGHT_CHARGE` (estratto conto ed export dell'estratto conto), (b) nel registro: sottoriga della cella Costo su desktop, al posto dell'importo sulla card mobile, accanto all'importo nella riga «Costo» dello sheet, (c) nel riepilogo del form dopo il salvataggio. Nessuna colonna nuova negli export del registro (l'importo è 0). | R-19-d chiede la dicitura nell'estratto conto; nel registro un «0,00 €» senza spiegazione sembrerebbe un errore, e il toggle del form la mostra già in modifica | una colonna «Senza addebito» negli export xlsx/pdf: rompe le intestazioni per un'informazione che l'estratto conto porta già |
 | **D-11** | Nessun permesso nuovo: il flag è accettato da chiunque abbia `flights.manage` (solo ADMIN). | Fatto misurato (rbac); lezione 14.9 F4: un permesso distinto oggi sarebbe un ramo irraggiungibile | `flights.noCharge`: speculativo |
@@ -428,7 +428,7 @@ Mirati da far girare prima della consegna: `flight-delete-update`, `flight-no-ch
 
 - Check sul saldo e suo salto per il senza addebito, rimozione di `forceReason` e del badge «Deroga», pattern unico di avviso: **19.9** (qui `noCharge` è solo un dato che la 19.9 leggerà).
 - Snapshot del compenso istruttore sul volo e sua conservazione nella modifica in place: **16.5** (dopo questa story).
-- 422 sulla rettifica manuale di un `FLIGHT_CHARGE` (che chiude la porta di D-8): **16.6b**.
+- 422 sulla rettifica manuale di un `FLIGHT_CHARGE` (che chiude la porta di D-8): **16.6b** — *superato: anticipato dal fix di review F1 (Review Record)*.
 - Estratto conto ordinato per data valuta, con saldo progressivo: **19.11**.
 - Revisione delle copy nuove: **19.12**.
 - Un permesso dedicato al senza addebito (D-11), un log di audit di cancellazioni e modifiche (D-1), un `updatedByUserId` (D-13), una colonna «Senza addebito» negli export del registro (D-10).
@@ -751,3 +751,85 @@ Login: tutte le `LoginAttempt` dei 15 minuti riuscite (`succeeded = t`), lock an
 ### Change Log
 
 - 2026-11-02 — dev 19.6: implementazione completa in `6651ec1` (schema + migrazione distruttiva, service, route, OpenAPI, UI desktop/mobile, i18n, seed, unit, e2e); Status → review.
+- 2026-11-02 — review 19.6 SHIPPABLE-WITH-FIXES (`19-6-review-report.md`); fix di F1-F3 in `2de0e8f`; Status resta review.
+
+## Review Record — 19.6
+
+- **Review adversarial** (`review-19-6`, Opus 5.5, 2026-11-02): **SHIPPABLE-WITH-FIXES**. Il suo arbitro su DB fresco ha dato **541/541**, `E2E_EXIT=0`, 0 flaky. Report: `19-6-review-report.md`, committato con questo record. Finding: F1 medium, F2 low, F3 low.
+- **Fix** (`fix-19-6`, Opus 5.5, commit **`2de0e8f`**). Decisioni della sessione principale: per F1 e F2 la strada (b) del report, cioè anticipare la Q4 della 16.6b; per F3 un nuovo controllo sotto lock.
+
+### F1 (medium) e F2 (low) — corretti anticipando la Q4 della 16.6b
+
+- **Server** (`accounts.service.ts#recordAdjustment`): l'originale non si legge più con un pre-check fuori transazione. Si legge **dentro** la transazione, dopo il `SELECT … FROM "Account" … FOR UPDATE`. Gli esiti, nell'ordine:
+  - assente, o di un altro conto → 404 `Movement not found.`;
+  - `FLIGHT_CHARGE` → **422 `ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE`**, con messaggio «A flight charge is corrected by editing or deleting the flight, not by a manual adjustment.»;
+  - `PACKAGE_PURCHASE` → 409, invariato;
+  - già rettificato → 409, invariato.
+- **Codice**: ho usato quello già fissato dalla 16.6b (AD-5, AC 10) al posto dell'esempio `ADJUSTMENT_TARGETS_FLIGHT_CHARGE`, così la 16.6b trova la Q4 fatta col suo contratto. È un 422 e non un 409 per la stessa ragione data in quella AD: è un vincolo sull'input, non sullo stato.
+- **Perché leggere sotto il lock chiude la corsa**:
+  - l'unico movimento che si può cancellare o spostare di conto è il `FLIGHT_CHARGE`;
+  - `deleteFlight` e `updateFlight` lo toccano solo tenendo il lock `Account` del suo conto (`updateFlight` li tiene tutti e due);
+  - quindi la riga controllata è quella che l'insert collega. Un addebito cancellato nel frattempo dà 404, e l'insert non può più fallire con P2003.
+  - Il backstop P2002 resta. Il suo commento ora dice che due richieste sullo stesso originale sono già serializzate dal lock.
+- **Difesa legacy D-8** (`flights.service.ts`):
+  - `loadFlightCharge` legge solo `{ id, accountId }`, sotto il lock `Flight`, che tiene fermo anche `accountId`.
+  - Il controllo della rettifica è una funzione nuova, `assertChargeNotAdjusted`. In `deleteFlight` e in `updateFlight` rilegge `reversal` **dopo** il lock `Account`.
+  - Il 409 resta, con lo stesso messaggio, solo per le rettifiche registrate prima di questo fix (residui delle sonde; 0 sul DB di carico).
+- **Altri percorsi**: `POST /transactions` non può raggiungere la guardia, perché il ramo `ADJUSTMENT` del suo schema non ha `originalMovementId` (`schemas/transactions.ts:189-193`; verificato). Lo storno di cassa è un altro modello.
+- **UI**:
+  - `account-section.tsx#rowIsAdjustable` diventa `!hasReversal && (TOP_UP || ADJUSTMENT)`. È il predicato di `transactions.service.ts#toAccountRow` (`actionable`) e copre la riga desktop e lo sheet mobile. Contabilità non cambia: era già giusta.
+  - Il form di rettifica mappa il codice sulla chiave nuova `AccountStatementPage.adjustments.flightChargeError` (IT «L'addebito di un volo si corregge modificando o eliminando il volo dal registro voli, non con una rettifica.» / EN). È la faccia localizzata del codice chiesta dalla sessione principale. Dichiarato: con l'azione nascosta l'UI normale non può raggiungerla.
+- **16.6b**: aggiunta una riga in testa, «Q4 anticipata nella 19.6 … non va rifatta». Annotate le due righe di questo file che la davano alla 16.6b (D-8 e §6).
+
+### F3 (low) — corretto con un 409 `FLIGHT_MODIFIED_CONCURRENTLY`
+
+- **Fix**: `updateFlight` aggiunge `updatedAt` alla pre-lettura e al `SELECT … FROM "Flight" … FOR UPDATE`. Se i due valori differiscono → **409 `FLIGHT_MODIFIED_CONCURRENTLY`**, prima di ogni altro lock e senza scrivere nulla.
+- **Perché `updatedAt` e non le colonne d'identità**:
+  - una sola colonna copre ogni input della pre-lettura: le esenzioni AOG, R-14.4-b, R-14.3-a e Q-19.3-b, e qualunque dipendenza futura;
+  - `updateFlight` è l'**unico** writer di una riga `Flight` dopo la creazione (`grep "flight\.update\|UPDATE \"Flight\""`: una sola occorrenza) e scrive sotto lo stesso lock;
+  - `@updatedAt` cambia a ogni sua scrittura.
+- **Perché non ricalcolare le esenzioni sotto lock**: bisognerebbe portare dentro la transazione tutto `resolveFlightInput` (anagrafiche, tariffe, scansione dei documenti), tenendo i lock `Flight`/`Aircraft` per tutta quella durata. Per due modifiche admin simultanee dello stesso volo, il 409 «ricarica e riprova» è più semplice e più onesto.
+- **Effetto dichiarato**: `PUT ‖ PUT` sullo stesso volo dava 200/200 (vinceva l'ultima scrittura). Ora dà **un 200 e un 409**, anche se le due modifiche toccano solo campi non d'identità. `PUT ‖ DELETE` non cambia: `DELETE` non tocca `updatedAt`, quindi la `PUT` dà 200 o 404.
+- **UI** (`flight-editor.tsx`): un 409 con questo codice mostra `LogbookPage.editor.concurrentEditError`, IT «Il volo è stato modificato da un altro utente nel frattempo: ricaricalo e riprova.» / EN. Il controllo viene prima del ramo D-8, che altrimenti risponderebbe con la frase sulla rettifica manuale. Il percorso `force` non cambia: per un cambio concorrente ha già il suo messaggio generico.
+- **OpenAPI**: `PUT /flights/{id}` documenta il 409 `FLIGHT_MODIFIED_CONCURRENTLY` e il 409 `CONFLICT`, ora solo legacy. `DELETE` documenta il 409 legacy. `POST …/account/adjustments` documenta il 422. I codici di risposta erano già elencati.
+
+### Prove
+
+- **Unit, discriminanza** (le versioni nuove dei tre file di test girano sul service di HEAD): **6 failed / 308**. Sono i 5 test nuovi più quello d'ordine di `updateFlight`, riscritto. Errori verbatim:
+  - 422 FLIGHT_CHARGE: `expected error to be instance of ValidationError … TypeError: Cannot read properties of undefined (reading '_sum')`, cioè il pre-fix andava avanti verso la scrittura;
+  - lettura sotto lock: `expected 160 to be less than 157`;
+  - controllo rettifica dopo il lock in `deleteFlight`: `expected "vi.fn()" to be called 2 times, but got 1 times`;
+  - ordine di `updateFlight`: `expected value must be number or bigint, received "undefined"`;
+  - F3: `expected error to be instance of ConflictError … TypeError: Cannot read properties of undefined (reading 'length')`;
+  - registry: `expected 'Story 19.6 (R-19-c) — FULL replacemen…' to contain 'FLIGHT_MODIFIED_CONCURRENTLY'`.
+
+  Gli altri test adattati passano anche sul pre-fix: tolgono solo `transactionMock not called` dai 404/409 di `recordAdjustment` e aggiungono `updatedAt` alle fixture del lock. Sul fix: **308 passed**, anche con `env -u DATABASE_URL -u AUTH_SECRET`.
+- **Sonde del reviewer** (gemello `am_fix196`, build di produzione; copie in `scratchpad/fix196/` con `PROBE_DATABASE_URL`). Prima riga pre-fix (HEAD `3a08b63`), seconda riga fix:
+
+  | Sonda | Pre-fix | Fix |
+  |---|---|---|
+  | `race-api adj-first` (rettifica in coda prima del DELETE sul lock `Account`) | `first 200 \| second 204` + `[{"type":"ADJUSTMENT","amountCents":12000,"unlinked":true}]` (credito orfano) | `first 422 ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE \| second 204`, movimenti `[]` |
+  | `race-api delete-first` | `first 204 \| second 500 INTERNAL_ERROR` | `first 204 \| second 404 NOT_FOUND Movement not found.`, movimenti `[]` |
+  | `race-put-rettifica` (rettifica legacy inserita in psql sotto il lock, PUT con cambio persona) | `PUT status 200`; rettifica sul conto p1 legata all'addebito spostato su p2; `balances p1 12000 p2 -18000` | `PUT status 409 CONFLICT`; addebito fermo su p1 a −12000, rettifica sullo stesso conto; `balances p1 0 p2 0` |
+  | `toctou-aog` (PUT2 pre-letto prima che PUT1 sposti il volo da A fermo a B) | `PUT1 200 \| PUT2 200`; `{"on_grounded_a":true,"status":"OUT_OF_SERVICE","minutes":45,"forcedAt":null}` | `PUT1 200 \| PUT2 409 FLIGHT_MODIFIED_CONCURRENTLY`; `{"on_grounded_a":false,"status":"OPERATIONAL","minutes":60}`; controllo seriale invariato (422) |
+
+  `probes.mjs stress 12` sul fix: `PUT‖DELETE` 12× 204/404, `DELETE‖POST` 12× 204/201, `PUT(A→B)‖POST(B)` 12× 200 / 409 `FLIGHT_OVERLAP`, `PUT‖PUT` 12× uno 200 e uno 409 (11× 409/200, 1× 200/409), scambio incrociato di persona 12× 200/200. Nessun 500, nessun deadlock, nessun P2003/P2025 nel log del server. Invariante globale tutto a 0, tranne `cross_account_reversal = 1`: è il residuo della sonda PUT eseguita sul pre-fix.
+- **UI** (`playwright-core` su `chromium-1228`, script `fix196/ui-rowaction.mjs`):
+  - pre-fix: `desktop: action on top-up 1 | action on flight charge 1`, `phone sheet: action on flight charge 1`;
+  - fix: `… flight charge 0`, `phone sheet: … 0`.
+
+  Screenshot `fix196/editor-409-1280.png` (frase del 409 sotto i campi, `role="alert"`) e `fix196/charge-sheet-375.png` (sheet dell'addebito con il solo «Chiudi», `scrollWidth` 375).
+- **e2e**:
+  - **Pre-fix** (build di HEAD con lo spec nuovo, gemello): `flight-delete-update.spec.ts:383` **rosso**, `Expected: 422`, `Received: 200` (`:403`).
+  - **Mutante** (fix senza il ramo `FLIGHT_MODIFIED_CONCURRENTLY` di `flight-editor.tsx`, ripristinato con sha256 identico): `:431` **rosso**, `Received: "L'addebito di questo volo è stato rettificato a mano: il volo non si può modificare."`.
+  - **Fix** (build dei gate, gemello, `E2E_REUSE_SERVER=1`, project `chromium`): serie mirata di 15 spec — `flight-delete-update`, `flight-no-charge`, `flights`, `flight-log`, `mobile-logbook`, `account-adjustments`, `account-statement`, `accounts-topups`, `billing`, `mobile-billing`, `mobile-self-public`, `my-account`, `membership-fee`, `cash-register`, `mobile-a11y-sweep`. Risultato: **169 passed, 1 flaky**, `E2E_EXIT=0` (3.6m). Il flaky è `flights.spec.ts:1027` (E5), verde al retry. Al primo tentativo è fallito alla **registrazione** iniziale (`POST /flights` → 422 invece di 201, `:1037`), un percorso che il fix non tocca. È la classe nota delle guardie 16.2 (TD 16.2-g), non questo fix.
+- **Gate** (sul contenuto committato): `PASS lint (21s) · PASS typecheck (3s) · PASS test (13s) — Tests 1847 passed (1847) · PASS build (54s)`.
+- **Delta**:
+  - unit **1842 → 1847** (+5: 2 in `accounts.service.test.ts`, 2 in `flights.service.test.ts`, 1 in `registry.test.ts`; misurato rimettendo i tre file di test di HEAD, con sha256 di ripristino verificato);
+  - e2e atteso per l'arbitro **541 → 543** (+2 in `flight-delete-update.spec.ts`). L'arbitro full-suite su DB fresco resta alla sessione principale.
+
+### Stato della macchina
+
+- Server fermati per PID; porta 3000 libera; `scripts/e2e.sh status` = DONE. L'ultimo run è quello del mutante, `E2E_EXIT=1` voluto.
+- Gemello `am_fix196` lasciato in piedi con le fixture delle sonde. Si può eliminare: `docker exec airmanager-postgres-1 psql -U airmanager -d postgres -c "DROP DATABASE am_fix196 WITH (FORCE)"`. `airmanager` e `airmanager_load` non sono stati toccati.
+- `.next` è la build dei gate sul contenuto committato.

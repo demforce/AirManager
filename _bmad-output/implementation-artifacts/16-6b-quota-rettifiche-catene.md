@@ -4,6 +4,8 @@ baseline_commit: 9272129
 
 # Story 16.6b: Una quota per anno, e una rettifica che non consuma lo storno di un volo
 
+> ⚠️ **Q4 anticipata nella 19.6 (fix review F1, 2026-11-02): non va rifatta.** `recordAdjustment` risponde già **422 `ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE`** su un originale `FLIGHT_CHARGE` (letto dentro la transazione, sotto il lock `Account`) e `rowIsAdjustable` dell'estratto conto è già «`TOP_UP`/`ADJUSTMENT` non rettificato» (AC 10-11, AD-5); `FLIGHT_CHARGE_REVERSAL` e `cancelFlight` non esistono più dalla 19.6. Restano da fare Q1-Q3, Q5, Q6.
+
 Status: **ready-for-dev** — 2026-09-10. **Modello dev: Opus 5 xhigh** (la story tocca UI: il `fetch` della quota associativa in `scadenze-console.tsx` — chiave di idempotenza, `try/catch`, bottone che oggi resta bloccato per sempre —, un ramo d'errore nuovo con la sua frase in due locale, e il predicato dell'azione di riga dell'estratto conto su **due facce**). Review: **Opus 5 xhigh adversarial**.
 
 > ⚠️ **Questa story è la METÀ «guardie di scrittura» della 16.6 del piano.** L'altra metà è `16-6a-data-valuta-e-totali.md` (data valuta, parità PDF/schermo, etichette dei libri). Il piano descriveva **una** story; la divido perché tocca **sei superfici indipendenti** (soglia di progetto: >4 superfici non correlate o >20 AC) e perché le due metà non condividono **nessun** file di produzione. **Nessuna dipendenza fra le due**: qualunque ordine, anche in parallelo.
