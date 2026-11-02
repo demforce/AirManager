@@ -4,7 +4,7 @@ baseline_commit: a7e960e
 
 # Story 19.8: Impostazioni a Salva unico
 
-Status: **review** — dev 2026-11-02 (commit `72ad09e`), Dev Agent Record sotto. Scritta: ready-for-dev 2026-11-01. **Nessuna domanda PO aperta**: le scelte di §0.3 sono di resa UI o tecniche, ognuna ricondotta a una ratifica chiusa (R-19-i/j/k/m, A17) o a un precedente del codice (19.3/19.4); la sessione principale può portarle al PO se lo ritiene. **Modello dev: Opus 5 xhigh (UI)** — la story riscrive l'intera pagina Impostazioni (9 sezioni, due facce desktop/mobile) attorno a uno stato in bozza, aggiunge un endpoint composito transazionale, estrae i core di scrittura di tre service, e riscrive 6 spec e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-8-impostazioni-salva-unico`.
+Status: **done** — 2026-11-02 (review SHIPPABLE con fix (1 medio, 5 bassi) → fix `b04260a` + docs `3bd68ca` (F1 sezioni bloccate durante il salvataggio, F2 lock ordinato + 409 CONCURRENT_SAVE, F3 404/409 NOT_FOUND, F4 rename a catena indipendenti dall'ordine, F5 maxLength SMTP, F6 messaggi); arbitro finale della sessione principale su DB fresco **567/567, 0 flaky, exit 0**). Storico — **review** — dev 2026-11-02 (commit `72ad09e`), Dev Agent Record sotto. Scritta: ready-for-dev 2026-11-01. **Nessuna domanda PO aperta**: le scelte di §0.3 sono di resa UI o tecniche, ognuna ricondotta a una ratifica chiusa (R-19-i/j/k/m, A17) o a un precedente del codice (19.3/19.4); la sessione principale può portarle al PO se lo ritiene. **Modello dev: Opus 5 xhigh (UI)** — la story riscrive l'intera pagina Impostazioni (9 sezioni, due facce desktop/mobile) attorno a uno stato in bozza, aggiunge un endpoint composito transazionale, estrae i core di scrittura di tre service, e riscrive 6 spec e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-8-impostazioni-salva-unico`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`a7e960e`** (i file delle Impostazioni sono identici a `869c9cf`). Il dev della 19.8 parte **DOPO il commit di 19.1…19.7**:
 > - **19.1** (committata, `08eb558`) ha già tolto tassa e istruzioni PPR dalla card Club (oggi 3 PUT, non 5) e la serie PPR delle impostazioni: nulla di PPR deve ricomparire.
@@ -714,3 +714,9 @@ e2e finali (gemello fresco): `56 passed (2.3m) E2E_EXIT=0` (progetto `chromium`,
 ### Stato della macchina
 
 Gemello `airmanager_fix198` **eliminato** (`pg_database` = `airmanager`, `airmanager_audit`, `airmanager_load` + template); `airmanager`, `airmanager_audit`, `airmanager_load` mai toccati; cartella `audit-2026-11-02/` mai toccata. Server su :3000 (pre-fix e fix) fermati per PID; `:3000` libero. `scripts/e2e.sh status` = DONE `E2E_EXIT=0` (catena del fix). `.next` = build di `npm run gates` sul contenuto di `b04260a`. Nessun push.
+
+### Chiusura (sessione principale, 2026-11-02)
+
+- **Arbitro finale**: DB `airmanager` resettato, `CI=1 scripts/e2e.sh start` su HEAD `3bd68ca`: **567 passed, 0 flaky, 0 failed, E2E_EXIT=0** (25,0 min) — delta 555 → 564 (dev) → 567 (fix: +3) confermato.
+- Durante il ciclo era attiva una seconda sessione Claude (audit con DB `airmanager_audit` e cartella `audit-2026-11-02/`): il PO ha scelto che prosegua questa sessione e che l'altra non buildi né usi :3000; nessuna interferenza osservata.
+
