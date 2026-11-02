@@ -164,6 +164,14 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       await expect(createExpiryType(adminActor(), input)).rejects.toMatchObject({ code: 'CONFLICT', details: { reason: 'NAME_TAKEN' } });
     });
 
+    it('review 19.8 F6: a name held by the membership-fee type (listed nowhere on the page) → 409 CONFLICT with reason NAME_RESERVED', async () => {
+      findFirst.mockResolvedValue({ kind: 'MEMBERSHIP' });
+      const input = createExpiryTypeSchema.parse({ name: 'Quota associativa' });
+
+      await expect(createExpiryType(adminActor(), input)).rejects.toMatchObject({ code: 'CONFLICT', details: { reason: 'NAME_RESERVED' } });
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
     it('trims the name before persisting (blocksBooking defaults to false, story 7.4)', async () => {
       findFirst.mockResolvedValue(null);
       create.mockResolvedValue(fixture({ name: 'Nuovo tipo' }));
@@ -331,6 +339,15 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
 
       await expect(updateExpiryType(adminActor(), 'et_1', input)).rejects.toThrow(ConflictError);
       expect(findFirstMock).toHaveBeenCalledWith(expect.objectContaining({ where: { name: 'Nome già usato', NOT: { id: 'et_1' } } }));
+      expect(updateMock).not.toHaveBeenCalled();
+    });
+
+    it('review 19.8 F6: a rename onto the membership-fee type\'s name → 409 CONFLICT with reason NAME_RESERVED, update never attempted', async () => {
+      findUnique.mockResolvedValue({ id: 'et_1' });
+      findFirst.mockResolvedValue({ kind: 'MEMBERSHIP' });
+      const input = updateExpiryTypeSchema.parse({ name: 'Quota associativa' });
+
+      await expect(updateExpiryType(adminActor(), 'et_1', input)).rejects.toMatchObject({ code: 'CONFLICT', details: { reason: 'NAME_RESERVED' } });
       expect(updateMock).not.toHaveBeenCalled();
     });
 

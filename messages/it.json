@@ -1684,6 +1684,8 @@
       "integerRange": "Inserisci un numero intero da {min} a {max}.",
       "invalidValue": "Valore non valido.",
       "duplicateName": "Questo nome è già usato in questa lista.",
+      "duplicateNameOtherList": "Questo nome è già usato da un tipo di scadenza nell'altra lista.",
+      "nameReserved": "Questo nome è riservato alla quota associativa.",
       "invalidItem": "Questa voce non è stata accettata: controlla i suoi campi.",
       "stale": "Questa voce è stata eliminata da un altro utente: ricarica la pagina.",
       "systemCategory": "Categoria di sistema: non si può rinominare né eliminare.",

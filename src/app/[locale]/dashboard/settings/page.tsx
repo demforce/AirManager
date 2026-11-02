@@ -149,6 +149,8 @@ export default async function SettingsPage({ params }: PageProps) {
             // `t.raw`: `{min}`/`{max}` come from the rule that failed, client-side.
             integerRange: t.raw('errors.integerRange') as string,
             duplicateName: t('errors.duplicateName'),
+            duplicateNameOtherList: t('errors.duplicateNameOtherList'),
+            nameReserved: t('errors.nameReserved'),
             invalidItem: t('errors.invalidItem'),
             stale: t('errors.stale'),
             systemCategory: t('errors.systemCategory'),

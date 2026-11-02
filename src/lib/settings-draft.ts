@@ -418,7 +418,9 @@ export type SettingsErrorMessage =
         | 'requiredDate'
         | 'invalidValue'
         | 'duplicateName'
+        | 'duplicateNameOtherList'
         | 'nameTaken'
+        | 'nameReserved'
         | 'inUse'
         | 'systemCategory'
         | 'stale'
@@ -455,11 +457,17 @@ function amountError(value: string, allowNegative: boolean): SettingsErrorMessag
   return null;
 }
 
+/**
+ * `listOf` names the on-screen list of an entry when ONE name space spans two
+ * lists (Ratings and Visite mediche): a name already used only in the OTHER
+ * list says so (review 19.8 F6) instead of "in this list".
+ */
 function validateList<T extends { rowKey: string; id?: string; name: string; removed: boolean }>(
   items: T[],
   isDirty: (item: T) => boolean,
   validityOf: ((item: T) => string) | null,
   errors: Record<string, SettingsItemError>,
+  listOf: (item: T) => string = () => '',
 ): void {
   const live = items.filter((item) => !item.removed);
   const counts = new Map<string, number>();
@@ -468,8 +476,10 @@ function validateList<T extends { rowKey: string; id?: string; name: string; rem
     if (!isDirty(item)) continue;
     const name = item.name.trim();
     if (name === '') errors[item.rowKey] = { field: 'name', message: { key: 'required' } };
-    else if ((counts.get(name) ?? 0) > 1) errors[item.rowKey] = { field: 'name', message: { key: 'duplicateName' } };
-    else if (validityOf) {
+    else if ((counts.get(name) ?? 0) > 1) {
+      const sameList = live.some((other) => other !== item && other.name.trim() === name && listOf(other) === listOf(item));
+      errors[item.rowKey] = { field: 'name', message: { key: sameList ? 'duplicateName' : 'duplicateNameOtherList' } };
+    } else if (validityOf) {
       const validity = validityOrRaw(validityOf(item));
       if (typeof validity === 'string' || (validity !== null && validity > LIMITS.validityMonths.max)) {
         errors[item.rowKey] = { field: 'validity', message: { key: 'integerRange', ...LIMITS.validityMonths } };
@@ -522,7 +532,13 @@ export function validateDraft(baseline: SettingsDraft, draft: SettingsDraft, pat
   const items: Record<string, SettingsItemError> = {};
   const savedTypes = byId([...baseline.ratings, ...baseline.medical]);
   // ONE name space for both catalogues (the `ExpiryType.name` unique key spans every kind).
-  validateList([...draft.ratings, ...draft.medical], (item) => expiryTypeRowState(item, item.id ? savedTypes.get(item.id) : undefined) !== 'saved', (item) => item.validityMonths, items);
+  validateList(
+    [...draft.ratings, ...draft.medical],
+    (item) => expiryTypeRowState(item, item.id ? savedTypes.get(item.id) : undefined) !== 'saved',
+    (item) => item.validityMonths,
+    items,
+    (item) => item.kind,
+  );
   const savedCategories = byId(baseline.cashCategories);
   validateList(draft.cashCategories, (item) => cashCategoryRowState(item, item.id ? savedCategories.get(item.id) : undefined) !== 'saved', null, items);
 
@@ -548,6 +564,8 @@ const LIST_ITEM_PATH = /^(expiryTypes|cashCategories)\.(create|update|delete)\.(
 
 const ITEM_MESSAGE_BY_REASON: Record<string, SettingsItemError> = {
   NAME_TAKEN: { field: 'name', message: { key: 'nameTaken' } },
+  // The membership-fee type holds it: a type listed nowhere on this page (review 19.8 F6).
+  NAME_RESERVED: { field: 'name', message: { key: 'nameReserved' } },
   IN_USE: { field: null, message: { key: 'inUse' } },
   SYSTEM_CATEGORY: { field: null, message: { key: 'systemCategory' } },
   NOT_FOUND: { field: null, message: { key: 'stale' } },

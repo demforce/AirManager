@@ -105,6 +105,7 @@ export function SmtpCard({ value, onChange, errors, testEmailBlocked, labels }: 
               value={value.host}
               onChange={(event) => onChange({ host: event.target.value })}
               aria-invalid={Boolean(errors.host)}
+              maxLength={255}
               placeholder="smtp.example.com"
               data-testid="smtp-host-input"
             />
@@ -112,8 +113,13 @@ export function SmtpCard({ value, onChange, errors, testEmailBlocked, labels }: 
           <Field label={labels.port} error={errors.port}>
             <Input type="number" value={value.port} onChange={(event) => onChange({ port: event.target.value })} aria-invalid={Boolean(errors.port)} placeholder="587" data-testid="smtp-port-input" />
           </Field>
-          <Field label={labels.security}>
-            <Select value={value.security} onChange={(event) => onChange({ security: event.target.value as SmtpSecurity })} data-testid="smtp-security-select">
+          <Field label={labels.security} error={errors.security}>
+            <Select
+              value={value.security}
+              onChange={(event) => onChange({ security: event.target.value as SmtpSecurity })}
+              aria-invalid={Boolean(errors.security)}
+              data-testid="smtp-security-select"
+            >
               {SECURITY_VALUES.map((security) => (
                 <option key={security} value={security}>
                   {labels.securityOptions[security]}
@@ -126,18 +132,28 @@ export function SmtpCard({ value, onChange, errors, testEmailBlocked, labels }: 
               value={value.from}
               onChange={(event) => onChange({ from: event.target.value })}
               aria-invalid={Boolean(errors.from)}
+              maxLength={255}
               placeholder="Club Ops <ops@example.com>"
               data-testid="smtp-from-input"
             />
           </Field>
-          <Field label={labels.user}>
-            <Input value={value.user} onChange={(event) => onChange({ user: event.target.value })} autoComplete="off" data-testid="smtp-user-input" />
+          <Field label={labels.user} error={errors.user}>
+            <Input
+              value={value.user}
+              onChange={(event) => onChange({ user: event.target.value })}
+              aria-invalid={Boolean(errors.user)}
+              maxLength={255}
+              autoComplete="off"
+              data-testid="smtp-user-input"
+            />
           </Field>
-          <Field label={labels.pass}>
+          <Field label={labels.pass} error={errors.pass}>
             <Input
               type="password"
               value={value.pass}
               onChange={(event) => onChange({ pass: event.target.value })}
+              aria-invalid={Boolean(errors.pass)}
+              maxLength={255}
               placeholder={value.hasPassword ? labels.passConfigured : '••••••••'}
               autoComplete="new-password"
               data-testid="smtp-pass-input"

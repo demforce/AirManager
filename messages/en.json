@@ -1684,6 +1684,8 @@
       "integerRange": "Enter a whole number from {min} to {max}.",
       "invalidValue": "Invalid value.",
       "duplicateName": "This name is already used in this list.",
+      "duplicateNameOtherList": "This name is already used by an expiry type in the other list.",
+      "nameReserved": "This name is reserved for the membership fee.",
       "invalidItem": "This entry was not accepted: check its fields.",
       "stale": "This entry was deleted by another user: reload the page.",
       "systemCategory": "System category: it cannot be renamed or deleted.",

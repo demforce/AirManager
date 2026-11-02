@@ -579,6 +579,106 @@ test.describe('Impostazioni — one page, one Salva (story 19.8, AC 8-13, 16-17)
     await expect(email).toHaveAttribute('aria-invalid', 'false');
   });
 
+  test('review F1: while the Salva is in flight the nine sections are read-only — an edit can no longer vanish when the answer becomes the new draft', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const fee = ((await (await page.request.get('/api/v1/settings/membership-fee')).json()) as { annualFeeCents: number }).annualFeeCents;
+    await gotoSettingsAndWaitForHydration(page);
+
+    // The PATCH is held until the in-flight page has been looked at.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route('**/api/v1/settings', async (route) => {
+      if (route.request().method() !== 'PATCH') return route.fallback();
+      await held;
+      return route.continue();
+    });
+
+    const nextFee = fee + 1000;
+    const feeInput = page.getByTestId('membership-settings-fee-input');
+    await feeInput.fill((nextFee / 100).toFixed(2));
+    const answer = page.waitForResponse((r) => r.url().endsWith('/api/v1/settings') && r.request().method() === 'PATCH');
+    await page.getByTestId('settings-save').click();
+
+    await expect(page.getByTestId('settings-dirty-summary')).toHaveText('Salvataggio in corso…');
+    await expect(page.getByTestId('settings-save')).toBeDisabled();
+    // Fields, list actions and the test email of every section — nothing takes an edit the answer would overwrite.
+    for (const testId of ['airfield-name-input', 'membership-settings-fee-input', 'currency-min-flights-input', 'scheduling-open-time-input', 'smtp-host-input', 'ratings-add-button', 'medical-add-button', 'cash-category-add-button', 'smtp-test-email-button']) {
+      await expect(page.getByTestId(testId), testId).toBeDisabled();
+    }
+
+    release();
+    expect((await answer).status()).toBe(200);
+    await expect(page.getByTestId('settings-dirty-summary')).toHaveText('Nessuna modifica');
+    await expect(feeInput).toBeEnabled();
+    await expect(feeInput).toHaveValue((nextFee / 100).toFixed(2));
+    // Editable again, and an edit is a change of its own.
+    await feeInput.fill((fee / 100).toFixed(2));
+    await expect(page.getByTestId('settings-dirty-summary')).toHaveText('Modifiche non salvate: Quota associativa');
+  });
+
+  test('review F5: a 422 on an SMTP field the client has no rule of its own for (user, password) marks THAT field and takes the focus', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await gotoSettingsAndWaitForHydration(page);
+    // Simulated (the inputs' own limit stops it, below): nothing reaches the database.
+    await page.route('**/api/v1/settings', (route) =>
+      route.request().method() === 'PATCH'
+        ? route.fulfill({
+            status: 422,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: { code: 'VALIDATION_ERROR', message: 'Invalid input.', details: { fieldErrors: { 'smtp.user': ['Too big: expected string to have <=255 characters'] } } } }),
+          })
+        : route.fallback(),
+    );
+
+    await page.getByTestId('smtp-host-input').fill(MAILPIT_SMTP.host);
+    await page.getByTestId('smtp-port-input').fill(String(MAILPIT_SMTP.port));
+    await page.getByTestId('smtp-from-input').fill('Utente rifiutato <ops@example.com>');
+    const user = page.getByTestId('smtp-user-input');
+    await user.fill(`rifiutato-${uniqueSuffix()}`);
+    await page.getByTestId('settings-save').click();
+
+    await expect(user).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByTestId('smtp-settings-card').getByText('Valore non valido.')).toBeVisible();
+    await expect(user).toBeFocused();
+    await expect(page.getByTestId('settings-save-error')).toHaveText('Nulla è stato salvato: correggi i campi evidenziati.');
+
+    // The schema's 255 is the inputs' own limit: the UI cannot produce that 422 any more.
+    for (const testId of ['smtp-host-input', 'smtp-from-input', 'smtp-user-input', 'smtp-pass-input']) {
+      await expect(page.getByTestId(testId), testId).toHaveAttribute('maxlength', '255');
+    }
+  });
+
+  test('review F6: a name used in the OTHER expiry list, or held by the membership-fee type (listed nowhere), says so on the row', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const visit = await createExpiryType(page, 'Visita altra lista', 'MEDICAL');
+
+    try {
+      await gotoSettingsAndWaitForHydration(page);
+      const newRow = page.locator('[data-testid="rating-row"][data-state="new"]');
+
+      // The seed's membership-fee type: refused by the server, on the new row.
+      await page.getByTestId('ratings-add-button').click();
+      await page.getByTestId('rating-name-input').fill('Quota associativa');
+      await page.getByTestId('rating-form-close').click();
+      const { response } = await saveAndWait(page);
+      expect(response.status()).toBe(409);
+      expect(((await response.json()) as { error: { details: { reason: string } } }).error.details.reason).toBe('NAME_RESERVED');
+      await expect(newRow.getByTestId('rating-row-error')).toHaveText('Questo nome è riservato alla quota associativa.');
+
+      // A visit's name on a rating: stopped by the client, zero requests.
+      const writes = trackApiWrites(page);
+      await newRow.getByTestId('rating-edit-button').click();
+      await page.getByTestId('rating-name-input').fill(visit.name);
+      await page.getByTestId('rating-form-close').click();
+      await page.getByTestId('settings-save').click();
+      await expect(newRow.getByTestId('rating-row-error')).toHaveText("Questo nome è già usato da un tipo di scadenza nell'altra lista.");
+      await page.waitForTimeout(300);
+      expect(writes).toHaveLength(0);
+    } finally {
+      await page.request.delete(`/api/v1/expiry-types/${visit.id}`);
+    }
+  });
+
   test('AC 13: Quota associativa and Currency show what is saved, save in their own blocks, and stop out-of-range values on the field', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const currency = (await (await page.request.get('/api/v1/settings/currency')).json()) as { minFlights: number; windowDays: number };

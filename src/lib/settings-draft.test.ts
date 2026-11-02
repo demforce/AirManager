@@ -273,10 +273,24 @@ describe('validateDraft — the client mirror (AD-9)', () => {
     );
     expect(errors.items).toEqual({
       'new:1': { field: 'name', message: { key: 'required' } },
-      'new:2': { field: 'name', message: { key: 'duplicateName' } },
+      // The visit takes the name of a RATING: the duplicate is in the OTHER list (review 19.8 F6).
+      'new:2': { field: 'name', message: { key: 'duplicateNameOtherList' } },
       et_m: { field: 'validity', message: { key: 'integerRange', min: 0, max: 600 } },
     });
     expect(errors.bar).toBe('checkFields');
+  });
+
+  it('a duplicate inside the SAME list says "in this list" (review 19.8 F6)', () => {
+    const errors = errorsOf(
+      edit(baseline, (draft) => {
+        draft.ratings.unshift({ rowKey: 'new:1', kind: 'RATING', name: 'Notturna', scope: 'ALL', validityMonths: '0', blocksBooking: false, isActive: true, removed: false });
+        draft.cashCategories.unshift({ rowKey: 'new:2', name: 'Carburante', isActive: true, removed: false, movementCount: 0, isSystem: false });
+      }),
+    );
+    expect(errors.items).toEqual({
+      'new:1': { field: 'name', message: { key: 'duplicateName' } },
+      'new:2': { field: 'name', message: { key: 'duplicateName' } },
+    });
   });
 
   it('a row removed in the draft frees its name for a new row', () => {
@@ -308,6 +322,7 @@ describe('mapSaveError (AD-5)', () => {
 
   it.each([
     ['NAME_TAKEN', { field: 'name', message: { key: 'nameTaken' } }],
+    ['NAME_RESERVED', { field: 'name', message: { key: 'nameReserved' } }],
     ['IN_USE', { field: null, message: { key: 'inUse' } }],
     ['SYSTEM_CATEGORY', { field: null, message: { key: 'systemCategory' } }],
     ['NOT_FOUND', { field: null, message: { key: 'stale' } }],
@@ -324,6 +339,8 @@ describe('mapSaveError (AD-5)', () => {
   it('403 → the bar says so; a 500, a network failure or a body that is no envelope → the generic bar message', () => {
     expect(mapSaveError(403, { error: { code: 'FORBIDDEN' } }, index)).toEqual({ ...NO_SETTINGS_ERRORS, bar: 'forbidden' });
     expect(mapSaveError(500, { error: { code: 'INTERNAL_ERROR' } }, index).bar).toBe('generic');
+    // Two saves aborted by Postgres (review 19.8 F2): no row to name, "try again" is the whole message.
+    expect(mapSaveError(409, { error: { code: 'CONFLICT', details: { reason: 'CONCURRENT_SAVE' } } }, index)).toEqual({ ...NO_SETTINGS_ERRORS, bar: 'generic' });
     expect(mapSaveError(0, null, index).bar).toBe('generic');
   });
 

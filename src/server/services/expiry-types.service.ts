@@ -70,6 +70,18 @@ const NAME_TAKEN_MESSAGE = 'An expiry type with this name already exists.';
 const IN_USE_MESSAGE = 'This expiry type is in use — deactivate it instead.';
 
 /**
+ * The 409 of a name already held by `holder`. The membership-fee type is
+ * listed nowhere on the Impostazioni page (story 19.7a), so a name taken by
+ * IT would read as a duplicate of nothing on screen: it says so with its own
+ * `reason` (review 19.8 F6).
+ */
+function nameTakenError(holder: { kind: ExpiryTypeListItem['kind'] }): ConflictError {
+  return holder.kind === 'MEMBERSHIP'
+    ? new ConflictError('This name is reserved for the membership-fee type.', { reason: 'NAME_RESERVED' })
+    : new ConflictError(NAME_TAKEN_MESSAGE, { reason: 'NAME_TAKEN' });
+}
+
+/**
  * Story 19.7a (D-3, R-19-j): a MEDICAL type has no scope and always counts
  * toward the medical requirement — `scope = ALL` and `blocksBooking = true`
  * are an invariant of the data, kept here on every write. A plain check
@@ -154,9 +166,9 @@ export async function createExpiryTypeCore(tx: Prisma.TransactionClient, input: 
 
   const name = input.name.trim();
 
-  const existing = await tx.expiryType.findFirst({ where: { name }, select: { id: true } });
+  const existing = await tx.expiryType.findFirst({ where: { name }, select: { kind: true } });
   if (existing) {
-    throw new ConflictError(NAME_TAKEN_MESSAGE, { reason: 'NAME_TAKEN' });
+    throw nameTakenError(existing);
   }
 
   try {
@@ -214,9 +226,9 @@ export async function updateExpiryTypeCore(tx: Prisma.TransactionClient, id: str
 
   const name = input.name !== undefined ? input.name.trim() : undefined;
   if (name !== undefined) {
-    const duplicate = await tx.expiryType.findFirst({ where: { name, NOT: { id } }, select: { id: true } });
+    const duplicate = await tx.expiryType.findFirst({ where: { name, NOT: { id } }, select: { kind: true } });
     if (duplicate) {
-      throw new ConflictError(NAME_TAKEN_MESSAGE, { reason: 'NAME_TAKEN' });
+      throw nameTakenError(duplicate);
     }
   }
 

@@ -221,6 +221,13 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
 
       await expect(renameCashCategory(adminActor(), 'cat_1', { name: 'Carburante' })).rejects.toThrow(ConflictError);
     });
+
+    it('a category deleted between the read and the write (P2025) → NotFoundError, not a raw 500 (review 19.8 F3)', async () => {
+      categoryFindUnique.mockResolvedValue({ id: 'cat_1' });
+      categoryUpdate.mockRejectedValue(prismaError('P2025'));
+
+      await expect(renameCashCategory(adminActor(), 'cat_1', { name: 'Rinominata' })).rejects.toThrow(NotFoundError);
+    });
   });
 
   describe('deactivateCashCategory / reactivateCashCategory (Task 1, AC 1 — atomic guard, review 2.2 F1 pattern)', () => {

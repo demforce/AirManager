@@ -84,6 +84,8 @@ beforeEach(() => {
   db.$transaction.mockReset();
   db.$transaction.mockImplementation(async (callback: (client: unknown) => unknown) => callback(tx));
   tx.appSetting.upsert.mockResolvedValue({});
+  // The row locks (`lockRows`, `updateExpiryTypeCore`) read no row by default.
+  tx.$queryRaw.mockResolvedValue([]);
   stubSnapshotReads();
 });
 
@@ -215,8 +217,9 @@ describe('saveSettings — one transaction, every write on tx (AC 4, AD-2)', () 
     expect(db.$transaction).toHaveBeenCalledTimes(1);
     for (const fn of writeMocks(db)) expect(fn).not.toHaveBeenCalled();
     expect(db.$queryRaw).not.toHaveBeenCalled();
-    // ...and the row lock of the expiry-type update was taken on tx too.
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    // ...and the row locks were taken on tx too: one per list (review 19.8
+    // F2) plus the expiry-type update's own.
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
   });
 
   it('order: scalar blocks, then per list delete → update → create, expiry types before cash categories', async () => {
@@ -334,6 +337,131 @@ describe('saveSettings — list semantics (AC 5)', () => {
     await saveSettings(adminActor(), { cashCategories: { delete: ['cc_x'], create: [{ name: 'Cat cc_x' }] } });
 
     expect(log).toEqual(['cashCategory.delete cc_x', 'cashCategory.create Cat cc_x']);
+  });
+});
+
+/** The SQL text of a tagged-template `$queryRaw` call and its bound values. */
+function rawCall(call: unknown[]): { sql: string; values: unknown[] } {
+  const [strings, ...params] = call as [TemplateStringsArray, ...Array<{ values?: unknown[] }>];
+  return { sql: strings.join('?'), values: params.flatMap((param) => param.values ?? [param]) };
+}
+
+/** Expiry types held in memory, so a rename is seen by the next duplicate check (review 19.8 F4). */
+function fakeExpiryTypes(names: Record<string, string>): Record<string, string> {
+  const state = { ...names };
+  tx.$queryRaw.mockImplementation(async () => Object.entries(state).map(([id, name]) => ({ id, name })));
+  tx.expiryType.findUnique.mockImplementation(async (args: { where: { id: string } }) =>
+    state[args.where.id] !== undefined ? { id: args.where.id, kind: 'RATING', scope: 'ALL', blocksBooking: false } : null,
+  );
+  tx.expiryType.findFirst.mockImplementation(async (args: { where: { name: string; NOT?: { id: string } } }) =>
+    Object.entries(state).some(([id, name]) => name === args.where.name && id !== args.where.NOT?.id) ? { kind: 'RATING' } : null,
+  );
+  tx.expiryType.update.mockImplementation(async (args: { where: { id: string }; data: { name?: string } }) => {
+    if (args.data.name !== undefined) state[args.where.id] = args.data.name;
+    return {};
+  });
+  return state;
+}
+
+describe('saveSettings — concurrency and ordering (review 19.8 F2/F4)', () => {
+  it('F2: the rows a list names in delete AND update are locked in ONE query ordered by id, before that list\'s first write', async () => {
+    const log = logCalls();
+    tx.$queryRaw.mockImplementation(async (...call: unknown[]) => {
+      log.push(`lock ${rawCall(call).sql.includes('"ExpiryType"') ? 'ExpiryType' : 'CashCategory'}`);
+      return [];
+    });
+
+    await saveSettings(adminActor(), {
+      expiryTypes: { delete: ['et_z'], update: [{ id: 'et_b', isActive: false }, { id: 'et_a', isActive: false }] },
+      cashCategories: { update: [{ id: 'cc_2', isActive: false }, { id: 'cc_1', isActive: false }] },
+    });
+
+    const typeLock = rawCall(tx.$queryRaw.mock.calls[0] as unknown[]);
+    expect(typeLock.sql).toMatch(/FROM "ExpiryType" WHERE "id" IN \(\?\) ORDER BY "id" FOR UPDATE$/);
+    expect(typeLock.values).toEqual(['et_z', 'et_b', 'et_a']);
+    const categoryLock = rawCall(tx.$queryRaw.mock.calls.at(-1) as unknown[]);
+    expect(categoryLock.sql).toMatch(/FROM "CashCategory" WHERE "id" IN \(\?\) ORDER BY "id" FOR UPDATE$/);
+    expect(categoryLock.values).toEqual(['cc_2', 'cc_1']);
+    // Each list's lock comes before its first write.
+    expect(log[0]).toBe('lock ExpiryType');
+    expect(log.indexOf('lock CashCategory')).toBeLessThan(log.indexOf('cashCategory.update cc_2'));
+    expect(log.indexOf('lock CashCategory')).toBeGreaterThan(log.indexOf('expiryType.update et_a'));
+  });
+
+  it('F2: a list with nothing to delete or update takes no lock (IN () is not SQL)', async () => {
+    logCalls();
+    await saveSettings(adminActor(), { cashCategories: { create: [{ name: 'Nuova' }] } });
+
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a model query (driver adapter error, cause.originalCode)', { name: 'DriverAdapterError', cause: { originalCode: '40P01', kind: 'postgres' } }],
+    ['a raw query (P2010, meta.driverAdapterError)', { code: 'P2010', meta: { driverAdapterError: { cause: { originalCode: '40P01' } } } }],
+    ['a write conflict (P2034)', { code: 'P2034' }],
+  ])('F2: a transaction Postgres aborted in %s → 409 CONFLICT reason CONCURRENT_SAVE, never a 500', async (_label, driverError) => {
+    logCalls();
+    tx.expiryType.create.mockRejectedValue(driverError);
+
+    const error = await saveSettings(adminActor(), { expiryTypes: { create: [{ name: 'Nuovo', kind: 'RATING', validityMonths: null }] } }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect((error as ConflictError).code).toBe('CONFLICT');
+    expect((error as ConflictError).details).toEqual({ reason: 'CONCURRENT_SAVE' });
+  });
+
+  it('F2: any other unknown error still propagates untouched (a 500, as a bug should)', async () => {
+    logCalls();
+    const bug = new Error('boom');
+    tx.expiryType.create.mockRejectedValue(bug);
+
+    await expect(saveSettings(adminActor(), { expiryTypes: { create: [{ name: 'Nuovo', kind: 'RATING', validityMonths: null }] } })).rejects.toBe(bug);
+  });
+
+  it.each([
+    ['A first', [{ id: 'et_a', name: 'Bravo' }, { id: 'et_b', name: 'Charlie' }]],
+    ['B first', [{ id: 'et_b', name: 'Charlie' }, { id: 'et_a', name: 'Bravo' }]],
+  ])('F4: a chain of renames (A takes B\'s name, B gets a new one) succeeds whatever the array order — %s', async (_label, update) => {
+    logCalls();
+    const state = fakeExpiryTypes({ et_a: 'Alfa', et_b: 'Bravo' });
+
+    await saveSettings(adminActor(), { expiryTypes: { update } });
+
+    expect(state).toEqual({ et_a: 'Bravo', et_b: 'Charlie' });
+  });
+
+  it('F4: a swap (a cycle) has no order that works — the documented 409 NAME_TAKEN, at the index of the row SENT', async () => {
+    logCalls();
+    fakeExpiryTypes({ et_a: 'Alfa', et_b: 'Bravo' });
+
+    const error = await saveSettings(adminActor(), {
+      expiryTypes: { update: [{ id: 'et_a', name: 'Bravo' }, { id: 'et_b', name: 'Alfa' }] },
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect((error as ConflictError).details).toMatchObject({ reason: 'NAME_TAKEN', item: { list: 'expiryTypes', op: 'update' } });
+  });
+
+  it('F4: a reordered rename that fails still names its OWN index in the array sent', async () => {
+    logCalls();
+    fakeExpiryTypes({ et_a: 'Alfa', et_b: 'Bravo', et_c: 'Delta' });
+
+    // B gives "Bravo" up to A, so B runs first; B's own new name is taken by C.
+    const error = await saveSettings(adminActor(), {
+      expiryTypes: { update: [{ id: 'et_a', name: 'Bravo' }, { id: 'et_b', name: 'Delta' }] },
+    }).catch((caught: unknown) => caught);
+
+    expect((error as ConflictError).details).toEqual({ reason: 'NAME_TAKEN', item: { list: 'expiryTypes', op: 'update', index: 1, id: 'et_b' } });
+  });
+
+  it('F3: a category deleted by another save between the read and the write → 409 NOT_FOUND naming the row, not a raw P2025', async () => {
+    logCalls();
+    tx.cashCategory.update.mockRejectedValue({ code: 'P2025' });
+
+    const error = await saveSettings(adminActor(), { cashCategories: { update: [{ id: 'cc_1', name: 'Rinominata' }] } }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect((error as ConflictError).details).toEqual({ reason: 'NOT_FOUND', item: { list: 'cashCategories', op: 'update', index: 0, id: 'cc_1' } });
   });
 });
 

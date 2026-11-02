@@ -226,49 +226,54 @@ export function SettingsConsole({ snapshot, labels }: { snapshot: SettingsSnapsh
       : labels.saveBar.dirty.replace('{sections}', dirty.map((section) => labels.sections[section]).join(', '));
 
   return (
-    <form ref={formRef} id="settings-form" className="settings-form" data-testid="settings-form" noValidate onSubmit={(event) => void save(event)}>
-      <ClubCard value={draft.club} onChange={(change) => changeSection('club', change)} errors={fieldErrors('club')} labels={labels.club} />
-      <MembershipCard value={draft.membership} onChange={(change) => changeSection('membership', change)} errors={fieldErrors('membership')} labels={labels.membership} />
-      <CurrencyCard value={draft.currency} onChange={(change) => changeSection('currency', change)} errors={fieldErrors('currency')} labels={labels.currency} />
-      <SchedulingCard value={draft.scheduling} onChange={(change) => changeSection('scheduling', change)} errors={fieldErrors('scheduling')} labels={labels.scheduling} />
-      <SmtpCard
-        value={draft.smtp}
-        onChange={(change) => changeSection('smtp', change)}
-        errors={fieldErrors('smtp')}
-        testEmailBlocked={testEmailBlocked(baseline, draft)}
-        labels={labels.smtp}
-      />
-      <TreasuryCard value={draft.treasury} onChange={(change) => changeSection('treasury', change)} errors={fieldErrors('treasury')} labels={labels.treasury} />
-      <RatingsCard
-        key={`ratings-${saveCount}`}
-        kind="RATING"
-        items={draft.ratings}
-        savedItems={baseline.ratings}
-        onChange={(items: ExpiryTypeDraftItem[], rowKey) => changeList('ratings', items, rowKey)}
-        newRowKey={newRowKey}
-        itemErrors={itemErrors(labels.ratings.errors)}
-        labels={labels.ratings}
-      />
-      <RatingsCard
-        key={`medical-${saveCount}`}
-        kind="MEDICAL"
-        items={draft.medical}
-        savedItems={baseline.medical}
-        onChange={(items: ExpiryTypeDraftItem[], rowKey) => changeList('medical', items, rowKey)}
-        newRowKey={newRowKey}
-        itemErrors={itemErrors(labels.medical.errors)}
-        labels={labels.medical}
-        testIds={MEDICAL_TEST_IDS}
-      />
-      <CashCategoriesCard
-        key={`cash-${saveCount}`}
-        items={draft.cashCategories}
-        savedItems={baseline.cashCategories}
-        onChange={(items: CashCategoryDraftItem[], rowKey) => changeList('cashCategories', items, rowKey)}
-        newRowKey={newRowKey}
-        itemErrors={itemErrors(labels.cashCategories.errors)}
-        labels={labels.cashCategories}
-      />
+    <form ref={formRef} id="settings-form" className="settings-form" data-testid="settings-form" noValidate aria-busy={saving} onSubmit={(event) => void save(event)}>
+      {/* Read-only while the Salva is in flight (trap 8, review 19.8 F1): the
+          answer becomes the new draft, so an edit made meanwhile would vanish
+          with the bar back on "Nessuna modifica". The bar stays outside. */}
+      <fieldset className="settings-sections" disabled={saving}>
+        <ClubCard value={draft.club} onChange={(change) => changeSection('club', change)} errors={fieldErrors('club')} labels={labels.club} />
+        <MembershipCard value={draft.membership} onChange={(change) => changeSection('membership', change)} errors={fieldErrors('membership')} labels={labels.membership} />
+        <CurrencyCard value={draft.currency} onChange={(change) => changeSection('currency', change)} errors={fieldErrors('currency')} labels={labels.currency} />
+        <SchedulingCard value={draft.scheduling} onChange={(change) => changeSection('scheduling', change)} errors={fieldErrors('scheduling')} labels={labels.scheduling} />
+        <SmtpCard
+          value={draft.smtp}
+          onChange={(change) => changeSection('smtp', change)}
+          errors={fieldErrors('smtp')}
+          testEmailBlocked={testEmailBlocked(baseline, draft)}
+          labels={labels.smtp}
+        />
+        <TreasuryCard value={draft.treasury} onChange={(change) => changeSection('treasury', change)} errors={fieldErrors('treasury')} labels={labels.treasury} />
+        <RatingsCard
+          key={`ratings-${saveCount}`}
+          kind="RATING"
+          items={draft.ratings}
+          savedItems={baseline.ratings}
+          onChange={(items: ExpiryTypeDraftItem[], rowKey) => changeList('ratings', items, rowKey)}
+          newRowKey={newRowKey}
+          itemErrors={itemErrors(labels.ratings.errors)}
+          labels={labels.ratings}
+        />
+        <RatingsCard
+          key={`medical-${saveCount}`}
+          kind="MEDICAL"
+          items={draft.medical}
+          savedItems={baseline.medical}
+          onChange={(items: ExpiryTypeDraftItem[], rowKey) => changeList('medical', items, rowKey)}
+          newRowKey={newRowKey}
+          itemErrors={itemErrors(labels.medical.errors)}
+          labels={labels.medical}
+          testIds={MEDICAL_TEST_IDS}
+        />
+        <CashCategoriesCard
+          key={`cash-${saveCount}`}
+          items={draft.cashCategories}
+          savedItems={baseline.cashCategories}
+          onChange={(items: CashCategoryDraftItem[], rowKey) => changeList('cashCategories', items, rowKey)}
+          newRowKey={newRowKey}
+          itemErrors={itemErrors(labels.cashCategories.errors)}
+          labels={labels.cashCategories}
+        />
+      </fieldset>
 
       <div className="settings-save-bar" data-testid="settings-save-bar">
         <div className="settings-save-status">

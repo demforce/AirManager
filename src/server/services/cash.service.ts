@@ -173,6 +173,12 @@ export async function updateCashCategoryCore(tx: Prisma.TransactionClient, id: s
     if (isUniqueViolation(error)) {
       throw new ConflictError(CATEGORY_NAME_TAKEN_MESSAGE, { reason: 'NAME_TAKEN' });
     }
+    if (isRecordNotFound(error)) {
+      // Deleted between the read above and this write (review 19.8 F3): the
+      // same answer as an id that was never there — 404 on the single route,
+      // the composite's 409 `NOT_FOUND` — never a raw P2025 500.
+      throw new NotFoundError('Cash category not found.');
+    }
     throw error;
   }
 }
