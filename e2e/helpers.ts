@@ -62,9 +62,8 @@ export async function ensureValidSeedExpiries(page: Page, personId: string, scop
 
   const existingResponse = await page.request.get(`/api/v1/expiries?personId=${personId}&pageSize=100`);
   expect(existingResponse.status()).toBe(200);
-  // The registry also lists rows DERIVED at read time (story 19.7b, AD-5): a
-  // "missing visit" row is a MEDICAL row that is not a visit, a "never paid"
-  // row carries the fee type without being a fee. Only registered documents count.
+  // The registry also lists rows DERIVED at read time (story 19.7b, AD-5): the
+  // currency rows. Only registered documents count.
   const existing = ((await existingResponse.json()) as { items: { source: string; expiryTypeId: string | null; category: string }[] }).items.filter(
     (item) => item.source === 'DOCUMENT',
   );

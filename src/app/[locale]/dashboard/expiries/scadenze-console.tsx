@@ -26,7 +26,7 @@ import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { registryTierOf } from '@/lib/expiry-status';
+import { tierOf } from '@/lib/expiry-status';
 import { expiryCardSubLine, expiryDaysLabel, expirySheetSub } from '@/lib/mobile-expiries';
 import { formatCents, parseCents } from '@/lib/money';
 import { randomIdempotencyKey } from '@/lib/use-idempotency-key';
@@ -99,8 +99,7 @@ export type ScadenzeConsoleLabels = {
   /** The row's category badge, by `item.category` (= the type's `kind`, story 19.7a D-12; `CURRENCY`, 19.7b) — never deduced from the name. */
   category: Record<Category, string>;
   statCards: { expired: string; expiredNote: string; within7: string; within7Note: string; within30: string; within30Note: string; within60: string; within60Note: string };
-  /** `missing` (story 19.7b): a row with no date — currency never acquired, fee never paid, no visit. */
-  status: { expired: string; within7: string; within30: string; within60: string; ok: string; missing: string };
+  status: { expired: string; within7: string; within30: string; within60: string; ok: string };
   daysAgoSuffix: string;
   daysSuffix: string;
   exportMenu: { label: string; xlsLabel: string; pdfLabel: string };
@@ -387,19 +386,17 @@ export function ScadenzeConsole({
 
   /**
    * Story 19.7b — ONE reading of a registry row for the table, the card and
-   * the sheet. A missing row (no date) is tier 0: the expired tint, ink and
-   * badge tone (D-19), «Mancante» as its status, no date and no day count.
-   * The certificate of a row without a type is what the row IS: the currency's
-   * own detail, or — for a missing visit — `null`, the category saying it all.
+   * the sheet. The certificate of the currency row, which has no type, is its
+   * own detail («1 volo negli ultimi 90 giorni»).
    */
   function viewOf(item: ExpiryDashboardItemDto) {
-    const tier = registryTierOf(item.daysUntil);
+    const tier = tierOf(item.daysUntil);
     return {
       tier,
-      certificate: item.typeName ?? currencyDetails[item.id] ?? null,
-      dateLabel: item.expiresAt === null ? null : formatDateOnly(item.expiresAt, locale),
-      daysLabel: item.daysUntil === null ? null : daysLabelOf(item.daysUntil),
-      statusLabel: item.status === 'missing' ? labels.status.missing : statusLabelOf(tier),
+      certificate: item.typeName ?? currencyDetails[item.id] ?? labels.category[item.category],
+      dateLabel: formatDateOnly(item.expiresAt, locale),
+      daysLabel: daysLabelOf(item.daysUntil),
+      statusLabel: statusLabelOf(tier),
     };
   }
 
@@ -417,8 +414,8 @@ export function ScadenzeConsole({
   function sheetRows(item: ExpiryDashboardItemDto): BottomSheetRow[] {
     const view = viewOf(item);
     return [
-      { k: labels.table.expiresAt, v: view.dateLabel ?? labels.mobile.noValue },
-      { k: labels.table.daysLeft, v: view.daysLabel ?? labels.mobile.noValue },
+      { k: labels.table.expiresAt, v: view.dateLabel },
+      { k: labels.table.daysLeft, v: view.daysLabel },
       { k: labels.table.status, v: view.statusLabel },
       { k: labels.mobile.scopeLabel, v: item.typeScope === null ? labels.mobile.noValue : labels.mobile.scope[item.typeScope] },
       { k: labels.mobile.notes, v: item.notes ?? labels.mobile.noValue },
@@ -569,9 +566,9 @@ export function ScadenzeConsole({
                   <div>
                     <Badge tone={CATEGORY_TONE[item.category]}>{labels.category[item.category]}</Badge>
                   </div>
-                  <div style={{ fontSize: 12.5 }}>{view.certificate ?? labels.category[item.category]}</div>
+                  <div style={{ fontSize: 12.5 }}>{view.certificate}</div>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
-                    {view.dateLabel ?? labels.mobile.noValue}
+                    {view.dateLabel}
                   </div>
                   {/* Story 15.10 (R-15.10-i): this cell sits on the row's OWN
                       tier tint, so the pair to measure is ink-on-tint, not
@@ -584,7 +581,7 @@ export function ScadenzeConsole({
                       because they PASS on their own tint (`--accent-ink` on
                       `--warn-soft` 11.32, `--ink-2` on `--panel` 9.99). */}
                   <div className={`mono num${TIER_DAYS_TONE[tier]}`} style={{ fontWeight: 600, ...(TIER_DAYS_INK[tier] === null ? null : { color: TIER_DAYS_INK[tier]! }) }}>
-                    {view.daysLabel ?? labels.mobile.noValue}
+                    {view.daysLabel}
                   </div>
                   <div data-testid="scadenze-status-badge">
                     <Badge tone={TIER_TONE[tier]} dot>

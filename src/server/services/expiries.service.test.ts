@@ -252,45 +252,39 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
   // --- listAllExpiries: the UNIFIED registry (story 6.4 AC 1; story 19.7b) ---
 
   describe('listAllExpiries — the unified registry SQL (story 19.7b, AD-1)', () => {
-    it('ONE query: documents ∪ currency ∪ never-paid fee ∪ missing visit, the window total on every row', async () => {
+    it('ONE query: documents ∪ dated currency rows, the window total on every row', async () => {
       queryRawMock.mockResolvedValue([] as never);
 
       await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
 
       expect(queryRawMock).toHaveBeenCalledTimes(1);
       const { sql } = rawCall();
-      // Documents: the type's kind is the category.
-      expect(sql).toMatch(/FROM "Expiry" e JOIN "ExpiryType" t ON t\."id" = e\."expiryTypeId"/);
+      // Documents: the type's kind is the category — of people NOT archived (review 19.7b F1).
+      const documents = sql.slice(sql.indexOf(`'DOCUMENT' AS "source"`), sql.indexOf("'currency:'"));
+      expect(documents).toMatch(/FROM "Expiry" e JOIN "ExpiryType" t ON t\."id" = e\."expiryTypeId" JOIN "Person" pd ON pd\."id" = e\."personId"\s+WHERE pd\."archivedAt" IS NULL\s+UNION ALL/);
       // Currency subjects (19.7a D-8): not archived, ACTIVE pilot or student profile — no instructor.
-      const subjects = sql.slice(sql.indexOf('"currencySubjects" AS ('), sql.indexOf('"members" AS ('));
+      const subjects = sql.slice(sql.indexOf('"currencySubjects" AS ('), sql.indexOf('"onBoard" AS ('));
       expect(subjects).toMatch(/p\."archivedAt" IS NULL/);
       expect(subjects).toMatch(/"PilotProfile" pp WHERE pp\."personId" = p\."id" AND pp\."deactivatedAt" IS NULL/);
       expect(subjects).toMatch(/"StudentProfile" sp WHERE sp\."personId" = p\."id" AND sp\."deactivatedAt" IS NULL/);
       expect(subjects).not.toMatch(/InstructorProfile/);
-      // Fee and visit: + an active instructor profile (Q-19.7-b = A, D-22).
-      const members = sql.slice(sql.indexOf('"members" AS ('), sql.indexOf('"onBoard" AS ('));
-      expect(members).toMatch(/"InstructorProfile" ip WHERE ip\."personId" = p\."id" AND ip\."deactivatedAt" IS NULL/);
       expect(sql).toMatch(/'currency:' \|\| s\."id", 'DERIVED', 'CURRENCY'/);
-      expect(sql).toMatch(/'membership:' \|\| m\."id", 'DERIVED', 'MEMBERSHIP'/);
-      expect(sql).toMatch(/WHERE "kind" = 'MEMBERSHIP'\) mt\s+WHERE NOT EXISTS \(SELECT 1 FROM "Expiry" x WHERE x\."personId" = m\."id" AND x\."expiryTypeId" = mt\."id"\)/);
-      expect(sql).toMatch(/'medical:' \|\| m\."id", 'DERIVED', 'MEDICAL'/);
       expect(sql).toMatch(/\(COUNT\(\*\) OVER \(\)\)::int AS "total"/);
     });
 
-    it('missing visit (D-22): only for someone with NO medical row at all, and only while a MEDICAL type is active (Q-19.7-c)', async () => {
+    it('nothing is derived for what is MISSING (PO 2026-11-02): no fee never paid, no visit never registered, no currency without a date', async () => {
       queryRawMock.mockResolvedValue([] as never);
 
       await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
 
       const { sql } = rawCall();
-      const medical = sql.slice(sql.indexOf("'medical:'"), sql.indexOf('SELECT r."id"'));
-      // No active MEDICAL type -> the requirement is off: the branch yields no row at all.
-      expect(medical).toMatch(/WHERE EXISTS \(SELECT 1 FROM "ExpiryType" WHERE "kind" = 'MEDICAL' AND "isActive"\)/);
-      // ANY medical row, valid or expired, of an active type or not: an expired visit is already a red document row.
-      expect(medical).toMatch(
-        /AND NOT EXISTS \(SELECT 1 FROM "Expiry" x JOIN "ExpiryType" xt ON xt\."id" = x\."expiryTypeId" WHERE x\."personId" = m\."id" AND xt\."kind" = 'MEDICAL'\)/,
-      );
-      expect(medical).not.toMatch(/expiresAt/);
+      expect(sql).not.toMatch(/'membership:'|'medical:'|"members"/);
+      // Exactly two branches: the documents and the currency.
+      const rows = sql.slice(sql.indexOf('"registryRows" AS ('), sql.indexOf('SELECT r."id"'));
+      expect(rows.match(/\bUNION ALL\b/g)).toHaveLength(1);
+      // The currency row only for a subject with at least X flights: an INNER join, and a date.
+      expect(rows).toMatch(/FROM "currencySubjects" s JOIN "currency" c ON c\."personId" = s\."id"\s+WHERE c\."xthFlightDate" IS NOT NULL/);
+      expect(rows).not.toMatch(/LEFT JOIN|COALESCE/);
     });
 
     it('currency = the SQL twin of computeCurrency (D-15): both seats, a supervised solo skipped, flights up to today, X-th date + Y', async () => {
@@ -313,7 +307,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
         const currency = sql.slice(sql.indexOf('"currency" AS ('), sql.indexOf('"registryRows" AS ('));
         expect(currency).toMatch(/ORDER BY d DESC OFFSET \?::int - 1 LIMIT 1\) AS "xthFlightDate"/);
         expect(currency).toMatch(/COUNT\(\*\) FILTER \(WHERE ob\."flightDate" >= \?::date - \?::int\)/);
-        expect(sql).toMatch(/c\."xthFlightDate" \+ \?::int, NULL, c\."lastFlightDate", COALESCE\(c\."flightsInWindow", 0\)/);
+        expect(sql).toMatch(/c\."xthFlightDate" \+ \?::int, NULL, c\."lastFlightDate", c\."flightsInWindow"/);
         // today twice (seats), X, today and Y (window), Y (expiry): X and Y from the settings, today as a string.
         expect(values.slice(0, 6)).toEqual(['2026-06-15', '2026-06-15', 3, '2026-06-15', 45, 45]);
         expect(getCurrencySettingsMock).toHaveBeenCalledTimes(1);
@@ -332,24 +326,21 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
 
         const { values } = rawCall();
         expect(values).toContain('2026-03-15');
-        expect(values).not.toContain('2026-03-13');
-        // The ordering key's "yesterday" is Rome's yesterday too.
-        expect(values.at(-3)).toBe('2026-03-14');
+        expect(values).not.toContain('2026-03-14');
         expect(result.items[0]).toMatchObject({ daysUntil: 0, status: 'expiring' });
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it('orders by COALESCE(expiresAt, yesterday), id (D-20): a missing row sorts as if it expired yesterday', async () => {
+    it('orders by expiresAt, id (most overdue first, stable pagination)', async () => {
       queryRawMock.mockResolvedValue([] as never);
 
       await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
 
       const { sql, values } = rawCall();
-      expect(sql).toMatch(/ORDER BY COALESCE\(r\."expiresAt", \?::date\), r\."id"\s+LIMIT \? OFFSET \?$/);
-      expect(sql).not.toMatch(/NULLS (FIRST|LAST)/);
-      expect(values.slice(-3)).toEqual([addDaysDateOnly(romeToday(), -1), 20, 0]);
+      expect(sql).toMatch(/ORDER BY r\."expiresAt", r\."id"\s+LIMIT \? OFFSET \?$/);
+      expect(values.slice(-2)).toEqual([20, 0]);
     });
 
     it('paginates with LIMIT/OFFSET from page/pageSize, the total from the SAME query', async () => {
@@ -419,35 +410,34 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       expect(values.filter((value) => value === '%50\\%\\_x\\\\%')).toHaveLength(2);
     });
 
-    it('window=expired -> missing rows OR expiresAt < today (D-19)', async () => {
+    it('window=expired -> expiresAt < today', async () => {
       queryRawMock.mockResolvedValue([] as never);
 
       await listAllExpiries(adminActor(), { window: 'expired', page: 1, pageSize: 20 });
 
       const { sql, values } = rawCall();
-      expect(whereOf(sql)).toBe('WHERE (r."expiresAt" IS NULL OR r."expiresAt" < ?::date)');
-      expect(values.at(-4)).toBe(romeToday());
+      expect(whereOf(sql)).toBe('WHERE r."expiresAt" < ?::date');
+      expect(values.at(-3)).toBe(romeToday());
     });
 
     it.each([
       ['7', 7],
       ['30', 30],
       ['60', 60],
-    ] as const)('window=%s -> missing rows OR expiresAt <= today + %d, NO lower bound', async (window, days) => {
+    ] as const)('window=%s -> expiresAt <= today + %d, NO lower bound', async (window, days) => {
       queryRawMock.mockResolvedValue([] as never);
 
       await listAllExpiries(adminActor(), { window, page: 1, pageSize: 20 });
 
       const { sql, values } = rawCall();
-      expect(whereOf(sql)).toBe('WHERE (r."expiresAt" IS NULL OR r."expiresAt" <= ?::date + ?::int)');
-      expect(values.slice(-5, -3)).toEqual([romeToday(), days]);
+      expect(whereOf(sql)).toBe('WHERE r."expiresAt" <= ?::date + ?::int');
+      expect(values.slice(-4, -2)).toEqual([romeToday(), days]);
     });
 
     it.each([
       ['expired', 'WHERE r."expiresAt" < ?::date', []],
       ['expiring', 'WHERE r."expiresAt" >= ?::date AND r."expiresAt" <= ?::date + ?::int', [EXPIRY_WARNING_DAYS]],
       ['ok', 'WHERE r."expiresAt" > ?::date + ?::int', [EXPIRY_WARNING_DAYS]],
-      ['missing', 'WHERE r."expiresAt" IS NULL', []],
     ] as const)('status=%s -> the same boundary as the per-row status', async (status, where, extra) => {
       queryRawMock.mockResolvedValue([] as never);
 
@@ -464,7 +454,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       await listAllExpiries(adminActor(), { category: 'RATING', personQuery: 'Ros', window: '7', status: 'ok', page: 1, pageSize: 20 });
 
       expect(whereOf(rawCall().sql)).toBe(
-        `WHERE r."category" = ? AND (p."firstName" ILIKE ? ESCAPE '\\' OR p."lastName" ILIKE ? ESCAPE '\\') AND (r."expiresAt" IS NULL OR r."expiresAt" <= ?::date + ?::int)`,
+        `WHERE r."category" = ? AND (p."firstName" ILIKE ? ESCAPE '\\' OR p."lastName" ILIKE ? ESCAPE '\\') AND r."expiresAt" <= ?::date + ?::int`,
       );
     });
   });
@@ -499,7 +489,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       });
     });
 
-    it('a currency row WITH a date: no type, its facts and the settings it was computed with', async () => {
+    it('a currency row: no type, its facts and the settings it was computed with', async () => {
       getCurrencySettingsMock.mockResolvedValue({ minFlights: 2, windowDays: 60 });
       const item = await mapOne(
         registryRowFixture({
@@ -528,33 +518,19 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       });
     });
 
-    it('a currency row WITHOUT a date (fewer than X flights ever): missing, no daysUntil', async () => {
-      const item = await mapOne(
-        registryRowFixture({ id: 'currency:person_1', source: 'DERIVED', category: 'CURRENCY', expiryTypeId: null, typeName: null, typeScope: null, expiresAt: null, flightsInWindow: 0 }),
-      );
-
-      expect(item).toMatchObject({
-        expiresAt: null,
-        status: 'missing',
-        daysUntil: null,
-        currency: { lastFlightDate: null, flightsInWindow: 0, minFlights: 1, windowDays: 90 },
-      });
-    });
-
-    it('a fee never paid (Q-19.7-b = A): the membership type, missing', async () => {
-      const item = await mapOne(
-        registryRowFixture({ id: 'membership:person_1', source: 'DERIVED', category: 'MEMBERSHIP', expiryTypeId: 'type_fee', typeName: 'Quota associativa', typeScope: 'ALL', expiresAt: null }),
-      );
-
-      expect(item).toMatchObject({ source: 'DERIVED', category: 'MEMBERSHIP', expiryTypeId: 'type_fee', typeName: 'Quota associativa', status: 'missing', daysUntil: null, currency: null });
-    });
-
-    it('a missing visit (Q-19.7-c): no type, missing', async () => {
-      const item = await mapOne(
-        registryRowFixture({ id: 'medical:person_1', source: 'DERIVED', category: 'MEDICAL', expiryTypeId: null, typeName: null, typeScope: null, expiresAt: null }),
-      );
-
-      expect(item).toMatchObject({ source: 'DERIVED', category: 'MEDICAL', expiryTypeId: null, typeName: null, typeScope: null, expiresAt: null, status: 'missing', daysUntil: null, currency: null });
+    it('the wire schema has no row without a date (PO 2026-11-02): expiresAt, daysUntil and the currency\'s lastFlightDate are required, `missing` is no status', () => {
+      const valid = { ...registryRowFixture(), status: 'ok', daysUntil: 3, currency: null } as Record<string, unknown>;
+      delete valid['lastFlightDate'];
+      delete valid['flightsInWindow'];
+      delete valid['total'];
+      expect(expiryDashboardItemSchema.safeParse(valid).success).toBe(true);
+      expect(expiryDashboardItemSchema.safeParse({ ...valid, expiresAt: null }).success).toBe(false);
+      expect(expiryDashboardItemSchema.safeParse({ ...valid, daysUntil: null }).success).toBe(false);
+      expect(expiryDashboardItemSchema.safeParse({ ...valid, status: 'missing' }).success).toBe(false);
+      const currency = { lastFlightDate: '2026-01-01', flightsInWindow: 1, minFlights: 1, windowDays: 90 };
+      expect(expiryDashboardItemSchema.safeParse({ ...valid, currency }).success).toBe(true);
+      expect(expiryDashboardItemSchema.safeParse({ ...valid, currency: { ...currency, lastFlightDate: null } }).success).toBe(false);
+      expect(listAllExpiriesQuerySchema.safeParse({ status: 'missing' }).success).toBe(false);
     });
 
     // The per-row status and the status filter MUST agree at the EXPIRY_WARNING_DAYS edge.
@@ -578,7 +554,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       expect(queryRawMock).not.toHaveBeenCalled();
     });
 
-    it('ONE query over the whole unified registry, EXCLUSIVE bands, and a missing row counts as EXPIRED (D-19)', async () => {
+    it('ONE query over the whole unified registry, EXCLUSIVE bands', async () => {
       queryRawMock.mockResolvedValue([{ expired: 2, within7: 3, within30: 5, within60: 7 }] as never);
 
       const result = await getExpiryTierCounts(adminActor());
@@ -586,13 +562,16 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       expect(result).toEqual({ expired: 2, within7: 3, within30: 5, within60: 7 });
       expect(queryRawMock).toHaveBeenCalledTimes(1);
       const { sql } = rawCall();
-      expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" IS NULL OR r\."expiresAt" < \?::date\)\)::int AS "expired"/);
+      expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" < \?::date\)\)::int AS "expired"/);
+      expect(sql).not.toMatch(/IS NULL OR/);
       expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" >= \?::date AND r\."expiresAt" <= \?::date \+ 7\)\)::int AS "within7"/);
       expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" > \?::date \+ 7 AND r\."expiresAt" <= \?::date \+ 30\)\)::int AS "within30"/);
       expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" > \?::date \+ 30 AND r\."expiresAt" <= \?::date \+ 60\)\)::int AS "within60"/);
       // Unfiltered: the stat cards count the full set, whatever the table shows.
       expect(sql).toMatch(/FROM "registryRows" r$/);
       expect(sql).toMatch(/'currency:'/);
+      // The same rows as the list: archived people's documents are out of the counts too (review 19.7b F1).
+      expect(sql).toMatch(/WHERE pd\."archivedAt" IS NULL/);
       expect(getCurrencySettingsMock).toHaveBeenCalledTimes(1);
     });
   });

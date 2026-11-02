@@ -483,19 +483,17 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     const common = { key: alert.key, kind: alert.kind, tone: alert.tone, href: alert.href };
     switch (alert.kind) {
       case 'expiry': {
-        const { personLastName, personFirstName, category, typeName, daysUntil } = alert.expiry;
-        // The SAME templates `ScadenzeWidget` renders, so the same scadenza
-        // reads identically on both surfaces — a missing row (story 19.7b) included.
+        const { personLastName, personFirstName, typeName, daysUntil } = alert.expiry;
+        // The SAME three templates `ScadenzeWidget` renders, so the same
+        // scadenza reads identically on both surfaces.
         const sub =
-          daysUntil === null
-            ? t('scadenzeWidget.missing')
-            : daysUntil === 0
-              ? t('scadenzeWidget.today')
-              : daysUntil < 0
-                ? t('scadenzeWidget.ago', { n: Math.abs(daysUntil) })
-                : t('scadenzeWidget.inDays', { n: daysUntil });
-        // Only the currency row and the missing visit have no type of their own (the never-paid fee carries its type).
-        const name = typeName ?? (category === 'CURRENCY' ? t('scadenzeWidget.currency') : t('scadenzeWidget.medical'));
+          daysUntil === 0
+            ? t('scadenzeWidget.today')
+            : daysUntil < 0
+              ? t('scadenzeWidget.ago', { n: Math.abs(daysUntil) })
+              : t('scadenzeWidget.inDays', { n: daysUntil });
+        // Only the currency row (story 19.7b) has no type of its own.
+        const name = typeName ?? t('scadenzeWidget.currency');
         return { ...common, title: `${personLastName} ${personFirstName} · ${name}`, sub };
       }
       case 'negativeBalance':
@@ -723,9 +721,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
             agoTemplate: t.raw('scadenzeWidget.ago') as string,
             inDaysTemplate: t.raw('scadenzeWidget.inDays') as string,
             seeAll: t.raw('scadenzeWidget.seeAll') as string,
-            missing: t('scadenzeWidget.missing'),
             currency: t('scadenzeWidget.currency'),
-            medical: t('scadenzeWidget.medical'),
           }}
         />
         <FleetCard

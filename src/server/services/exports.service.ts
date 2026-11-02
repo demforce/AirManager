@@ -411,17 +411,14 @@ type ExpiriesTranslator = ReturnType<typeof createTranslator<Messages, 'Expiries
 type ExpiryTypesTranslator = ReturnType<typeof createTranslator<Messages, 'ExpiryTypesPage'>>;
 
 /**
- * The four cells the xlsx and the PDF share for a row of the UNIFIED registry
- * (story 19.7b, AD-4): a row without a type shows its category (the currency
- * row, the missing visit), a row without a type scope «—», a missing row «—»
- * for the date and «Mancante»/«Missing» as its status — the screen's own words.
+ * The two cells the xlsx and the PDF share for a row of the UNIFIED registry
+ * (story 19.7b, AD-4): the currency row has no type, so it shows its category,
+ * and no type scope, so «—» — the screen's own words.
  */
-function registryExportCells(t: ExpiriesTranslator, tScope: ExpiryTypesTranslator, locale: AppLocale) {
+function registryExportCells(t: ExpiriesTranslator, tScope: ExpiryTypesTranslator) {
   return {
     type: (row: RegistryExportRow) => row.typeName ?? t(`registry.category.${row.category}`),
     scope: (row: RegistryExportRow) => (row.typeScope === null ? '—' : tScope(`scope.${row.typeScope}`)),
-    expiresAt: (row: RegistryExportRow) => (row.expiresAt === null ? '—' : formatDateOnly(row.expiresAt, locale)),
-    status: (row: RegistryExportRow) => (row.status === 'missing' ? t('registry.status.missing') : t(`own.table.status.${row.status}`)),
   };
 }
 
@@ -434,13 +431,13 @@ export async function exportExpiriesXlsx(actor: Actor, query: ListAllExpiriesQue
   const t = createTranslator({ locale, messages, namespace: 'ExpiriesPage' });
   const tScope = createTranslator({ locale, messages, namespace: 'ExpiryTypesPage' });
 
-  const cells = registryExportCells(t, tScope, locale);
+  const cells = registryExportCells(t, tScope);
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
     { header: t('dashboard.table.person'), value: (row) => `${row.personLastName} ${row.personFirstName}` },
     { header: t('dashboard.table.type'), value: cells.type },
     { header: t('dashboard.table.scope'), value: cells.scope },
-    { header: t('dashboard.table.expiresAt'), value: cells.expiresAt },
-    { header: t('dashboard.table.status'), value: cells.status },
+    { header: t('dashboard.table.expiresAt'), value: (row) => formatDateOnly(row.expiresAt, locale) },
+    { header: t('dashboard.table.status'), value: (row) => t(`own.table.status.${row.status}`) },
   ];
 
   return toXlsxExport('expiries', t('dashboard.heading'), columns, result.items);
@@ -669,8 +666,6 @@ export async function exportFlightsPdf(actor: Actor, query: ListFlightsQuery): P
 // constants, low churn, kept in exact sync by hand (Dev Notes: "riusando
 // ESATTAMENTE la palette").
 const EXPIRY_STATUS_PDF_COLOR = { ok: '#346538', expiring: '#956400', expired: '#9F2F2D' } as const;
-/** Story 19.7b (D-19): a missing row counts as expired — same red. */
-const MISSING_PDF_COLOR = EXPIRY_STATUS_PDF_COLOR.expired;
 
 export async function exportExpiriesPdf(actor: Actor, query: ListAllExpiriesQuery): Promise<PdfExport> {
   const result = await listAllExpiries(actor, { ...query, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
@@ -682,16 +677,16 @@ export async function exportExpiriesPdf(actor: Actor, query: ListAllExpiriesQuer
   const t = createTranslator({ locale, messages, namespace: 'ExpiriesPage' });
   const tScope = createTranslator({ locale, messages, namespace: 'ExpiryTypesPage' });
 
-  const cells = registryExportCells(t, tScope, locale);
+  const cells = registryExportCells(t, tScope);
   const columns: PdfColumn<(typeof result.items)[number]>[] = [
     { header: t('dashboard.table.person'), value: (row) => `${row.personLastName} ${row.personFirstName}` },
     { header: t('dashboard.table.type'), value: cells.type },
     { header: t('dashboard.table.scope'), value: cells.scope },
-    { header: t('dashboard.table.expiresAt'), value: cells.expiresAt },
+    { header: t('dashboard.table.expiresAt'), value: (row) => formatDateOnly(row.expiresAt, locale) },
     {
       header: t('dashboard.table.status'),
-      value: cells.status,
-      color: (row) => (row.status === 'missing' ? MISSING_PDF_COLOR : EXPIRY_STATUS_PDF_COLOR[row.status]),
+      value: (row) => t(`own.table.status.${row.status}`),
+      color: (row) => EXPIRY_STATUS_PDF_COLOR[row.status],
     },
   ];
 

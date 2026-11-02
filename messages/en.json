@@ -198,9 +198,7 @@
       "ago": "{n}d ago",
       "inDays": "in {n}d",
       "seeAll": "+{count} more · See all",
-      "currency": "Currency",
-      "medical": "Medical",
-      "missing": "Missing"
+      "currency": "Currency"
     },
     "fleetCard": {
       "cardTitle": "Aircraft",
@@ -1391,8 +1389,7 @@
         "within7": "≤ 7 days",
         "within30": "≤ 30 days",
         "within60": "≤ 60 days",
-        "ok": "Valid",
-        "missing": "Missing"
+        "ok": "Valid"
       },
       "daysAgoSuffix": "d ago",
       "daysSuffix": " d",
@@ -1448,7 +1445,7 @@
         "CURRENCY": "Currency"
       },
       "currency": {
-        "detail": "{count, plural, one {# flight} other {# flights}} in the last {days} days"
+        "detail": "{count, plural, one {# flight} other {# flights}} {days, plural, one {in the last day} other {in the last # days}}"
       }
     },
     "own": {

@@ -143,9 +143,8 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
 
   /**
    * Story 19.7b (AC 11): the unified registry counts derived rows too — a
-   * currency row per pilot/student, a «Mancante» row per person who never paid
-   * the fee — so «≤ 7 giorni» moves whenever ANY concurrent spec creates a
-   * person or registers a flight. Two reads compared for equality are a flake
+   * currency row per pilot/student who flew enough — so «≤ 7 giorni» moves
+   * whenever ANY concurrent spec registers a document or a flight. Two reads compared for equality are a flake
    * by construction (lesson Billing-2 F4). A SCISSOR read instead: unfiltered,
    * filtered, unfiltered; a filter that leaked into the stat cards would make
    * the filtered read 0 (no row has that type) against two non-zero bounds,

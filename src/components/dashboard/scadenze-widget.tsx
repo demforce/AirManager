@@ -16,7 +16,7 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icons';
 import { Link } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { registryTierOf } from '@/lib/expiry-status';
+import { tierOf } from '@/lib/expiry-status';
 import type { ExpiryDashboardItemDto } from '@/lib/schemas/expiries';
 
 const WINDOWS = ['7', '30', '60'] as const;
@@ -24,14 +24,14 @@ type WindowChoice = (typeof WINDOWS)[number];
 
 const TOP_ROWS = 6;
 
-/** Icon tone: red for the two urgent tiers (scaduto/≤7g), amber otherwise (Contesto: `ScadenzeWidget`'s own `iconTone`). A missing row (`null`, story 19.7b) is tier 0. */
-function iconToneOf(daysUntil: number | null): 'red' | 'amber' {
-  return registryTierOf(daysUntil) <= 1 ? 'red' : 'amber';
+/** Icon tone: red for the two urgent tiers (scaduto/≤7g), amber otherwise (Contesto: `ScadenzeWidget`'s own `iconTone`). */
+function iconToneOf(daysUntil: number): 'red' | 'amber' {
+  return tierOf(daysUntil) <= 1 ? 'red' : 'amber';
 }
 
-/** Badge tone: bad for the two urgent tiers, warn for ≤30g, info for ≤60g (Contesto: `ScadenzeWidget`'s own `badgeTone`). A missing row is tier 0. */
-function badgeToneOf(daysUntil: number | null): BadgeTone {
-  const tier = registryTierOf(daysUntil);
+/** Badge tone: bad for the two urgent tiers, warn for ≤30g, info for ≤60g (Contesto: `ScadenzeWidget`'s own `badgeTone`). */
+function badgeToneOf(daysUntil: number): BadgeTone {
+  const tier = tierOf(daysUntil);
   if (tier <= 1) return 'bad';
   if (tier === 2) return 'warn';
   return 'info';
@@ -52,10 +52,8 @@ export type ScadenzeWidgetLabels = {
   inDaysTemplate: string;
   /** `t.raw` template, `"+{count} altre · Vedi tutte"`. */
   seeAll: string;
-  /** Story 19.7b: the day label of a missing row (no date), and the sub-line of a row with no type of its own. */
-  missing: string;
+  /** Story 19.7b: the sub-line of the currency row, which has no type of its own. */
   currency: string;
-  medical: string;
 };
 
 export type ScadenzeWidgetProps = {
@@ -68,13 +66,11 @@ export type ScadenzeWidgetProps = {
 export function ScadenzeWidget({ items, locale, viewAllHref, labels }: ScadenzeWidgetProps) {
   const [win, setWin] = useState<WindowChoice>('30');
 
-  // A missing row (no date, story 19.7b D-19) counts as expired: it is in every window.
-  const inWindow = useMemo(() => items.filter((item) => item.daysUntil === null || item.daysUntil <= Number(win)), [items, win]);
+  const inWindow = useMemo(() => items.filter((item) => item.daysUntil <= Number(win)), [items, win]);
   const shown = inWindow.slice(0, TOP_ROWS);
   const remaining = inWindow.length - shown.length;
 
-  function dayLabel(daysUntil: number | null): string {
-    if (daysUntil === null) return labels.missing;
+  function dayLabel(daysUntil: number): string {
     if (daysUntil === 0) return labels.today;
     if (daysUntil < 0) return labels.agoTemplate.replace('{n}', String(Math.abs(daysUntil)));
     return labels.inDaysTemplate.replace('{n}', String(daysUntil));
@@ -109,8 +105,8 @@ export function ScadenzeWidget({ items, locale, viewAllHref, labels }: ScadenzeW
                 <div className="list-title">
                   {item.personLastName} {item.personFirstName}
                 </div>
-                {/* Only the currency row and the missing visit have no type of their own (the never-paid fee carries its type). */}
-                <div className="list-sub">{item.typeName ?? (item.category === 'CURRENCY' ? labels.currency : labels.medical)}</div>
+                {/* Only the currency row (story 19.7b) has no type of its own. */}
+                <div className="list-sub">{item.typeName ?? labels.currency}</div>
               </div>
               <Badge tone={badgeToneOf(item.daysUntil)} dot>
                 {dayLabel(item.daysUntil)}

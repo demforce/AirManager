@@ -1313,13 +1313,13 @@ registry.registerPath({
   path: '/api/v1/expiries',
   summary: 'The urgency dashboard: the unified registry of every person, filterable (story 6.4, AC 1, FR-38; story 19.7b)',
   description:
-    'Story 19.7b changes the contract: the items are the rows of the UNIFIED registry — every registered scadenza (`source: DOCUMENT`, `category` = its type\'s kind `MEDICAL`/`RATING`/`MEMBERSHIP`) plus rows DERIVED at read time and never stored (`source: DERIVED`): one `CURRENCY` row per non-archived person with an active pilot or student profile (`expiresAt` = date of the X-th most recent flight on board + Y days, X/Y the currency settings, echoed in `currency`; `null` with fewer than X flights ever), one `MEMBERSHIP` row per non-archived pilot, student or instructor who never paid the membership fee (it carries the fee type), and one `MEDICAL` row per such person with no medical visit registered at all, when at least one medical type is active. A derived row\'s `id` is `currency:`/`membership:`/`medical:` + the person id — no endpoint accepts it (`PATCH`/`DELETE /api/v1/expiries/{id}` answer 404). `expiryTypeId`/`typeName`/`typeScope` are `null` on the currency and missing-visit rows; `expiresAt`/`daysUntil` are `null` on a missing row, whose `status` is `missing`. Ordered by `expiresAt` with a missing row sorted as if it had expired YESTERDAY (after the documents expired earlier, before the running ones), then `id` (stable pagination). "Today" is the Europe/Rome date. Filters are optional and AND-combinable: `category` (4 values; `MEDICAL` includes the missing-visit rows), `expiryTypeId` and `scope` (rows without a type never match), `personId`, `personQuery` (case-insensitive substring of first or last name, wildcards matched literally), `window` (`7`/`30`/`60` = `expiresAt <= today + N` with no lower bound, `expired` = before today — a missing row is in every window) or `status` (`ok`/`expiring`/`expired` on the same `today`/`EXPIRY_WARNING_DAYS` boundary as the per-row `status` field, `missing` = no date), all applied server-side, never post-filtered. Requires `expiries.manage`.',
+    'Story 19.7b changes the contract: the items are the rows of the UNIFIED registry — every registered scadenza of a non-archived person (`source: DOCUMENT`, `category` = its type\'s kind `MEDICAL`/`RATING`/`MEMBERSHIP`) plus the `CURRENCY` rows DERIVED at read time and never stored (`source: DERIVED`): one per non-archived person with an active pilot or student profile and at least X flights on board ever (`expiresAt` = date of the X-th most recent one + Y days, X/Y the currency settings, echoed in `currency`). Every row has a date: nothing is listed for what is missing (a currency never acquired, a membership fee never paid, a medical visit never registered). A currency row\'s `id` is `currency:` + the person id — no endpoint accepts it (`PATCH`/`DELETE /api/v1/expiries/{id}` answer 404) — and its `expiryTypeId`/`typeName`/`typeScope` are `null`. Ordered by `expiresAt`, then `id` (stable pagination). "Today" is the Europe/Rome date. Filters are optional and AND-combinable: `category` (4 values), `expiryTypeId` and `scope` (the currency rows never match), `personId`, `personQuery` (case-insensitive substring of first or last name, wildcards matched literally), `window` (`7`/`30`/`60` = `expiresAt <= today + N` with no lower bound, `expired` = before today) or `status` (`ok`/`expiring`/`expired` on the same `today`/`EXPIRY_WARNING_DAYS` boundary as the per-row `status` field), all applied server-side, never post-filtered. Requires `expiries.manage`.',
   tags: ['Expiries'],
   security,
   request: { query: listAllExpiriesQuerySchema },
   responses: {
     200: {
-      description: 'A page of registry rows, ordered by urgency, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1) — a row without a type shows its category, a missing row a dash for the date and «Mancante»/«Missing» as status.',
+      description: 'A page of registry rows, ordered by urgency, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1) — a currency row shows its category as the type and a dash as the scope.',
       content: { ...jsonContent(expiryDashboardListResponseSchema), ...xlsxContent() },
     },
     ...errorResponses(401, 403, 422),
@@ -1331,7 +1331,7 @@ registry.registerPath({
   path: '/api/v1/expiries/pdf',
   summary: 'PDF export of the urgency dashboard (story 10.2, AC 2)',
   description:
-    'Dedicated PDF route (spine :105), same query schema and the same unified rows as `GET /api/v1/expiries` above (story 19.7b: currency rows and missing rows included). The status column is colored with the SAME red/yellow/green palette as the dashboard badge, a missing row in the expired red. No totals (a status list has nothing summable). Requires `expiries.manage`.',
+    'Dedicated PDF route (spine :105), same query schema and the same unified rows as `GET /api/v1/expiries` above (story 19.7b: currency rows included). The status column is colored with the SAME red/yellow/green palette as the dashboard badge. No totals (a status list has nothing summable). Requires `expiries.manage`.',
   tags: ['Expiries'],
   security,
   request: { query: listAllExpiriesQuerySchema },
@@ -1361,7 +1361,7 @@ registry.registerPath({
   path: '/api/v1/expiries/{id}',
   summary: 'Update a scadenza (partial patch, AC 1)',
   description:
-    "Every field optional; `personId`/`expiryTypeId` are NOT patchable (a wrong type/person is corrected by delete + re-register). A PENDING proposal already filed against this scadenza is left untouched. Only a registered scadenza has an id here: a derived registry row (`currency:…`, `membership:…`, `medical:…`, story 19.7b) answers 404. Requires `expiries.manage`.",
+    "Every field optional; `personId`/`expiryTypeId` are NOT patchable (a wrong type/person is corrected by delete + re-register). A PENDING proposal already filed against this scadenza is left untouched. Only a registered scadenza has an id here: a derived currency row of the registry (`currency:…`, story 19.7b) answers 404. Requires `expiries.manage`.",
   tags: ['Expiries'],
   security,
   request: { params: expiryIdParams, body: { content: jsonContent(updateExpirySchema), required: true } },
@@ -1376,7 +1376,7 @@ registry.registerPath({
   path: '/api/v1/expiries/{id}',
   summary: 'Delete a scadenza (admin correction tool, AC 1)',
   description:
-    'For correcting a wrong type/person registration — deletes the scadenza and cascades to any `ExpiryUpdateProposal` rows (pending included). A derived registry row id (story 19.7b) answers 404. Requires `expiries.manage`.',
+    'For correcting a wrong type/person registration — deletes the scadenza and cascades to any `ExpiryUpdateProposal` rows (pending included). A derived currency row id (story 19.7b) answers 404. Requires `expiries.manage`.',
   tags: ['Expiries'],
   security,
   request: { params: expiryIdParams },

@@ -439,8 +439,8 @@ test.describe('story 15.3 — "In corso ora" and the "Avvisi" feed', () => {
     await page.goto('/it/dashboard');
     const feed = page.getByTestId('mobile-overview-alerts');
     await expect(feed).toBeVisible();
-    // Story 19.7b: the fixture pilot also has derived rows of their own (a currency never acquired, a fee never
-    // paid, maybe a missing visit) — the voice under test is the one of the TYPE registered above.
+    // Story 19.7b: the fixture pilot may also have a currency row of their own (an expired one is a voice too) —
+    // the voice under test is the one of the TYPE registered above.
     await expect(
       feed.getByTestId('mobile-overview-alert-row').filter({ hasText: pilot.lastName }).filter({ hasText: `· ${registeredTypeName!}` }),
     ).toHaveCount(1);

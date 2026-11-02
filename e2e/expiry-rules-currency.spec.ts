@@ -319,8 +319,8 @@ test.describe('Story 19.7a — the membership fee has its own category (AC 11, A
       ['it', 'Quota associativa'],
       ['en', 'Membership fee'],
     ] as const) {
-      // `category=MEMBERSHIP` (story 19.7b): the person also has derived rows of their own now (a currency and a
-      // missing visit), and this test is about the fee's badge.
+      // `category=MEMBERSHIP` (story 19.7b): the registry lists every category of the person, and this test is
+      // about the fee's badge.
       await page.goto(`/${locale}/dashboard/expiries?window=all&category=MEMBERSHIP&personQuery=${encodeURIComponent(person.lastName)}`);
       const rows = page.getByTestId('scadenze-row');
       await expect(rows).toHaveCount(1);

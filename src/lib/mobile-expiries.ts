@@ -33,11 +33,9 @@ export function expiryDaysLabel(daysUntil: number, suffixes: { ago: string; left
  * The registry card's mono sub-line — the template's own `{{x.what}} ·
  * {{x.date}}` (`AirOps Mobile` 273-283) plus the day count, which ratifica
  * R-15.7-b moved here when the right-hand pill became the app's own 5-tier
- * status `Badge`. A "missing" row of the unified registry (story 19.7b) has
- * no date and no day count: both segments are `null` and simply OMITTED —
- * its status badge already says "Mancante".
+ * status `Badge`.
  */
-export function expiryCardSubLine(parts: { typeName: string; dateLabel: string | null; daysLabel: string | null }): string {
+export function expiryCardSubLine(parts: { typeName: string; dateLabel: string; daysLabel: string }): string {
   return joinSegments([parts.typeName, parts.dateLabel, parts.daysLabel]);
 }
 
@@ -45,11 +43,9 @@ export function expiryCardSubLine(parts: { typeName: string; dateLabel: string |
  * The registry sheet's mono over-line: the two CLASSIFICATIONS of a scadenza
  * (category, already translated, and certificate), with the person as the sheet's title. Goes
  * through `joinSegments` because it becomes half of the dialog's accessible
- * name (`${sub} — ${title}`, `bottom-sheet.tsx:61`). A derived row with no
- * certificate of its own (the "missing visit" row, story 19.7b) passes `null`
- * and the over-line is the category alone — never the category twice.
+ * name (`${sub} — ${title}`, `bottom-sheet.tsx:61`).
  */
-export function expirySheetSub(parts: { category: string; typeName: string | null }): string {
+export function expirySheetSub(parts: { category: string; typeName: string }): string {
   return joinSegments([parts.category, parts.typeName]);
 }
 

@@ -23,12 +23,6 @@ describe('expiryCardSubLine', () => {
   it('drops a blank segment instead of leaving two separators adjacent', () => {
     expect(expiryCardSubLine({ typeName: 'Rating SEP', dateLabel: '', daysLabel: '38 g' })).toBe('Rating SEP · 38 g');
   });
-
-  it('a missing row of the unified registry (story 19.7b): no date, no day count, no "—" in the line', () => {
-    const sub = expiryCardSubLine({ typeName: 'Quota associativa', dateLabel: null, daysLabel: null });
-    expect(sub).toBe('Quota associativa');
-    expect(sub).not.toContain('—');
-  });
 });
 
 describe('expirySheetSub', () => {
@@ -45,12 +39,8 @@ describe('expirySheetSub', () => {
   });
 });
 
-describe('expirySheetSub — derived rows (story 19.7b)', () => {
-  it('a row with no certificate of its own is the category alone, never the category twice', () => {
-    expect(expirySheetSub({ category: 'Visita medica', typeName: null })).toBe('Visita medica');
-  });
-
-  it('the currency row carries its detail as the certificate', () => {
+describe('expirySheetSub — the currency row (story 19.7b)', () => {
+  it('carries its detail as the certificate', () => {
     expect(expirySheetSub({ category: 'Currency', typeName: '1 volo negli ultimi 90 giorni' })).toBe('Currency · 1 volo negli ultimi 90 giorni');
   });
 });

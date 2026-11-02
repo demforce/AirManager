@@ -198,9 +198,7 @@
       "ago": "{n}g fa",
       "inDays": "tra {n}g",
       "seeAll": "+{count} altre · Vedi tutte",
-      "currency": "Currency",
-      "medical": "Visita medica",
-      "missing": "Mancante"
+      "currency": "Currency"
     },
     "fleetCard": {
       "cardTitle": "Aeromobili",
@@ -1391,8 +1389,7 @@
         "within7": "≤ 7 giorni",
         "within30": "≤ 30 giorni",
         "within60": "≤ 60 giorni",
-        "ok": "Valido",
-        "missing": "Mancante"
+        "ok": "Valido"
       },
       "daysAgoSuffix": "g fa",
       "daysSuffix": " g",
@@ -1448,7 +1445,7 @@
         "CURRENCY": "Currency"
       },
       "currency": {
-        "detail": "{count, plural, one {# volo} other {# voli}} negli ultimi {days} giorni"
+        "detail": "{count, plural, one {# volo} other {# voli}} {days, plural, one {nell'ultimo giorno} other {negli ultimi # giorni}}"
       }
     },
     "own": {

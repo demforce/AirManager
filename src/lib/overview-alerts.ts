@@ -25,7 +25,7 @@
  * No i18n, no formatting, no `Date`: the caller renders. `tierOf` is imported
  * rather than re-derived (single implementation of the day boundaries).
  */
-import { registryTierOf } from './expiry-status';
+import { tierOf } from './expiry-status';
 
 /** Every voice is verifiable at its source (AC 4): the kind says which source produced it. */
 export type OverviewAlertKind = 'expiry' | 'negativeBalance';
@@ -38,12 +38,10 @@ export type OverviewAlertExpiry = {
   personId: string;
   personFirstName: string;
   personLastName: string;
-  /** The registry row's category (story 19.7b) — how the caller names a row with no type of its own. */
-  category: 'MEDICAL' | 'RATING' | 'MEMBERSHIP' | 'CURRENCY';
-  /** `null` on a registry row with no type of its own (the currency row, a missing visit — story 19.7b): the caller names it by category. */
+  /** `null` on the registry's currency row (story 19.7b), which has no type of its own: the caller names it. */
   typeName: string | null;
-  /** Calendar days to `expiresAt`; negative = already expired, `null` = missing (`ExpiryDashboardItemDto.daysUntil`). */
-  daysUntil: number | null;
+  /** Calendar days to `expiresAt`; negative = already expired (`ExpiryDashboardItemDto.daysUntil`). */
+  daysUntil: number;
 };
 
 export type OverviewAlertNegativeBalance = {
@@ -106,11 +104,11 @@ const DOMAIN_HREF: Record<OverviewAlertKind, string> = {
   negativeBalance: BALANCES_HREF,
 };
 
-/** Lower = more urgent. See the ratified order in the module doc-comment. A missing row (story 19.7b, D-19) ranks as expired. */
+/** Lower = more urgent. See the ratified order in the module doc-comment. */
 function rankOf(alert: OverviewAlert): number {
   switch (alert.kind) {
     case 'expiry': {
-      const tier = registryTierOf(alert.expiry.daysUntil);
+      const tier = tierOf(alert.expiry.daysUntil);
       if (tier === 0) return 0;
       if (tier === 1) return 2;
       if (tier === 2) return 4;
@@ -121,16 +119,11 @@ function rankOf(alert: OverviewAlert): number {
   }
 }
 
-/**
- * Tiebreak INSIDE a rank; lower first. Most overdue scadenza / deepest red
- * first. A missing row weighs −1, "expired yesterday": the very place the
- * registry itself sorts it (story 19.7b, D-20) — after the documents expired
- * longer ago, before the ones still running.
- */
+/** Tiebreak INSIDE a rank; lower first. Most overdue scadenza / deepest red first. */
 function weightOf(alert: OverviewAlert): number {
   switch (alert.kind) {
     case 'expiry':
-      return alert.expiry.daysUntil ?? -1;
+      return alert.expiry.daysUntil;
     case 'negativeBalance':
       return alert.balance.balanceCents;
   }
@@ -142,13 +135,11 @@ export function buildOverviewAlerts(input: OverviewAlertsInput, limit: number = 
   for (const expiry of input.expiries) {
     // Beyond 60 days a scadenza is `ok`, not an avviso — the 60-day fetch
     // window should not contain one, this is the defensive half of the tier.
-    // A missing row is tier 0, never skipped.
-    const tier = registryTierOf(expiry.daysUntil);
-    if (tier === 4) continue;
+    if (tierOf(expiry.daysUntil) === 4) continue;
     all.push({
       key: `expiry:${expiry.id}`,
       kind: 'expiry',
-      tone: tier <= 1 ? 'red' : 'amber',
+      tone: tierOf(expiry.daysUntil) <= 1 ? 'red' : 'amber',
       href: EXPIRIES_HREF,
       expiry,
     });

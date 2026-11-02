@@ -1,8 +1,7 @@
 /**
  * The medical requirement of story 19.7a (R-19-j, D-4) — PURE, so the flight
- * and booking scans (`expiries.service.ts#getMedicalRequirementFailure`), the
- * Scadenze registry of story 19.7b and the checks of stories 19.9/19.10 all
- * judge a person with the SAME rule.
+ * and booking scans (`expiries.service.ts#getMedicalRequirementFailure`) and
+ * the checks of stories 19.9/19.10 all judge a person with the SAME rule.
  *
  * The rule: whoever is on board needs ONE valid medical visit of ANY class.
  * - It applies only while at least one MEDICAL type is ACTIVE: an

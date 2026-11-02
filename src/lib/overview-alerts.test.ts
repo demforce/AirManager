@@ -1,13 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildOverviewAlerts, OVERVIEW_ALERTS_LIMIT, type OverviewAlertsInput } from './overview-alerts';
 
-function expiry(id: string, daysUntil: number | null, lastName = 'Rossi') {
-  return { id, personId: `p-${id}`, personFirstName: 'Mario', personLastName: lastName, category: 'MEDICAL' as const, typeName: 'Visita medica', daysUntil };
-}
-
-/** A row of the unified registry with no date and no type of its own (story 19.7b): a currency never acquired. */
-function missingCurrency(id: string) {
-  return { ...expiry(id, null), category: 'CURRENCY' as const, typeName: null };
+function expiry(id: string, daysUntil: number, lastName = 'Rossi') {
+  return { id, personId: `p-${id}`, personFirstName: 'Mario', personLastName: lastName, typeName: 'Visita medica', daysUntil };
 }
 
 function balance(personId: string, balanceCents: number) {
@@ -58,34 +53,6 @@ describe('buildOverviewAlerts — ratified order (R-15.3-e)', () => {
   it('drops a scadenza beyond the 60-day window (tier 4 is not an avviso)', () => {
     const result = buildOverviewAlerts({ ...EMPTY, expiries: [expiry('far', 120)] });
     expect(result.items).toEqual([]);
-  });
-});
-
-describe('buildOverviewAlerts — missing rows of the unified registry (story 19.7b)', () => {
-  it('rank of an expired row, weight −1: after one expired 10 days ago, before one expiring, never dropped', () => {
-    const result = buildOverviewAlerts(
-      {
-        expiries: [expiry('in7', 3), missingCurrency('currency:p1'), expiry('in60', 55), expiry('late-10', -10)],
-        negativeBalances: [balance('debtor', -1_000)],
-      },
-      99,
-    );
-
-    expect(result.items.map((item) => item.key)).toEqual(['expiry:late-10', 'expiry:currency:p1', 'balance:debtor', 'expiry:in7', 'expiry:in60']);
-  });
-
-  it('sorts exactly like a row that expired yesterday (D-20), red', () => {
-    const result = buildOverviewAlerts({ ...EMPTY, expiries: [expiry('yesterday', -1), missingCurrency('currency:p1'), expiry('two-days', -2)] }, 99);
-
-    expect(result.items.map((item) => item.key)).toEqual(['expiry:two-days', 'expiry:currency:p1', 'expiry:yesterday']);
-    expect(result.items.find((item) => item.key === 'expiry:currency:p1')?.tone).toBe('red');
-  });
-
-  it('the cap hides missing rows after the older expired documents, never before them', () => {
-    const result = buildOverviewAlerts({ ...EMPTY, expiries: [missingCurrency('currency:a'), missingCurrency('currency:b'), expiry('decade', -3650)] }, 1);
-
-    expect(result.items.map((item) => item.key)).toEqual(['expiry:decade']);
-    expect(result.hiddenCount).toBe(2);
   });
 });
 

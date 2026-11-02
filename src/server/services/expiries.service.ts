@@ -6,7 +6,7 @@ import { computeExpiryStatus, daysUntilUtc, EXPIRY_WARNING_DAYS, type ExpiryStat
 import { evaluateMedicalRequirement, type MedicalRequirementFailure } from '@/lib/medical-requirement';
 import type { ExpiryWindowDto, ListAllExpiriesQuery, RegisterExpiryInput, UpdateExpiryInput } from '@/lib/schemas/expiries';
 import { APP_TIMEZONE } from '@/lib/time';
-import { addDaysDateOnly, todayDateOnlyInZone } from '@/lib/zoned-time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { getCurrencySettings } from './app-settings.service';
@@ -347,11 +347,8 @@ export async function deleteExpiry(actor: Actor, id: string): Promise<void> {
 /** The registry row's category (story 19.7b): the type's `kind` for a document, `CURRENCY` for the derived currency row. */
 export type RegistryCategory = ExpiryTypeKind | 'CURRENCY';
 
-/** The registry row's status: the three bands of `computeExpiryStatus` plus `missing`, a row with no date (story 19.7b, D-19). */
-export type RegistryStatus = ExpiryStatus | 'missing';
-
 export type ExpiryDashboardItem = {
-  /** An `Expiry` id, or `currency:`/`membership:`/`medical:` + the person id for a derived row (no endpoint accepts those). */
+  /** An `Expiry` id, or `currency:` + the person id for a derived currency row (no endpoint accepts it). */
   id: string;
   source: 'DOCUMENT' | 'DERIVED';
   /** The type's `kind` for a document (story 19.7a, D-12), `CURRENCY` for the currency row (19.7b). */
@@ -359,17 +356,16 @@ export type ExpiryDashboardItem = {
   personId: string;
   personFirstName: string;
   personLastName: string;
-  /** `null` on the currency row and on the "missing visit" row; the "never paid" row carries the membership type. */
+  /** `null` on the currency row, which has no type of its own. */
   expiryTypeId: string | null;
   typeName: string | null;
   typeScope: ExpiryScope | null;
-  /** `null` = missing: currency never acquired, membership fee never paid, no medical visit at all. */
-  expiresAt: string | null;
+  expiresAt: string;
   notes: string | null;
-  status: RegistryStatus;
-  daysUntil: number | null;
+  status: ExpiryStatus;
+  daysUntil: number;
   /** Only on the `CURRENCY` row. */
-  currency: { lastFlightDate: string | null; flightsInWindow: number; minFlights: number; windowDays: number } | null;
+  currency: { lastFlightDate: string; flightsInWindow: number; minFlights: number; windowDays: number } | null;
 };
 
 export type ExpiryDashboardListResult = {
@@ -383,19 +379,20 @@ export type ExpiryDashboardListResult = {
 const MS_PER_DAY = 86_400_000;
 
 /**
- * The UNIFIED Scadenze registry (story 19.7b, Q-19.7-a/b/c) as a CTE named
+ * The UNIFIED Scadenze registry (story 19.7b, Q-19.7-a) as a CTE named
  * `"registryRows"` — one row per:
  *
- * - registered `Expiry` (`source = 'DOCUMENT'`, `category` = its type's `kind`);
+ * - registered `Expiry` of a person NOT archived (`source = 'DOCUMENT'`,
+ *   `category` = its type's `kind`; review 19.7b F1: an archived person
+ *   leaves the registry whole, as the derived rows already did);
  * - currency SUBJECT (19.7a D-8: not archived, ACTIVE pilot or student
- *   profile): `category = 'CURRENCY'`, `expiresAt` = date of the X-th most
- *   recent on-board flight + Y days, `NULL` with fewer than X flights ever;
- * - member (not archived, ACTIVE pilot, student OR instructor profile) with no
- *   `Expiry` of the MEMBERSHIP type — the fee "never paid" (Q-19.7-b = A);
- * - member with NO medical `Expiry` at all, when at least one MEDICAL type is
- *   active (Q-19.7-c, D-22): someone whose visits are all expired already has
- *   a red document row, a second row for the same failed requirement would be
- *   a duplicate.
+ *   profile) with at least X on-board flights ever: `category = 'CURRENCY'`,
+ *   `expiresAt` = date of the X-th most recent one + Y days.
+ *
+ * Every row has a date. Nothing is derived for what is MISSING — a currency
+ * never acquired, a membership fee never paid, a medical visit never
+ * registered show no row at all (PO 2026-11-02, Q-19.7-b/c overturned); the
+ * flight and booking checks (19.9/19.10) still fail on them.
  *
  * The currency here is the SQL TWIN of `@/lib/currency#computeCurrency`
  * (D-15): it has to live in SQL to be sorted, filtered and paginated together
@@ -421,12 +418,6 @@ function registryRowsSql(today: string, settings: CurrencySettings): Prisma.Sql 
       WHERE p."archivedAt" IS NULL
         AND (EXISTS (SELECT 1 FROM "PilotProfile" pp WHERE pp."personId" = p."id" AND pp."deactivatedAt" IS NULL)
           OR EXISTS (SELECT 1 FROM "StudentProfile" sp WHERE sp."personId" = p."id" AND sp."deactivatedAt" IS NULL))
-    ), "members" AS (
-      SELECT p."id" FROM "Person" p
-      WHERE p."archivedAt" IS NULL
-        AND (EXISTS (SELECT 1 FROM "PilotProfile" pp WHERE pp."personId" = p."id" AND pp."deactivatedAt" IS NULL)
-          OR EXISTS (SELECT 1 FROM "StudentProfile" sp WHERE sp."personId" = p."id" AND sp."deactivatedAt" IS NULL)
-          OR EXISTS (SELECT 1 FROM "InstructorProfile" ip WHERE ip."personId" = p."id" AND ip."deactivatedAt" IS NULL))
     ), "onBoard" AS (
       SELECT f."personId", f."flightDate" FROM "Flight" f WHERE f."flightDate" <= ${today}::date
       UNION ALL
@@ -443,20 +434,13 @@ function registryRowsSql(today: string, settings: CurrencySettings): Prisma.Sql 
     ), "registryRows" AS (
       SELECT e."id", 'DOCUMENT' AS "source", t."kind"::text AS "category", e."personId", e."expiryTypeId", t."name" AS "typeName",
              t."scope"::text AS "typeScope", e."expiresAt", e."notes", NULL::date AS "lastFlightDate", NULL::int AS "flightsInWindow"
-      FROM "Expiry" e JOIN "ExpiryType" t ON t."id" = e."expiryTypeId"
+      FROM "Expiry" e JOIN "ExpiryType" t ON t."id" = e."expiryTypeId" JOIN "Person" pd ON pd."id" = e."personId"
+      WHERE pd."archivedAt" IS NULL
       UNION ALL
       SELECT 'currency:' || s."id", 'DERIVED', 'CURRENCY', s."id", NULL, NULL, NULL,
-             c."xthFlightDate" + ${settings.windowDays}::int, NULL, c."lastFlightDate", COALESCE(c."flightsInWindow", 0)
-      FROM "currencySubjects" s LEFT JOIN "currency" c ON c."personId" = s."id"
-      UNION ALL
-      SELECT 'membership:' || m."id", 'DERIVED', 'MEMBERSHIP', m."id", mt."id", mt."name", mt."scope"::text, NULL, NULL, NULL, NULL
-      FROM "members" m CROSS JOIN (SELECT "id", "name", "scope" FROM "ExpiryType" WHERE "kind" = 'MEMBERSHIP') mt
-      WHERE NOT EXISTS (SELECT 1 FROM "Expiry" x WHERE x."personId" = m."id" AND x."expiryTypeId" = mt."id")
-      UNION ALL
-      SELECT 'medical:' || m."id", 'DERIVED', 'MEDICAL', m."id", NULL, NULL, NULL, NULL, NULL, NULL, NULL
-      FROM "members" m
-      WHERE EXISTS (SELECT 1 FROM "ExpiryType" WHERE "kind" = 'MEDICAL' AND "isActive")
-        AND NOT EXISTS (SELECT 1 FROM "Expiry" x JOIN "ExpiryType" xt ON xt."id" = x."expiryTypeId" WHERE x."personId" = m."id" AND xt."kind" = 'MEDICAL')
+             c."xthFlightDate" + ${settings.windowDays}::int, NULL, c."lastFlightDate", c."flightsInWindow"
+      FROM "currencySubjects" s JOIN "currency" c ON c."personId" = s."id"
+      WHERE c."xthFlightDate" IS NOT NULL
     )`;
 }
 
@@ -470,10 +454,9 @@ function escapeLikePattern(value: string): string {
  * `EXPIRY_WARNING_DAYS` boundary `computeExpiryStatus` uses for the row's own
  * `status` field — by construction the two never disagree: `expired` is
  * `expiresAt < today`, `expiring` is `today <= expiresAt <= today +
- * EXPIRY_WARNING_DAYS` (inclusive both ends), `ok` beyond it, and `missing`
- * (story 19.7b) the rows with no date.
+ * EXPIRY_WARNING_DAYS` (inclusive both ends), `ok` beyond it.
  */
-function statusSql(status: RegistryStatus, today: string): Prisma.Sql {
+function statusSql(status: ExpiryStatus, today: string): Prisma.Sql {
   switch (status) {
     case 'expired':
       return Prisma.sql`r."expiresAt" < ${today}::date`;
@@ -481,8 +464,6 @@ function statusSql(status: RegistryStatus, today: string): Prisma.Sql {
       return Prisma.sql`r."expiresAt" >= ${today}::date AND r."expiresAt" <= ${today}::date + ${EXPIRY_WARNING_DAYS}::int`;
     case 'ok':
       return Prisma.sql`r."expiresAt" > ${today}::date + ${EXPIRY_WARNING_DAYS}::int`;
-    case 'missing':
-      return Prisma.sql`r."expiresAt" IS NULL`;
   }
 }
 
@@ -490,17 +471,16 @@ function statusSql(status: RegistryStatus, today: string): Prisma.Sql {
  * The registry's "finestra" segmented filter (story 12.11, AC 3), the
  * prototype's own `inWindow` predicate (`ScadenzeView.jsx`): `'7'`/`'30'`/`'60'`
  * are `expiresAt <= today + N` with NO lower bound (an already-expired row
- * still matches), `'expired'` is `expiresAt < today`. A "missing" row (no date)
- * counts as expired (story 19.7b, D-19), so it is in EVERY window.
+ * still matches), `'expired'` is `expiresAt < today`.
  * Deliberately separate from {@link statusSql} — a caller passes ONE of
  * `status`/`window`, never both (the Scadenze page only ever sends `window`).
  */
 function windowSql(window: ExpiryWindowDto, today: string): Prisma.Sql {
   if (window === 'expired') {
-    return Prisma.sql`(r."expiresAt" IS NULL OR r."expiresAt" < ${today}::date)`;
+    return Prisma.sql`r."expiresAt" < ${today}::date`;
   }
   const days = window === '7' ? 7 : window === '30' ? 30 : 60;
-  return Prisma.sql`(r."expiresAt" IS NULL OR r."expiresAt" <= ${today}::date + ${days}::int)`;
+  return Prisma.sql`r."expiresAt" <= ${today}::date + ${days}::int`;
 }
 
 /** Every filter of {@link listAllExpiries}, AND-combined over `"registryRows" r JOIN "Person" p`. */
@@ -529,14 +509,15 @@ type RegistryRow = {
   expiryTypeId: string | null;
   typeName: string | null;
   typeScope: ExpiryScope | null;
-  expiresAt: string | null;
+  expiresAt: string;
   notes: string | null;
+  /** `null` on a document row (the SQL selects it for the currency row only). */
   lastFlightDate: string | null;
   flightsInWindow: number | null;
 };
 
 function toRegistryItem(row: RegistryRow, today: Date, settings: CurrencySettings): ExpiryDashboardItem {
-  const expiresAt = row.expiresAt === null ? null : parseDateOnlyUtc(row.expiresAt);
+  const expiresAt = parseDateOnlyUtc(row.expiresAt);
   return {
     id: row.id,
     source: row.source,
@@ -549,11 +530,11 @@ function toRegistryItem(row: RegistryRow, today: Date, settings: CurrencySetting
     typeScope: row.typeScope,
     expiresAt: row.expiresAt,
     notes: row.notes,
-    status: expiresAt === null ? 'missing' : computeExpiryStatus(expiresAt, today),
-    daysUntil: expiresAt === null ? null : daysUntilUtc(expiresAt, today),
+    status: computeExpiryStatus(expiresAt, today),
+    daysUntil: daysUntilUtc(expiresAt, today),
     currency:
       row.category === 'CURRENCY'
-        ? { lastFlightDate: row.lastFlightDate, flightsInWindow: row.flightsInWindow ?? 0, minFlights: settings.minFlights, windowDays: settings.windowDays }
+        ? { lastFlightDate: row.lastFlightDate!, flightsInWindow: row.flightsInWindow!, minFlights: settings.minFlights, windowDays: settings.windowDays }
         : null,
   };
 }
@@ -570,13 +551,8 @@ function toRegistryItem(row: RegistryRow, today: Date, settings: CurrencySetting
  * (the TYPE's ambito — rows without a type never match); `window` or `status`
  * (SQL predicates, never post-filtered in JS).
  *
- * Ordered `COALESCE(expiresAt, yesterday), id` (D-20): a "missing" row sorts
- * as if it expired YESTERDAY — after the documents expired longer ago, before
- * those still running. Neither `NULLS FIRST` (hundreds of people without a
- * flight or a fee would bury every expired document under the Panoramica's
- * 60-row scan and the 5-row "Avvisi" feed) nor `NULLS LAST` (a missing row
- * after documents valid for another year). `id` breaks ties for a stable
- * pagination. `total` comes from the SAME query (`COUNT(*) OVER ()`); only a
+ * Ordered `expiresAt, id` (story 6.4: most overdue first; `id` breaks ties for
+ * a stable pagination). `total` comes from the SAME query (`COUNT(*) OVER ()`); only a
  * page past the end, which has no row to carry it, runs a count of its own.
  *
  * ONE "today" for every row (D-21): Rome's, as the currency's own (A16) — a
@@ -588,7 +564,6 @@ export async function listAllExpiries(actor: Actor, query: ListAllExpiriesQuery)
   authorize(actor, 'expiries.manage');
 
   const today = todayDateOnlyInZone(APP_TIMEZONE);
-  const yesterday = addDaysDateOnly(today, -1);
   const settings = await getCurrencySettings();
   const rowsSql = registryRowsSql(today, settings);
   const whereSql = registryWhereSql(query, today);
@@ -601,7 +576,7 @@ export async function listAllExpiries(actor: Actor, query: ListAllExpiriesQuery)
            to_char(r."lastFlightDate", 'YYYY-MM-DD') AS "lastFlightDate", r."flightsInWindow", (COUNT(*) OVER ())::int AS "total"
     FROM "registryRows" r JOIN "Person" p ON p."id" = r."personId"
     ${whereSql}
-    ORDER BY COALESCE(r."expiresAt", ${yesterday}::date), r."id"
+    ORDER BY r."expiresAt", r."id"
     LIMIT ${take} OFFSET ${skip}`;
 
   let total = rows[0]?.total ?? 0;
@@ -630,13 +605,13 @@ export type ExpiryTierCounts = {
 
 /**
  * The Scadenze registry's 4 stat-card counts (story 12.11, AC 3) — GLOBAL
- * counts across the WHOLE unified registry (story 19.7b, Q-19.7-a: documents,
- * currency rows and "missing" rows alike), unaffected by the table's own
+ * counts across the WHOLE unified registry (story 19.7b, Q-19.7-a: documents
+ * and currency rows alike), unaffected by the table's own
  * filters (mirrors the prototype's own `rows` vs `shown` split,
  * `ScadenzeView.jsx`: stat cards always count the FULL unfiltered set).
  * EXCLUSIVE bands (Contesto: `tierOf`, `ScadenzeView.jsx:12-20`) — `within30`
  * is "more than 7 but at most 30 days out", NOT cumulative with `within7`.
- * A "missing" row counts as expired (D-19). Same boundaries the alert job's
+ * Same boundaries the alert job's
  * cadence markers use (60/30/7/0, `EXPIRY_ALERT_THRESHOLDS`) — ONE `COUNT …
  * FILTER` query over the registry, never a tally over a capped page. Same
  * Rome "today" and same once-per-call settings as {@link listAllExpiries}.
@@ -649,7 +624,7 @@ export async function getExpiryTierCounts(actor: Actor): Promise<ExpiryTierCount
 
   const [counts] = await prisma.$queryRaw<ExpiryTierCounts[]>`
     ${registryRowsSql(today, settings)}
-    SELECT (COUNT(*) FILTER (WHERE r."expiresAt" IS NULL OR r."expiresAt" < ${today}::date))::int AS "expired",
+    SELECT (COUNT(*) FILTER (WHERE r."expiresAt" < ${today}::date))::int AS "expired",
            (COUNT(*) FILTER (WHERE r."expiresAt" >= ${today}::date AND r."expiresAt" <= ${today}::date + 7))::int AS "within7",
            (COUNT(*) FILTER (WHERE r."expiresAt" > ${today}::date + 7 AND r."expiresAt" <= ${today}::date + 30))::int AS "within30",
            (COUNT(*) FILTER (WHERE r."expiresAt" > ${today}::date + 30 AND r."expiresAt" <= ${today}::date + 60))::int AS "within60"

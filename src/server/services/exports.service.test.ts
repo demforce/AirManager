@@ -395,95 +395,52 @@ describe('exportExpiriesXlsx (T2 — date-only column mapping)', () => {
   });
 });
 
-/** The three DERIVED rows of the unified registry (story 19.7b): a currency never acquired, a fee never paid, a missing visit. */
-const DERIVED_REGISTRY_ROWS = [
-  {
-    id: 'currency:p_1',
-    source: 'DERIVED',
-    category: 'CURRENCY',
-    personId: 'p_1',
-    personFirstName: 'Mario',
-    personLastName: 'Rossi',
-    expiryTypeId: null,
-    typeName: null,
-    typeScope: null,
-    expiresAt: null,
-    notes: null,
-    status: 'missing',
-    daysUntil: null,
-    currency: { lastFlightDate: null, flightsInWindow: 0, minFlights: 1, windowDays: 90 },
-  },
-  {
-    id: 'membership:p_2',
-    source: 'DERIVED',
-    category: 'MEMBERSHIP',
-    personId: 'p_2',
-    personFirstName: 'Anna',
-    personLastName: 'Bianchi',
-    expiryTypeId: 'type_fee',
-    typeName: 'Quota associativa',
-    typeScope: 'ALL',
-    expiresAt: null,
-    notes: null,
-    status: 'missing',
-    daysUntil: null,
-    currency: null,
-  },
-  {
-    id: 'medical:p_3',
-    source: 'DERIVED',
-    category: 'MEDICAL',
-    personId: 'p_3',
-    personFirstName: 'Luca',
-    personLastName: 'Verdi',
-    expiryTypeId: null,
-    typeName: null,
-    typeScope: null,
-    expiresAt: null,
-    notes: null,
-    status: 'missing',
-    daysUntil: null,
-    currency: null,
-  },
-];
+/** The DERIVED currency row of the unified registry (story 19.7b) — no type, no type scope, always a date. */
+const CURRENCY_REGISTRY_ROW = {
+  id: 'currency:p_1',
+  source: 'DERIVED',
+  category: 'CURRENCY',
+  personId: 'p_1',
+  personFirstName: 'Mario',
+  personLastName: 'Rossi',
+  expiryTypeId: null,
+  typeName: null,
+  typeScope: null,
+  expiresAt: '2026-11-05',
+  notes: null,
+  status: 'expiring',
+  daysUntil: 3,
+  currency: { lastFlightDate: '2026-08-07', flightsInWindow: 1, minFlights: 1, windowDays: 90 },
+};
 
-describe('exportExpiriesXlsx / exportExpiriesPdf — derived rows of the unified registry (story 19.7b, AD-4)', () => {
-  it('xlsx: a row without a type shows its category, «—» for a missing scope and date, «Mancante» as status', async () => {
-    listAllExpiriesMock.mockResolvedValue({ total: 3, page: 1, pageSize: EXPORT_MAX_ROWS, items: DERIVED_REGISTRY_ROWS } as never);
+describe('exportExpiriesXlsx / exportExpiriesPdf — the currency row of the unified registry (story 19.7b, AD-4)', () => {
+  it('xlsx: the category as the type, «—» as the scope, its date and status', async () => {
+    listAllExpiriesMock.mockResolvedValue({ total: 1, page: 1, pageSize: EXPORT_MAX_ROWS, items: [CURRENCY_REGISTRY_ROW] } as never);
 
     const { buffer } = await exportExpiriesXlsx(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
     const sheet = await readSheet(buffer);
-    const rows = [2, 3, 4].map((index) => [1, 2, 3, 4, 5].map((cell) => sheet.getRow(index).getCell(cell).value));
 
-    expect(rows).toEqual([
-      ['Rossi Mario', 'Currency', '—', '—', 'Mancante'],
-      ['Bianchi Anna', 'Quota associativa', 'Tutti', '—', 'Mancante'],
-      ['Verdi Luca', 'Visita medica', '—', '—', 'Mancante'],
-    ]);
+    expect([1, 2, 3, 4, 5].map((cell) => sheet.getRow(2).getCell(cell).value)).toEqual(['Rossi Mario', 'Currency', '—', '05/11/2026', 'In scadenza']);
   });
 
-  it('xlsx in English: the category and «Missing»', async () => {
-    listAllExpiriesMock.mockResolvedValue({ total: 3, page: 1, pageSize: EXPORT_MAX_ROWS, items: DERIVED_REGISTRY_ROWS } as never);
+  it('xlsx in English: the category', async () => {
+    listAllExpiriesMock.mockResolvedValue({ total: 1, page: 1, pageSize: EXPORT_MAX_ROWS, items: [CURRENCY_REGISTRY_ROW] } as never);
 
     const { buffer } = await exportExpiriesXlsx(ACTOR, { page: 1, pageSize: 20, locale: 'en' });
     const sheet = await readSheet(buffer);
 
-    expect([2, 4].map((index) => sheet.getRow(index).getCell(2).value)).toEqual(['Currency', 'Medical']);
-    expect(sheet.getRow(2).getCell(5).value).toBe('Missing');
+    expect(sheet.getRow(2).getCell(2).value).toBe('Currency');
   });
 
-  it('pdf: same cells, and a missing row in the expired red', async () => {
-    listAllExpiriesMock.mockResolvedValue({ total: 3, page: 1, pageSize: PDF_EXPORT_MAX_ROWS, items: DERIVED_REGISTRY_ROWS } as never);
+  it('pdf: same cells, the status in its own colour', async () => {
+    listAllExpiriesMock.mockResolvedValue({ total: 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS, items: [CURRENCY_REGISTRY_ROW] } as never);
 
     await exportExpiriesPdf(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
     const props = lastPdfProps();
     const column = (header: string) => props.columns.find((c) => c.header === header)!;
 
-    expect(props.rows.map((row) => column('Tipo').value(row))).toEqual(['Currency', 'Quota associativa', 'Visita medica']);
-    expect(props.rows.map((row) => column('Ambito').value(row))).toEqual(['—', 'Tutti', '—']);
-    expect(props.rows.map((row) => column('Scadenza').value(row))).toEqual(['—', '—', '—']);
-    expect(props.rows.map((row) => column('Stato').value(row))).toEqual(['Mancante', 'Mancante', 'Mancante']);
-    expect(props.rows.map((row) => column('Stato').color!(row))).toEqual(['#9F2F2D', '#9F2F2D', '#9F2F2D']);
+    expect(['Tipo', 'Ambito', 'Scadenza', 'Stato'].map((header) => column(header).value(props.rows[0]!))).toEqual(['Currency', '—', '05/11/2026', 'In scadenza']);
+    expect(column('Stato').color!(props.rows[0]!)).toBe('#956400');
   });
 });
 

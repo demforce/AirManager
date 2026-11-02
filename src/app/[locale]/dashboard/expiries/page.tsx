@@ -217,7 +217,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               within30: t('registry.status.within30'),
               within60: t('registry.status.within60'),
               ok: t('registry.status.ok'),
-              missing: t('registry.status.missing'),
             },
             daysAgoSuffix: t('registry.daysAgoSuffix'),
             daysSuffix: t('registry.daysSuffix'),
