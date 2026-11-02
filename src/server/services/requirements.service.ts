@@ -38,7 +38,8 @@ import { getMembershipStatus } from './membership.service';
  *   edited never counts for itself).
  * - BALANCE (`balance`) — `SUM(amountCents)` of the person's account (0
  *   without one) plus `creditCents` (the operation's own current charge, on
- *   an edit) must cover `costCents`; equal is covered.
+ *   an edit) must cover `costCents`; equal is covered (`balanceFailure`,
+ *   which a caller writing the charge re-applies under its `Account` lock).
  *
  * Output order is CONTRACT (the e2e assert it): EXPIRY of the person, EXPIRY
  * of the instructor, MEMBERSHIP of the person, MEMBERSHIP of the instructor,
@@ -140,13 +141,23 @@ export async function evaluateRequirements(input: RequirementsInput): Promise<Re
 
   if (input.balance !== null) {
     const aggregate = await prisma.accountMovement.aggregate({ where: { account: { personId: person.id } }, _sum: { amountCents: true } });
-    const balanceCents = (aggregate._sum.amountCents ?? 0) + input.balance.creditCents;
-    if (balanceCents < input.balance.costCents) {
-      failures.push({ type: 'BALANCE', role: 'person', personName: person.name, balanceCents, costCents: input.balance.costCents });
-    }
+    const failure = balanceFailure(person.name, (aggregate._sum.amountCents ?? 0) + input.balance.creditCents, input.balance.costCents);
+    if (failure !== null) failures.push(failure);
   }
 
   return failures;
+}
+
+/**
+ * The BALANCE rule (R-19-g) on a balance already read, credit included:
+ * short of the cost is a failure, equal is covered. `evaluateRequirements`
+ * reads that balance before the caller's transaction; a caller that WRITES
+ * the charge judges it again with this, on the balance it reads under its
+ * own `Account` lock (review 19.9 F2: two charges racing on the first read
+ * would otherwise both pass it).
+ */
+export function balanceFailure(personName: string, balanceCents: number, costCents: number): RequirementFailure | null {
+  return balanceCents < costCents ? { type: 'BALANCE', role: 'person', personName, balanceCents, costCents } : null;
 }
 
 /** The 422 of the shared contract (`schemas/requirements.ts`) — flights, bookings and the membership fee throw it the same way. */

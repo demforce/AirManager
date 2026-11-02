@@ -19,7 +19,7 @@ import { outOfServiceDetails } from './aircraft-status';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { getEffectiveInstructorRate, type InstructorRateListItem } from './instructor-rates.service';
 import { getEffectiveRate } from './rates.service';
-import { evaluateRequirements, throwRequirementsNotMet, type RequirementFailure } from './requirements.service';
+import { balanceFailure, evaluateRequirements, throwRequirementsNotMet, type RequirementFailure } from './requirements.service';
 
 /**
  * Flight logging with automatic charges (epic 5, story 5.1; FR-9/FR-14/
@@ -46,7 +46,9 @@ import { evaluateRequirements, throwRequirementsNotMet, type RequirementFailure 
  * any failure is ONE 422 `REQUIREMENTS_NOT_MET` listing them all, unless an
  * admin (`requirements.force`) resends the same request with `force: true` —
  * no motivo — which stamps the silent `forcedAt`/`forcedByUserId` (A10). See
- * that function's own doc-comment for the policy.
+ * that function's own doc-comment for the policy. The balance is judged once
+ * more inside the transaction, on the balance read under the `Account` lock
+ * (`settleBalanceUnderLock`, review 19.9 F2): that read is the decision.
  *
  * **422, not 409, on a stale reference**: an archived aircraft/person here
  * answers 422 (a stable, specific code — AC 3), never a 409. The flight input
@@ -325,6 +327,8 @@ type ResolvedFlightInput = {
   instructorAmountCents: number | null;
   /** Story 19.9 (A10) — set ONLY when `force` derogated at least one requirement; `null` on every normal registration/edit, INCLUDING a `force: true` request with nothing to derogate. */
   forceStamp: { forcedAt: Date; forcedByUserId: string } | null;
+  /** The balance requirement the transaction judges again under the `Account` lock (`settleBalanceUnderLock`, review 19.9 F2); `null` on a no-charge flight (A9). */
+  balanceCheck: { costCents: number; creditCents: number } | null;
 };
 
 /**
@@ -445,7 +449,9 @@ function isIdentityUnchanged(
  *   as the currency's on-board flights, review 19.7a F2);
  * - currency: only on a SOLO flight (no instructor, or SCHOOL with `isSolo`
  *   — R-19-i, CR §4.5, A5), the person only;
- * - balance: always, except on a no-charge flight (A9).
+ * - balance: always, except on a no-charge flight (A9) — and judged again by
+ *   the caller's transaction under the `Account` lock (`balanceCheck`,
+ *   `settleBalanceUnderLock`).
  * Any failure without `force` is ONE 422 `REQUIREMENTS_NOT_MET`
  * (`details.failures`); with `force` (the 403 above already guarantees
  * `requirements.force`) it stamps `forcedAt`/`forcedByUserId` — never on a
@@ -455,7 +461,9 @@ function isIdentityUnchanged(
  * re-checked while the aircraft stays the same (AOG-1a AD-4: a cycles-only
  * edit of a HISTORICAL flight must not depend on TODAY's state); documents
  * and fee are skipped when person, instructor and date are unchanged
- * (`isIdentityUnchanged`, R-14.4-b); the currency is skipped when person and
+ * (`isIdentityUnchanged`, R-14.4-b) and nobody boards — a SCHOOL solo made
+ * dual brings its instructor on board, so it is checked (review 19.9 F1),
+ * while a dual made solo only lets them off; the currency is skipped when person and
  * date are unchanged and the original flight was already a solo, and
  * otherwise leaves the flight itself out (`excludeFlightId`); the balance is
  * ALWAYS re-checked (PO, Q-19.9-b), crediting back the flight's current
@@ -665,6 +673,7 @@ async function resolveFlightInput(
   const outOfService: RequirementFailure[] = outOfServiceBlock
     ? [{ type: 'AIRCRAFT_OUT_OF_SERVICE', registration: aircraft.registration, ...outOfServiceDetails(aircraft) }]
     : [];
+  const balanceCheck = input.noCharge ? null : { costCents: write.totalAmountCents, creditCents: samePerson ? original.chargeCents : 0 };
   const failures: RequirementFailure[] = [
     ...outOfService,
     ...(await evaluateRequirements({
@@ -672,9 +681,11 @@ async function resolveFlightInput(
       membershipDateOnly: flightDay,
       person: { id: person.id, name: personDisplayName, hasActivePilot, hasActiveStudent, hasActiveInstructor: false },
       instructor: solo ? null : { personId: instructorPersonId!, name: instructorName! },
-      documents: !isIdentityUnchanged(original, input, instructorPersonId, flightDate),
+      // Review 19.9 F1: an instructor who BOARDS (a solo made dual) was never
+      // checked on this flight, whatever `isIdentityUnchanged` says of the ids.
+      documents: !isIdentityUnchanged(original, input, instructorPersonId, flightDate) || (originalSolo && !solo),
       currency: solo && !(samePerson && sameDate && originalSolo) ? { dateOnly: flightDay, excludeFlightId: original?.id ?? null } : null,
-      balance: input.noCharge ? null : { costCents: write.totalAmountCents, creditCents: samePerson ? original.chargeCents : 0 },
+      balance: balanceCheck,
     })),
   ];
   if (failures.length > 0 && !input.force) {
@@ -684,7 +695,35 @@ async function resolveFlightInput(
   // was nothing to derogate.
   const forceStamp = failures.length > 0 ? { forcedAt: new Date(), forcedByUserId: actor.userId } : null;
 
-  return { resolved: { ...resolved, forceStamp }, write };
+  return { resolved: { ...resolved, forceStamp, balanceCheck }, write };
+}
+
+/**
+ * Review 19.9 F2 (R-19-g) — the FINAL decision on the balance, taken on the
+ * balance the transaction read under the `Account` lock (the charged
+ * account's SUM; on an edit it still holds the flight's current charge,
+ * credited back by `balanceCheck`). `resolveFlightInput` judged it before
+ * the transaction, so the admin sees the complete list; two charges racing
+ * on that read would both pass it. Short of the cost without `force` => the
+ * same 422 with the BALANCE item alone (unforced, the list before the
+ * transaction was empty), thrown inside the transaction, which rolls back;
+ * with `force` the deroga is real, so the flight is stamped even when
+ * nothing else was derogated. Returns the stamp to write.
+ */
+function settleBalanceUnderLock(
+  actor: Actor,
+  input: RegisterFlightInput,
+  resolved: ResolvedFlightInput,
+  lockedBalanceCents: number,
+): ResolvedFlightInput['forceStamp'] {
+  const check = resolved.balanceCheck;
+  const shortfall =
+    check === null
+      ? null
+      : balanceFailure(`${resolved.person.firstName} ${resolved.person.lastName}`, lockedBalanceCents + check.creditCents, check.costCents);
+  if (shortfall === null) return resolved.forceStamp;
+  if (!input.force) throwRequirementsNotMet([shortfall]);
+  return resolved.forceStamp ?? { forcedAt: new Date(), forcedByUserId: actor.userId };
 }
 
 /**
@@ -818,7 +857,7 @@ type FlightWrite = {
  * The description starts with the no-charge wording so it survives the
  * statement card's end-truncation on a phone; a normal flight's is unchanged.
  */
-function buildFlightWrite(resolved: Omit<ResolvedFlightInput, 'forceStamp'>, input: RegisterFlightInput): FlightWrite {
+function buildFlightWrite(resolved: Omit<ResolvedFlightInput, 'forceStamp' | 'balanceCheck'>, input: RegisterFlightInput): FlightWrite {
   const aircraftAmountCents = input.noCharge ? 0 : Math.round((resolved.aircraftRateCentsPerHour * resolved.minutes) / 60);
   const instructorAmountCents = resolved.instructorAmountCents === null ? null : input.noCharge ? 0 : resolved.instructorAmountCents;
   const label = input.noCharge ? 'Volo senza addebito' : 'Volo';
@@ -870,12 +909,13 @@ type RegisterFlightCoreResult = {
  * row behind the flight, the `Account` row behind `accountId`) — it takes
  * none of its own.
  *
- * 1. Reads the pre-movement balance (`readBalanceCents`, AD-3).
- * 2. Writes, in order: `Flight.create` (the `buildFlightWrite` snapshot, plus
- *    the actor and the force stamp), the `FLIGHT_CHARGE` `AccountMovement`
- *    (`amountCents: -(total)`, linked via `flightId` — always created, `0` on
- *    a no-charge flight: one charge per flight, AD-7). Nothing is written on
- *    the `Aircraft` row (story 19.2: its hours are the sum of its flights).
+ * Writes, in order: `Flight.create` (the `buildFlightWrite` snapshot, plus
+ * the actor and the force stamp), the `FLIGHT_CHARGE` `AccountMovement`
+ * (`amountCents: -(total)`, linked via `flightId` — always created, `0` on a
+ * no-charge flight: one charge per flight, AD-7). Nothing is written on the
+ * `Aircraft` row (story 19.2: its hours are the sum of its flights). The
+ * pre-movement balance is the caller's read under the `Account` lock (AD-3),
+ * the one the balance requirement was settled on (review 19.9 F2).
  */
 async function registerFlightCore(
   tx: Prisma.TransactionClient,
@@ -883,11 +923,12 @@ async function registerFlightCore(
     actorUserId: string;
     accountId: string;
     write: FlightWrite;
-    /** `resolveFlightInput`'s own force-stamp, spread onto `Flight.create`'s data verbatim (`null` on every normal flight). */
+    balanceBeforeCents: number;
+    /** `settleBalanceUnderLock`'s stamp, spread onto `Flight.create`'s data verbatim (`null` on every normal flight). */
     forceStamp: ResolvedFlightInput['forceStamp'];
   },
 ): Promise<RegisterFlightCoreResult> {
-  const balanceBeforeCents = await readBalanceCents(tx, params.accountId);
+  const { balanceBeforeCents } = params;
 
   const created = await tx.flight.create({
     data: {
@@ -941,6 +982,9 @@ async function registerFlightCore(
  * UNCHANGED from 5.1 — the in-transaction WORK after it lives in
  * `registerFlightCore`. Story 16.2 adds ONE read under that same aircraft
  * lock, before any write: `assertNoOverlappingFlight` (409 `FLIGHT_OVERLAP`).
+ * Under the `Account` lock, before any write, the balance read there settles
+ * the balance requirement (`settleBalanceUnderLock`, review 19.9 F2): 422
+ * `REQUIREMENTS_NOT_MET` and a rollback when it no longer covers the cost.
  *
  * Returns the created flight plus the refreshed account overview. POST-commit
  * (never inside the transaction, Dev Notes): compares the balance band
@@ -997,11 +1041,13 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
     // THIS account so the "balance before" read never races.
     await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR UPDATE`;
 
+    const balanceBeforeCents = await readBalanceCents(tx, account.id);
     const core = await registerFlightCore(tx, {
       actorUserId: actor.userId,
       accountId: account.id,
       write,
-      forceStamp: resolved.forceStamp,
+      balanceBeforeCents,
+      forceStamp: settleBalanceUnderLock(actor, input, resolved, balanceBeforeCents),
     });
     return { ...core, accountId: account.id, accountCreatedAt: account.createdAt };
   });
@@ -1143,7 +1189,9 @@ export async function deleteFlight(actor: Actor, flightId: string): Promise<void
  * excluding this flight; the charge (`loadFlightCharge`); the new person's
  * account get-or-create, then the charge's and the new person's `Account`
  * rows in one ordered query; the D-8 check (`assertChargeNotAdjusted`, 409
- * with a manual rettifica); the new account's balance; `Flight.update`;
+ * with a manual rettifica); the new account's balance, which settles the
+ * balance requirement (`settleBalanceUnderLock`, review 19.9 F2: 422 and a
+ * rollback when it no longer covers the cost); `Flight.update`;
  * `AccountMovement.update` of the existing charge (account, amount,
  * description, value date = the new `flightDate`); the new account's
  * balance, re-read. `actorUserId` on both rows stays whoever registered the
@@ -1229,10 +1277,11 @@ export async function updateFlight(actor: Actor, flightId: string, input: Regist
     await assertChargeNotAdjusted(tx, charge.id);
 
     const before = await readBalanceCents(tx, account.id);
+    const forceStamp = settleBalanceUnderLock(actor, input, resolved, before);
 
     const updated = await tx.flight.update({
       where: { id: flightId },
-      data: { ...write.flightData, ...(resolved.forceStamp ?? {}) },
+      data: { ...write.flightData, ...(forceStamp ?? {}) },
       select: FLIGHT_SELECT,
     });
     await tx.accountMovement.update({

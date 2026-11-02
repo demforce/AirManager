@@ -28,7 +28,7 @@ const authorizeMock = vi.fn();
 vi.mock('@/server/auth/rbac', () => ({ authorize: (...args: unknown[]) => authorizeMock(...args) }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { evaluateRequirements, throwRequirementsNotMet } = await import('./requirements.service');
+const { balanceFailure, evaluateRequirements, throwRequirementsNotMet } = await import('./requirements.service');
 
 type Row = Record<string, unknown>;
 type RowsMock = { mockResolvedValueOnce: (v: Row[]) => RowsMock; mockResolvedValue: (v: Row[]) => RowsMock; mock: { calls: unknown[][] } };
@@ -314,6 +314,15 @@ describe('evaluateRequirements (story 19.9)', () => {
       await expect(evaluateRequirements(input({ balance: { costCents: 1, creditCents: 0 } }))).resolves.toEqual([
         { type: 'BALANCE', role: 'person', personName: 'Mario Rossi', balanceCents: 0, costCents: 1 },
       ]);
+    });
+  });
+
+  // Review 19.9 F2: the same rule, re-applied by a caller on the balance it read under its Account lock.
+  describe('balanceFailure', () => {
+    it('one cent short is the BALANCE failure quoting both amounts; equal and above are covered', () => {
+      expect(balanceFailure('Mario Rossi', 5999, 6000)).toEqual({ type: 'BALANCE', role: 'person', personName: 'Mario Rossi', balanceCents: 5999, costCents: 6000 });
+      expect(balanceFailure('Mario Rossi', 6000, 6000)).toBeNull();
+      expect(balanceFailure('Mario Rossi', 6001, 6000)).toBeNull();
     });
   });
 

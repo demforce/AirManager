@@ -27,6 +27,7 @@
  * view until the user explicitly closes.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -317,6 +318,8 @@ export function FlightEditor({
   const [lastResult, setLastResult] = useState<RegisterFlightResponseDto | null>(null);
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
   const formRef = useRef<HTMLFormElement | null>(null);
+  const submitButtonRef = useRef<HTMLButtonElement | null>(null);
+  const formErrorRef = useRef<HTMLParagraphElement | null>(null);
 
   // --- Requirements warning (story 19.9, AD-6) ------------------------------
   // `requirements` is non-null ONLY right after a 422 `REQUIREMENTS_NOT_MET`:
@@ -331,6 +334,21 @@ export function FlightEditor({
   function dismissRequirements(): void {
     setRequirements(null);
     setProceedError(false);
+  }
+
+  /** «Annulla» — review 19.9 F3: the focus goes back to the submit that opened the warning, never to the page body. */
+  function cancelRequirements(): void {
+    submitButtonRef.current?.focus();
+    dismissRequirements();
+  }
+
+  /** Review 19.9 F3: a resend that closes the warning hands the focus to the banner saying why (rendered first, hence `flushSync`). */
+  function closeRequirementsWithError(message: string): void {
+    flushSync(() => {
+      dismissRequirements();
+      setFormError(message);
+    });
+    formErrorRef.current?.focus();
   }
 
   /**
@@ -722,13 +740,11 @@ export function FlightEditor({
         error?: { code?: string; details?: { takeoffAt?: string; landingAt?: string } };
       } | null;
       if (response.status === 409 && errorBody?.error?.code === 'FLIGHT_OVERLAP') {
-        dismissRequirements();
-        setFormError(overlapMessage(errorBody.error.details));
+        closeRequirementsWithError(overlapMessage(errorBody.error.details));
         return;
       }
       if (isCorrecting && response.status === 404) {
-        dismissRequirements();
-        setFormError(labels.notFoundError);
+        closeRequirementsWithError(labels.notFoundError);
         return;
       }
       setProceedError(true);
@@ -769,7 +785,7 @@ export function FlightEditor({
         <button type="button" className="btn" onClick={onClose}>
           {labels.cancel}
         </button>
-        <button type="submit" form="flight-editor-form" className="btn primary" disabled={isSubmitting || noAircraft || noPerson}>
+        <button ref={submitButtonRef} type="submit" form="flight-editor-form" className="btn primary" disabled={isSubmitting || noAircraft || noPerson}>
           <Icon.check /> {isCorrecting ? labels.correctSubmit : labels.submit}
         </button>
       </>
@@ -971,7 +987,7 @@ export function FlightEditor({
           {noAircraft ? <p style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 10 }}>{labels.fields.noAircraftAvailable}</p> : null}
           {noPerson ? <p style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 4 }}>{labels.fields.noPersonAvailable}</p> : null}
           {formError ? (
-            <p role="alert" data-testid="flight-form-error" style={{ color: 'var(--bad)', fontSize: 13, marginTop: 14 }}>
+            <p ref={formErrorRef} tabIndex={-1} role="alert" data-testid="flight-form-error" className="req-error-banner" style={{ color: 'var(--bad)', fontSize: 13, marginTop: 14 }}>
               {formError}
             </p>
           ) : null}
@@ -981,7 +997,7 @@ export function FlightEditor({
               failures={requirements.failures}
               canProceed={canForce}
               onProceed={() => void onProceed()}
-              onCancel={dismissRequirements}
+              onCancel={cancelRequirements}
               submitting={proceedSubmitting}
               error={proceedError}
               moneyLocale={moneyLocale}

@@ -299,6 +299,22 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     }
   });
 
+  it('review 19.9 F4: the 422 of both flight writes is the AD-8 envelope OR the REQUIREMENTS_NOT_MET one, whose details reference RequirementsNotMetDetails', () => {
+    type Schema = { anyOf?: Schema[]; oneOf?: Schema[]; properties?: Record<string, Schema>; $ref?: string; enum?: unknown[]; const?: unknown };
+    const paths = doc.paths as Record<string, Record<string, { responses: Record<string, { content?: Record<string, { schema: Schema }> }> }>>;
+    for (const operation of [paths['/api/v1/flights']?.['post'], paths['/api/v1/flights/{id}']?.['put']]) {
+      const schema = operation?.responses['422']?.content?.['application/json']?.schema;
+      const variants = schema?.anyOf ?? schema?.oneOf ?? [];
+      expect(variants).toHaveLength(2);
+      const requirements = variants.find((variant) => variant.properties?.['error']?.properties?.['details']?.$ref !== undefined);
+      expect(requirements?.properties?.['error']?.properties?.['details']?.$ref).toBe('#/components/schemas/RequirementsNotMetDetails');
+      expect(JSON.stringify(requirements?.properties?.['error']?.properties?.['code'])).toContain('REQUIREMENTS_NOT_MET');
+    }
+    // Every other operation keeps the plain envelope.
+    const deleteSchema = paths['/api/v1/flights/{id}']?.['delete']?.responses['409']?.content?.['application/json']?.schema;
+    expect(deleteSchema?.anyOf ?? deleteSchema?.oneOf).toBeUndefined();
+  });
+
   it('documents blocksBooking on the ExpiryType schema (story 7.4)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
     expect(schemas?.['ExpiryType']?.properties).toHaveProperty('blocksBooking');

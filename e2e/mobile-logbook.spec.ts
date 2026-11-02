@@ -860,11 +860,19 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     expect(geometry.buttonHeights).toHaveLength(2);
     for (const height of geometry.buttonHeights) expect(height).toBeGreaterThanOrEqual(44);
 
+    // Review 19.9 F3: «Annulla» gives the focus back to the anchored submit, never to the body.
+    await warning.getByTestId('requirements-cancel').click();
+    await expect(warning).toHaveCount(0);
+    const submit = page.getByRole('button', { name: 'Registra volo' });
+    await expect(submit).toBeFocused();
+    await expect(submit).toBeInViewport();
+    await submit.click();
+
     await warning.getByTestId('requirements-proceed').click();
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     // No deroga notice in the summary (A10): nothing but the breakdown, and no "deroga" wording.
     await expect(page.getByTestId('flight-result-panel')).not.toContainText(/deroga/i);
-    expect(flightPosts, 'the submit, then ONE resend').toBe(2);
+    expect(flightPosts, 'two submits, then ONE resend').toBe(3);
   });
 
   test('closing and reopening the panel wipes the pending requirements body (review 14.4 F1)', async ({ page }) => {

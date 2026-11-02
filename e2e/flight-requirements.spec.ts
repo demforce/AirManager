@@ -9,6 +9,7 @@ import {
   registerExpiry,
   registerFlightOn,
   selectFromCombobox,
+  sendInRegola,
   todayRome,
   type E2eRequirementFailure,
 } from './helpers';
@@ -31,7 +32,8 @@ if (!SEED_PASSWORD) {
  * writes no AppSettings (X and Y of the currency stay what the DB holds —
  * read, never assumed), so the file stays in the `fullyParallel` project.
  * The catalogue is GLOBAL and dirtied by parallel specs (TD 16.2-g): every
- * asserted list goes through `ownFailures` (E-R6). The one blocking RATING
+ * asserted list goes through `ownFailures` (E-R6), and every write that must
+ * pass unwarned through `sendInRegola` (review F5). The one blocking RATING
  * this file creates is scoped to STUDENTS (every "in regola" case here is a
  * pilot) and deactivated as soon as its case is asserted.
  */
@@ -139,14 +141,23 @@ test.describe('Requirements of a flight: each check alone, then together (story 
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const pilot = await pilotInRegola(page, aircraft.id, 'InRegola', 20_000);
+    const inRegola = [{ personId: pilot.id, scope: 'PILOTS' as const }];
 
-    const plain = await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.id, FLIGHT_DAY) });
+    const plain = await sendInRegola(page, inRegola, () => page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.id, FLIGHT_DAY) }));
     expect(plain.status(), await plain.text()).toBe(201);
     expect(((await plain.json()) as { flight: { forcedAt: string | null } }).flight.forcedAt).toBeNull();
 
-    const forcedForNothing = await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.id, FLIGHT_DAY, { force: true }, 30, '12') });
-    expect(forcedForNothing.status(), await forcedForNothing.text()).toBe(201);
-    expect(((await forcedForNothing.json()) as { flight: { forcedAt: string | null } }).flight.forcedAt).toBeNull();
+    // A force with nothing to derogate stamps nothing. A sibling spec's blocking type gone active in
+    // between WOULD be something to derogate (TD 16.2-g): only when covering the pilot again finds
+    // one is the request resent, on the next free slot (review F5).
+    let forcedAt: string | null = null;
+    for (const hour of ['12', '13', '14']) {
+      const forcedForNothing = await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.id, FLIGHT_DAY, { force: true }, 30, hour) });
+      expect(forcedForNothing.status(), await forcedForNothing.text()).toBe(201);
+      forcedAt = ((await forcedForNothing.json()) as { flight: { forcedAt: string | null } }).flight.forcedAt;
+      if (forcedAt === null || (await ensureValidSeedExpiries(page, pilot.id, 'PILOTS')) === 0) break;
+    }
+    expect(forcedAt).toBeNull();
   });
 
   test('(b) EXPIRY alone: a blocking RATING expired the day before is the only failure — and once its type is deactivated it is no failure at all (16.4)', async ({ page }) => {
@@ -272,6 +283,35 @@ test.describe('Requirements of a flight: each check alone, then together (story 
 });
 
 test.describe('Requirements of an edit (story 19.9, AC 11, AC 12)', () => {
+  test('(a) review F1: a SCHOOL solo made dual — same student, instructor and date — checks the instructor who now boards; made solo again, the instructor is let off', async ({
+    page,
+  }) => {
+    await login(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    // The student in regola, with a currency from a no-charge lesson; the instructor with no visit and no fee.
+    const student = await createPerson(page, 'student', 'Sale');
+    await ensureFlightRequirements(page, { personId: student.id, scope: 'STUDENTS', topUpCents: 20_000 });
+    const instructor = await createPerson(page, 'instructor', 'ABordo');
+    await registerFlightOn(page, { aircraftId: aircraft.id, personId: student.id, instructorPersonId: instructor.id, flightType: 'SCHOOL', date: CURRENCY_DAY, noCharge: true });
+    const dual = { flightType: 'SCHOOL', instructorPersonId: instructor.id };
+    const solo = await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, student.id, FLIGHT_DAY, { ...dual, isSolo: true, force: true }) });
+    expect(solo.status(), await solo.text()).toBe(201);
+    const flightId = ((await solo.json()) as { flight: { id: string } }).flight.id;
+
+    // Solo -> dual: the instructor boards, so the documents and the fee are judged again (E-R6 for the catalogue).
+    const boarded = await page.request.put(`/api/v1/flights/${flightId}`, { data: flightBody(aircraft.id, student.id, FLIGHT_DAY, dual) });
+    expect(ownFailures(await failuresOf(boarded))).toEqual([
+      { type: 'EXPIRY', role: 'instructor', personName: instructor.serverName, typeName: MEDICAL, expiresAt: null },
+      { type: 'MEMBERSHIP', role: 'instructor', personName: instructor.serverName, expiresAt: null },
+    ]);
+
+    // Dual -> solo: nobody boards, the instructor is let off — the student's currency comes from the lesson above.
+    const madeDual = await page.request.put(`/api/v1/flights/${flightId}`, { data: flightBody(aircraft.id, student.id, FLIGHT_DAY, { ...dual, force: true }) });
+    expect(madeDual.status(), await madeDual.text()).toBe(200);
+    const backToSolo = await page.request.put(`/api/v1/flights/${flightId}`, { data: flightBody(aircraft.id, student.id, FLIGHT_DAY, { ...dual, isSolo: true }) });
+    expect(backToSolo.status(), await backToSolo.text()).toBe(200);
+  });
+
   test('(b) the edited flight never counts for its own currency: its only solo, moved one day LATER, lists the currency', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
@@ -295,7 +335,9 @@ test.describe('Requirements of an edit (story 19.9, AC 11, AC 12)', () => {
 
     // Exactly 0 € after fee and flight.
     const exact = await pilotInRegola(page, aircraft.id, 'Netto', 6000);
-    const registered = await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, exact.id, FLIGHT_DAY) });
+    const registered = await sendInRegola(page, [{ personId: exact.id, scope: 'PILOTS' }], () =>
+      page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, exact.id, FLIGHT_DAY) }),
+    );
     expect(registered.status(), await registered.text()).toBe(201);
     const flightId = ((await registered.json()) as { flight: { id: string } }).flight.id;
 
@@ -328,7 +370,9 @@ test.describe('Requirements of an edit (story 19.9, AC 11, AC 12)', () => {
     // balance tells "not judged" (A9) from "judged and covered".
     const charged = await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.id, FLIGHT_DAY, { force: true }, 30, '13') });
     expect(charged.status(), await charged.text()).toBe(201);
-    const noCharge = await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.id, FLIGHT_DAY, { noCharge: true }, 30, '15') });
+    const noCharge = await sendInRegola(page, [{ personId: pilot.id, scope: 'PILOTS' }], () =>
+      page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.id, FLIGHT_DAY, { noCharge: true }, 30, '15') }),
+    );
     expect(noCharge.status(), await noCharge.text()).toBe(201);
     expect(((await noCharge.json()) as { flight: { forcedAt: string | null } }).flight.forcedAt).toBeNull();
   });
@@ -406,6 +450,8 @@ test.describe('The warning in the flight form (story 19.9, AC 13-15)', () => {
     await page.getByRole('button', { name: 'Registra volo' }).click();
     await page.getByTestId('requirements-warning').getByTestId('requirements-cancel').click();
     await expect(page.getByTestId('requirements-warning')).toHaveCount(0);
+    // Review F3: the focus goes back to the submit that opened the warning, never to the body.
+    await expect(page.getByRole('button', { name: 'Registra volo' })).toBeFocused();
     expect(posts, 'no request from a change or from «Annulla» — only the three submits').toHaveLength(3);
 
     // AC 14: a failed resend keeps the warning open with its retry message...
@@ -416,6 +462,8 @@ test.describe('The warning in the flight form (story 19.9, AC 13-15)', () => {
     await page.getByTestId('requirements-proceed').click();
     await expect(page.getByTestId('requirements-proceed-error')).toHaveText('Impossibile completare l\'operazione. Riprova.');
     await expect(page.getByTestId('requirements-warning')).toBeVisible();
+    // Review F3: disabled while it sent, the button had dropped the focus — it has it back for the retry.
+    await expect(page.getByTestId('requirements-proceed')).toBeFocused();
 
     // ...and a successful one is the SAME body plus force, once, same endpoint and method.
     await page.getByTestId('requirements-proceed').click();

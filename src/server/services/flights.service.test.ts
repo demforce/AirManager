@@ -89,12 +89,16 @@ vi.mock('./instructor-rates.service', () => ({
 // importing it would drag currency/membership/expiries and `@/lib/env` in).
 // This file proves the POLICY flights.service asks for — which blocks, for
 // whom, on which day — and what it does with the answer. The 422 is the real
-// `ValidationError` of the shared contract.
+// `ValidationError` of the shared contract. `balanceFailure` (the BALANCE rule
+// the transaction re-applies under the `Account` lock, review 19.9 F2) is
+// mocked too, defaulting to "covered": its boundary is proved where it lives.
 const evaluateRequirementsMock = vi.fn();
+const balanceFailureMock = vi.fn();
 vi.mock('./requirements.service', async () => {
   const { ValidationError } = await import('./errors');
   return {
     evaluateRequirements: (...args: unknown[]) => evaluateRequirementsMock(...args),
+    balanceFailure: (...args: unknown[]) => balanceFailureMock(...args),
     throwRequirementsNotMet: (failures: unknown[]) => {
       throw new ValidationError('Requirements not met.', { failures }, 'REQUIREMENTS_NOT_MET');
     },
@@ -331,6 +335,8 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     // about them keep passing unmodified; the dedicated describe blocks
     // below override it per test.
     evaluateRequirementsMock.mockResolvedValue([]);
+    balanceFailureMock.mockReset();
+    balanceFailureMock.mockReturnValue(null);
     // Story 16.2 default: no overlapping flight — every PRE-EXISTING test in
     // this file keeps passing unmodified; the dedicated describe block below
     // overrides it per test.
@@ -1369,6 +1375,48 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(parsed).not.toHaveProperty('forceReason');
       expect(parsed.force).toBe(true);
     });
+
+    // Review 19.9 F2 (R-19-g): the balance read under the Account lock is the decision.
+    describe('the balance settled under the Account lock (review F2)', () => {
+      const SHORT = { type: 'BALANCE', role: 'person', personName: 'Mario Rossi', balanceCents: -5000, costCents: 20000 } as const;
+
+      it('is judged on the balance read AFTER the Account lock, credit 0, before any write', async () => {
+        accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 4321 } });
+
+        await registerFlight(adminActor(), BASE_INPUT);
+
+        expect(balanceFailureMock).toHaveBeenCalledWith('Mario Rossi', 4321, 20000);
+        const accountLock = queryRawMock.mock.invocationCallOrder[1]!;
+        const balanceRead = accountMovementAggregateMock.mock.invocationCallOrder[0]!;
+        const judged = balanceFailureMock.mock.invocationCallOrder[0]!;
+        expect(accountLock).toBeLessThan(balanceRead);
+        expect(balanceRead).toBeLessThan(judged);
+        expect(judged).toBeLessThan(flightCreateMock.mock.invocationCallOrder[0]!);
+      });
+
+      it('no longer covered there (a charge raced in) and unforced: the SAME 422 with the BALANCE item alone, nothing written', async () => {
+        balanceFailureMock.mockReturnValue(SHORT);
+
+        await expect(registerFlight(adminActor(), BASE_INPUT)).rejects.toMatchObject({ code: 'REQUIREMENTS_NOT_MET', details: { failures: [SHORT] } });
+        expect(transactionMock).toHaveBeenCalledTimes(1);
+        expect(flightCreateMock).not.toHaveBeenCalled();
+        expect(accountMovementCreateMock).not.toHaveBeenCalled();
+      });
+
+      it('no longer covered there and forced: registered, and stamped although nothing else was derogated', async () => {
+        balanceFailureMock.mockReturnValue(SHORT);
+
+        await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, force: true }));
+
+        expect(createdData()).toMatchObject({ forcedByUserId: 'admin_1', forcedAt: expect.any(Date) });
+      });
+
+      it('a no-charge flight is not judged there either (A9)', async () => {
+        await registerFlight(adminActor(), registerFlightSchema.parse({ ...BASE_INPUT, noCharge: true }));
+
+        expect(balanceFailureMock).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('deleteFlight (story 19.6, P2 — R-19-c; AD-2/AD-3; AC 4/5/7/8)', () => {
@@ -1725,6 +1773,30 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
+    // Review 19.9 F2 (R-19-g): the balance read under the Account lock is the decision, on an edit too.
+    it('the balance is settled on the new account read AFTER the Account lock, the current charge credited back; short and unforced: the 422 with the BALANCE item alone, nothing written (review F2)', async () => {
+      const short = { type: 'BALANCE', role: 'person', personName: 'Mario Rossi', balanceCents: 1000, costCents: 7500 } as const;
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: -19000 } });
+      balanceFailureMock.mockReturnValue(short);
+
+      await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).rejects.toMatchObject({ code: 'REQUIREMENTS_NOT_MET', details: { failures: [short] } });
+
+      // SUM under the lock (-190,00, the current -200,00 charge included) + that charge credited back.
+      expect(balanceFailureMock).toHaveBeenCalledWith('Mario Rossi', -19000 + 20000, 7500);
+      expect(queryRawMock.mock.invocationCallOrder[2]!).toBeLessThan(accountMovementAggregateMock.mock.invocationCallOrder[0]!);
+      expect(accountMovementAggregateMock.mock.invocationCallOrder[0]!).toBeLessThan(balanceFailureMock.mock.invocationCallOrder[0]!);
+      expect(flightUpdateMock).not.toHaveBeenCalled();
+      expect(accountMovementUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('short under the lock and forced: the edit is stamped although nothing else was derogated (review F2)', async () => {
+      balanceFailureMock.mockReturnValue({ type: 'BALANCE', role: 'person', personName: 'Mario Rossi', balanceCents: 1000, costCents: 7500 });
+
+      await updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, force: true }));
+
+      expect(updatedFlightData()).toMatchObject({ forcedByUserId: 'admin_1', forcedAt: expect.any(Date) });
+    });
+
     it('422 AIRCRAFT_ARCHIVED when the edited data targets an archived aircraft — re-validates the NEW data, transaction never opens', async () => {
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_2', registration: 'I-ARCH', archivedAt: new Date('2026-01-01T00:00:00.000Z') });
       const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2' });
@@ -1795,6 +1867,27 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         await updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, instructorPersonId: 'person_instructor' }));
 
         expect(askedFor()).toMatchObject({ documents: true, instructor: { personId: 'person_instructor', name: 'Anna Bianchi' }, currency: null });
+      });
+
+      // Review 19.9 F1: the exemption keys on who is ON BOARD, not on the instructor's id.
+      it('(a) an original SCHOOL solo made dual with the SAME instructor brings documents and fee back — that instructor now boards (review F1)', async () => {
+        flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, flightType: 'SCHOOL', isSolo: true, instructorProfile: { personId: 'person_instructor' } });
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+
+        await updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, flightType: 'SCHOOL', isSolo: false, instructorPersonId: 'person_instructor' }));
+
+        expect(askedFor()).toMatchObject({ documents: true, instructor: { personId: 'person_instructor', name: 'Anna Bianchi' }, currency: null });
+      });
+
+      it('(a) the inverse, a dual made solo with the same instructor: nobody boards — documents and fee stay skipped, the instructor is not asked (review F1)', async () => {
+        flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, flightType: 'SCHOOL', instructorProfile: { personId: 'person_instructor' } });
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 10000 });
+
+        await updateFlight(adminActor(), 'flight_orig', registerFlightSchema.parse({ ...UPDATE_INPUT, flightType: 'SCHOOL', isSolo: true, instructorPersonId: 'person_instructor' }));
+
+        expect(askedFor()).toMatchObject({ documents: false, instructor: null });
       });
 
       it('(b) an original solo kept solo, same person and date: currency skipped', async () => {

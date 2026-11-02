@@ -1,6 +1,14 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ensureFlightRequirements, ensureValidSeedExpiries, ownFailures, registerFlightOn, submitPastRequirements, type E2eRequirementFailure } from './helpers';
+import {
+  ensureFlightRequirements,
+  ensureValidSeedExpiries,
+  ownFailures,
+  registerFlightOn,
+  sendInRegola,
+  submitPastRequirements,
+  type E2eRequirementFailure,
+} from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -562,7 +570,8 @@ test.describe('The grounding on a flight: the first failure of the one warning, 
       takeoffAt: `${flightDay}T10:00:00.000Z`,
       landingAt: `${flightDay}T${landing}:00.000Z`,
     });
-    const registered = await page.request.post('/api/v1/flights', { data: body(flown.id, '11:00') });
+    // Review 19.9 F5: a sibling spec's global blocking type gone active since the snapshot is covered and resent.
+    const registered = await sendInRegola(page, [{ personId: pilot.personId, scope: 'PILOTS' }], () => page.request.post('/api/v1/flights', { data: body(flown.id, '11:00') }));
     expect(registered.status(), await registered.text()).toBe(201);
     const registeredFlight = ((await registered.json()) as { flight: { id: string; forcedAt: string | null } }).flight;
     expect(registeredFlight.forcedAt).toBeNull();

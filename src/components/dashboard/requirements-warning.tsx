@@ -13,8 +13,10 @@
  * caller who cannot derogate; the flight form never uses it (only an admin
  * registers flights). `error` = the last «Procedi comunque» failed with
  * something the caller does not map itself (network, 5xx): the warning stays
- * open with a retry message. On mount it takes the focus and scrolls into
- * view — on the phone it sits under the whole form.
+ * open with a retry message — and «Procedi comunque» takes the focus back. On
+ * mount it takes the focus and scrolls into view — on the phone it sits under
+ * the whole form. Giving the focus back when the warning CLOSES is the
+ * caller's job (it owns the submit and the banner).
  *
  * Tokens only (`--warn-soft`/`--warn`, the panel of the deroga it replaces);
  * the 44px phone targets live in `airops.css` (`.req-warning`).
@@ -42,11 +44,19 @@ export function RequirementsWarning({ failures, canProceed, onProceed, onCancel,
   const t = useTranslations('Requirements');
   const titleId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const proceedRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     rootRef.current?.focus({ preventScroll: true });
     rootRef.current?.scrollIntoView({ block: 'nearest' });
   }, []);
+
+  // Review 19.9 F3: «Procedi comunque» is disabled while it sends, and a
+  // disabled button drops the focus to the page body; when the resend ends
+  // with the warning still open (the retry message), it takes it back.
+  useEffect(() => {
+    if (!submitting && document.activeElement === document.body) proceedRef.current?.focus();
+  }, [submitting]);
 
   const format = { formatDate: (dateOnly: string) => formatDateOnly(dateOnly, moneyLocale), formatMoney: (cents: number) => formatCents(cents, moneyLocale) };
 
@@ -79,7 +89,7 @@ export function RequirementsWarning({ failures, canProceed, onProceed, onCancel,
       ) : null}
       {canProceed ? (
         <div className="req-warning-actions">
-          <button type="button" className="btn primary" disabled={submitting} onClick={onProceed} data-testid="requirements-proceed">
+          <button ref={proceedRef} type="button" className="btn primary" disabled={submitting} onClick={onProceed} data-testid="requirements-proceed">
             {t('proceed')}
           </button>
           <button type="button" className="btn" onClick={onCancel} data-testid="requirements-cancel">

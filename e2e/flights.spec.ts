@@ -1,6 +1,14 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ensureFlightRequirements, ensureValidSeedExpiries, registerExpiry, registerFlightOn, submitPastRequirements, todayRome } from './helpers';
+import {
+  ensureFlightRequirements,
+  ensureValidSeedExpiries,
+  registerExpiry,
+  registerFlightOn,
+  submitInRegola,
+  submitPastRequirements,
+  todayRome,
+} from './helpers';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -194,10 +202,10 @@ async function createExpiryTypeForFlights(page: Page, blocksBooking: boolean): P
  * OTHER spec's fresh-person `ensureValidSeedExpiries` scan (e2e/helpers.ts)
  * that happened to run just before this type went active, blocking that
  * spec's later flight registration too (observed cross-file: `my-account`/
- * `pdf-exports`/`instructor-compensation`/`reports`). This is called AFTER
- * every assertion the test needs the type ACTIVE for, so it always
- * re-authenticates as ADMIN (`settings.manage`, story 6.1) regardless of
- * which actor the test ended as.
+ * `pdf-exports`/`instructor-compensation`/`reports`). Called by that
+ * describe's `afterEach` (TD-19.9-c: a failed test must not leave the type
+ * active either), so it always re-authenticates as ADMIN (`settings.manage`,
+ * story 6.1) regardless of which actor the test ended as.
  */
 async function deactivateBlockingType(page: Page, typeId: string): Promise<void> {
   await page.context().clearCookies();
@@ -695,12 +703,20 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
 test.describe('Requirements warning & admin deroga from the form (Story 14.4 rewritten by story 19.9, E-R4; AC 13/17)', () => {
   // Story 14.4 blast-radius fixture fix: 2 of the 4 tests below each create
   // their OWN active, scope: 'ALL', blocksBooking: true `ExpiryType` (active
-  // until `deactivateBlockingType` runs at that test's end) — under
+  // until `deactivateBlockingType` runs in the `afterEach` below) — under
   // `fullyParallel: true` a SIBLING test in this SAME describe block could
   // otherwise run concurrently on a different worker and see it as a MISSING
   // document of its own fresh pilot. Serial mode makes this describe block
   // race-free against itself.
   test.describe.configure({ mode: 'serial' });
+
+  // TD-19.9-c: deactivated after EVERY test, passed or failed — a failed test
+  // left its `scope: 'ALL'` type active, a missing document of every person
+  // created after it.
+  const activeBlockingTypeIds: string[] = [];
+  test.afterEach(async ({ page }) => {
+    for (const typeId of activeBlockingTypeIds.splice(0)) await deactivateBlockingType(page, typeId);
+  });
 
   test('ADMIN: a pilot with a blocking expired document gets ONE warning naming document, date and owner — no motivo field — and «Procedi comunque» registers it (201) with the silent stamp and no badge', async ({
     page,
@@ -710,6 +726,7 @@ test.describe('Requirements warning & admin deroga from the form (Story 14.4 rew
     // Ordering: see `ensureValidSeedExpiries`'s own doc-comment.
     const pilot = await createPilotWithLogin(page, 'PilotForce123!');
     const blockingType = await createExpiryTypeForFlights(page, true);
+    activeBlockingTypeIds.push(blockingType.id);
     await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
 
     await page.goto('/it/dashboard/logbook');
@@ -749,7 +766,6 @@ test.describe('Requirements warning & admin deroga from the form (Story 14.4 rew
     await expect(row).toHaveCount(1);
     await expect(row).not.toContainText('Deroga');
     await expect(row).not.toContainText('Motivo');
-    await deactivateBlockingType(page, blockingType.id);
   });
 
   // Review 14.9 F4: this proves the `flights.manage` gate rejects a pilot
@@ -790,6 +806,7 @@ test.describe('Requirements warning & admin deroga from the form (Story 14.4 rew
     const pilot = await createPilotWithLogin(page, 'PilotInstrBlock123!');
     const instructor = await createInstructorWithRate(page, 4000);
     const blockingType = await createExpiryTypeForFlights(page, true);
+    activeBlockingTypeIds.push(blockingType.id);
     await registerExpiry(page, instructor.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
 
     await page.goto('/it/dashboard/logbook');
@@ -811,7 +828,6 @@ test.describe('Requirements warning & admin deroga from the form (Story 14.4 rew
     await warning.getByTestId('requirements-proceed').click();
 
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
-    await deactivateBlockingType(page, blockingType.id);
   });
 
   test('a flight the balance does not cover is a BALANCE item with both amounts; after «Procedi comunque» the summary still flags the negative balance (AC 17, D-11)', async ({
@@ -860,11 +876,12 @@ test.describe('Requirements warning & admin deroga from the form (Story 14.4 rew
  * `bookings.spec.ts` ("Booking expiry block", story 7.4) stay ACTIVE for
  * good, the ones of the "Requirements warning" describe above are active
  * for the duration of the test that creates each (`deactivateBlockingType`
- * runs at its end). Under `fullyParallel` a type that goes active AFTER a
+ * runs in that describe's `afterEach`). Under `fullyParallel` a type that goes active AFTER a
  * fresh person's `ensureValidSeedExpiries` scan adds a MISSING document to
  * that person's requirements (story 19.9: `REQUIREMENTS_NOT_MET`). The API
- * fixtures here pass `force` and never meet it; only the UI test that needs
- * a pilot "in regola" (E6) keeps a small window open.
+ * fixtures here pass `force` and never meet it; the UI test that needs a
+ * pilot "in regola" (E6) submits through `submitInRegola`, which covers such
+ * a document and submits again (review 19.9 F5).
  */
 test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', () => {
   /** The registry's own view of one aircraft's flights (admin scope) — how a refused registration is proved to have written nothing. */
@@ -1087,7 +1104,10 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     // Story 19.9: the pilot is "in regola" (E-R5) so that no submit below meets
     // the requirements warning first — every 422 precedes the 409. The currency
     // comes from a no-charge fixture flight on ANOTHER aircraft, two weeks before.
+    // Every registration goes through `submitInRegola` (review F5, TD 16.2-g).
     await ensureFlightRequirements(page, { personId: pilot.personId, scope: 'PILOTS', topUpCents: 100_000 });
+    const inRegola = [{ personId: pilot.personId, scope: 'PILOTS' as const }];
+    const submit = page.getByRole('button', { name: 'Registra volo' });
     const currencyAircraft = await createAircraftWithRate(page, 12000);
     await seedAircraftRate(currencyAircraft.id, { studentPriceCents: 12000, pilotPriceCents: 12000, validFrom: '2019-12-01' });
     await registerFlightOn(page, { aircraftId: currencyAircraft.id, personId: pilot.personId, flightType: 'TOURISM', date: '2019-12-18', noCharge: true });
@@ -1106,7 +1126,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await fillCommonFields();
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitInRegola(page, inRegola, submit);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     await page.getByTestId('flight-result-close').click();
 
@@ -1116,7 +1136,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await fillCommonFields();
     await page.getByLabel('Ora decollo').fill('10:30');
     await page.getByLabel('Ora atterraggio').fill('11:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitInRegola(page, inRegola, submit);
 
     const formError = page.getByTestId('flight-form-error');
     await expect(formError).toContainText(conflictText);
@@ -1127,7 +1147,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await page.getByLabel('Ora decollo').fill('20:00');
     await page.getByLabel('Ora atterraggio').fill('20:30');
     await page.getByLabel('Aeroporto di partenza').fill(spareDeparture);
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await submitInRegola(page, inRegola, submit);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     await page.getByTestId('flight-result-close').click();
 
@@ -1180,6 +1200,8 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
       const formError = page.getByTestId('flight-form-error');
       await expect(formError).toContainText(conflictText);
       await expect(warning).toHaveCount(0);
+      // Review 19.9 F3: the closed warning hands the focus to the banner, never to the body.
+      await expect(formError).toBeFocused();
     }
 
     // The flight that will be conflicted with: 10:00 -> 11:00 local,

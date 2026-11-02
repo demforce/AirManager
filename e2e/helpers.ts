@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import type { Locator, Page } from '@playwright/test';
+import type { APIResponse, Locator, Page } from '@playwright/test';
 
 /** A comfortably far-future date — never itself the boundary under test. */
 export const FAR_FUTURE_DATE = '2099-12-31';
@@ -50,15 +50,19 @@ export async function registerExpiry(page: Page, personId: string, expiryTypeId:
  * its OWN custom types (`flights.spec.ts`'s cleanup) between this
  * function's GET and its POST — either 409 cause means the type is no
  * longer something this person needs covered, never a real failure.
+ *
+ * Returns how many blocking RATINGs it registered (story 19.9, review F5:
+ * `sendInRegola`'s callers read a non-zero count on a person already "in
+ * regola" as a sibling spec's type gone active in between).
  */
-export async function ensureValidSeedExpiries(page: Page, personId: string, scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS'): Promise<void> {
+export async function ensureValidSeedExpiries(page: Page, personId: string, scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS'): Promise<number> {
   const typesResponse = await page.request.get('/api/v1/expiry-types');
   expect(typesResponse.status()).toBe(200);
   // Active types only, ordered by name (the endpoint's defaults).
   const types = (await typesResponse.json()) as { id: string; scope: string; kind: string; blocksBooking: boolean }[];
   const ratings = types.filter((type) => type.kind === 'RATING' && type.blocksBooking && (type.scope === 'ALL' || type.scope === scope));
   const firstMedical = types.find((type) => type.kind === 'MEDICAL');
-  if (ratings.length === 0 && firstMedical === undefined) return;
+  if (ratings.length === 0 && firstMedical === undefined) return 0;
 
   const existingResponse = await page.request.get(`/api/v1/expiries?personId=${personId}&pageSize=100`);
   expect(existingResponse.status()).toBe(200);
@@ -71,11 +75,14 @@ export async function ensureValidSeedExpiries(page: Page, personId: string, scop
   const hasVisit = existing.some((item) => item.category === 'MEDICAL');
 
   const toRegister = [...ratings.filter((type) => !alreadyRegisteredTypeIds.has(type.id)), ...(firstMedical !== undefined && !hasVisit ? [firstMedical] : [])];
+  let registeredRatings = 0;
   for (const type of toRegister) {
     const response = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId: type.id, expiresAt: FAR_FUTURE_DATE } });
     if (response.status() === 409) continue;
     expect(response.status()).toBe(201);
+    if (type.kind === 'RATING') registeredRatings += 1;
   }
+  return registeredRatings;
 }
 
 /** The UTC instant of `hhmm` on `date` on the Europe/Rome wall clock (+01:00 in winter, +02:00 in summer). */
@@ -211,6 +218,53 @@ export function ownFailures<T extends E2eRequirementFailure>(failures: T[], ownT
       ownTypeNames.includes(failure.typeName ?? '') ||
       (failure.typeName ?? '').includes('Visita medica'),
   );
+}
+
+/** A person `ensureFlightRequirements` made "in regola", with the scope it was covered for. */
+export type InRegolaPerson = { personId: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' };
+
+/** True when a flight write was refused ONLY for missing documents of types the test never named (`ownFailures` keeps none). */
+async function refusedOnlyByForeignTypes(response: { status(): number; json(): Promise<unknown> }): Promise<boolean> {
+  if (response.status() !== 422) return false;
+  const failures = ((await response.json()) as { error?: { code?: string; details?: { failures?: E2eRequirementFailure[] } } }).error?.details?.failures;
+  return failures !== undefined && failures.length > 0 && ownFailures(failures).length === 0;
+}
+
+/**
+ * Story 19.9 (review F5, TD 16.2-g): a flight write that must meet NO
+ * requirement, for people made "in regola" by `ensureFlightRequirements`.
+ * That state is a snapshot of a GLOBAL catalogue: a sibling spec can
+ * activate a blocking RATING (scope `ALL`) right after it, and the person
+ * then misses that document. Only for that answer — a 422 whose every item
+ * is such a missing document — are the people covered again and the request
+ * resent (twice at most); any other answer, a failure the test owns
+ * included, is returned as is for the caller to assert.
+ */
+export async function sendInRegola(page: Page, people: InRegolaPerson[], send: () => Promise<APIResponse>): Promise<APIResponse> {
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await send();
+    if (attempt === 3 || !(await refusedOnlyByForeignTypes(response))) return response;
+    for (const person of people) await ensureValidSeedExpiries(page, person.personId, person.scope);
+  }
+}
+
+/**
+ * The flight-form counterpart of `sendInRegola` (review F5): clicks `submit`
+ * and waits for the flight write it sends; when that write was refused ONLY
+ * for a sibling spec's missing documents, covers the people again, closes
+ * the warning with «Annulla» and clicks again (twice at most). The caller
+ * asserts the outcome it expects.
+ */
+export async function submitInRegola(page: Page, people: InRegolaPerson[], submit: Locator): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    const answered = page.waitForResponse(
+      (response) => /^\/api\/v1\/flights(\/[^/]+)?$/.test(new URL(response.url()).pathname) && ['POST', 'PUT'].includes(response.request().method()),
+    );
+    await submit.click();
+    if (attempt === 3 || !(await refusedOnlyByForeignTypes(await answered))) return;
+    for (const person of people) await ensureValidSeedExpiries(page, person.personId, person.scope);
+    await page.getByTestId('requirements-warning').getByTestId('requirements-cancel').click();
+  }
 }
 
 /**
