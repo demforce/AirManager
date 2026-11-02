@@ -48,6 +48,8 @@ vi.mock('@/server/db/prisma', () => ({
     },
     expiry: {
       create: vi.fn(),
+      // Story 19.4: the composite's pre-transaction read of the rows its `expiries.set` would create.
+      findMany: vi.fn(),
     },
     $transaction: vi.fn(),
     // Story 19.3 (AD-5): `upsertProfile`'s `Person` row lock.
@@ -62,6 +64,23 @@ vi.mock('@/server/db/prisma', () => ({
 vi.mock('./auth-tokens.service', () => ({
   sendInviteEmail: vi.fn(),
 }));
+
+// Story 19.4 (AD-7, AC 9): every permission of the composite belongs to the
+// ADMIN alone today, so "has people.manage but not payouts.manage" is no real
+// role — this deny-list makes the REAL `authorize` refuse one permission at a
+// time. Empty (every other test) = the real `authorize`, unchanged.
+const deniedPermissions = vi.hoisted(() => new Set<string>());
+vi.mock('@/server/auth/rbac', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/server/auth/rbac')>();
+  const { ForbiddenError: Forbidden } = await import('./errors');
+  return {
+    ...actual,
+    authorize: (actor: Parameters<typeof actual.authorize>[0], permission: Parameters<typeof actual.authorize>[1]) => {
+      if (deniedPermissions.has(permission)) throw new Forbidden(`Actor lacks required permission: ${permission}`);
+      actual.authorize(actor, permission);
+    },
+  };
+});
 
 const { prisma } = await import('@/server/db/prisma');
 const { sendInviteEmail } = await import('./auth-tokens.service');
@@ -78,6 +97,10 @@ const {
   assertStudentProfileExclusive,
 } = await import('./people.service');
 const { ConflictError, NotFoundError } = await import('./errors');
+const { updatePersonCompositeSchema } = await import('@/lib/schemas/people');
+const { todayDateOnlyInZone } = await import('@/lib/zoned-time');
+const { APP_TIMEZONE } = await import('@/lib/time');
+const { parseDateOnlyUtc } = await import('@/lib/date-only');
 
 const findUniqueMock = vi.mocked(prisma.person.findUnique);
 const findFirstMock = vi.mocked(prisma.person.findFirst);
@@ -103,6 +126,7 @@ const userFindUniqueMock = vi.mocked(prisma.user.findUnique);
 const userCreateMock = vi.mocked(prisma.user.create);
 const expiryTypeFindManyMock = vi.mocked(prisma.expiryType.findMany);
 const expiryCreateMock = vi.mocked(prisma.expiry.create);
+const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
 const sendInviteEmailMock = vi.mocked(sendInviteEmail);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
@@ -193,6 +217,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     userCreateMock.mockReset();
     expiryTypeFindManyMock.mockReset();
     expiryCreateMock.mockReset();
+    expiryFindManyMock.mockReset();
+    deniedPermissions.clear();
     sendInviteEmailMock.mockReset();
     queryRawMock.mockReset();
     // Story 19.3 default: the `Person` row lock finds the person.
@@ -696,6 +722,409 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         where: { email: 'taken@airmanager.local', id: { not: 'person_1' } },
         select: { id: true },
       });
+    });
+  });
+
+  // Story 19.4 (AD-2..AD-7): `updatePerson` is the person composite — every
+  // part of the editors' single "Salva" in ONE transaction, on a `tx` DISTINCT
+  // from the global `prisma` (review 14.8 F4's idiom), so a write that escaped
+  // the transaction could not pass unnoticed.
+  describe('updatePerson — one atomic save (story 19.4)', () => {
+    const ACTIVE = { deactivatedAt: null };
+    const INACTIVE = { deactivatedAt: new Date('2026-01-01T00:00:00.000Z') };
+    /** A deactivated student keeps its course start date (read back into the `PersonDetail`). */
+    const STUDENT_INACTIVE = { courseStartDate: new Date('2026-03-01'), ...INACTIVE };
+    const today = todayDateOnlyInZone(APP_TIMEZONE);
+
+    type Profiles = { pilotProfile?: unknown; studentProfile?: unknown; instructorProfile?: unknown };
+    type ExpiryRow = { id: string; expiryTypeId: string; expiresAt: Date };
+
+    /** The person's state as the transaction sees it; `profiles` is what the profile reads return (the FINAL state the writes produced, in these fakes). */
+    function fakeTx(
+      calls: string[],
+      state: { profiles?: Profiles; archivedAt?: Date | null; expiries?: ExpiryRow[]; expiryCreateError?: unknown } = {},
+    ) {
+      const profiles = { pilotProfile: null, studentProfile: null, instructorProfile: null, ...state.profiles };
+      const record = (name: string, value: unknown = {}) => async () => (calls.push(name), value);
+      return {
+        $queryRaw: vi.fn(async (strings: TemplateStringsArray) => (calls.push(`queryRaw:${strings.join('?')}`), [{ id: 'person_1', archivedAt: state.archivedAt ?? null }])),
+        pilotProfile: { upsert: vi.fn(record('pilotProfile.upsert', { licenseNumber: 'L', licenseType: 'PPL', deactivatedAt: null })), updateMany: vi.fn(record('pilotProfile.updateMany', { count: 0 })) },
+        studentProfile: {
+          upsert: vi.fn(record('studentProfile.upsert', { courseStartDate: new Date('2026-03-01'), deactivatedAt: null })),
+          updateMany: vi.fn(record('studentProfile.updateMany', { count: 0 })),
+        },
+        instructorProfile: {
+          upsert: vi.fn(record('instructorProfile.upsert', { deactivatedAt: null })),
+          updateMany: vi.fn(record('instructorProfile.updateMany', { count: 0 })),
+          update: vi.fn(record('instructorProfile.update')),
+        },
+        account: { upsert: vi.fn(record('account.upsert', { id: 'account_1' })) },
+        person: {
+          findUnique: vi.fn(record('person.findUnique', profiles)),
+          findUniqueOrThrow: vi.fn(record('person.findUniqueOrThrow', { ...SELECTED_PERSON, ...profiles })),
+          update: vi.fn(record('person.update', { ...SELECTED_PERSON, ...profiles })),
+        },
+        expiry: {
+          deleteMany: vi.fn(record('expiry.deleteMany', { count: 1 })),
+          findMany: vi.fn(record('expiry.findMany', state.expiries ?? [])),
+          create: vi.fn(async () => {
+            calls.push('expiry.create');
+            if (state.expiryCreateError) throw state.expiryCreateError;
+            return { id: 'exp_new' };
+          }),
+          update: vi.fn(record('expiry.update')),
+        },
+        sentAlert: { deleteMany: vi.fn(record('sentAlert.deleteMany', { count: 2 })) },
+        instructorRate: { upsert: vi.fn(record('instructorRate.upsert', { id: 'rate_1' })) },
+      };
+    }
+
+    function runOn(tx: unknown): void {
+      (transaction as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation((arg: unknown) =>
+        (arg as (t: unknown) => unknown)(tx),
+      );
+    }
+
+    /** The pre-transaction reads find the person, an unused email, these expiry types and these already registered rows. */
+    function outside(types: Array<{ id: string; scope: string; isActive: boolean }> = [], registered: string[] = []): void {
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      personFindFirst.mockResolvedValue(null);
+      expiryTypeFindMany.mockResolvedValue(types);
+      (expiryFindManyMock as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue(registered.map((expiryTypeId) => ({ expiryTypeId })));
+    }
+
+    const writesOn = (calls: string[]) => calls.filter((call) => /\.(upsert|update|updateMany|create|deleteMany)$/.test(call));
+
+    it('an anagrafica-only body behaves as before (AC 1): the lock, the update, the PersonDetail — no profile, expiry or instructor call', async () => {
+      const calls: string[] = [];
+      outside();
+      runOn(fakeTx(calls));
+
+      const result = await updatePerson(adminActor(), 'person_1', { phone: '+39 333 0000000' });
+
+      expect(calls).toEqual([expect.stringContaining('FOR NO KEY UPDATE'), 'person.update']);
+      expect(result).toHaveProperty('pilotProfile', null);
+      expect(result).toHaveProperty('studentProfile', null);
+      expect(result).toHaveProperty('instructorProfile', null);
+    });
+
+    it('a body with no anagrafica key reads the PersonDetail back instead of updating the person', async () => {
+      const calls: string[] = [];
+      outside();
+      runOn(fakeTx(calls, { profiles: { instructorProfile: INACTIVE } }));
+
+      await updatePerson(adminActor(), 'person_1', { profiles: { instructor: { active: false } } });
+
+      expect(calls).not.toContain('person.update');
+      expect(calls.at(-1)).toBe('person.findUniqueOrThrow');
+    });
+
+    it('profiles are declarative (AC 2): active:true activates through the cores (Account included), active:false on an inactive profile is a 200 no-op', async () => {
+      const calls: string[] = [];
+      outside();
+      const tx = fakeTx(calls, { profiles: { pilotProfile: ACTIVE, instructorProfile: INACTIVE } });
+      runOn(tx);
+
+      await expect(
+        updatePerson(adminActor(), 'person_1', {
+          profiles: { pilot: { active: true, licenseNumber: 'IT-1', licenseType: 'PPL(A)' }, student: { active: false }, instructor: { active: false } },
+        }),
+      ).resolves.toMatchObject({ profiles: { pilot: true, student: false, instructor: false } });
+
+      expect(tx.pilotProfile.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { licenseNumber: 'IT-1', licenseType: 'PPL(A)', deactivatedAt: null } }));
+      expect(tx.account.upsert).toHaveBeenCalled();
+      // `count: 0` (nothing active to deactivate) is no error: the body states the final state (D-2).
+      expect(tx.studentProfile.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { personId: 'person_1', deactivatedAt: null } }));
+      expect(tx.instructorProfile.updateMany).toHaveBeenCalled();
+    });
+
+    it('exclusivity on the FINAL state (AC 3): deactivations first, activations next, ONE check after the last profile write and before the expiries', async () => {
+      const calls: string[] = [];
+      outside([{ id: 'type_all', scope: 'ALL', isActive: true }]);
+      runOn(fakeTx(calls, { profiles: { pilotProfile: ACTIVE, studentProfile: STUDENT_INACTIVE } }));
+
+      await updatePerson(adminActor(), 'person_1', {
+        profiles: { student: { active: false }, pilot: { active: true, licenseNumber: 'IT-1', licenseType: 'PPL(A)' } },
+        expiries: { set: [{ expiryTypeId: 'type_all', expiresAt: '2030-01-01' }] },
+      });
+
+      const checks = calls.filter((call) => call === 'person.findUnique');
+      expect(checks).toHaveLength(1);
+      expect(calls.indexOf('studentProfile.updateMany')).toBeLessThan(calls.indexOf('pilotProfile.upsert'));
+      expect(calls.indexOf('account.upsert')).toBeLessThan(calls.indexOf('person.findUnique'));
+      expect(calls.indexOf('person.findUnique')).toBeLessThan(calls.indexOf('expiry.findMany'));
+    });
+
+    it('activating Pilot with Student still active, or both in one body: 422 STUDENT_PROFILE_EXCLUSIVE thrown inside the transaction (the rollback undoes the Account too)', async () => {
+      const calls: string[] = [];
+      outside();
+      runOn(fakeTx(calls, { profiles: { pilotProfile: ACTIVE, studentProfile: ACTIVE } }));
+      await expect(
+        updatePerson(adminActor(), 'person_1', { phone: '+39 1', profiles: { pilot: { active: true, licenseNumber: 'IT-1', licenseType: 'PPL(A)' } } }),
+      ).rejects.toMatchObject({ code: 'STUDENT_PROFILE_EXCLUSIVE' });
+      expect(calls).toContain('account.upsert');
+      expect(calls).not.toContain('person.update');
+
+      runOn(fakeTx([], { profiles: { pilotProfile: ACTIVE, studentProfile: ACTIVE } }));
+      await expect(
+        updatePerson(adminActor(), 'person_1', {
+          profiles: { pilot: { active: true, licenseNumber: 'IT-1', licenseType: 'PPL(A)' }, student: { active: true, courseStartDate: '2026-03-01' } },
+        }),
+      ).rejects.toMatchObject({ code: 'STUDENT_PROFILE_EXCLUSIVE' });
+    });
+
+    it('expiries by type (AC 4): removals, then a missing row created, a moved date rewritten with its sent alerts wiped, an equal date not written', async () => {
+      const calls: string[] = [];
+      outside(
+        [
+          { id: 'type_new', scope: 'ALL', isActive: true },
+          { id: 'type_moved', scope: 'ALL', isActive: true },
+          { id: 'type_same', scope: 'ALL', isActive: true },
+        ],
+        ['type_moved', 'type_same'],
+      );
+      const tx = fakeTx(calls, {
+        expiries: [
+          { id: 'exp_moved', expiryTypeId: 'type_moved', expiresAt: parseDateOnlyUtc('2027-01-01') },
+          { id: 'exp_same', expiryTypeId: 'type_same', expiresAt: parseDateOnlyUtc('2027-06-30') },
+        ],
+      });
+      runOn(tx);
+
+      await updatePerson(adminActor(), 'person_1', {
+        expiries: {
+          set: [
+            { expiryTypeId: 'type_new', expiresAt: '2028-01-01' },
+            { expiryTypeId: 'type_moved', expiresAt: '2028-02-01' },
+            { expiryTypeId: 'type_same', expiresAt: '2027-06-30' },
+          ],
+          remove: ['type_gone'],
+        },
+      });
+
+      expect(tx.expiry.deleteMany).toHaveBeenCalledWith({ where: { personId: 'person_1', expiryTypeId: { in: ['type_gone'] } } });
+      expect(calls.indexOf('expiry.deleteMany')).toBeLessThan(calls.indexOf('expiry.create'));
+      expect(tx.expiry.create).toHaveBeenCalledTimes(1);
+      expect(tx.expiry.create).toHaveBeenCalledWith({
+        data: { personId: 'person_1', expiryTypeId: 'type_new', expiresAt: parseDateOnlyUtc('2028-01-01'), actorUserId: 'admin_1' },
+      });
+      expect(tx.sentAlert.deleteMany).toHaveBeenCalledTimes(1);
+      expect(tx.sentAlert.deleteMany).toHaveBeenCalledWith({ where: { expiryId: 'exp_moved' } });
+      expect(tx.expiry.update).toHaveBeenCalledTimes(1);
+      expect(tx.expiry.update).toHaveBeenCalledWith({ where: { id: 'exp_moved' }, data: { expiresAt: parseDateOnlyUtc('2028-02-01'), actorUserId: 'admin_1' } });
+    });
+
+    it('a row to CREATE on an unknown or deactivated type is a 422 before any lock; an existing row on a deactivated type still moves its date', async () => {
+      outside([]);
+      await expect(updatePerson(adminActor(), 'person_1', { expiries: { set: [{ expiryTypeId: 'nope', expiresAt: '2030-01-01' }] } })).rejects.toMatchObject({
+        code: 'EXPIRY_TYPE_NOT_FOUND',
+      });
+
+      outside([{ id: 'type_off', scope: 'ALL', isActive: false }]);
+      await expect(updatePerson(adminActor(), 'person_1', { expiries: { set: [{ expiryTypeId: 'type_off', expiresAt: '2030-01-01' }] } })).rejects.toMatchObject({
+        code: 'EXPIRY_TYPE_INACTIVE',
+      });
+      expect(transactionMock).not.toHaveBeenCalled();
+
+      const calls: string[] = [];
+      outside([{ id: 'type_off', scope: 'ALL', isActive: false }], ['type_off']);
+      runOn(fakeTx(calls, { expiries: [{ id: 'exp_off', expiryTypeId: 'type_off', expiresAt: parseDateOnlyUtc('2027-01-01') }] }));
+      await expect(updatePerson(adminActor(), 'person_1', { expiries: { set: [{ expiryTypeId: 'type_off', expiresAt: '2030-01-01' }] } })).resolves.toBeDefined();
+      expect(calls).toContain('expiry.update');
+    });
+
+    it('a new row whose scope matches none of the FINAL profiles is 422 SCOPE_MISMATCH inside the transaction, after the deactivation; on an archived person 409 PERSON_ARCHIVED', async () => {
+      const calls: string[] = [];
+      outside([{ id: 'type_pilots', scope: 'PILOTS', isActive: true }]);
+      // The profile reads return the state AFTER the deactivation of this same body.
+      runOn(fakeTx(calls, { profiles: { pilotProfile: INACTIVE } }));
+      await expect(
+        updatePerson(adminActor(), 'person_1', {
+          phone: '+39 1',
+          profiles: { pilot: { active: false } },
+          expiries: { set: [{ expiryTypeId: 'type_pilots', expiresAt: '2030-01-01' }] },
+        }),
+      ).rejects.toMatchObject({ code: 'SCOPE_MISMATCH' });
+      expect(calls.indexOf('pilotProfile.updateMany')).toBeLessThan(calls.indexOf('expiry.findMany'));
+      expect(calls).not.toContain('expiry.create');
+      expect(calls).not.toContain('person.update');
+
+      outside([{ id: 'type_all', scope: 'ALL', isActive: true }]);
+      runOn(fakeTx([], { archivedAt: new Date('2026-05-01T00:00:00.000Z') }));
+      await expect(updatePerson(adminActor(), 'person_1', { expiries: { set: [{ expiryTypeId: 'type_all', expiresAt: '2030-01-01' }] } })).rejects.toMatchObject({
+        code: 'PERSON_ARCHIVED',
+      });
+    });
+
+    it('a concurrent create of the same row (P2002) is 409 EXPIRY_CONFLICT — never the generic CONFLICT a client reads as "email already used"', async () => {
+      outside([{ id: 'type_all', scope: 'ALL', isActive: true }]);
+      runOn(fakeTx([], { expiryCreateError: Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }) }));
+
+      await expect(updatePerson(adminActor(), 'person_1', { expiries: { set: [{ expiryTypeId: 'type_all', expiresAt: '2030-01-01' }] } })).rejects.toMatchObject({
+        code: 'EXPIRY_CONFLICT',
+      });
+    });
+
+    it('instructor parts (AC 5): compensation assigned only when it changes, the rate through upsertInstructorRateCore — also when this same body activates the profile', async () => {
+      const calls: string[] = [];
+      outside();
+      const tx = fakeTx(calls, { profiles: { instructorProfile: { id: 'ip_1', deactivatedAt: null, payoutRateCents: 3000 } } });
+      runOn(tx);
+
+      await updatePerson(adminActor(), 'person_1', {
+        profiles: { instructor: { active: true } },
+        payoutRateCents: 4500,
+        instructorRate: { priceCentsPerHour: 5000, validFrom: today },
+      });
+
+      expect(tx.instructorProfile.update).toHaveBeenCalledWith({ where: { id: 'ip_1' }, data: { payoutRateCents: 4500 } });
+      expect(tx.instructorRate.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { instructorProfileId_validFrom: { instructorProfileId: 'ip_1', validFrom: parseDateOnlyUtc(today) } } }),
+      );
+      expect(calls.indexOf('instructorProfile.upsert')).toBeLessThan(calls.indexOf('instructorProfile.update'));
+
+      const sameRate = fakeTx([], { profiles: { instructorProfile: { id: 'ip_1', deactivatedAt: null, payoutRateCents: 4500 } } });
+      runOn(sameRate);
+      await updatePerson(adminActor(), 'person_1', { payoutRateCents: 4500 });
+      expect(sameRate.instructorProfile.update).not.toHaveBeenCalled();
+
+      const cleared = fakeTx([], { profiles: { instructorProfile: { id: 'ip_1', deactivatedAt: null, payoutRateCents: 4500 } } });
+      runOn(cleared);
+      await updatePerson(adminActor(), 'person_1', { payoutRateCents: null });
+      expect(cleared.instructorProfile.update).toHaveBeenCalledWith({ where: { id: 'ip_1' }, data: { payoutRateCents: null } });
+    });
+
+    it('compensation or rate without an instructor profile active on the FINAL state: 409 INSTRUCTOR_PROFILE_INACTIVE, propagated out of the transaction, the anagrafica never written (AC 5, AC 7)', async () => {
+      const calls: string[] = [];
+      outside();
+      runOn(fakeTx(calls, { profiles: { instructorProfile: { id: 'ip_1', ...INACTIVE, payoutRateCents: 3000 } } }));
+
+      await expect(
+        updatePerson(adminActor(), 'person_1', { firstName: 'Nuovo', profiles: { instructor: { active: false } }, payoutRateCents: 4500 }),
+      ).rejects.toMatchObject({ code: 'INSTRUCTOR_PROFILE_INACTIVE' });
+      expect(calls).not.toContain('instructorProfile.update');
+      expect(calls).not.toContain('person.update');
+
+      runOn(fakeTx([], {}));
+      await expect(updatePerson(adminActor(), 'person_1', { instructorRate: { priceCentsPerHour: 5000, validFrom: today } })).rejects.toMatchObject({
+        code: 'INSTRUCTOR_PROFILE_INACTIVE',
+      });
+    });
+
+    it('a rate dated before today (Europe/Rome) is 422 RATE_VALID_FROM_IN_PAST before the transaction opens', async () => {
+      outside();
+      await expect(
+        updatePerson(adminActor(), 'person_1', { firstName: 'Nuovo', instructorRate: { priceCentsPerHour: 5000, validFrom: '2000-01-01' } }),
+      ).rejects.toMatchObject({ code: 'RATE_VALID_FROM_IN_PAST' });
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('every write of a save touching ALL the parts runs on tx (AC 7), the Person lock first and the anagrafica last (AC 8)', async () => {
+      const calls: string[] = [];
+      outside([{ id: 'type_all', scope: 'ALL', isActive: true }]);
+      runOn(
+        fakeTx(calls, {
+          profiles: { pilotProfile: ACTIVE, studentProfile: STUDENT_INACTIVE, instructorProfile: { id: 'ip_1', deactivatedAt: null, payoutRateCents: 3000 } },
+        }),
+      );
+
+      await updatePerson(adminActor(), 'person_1', {
+        firstName: 'Nuovo',
+        email: 'nuovo@airmanager.local',
+        profiles: { student: { active: false }, pilot: { active: true, licenseNumber: 'IT-1', licenseType: 'PPL(A)' }, instructor: { active: true } },
+        expiries: { set: [{ expiryTypeId: 'type_all', expiresAt: '2030-01-01' }], remove: ['type_gone'] },
+        payoutRateCents: 4500,
+        instructorRate: { priceCentsPerHour: 5000, validFrom: today },
+      });
+
+      expect(calls[0]).toContain('FROM "Person"');
+      expect(calls[0]).toContain('FOR NO KEY UPDATE');
+      expect(calls.filter((call) => call.startsWith('queryRaw:'))).toHaveLength(1);
+      expect(writesOn(calls).at(-1)).toBe('person.update');
+      expect(calls.indexOf('studentProfile.updateMany')).toBeLessThan(calls.indexOf('pilotProfile.upsert'));
+      expect(calls.indexOf('expiry.create')).toBeLessThan(calls.indexOf('instructorProfile.update'));
+      expect(calls.indexOf('instructorProfile.update')).toBeLessThan(calls.indexOf('instructorRate.upsert'));
+      // Nothing written on the global client: every write of the save went through `tx`.
+      for (const mock of [updateMock, pilotProfileUpsertMock, pilotProfileUpdateManyMock, studentProfileUpdateManyMock, instructorProfileUpsertMock, instructorProfileUpdateManyMock, accountUpsertMock, expiryCreateMock, queryRawMock]) {
+        expect(mock).not.toHaveBeenCalled();
+      }
+    });
+
+    it('a failure before the transaction (403, 404, 409 email, 422) takes no lock (AC 8)', async () => {
+      await expect(updatePerson(pilotActor(), 'person_1', { firstName: 'X' })).rejects.toThrow(ForbiddenError);
+
+      personFindUnique.mockResolvedValue(null);
+      await expect(updatePerson(adminActor(), 'missing', { firstName: 'X' })).rejects.toThrow(NotFoundError);
+
+      personFindUnique.mockResolvedValue({ id: 'person_1' });
+      personFindFirst.mockResolvedValue({ id: 'someone_else' });
+      await expect(updatePerson(adminActor(), 'person_1', { email: 'taken@airmanager.local' })).rejects.toMatchObject({ code: 'CONFLICT' });
+
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    describe('one permission per part present (AD-7, AC 9)', () => {
+      const parts: Array<{ permission: string; body: Parameters<typeof updatePerson>[2] }> = [
+        { permission: 'payouts.manage', body: { payoutRateCents: 4500 } },
+        { permission: 'settings.manage', body: { instructorRate: { priceCentsPerHour: 5000, validFrom: today } } },
+        { permission: 'expiries.manage', body: { expiries: { remove: ['type_x'] } } },
+      ];
+
+      for (const { permission, body } of parts) {
+        it(`without ${permission}: a body carrying its part is a 403 before any query; a body without it saves`, async () => {
+          deniedPermissions.add(permission);
+          outside();
+
+          await expect(updatePerson(adminActor(), 'person_1', { firstName: 'Nuovo', ...body })).rejects.toThrow(ForbiddenError);
+          expect(findUniqueMock).not.toHaveBeenCalled();
+          expect(transactionMock).not.toHaveBeenCalled();
+
+          runOn(fakeTx([]));
+          await expect(updatePerson(adminActor(), 'person_1', { firstName: 'Nuovo' })).resolves.toBeDefined();
+        });
+      }
+    });
+
+    it('idempotency (AC 10): the same full body twice gives 200 twice, and the second time wipes no sent alert', async () => {
+      const body = {
+        phone: '+39 333 1111111',
+        profiles: { student: { active: false as const } },
+        expiries: { set: [{ expiryTypeId: 'type_all', expiresAt: '2030-01-01' }], remove: ['type_gone'] },
+        payoutRateCents: 4500,
+        instructorRate: { priceCentsPerHour: 5000, validFrom: today },
+      };
+      const instructorProfile = { id: 'ip_1', deactivatedAt: null, payoutRateCents: 3000 };
+      outside([{ id: 'type_all', scope: 'ALL', isActive: true }], ['type_all']);
+
+      const first = fakeTx([], { profiles: { instructorProfile }, expiries: [{ id: 'exp_1', expiryTypeId: 'type_all', expiresAt: parseDateOnlyUtc('2029-01-01') }] });
+      runOn(first);
+      await expect(updatePerson(adminActor(), 'person_1', body)).resolves.toBeDefined();
+      expect(first.sentAlert.deleteMany).toHaveBeenCalledTimes(1);
+
+      // The state the first save left behind: date moved, compensation set, student already inactive.
+      const second = fakeTx([], {
+        profiles: { instructorProfile: { ...instructorProfile, payoutRateCents: 4500 } },
+        expiries: [{ id: 'exp_1', expiryTypeId: 'type_all', expiresAt: parseDateOnlyUtc('2030-01-01') }],
+      });
+      runOn(second);
+      await expect(updatePerson(adminActor(), 'person_1', body)).resolves.toBeDefined();
+      expect(second.sentAlert.deleteMany).not.toHaveBeenCalled();
+      expect(second.expiry.update).not.toHaveBeenCalled();
+      expect(second.instructorProfile.update).not.toHaveBeenCalled();
+    });
+
+    it('the body schema: a type at most once across set and remove, profile shapes by final state', () => {
+      const parse = (body: unknown) => updatePersonCompositeSchema.safeParse(body).success;
+      expect(parse({ expiries: { set: [{ expiryTypeId: 'a', expiresAt: '2030-01-01' }], remove: ['b'] } })).toBe(true);
+      expect(parse({ expiries: { set: [{ expiryTypeId: 'a', expiresAt: '2030-01-01' }], remove: ['a'] } })).toBe(false);
+      expect(parse({ expiries: { set: [{ expiryTypeId: 'a', expiresAt: '2030-01-01' }, { expiryTypeId: 'a', expiresAt: '2031-01-01' }] } })).toBe(false);
+      expect(parse({ expiries: { remove: ['a', 'a'] } })).toBe(false);
+      expect(parse({ profiles: { pilot: { active: false } } })).toBe(true);
+      expect(parse({ profiles: { pilot: { active: true } } })).toBe(false);
+      expect(parse({ profiles: { student: { active: true, courseStartDate: '2026-03-01' }, instructor: { active: true } } })).toBe(true);
+      expect(parse({ payoutRateCents: null })).toBe(true);
+      expect(parse({ payoutRateCents: -1 })).toBe(false);
+      expect(parse({ instructorRate: { priceCentsPerHour: 0, validFrom: '2030-01-01' } })).toBe(false);
     });
   });
 

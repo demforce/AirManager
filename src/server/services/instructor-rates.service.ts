@@ -149,8 +149,9 @@ export async function createInstructorRate(
 
 /**
  * Lists an instructor's full rate history, most recent `validFrom` first (AC
- * 1) — the instructor editor's rates panel still reads it until story 19.4,
- * and API clients keep it (story 19.3, D-2). `people.read` (ADMIN-only) — WIDER than `createInstructorRate`'s
+ * 1) — the instructor editor derives the rate in effect and the next
+ * scheduled one from it (story 19.4, D-10), and API clients keep it (story
+ * 19.3, D-2). `people.read` (ADMIN-only) — WIDER than `createInstructorRate`'s
  * `settings.manage` (Dev Notes: instructor data lives under `people`, so the
  * same permission that reads a person's profile also reads their pricing —
  * a deliberately different split from 4.1's `aircraft.manage`, documented

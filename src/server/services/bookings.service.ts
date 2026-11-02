@@ -80,12 +80,14 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
  * booking); the guarded `updateMany` that ends a move or a transition locks
  * the booking row it already holds; `cancelBooking` takes a single lock (its
  * `updateMany`'s row), which cannot close a cycle. So two booking writers can
- * never wait on each other in a cycle; no other service locks `Booking`/
- * `InstructorProfile` rows, the one other `Person` lock
- * (`people.service.ts#upsertProfile`, story 19.3, same `FOR NO KEY UPDATE`)
- * is the FIRST statement of its transaction and is followed only by that
- * person's own profile and `Account` rows, so it cannot close a cycle with
- * these paths, and no table references `Booking` by
+ * never wait on each other in a cycle; no other service locks `Booking`
+ * rows, and the two other `Person` locks — `people.service.ts#upsertProfile`
+ * (story 19.3) and the person composite `people.service.ts#updatePerson`
+ * (story 19.4), same `FOR NO KEY UPDATE` — are the FIRST statement of their
+ * transaction and are followed only by that SAME person's own rows (profiles,
+ * `Account`, expiries, its `InstructorProfile` and rates, the `Person` update
+ * last), in the same `Person → InstructorProfile` order as these paths, so
+ * they cannot close a cycle with them, and no table references `Booking` by
  * foreign key, so its `FOR UPDATE` blocks no FK check (census in the story
  * 16.3 file). The implicit row lock of that guarded `updateMany` is what the
  * first census missed (review 16.3 MAJOR-2): `updateBooking` took it AFTER

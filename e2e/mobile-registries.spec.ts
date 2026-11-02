@@ -784,7 +784,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     expect(probe.anchoredRows).toBe(1);
   });
 
-  test('R-15.5-f: instructor-editor keeps ONE anchored primary row and its section submits where they were (AC 5-b/c)', async ({ page }) => {
+  test('R-19-m: instructor-editor has ONE save, in `.so-foot`, and NO section submits (story 19.4 AC 20/23, superseding AC 5-c of 15.5)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const tag = `E${uniqueSuffix()}`;
     const person = await createPilot(page, tag);
@@ -799,15 +799,16 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await page.getByTestId('mobile-instructor-sheet').getByTestId('instructor-edit-mobile').click();
     await expect(page.getByTestId('instructor-identity-form')).toBeVisible();
 
-    // Story 15.10 (ratifica R-15.10-f) moved this panel's PRIMARY action out of
-    // the scrolling body and into `SlideOver`'s `footer` (`.so-foot`), wired to
-    // its form with `form="instructor-identity-form"`. What 15.5 could only
-    // anchor with `position: sticky` — a sticky box cannot leave its containing
-    // block, and this body scrolls 2642px inside 716px, so the bar ended at
-    // `top -1383.53` with the submit not hit-testable — is now fixed for real.
-    // The requirement this test guards is unchanged in substance (ONE primary
-    // action for the panel, section submits left where they are); what changed
-    // is WHERE the primary one lives, by a PO decision.
+    // Story 15.10 moved this panel's PRIMARY action out of the scrolling body
+    // and into `SlideOver`'s `footer` (`.so-foot`), wired to its form with
+    // `form="instructor-identity-form"` — a sticky bar inside the body could
+    // not leave its containing block (measured `top -1383.53`, not
+    // hit-testable). Story 19.4 (R-19-m, superseding R-15.10-f) made it the
+    // panel's ONLY save: the compensation and the student rate are sections of
+    // that one form, with no submit of their own. The Salva is disabled while
+    // there is nothing to save (D-5) — still the hit-test target (measured on
+    // the project's Chromium: a disabled button stays the `elementFromPoint`
+    // result).
     const probe = await page.evaluate(() => {
       const body = document.querySelector('.so-body') as HTMLElement;
       const foot = document.querySelector('.so-foot');
@@ -828,11 +829,9 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
         bodyScrolls: body.scrollHeight > body.clientHeight,
         atTop,
         atBottom,
-        // The section submits stay ordinary in-body buttons (AC 5-c) — neither
-        // anchored in a sticky row nor promoted into the panel's footer.
-        sectionSubmitsAnchored: ['instructor-payout-rate-submit', 'instructor-rates-submit']
-          .map((testId) => document.querySelector(`[data-testid="${testId}"]`))
-          .filter((node) => node !== null && (node.closest('.so-actions') !== null || node.closest('.so-foot') !== null)).length,
+        // No section submits anywhere (R-19-m): the footer's Salva is the only one.
+        sectionSubmits: document.querySelectorAll('[data-testid="instructor-payout-rate-submit"], [data-testid="instructor-rates-submit"]').length,
+        submitsInPanel: document.querySelectorAll('.slideover-panel button[type="submit"]').length,
       };
     });
     expect(probe.anchoredRows).toBe(0);
@@ -844,7 +843,8 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     // all the way down.
     expect(probe.atBottom.reachable).toBe(true);
     expect(probe.atTop.height).toBeGreaterThanOrEqual(44);
-    expect(probe.sectionSubmitsAnchored).toBe(0);
+    expect(probe.sectionSubmits).toBe(0);
+    expect(probe.submitsInPanel).toBe(1);
 
     // Review F6: the body's bottom padding is zeroed only where the action row
     // is the LAST thing in it — there the padding would push the sticky bar up

@@ -22,7 +22,7 @@ export function isExpiryScopeCompatible(scope: ExpiryScopeDto, profiles: Profile
  * truth). Story 13.2 review F3 (PO decision 2026-07-24): a financial
  * obligation, not a flight rating/medical, so it must never be offered as a
  * selectable chip in the person/instructor editor (create form or
- * `LiveExpiryEditor`) — it stays managed ONLY by the Impostazioni quota card
+ * `ExpiryDraftEditor`) — it stays managed ONLY by the Impostazioni quota card
  * + addebito flow. The Scadenze page is a different surface and keeps
  * showing an already-registered quota unaffected.
  */

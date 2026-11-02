@@ -39,7 +39,7 @@ function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Local mirror of `src/lib/date-only.ts#addMonthsClampUtc` (e2e specs never import server code, same convention as `addDaysUtc` above) — CLAMPS to the target month's real last day (e.g. 31 Jan + 1 month -> 28/29 Feb), matching `LiveExpiryEditor`'s own precompile (story 13.8, AC 5). */
+/** Local mirror of `src/lib/date-only.ts#addMonthsClampUtc` (e2e specs never import server code, same convention as `addDaysUtc` above) — CLAMPS to the target month's real last day (e.g. 31 Jan + 1 month -> 28/29 Feb), matching `ExpiryDraftEditor`'s own precompile (story 13.8, AC 5). */
 function addMonthsUtc(dateOnly: string, months: number): string {
   const [year, month, day] = dateOnly.split('-').map(Number) as [number, number, number];
   const targetMonthIndex = month - 1 + months;
@@ -84,25 +84,23 @@ async function createExpiryType(
  * story 13.3 (R-13.3-c, AC 1 "gestione avviene via editor") retired the
  * page-level "Registra scadenza" form (`ExpiriesPanel`): the scheda persona
  * now shows a READ-ONLY list, and registering a scadenza goes through
- * "Modifica" → the SAME `PilotEditor` slide-over's "Ratings" section
- * (`LiveExpiryEditor`, story 13.2) the Piloti table already uses. Assumes
- * the editor is already OPEN (caller opens it once, adds every type in the
- * same session — `LiveExpiryEditor` refetches its own catalogue/current list
- * after each add, so a type registered earlier in the session correctly
- * disappears from the chip strip for the next one).
+ * "Modifica" → the SAME `PilotEditor` slide-over's "Ratings" section the
+ * Piloti table already uses. Since story 19.4 (AD-8, `ExpiryDraftEditor`) a
+ * chip only adds a DRAFT row: the caller adds every type it needs this way,
+ * then sends them all with ONE Salva (`saveEditor`).
  */
-async function registerExpiryViaUi(page: Page, values: { typeId: string; expiresAt: string }): Promise<void> {
+async function draftExpiryViaUi(page: Page, values: { typeId: string; expiresAt: string }): Promise<void> {
   const ratingsEditor = page.getByTestId('pilot-ratings-editor');
   await ratingsEditor.getByTestId(`expiry-chip-${values.typeId}`).click();
-  await ratingsEditor.getByTestId('expiry-add-date').fill(values.expiresAt);
-  await ratingsEditor.getByTestId('expiry-add-confirm').click();
-  // Wait for the add to actually settle (POST + `refresh()`'s refetch) before
-  // returning: the caller registers several types back to back in the SAME
-  // session, and starting the next chip click while this one is still
-  // in-flight (`expiry-add-form` still mounted) is a real race, not just
-  // test impatience — the new row is the definitive "done" signal.
-  await expect(ratingsEditor.getByTestId('expiry-add-form')).toHaveCount(0);
-  await expect(ratingsEditor.getByTestId(`expiry-row-${values.typeId}`)).toBeVisible();
+  await ratingsEditor.getByTestId(`expiry-date-${values.typeId}`).fill(values.expiresAt);
+  await expect(ratingsEditor.getByTestId(`expiry-row-${values.typeId}`)).toHaveAttribute('data-state', 'new');
+}
+
+/** The editor's single Salva, settled: the success toast, then nothing left to save. */
+async function saveEditor(page: Page): Promise<void> {
+  await page.getByTestId('pilot-identity-submit').click();
+  await expect(page.getByTestId('toast').filter({ hasText: 'Dati aggiornati.' })).toBeVisible();
+  await expect(page.getByTestId('pilot-identity-submit')).toBeDisabled();
 }
 
 test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-driven since Story 13.3)', () => {
@@ -125,24 +123,26 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-dri
     await page.goto(`/it/dashboard/people/${personId}`);
     await page.getByTestId('person-edit-button').click();
 
-    await registerExpiryViaUi(page, { typeId: okType.id, expiresAt: addDaysUtc(400) });
-    await registerExpiryViaUi(page, { typeId: expiringType.id, expiresAt: addDaysUtc(20) });
+    await draftExpiryViaUi(page, { typeId: okType.id, expiresAt: addDaysUtc(400) });
+    await draftExpiryViaUi(page, { typeId: expiringType.id, expiresAt: addDaysUtc(20) });
     // R6 (`Expiry.issuedAt` dropped): an already-expired scadenza is simply
     // legal to register — no more "issue date" to compare `expiresAt`
     // against (review F1's root cause).
-    await registerExpiryViaUi(page, { typeId: expiredType.id, expiresAt: addDaysUtc(-30) });
+    await draftExpiryViaUi(page, { typeId: expiredType.id, expiresAt: addDaysUtc(-30) });
+    await saveEditor(page);
 
     // AC 1: a duplicate (person, type) has no UI path anymore — the chip
-    // itself disappears once registered (13.2's `LiveExpiryEditor` only
-    // offers UNregistered types) — verified directly against the endpoint
-    // the chip flow calls, same as the SCOPE_MISMATCH check below.
+    // itself disappears once registered (the editor only offers
+    // UNregistered types) — verified directly against the standalone
+    // endpoint, same as the SCOPE_MISMATCH check below.
     const duplicateResponse = await page.request.post('/api/v1/expiries', {
       data: { personId, expiryTypeId: okType.id, expiresAt: addDaysUtc(500) },
     });
     expect(duplicateResponse.status()).toBe(409);
 
-    // Close the editor — the dossier's read-only "Scadenze" list refreshes
-    // (`edit-person-button.tsx`'s `onClose` calls `router.refresh()`).
+    // Close the editor — the dossier's read-only "Scadenze" list was already
+    // refreshed by the Salva (`edit-person-button.tsx`'s `onMutated` calls
+    // `router.refresh()`, story 19.4).
     await page.getByRole('button', { name: 'Chiudi' }).click();
 
     const okRow = page.getByTestId('person-expiry-row').filter({ hasText: okType.name });
@@ -186,7 +186,7 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-dri
   });
 
   // Story 13.8 (AC 5 — F2, review 13.3): revives the coverage the note above
-  // used to explain away. `LiveExpiryEditor` now precompiles `expiresAt`
+  // used to explain away. The editor precompiles `expiresAt`
   // from the selected type's `validityMonths` (`today + validityMonths`,
   // clamped to the target month's real last day) the same way the
   // pre-13.3 page-level form did — still fully EDITABLE afterwards, and a
@@ -207,22 +207,22 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-dri
 
     const ratingsEditor = page.getByTestId('pilot-ratings-editor');
 
-    // No validityMonths: selecting the chip leaves the date field blank.
+    // No validityMonths: selecting the chip adds a row whose date is blank.
     await ratingsEditor.getByTestId(`expiry-chip-${withoutValidity.id}`).click();
-    await expect(ratingsEditor.getByTestId('expiry-add-date')).toHaveValue('');
-    // Deselect (collapses the add form) before picking the next chip.
+    await expect(ratingsEditor.getByTestId(`expiry-date-${withoutValidity.id}`)).toHaveValue('');
+    // A second click on the chip drops the draft row again.
     await ratingsEditor.getByTestId(`expiry-chip-${withoutValidity.id}`).click();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${withoutValidity.id}`)).toHaveCount(0);
 
     // validityMonths: 24 -> precompiled to today + 24 months.
     await ratingsEditor.getByTestId(`expiry-chip-${withValidity.id}`).click();
-    await expect(ratingsEditor.getByTestId('expiry-add-date')).toHaveValue(addMonthsUtc(todayUtc(), 24));
+    await expect(ratingsEditor.getByTestId(`expiry-date-${withValidity.id}`)).toHaveValue(addMonthsUtc(todayUtc(), 24));
 
     // Still EDITABLE: override it, save, and the PERSISTED value is the override, not the precompiled default.
     const overrideDate = addDaysUtc(500);
-    await ratingsEditor.getByTestId('expiry-add-date').fill(overrideDate);
-    await ratingsEditor.getByTestId('expiry-add-confirm').click();
-    await expect(ratingsEditor.getByTestId('expiry-add-form')).toHaveCount(0);
-    await expect(ratingsEditor.getByTestId(`expiry-row-${withValidity.id}`)).toBeVisible();
+    await ratingsEditor.getByTestId(`expiry-date-${withValidity.id}`).fill(overrideDate);
+    await saveEditor(page);
+    await expect(ratingsEditor.getByTestId(`expiry-row-${withValidity.id}`)).toHaveAttribute('data-state', 'saved');
 
     const expiriesResponse = await page.request.get(`/api/v1/people/${personId}/expiries`);
     expect(expiriesResponse.status()).toBe(200);

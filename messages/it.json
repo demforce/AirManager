@@ -293,17 +293,6 @@
         "inactive": "Disattivato",
         "notActivated": "Non attivato"
       },
-      "actions": {
-        "activate": "Attiva",
-        "edit": "Modifica",
-        "reactivate": "Riattiva",
-        "deactivate": "Disattiva",
-        "confirmDeactivate": "Disattivare questo profilo?",
-        "confirmYes": "Conferma",
-        "confirmCancel": "Annulla",
-        "cancel": "Annulla",
-        "save": "Salva"
-      },
       "errors": {
         "requiredField": "Campo obbligatorio.",
         "generic": "Si è verificato un errore. Riprova.",
@@ -414,14 +403,8 @@
           "expired": "Scaduta"
         },
         "dateLabel": "Data di scadenza",
-        "addAction": "Aggiungi",
-        "cancel": "Annulla",
-        "save": "Salva",
-        "edit": "Modifica",
         "remove": "Rimuovi",
-        "confirmRemove": "Rimuovere questa scadenza?",
-        "confirmYes": "Conferma",
-        "confirmCancel": "Annulla",
+        "restore": "Ripristina",
         "requiredDate": "La data di scadenza è obbligatoria.",
         "genericError": "Si è verificato un errore. Riprova."
       },
@@ -429,14 +412,8 @@
         "subHeading": "Visita medica",
         "empty": "Nessuna visita medica registrata.",
         "dateLabel": "Data di scadenza",
-        "addAction": "Aggiungi",
-        "cancel": "Annulla",
-        "save": "Salva",
-        "edit": "Modifica",
         "remove": "Rimuovi",
-        "confirmRemove": "Rimuovere questa visita medica?",
-        "confirmYes": "Conferma",
-        "confirmCancel": "Annulla",
+        "restore": "Ripristina",
         "requiredDate": "La data di scadenza è obbligatoria.",
         "genericError": "Si è verificato un errore. Riprova."
       },
@@ -541,15 +518,13 @@
         "email": "Email",
         "phone": "Telefono",
         "address": "Indirizzo",
-        "save": "Salva modifiche",
         "loadError": "Impossibile caricare i dati anagrafici.",
         "requiredField": "Campo obbligatorio."
       },
       "payoutRate": {
         "sectionTitle": "Tariffa payout (pagata all'istruttore)",
         "label": "Tariffa oraria",
-        "noValue": "—",
-        "save": "Salva"
+        "noValue": "—"
       },
       "ratings": {
         "sectionTitle": "Ratings",
@@ -560,14 +535,8 @@
           "expired": "Scaduta"
         },
         "dateLabel": "Data di scadenza",
-        "addAction": "Aggiungi",
-        "cancel": "Annulla",
-        "save": "Salva",
-        "edit": "Modifica",
         "remove": "Rimuovi",
-        "confirmRemove": "Rimuovere questa scadenza?",
-        "confirmYes": "Conferma",
-        "confirmCancel": "Annulla",
+        "restore": "Ripristina",
         "requiredDate": "La data di scadenza è obbligatoria.",
         "genericError": "Si è verificato un errore. Riprova."
       },
@@ -583,25 +552,14 @@
     },
     "studentRate": {
       "heading": "Tariffa allievo (addebitata al pilota/allievo)",
-      "current": "Tariffa attuale",
       "noCurrentRate": "Nessuna tariffa in vigore",
-      "loadError": "Impossibile caricare lo storico tariffe.",
       "price": "Prezzo (€/h)",
       "validFrom": "In vigore da",
-      "submit": "Aggiungi tariffa",
-      "rateAdded": "Tariffa aggiunta.",
+      "next": "Dal {date}: {price}/h",
       "requiredField": "Campo obbligatorio.",
       "invalidPrice": "Il prezzo deve essere un importo positivo (es. 45,00).",
       "invalidDate": "Inserisci una data valida.",
-      "genericError": "Si è verificato un errore. Riprova.",
-      "conflictError": "Esiste già una tariffa con questa data di decorrenza, oppure la persona non ha un profilo istruttore attivo.",
-      "historyTitle": "Storico tariffe",
-      "historyEmpty": "Nessuna tariffa registrata.",
-      "historyValidFrom": "In vigore da",
-      "historyPrice": "Prezzo",
-      "historyActor": "Chi",
-      "historyWhen": "Registrata il",
-      "historyShowAll": "Mostra tutte ({count})"
+      "genericError": "Si è verificato un errore. Riprova."
     },
     "pay": {
       "title": "Registra pagamento",
@@ -648,11 +606,9 @@
       }
     },
     "toast": {
-      "rateSet": "Tariffa payout aggiornata.",
+      "saved": "Modifiche salvate.",
       "payoutRecorded": "Pagamento registrato.",
-      "instructorAdded": "Profilo istruttore attivato.",
-      "genericError": "Si è verificato un errore. Riprova.",
-      "identitySaved": "Dati anagrafici aggiornati."
+      "instructorAdded": "Profilo istruttore attivato."
     }
   },
   "PersonDetailPage": {

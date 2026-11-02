@@ -3,44 +3,57 @@
 /**
  * Instructor slide-over editor (story 12.7, AC 6) — port of
  * `docs/design-reference/airops/src/People.jsx#InstructorEditor` onto the
- * REAL domain: anagrafica (PATCH people, `people.manage`), payout rate (PUT
- * instructor-compensation/{id}/rate, `payouts.manage` — the RATIFIED
- * permission, admin-only), the STUDENT-charged rate panel (moved here from
- * `people/[id]`, `settings.manage`, D8 — clearly labeled distinct from the
- * payout rate), and ore/dovuto READ-ONLY. NO "Cadenza pagamenti" (D13 — the
- * prototype's Mensile/Settimanale/Per volo selector has no domain
- * counterpart, not ported).
+ * REAL domain: anagrafica, ratings, the compensation PAID to the instructor
+ * (`InstructorProfile.payoutRateCents`, `payouts.manage`), the rate CHARGED
+ * to the student (`InstructorRate`, `settings.manage`, D8 — clearly labeled
+ * distinct from the compensation), and ore/dovuto READ-ONLY. NO "Cadenza
+ * pagamenti" (D13 — the prototype's Mensile/Settimanale/Per volo selector has
+ * no domain counterpart, not ported).
  *
- * Story 13.1 (R-13.1-b): the free-text "abilitazioni" section (PUT
- * profiles/instructor) is REMOVED along with `InstructorProfile.ratings` —
- * abilitazioni now live as `Expiry` rows. Story 13.2 (AC 5, gap N6 from
- * 13.1) restores their display/editing here as a catalogue-driven chip
- * picker (`LiveExpiryEditor`, `kind="RATING"`, scope INSTRUCTORS — the same
- * component the pilot editor's own Ratings section uses, AC 2) — never free
- * text.
+ * Story 13.1 (R-13.1-b): abilitazioni live as `Expiry` rows on
+ * `INSTRUCTORS`-scoped types, picked from the catalogue — never free text.
+ *
+ * Story 19.4 (R-19-m, A17): ONE form — anagrafica, ratings (draft), the
+ * compensation and the student rate — and ONE "Salva" in the panel footer,
+ * which sends ONE `PATCH /api/v1/people/{id}` with only what changed (D-3);
+ * the server saves it all or nothing. The student rate follows R-19-f, like
+ * the aircraft's (story 19.3): the rate in effect today is the price field's
+ * placeholder and hint, an empty field changes nothing, "In vigore da" is
+ * today (Europe/Rome) at the earliest, no history — only the next scheduled
+ * change, on one line (Q-19.4-b). The compensation has no decorrenza: its
+ * field holds the current value, and emptying it means no compensation
+ * (Q-19.4-a).
  */
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
+import { useForm, useWatch } from 'react-hook-form';
 import { Field, Input, InputGroup } from '@/components/ui/field';
+import { DateInput } from '@/components/ui/date-input';
 import { SlideOver } from '@/components/ui/slide-over';
-import { LiveExpiryEditor, type LiveExpiryEditorLabels } from '@/components/dashboard/expiry-editor';
+import { ExpiryDraftEditor, usePersonExpiryDraft, type ExpiryDraftEditorLabels, type ExpiryKind } from '@/components/dashboard/expiry-editor';
 import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
 import type { ProfileFlags } from '@/lib/expiry-scope';
 import { formatCents, parseCents } from '@/lib/money';
-import { updatePersonSchema, type UpdatePersonInput } from '@/lib/schemas/people';
-import { formatMinutes } from '@/lib/time';
-import { InstructorRatesPanel, type InstructorRatesPanelLabels } from './instructor-rates-panel';
+import { changedIdentityFields, IDENTITY_FIELDS, personSaveErrorSection, type PersonSaveSection } from '@/lib/person-save';
+import { updatePersonSchema, type InstructorRateItemDto, type PersonDetailDto, type UpdatePersonCompositeInput, type UpdatePersonInput } from '@/lib/schemas/people';
+import { APP_TIMEZONE, formatDateOnly, formatMinutes } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import type { InstructorRow } from './instructors-console';
 
 /** Instructor editor viewers are, by construction, an active INSTRUCTORS profile (this console only lists those) — no OTHER profile flag is known here, so the ratings picker only ever offers `INSTRUCTORS`/`ALL`-scoped catalogue types (AC 5's literal scope). */
 const INSTRUCTOR_PROFILE_FLAGS: ProfileFlags = { pilot: false, student: false, instructor: true };
 
+const INSTRUCTOR_EXPIRY_KINDS: readonly ExpiryKind[] = ['RATING'];
+
+/** The server's cap on both money columns (`setInstructorPayoutRateSchema`, `createInstructorRateSchema`). */
+const MAX_CENTS = 2_147_483_647;
+
 export type InstructorEditorLabels = {
   closeLabel: string;
   cancel: string;
+  /** The footer's single "Salva" — the same words as the pilot editor's. */
+  save: string;
   identity: {
     sectionTitle: string;
     firstName: string;
@@ -48,19 +61,32 @@ export type InstructorEditorLabels = {
     email: string;
     phone: string;
     address: string;
-    save: string;
     loadError: string;
     /** Story 14.2, AC 1/4: this section had NO required-field feedback at all (not even `aria-invalid`) — its own `updatePersonSchema` RHF errors were silently dropped. */
     requiredField: string;
   };
-  payoutRate: { sectionTitle: string; label: string; noValue: string; save: string };
-  ratings: { sectionTitle: string } & LiveExpiryEditorLabels;
+  payoutRate: { sectionTitle: string; label: string; noValue: string };
+  ratings: { sectionTitle: string } & ExpiryDraftEditorLabels;
   readOnly: { sectionTitle: string; hoursTotal: string; owedTotal: string };
-  studentRate: InstructorRatesPanelLabels & { heading: string };
-  errors: { generic: string; invalidRate: string };
+  studentRate: {
+    heading: string;
+    price: string;
+    validFrom: string;
+    /** `t.raw` template with a `{price}` placeholder — the price field's hint when a rate is in effect today (the placeholder alone is not accessible). */
+    currentHint: string;
+    noCurrentRate: string;
+    /** `t.raw` template with `{date}`/`{price}` — the one line of the next scheduled rate (Q-19.4-b). */
+    next: string;
+    requiredField: string;
+    invalidPrice: string;
+    invalidDate: string;
+    validFromPast: string;
+    genericError: string;
+  };
+  errors: { generic: string; invalidRate: string; conflictEmail: string };
 };
 
-type ToastLabels = { genericError: string; rateSet: string; identitySaved: string };
+type ToastLabels = { saved: string };
 type ToastHandle = { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
 
 type InstructorEditorProps = {
@@ -101,18 +127,16 @@ export function InstructorEditor({
   // `onMutated` -> `router.refresh()`, which does NOT retroactively update
   // THIS already-open editor's `instructor` prop (`editorTarget` in
   // `instructors-console.tsx` is a stable snapshot captured at click time) —
-  // without a local merge, the payout-rate field (and this header) would
-  // keep showing the PRE-save value until the slide-over is closed and
-  // reopened. `initialRateCents` reacts to `current` (not the original prop)
-  // so the sub-form re-syncs immediately after its own save. The
-  // `Ore totali`/`Dovuto` readonly fields are the one exception —
-  // they are server-COMPUTED from flight/payout data no sub-form response
-  // carries, so they only refresh once the editor is reopened
+  // without a local merge, this header and the compensation the next Salva
+  // compares against would stay on the PRE-save values until the slide-over
+  // is reopened. The `Ore totali`/`Dovuto` readonly fields are the one
+  // exception — they are server-COMPUTED from flight/payout data the Salva's
+  // response does not carry, so they only refresh once the editor is reopened
   // (`onMutated`'s `router.refresh()` already keeps the TABLE row itself
   // correct in the meantime).
   const [current, setCurrent] = useState<InstructorRow | null>(instructor);
-  /** Mirrors `IdentitySection`: `ready` = the editable form is mounted (not the load-error, loading or read-only branch), `busy` = a save is in flight. */
-  const [identityForm, setIdentityForm] = useState<{ ready: boolean; busy: boolean }>({ ready: false, busy: false });
+  /** Mirrors `EditInstructorForm`: `ready` = the editable form is mounted (not the load-error, loading or read-only branch), `dirty` = something to save (D-5), `busy` = a save is in flight. */
+  const [formState, setFormState] = useState<{ ready: boolean; dirty: boolean; busy: boolean }>({ ready: false, dirty: false, busy: false });
 
   function applyPatch(patch: Partial<InstructorRow>): void {
     setCurrent((existing) => (existing ? { ...existing, ...patch } : existing));
@@ -122,66 +146,45 @@ export function InstructorEditor({
   const open = current !== null;
   const title = current ? `${current.lastName} ${current.firstName}` : '';
 
-  /* Story 15.10 (R-15.10-f): the anagrafica's save moves from the in-body
-     `.so-actions` bar to `SlideOver`'s `footer` (`.so-foot`, OUTSIDE the
-     scrolling `.so-body`), wired to its form with `form="instructor-identity-form"`.
-     Measured at 375px before the move: `.so-body` scrolls 2642px inside 716px
-     and the sticky bar ended at `top -1383.53`, with `elementFromPoint` on the
-     submit returning FALSE. It renders only when the identity form itself does
-     — the section has a load-error, a loading and a READ-ONLY branch (no
-     `canManagePeople`), and a footer submit pointing at a form that is not in
-     the DOM would be a dead control. The rate/tariffa submits below stay in
-     their own sections, as ratified. */
-  const identityFooter = identityForm.ready ? (
+  /* The panel's ONE "Salva" (story 19.4) lives in `SlideOver`'s `footer`
+     (`.so-foot`, OUTSIDE the scrolling `.so-body` — story 15.10 measured a
+     submit inside the body leaving the viewport at 375px), wired to its form
+     with `form="instructor-identity-form"`. It renders only when that form
+     itself does — the editor has a load-error, a loading and a READ-ONLY
+     branch (no `canManagePeople`), and a footer submit pointing at a form that
+     is not in the DOM would be a dead control. */
+  const footer = formState.ready ? (
     <>
       <div style={{ flex: 1 }} />
-      <button type="submit" form="instructor-identity-form" disabled={identityForm.busy} className="btn primary" data-testid="instructor-identity-submit">
-        {labels.identity.save}
+      <button type="button" className="btn" onClick={onClose}>
+        {labels.cancel}
+      </button>
+      <button
+        type="submit"
+        form="instructor-identity-form"
+        disabled={!formState.dirty || formState.busy}
+        className="btn primary"
+        data-testid="instructor-identity-submit"
+      >
+        {labels.save}
       </button>
     </>
   ) : undefined;
 
   return (
-    <SlideOver open={open} onClose={onClose} title={title} closeLabel={labels.closeLabel} footer={identityFooter}>
+    <SlideOver open={open} onClose={onClose} title={title} closeLabel={labels.closeLabel} footer={footer}>
       {current ? (
         <>
-          <IdentitySection
-            personId={current.personId}
+          <EditInstructorForm
+            instructor={current}
             canManagePeople={canManagePeople}
             locale={locale}
-            labels={labels.identity}
+            labels={labels}
             toast={toast}
             toastLabels={toastLabels}
-            onFormStateChange={setIdentityForm}
-            onSaved={(patch) => applyPatch(patch)}
+            onStateChange={setFormState}
+            onSaved={applyPatch}
           />
-
-          <Section title={labels.ratings.sectionTitle}>
-            <LiveExpiryEditor personId={current.personId} kind="RATING" profiles={INSTRUCTOR_PROFILE_FLAGS} locale={locale} labels={labels.ratings} />
-          </Section>
-
-          <Section title={labels.payoutRate.sectionTitle}>
-            <PayoutRateForm
-              personId={current.personId}
-              initialRateCents={current.payoutRateCents}
-              labels={labels.payoutRate}
-              errorLabels={labels.errors}
-              toast={toast}
-              toastLabels={toastLabels}
-              onSaved={(patch) => applyPatch(patch)}
-            />
-          </Section>
-
-          <Section title={labels.studentRate.heading}>
-            <InstructorRatesPanel
-              // Remount on instructor change — same rationale as every
-              // other per-id-keyed sub-panel in this codebase (review 2.4 F1).
-              key={current.personId}
-              personId={current.personId}
-              toast={toast}
-              labels={labels.studentRate}
-            />
-          </Section>
 
           <Section title={labels.readOnly.sectionTitle}>
             <div className="form-grid">
@@ -199,40 +202,108 @@ export function InstructorEditor({
   );
 }
 
-// --- Anagrafica (PATCH people, `people.manage`) -----------------------------
+// --- The form ------------------------------------------------------------------
 
-type PersonIdentity = { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null };
+type PersonIdentity = Pick<PersonDetailDto, 'firstName' | 'lastName' | 'email' | 'phone' | 'address'>;
+
+function identityOf(person: PersonIdentity): PersonIdentity {
+  return { firstName: person.firstName, lastName: person.lastName, email: person.email, phone: person.phone, address: person.address };
+}
 
 async function fetchPersonIdentity(personId: string): Promise<PersonIdentity | null> {
   const response = await fetch(`/api/v1/people/${personId}`);
   if (!response.ok) return null;
-  return (await response.json()) as PersonIdentity;
+  return identityOf((await response.json()) as PersonIdentity);
 }
 
-function IdentitySection({
-  personId,
+async function fetchInstructorRates(personId: string): Promise<InstructorRateItemDto[]> {
+  const response = await fetch(`/api/v1/people/${personId}/instructor-rates`);
+  if (!response.ok) return [];
+  return (await response.json()) as InstructorRateItemDto[];
+}
+
+/** A price the way it is typed (`45,00` — no symbol, no grouping): the placeholder of the rate field and the value of the compensation field — the twin of `fleet/aircraft-editor.tsx#typableCents`. */
+function typableCents(cents: number): string {
+  return (cents / 100).toFixed(2).replace('.', ',');
+}
+
+/** `null` = no compensation (empty field); `undefined` = not a valid amount. */
+function payoutCentsOf(value: string): number | null | undefined {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  try {
+    const cents = parseCents(trimmed);
+    return cents >= 0 && cents <= MAX_CENTS ? cents : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isValidRatePrice(value: string): boolean {
+  try {
+    const cents = parseCents(value.trim());
+    return cents > 0 && cents <= MAX_CENTS;
+  } catch {
+    return false;
+  }
+}
+
+/** Focuses where a failed Salva points: the first invalid control of that section, else its error message (story 19.4, AD-5). */
+function focusSection(section: HTMLElement | null): void {
+  if (!section) return;
+  (section.querySelector<HTMLElement>('[aria-invalid="true"]') ?? section.querySelector<HTMLElement>('[role="alert"]'))?.focus();
+}
+
+/** A section's error after a failed Salva — `role="alert"` (announced) and focusable, so the focus can land on it when no field is to blame. */
+function SectionError({ message, testId }: { message: string; testId: string }) {
+  return (
+    <p role="alert" tabIndex={-1} data-testid={testId} className="fld-label" style={{ color: 'var(--bad)', marginTop: 10, textTransform: 'none' }}>
+      {message}
+    </p>
+  );
+}
+
+/**
+ * Story 19.4 (AD-10): every editable part of the instructor in ONE form.
+ * Same contract as `pilots/pilot-editor.tsx#EditPersonForm`: the Salva sends
+ * only what differs from what was loaded, validated here first; a failure
+ * keeps the whole draft and shows the error in its section; a success
+ * realigns every part on the saved state.
+ */
+function EditInstructorForm({
+  instructor,
   canManagePeople,
+  locale,
   labels,
   toast,
   toastLabels,
-  onFormStateChange,
+  onStateChange,
   onSaved,
 }: {
-  personId: string;
+  instructor: InstructorRow;
   canManagePeople: boolean;
   locale: 'it' | 'en';
-  labels: InstructorEditorLabels['identity'];
+  labels: InstructorEditorLabels;
   toast: ToastHandle;
   toastLabels: ToastLabels;
   /** `useState`'s setter — stable by contract, so the effect below cannot loop. */
-  onFormStateChange: (state: { ready: boolean; busy: boolean }) => void;
+  onStateChange: (state: { ready: boolean; dirty: boolean; busy: boolean }) => void;
   onSaved: (patch: Partial<InstructorRow>) => void;
 }) {
+  const personId = instructor.personId;
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const identityRef = useRef<HTMLDivElement | null>(null);
+  const ratingsRef = useRef<HTMLDivElement | null>(null);
+  const payoutRef = useRef<HTMLDivElement | null>(null);
+  const rateRef = useRef<HTMLDivElement | null>(null);
+  const formErrorRef = useRef<HTMLDivElement | null>(null);
+
   const [identity, setIdentity] = useState<PersonIdentity | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const formRef = useRef<HTMLFormElement | null>(null);
+  const [rates, setRates] = useState<InstructorRateItemDto[] | null>(null);
 
+  // Fetch-on-mount: the promise callbacks set state, never the effect body
+  // itself (the React Compiler's `react-hooks/set-state-in-effect` rule).
   useEffect(() => {
     let cancelled = false;
     void fetchPersonIdentity(personId).then((result) => {
@@ -243,6 +314,9 @@ function IdentitySection({
       }
       setIdentity(result);
     });
+    void fetchInstructorRates(personId).then((result) => {
+      if (!cancelled) setRates(result);
+    });
     return () => {
       cancelled = true;
     };
@@ -252,58 +326,154 @@ function IdentitySection({
     register,
     handleSubmit,
     setError,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<UpdatePersonInput>({
     resolver: zodResolver(updatePersonSchema),
     values: identity ?? undefined,
   });
+  const identityValues = useWatch({ control });
 
-  // The submit that runs this form lives in the panel's `.so-foot` (story
-  // 15.10), outside this component: it needs to know whether the form exists
-  // at all and whether a request is in flight.
-  const formMounted = !loadError && identity !== null && canManagePeople;
+  const expiries = usePersonExpiryDraft(personId, INSTRUCTOR_EXPIRY_KINDS);
+
+  const [payout, setPayout] = useState(instructor.payoutRateCents === null ? '' : typableCents(instructor.payoutRateCents));
+  // A16 (story 16.9 AD-1 idiom, same as the aircraft editor): "today" is the
+  // Europe/Rome calendar day the server's `RATE_VALID_FROM_IN_PAST` checks
+  // against. Computed once per mount: the panel only renders client-side.
+  const [today] = useState(() => todayDateOnlyInZone(APP_TIMEZONE));
+  const [ratePrice, setRatePrice] = useState('');
+  const [rateValidFrom, setRateValidFrom] = useState(today);
+  /** The server's 422 `RATE_VALID_FROM_IN_PAST` (midnight between render and Salva) — cleared as soon as the date changes. */
+  const [validFromServerPast, setValidFromServerPast] = useState(false);
+
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [saveError, setSaveError] = useState<{ section: PersonSaveSection; message: string } | null>(null);
+
+  // D-10: the rate in effect today and the next scheduled one, from the list
+  // (`validFrom` desc) — max `validFrom <= today`, min `validFrom > today`.
+  const currentRate = rates?.find((rate) => rate.validFrom <= today) ?? null;
+  const nextRate = rates?.filter((rate) => rate.validFrom > today).at(-1) ?? null;
+
+  const changedIdentity = identity ? changedIdentityFields(identityValues, identity) : [];
+  const payoutCents = payoutCentsOf(payout);
+  const payoutChanged = payoutCents !== instructor.payoutRateCents;
+  // Touched = a price typed; the date alone writes nothing (R-19-f: empty = unchanged).
+  const rateTouched = ratePrice.trim().length > 0;
+  const hasExpiryChanges = expiries.changes.set.length > 0 || expiries.changes.remove.length > 0;
+  const dirty = changedIdentity.length > 0 || payoutChanged || rateTouched || hasExpiryChanges;
+
+  const payoutError = payoutCents === undefined ? labels.errors.invalidRate : null;
+  const trimmedValidFrom = rateValidFrom.trim();
+  const ratePriceError = rateTouched && !isValidRatePrice(ratePrice) ? labels.studentRate.invalidPrice : null;
+  // The native `min` does not stop a TYPED earlier date (the form is
+  // `noValidate`), so "before today" is checked here — ISO strings compare as dates.
+  const rateValidFromError = !rateTouched
+    ? null
+    : trimmedValidFrom.length === 0
+      ? labels.studentRate.requiredField
+      : !/^\d{4}-\d{2}-\d{2}$/.test(trimmedValidFrom)
+        ? labels.studentRate.invalidDate
+        : trimmedValidFrom < today || validFromServerPast
+          ? labels.studentRate.validFromPast
+          : null;
+
+  const ready = !loadError && identity !== null && canManagePeople;
+  // The submit that runs this form lives in the panel's `.so-foot`, outside
+  // this component: it needs to know whether the form exists at all, whether
+  // there is anything to save and whether a request is in flight.
   useEffect(() => {
-    onFormStateChange({ ready: formMounted, busy: isSubmitting });
-  }, [formMounted, isSubmitting, onFormStateChange]);
+    onStateChange({ ready, dirty, busy: isSubmitting });
+  }, [ready, dirty, isSubmitting, onStateChange]);
+
+  // A failed Salva moves the focus into the section it names — once the error
+  // is committed (same reason as `pilots/pilot-editor.tsx#EditPersonForm`).
+  useEffect(() => {
+    if (!saveError) return;
+    const section = saveError.section;
+    focusSection(
+      (section === 'identity' ? identityRef : section === 'expiries' ? ratingsRef : section === 'payoutRate' ? payoutRef : section === 'instructorRate' ? rateRef : formErrorRef)
+        .current,
+    );
+  }, [saveError]);
+
+  function onInvalid(): void {
+    setSubmitAttempted(true);
+  }
 
   async function onSubmit(values: UpdatePersonInput): Promise<void> {
-    setFormError(null);
+    setSubmitAttempted(true);
+    setSaveError(null);
+    if (payoutError || ratePriceError || rateValidFromError || expiries.missingDateIds.size > 0) {
+      setTimeout(() => focusFirstInvalid(formRef.current), 0);
+      return;
+    }
+
+    const body: UpdatePersonCompositeInput = {};
+    for (const field of changedIdentity) {
+      (body as Record<string, unknown>)[field] = values[field] ?? null;
+    }
+    if (hasExpiryChanges) {
+      const { set, remove } = expiries.changes;
+      body.expiries = { ...(set.length > 0 && { set }), ...(remove.length > 0 && { remove }) };
+    }
+    if (payoutChanged) body.payoutRateCents = payoutCents ?? null;
+    if (rateTouched) body.instructorRate = { priceCentsPerHour: parseCents(ratePrice.trim()), validFrom: trimmedValidFrom };
+
     const response = await fetch(`/api/v1/people/${personId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
+      body: JSON.stringify(body),
     });
+
     if (!response.ok) {
-      if (response.status === 422) {
-        // Review F1: this section had no 422-mapping at all (twin gap to
-        // `pilots/pilot-editor.tsx#IdentitySection`'s own `updatePersonSchema`
-        // form) — same field-shaped 422 handling, reusing `labels.requiredField`.
-        const { fieldErrors } = await parseApiError(response);
-        const known: Array<keyof UpdatePersonInput> = ['firstName', 'lastName', 'email', 'phone', 'address'];
-        let mapped = false;
-        for (const field of known) {
-          if (fieldErrors.has(field)) {
-            setError(field, { type: 'server', message: labels.requiredField });
-            mapped = true;
-          }
+      const { code, fieldErrors } = await parseApiError(response);
+      const section = personSaveErrorSection(code, fieldErrors, body.payoutRateCents !== undefined);
+      if (section === 'identity' && code !== 'CONFLICT') {
+        // Review F1 of story 14.2: the field-shaped 422 marks THAT field.
+        for (const field of IDENTITY_FIELDS) {
+          if (fieldErrors.has(field)) setError(field, { type: 'server', message: labels.identity.requiredField });
         }
-        if (mapped) {
-          setTimeout(() => focusFirstInvalid(formRef.current), 0);
-          return;
-        }
+        setTimeout(() => focusFirstInvalid(identityRef.current), 0);
+        return;
       }
-      setFormError(toastLabels.genericError);
+      if (code === 'RATE_VALID_FROM_IN_PAST') {
+        setValidFromServerPast(true);
+        setTimeout(() => focusFirstInvalid(rateRef.current), 0);
+        return;
+      }
+      const shown: PersonSaveSection = section === 'profiles' ? 'form' : section;
+      const message =
+        shown === 'identity'
+          ? labels.errors.conflictEmail
+          : shown === 'expiries'
+            ? labels.ratings.genericError
+            : shown === 'instructorRate'
+              ? labels.studentRate.genericError
+              : labels.errors.generic;
+      setSaveError({ section: shown, message });
       return;
     }
-    const updated = (await response.json()) as PersonIdentity;
-    toast.show(toastLabels.identitySaved, 'ok');
-    onSaved({ firstName: updated.firstName, lastName: updated.lastName });
+
+    const updated = (await response.json()) as PersonDetailDto;
+    toast.show(toastLabels.saved, 'ok');
+    // Realign every part on what the server saved (D-4): nothing left to save.
+    // The compensation is not in the response: it is the value just sent.
+    const savedPayout = payoutChanged ? (payoutCents ?? null) : instructor.payoutRateCents;
+    setIdentity(identityOf(updated));
+    setPayout(savedPayout === null ? '' : typableCents(savedPayout));
+    setRatePrice('');
+    setRateValidFrom(today);
+    setValidFromServerPast(false);
+    setSubmitAttempted(false);
+    onSaved({ firstName: updated.firstName, lastName: updated.lastName, payoutRateCents: savedPayout });
+    const [nextRates] = await Promise.all([fetchInstructorRates(personId), expiries.reload()]);
+    setRates(nextRates);
   }
 
   if (loadError) {
     return (
       <p className="fld-label" style={{ color: 'var(--bad)' }}>
-        {labels.loadError}
+        {labels.identity.loadError}
       </p>
     );
   }
@@ -313,126 +483,121 @@ function IdentitySection({
   if (!canManagePeople) {
     return (
       <div className="form-grid">
-        <Field label={labels.firstName}>
+        <Field label={labels.identity.firstName}>
           <Input value={identity.firstName} disabled />
         </Field>
-        <Field label={labels.lastName}>
+        <Field label={labels.identity.lastName}>
           <Input value={identity.lastName} disabled />
         </Field>
       </div>
     );
   }
 
-  return (
-    <form id="instructor-identity-form" ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-identity-form">
-      <div className="form-grid">
-        <Field label={labels.firstName} error={errors.firstName ? labels.requiredField : undefined}>
-          <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
-        </Field>
-        <Field label={labels.lastName} error={errors.lastName ? labels.requiredField : undefined}>
-          <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
-        </Field>
-        <Field label={labels.email} error={errors.email ? labels.requiredField : undefined}>
-          <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
-        </Field>
-        <Field label={labels.phone} error={errors.phone ? labels.requiredField : undefined}>
-          <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
-        </Field>
-        <Field label={labels.address} wide error={errors.address ? labels.requiredField : undefined}>
-          <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
-        </Field>
-      </div>
-      {formError ? (
-        <p role="alert" data-testid="instructor-identity-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 10 }}>
-          {formError}
-        </p>
-      ) : null}
-    </form>
-  );
-}
-
-// --- Tariffa payout (PUT instructor-compensation/{id}/rate, `payouts.manage`) -----
-
-const payoutRateFormSchema = z.object({ rate: z.string() }).refine(
-  (values) => {
-    const trimmed = values.rate.trim();
-    if (trimmed.length === 0) return true;
-    try {
-      return parseCents(trimmed) >= 0 && parseCents(trimmed) <= 2_147_483_647;
-    } catch {
-      return false;
-    }
-  },
-  { message: 'invalidRate', path: ['rate'] },
-);
-
-type PayoutRateFormValues = z.infer<typeof payoutRateFormSchema>;
-
-function PayoutRateForm({
-  personId,
-  initialRateCents,
-  labels,
-  errorLabels,
-  toast,
-  toastLabels,
-  onSaved,
-}: {
-  personId: string;
-  initialRateCents: number | null;
-  labels: InstructorEditorLabels['payoutRate'];
-  errorLabels: InstructorEditorLabels['errors'];
-  toast: ToastHandle;
-  toastLabels: ToastLabels;
-  onSaved: (patch: Partial<InstructorRow>) => void;
-}) {
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<PayoutRateFormValues>({
-    resolver: zodResolver(payoutRateFormSchema),
-    values: { rate: initialRateCents === null ? '' : (initialRateCents / 100).toFixed(2).replace('.', ',') },
-  });
-
-  async function onSubmit(values: PayoutRateFormValues): Promise<void> {
-    setFormError(null);
-    const trimmed = values.rate.trim();
-    const payoutRateCents = trimmed.length === 0 ? null : parseCents(trimmed);
-
-    const response = await fetch(`/api/v1/instructor-compensation/${personId}/rate`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payoutRateCents }),
-    });
-    if (!response.ok) {
-      setFormError(toastLabels.genericError);
-      return;
-    }
-    toast.show(toastLabels.rateSet, 'ok');
-    onSaved({ payoutRateCents });
-  }
+  const studentRate = labels.studentRate;
+  const showRateErrors = submitAttempted || validFromServerPast;
 
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-payout-rate-form">
-      <div className="form-grid">
-        <Field label={labels.label} error={errors.rate ? errorLabels.invalidRate : undefined}>
-          <InputGroup prefix="€" suffix="/h">
-            <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.rate)} {...register('rate')} />
-          </InputGroup>
-        </Field>
+    <form id="instructor-identity-form" ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)} noValidate data-testid="instructor-identity-form">
+      <div ref={identityRef}>
+        <div className="form-grid">
+          <Field label={labels.identity.firstName} error={errors.firstName ? labels.identity.requiredField : undefined}>
+            <Input aria-invalid={Boolean(errors.firstName)} {...register('firstName')} />
+          </Field>
+          <Field label={labels.identity.lastName} error={errors.lastName ? labels.identity.requiredField : undefined}>
+            <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
+          </Field>
+          <Field label={labels.identity.email} error={errors.email ? labels.identity.requiredField : undefined}>
+            <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
+          </Field>
+          <Field label={labels.identity.phone} error={errors.phone ? labels.identity.requiredField : undefined}>
+            <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
+          </Field>
+          <Field label={labels.identity.address} wide error={errors.address ? labels.identity.requiredField : undefined}>
+            <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
+          </Field>
+        </div>
+        {saveError?.section === 'identity' ? <SectionError message={saveError.message} testId="instructor-identity-error" /> : null}
       </div>
-      {formError ? (
-        <p role="alert" data-testid="instructor-payout-rate-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-          {formError}
-        </p>
-      ) : null}
-      <div style={{ marginTop: 10 }}>
-        <button type="submit" disabled={isSubmitting} className="btn" data-testid="instructor-payout-rate-submit">
-          {labels.save}
-        </button>
-      </div>
+
+      <Section title={labels.ratings.sectionTitle}>
+        <div ref={ratingsRef} data-testid="instructor-ratings-editor">
+          <ExpiryDraftEditor
+            draft={expiries}
+            kind="RATING"
+            profiles={INSTRUCTOR_PROFILE_FLAGS}
+            labels={labels.ratings}
+            showMissingDates={submitAttempted}
+          />
+          {saveError?.section === 'expiries' ? <SectionError message={saveError.message} testId="instructor-ratings-error" /> : null}
+        </div>
+      </Section>
+
+      <Section title={labels.payoutRate.sectionTitle}>
+        <div ref={payoutRef} data-testid="instructor-payout-rate-form">
+          <div className="form-grid">
+            <Field label={labels.payoutRate.label} error={submitAttempted ? (payoutError ?? undefined) : undefined}>
+              <InputGroup prefix="€" suffix="/h">
+                <Input
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  aria-invalid={submitAttempted && payoutError !== null}
+                  value={payout}
+                  onChange={(event) => setPayout(event.target.value)}
+                  data-testid="instructor-payout-rate"
+                />
+              </InputGroup>
+            </Field>
+          </div>
+          {saveError?.section === 'payoutRate' ? <SectionError message={saveError.message} testId="instructor-payout-rate-error" /> : null}
+        </div>
+      </Section>
+
+      <Section title={studentRate.heading}>
+        <div ref={rateRef} data-testid="instructor-rates-panel">
+          <div className="form-grid">
+            <Field
+              label={studentRate.price}
+              error={showRateErrors ? (ratePriceError ?? undefined) : undefined}
+              hint={
+                rates === null
+                  ? undefined
+                  : currentRate
+                    ? studentRate.currentHint.replace('{price}', formatCents(currentRate.priceCentsPerHour, locale))
+                    : studentRate.noCurrentRate
+              }
+            >
+              <Input
+                inputMode="decimal"
+                placeholder={currentRate ? typableCents(currentRate.priceCentsPerHour) : undefined}
+                aria-invalid={showRateErrors && ratePriceError !== null}
+                value={ratePrice}
+                onChange={(event) => setRatePrice(event.target.value)}
+                data-testid="instructor-rate-price"
+              />
+            </Field>
+            <Field label={studentRate.validFrom} error={showRateErrors ? (rateValidFromError ?? undefined) : undefined}>
+              <DateInput
+                aria-invalid={showRateErrors && rateValidFromError !== null}
+                value={rateValidFrom}
+                min={today}
+                onChange={(event) => {
+                  setRateValidFrom(event.target.value);
+                  setValidFromServerPast(false);
+                }}
+                data-testid="instructor-rate-valid-from"
+              />
+            </Field>
+          </div>
+          {nextRate ? (
+            <p className="fld-hint" data-testid="instructor-rates-next" style={{ marginTop: 12 }}>
+              {studentRate.next.replace('{date}', formatDateOnly(nextRate.validFrom, locale)).replace('{price}', formatCents(nextRate.priceCentsPerHour, locale))}
+            </p>
+          ) : null}
+          {saveError?.section === 'instructorRate' ? <SectionError message={saveError.message} testId="instructor-rates-error" /> : null}
+        </div>
+      </Section>
+
+      <div ref={formErrorRef}>{saveError?.section === 'form' ? <SectionError message={saveError.message} testId="instructor-save-error" /> : null}</div>
     </form>
   );
 }

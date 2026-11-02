@@ -45,6 +45,11 @@ export default async function InstructorsPage({ params }: PageProps) {
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const t = await getTranslations('InstructorsPage');
   const tExport = await getTranslations('Export');
+  // Story 19.4: the student rate field reads like the aircraft's (story 19.3)
+  // and the anagrafica's email conflict like the pilot editor's — the same
+  // copy, not a duplicate.
+  const tAircraft = await getTranslations('AircraftPage');
+  const tPilots = await getTranslations('PilotsPage');
 
   const activeCount = summary.length;
   const totalMinutes = summary.reduce((sum, row) => sum + row.totalMinutes, 0);
@@ -122,6 +127,7 @@ export default async function InstructorsPage({ params }: PageProps) {
           editor: {
             closeLabel: t('editor.closeLabel'),
             cancel: t('editor.cancel'),
+            save: t('editor.save'),
             identity: {
               sectionTitle: t('editor.identity.sectionTitle'),
               firstName: t('editor.identity.firstName'),
@@ -129,7 +135,6 @@ export default async function InstructorsPage({ params }: PageProps) {
               email: t('editor.identity.email'),
               phone: t('editor.identity.phone'),
               address: t('editor.identity.address'),
-              save: t('editor.identity.save'),
               loadError: t('editor.identity.loadError'),
               requiredField: t('editor.identity.requiredField'),
             },
@@ -137,21 +142,14 @@ export default async function InstructorsPage({ params }: PageProps) {
               sectionTitle: t('editor.payoutRate.sectionTitle'),
               label: t('editor.payoutRate.label'),
               noValue: t('editor.payoutRate.noValue'),
-              save: t('editor.payoutRate.save'),
             },
             ratings: {
               sectionTitle: t('editor.ratings.sectionTitle'),
               empty: t('editor.ratings.empty'),
               status: { ok: t('editor.ratings.status.ok'), expiring: t('editor.ratings.status.expiring'), expired: t('editor.ratings.status.expired') },
               dateLabel: t('editor.ratings.dateLabel'),
-              addAction: t('editor.ratings.addAction'),
-              cancel: t('editor.ratings.cancel'),
-              save: t('editor.ratings.save'),
-              edit: t('editor.ratings.edit'),
               remove: t('editor.ratings.remove'),
-              confirmRemove: t('editor.ratings.confirmRemove'),
-              confirmYes: t('editor.ratings.confirmYes'),
-              confirmCancel: t('editor.ratings.confirmCancel'),
+              restore: t('editor.ratings.restore'),
               requiredDate: t('editor.ratings.requiredDate'),
               genericError: t('editor.ratings.genericError'),
             },
@@ -162,29 +160,21 @@ export default async function InstructorsPage({ params }: PageProps) {
             },
             studentRate: {
               heading: t('studentRate.heading'),
-              current: t('studentRate.current'),
-              noCurrentRate: t('studentRate.noCurrentRate'),
-              loadError: t('studentRate.loadError'),
               price: t('studentRate.price'),
               validFrom: t('studentRate.validFrom'),
-              submit: t('studentRate.submit'),
-              rateAdded: t('studentRate.rateAdded'),
+              // `t.raw`, not `t`: `{price}`/`{date}` are filled CLIENT-side,
+              // and `t()` would try to resolve them as ICU variables here and
+              // throw FORMATTING_ERROR — same reason as `fleet/page.tsx`.
+              currentHint: tAircraft.raw('editor.rates.currentHint') as string,
+              noCurrentRate: t('studentRate.noCurrentRate'),
+              next: t.raw('studentRate.next') as string,
               requiredField: t('studentRate.requiredField'),
               invalidPrice: t('studentRate.invalidPrice'),
               invalidDate: t('studentRate.invalidDate'),
+              validFromPast: tAircraft('editor.errors.validFromPast'),
               genericError: t('studentRate.genericError'),
-              conflictError: t('studentRate.conflictError'),
-              historyTitle: t('studentRate.historyTitle'),
-              historyEmpty: t('studentRate.historyEmpty'),
-              historyActor: t('studentRate.historyActor'),
-              historyWhen: t('studentRate.historyWhen'),
-              // `t.raw`, not `t`: the `{count}` placeholder is filled CLIENT-side
-              // (the hidden-row count is only known there), and `t()` would try to
-              // resolve it as an ICU variable here and throw FORMATTING_ERROR —
-              // same reason `fleet/page.tsx:180` reads its own `showAll` raw.
-              historyShowAll: t.raw('studentRate.historyShowAll') as string,
             },
-            errors: { generic: t('editor.errors.generic'), invalidRate: t('editor.errors.invalidRate') },
+            errors: { generic: t('editor.errors.generic'), invalidRate: t('editor.errors.invalidRate'), conflictEmail: tPilots('editor.errors.conflictEmail') },
           },
           profile: {
             closeLabel: t('profile.closeLabel'),
@@ -222,11 +212,9 @@ export default async function InstructorsPage({ params }: PageProps) {
             closeLabel: t('paymentCycle.closeLabel'),
           },
           toast: {
-            rateSet: t('toast.rateSet'),
+            saved: t('toast.saved'),
             payoutRecorded: t('toast.payoutRecorded'),
             instructorAdded: t('toast.instructorAdded'),
-            genericError: t('toast.genericError'),
-            identitySaved: t('toast.identitySaved'),
           },
         }}
       />

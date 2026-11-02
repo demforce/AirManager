@@ -15,8 +15,8 @@ type Translator = Awaited<ReturnType<typeof getTranslations>>;
 /**
  * `t` = `PilotsPage` (the editor's own copy, generic across any person —
  * not pilot-specific despite the namespace name), `tProfiles` =
- * `PeoplePage` (profile activate/edit copy shared with the legacy
- * `ProfilesPanel`), `tUsers` = `UsersPage` (role names shared with
+ * `PeoplePage` (profile titles, fields and states shared with the scheda
+ * persona), `tUsers` = `UsersPage` (role names shared with
  * `/dashboard/users`).
  */
 export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUsers: Translator): PilotEditorLabels {
@@ -42,17 +42,6 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
         inactive: tProfiles('profilesPanel.status.inactive'),
         notActivated: tProfiles('profilesPanel.status.notActivated'),
       },
-      actions: {
-        activate: tProfiles('profilesPanel.actions.activate'),
-        edit: tProfiles('profilesPanel.actions.edit'),
-        reactivate: tProfiles('profilesPanel.actions.reactivate'),
-        deactivate: tProfiles('profilesPanel.actions.deactivate'),
-        confirmDeactivate: tProfiles('profilesPanel.actions.confirmDeactivate'),
-        confirmYes: tProfiles('profilesPanel.actions.confirmYes'),
-        confirmCancel: tProfiles('profilesPanel.actions.confirmCancel'),
-        cancel: tProfiles('profilesPanel.actions.cancel'),
-        save: tProfiles('profilesPanel.actions.save'),
-      },
       errors: {
         requiredField: tProfiles('profilesPanel.errors.requiredField'),
         generic: tProfiles('profilesPanel.errors.generic'),
@@ -71,14 +60,8 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       empty: t('editor.ratings.empty'),
       status: { ok: t('editor.ratings.status.ok'), expiring: t('editor.ratings.status.expiring'), expired: t('editor.ratings.status.expired') },
       dateLabel: t('editor.ratings.dateLabel'),
-      addAction: t('editor.ratings.addAction'),
-      cancel: t('editor.ratings.cancel'),
-      save: t('editor.ratings.save'),
-      edit: t('editor.ratings.edit'),
       remove: t('editor.ratings.remove'),
-      confirmRemove: t('editor.ratings.confirmRemove'),
-      confirmYes: t('editor.ratings.confirmYes'),
-      confirmCancel: t('editor.ratings.confirmCancel'),
+      restore: t('editor.ratings.restore'),
       requiredDate: t('editor.ratings.requiredDate'),
       genericError: t('editor.ratings.genericError'),
     },
@@ -87,14 +70,8 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       empty: t('editor.medical.empty'),
       status: { ok: t('editor.ratings.status.ok'), expiring: t('editor.ratings.status.expiring'), expired: t('editor.ratings.status.expired') },
       dateLabel: t('editor.medical.dateLabel'),
-      addAction: t('editor.medical.addAction'),
-      cancel: t('editor.medical.cancel'),
-      save: t('editor.medical.save'),
-      edit: t('editor.medical.edit'),
       remove: t('editor.medical.remove'),
-      confirmRemove: t('editor.medical.confirmRemove'),
-      confirmYes: t('editor.medical.confirmYes'),
-      confirmCancel: t('editor.medical.confirmCancel'),
+      restore: t('editor.medical.restore'),
       requiredDate: t('editor.medical.requiredDate'),
       genericError: t('editor.medical.genericError'),
     },

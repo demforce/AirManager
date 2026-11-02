@@ -293,17 +293,6 @@
         "inactive": "Deactivated",
         "notActivated": "Not activated"
       },
-      "actions": {
-        "activate": "Activate",
-        "edit": "Edit",
-        "reactivate": "Reactivate",
-        "deactivate": "Deactivate",
-        "confirmDeactivate": "Deactivate this profile?",
-        "confirmYes": "Confirm",
-        "confirmCancel": "Cancel",
-        "cancel": "Cancel",
-        "save": "Save"
-      },
       "errors": {
         "requiredField": "This field is required.",
         "generic": "Something went wrong. Please try again.",
@@ -414,14 +403,8 @@
           "expired": "Expired"
         },
         "dateLabel": "Expiry date",
-        "addAction": "Add",
-        "cancel": "Cancel",
-        "save": "Save",
-        "edit": "Edit",
         "remove": "Remove",
-        "confirmRemove": "Remove this expiry?",
-        "confirmYes": "Confirm",
-        "confirmCancel": "Cancel",
+        "restore": "Restore",
         "requiredDate": "The expiry date is required.",
         "genericError": "Something went wrong. Please try again."
       },
@@ -429,14 +412,8 @@
         "subHeading": "Medical",
         "empty": "No medical expiry on file.",
         "dateLabel": "Expiry date",
-        "addAction": "Add",
-        "cancel": "Cancel",
-        "save": "Save",
-        "edit": "Edit",
         "remove": "Remove",
-        "confirmRemove": "Remove this medical expiry?",
-        "confirmYes": "Confirm",
-        "confirmCancel": "Cancel",
+        "restore": "Restore",
         "requiredDate": "The expiry date is required.",
         "genericError": "Something went wrong. Please try again."
       },
@@ -541,15 +518,13 @@
         "email": "Email",
         "phone": "Phone",
         "address": "Address",
-        "save": "Save changes",
         "loadError": "Could not load the identity data.",
         "requiredField": "Required field."
       },
       "payoutRate": {
         "sectionTitle": "Payout rate (paid to the instructor)",
         "label": "Hourly rate",
-        "noValue": "—",
-        "save": "Save"
+        "noValue": "—"
       },
       "ratings": {
         "sectionTitle": "Ratings",
@@ -560,14 +535,8 @@
           "expired": "Expired"
         },
         "dateLabel": "Expiry date",
-        "addAction": "Add",
-        "cancel": "Cancel",
-        "save": "Save",
-        "edit": "Edit",
         "remove": "Remove",
-        "confirmRemove": "Remove this expiry?",
-        "confirmYes": "Confirm",
-        "confirmCancel": "Cancel",
+        "restore": "Restore",
         "requiredDate": "The expiry date is required.",
         "genericError": "Something went wrong. Please try again."
       },
@@ -583,25 +552,14 @@
     },
     "studentRate": {
       "heading": "Student rate (charged to the pilot/student)",
-      "current": "Current rate",
       "noCurrentRate": "No rate currently in effect",
-      "loadError": "Could not load the rate history.",
       "price": "Price (€/h)",
       "validFrom": "In effect from",
-      "submit": "Add rate",
-      "rateAdded": "Rate added.",
+      "next": "From {date}: {price}/h",
       "requiredField": "Required field.",
       "invalidPrice": "Price must be a positive amount (e.g. 45.00).",
       "invalidDate": "Enter a valid date.",
-      "genericError": "Something went wrong. Please try again.",
-      "conflictError": "A rate with this validFrom already exists, or this person has no active instructor profile.",
-      "historyTitle": "Rate history",
-      "historyEmpty": "No rate recorded.",
-      "historyValidFrom": "In effect from",
-      "historyPrice": "Price",
-      "historyActor": "Who",
-      "historyWhen": "Recorded on",
-      "historyShowAll": "Show all ({count})"
+      "genericError": "Something went wrong. Please try again."
     },
     "pay": {
       "title": "Record payout",
@@ -648,11 +606,9 @@
       }
     },
     "toast": {
-      "rateSet": "Payout rate updated.",
+      "saved": "Changes saved.",
       "payoutRecorded": "Payout recorded.",
-      "instructorAdded": "Instructor profile activated.",
-      "genericError": "Something went wrong. Please try again.",
-      "identitySaved": "Identity data updated."
+      "instructorAdded": "Instructor profile activated."
     }
   },
   "PersonDetailPage": {

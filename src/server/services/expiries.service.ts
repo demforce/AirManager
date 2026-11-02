@@ -1,4 +1,4 @@
-import type { ExpiryProposalStatus, ExpiryScope } from '@/generated/prisma/client';
+import type { ExpiryProposalStatus, ExpiryScope, Prisma } from '@/generated/prisma/client';
 import { paginate, paginationOffset } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
 import { computeExpiryStatus, daysUntilUtc, EXPIRY_WARNING_DAYS, type ExpiryStatus } from '@/lib/expiry-status';
@@ -151,9 +151,11 @@ type ScopeCheckPerson = {
  * doc-comment names this story as its owner). `ALL` matches everyone; every
  * other scope requires the corresponding profile to exist AND be currently
  * ACTIVE (`deactivatedAt === null`) — a deactivated or never-activated
- * profile is treated the same as "no profile", both fail the check.
+ * profile is treated the same as "no profile", both fail the check. Exported
+ * for the person composite (`people.service.ts#updatePerson`, story 19.4),
+ * which runs it against the profiles as they are AFTER its own profile writes.
  */
-function assertScopeCompatible(scope: ExpiryScope, person: ScopeCheckPerson): void {
+export function assertScopeCompatible(scope: ExpiryScope, person: ScopeCheckPerson): void {
   if (scope === 'ALL') {
     return;
   }
@@ -267,18 +269,14 @@ export async function updateExpiry(actor: Actor, id: string, input: UpdateExpiry
     throw new NotFoundError('Expiry not found.');
   }
 
-  const nextExpiresAt = input.expiresAt !== undefined ? parseDateOnlyUtc(input.expiresAt) : existing.expiresAt;
-  const expiresAtChanged = nextExpiresAt.getTime() !== existing.expiresAt.getTime();
-
   const updated = await prisma.$transaction(async (tx) => {
-    if (expiresAtChanged) {
-      await tx.sentAlert.deleteMany({ where: { expiryId: id } });
+    if (input.expiresAt !== undefined) {
+      await updateExpiryDateCore(tx, id, parseDateOnlyUtc(input.expiresAt), existing.expiresAt, actor.userId);
     }
 
     return tx.expiry.update({
       where: { id },
       data: {
-        ...(input.expiresAt !== undefined ? { expiresAt: nextExpiresAt } : {}),
         ...(input.notes !== undefined ? { notes: input.notes } : {}),
         actorUserId: actor.userId,
       },
@@ -287,6 +285,26 @@ export async function updateExpiry(actor: Actor, id: string, input: UpdateExpiry
   });
 
   return toListItem(updated, todayDateOnlyUtc());
+}
+
+/**
+ * Writes a scadenza's `expiresAt` — the ONE place of story 6.3's AD-9 rule
+ * (see `updateExpiry`): when the date actually CHANGES value, its `SentAlert`
+ * rows are wiped in the same transaction, so the renewed cycle re-earns its
+ * alerts. Shared by `updateExpiry` and the person composite
+ * (`people.service.ts#updatePerson`, story 19.4).
+ */
+export async function updateExpiryDateCore(
+  tx: Prisma.TransactionClient,
+  expiryId: string,
+  nextExpiresAt: Date,
+  previousExpiresAt: Date,
+  actorUserId: string,
+): Promise<void> {
+  if (nextExpiresAt.getTime() !== previousExpiresAt.getTime()) {
+    await tx.sentAlert.deleteMany({ where: { expiryId } });
+  }
+  await tx.expiry.update({ where: { id: expiryId }, data: { expiresAt: nextExpiresAt, actorUserId } });
 }
 
 /**

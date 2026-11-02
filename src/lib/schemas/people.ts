@@ -1,5 +1,6 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { exportQuerySchema } from './common';
+import { setInstructorPayoutRateSchema } from './instructor-compensation';
 import { roleSchema } from './users';
 import { z } from './zod-with-openapi';
 
@@ -287,3 +288,67 @@ export type InstructorRateItemDto = z.infer<typeof instructorRateItemSchema>;
 export const instructorRateListResponseSchema = z.array(instructorRateItemSchema);
 
 export type InstructorRateListResponseDto = z.infer<typeof instructorRateListResponseSchema>;
+
+// --- One atomic save of a person (story 19.4, AD-1) --------------------------
+
+/**
+ * A profile's FINAL state in the person composite (D-2): `active: true` with
+ * the same fields `PUT /people/{id}/profiles/{type}` takes (activates or
+ * updates), `active: false` deactivates — a no-op on a profile that is
+ * already inactive or was never activated.
+ */
+const pilotProfileChangeSchema = z.discriminatedUnion('active', [
+  pilotProfileRequestSchema.extend({ active: z.literal(true) }),
+  z.object({ active: z.literal(false) }),
+]);
+
+const studentProfileChangeSchema = z.discriminatedUnion('active', [
+  studentProfileRequestSchema.extend({ active: z.literal(true) }),
+  z.object({ active: z.literal(false) }),
+]);
+
+/** The instructor profile has no field of its own (story 13.1, R-13.1-b): only its final state. */
+const instructorProfileChangeSchema = z.object({ active: z.boolean() });
+
+/**
+ * The person's scadenze, by TYPE (D-2): `set` creates the row of a type the
+ * person does not have yet, or moves the date of the one they have; `remove`
+ * deletes the row of a type (absent = no-op). A type appears at most once,
+ * in one of the two arrays — anything else is a client bug.
+ */
+const personExpiryChangesSchema = z
+  .object({
+    set: z.array(createPersonExpirySchema).max(50).optional(),
+    remove: z.array(z.string().min(1)).max(50).optional(),
+  })
+  .refine(
+    ({ set = [], remove = [] }) => {
+      const setIds = set.map((item) => item.expiryTypeId);
+      return new Set(setIds).size === setIds.length && new Set(remove).size === remove.length && !setIds.some((id) => remove.includes(id));
+    },
+    { message: 'Each expiryTypeId may appear once, in set or in remove.' },
+  );
+
+/**
+ * `PATCH /api/v1/people/{id}` (story 19.4, AD-1): the anagrafica patch of
+ * `updatePersonSchema` plus four OPTIONAL blocks saved in the SAME
+ * transaction (`people.service.ts#updatePerson`). A body with only the
+ * anagrafica keys behaves as before. `payoutRateCents` has the shape of
+ * `PUT /instructor-compensation/{id}/rate` (`setInstructorPayoutRateSchema`:
+ * integer cents ≥ 0, or `null` = no compensation) and `instructorRate` the
+ * shape of `POST /people/{id}/instructor-rates`.
+ */
+export const updatePersonCompositeSchema = updatePersonSchema.extend({
+  profiles: z
+    .object({
+      pilot: pilotProfileChangeSchema.optional(),
+      student: studentProfileChangeSchema.optional(),
+      instructor: instructorProfileChangeSchema.optional(),
+    })
+    .optional(),
+  expiries: personExpiryChangesSchema.optional(),
+  payoutRateCents: setInstructorPayoutRateSchema.shape.payoutRateCents.optional(),
+  instructorRate: createInstructorRateSchema.optional(),
+});
+
+export type UpdatePersonCompositeInput = z.infer<typeof updatePersonCompositeSchema>;

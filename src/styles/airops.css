@@ -826,6 +826,12 @@ html[data-theme="dark"] .alert-box.info{ color: oklch(0.86 0.1 245); }
   color: var(--accent-ink);
   font-weight: 600;
 }
+/* Story 19.4 (AD-8): a draft row the single Salva will write (new, or a moved
+   date) carries the same accent bar the selected chip uses; a row marked for
+   removal reads struck through until the Salva — or "Ripristina" — settles it. */
+.expiry-draft-row[data-state="new"],
+.expiry-draft-row[data-state="changed"]{ box-shadow: inset 2px 0 0 var(--accent); padding-left: 8px; }
+.expiry-draft-row[data-state="removed"] > span:first-child{ text-decoration: line-through; color: var(--ink-4); }
 
 /* ---------- fleet ---------- */
 .fleet-grid{

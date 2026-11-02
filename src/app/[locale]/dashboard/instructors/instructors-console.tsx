@@ -87,7 +87,7 @@ export type InstructorsConsoleLabels = {
     genericError: string;
   };
   paymentCycle: { title: string; subtitle: string; empty: string; pay: string; closeLabel: string };
-  toast: { rateSet: string; payoutRecorded: string; instructorAdded: string; genericError: string; identitySaved: string };
+  toast: { saved: string; payoutRecorded: string; instructorAdded: string };
 };
 
 type InstructorsConsoleProps = {
@@ -615,9 +615,10 @@ function PaymentCycleSlideOver({ open, onClose, items, locale, labels, onPay }: 
 
 // --- "Aggiungi istruttore" slide-over -----------------------------------------
 // AC 4: activates the instructor profile on an EXISTING person (or one just
-// created via the Pilots page, story 12.6) — reuses the SAME
-// `PUT /api/v1/people/{id}/profiles/instructor` endpoint the pilots editor's
-// `ProfilesSection` already uses, never a parallel "create person" flow.
+// created via the Pilots page, story 12.6) — through the single-profile
+// `PUT /api/v1/people/{id}/profiles/instructor` endpoint (the pilots editor
+// activates it inside its own single Salva since story 19.4), never a
+// parallel "create person" flow.
 // Story 13.1 (R-13.1-b): the free-text "abilitazioni" field this form used
 // to require is GONE — `PUT .../profiles/instructor` now just activates the
 // profile, no body needed, so this is a plain search-then-confirm (no

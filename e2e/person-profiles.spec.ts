@@ -10,12 +10,15 @@ if (!SEED_PASSWORD) {
 }
 
 /**
- * Person profiles (story 2.2), adapted to the new Piloti editor (story 12.6,
- * AC 4/7): the legacy `/dashboard/people` "Profili" panel is gone — profile
- * activation now lives INSIDE the pilot slide-over editor's own "Profili"
- * section (`pilot-editor-profile-{pilot,student,instructor}` testids). The
- * underlying API/403 contract is UNCHANGED (still `PUT
- * /profiles/{type}`/`POST /profiles/{type}/deactivate`, `people.manage`).
+ * Person profiles (story 2.2), in the Piloti editor (story 12.6, AC 4/7):
+ * each profile has its box in the editor's "Profili" section
+ * (`pilot-editor-profile-{pilot,student,instructor}`). Since story 19.4
+ * (R-19-m, A11) a profile is activated or deactivated by its checkbox
+ * (`pilot-editor-profile-{type}-active`) in the editor's draft, and the
+ * panel's single Salva (`pilot-identity-submit`) writes it — through the
+ * person composite `PATCH /api/v1/people/{id}`. The single-profile routes
+ * (`PUT /profiles/{type}`, `POST /profiles/{type}/deactivate`) stay for API
+ * clients (D-8): their 403/404 contract is asserted below, unchanged.
  */
 async function loginExpectingDashboard(page: Page, email: string): Promise<void> {
   await page.goto('/it/login');
@@ -62,23 +65,25 @@ test.describe('Person profiles (Story 2.2), adapted to the Piloti editor (Story 
 
     const row = await openEditor(page, person.lastName);
 
-    // The Pilota section starts "Non attivato" — activate it with its fields.
+    // The Pilota box starts "Non attivato" — tick it, fill its fields, one Salva.
     const pilotSection = page.getByTestId('pilot-editor-profile-pilot');
     await expect(pilotSection.getByText('Non attivato', { exact: true })).toBeVisible();
-    await pilotSection.getByRole('button', { name: 'Attiva' }).click();
-    await pilotSection.getByLabel('Numero licenza').fill('IT-PPL-77821');
-    await pilotSection.getByLabel('Tipo licenza').fill('PPL(A)');
-    await pilotSection.getByRole('button', { name: 'Salva' }).click();
+    await page.getByTestId('pilot-editor-profile-pilot-active').check();
+    await page.getByTestId('pilot-editor-profile-pilot-license-number').fill('IT-PPL-77821');
+    await page.getByTestId('pilot-editor-profile-pilot-license-type').fill('PPL(A)');
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Dati aggiornati.' })).toBeVisible();
 
-    // Panel shows the saved data and the active status.
-    await expect(pilotSection.getByText('Numero licenza: IT-PPL-77821 · Tipo licenza: PPL(A)')).toBeVisible();
+    // The box shows the saved state and keeps the saved data in its fields.
     await expect(pilotSection.getByText('Attivo', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('pilot-editor-profile-pilot-license-number')).toHaveValue('IT-PPL-77821');
+    await expect(page.getByTestId('pilot-editor-profile-pilot-license-type')).toHaveValue('PPL(A)');
 
     // The list row now carries the "Pilota" role badge (router.refresh() re-fetched the flags).
     await expect(row.getByText('Pilota', { exact: true })).toBeVisible();
   });
 
-  test('student → pilot transition keeps the same person row (AC 2)', async ({ page }) => {
+  test('student → pilot transition in ONE Salva keeps the same person row (AC 2; story 19.4 AC 17)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Andrea');
     await createPilot(page, person);
@@ -87,26 +92,37 @@ test.describe('Person profiles (Story 2.2), adapted to the Piloti editor (Story 
 
     // Activate the student profile.
     const studentSection = page.getByTestId('pilot-editor-profile-student');
-    await studentSection.getByRole('button', { name: 'Attiva' }).click();
-    await studentSection.getByLabel('Data inizio corso').fill('2026-03-01');
-    await studentSection.getByRole('button', { name: 'Salva' }).click();
+    await page.getByTestId('pilot-editor-profile-student-active').check();
+    await page.getByTestId('pilot-editor-profile-student-course-start').fill('2026-03-01');
+    await page.getByTestId('pilot-identity-submit').click();
     await expect(studentSection.getByText('Attivo', { exact: true })).toBeVisible();
-    await expect(studentSection.getByText('Data inizio corso: 01/03/2026')).toBeVisible();
-
     await expect(row.getByText('Allievo', { exact: true })).toBeVisible();
 
-    // The student gets the license: deactivate Allievo (two-step confirm)…
-    await studentSection.getByRole('button', { name: 'Disattiva' }).click();
-    await studentSection.getByRole('button', { name: 'Conferma' }).click();
+    // With Allievo ticked, Pilota cannot be ticked (R-19-e): the control is disabled and says why.
+    await expect(page.getByTestId('pilot-editor-profile-pilot-active')).toBeDisabled();
+    await expect(page.getByTestId('pilot-editor-profile-pilot-active')).toHaveAccessibleDescription(
+      "Allievo non può essere attivo insieme a Pilota o Istruttore: disattiva prima l'altro profilo.",
+    );
+
+    // The student gets the license: untick Allievo, tick Pilota, ONE Salva.
+    const writes: Array<{ method: string; url: string; body: unknown }> = [];
+    page.on('request', (request) => {
+      if (request.method() !== 'GET' && request.url().includes('/api/v1/')) writes.push({ method: request.method(), url: request.url(), body: request.postDataJSON() });
+    });
+    await page.getByTestId('pilot-editor-profile-student-active').uncheck();
+    await page.getByTestId('pilot-editor-profile-pilot-active').check();
+    await page.getByTestId('pilot-editor-profile-pilot-license-number').fill('IT-PPL-90455');
+    await page.getByTestId('pilot-editor-profile-pilot-license-type').fill('PPL(A)');
+    await page.getByTestId('pilot-identity-submit').click();
+    const pilotSection = page.getByTestId('pilot-editor-profile-pilot');
+    await expect(pilotSection.getByText('Attivo', { exact: true })).toBeVisible();
     await expect(studentSection.getByText('Disattivato', { exact: true })).toBeVisible();
 
-    // …and activate Pilota on the same person.
-    const pilotSection = page.getByTestId('pilot-editor-profile-pilot');
-    await pilotSection.getByRole('button', { name: 'Attiva' }).click();
-    await pilotSection.getByLabel('Numero licenza').fill('IT-PPL-90455');
-    await pilotSection.getByLabel('Tipo licenza').fill('PPL(A)');
-    await pilotSection.getByRole('button', { name: 'Salva' }).click();
-    await expect(pilotSection.getByText('Attivo', { exact: true })).toBeVisible();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.method).toBe('PATCH');
+    expect(writes[0]!.body).toEqual({
+      profiles: { student: { active: false }, pilot: { active: true, licenseNumber: 'IT-PPL-90455', licenseType: 'PPL(A)' } },
+    });
 
     // Same single person row: pilot badge on, student badge off — no second
     // anagrafica appeared (AD-11: the Person and its id survive the switch).
@@ -115,6 +131,29 @@ test.describe('Person profiles (Story 2.2), adapted to the Piloti editor (Story 
     await expect(row.getByText('Allievo', { exact: true })).toHaveCount(0);
     // The deactivated student data is retained in the panel, not deleted.
     await expect(studentSection.getByText('Data inizio corso: 01/03/2026')).toBeVisible();
+  });
+
+  test('unticking a profile drops the NEW expiry rows it alone allowed, before any Salva (story 19.4 AC 17, AD-8)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('Prune');
+    await createPilot(page, person);
+    const typeResponse = await page.request.post('/api/v1/expiry-types', { data: { name: `Rating piloti ${Date.now()}`, scope: 'PILOTS' } });
+    expect(typeResponse.status()).toBe(201);
+    const { id: typeId } = (await typeResponse.json()) as { id: string };
+
+    await openEditor(page, person.lastName);
+    const ratings = page.getByTestId('pilot-ratings-editor');
+    // A PILOTS-scope chip is offered only once Pilota is ticked in the draft.
+    await expect(ratings.getByTestId(`expiry-chip-${typeId}`)).toHaveCount(0);
+    await page.getByTestId('pilot-editor-profile-pilot-active').check();
+    await ratings.getByTestId(`expiry-chip-${typeId}`).click();
+    await expect(ratings.getByTestId(`expiry-row-${typeId}`)).toHaveAttribute('data-state', 'new');
+
+    await page.getByTestId('pilot-editor-profile-pilot-active').uncheck();
+    await expect(ratings.getByTestId(`expiry-row-${typeId}`)).toHaveCount(0);
+    await expect(ratings.getByTestId(`expiry-chip-${typeId}`)).toHaveCount(0);
+    // Back to the state the editor opened with: nothing to save.
+    await expect(page.getByTestId('pilot-identity-submit')).toBeDisabled();
   });
 
   test('a pilot gets the 403 AD-8 envelope from PUT .../profiles/pilot (AC 3)', async ({ page }) => {
@@ -153,8 +192,10 @@ test.describe('Person profiles (Story 2.2), adapted to the Piloti editor (Story 
  * Story 19.3 (R-19-e, Q-19.3-c): the student profile excludes the pilot AND
  * the instructor profile — 422 `STUDENT_PROFILE_EXCLUSIVE` on every path
  * that could make them coexist, nothing written. These API tests are the
- * permanent proof of the rule; the two UI tests at the end prove the message
- * mapping of the CURRENT editor (story 19.4 replaces those controls).
+ * permanent proof of the rule. Since story 19.4 (AD-9) the editor and the
+ * "Nuovo" form do not let the two coexist in the first place (the UI tests
+ * at the end); "Aggiungi istruttore", which activates the instructor on an
+ * existing person, still maps the 422 onto its own message.
  */
 test.describe('Exclusive student profile (Story 19.3, AC 13-16)', () => {
   const PILOT_BODY = { licenseNumber: 'IT-PPL-EXCL', licenseType: 'PPL(A)' };
@@ -241,7 +282,7 @@ test.describe('Exclusive student profile (Story 19.3, AC 13-16)', () => {
     }
   });
 
-  test('the editor maps the 422 onto the section: activating Pilota while Allievo is active shows the exclusivity message (AC 16, until story 19.4)', async ({ page }) => {
+  test('the editor does not let Allievo coexist with Pilota or Istruttore: the excluded controls are disabled, with the reason (story 19.4 AD-9)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('ExclUi');
     await createPilot(page, person);
@@ -250,33 +291,57 @@ test.describe('Exclusive student profile (Story 19.3, AC 13-16)', () => {
 
     await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(person.lastName)}`);
     await openEditor(page, person.lastName);
-    const pilotSection = page.getByTestId('pilot-editor-profile-pilot');
-    await pilotSection.getByRole('button', { name: 'Attiva' }).click();
-    await pilotSection.getByLabel('Numero licenza').fill('IT-PPL-UI');
-    await pilotSection.getByLabel('Tipo licenza').fill('PPL(A)');
-    await pilotSection.getByRole('button', { name: 'Salva' }).click();
+    await expect(page.getByTestId('pilot-editor-profile-student-active')).toBeChecked();
+    for (const type of ['pilot', 'instructor']) {
+      await expect(page.getByTestId(`pilot-editor-profile-${type}-active`)).toBeDisabled();
+      await expect(page.getByTestId(`pilot-editor-profile-${type}-active`)).toHaveAccessibleDescription(
+        "Allievo non può essere attivo insieme a Pilota o Istruttore: disattiva prima l'altro profilo.",
+      );
+    }
 
-    await expect(pilotSection.getByRole('alert')).toHaveText("Allievo non può essere attivo insieme a Pilota o Istruttore: disattiva prima l'altro profilo.");
-    await expect(pilotSection.getByText('Non attivato', { exact: true })).toBeVisible();
+    // Unticking Allievo frees both; ticking Istruttore blocks Allievo in turn.
+    await page.getByTestId('pilot-editor-profile-student-active').uncheck();
+    await expect(page.getByTestId('pilot-editor-profile-pilot-active')).toBeEnabled();
+    await page.getByTestId('pilot-editor-profile-instructor-active').check();
+    await expect(page.getByTestId('pilot-editor-profile-student-active')).toBeDisabled();
+    await expect(page.getByTestId('pilot-editor-profile-pilot-active')).toBeEnabled();
   });
 
-  test('the "Nuovo" form maps the 422 onto its banner when Pilota and Allievo are both ticked (AC 16, until story 19.4)', async ({ page }) => {
+  test('the "Nuovo" form does not let Allievo be ticked with Pilota or Istruttore (story 19.4 AD-9, AC 25)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const person = uniquePerson('ExclForm');
 
     await page.goto('/it/dashboard/pilots');
     await page.getByTestId('pilots-new-button').click();
     const form = page.getByTestId('pilot-identity-form');
-    await form.getByLabel('Nome', { exact: true }).fill(person.firstName);
-    await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
     await form.getByTestId('new-person-activate-pilot').check();
-    await form.getByTestId('new-person-pilot-license-number').fill('IT-PPL-FORM');
-    await form.getByTestId('new-person-pilot-license-type').fill('PPL(A)');
-    await form.getByTestId('new-person-activate-student').check();
-    await form.getByTestId('new-person-student-course-start').fill('2026-03-01');
-    await page.getByTestId('pilot-identity-submit').click();
+    await expect(form.getByTestId('new-person-activate-student')).toBeDisabled();
+    await expect(form.getByTestId('new-person-activate-instructor')).toBeEnabled();
+    await expect(form.getByTestId('new-person-activate-student')).toHaveAccessibleDescription(
+      "Allievo non può essere attivo insieme a Pilota o Istruttore: disattiva prima l'altro profilo.",
+    );
 
-    await expect(page.getByTestId('pilot-identity-error')).toHaveText('Il profilo allievo non può essere attivato insieme a pilota o istruttore.');
-    await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toHaveCount(0);
+    await form.getByTestId('new-person-activate-pilot').uncheck();
+    await form.getByTestId('new-person-activate-student').check();
+    await expect(form.getByTestId('new-person-activate-pilot')).toBeDisabled();
+    await expect(form.getByTestId('new-person-activate-instructor')).toBeDisabled();
+  });
+
+  test('"Aggiungi istruttore" on a person with an active student profile names the rule, and activates nothing (story 19.3 §H-4)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('ExclAdd');
+    const created = await page.request.post('/api/v1/people', { data: { ...person, profiles: { student: STUDENT_BODY } } });
+    expect(created.status()).toBe(201);
+    const { id: personId } = (await created.json()) as { id: string };
+
+    await page.goto('/it/dashboard/instructors');
+    await page.getByTestId('instructors-new-button').click();
+    await page.getByTestId('add-instructor-search').fill(person.lastName);
+    await page.getByTestId(`add-instructor-result-${personId}`).click();
+    await page.getByTestId('add-instructor-submit').click();
+
+    await expect(page.getByTestId('add-instructor-error')).toHaveText(
+      "Questa persona ha un profilo allievo attivo: disattivalo prima di attivare l'istruttore.",
+    );
+    expect((await profilesOf(page, personId)).instructorProfile).toBeNull();
   });
 });

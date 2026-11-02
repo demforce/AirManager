@@ -326,7 +326,7 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     expect(inviteEmail.Text).toContain('set-password');
   });
 
-  test('inline editor: adds and removes a rating via chip + date, without leaving the person editor (AC 2)', async ({ page }) => {
+  test('inline editor: adds and removes a rating via chip + date and the single Salva, without leaving the person editor (AC 2; story 19.4 AD-8)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Inline');
     await createPilot(page, person);
@@ -342,11 +342,14 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     const row = rowFor(page, person.lastName);
     await row.getByRole('button', { name: 'Modifica' }).click();
 
+    // The chip adds a draft row (nothing written yet); the Salva writes it.
     const ratingsEditor = page.getByTestId('pilot-ratings-editor');
     await ratingsEditor.getByTestId(`expiry-chip-${ratingTypeId}`).click();
-    await ratingsEditor.getByTestId('expiry-add-date').fill('2099-03-01');
-    await ratingsEditor.getByTestId('expiry-add-confirm').click();
-    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toBeVisible();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toHaveAttribute('data-state', 'new');
+    await ratingsEditor.getByTestId(`expiry-date-${ratingTypeId}`).fill('2099-03-01');
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Dati aggiornati.' })).toBeVisible();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toHaveAttribute('data-state', 'saved');
 
     // The link to the standalone Scadenze page is gone (AC 2).
     await expect(page.getByText('Gestisci in Scadenze')).toHaveCount(0);
@@ -360,12 +363,14 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await expect(ratingsEditor.getByTestId(`expiry-chip-${membershipFeeType!.id}`)).toHaveCount(0);
     await expect(ratingsEditor.getByTestId(`expiry-row-${membershipFeeType!.id}`)).toHaveCount(0);
 
+    // "Rimuovi" only marks the row (reversible until the Salva); the Salva deletes it.
     await ratingsEditor.getByTestId(`expiry-remove-${ratingTypeId}`).click();
-    await ratingsEditor.getByTestId(`expiry-remove-confirm-${ratingTypeId}`).click();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toHaveAttribute('data-state', 'removed');
+    await page.getByTestId('pilot-identity-submit').click();
     await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toHaveCount(0);
   });
 
-  test('inline editor: edits the date of an existing rating via the "Modifica" action (PATCH, AC 2)', async ({ page }) => {
+  test('inline editor: moves the date of an existing rating, written by the single Salva (AC 2; story 19.4 AD-8)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('EditDate');
 
@@ -388,11 +393,15 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await row.getByRole('button', { name: 'Modifica' }).click();
 
     const ratingsEditor = page.getByTestId('pilot-ratings-editor');
-    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toBeVisible();
-    await ratingsEditor.getByTestId(`expiry-edit-${ratingTypeId}`).click();
-    await ratingsEditor.getByTestId(`expiry-edit-date-${ratingTypeId}`).fill('2099-12-31');
-    await ratingsEditor.getByTestId(`expiry-edit-save-${ratingTypeId}`).click();
-    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toContainText('31/12/2099');
+    const expiryRow = ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`);
+    await expect(expiryRow).toHaveAttribute('data-state', 'saved');
+    await ratingsEditor.getByTestId(`expiry-date-${ratingTypeId}`).fill('2099-12-31');
+    await expect(expiryRow).toHaveAttribute('data-state', 'changed');
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(expiryRow).toHaveAttribute('data-state', 'saved');
+    await expect(ratingsEditor.getByTestId(`expiry-date-${ratingTypeId}`)).toHaveValue('2099-12-31');
+    const expiries = (await (await page.request.get(`/api/v1/people/${personId}/expiries`)).json()) as Array<{ expiryTypeId: string; expiresAt: string }>;
+    expect(expiries.find((expiry) => expiry.expiryTypeId === ratingTypeId)?.expiresAt).toBe('2099-12-31');
   });
 
   test('instructor editor: adds a Rating from the catalogue chips (AC 5, gap N6 from 13.1)', async ({ page }) => {
@@ -423,9 +432,14 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await expect(identityForm.getByLabel('Codice fiscale', { exact: true })).toHaveCount(0);
 
     await page.getByTestId(`expiry-chip-${ratingTypeId}`).click();
-    await page.getByTestId('expiry-add-date').fill('2099-05-01');
-    await page.getByTestId('expiry-add-confirm').click();
-    await expect(page.getByTestId(`expiry-row-${ratingTypeId}`)).toBeVisible();
+    await page.getByTestId(`expiry-date-${ratingTypeId}`).fill('2099-05-01');
+    await page.getByTestId('instructor-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Modifiche salvate.' })).toBeVisible();
+    // Asserted on the API: the Salva refreshes the page, and the instructors
+    // console re-mounts (closing the editor) when a parallel spec changed the
+    // number of instructors meanwhile (see `instructor-rates.spec.ts#saveAndReopen`).
+    const expiries = (await (await page.request.get(`/api/v1/people/${personId}/expiries`)).json()) as Array<{ expiryTypeId: string; expiresAt: string }>;
+    expect(expiries.find((expiry) => expiry.expiryTypeId === ratingTypeId)?.expiresAt).toBe('2099-05-01');
   });
 
   test('client blocks submit when a selected Ratings chip has no date — no create request fires (AC 1)', async ({ page }) => {

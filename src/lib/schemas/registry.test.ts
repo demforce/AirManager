@@ -191,6 +191,31 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     });
   });
 
+  describe('Person composite save (story 19.4, AC 12)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    const patch = (doc.paths as Record<string, Record<string, { description?: string; responses: Record<string, { content?: Record<string, { schema?: unknown }> }> }>>)[
+      '/api/v1/people/{id}'
+    ]?.['patch'];
+
+    it('documents the four optional blocks next to the anagrafica on UpdatePersonRequest', () => {
+      for (const field of ['firstName', 'lastName', 'email', 'phone', 'address', 'profiles', 'expiries', 'payoutRateCents', 'instructorRate']) {
+        expect(schemas?.['UpdatePersonRequest']?.properties, field).toHaveProperty(field);
+      }
+    });
+
+    it('answers PersonDetail, with 401/403/404/409/422/500, and names the composite codes', () => {
+      // Inlined like the GET's (the registry only `$ref`s request bodies): the three full profiles are what `PersonDetail` adds to `Person`.
+      const body = patch?.responses?.['200']?.content?.['application/json']?.schema as { properties?: Record<string, unknown> } | undefined;
+      for (const field of ['profiles', 'pilotProfile', 'studentProfile', 'instructorProfile']) {
+        expect(body?.properties, field).toHaveProperty(field);
+      }
+      expect(Object.keys(patch?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
+      for (const code of ['STUDENT_PROFILE_EXCLUSIVE', 'RATE_VALID_FROM_IN_PAST', 'SCOPE_MISMATCH', 'PERSON_ARCHIVED', 'INSTRUCTOR_PROFILE_INACTIVE', 'EXPIRY_CONFLICT']) {
+        expect(patch?.description, code).toContain(code);
+      }
+    });
+  });
+
   describe('Removed fields (story 19.2)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
 

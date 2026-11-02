@@ -102,7 +102,7 @@ import {
   pilotProfileSchema,
   studentProfileRequestSchema,
   studentProfileSchema,
-  updatePersonSchema,
+  updatePersonCompositeSchema,
 } from './people';
 import { chargeMembershipFeeResponseSchema, chargeMembershipFeeSchema } from './membership';
 import { metarResponseSchema } from './metar';
@@ -234,7 +234,7 @@ registry.register('Person', personListItemSchema);
 registry.register('PersonList', personListResponseSchema);
 registry.register('PersonDetail', personDetailSchema);
 registry.register('CreatePersonRequest', createPersonSchema);
-registry.register('UpdatePersonRequest', updatePersonSchema);
+registry.register('UpdatePersonRequest', updatePersonCompositeSchema);
 registry.register('PilotProfileRequest', pilotProfileRequestSchema);
 registry.register('PilotProfile', pilotProfileSchema);
 registry.register('StudentProfileRequest', studentProfileRequestSchema);
@@ -435,12 +435,14 @@ registry.registerPath({
 registry.registerPath({
   method: 'patch',
   path: '/api/v1/people/{id}',
-  summary: 'Update a person (name, contact details)',
+  summary: 'Update a person — optionally in one atomic save (profiles, expiries, instructor compensation and rate)',
+  description:
+    'Story 19.4 (A17): the anagrafica keys (`firstName`/`lastName`/`email`/`phone`/`address`, all optional) plus four OPTIONAL blocks, all saved in ONE transaction — a failure in any block saves nothing. The body is declarative on the FINAL state (D-2), so sending the same body twice gives the same state and 200 both times: `profiles.{pilot,student,instructor}` = `{ active: true, …fields }` activates or updates (same fields as `PUT /people/{id}/profiles/{type}`), `{ active: false }` deactivates (a no-op when already inactive or never activated); `expiries` = `{ set: [{ expiryTypeId, expiresAt }], remove: [expiryTypeId] }` by type — `set` creates the missing row or moves the date of the existing one (a new date resets its sent alerts, an equal date writes nothing), `remove` deletes the row of that type (absent = no-op), each type at most once across both arrays; `payoutRateCents` sets the instructor compensation (integer cents ≥ 0, `null` = none); `instructorRate` records the student-charged instructor rate (`validFrom` today or later in Europe/Rome, rewriting the row already on that date). Permissions per block present: `people.manage` always (profiles included), `expiries.manage` for `expiries`, `payouts.manage` for `payoutRateCents`, `settings.manage` for `instructorRate` — a block without its permission answers 403 for the whole request, before anything is read. Order inside the transaction: the `Person` row lock, profile deactivations then activations (the student profile excludes the pilot and instructor ones on the final state: 422 `STUDENT_PROFILE_EXCLUSIVE`), expiries (removals, then `set`: a new row needs an active type — 422 `EXPIRY_TYPE_NOT_FOUND`/`EXPIRY_TYPE_INACTIVE` —, a scope matching the FINAL profiles — 422 `SCOPE_MISMATCH` — and a person not archived — 409 `PERSON_ARCHIVED`; a concurrent create of the same row is 409 `EXPIRY_CONFLICT`), compensation and rate (an instructor profile active on the final state, else 409 `INSTRUCTOR_PROFILE_INACTIVE`), the anagrafica last (409 `CONFLICT` = email already used). A `validFrom` in the past is 422 `RATE_VALID_FROM_IN_PAST`. Answers the person with its three profiles (`PersonDetail`, a superset of the `Person` this route returned before).',
   tags: ['People'],
   security,
-  request: { params: personIdParams, body: { content: jsonContent(updatePersonSchema), required: true } },
+  request: { params: personIdParams, body: { content: jsonContent(updatePersonCompositeSchema), required: true } },
   responses: {
-    200: { description: 'The updated person.', content: jsonContent(personListItemSchema) },
+    200: { description: 'The updated person, with its profiles.', content: jsonContent(personDetailSchema) },
     ...errorResponses(401, 403, 404, 409, 422),
   },
 });

@@ -134,12 +134,12 @@ test.describe('Instructor compensation (story 12.7)', () => {
     await expect(row.getByTestId(`instructor-edit-${instructor.personId}`)).toBeVisible();
     await expect(row).toContainText('—');
 
-    // Set the payout rate to 30,00 €/h via the editor.
+    // Set the payout rate to 30,00 €/h via the editor's single Salva (story 19.4).
     await row.getByTestId(`instructor-edit-${instructor.personId}`).click();
     const rateForm = page.getByTestId('instructor-payout-rate-form');
     await rateForm.getByLabel('Tariffa oraria').fill('30,00');
-    await page.getByTestId('instructor-payout-rate-submit').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa payout aggiornata' })).toBeVisible();
+    await page.getByTestId('instructor-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Modifiche salvate.' })).toBeVisible();
 
     // 60 min / 60 * 3000 c = 3000 c = 30,00 € owed (AC 2's rounding rule).
     const refreshedRow = page.getByTestId(`instructor-row-${instructor.personId}`);

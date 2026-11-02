@@ -29,7 +29,7 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { deleteExpiry, getExpiryTierCounts, listAllExpiries, listBlockingExpiriesByPerson, listPersonExpiries, registerExpiry, updateExpiry } = await import(
+const { deleteExpiry, getExpiryTierCounts, listAllExpiries, listBlockingExpiriesByPerson, listPersonExpiries, registerExpiry, updateExpiry, updateExpiryDateCore } = await import(
   './expiries.service'
 );
 const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
@@ -597,6 +597,23 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
 
       await updateExpiry(adminActor(), 'exp_1', { notes: 'solo note' });
 
+      expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- updateExpiryDateCore (story 19.4, AD-4: the AD-9 rule in one place) ---
+
+  describe('updateExpiryDateCore', () => {
+    it('writes the date on the given tx and wipes SentAlert only when the date changes', async () => {
+      const tx = { sentAlert: { deleteMany: vi.fn(async () => ({ count: 1 })) }, expiry: { update: vi.fn(async () => ({})) } };
+
+      await updateExpiryDateCore(tx as never, 'exp_1', parseDateOnlyUtc('2027-06-30'), parseDateOnlyUtc('2026-12-31'), 'admin_1');
+      expect(tx.sentAlert.deleteMany).toHaveBeenCalledWith({ where: { expiryId: 'exp_1' } });
+      expect(tx.expiry.update).toHaveBeenCalledWith({ where: { id: 'exp_1' }, data: { expiresAt: parseDateOnlyUtc('2027-06-30'), actorUserId: 'admin_1' } });
+
+      tx.sentAlert.deleteMany.mockClear();
+      await updateExpiryDateCore(tx as never, 'exp_1', parseDateOnlyUtc('2027-06-30'), parseDateOnlyUtc('2027-06-30'), 'admin_1');
+      expect(tx.sentAlert.deleteMany).not.toHaveBeenCalled();
       expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
     });
   });
