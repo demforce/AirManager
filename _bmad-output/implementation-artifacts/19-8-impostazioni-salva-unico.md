@@ -4,7 +4,7 @@ baseline_commit: a7e960e
 
 # Story 19.8: Impostazioni a Salva unico
 
-Status: **ready-for-dev** — 2026-11-01. **Nessuna domanda PO aperta**: le scelte di §0.3 sono di resa UI o tecniche, ognuna ricondotta a una ratifica chiusa (R-19-i/j/k/m, A17) o a un precedente del codice (19.3/19.4); la sessione principale può portarle al PO se lo ritiene. **Modello dev: Opus 5 xhigh (UI)** — la story riscrive l'intera pagina Impostazioni (9 sezioni, due facce desktop/mobile) attorno a uno stato in bozza, aggiunge un endpoint composito transazionale, estrae i core di scrittura di tre service, e riscrive 6 spec e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-8-impostazioni-salva-unico`.
+Status: **review** — dev 2026-11-02 (commit `72ad09e`), Dev Agent Record sotto. Scritta: ready-for-dev 2026-11-01. **Nessuna domanda PO aperta**: le scelte di §0.3 sono di resa UI o tecniche, ognuna ricondotta a una ratifica chiusa (R-19-i/j/k/m, A17) o a un precedente del codice (19.3/19.4); la sessione principale può portarle al PO se lo ritiene. **Modello dev: Opus 5 xhigh (UI)** — la story riscrive l'intera pagina Impostazioni (9 sezioni, due facce desktop/mobile) attorno a uno stato in bozza, aggiunge un endpoint composito transazionale, estrae i core di scrittura di tre service, e riscrive 6 spec e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-8-impostazioni-salva-unico`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`a7e960e`** (i file delle Impostazioni sono identici a `869c9cf`). Il dev della 19.8 parte **DOPO il commit di 19.1…19.7**:
 > - **19.1** (committata, `08eb558`) ha già tolto tassa e istruzioni PPR dalla card Club (oggi 3 PUT, non 5) e la serie PPR delle impostazioni: nulla di PPR deve ricomparire.
@@ -474,18 +474,18 @@ Mirati prima della consegna: `settings` (`--no-deps` in locale), `treasury-setti
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento**: `git log --oneline -10` (19.1…19.7 committate); contratti della 19.7 verificati sul codice (tabella del banner) con ogni differenza in §A; `scripts/e2e.sh status`, `:3000` libero; rieseguire i censimenti di §3.1 e §3.4; conteggio chiavi i18n di partenza.
-- [ ] **T1 — Contratto** (AC 1, 6, 7): `updateSettingsSchema`, `settingsSnapshotSchema`, tipi; route `PATCH /api/v1/settings` con `fieldErrors` puntati; `GET`/`PUT /api/v1/settings/currency` (D-8); `registry.ts` + `registry.test.ts`.
-- [ ] **T2 — Core e service** (AC 2-6): core `tx` di AD-3 nei tre service (route singole invariate, `details.reason` additivo); `settings.service.ts` con `getSettingsSnapshot` e `saveSettings` nell'ordine di AD-2; `page.tsx` sullo snapshot.
-- [ ] **T3 — Unit** (AC 1-6, 10-11, 14, 17): §3.5; comando env eager.
-- [ ] **T4 — Modulo bozza** (AC 10, 11, 14, 17): `src/lib/settings-draft.ts` + test (AD-9).
-- [ ] **T5 — Pagina e sezioni scalari** (AC 8-13, 16-17): `settings-console.tsx`, sezioni controllate, Club unificata, Quota e Currency nuove, barra del Salva, email di prova (D-9).
-- [ ] **T6 — Liste in bozza** (AC 14-15, 18): `ratings-card.tsx` (Ratings + Visite mediche senza ambito), `cash-categories-card.tsx`, entrambe le facce; `mobile-settings.ts`.
-- [ ] **T7 — CSS e mobile** (AC 18): barra sopra la tab bar (misurata), stati di voce coi token esistenti, regole orfane rimosse.
-- [ ] **T8 — i18n** (AC 22): §3.6, parità misurata.
-- [ ] **T9 — e2e** (AC 3, 5, 8-11, 13-20): §3.4 (riscritture + test nuovi in `settings.spec.ts`).
-- [ ] **T10 — Discriminanza** (§4.3) con sha256.
-- [ ] **T11 — Verifica** (AC 21, 23, 24): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato (righe effettive, delta test, deviazioni).
+- [x] **T0 — Riallineamento**: `git log --oneline -10` (19.1…19.7 committate); contratti della 19.7 verificati sul codice (tabella del banner) con ogni differenza in §A; `scripts/e2e.sh status`, `:3000` libero; rieseguire i censimenti di §3.1 e §3.4; conteggio chiavi i18n di partenza.
+- [x] **T1 — Contratto** (AC 1, 6, 7): `updateSettingsSchema`, `settingsSnapshotSchema`, tipi; route `PATCH /api/v1/settings` con `fieldErrors` puntati; `GET`/`PUT /api/v1/settings/currency` (D-8); `registry.ts` + `registry.test.ts`.
+- [x] **T2 — Core e service** (AC 2-6): core `tx` di AD-3 nei tre service (route singole invariate, `details.reason` additivo); `settings.service.ts` con `getSettingsSnapshot` e `saveSettings` nell'ordine di AD-2; `page.tsx` sullo snapshot.
+- [x] **T3 — Unit** (AC 1-6, 10-11, 14, 17): §3.5; comando env eager.
+- [x] **T4 — Modulo bozza** (AC 10, 11, 14, 17): `src/lib/settings-draft.ts` + test (AD-9).
+- [x] **T5 — Pagina e sezioni scalari** (AC 8-13, 16-17): `settings-console.tsx`, sezioni controllate, Club unificata, Quota e Currency nuove, barra del Salva, email di prova (D-9).
+- [x] **T6 — Liste in bozza** (AC 14-15, 18): `ratings-card.tsx` (Ratings + Visite mediche senza ambito), `cash-categories-card.tsx`, entrambe le facce; `mobile-settings.ts`.
+- [x] **T7 — CSS e mobile** (AC 18): barra sopra la tab bar (misurata), stati di voce coi token esistenti, regole orfane rimosse.
+- [x] **T8 — i18n** (AC 22): §3.6, parità misurata.
+- [x] **T9 — e2e** (AC 3, 5, 8-11, 13-20): §3.4 (riscritture + test nuovi in `settings.spec.ts`).
+- [x] **T10 — Discriminanza** (§4.3) con sha256.
+- [x] **T11 — Verifica** (AC 21, 23, 24): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato (righe effettive, delta test, deviazioni).
 
 ---
 
@@ -493,26 +493,164 @@ Mirati prima della consegna: `settings` (`--no-deps` in locale), `treasury-setti
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), unico dev subagent (`dev-19-8`), 2026-11-02. Skill: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend`, `ui-ux-pro-max` (query «sticky save bar», «inline validation error focus», «submit button disabled state» → riepilogo errore nella barra + errore sul campo, stato disabilitato visibile, feedback di salvataggio).
+
 ### §A — Riallineamento sul HEAD (T0) e contratti della 19.7
+
+- HEAD di partenza `a598b26` (19.1…19.7b committate, `git log --oneline -15`); `scripts/e2e.sh status` = ultimo arbitro 555 passed `E2E_EXIT=0`; `:3000` libero. DB `airmanager` NON toccato: tutte le prove su un gemello `airmanager_19_8` (createdb + migrate deploy + seed nel container, ricreato da zero prima della serie finale; eliminato a fine lavoro).
+- **Contratti 19.7a verificati sul codice** (nessuna differenza di nome): `writeCurrencySettingsCore(tx, input)` e `setCurrencySettings` = `authorize` + `$transaction(core)` (`app-settings.service.ts:428-444`), `getCurrencySettings` senza gate, `currencySettingsSchema` in `schemas/settings.ts`, `CURRENCY_DEFAULTS` **e `CURRENCY_LIMITS`** in `src/lib/currency.ts` (D-g della 19.7a: il mirror li legge di lì); 409 `MEMBERSHIP_TYPE_LOCKED` e 422 `MEDICAL_TYPE_FIELDS` in `expiry-types.service.ts` (`assertNotMembership`/`assertMedicalFields`); `updateExpiryType` già in `$transaction` con `FOR UPDATE` (fix F3) — il core l'ha ereditato tale e quale; D-18 già fatto in `ratings-card.tsx` (form MEDICAL senza ambito/checkbox).
+- **Scostamenti di riga rispetto a `a7e960e`** (stesso disegno): setter di `app-settings.service.ts` a `:92-102` (ICAO), `:116-126` (email), `:177-191` (scheduling), `:239-271` (SMTP), `:321-331` (METAR), `:367-377` (quota), `:447-457` (branding), `:537-559` (tesoreria); `expiry-types.service.ts:134-265`; `cash.service.ts:98-230` invariato; `page.tsx` `Promise.all` `:144-156` invariato; regole mobili `airops.css` dei «Salva» per card a `:3361-3362` (non `:3288-3290`), checkbox `:3410-3411`, `.catalog-sheet-step` `:3399-3400`.
+- **Censimenti §3.1/§3.4 rieseguiti**: inventario identico (8 salvataggi + 3×3 scritture immediate + l'azione di prova; Club già a 3 PUT dopo la 19.1). Grep e2e: gli 8 spec attesi più due falsi positivi (`people-management.spec.ts:309` `medical-chip-*`, `person-save.spec.ts:252` `pilot-medical-editor`: altri testid, nessun flusso Impostazioni). `grep -rn 'data-testid\^=' e2e/` → nessun selettore su `settings`/`rating`/`medical`/`cash-category`/`club`.
+- i18n di partenza: 1662 chiavi per locale, `SettingsPage` 208, parità 0/0.
+- Unit di partenza: 1956 (gates sul HEAD).
 
 ### §B — Riepilogo per AC con le prove
 
-### §C — Core estratti e route singole invariate (prima/dopo per route: status, codice, body)
+| AC | Prova |
+|---|---|
+| 1 | e2e `settings.spec` «AC 1» (pilota e istruttore 403 `FORBIDDEN`, quota invariata; `{}` → `fieldErrors['']`; `smtp.host`, `scheduling.closeTime`, `club.contactEmail`, `cashCategories.create.1.name` puntati). Unit: `settings.service.test` «permission» (403 prima di QUALUNQUE metodo di `prisma`, `$transaction` mai chiamata), `issues-by-path.test` (blocco, array, radice), `schemas/settings.test` (11 casi sulla forma). |
+| 2 | Unit `settings.service.test` «each scalar block» (9 casi + password cifrata): ogni blocco scrive esattamente le sue chiavi su `tx`, niente su `prisma`. |
+| 3 | e2e `settings.spec` «AC 3 (a)» (409 `NAME_TAKEN`, `item {expiryTypes, create, 0}`, METAR e scheduling invariati) e «AC 3 (b)/(c)» (409 `IN_USE` `item {cashCategories, delete, 0, id}`, categoria nuova assente, quota invariata; update di un id inesistente 409 `NOT_FOUND`, METAR invariata). Discriminante §D.1. |
+| 4 | Unit `settings.service.test` «one transaction»: `tx` distinto, zero scritture su `prisma` con tutti i blocchi e tutte le liste, lock di riga su `tx`; ordine delete → update → create per lista e scalari prima; errore dell'ultimo core propagato con `details.item`, nessuno snapshot letto. |
+| 5 | e2e «AC 5» (un PATCH crea/rinomina/disattiva tipi e crea/rinomina+disattiva/elimina categorie; delete già eliminato e `isActive:false` su inattiva → 200; «elimina X e crea X» → 200 con id nuovo; «Ricariche» → 409 `SYSTEM_CATEGORY`; tipo con scadenza registrata → 409 `IN_USE` con item). `cash-register.spec` e i test API di `expiry-types.spec` **non modificati** e verdi. Unit «list semantics» (7 casi). |
+| 6 | e2e «AC 6/17» (10 chiavi, `smtp` senza `pass`, `hasPassword: true`, nessuna quota nei tipi; la pagina mostra lo stesso `from`); unit «getSettingsSnapshot» (MEMBERSHIP esclusa, METAR = ICAO → `''`, snapshot letto DOPO il commit). |
+| 7 | `registry.test` (path in elenco; request con i 10 blocchi; response `SettingsSnapshot`; 401/403/409/422; componenti `UpdateSettingsRequest`/`SettingsSnapshot` con i 10 blocchi; `settings/currency` GET 401 / PUT 401-403-422). |
+| 8 | e2e «AC 8» (un solo `settings-save`, `type=submit`, nella barra, ultimo figlio del form; `getByRole('button', {name: 'Salva', exact})` = 1; 21 testid spariti a 0; un solo `button[type=submit]` nel form); a 375 la matrice di `mobile-settings` «AC 9». Discriminante §D.3. |
+| 9 | e2e «AC 9»: le nove sezioni cambiate (nome, ICAO, email, METAR, quota, X/Y, finestra, mittente SMTP su Mailpit, tesoreria, rating nuovo, visita del test disattivata, categoria del test rinominata), zero scritture prima del click, **una** `PATCH /api/v1/settings` sola, body con i 10 blocchi, toast, barra di nuovo «Nessuna modifica», tutto presente dopo il reload. |
+| 10 | e2e «AC 10» (disabilitato all'arrivo; «Quota associativa» nella barra; valore riportato a mano → disabilitato; Invio su pagina pulita → zero richieste; body = `['airfield','currency']`). Unit `settings-draft.test` (DB fresco → patch `null`; `60`/`60,00`; ICAO/email normalizzati; lista sola → `['expiryTypes']`). Discriminante §D.2. |
+| 11 | e2e «AC 11 (a)» (422 su host, `aria-invalid`, messaggio, focus sull'host, bozza intatta, ICAO vecchio dopo reload), «AC 11 (b)» (nome preso via API dopo il caricamento → 409 su `rating-row-error` della riga nuova, focus lì, METAR invariata), «AC 11 (c)/12» (email e nome vuoto fermati dal client, zero richieste, messaggio un nodo). Unit `mapSaveError` (7 casi). |
+| 12 | e2e «AC 11 (c)/12» (hint «Riceve l'email di prova SMTP.», placeholder METAR = ICAO della bozza, nome vuoto fermato); `club-membership-fee-input` a 0 (AC 8). TD 19.1-a chiuso: §G. |
+| 13 | e2e «AC 13» (quota a 2 decimali e currency mostrate come salvate; X=0 e Y=3651 fermati con «Inserisci un numero intero da 1 a 99/3650.», zero richieste; salvataggio → body esatto `{membershipFee, currency}`, GET `membership-fee` = nuovo importo, cioè ciò che precompila l'azione Scadenze). `membership-fee.spec` invariato e verde (legge via API). |
+| 14 | Desktop: `expiry-types.spec` (crea/modifica/disattiva/elimina in bozza, `data-state` new/changed/removed, «Ripristina», doppione fermato dal client a zero PATCH, «Elimina» su nuova la toglie), `settings.spec` «Categorie di cassa» (stesso ciclo + 409 «in uso» sulla riga). 375: `mobile-settings` «19.8 AC 14» tipo (crea dal pannello, modifica/disattiva dallo sheet, 409 mockato sulla card, elimina) e categorie (crea/rinomina/disattiva/elimina, sistema senza Elimina e nome in sola lettura). |
+| 15 | `expiry-types.spec` test 2 (nessun `medical-scope-select`, nessuna checkbox, nessun «Tutti»/«Blocca prenotazioni» sulla riga, create = `{name, kind: 'MEDICAL', validityMonths}`, update = solo `name`; DB `ALL`/`true`), test 1 (nessuna colonna «Ambito» nella tabella visite); `mobile-settings` «AC 5» (sheet visita `['Validità', 'Stato']`, rating `['Ambito','Validità','Stato','Blocca prenotazioni e voli']`). Unit `mobile-settings.test` (ambito assente). |
+| 16 | e2e «AC 16/17»: email di contatto modificata → bottone disabilitato con `smtp-test-email-hint`; Salva → abilitato; bozza in un'altra sezione non lo blocca; click → solo `POST …/test-email`, email su Mailpit al contatto salvato, bozza currency intatta. |
+| 17 | e2e «AC 16/17» (password digitata nel body, assente dalla risposta, campo svuotato e placeholder «Password già configurata»; secondo salvataggio senza `pass`, `hasPassword` resta `true`) e «AC 6/17». |
+| 18 | `mobile-settings` «AC 4 / 19.8 AC 18» (zero target < 44px a 320/375/390 anche coi tre pannelli aperti; Salva ≥ 44px e largo quanto il contenuto della barra; `headHeights` `toHaveLength(9)` ≤ pre-fix), «AC 10» (a 320/375/390: barra sopra la tab bar — `gap ≥ 0` e hit-test sul Salva — in cima e in fondo; `COVERED` senza `tabbar`/`savebar`/`other` in fondo; overflow 0), «AC 11» (iii con `settings-save` tra i bersagli ristretti, iv nuova: `bottom: 0` → la tab bar copre il Salva), «AC 5» (sheet senza `secondStep`, «Ripristina» ≥ 44px). Misura: tab bar 66,92px a 320/375/390 in IT e EN, gap 8,08px, Salva 44px. |
+| 19 | `settings.spec` redirect pilota, `treasury-settings.spec` redirect, `mobile-settings` «AC 13» (pilota/allievo/istruttore a 375 e 1280): verdi. |
+| 20 | Nessuno spec nuovo in catena; i test che scrivono AppSettings sono tutti in `settings.spec`. `expiry-types.spec` asserisce a ogni Salva `Object.keys(body) == ['expiryTypes']` (helper `saveOnlyExpiryTypes`), `expiry-registration.spec` idem, `pdf-exports.spec` asserisce il body `{airfield: {name}}`. |
+| 21 | §E. |
+| 22 | §E. |
+| 23 | §I. |
+| 24 | §H. |
 
-### §D — Discriminanza (atomicità, diff, un solo Salva, barra) con sha256
+### §C — Core estratti e route singole invariate
+
+| Route singola | Prima | Dopo |
+|---|---|---|
+| `PUT settings/airfield`, `club`, `metar-station`, `membership-fee` | upsert su `prisma` | `authorize` + `write*Core(prisma, …)` (una chiave: non transazionale, come prima); stessi status/codici/body |
+| `PUT settings/scheduling`, `smtp`, `treasury` | `$transaction([...])` a batch | `authorize` + `$transaction((tx) => write*Core(tx, …))`; stessi body (`smtp` risponde ancora `getSmtpSettings`) |
+| `PUT settings/club` | due setter in `Promise.all` | **invariata** (TD 19.8-a) |
+| `POST /expiry-types` | create su `prisma` | `authorize` + `createExpiryTypeCore(prisma)`; 409 con `details.reason: 'NAME_TAKEN'` (additivo) |
+| `PATCH /expiry-types/{id}` | `$transaction` + `FOR UPDATE` | `authorize` + `$transaction(updateExpiryTypeCore)`; il catch P2002 è nel core (stesso 409 + `reason`) |
+| `DELETE /expiry-types/{id}` | delete su `prisma`, 404/409 | `deleteExpiryTypeCore(prisma, id, { missingOk: false })`: stesso 404, 409 `reason: 'IN_USE'` |
+| `POST/PATCH/DELETE /cash-categories…` | create/rename/delete su `prisma` | `createCashCategoryCore`, `updateCashCategoryCore(prisma, id, { name })` (qualunque `name` su una categoria di sistema = 409, come prima), `deleteCashCategoryCore(…, { missingOk: false })`; `reason` additivo (`NAME_TAKEN`/`SYSTEM_CATEGORY`/`IN_USE`) |
+| `POST /cash-categories/{id}/{deactivate,reactivate}` | guardia atomica, 409 «already» | **non toccate** (il core dichiarativo è solo del composito) |
+
+Unit esistenti rimasti verdi; i 5 di `app-settings.service.test` che asserivano la forma batch `$transaction([...])` riscritti sul callback (`runTransactionsOnPrisma`: le upsert del core si leggono su `upsertMock`), più due asserzioni `details.reason` in `cash`/`expiry-types.service.test`. e2e `cash-register.spec` e test API di `expiry-types.spec` invariati e verdi.
+
+### §D — Discriminanza (§4.3), una build mutante unica
+
+sha256 prima della mutazione (= dopo il ripristino, `diff` vuoto: `SHA_IDENTICAL`):
+```
+050ac68378aaf31729bfdd9737727541abfd9bf01370b5040170865715e4ab52  src/server/services/settings.service.ts
+7df94d39eb46f16e9e00e4bfdf4c85a179e85396f0a41bb940c1567a3cad7972  src/lib/settings-draft.ts
+0139095d4443a8ff59b76c119bfc63d4003dce5e4ac883a3a8a6448307a7a887  src/app/[locale]/dashboard/settings/scheduling-card.tsx
+9b1e19f81a0fd15f07195cd5fdcef6e4734358e7e35b77c1a98d1374bf65b141  src/styles/airops.css
+```
+Quattro mutanti nella stessa build (`--retries=0`), ognuno rosso sul SUO test e per il SUO motivo:
+1. **Atomicità** — `saveSettings` esegue gli stessi passi su `prisma` invece che in `$transaction` → `settings.spec` «AC 3 (a)» rosso all'asserzione `settings.spec.ts:235` (riga attuale) (`metar-station` cambiata nonostante il 409).
+2. **Diff** — `buildSettingsPatch` manda ogni blocco scalare sempre → `expiry-types.spec` test 1 rosso a `expiry-types.spec.ts:40` (`Object.keys(body)` con 8 chiavi in più) e `settings.spec` «AC 10» rosso a `settings.spec.ts:476` (Salva abilitato all'arrivo).
+3. **Un solo Salva** — un `scheduling-settings-save` rimesso nella card → «AC 8» rosso a `settings.spec.ts:388` (2 bottoni «Salva»).
+4. **Barra sopra la tab bar** — tolto il `bottom` mobile → `mobile-settings` «AC 10» rosso a `mobile-settings.spec.ts:766` (`bar vs tab bar @320`: −54,92). La stessa prova vive anche nello spec come discriminante (iv), per iniezione di stile.
+Le righe citate sono quelle attuali (la build mutante girava sulla versione dello spec di 4 righe più corta in testa, prima del letterale SMTP di §F). Nota di processo: in modalità serial un rosso salta il resto del gruppo, per cui AC 8 e AC 10 sono stati rieseguiti da soli sulla stessa build mutante.
 
 ### §E — Grep di AC 21 e parità i18n (verbatim)
 
-### §F — Delta test (unit ed e2e, prima/dopo)
+```
+--- grep 1 (fetch verso le route singole di scrittura)
+src/app/[locale]/dashboard/settings/smtp-card.tsx:58:    const response = await fetch('/api/v1/settings/smtp/test-email', { method: 'POST' }).catch(() => null);
+```
+→ l'unico risultato è l'azione «Invia email di prova», che l'AC stesso esclude (la regex `settings/smtp` combacia con `settings/smtp/test-email`); l'altra fetch della pagina è la `PATCH /api/v1/settings` (`settings-console.tsx:196`).
+```
+--- grep 2 (testid ritirati) in src: 0 righe
+--- grep 2 in e2e: solo le asserzioni di ASSENZA richieste dall'AC 8
+e2e/settings.spec.ts:373-376 (RETIRED_TESTIDS, count 0 a 1280)
+e2e/mobile-settings.spec.ts:716-719 (absentAtRest, count 0 a 375 e 1280)
+e2e/expiry-types.spec.ts:149 (medical-scope-select toHaveCount(0), AC 15)
+--- grep 3 (SettingsForm / settings-form.tsx): 0 righe
+--- grep 4 (Promise.all nella cartella della pagina): 0 righe
+```
+(stesso trattamento della 19.6, AC 29: i residui sono le asserzioni di assenza; AC 8 e AC 21 non si possono soddisfare entrambi alla lettera altrimenti.)
+
+i18n: `SettingsPage` **208 → 168** chiavi per locale, totale 1662 → 1622; parità `diff` vuoto (0/0); script di controllo: ognuna delle 168 chiavi è letta da `page.tsx` (letterale o template `${ns}`), nessuna chiave letta manca. Rimosse 73 (save/saved/error delle card, quota nella Club, `identityHeading`, `form.*` di submit/cancel/genericError/requiredField, `feedback.*` delle azioni immediate, `actions.confirm*`, ambito/blocca/yes/no delle visite, `treasury.invalidAmount` → `errors.invalidAmount`, `club.error` → `errors.generic`, `club.form.requiredField` → `errors.required`); aggiunte 33: `save`, `saved`, `saveBar.{clean,dirty,saving}`, `errors.{required,invalidAmount,integerRange,invalidValue,duplicateName,invalidItem,stale,systemCategory,checkFields,forbidden,generic}`, `rowState.{new,changed,removed}`, `actions.restore`, `club.contactEmailHint`, `membership.{title,sub,fee,feeHint}`, `currency.{title,sub,minFlights,windowDays,flightsSuffix,daysSuffix,hint}`, `smtp.testEmailNeedsSave`.
+
+### §F — Delta test
+
+- **Unit**: 1956 → **2038** (+82): `settings.service.test` 29 (nuovo), `settings-draft.test` 32 (nuovo), `issues-by-path.test` 4 (nuovo), `schemas/settings.test` +11, `registry.test` +2, `mobile-settings.test` +2, `cash.service.test` +1, `expiry-types.service.test` +1; 5 test di `app-settings.service.test` riscritti (forma callback). Verifica env eager: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` sui 7 file toccati → 233 passed.
+- **e2e**: `settings.spec` 7 → 16 (+9); `expiry-types` 6, `treasury-settings` 3, `mobile-settings` 12, `pdf-exports` 9, `expiry-registration` 2 invariati di numero (riscritti). `npx playwright test --list` → **564** test (era 555). **Delta arbitro atteso 555 → 564.**
+- **Serie mirate** (gemello ricreato da zero, build pulita, `E2E_REUSE_SERVER=1`): progetto `chromium` — `expiry-types`, `pdf-exports`, `expiry-registration`, `cash-register`, `membership-fee`, `api-v1`, `mobile-ink-targets` → **56 passed**, exit 0; catena `--no-deps --workers=1` — `settings` + `treasury-settings` + `mobile-settings` → **31 passed**, exit 0, zero flaky. Serie precedenti sul gemello sporco: `settings` 15 + 1 flaky (login, classe nota: il retry passa; `LoginAttempt` solo righe `succeeded`), `treasury-settings` + `mobile-settings` 15 passed; `api-v1` 2 rossi **solo** sul gemello che aveva già girato la catena (le prenotazioni del 2099 superano i `maxAdvanceDays: 3650` della finestra permissiva ripristinata da `settings.spec`; nella suite vera `chromium` gira PRIMA della catena): verde dopo aver tolto le `sched.*` dal gemello, e verde nella serie finale.
+- Dopo la serie finale una sola riga di spec è cambiata: `settings.spec` usa il letterale `'localhost'` per l'host SMTP invece di `process.env['SMTP_HOST']` (che `env.ci-sync.test` avrebbe voluto in `ci.yml`): stesso valore di `.env`/`.env.example`.
 
 ### §G — Deviazioni motivate
 
+- **D-a (firme di AD-9)**: `buildSettingsPatch` restituisce `{ body, index }` (l'indice `index → rowKey` della richiesta, trappola 8) invece del solo body; `validateDraft(baseline, draft, patch)` riceve anche la baseline (serve per sapere quali righe sono nuove/modificate: le righe salvate e intatte non si validano).
+- **D-b (validazione solo dei blocchi nel patch)**: il mirror controlla solo i blocchi che il Salva sta per mandare — su un'installazione nuova l'host SMTP vuoto non blocca un salvataggio dell'ICAO.
+- **D-c (`closeTime ≤ openTime` fermato dal client)**: AD-9 lo mette nel mirror, quindi dal telefono è un errore client a zero richieste, non il «422 puntato» citato in §3.4 per `mobile-settings`; il 422 `scheduling.closeTime` resta provato via API (`settings.spec` AC 1). L'host SSRF resta l'unico 422 di campo provato dalla UI.
+- **D-d (modifiche durante la richiesta)**: la bozza non si blocca durante il salvataggio; la risposta riallinea baseline e bozza allo snapshot (spec), quindi un carattere digitato nei ~100 ms del volo andrebbe perso. La mappa degli errori usa comunque l'indice della richiesta catturato al click.
+- **D-e (azioni su voci nuove/eliminate)**: una voce nuova non ha «Disattiva» (il create non porta `isActive`); una voce «Da eliminare» mostra solo «Ripristina».
+- **D-f (messaggio di riga sul telefono)**: l'errore sta subito SOTTO la card (fratello del `<button>`), non dentro: un `role="alert"` dentro il bottone della card ne sporcherebbe il ruolo, e la card resta un solo interattivo (asserito).
+- **D-g (copy)**: etichetta «Finestra» (non «Finestra (giorni)») perché il suffisso dell'`InputGroup` dice già «giorni»; hint di METAR ed email come `hint` del `Field` (sotto il campo) invece del paragrafo sotto la griglia; messaggio nuovo `errors.checkFields` nella barra quando i campi evidenziati spiegano perché nulla è stato salvato (linea guida «errore sul campo + riepilogo»); nomi vuoti di una voce nuova mostrati come «—». Copy definitive: 19.12.
+- **D-h (stato disabilitato)**: `.btn` non ha un aspetto `:disabled` (solo `[aria-disabled]`, 13.11): il Salva e «Invia email di prova» prendono la stessa opacità .4 con regole sulle classi della pagina (`.settings-save-bar > .btn:disabled`, `.settings-card > .card-head > .btn:disabled`), non globali (TD 19.8-b).
+- **D-i (focus sull'errore)**: il primo errore visibile (campo `aria-invalid` o messaggio di riga) prende il focus da un effetto dopo il commit e viene centrato (`scrollIntoView({ block: 'center' })`): lo scroll minimo del browser lo lasciava sotto la top bar o sotto la barra del Salva (misurato prima della correzione).
+- **D-j (pannelli dopo il Salva)**: le tre card di lista si rimontano a ogni Salva riuscito (`key` col contatore), che chiude pannelli e sheet; la console NON si rimonta (trappola 11).
+- **D-k (OpenAPI)**: come ogni altro request/response registrato del repo, il path inlinea lo schema e i componenti `UpdateSettingsRequest`/`SettingsSnapshot` sono registrati a parte (il test lo asserisce così, non con un `$ref`).
+- **TD 19.1-a chiuso** come falso positivo: `airfield.contactEmail` ha un consumer (`smtp-test-email.service.ts:23`, destinatario dell'email di prova); il campo resta, con l'hint che lo dice.
+- **METAR negli e2e**: il layout della dashboard chiama `getMetar` a ogni pagina (TD 19.7b-e, senza timeout; misurato qui: LIRF 8,0 s, LIZZ 204 in 0,28 s). `settings.spec` salva solo una stazione FISSA (`LIZZ`) e in `afterAll` rimette METAR `''` e ICAO/email/nome/quota/currency ai valori letti in `beforeAll` (più finestra permissiva e tesoreria neutra), così la catena a valle non eredita stazioni.
+
+### §7 — Debito tecnico nuovo
+
+- **TD 19.8-a** — `PUT /api/v1/settings/club` (route singola, non toccata per chirurgia) scrive ancora ICAO ed email con due setter in `Promise.all`, non atomici fra loro (preesistente; il composito li scrive nella sua transazione). Bassa.
+- **TD 19.8-b** — `.btn` non ha uno stile `:disabled` globale: ogni bottone disabilitato dell'app (fuori da questa pagina) appare identico a uno attivo. Bassa/media, da decidere a livello di design system.
+- **TD 19.8-c** — transazione del composito con il timeout predefinito (5 s): un client API che mandasse liste ai massimi (50 + 200 + 200 voci per lista) su un DB remoto lento potrebbe superarlo (P2028). Nessun consumer oggi oltre la pagina. Bassa.
+
 ### §H — Verifica UI (screenshot)
 
+Script `playwright-core` throwaway (scratchpad, Chromium 1228), build di produzione sul gemello: 1280 chiaro (pulita, pannello aperto, lista con new/changed/removed, errore di riga, errore di campo centrato), 1280 scuro (stessi stati), 375 chiaro (pulita con Salva disabilitato visibile, pannello aperto, sheet di una voce, lista sporca, errore di riga, errore host centrato con hint della prova e messaggio della barra, fondo pagina). Misure: overflow orizzontale 0 a 1280 e 375; barra 60,8px a 1280 (12px dal bordo), 92,1px a 375, 8,08px sopra la tab bar (66,92px) a 320/375/390 IT ed EN. Solo token e primitive AirOps esistenti (`--panel`, `--border`, `--radius-md`, `--shadow-md`, `--accent`, `--ink-*`, `Badge` info/warn/bad); stati di voce con gli stessi segni delle righe in bozza della 19.4.
+
 ### §I — Gate ed esiti verbatim
+
+```
+PASS  lint (60s)
+PASS  typecheck (10s)
+PASS  test (22s) — Tests  2038 passed (2038)
+PASS  build (56s)
+```
+e2e finali (gemello fresco): `56 passed (2.3m) E2E_EXIT=0` (progetto `chromium`, 7 spec) e `31 passed (2.4m) E2E_EXIT=0` (catena `settings` + `treasury-settings` + `mobile-settings`, `--no-deps --workers=1`). L'arbitro full-suite su DB fresco resta alla sessione principale (atteso 564).
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created (story writer, 2026-11-01, ricognizione su `a7e960e`).
+- Implementazione completa dei 24 AC (commit `72ad09e`): endpoint composito atomico con core `tx`, snapshot unico, pagina a Salva unico su due facce, liste in bozza, i18n, e2e riscritti/ampliati; discriminanza dei quattro mutanti provata con sha256 identici al ripristino.
+- Gemello `airmanager_19_8` eliminato a fine lavoro; `airmanager` e `airmanager_load` mai toccati.
 
 ### File List
+
+- `src/app/api/v1/settings/route.ts` (nuovo)
+- `src/app/api/v1/settings/currency/route.ts` (nuovo)
+- `src/lib/api/issues-by-path.ts`, `src/lib/api/issues-by-path.test.ts` (nuovi)
+- `src/lib/settings-draft.ts`, `src/lib/settings-draft.test.ts` (nuovi)
+- `src/server/services/settings.service.ts`, `src/server/services/settings.service.test.ts` (nuovi)
+- `src/app/[locale]/dashboard/settings/settings-console.tsx`, `membership-card.tsx`, `currency-card.tsx` (nuovi)
+- `src/app/[locale]/dashboard/settings/settings-form.tsx` (eliminato, confluito nella sezione Club)
+- `src/app/[locale]/dashboard/settings/page.tsx`, `club-card.tsx`, `scheduling-card.tsx`, `smtp-card.tsx`, `treasury-card.tsx`, `ratings-card.tsx`, `cash-categories-card.tsx`
+- `src/server/services/app-settings.service.ts`, `app-settings.service.test.ts`, `expiry-types.service.ts`, `expiry-types.service.test.ts`, `cash.service.ts`, `cash.service.test.ts`
+- `src/lib/schemas/settings.ts`, `settings.test.ts`, `registry.ts`, `registry.test.ts`
+- `src/lib/mobile-settings.ts`, `mobile-settings.test.ts`
+- `src/styles/airops.css`
+- `messages/it.json`, `messages/en.json`
+- `e2e/settings.spec.ts`, `e2e/expiry-types.spec.ts`, `e2e/treasury-settings.spec.ts`, `e2e/mobile-settings.spec.ts`, `e2e/pdf-exports.spec.ts`, `e2e/expiry-registration.spec.ts`
+- `_bmad-output/implementation-artifacts/19-8-impostazioni-salva-unico.md` (questo record)
+
+### Change Log
+
+- 2026-11-02 — dev (Opus 5.5): implementazione `72ad09e` (feat) e Dev Agent Record; Status → review.
