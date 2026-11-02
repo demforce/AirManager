@@ -101,7 +101,7 @@ export function buildNewBookingFormLabels(t: Translator, schedulingWindowSummary
   return {
     title: t('form.title'),
     subtitle: t('list.cardTitle'),
-    selectPlaceholder: t('form.selectPlaceholder'),
+    picker: { placeholder: t('form.picker.placeholder'), noResults: t('form.picker.noResults') },
     aircraft: t('form.aircraft'),
     outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
     person: t('form.person'),
@@ -152,7 +152,7 @@ export function buildEditBookingFormLabels(t: Translator, schedulingWindowSummar
     subtitle: t('list.cardTitle'),
     cancel: t('list.actions.dismiss'),
     save: t('list.actions.save'),
-    selectPlaceholder: t('form.selectPlaceholder'),
+    picker: { placeholder: t('form.picker.placeholder'), noResults: t('form.picker.noResults') },
     aircraft: t('form.aircraft'),
     outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
     startsAt: t('form.startsAt'),

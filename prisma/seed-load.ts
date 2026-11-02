@@ -616,8 +616,7 @@ async function main(): Promise<void> {
     for (const instant of instants) {
       const flightDate = utcMidnight(instant.day.getUTCFullYear(), instant.day.getUTCMonth() + 1, instant.day.getUTCDate());
       const isSchool = chance(0.2) && studentPersons.length > 0 && instructorPersons.length > 0;
-      const isAerialWork = !isSchool && chance(0.15);
-      const flightType: FlightType = isSchool ? 'SCHOOL' : isAerialWork ? 'AERIAL_WORK' : 'TOURISM';
+      const flightType: FlightType = isSchool ? 'SCHOOL' : 'TOURISM';
 
       let personId: string;
       let instructorProfileId: string | null = null;

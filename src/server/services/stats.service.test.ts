@@ -124,7 +124,6 @@ describe('getStats (story 12.10, AC 1)', () => {
         return [
           { flightType: 'SCHOOL', _count: { _all: 3 }, _sum: { minutes: 180 } },
           { flightType: 'TOURISM', _count: { _all: 2 }, _sum: { minutes: 90 } },
-          { flightType: 'AERIAL_WORK', _count: { _all: 1 }, _sum: { minutes: 30 } },
         ];
       }
       return [];
@@ -132,18 +131,17 @@ describe('getStats (story 12.10, AC 1)', () => {
 
     const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
-    expect(result.kpis.movements).toBe(6); // 3 + 2 + 1 REGISTERED flights
-    expect(result.kpis.flightMinutes).toBe(300);
+    expect(result.kpis.movements).toBe(5); // 3 + 2 REGISTERED flights
+    expect(result.kpis.flightMinutes).toBe(270);
     expect(result.movementMix).toEqual([
       { key: 'SCHOOL', count: 3 },
       { key: 'TOURISM', count: 2 },
-      { key: 'AERIAL_WORK', count: 1 },
     ]);
     // The `/api/v1/stats` contract (a future Flutter client reads it): the
     // exact key sets, so a field added or left behind fails here.
     expect(Object.keys(result.kpis).sort()).toEqual(['fleetUtilization', 'flightMinutes', 'movements', 'revenueCents']);
     expect(Object.keys(result.series).sort()).toEqual(['flightMinutes', 'months', 'revenueCents']);
-    expect(result.movementMix.map((m) => m.key)).toEqual(['SCHOOL', 'TOURISM', 'AERIAL_WORK']);
+    expect(result.movementMix.map((m) => m.key)).toEqual(['SCHOOL', 'TOURISM']);
   });
 
   it('instructors: minutes computed for a HISTORICAL ref, owedCents forced null (never asks the compensation summary)', async () => {

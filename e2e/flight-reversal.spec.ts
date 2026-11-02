@@ -180,7 +180,7 @@ test.describe('Flight cancellation and correction with reversal (Story 5.3, AC 1
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
-    await page.getByTestId('flight-form').getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Tipo di volo'), 'Scuola', 'Scuola');
     await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');

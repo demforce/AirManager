@@ -9,13 +9,14 @@ import { formatCents } from '@/lib/money';
 import type { StatsResponseDto } from '@/lib/schemas/stats';
 import { formatMinutes } from '@/lib/time';
 
-type MixKey = 'SCHOOL' | 'TOURISM' | 'AERIAL_WORK';
+type MixKey = 'SCHOOL' | 'TOURISM';
 
 /**
- * Movement-mix tones (AC 3) — three of the prototype's own legend tokens
- * (`--accent`/`--ok`/`--ink-3`), reassigned to D13's real taxonomy
- * (the prototype's own keys, "Dep/arr basati"/"Noleggi"/etc., don't exist in
- * this domain — ratifica utente 1).
+ * Movement-mix tones (AC 3) — two of the prototype's own legend tokens
+ * (`--accent`/`--ok`), reassigned to D13's real taxonomy (the prototype's own
+ * keys, "Dep/arr basati"/"Noleggi"/etc., don't exist in this domain —
+ * ratifica utente 1). Story 19.5 removed the third flight type, and its
+ * `--ink-3` band with it.
  *
  * Story 15.8b (R-15.8b-e): a `.flow-bar-*` CLASS, no longer an inline
  * `background`. Measured in the light theme, the raw tokens painted the four
@@ -27,7 +28,6 @@ type MixKey = 'SCHOOL' | 'TOURISM' | 'AERIAL_WORK';
 const MIX_TONES: Record<MixKey, string> = {
   SCHOOL: 'flow-bar-in',
   TOURISM: 'flow-bar-accent',
-  AERIAL_WORK: 'flow-bar-muted',
 };
 
 export type ReportsLabels = {

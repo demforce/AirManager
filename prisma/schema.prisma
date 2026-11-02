@@ -823,18 +823,17 @@ model HourPackage {
 }
 
 /// A logged flight's purpose (epic 5, story 5.1; renamed to the real-world
-/// taxonomy in story 9.4). `TOURISM` is a tourism/private flight, `SCHOOL`
-/// is a training flight WITH an instructor (epic 9 sums school hours per
-/// instructor off this), `AERIAL_WORK` covers everything else (aerial
-/// work). `SCHOOL` mandates an instructor (422
-/// `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`); an instructor is also allowed
-/// (never required) on `TOURISM`/`AERIAL_WORK` (e.g. a checkride) and
+/// taxonomy in story 9.4; two values only since story 19.5, which folded the
+/// never-used third type into `TOURISM`). `TOURISM` is a tourism/private
+/// flight, `SCHOOL` is a training flight WITH an instructor (epic 9 sums
+/// school hours per instructor off this). `SCHOOL` mandates an instructor
+/// (422 `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`); an instructor is also allowed
+/// (never required) on `TOURISM` (e.g. a checkride, CR 2026-11-01 A5) and
 /// always generates their own charge either way. See `Flight.isSolo` for
 /// the dual/solo distinction within `SCHOOL`.
 enum FlightType {
   TOURISM
   SCHOOL
-  AERIAL_WORK
 }
 
 /// A logged flight's lifecycle state (epic 5, story 5.1). Story 5.1 never

@@ -5,7 +5,7 @@
  * port of `docs/design-reference/airops/src/Forms.jsx#NewLogbookForm` onto
  * the REAL domain (`docs/design-reference/airops/src/LogbookView.jsx`'s
  * `kind` Scuola/Solo/IFR/ME/Noleggio has no counterpart here: the real
- * `FlightType` is TOURISM/SCHOOL/AERIAL_WORK + `isSolo`, no manual
+ * `FlightType` is TOURISM/SCHOOL + `isSolo`, no manual
  * durata/costo — both derived server-side) plus the legacy
  * `flights-manager.tsx#RegisterFlightForm`'s business logic (composed
  * takeoff/landing instants, live-computed duration, idempotency, error
@@ -23,15 +23,16 @@ import { useId, useMemo, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { Field, Input, Select } from '@/components/ui/field';
+import { Field, Input } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
+import { Toggle } from '@/components/ui/toggle';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents } from '@/lib/money';
-import { flightTypeSchema, type FlightListItemDto, type FlightTypeDto, type RegisterFlightResponseDto } from '@/lib/schemas/flights';
+import type { FlightListItemDto, FlightTypeDto, RegisterFlightResponseDto } from '@/lib/schemas/flights';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
@@ -66,9 +67,10 @@ export type FlightEditorLabels = {
     noInstructor: string;
     flightDate: string;
     flightType: string;
+    /** Story 19.5 (D-1) — the `Toggle`'s label «Volo solista» (on = solo); `soloModes` are its two visible state texts. */
     soloMode: string;
     soloModes: { dual: string; solo: string };
-    /** Story 14.3, AC 2 — shown as a neutral `Field` hint under Tipo volo once a person with only an active student profile is selected (the select is also forced/disabled to SCHOOL, see `isStudentOnly`). */
+    /** Story 14.3, AC 2 — shown as a neutral hint under Tipo volo once a person with only an active student profile is selected (the combobox is also forced/disabled to SCHOOL, see `isStudentOnly`). */
     studentOnlyHint: string;
     /** Review F1 (14.3) — shown ONLY while correcting a flight whose person is student-only TODAY but whose recorded type is NOT SCHOOL (ratifica R-14.3-a: never disabled, never rewritten). Contains a `{type}` placeholder for the flight's own recorded type label. */
     studentOnlyCorrectionHint: string;
@@ -80,7 +82,7 @@ export type FlightEditorLabels = {
     takeoffs: string;
     landings: string;
   };
-  flightTypes: { private: string; school: string; other: string };
+  flightTypes: { private: string; school: string };
   errors: {
     FLIGHT_TIMES_INVALID: string;
     NO_AIRCRAFT_RATE: string;
@@ -232,7 +234,6 @@ function todayDateOnly(): string {
 
 const flightFormSchema = z.object({
   flightDate: z.string().trim().min(1),
-  flightType: flightTypeSchema,
   departureAirfield: z.string().trim().min(1),
   arrivalAirfield: z.string().trim().min(1),
   takeoffTime: z.string().trim().min(1),
@@ -247,7 +248,6 @@ function flightFormDefaults(target: FlightEditorTarget, airfieldName: string): F
   if (target.mode === 'new') {
     return {
       flightDate: todayDateOnly(),
-      flightType: 'TOURISM',
       departureAirfield: airfieldName,
       arrivalAirfield: airfieldName,
       takeoffTime: '',
@@ -259,7 +259,6 @@ function flightFormDefaults(target: FlightEditorTarget, airfieldName: string): F
   const flight = target.flight;
   return {
     flightDate: flight.takeoffAt ? localDateFromIso(flight.takeoffAt) : flight.flightDate,
-    flightType: flight.flightType,
     departureAirfield: flight.departureAirfield ?? '',
     arrivalAirfield: flight.arrivalAirfield ?? '',
     takeoffTime: flight.takeoffAt ? localTimeFromIso(flight.takeoffAt) : '',
@@ -316,16 +315,19 @@ export function FlightEditor({
   // Review F1 (14.3, CORRUZIONE DATI): the initial Tipo volo must NEVER be
   // silently rewritten from the flight's own recorded value — forcing it to
   // SCHOOL here based on the person's CURRENT active-profile flags used to
-  // make "Correggi volo" on an old TOURISM/AERIAL_WORK flight, whose person
+  // make "Correggi volo" on an old TOURISM flight, whose person
   // is student-only TODAY, open showing "Scuola" while the record says
   // otherwise; confirming even a cycles-only correction then re-typed the
   // flight and re-charged it as SCHOOL (ratifica R-14.3-a: a historical
   // flight's type is never rewritten by the UI, only by an explicit operator
   // choice — see `isLocked`/`showStudentOnlyCorrectionWarning` below).
-  // `defaults.flightType` is always the value ALREADY ON FILE in `correct`
-  // mode, and the plain `'TOURISM'` default in `new` mode (where `personId`
-  // starts empty, so no forcing ever applied here anyway).
-  const initialFlightType: FlightTypeDto = defaults.flightType;
+  // `correctingFlight.flightType` is always the value ALREADY ON FILE in
+  // `correct` mode, and the plain `'TOURISM'` default in `new` mode (where
+  // `personId` starts empty, so no forcing ever applied here anyway). Plain
+  // state, not a react-hook-form field (story 19.5, AD-6): like the three
+  // pickers, Tipo volo is a `SearchCombobox`, and RHF never sent it anyway
+  // (the body reads `effectiveFlightType`).
+  const initialFlightType: FlightTypeDto = correctingFlight?.flightType ?? 'TOURISM';
 
   const [formError, setFormError] = useState<string | null>(null);
   const [selectedFlightType, setSelectedFlightType] = useState<FlightTypeDto>(initialFlightType);
@@ -403,7 +405,7 @@ export function FlightEditor({
     formState: { errors, isSubmitting },
   } = useForm<FlightFormValues>({
     resolver: zodResolver(flightFormSchema),
-    defaultValues: { ...defaults, flightType: initialFlightType },
+    defaultValues: defaults,
   });
 
   function handleAircraftChange(id: string): void {
@@ -423,7 +425,7 @@ export function FlightEditor({
   // non-restricted person un-locks Tipo volo again.
   const personIsStudentOnly = isStudentOnly(personId);
   // Review F1/F2 (14.3): the lock is a NEW-registration-only concept —
-  // correcting a historical flight NEVER disables the select (ratifica
+  // correcting a historical flight NEVER disables Tipo volo (ratifica
   // R-14.3-a: the operator decides whether to change a historical flight's
   // type, never the UI; see `showStudentOnlyCorrectionWarning` below for
   // what correct mode shows instead). `isLocked` is the ONE value driving
@@ -440,7 +442,7 @@ export function FlightEditor({
   // operator's own last choice; while `isLocked`, SCHOOL wins regardless
   // (covers BOTH the initial selection AND the delayed case where
   // `searchPilotStudent` fills in the CURRENTLY selected person's profile
-  // flags later, typed but never re-selected). Fed BOTH into the Select's
+  // flags later, typed but never re-selected). Fed BOTH into the combobox's
   // own `value` (so the DOM can never show a stale, server-rejected type
   // while disabled — review F2) and into the submitted payload below, one
   // single derivation for both, per the review's own fix note.
@@ -449,16 +451,24 @@ export function FlightEditor({
   // Review F1 (14.3): correcting a flight whose person is student-only TODAY
   // but whose recorded type is NOT SCHOOL — a real, if rare, state (ratifica
   // R-14.3-b: a license is for life, so losing every profile is unusual, but
-  // a deactivated pilot profile is not impossible). The select stays
+  // a deactivated pilot profile is not impossible). Tipo volo stays
   // ENABLED (never a silent rewrite, R-14.3-a) — this only names the
   // situation so the operator decides with full information.
   const showStudentOnlyCorrectionWarning = isCorrecting && personIsStudentOnly && effectiveFlightType !== 'SCHOOL';
 
   function flightTypeLabel(type: FlightTypeDto): string {
-    if (type === 'SCHOOL') return labels.flightTypes.school;
-    if (type === 'AERIAL_WORK') return labels.flightTypes.other;
-    return labels.flightTypes.private;
+    return type === 'SCHOOL' ? labels.flightTypes.school : labels.flightTypes.private;
   }
+
+  // Story 19.5 (AD-6, D-3): Tipo volo is the same `SearchCombobox` as the
+  // three pickers, in static mode — two fixed options, no `fetchOptions`.
+  const flightTypeComboOptions = useMemo<SearchComboboxOption[]>(
+    () => [
+      { id: 'TOURISM', label: labels.flightTypes.private },
+      { id: 'SCHOOL', label: labels.flightTypes.school },
+    ],
+    [labels.flightTypes.private, labels.flightTypes.school],
+  );
 
   const aircraftComboOptions = useMemo<SearchComboboxOption[]>(() => {
     const base = aircraftOptions.map((aircraft) => ({ id: aircraft.id, label: aircraftOptionLabel(aircraft, labels.outOfServiceSuffix) }));
@@ -601,7 +611,7 @@ export function FlightEditor({
       takeoffAt: times.takeoffAt.toISOString(),
       landingAt: times.landingAt.toISOString(),
       // Review F2: the SUBMITTED type is `effectiveFlightType`, not the raw
-      // form value — the one derivation that also drives the Select's own
+      // form value — the one derivation that also drives the combobox's own
       // `value`/`disabled` above, so the two can never disagree.
       flightType: effectiveFlightType,
       isSolo,
@@ -924,7 +934,7 @@ export function FlightEditor({
             </Field>
             {/* `SearchCombobox` renders its OWN `<label>` (story TD-3) — a
                 wrapping `Field` would double it up (its `.fld-label` PLUS the
-                combobox's own), so these three use a bare `.fld`/`.fld.wide`
+                combobox's own), so these four use a bare `.fld`/`.fld.wide`
                 wrapper (same grid-cell/spacing rules, no second label). */}
             <div className="fld">
               <SearchCombobox
@@ -966,37 +976,49 @@ export function FlightEditor({
                 emptyText={labels.picker.noResults}
               />
             </div>
-            <Field
-              label={labels.fields.flightType}
-              hint={
-                isLocked
-                  ? labels.fields.studentOnlyHint
-                  : showStudentOnlyCorrectionWarning
-                    ? labels.fields.studentOnlyCorrectionHint.replace('{type}', flightTypeLabel(correctingFlight!.flightType))
-                    : undefined
-              }
-            >
-              <Select
-                disabled={isLocked}
-                data-testid="flight-type-select"
+            <div className="fld">
+              {/* The id (= testid) still says "select" although the control is
+                  a combobox since story 19.5: desktop testids never change. */}
+              <SearchCombobox
+                id="flight-type-select"
+                label={labels.fields.flightType}
                 // Review F2: `value` is CONTROLLED by `effectiveFlightType`
                 // (never the raw `selectedFlightType`) — the DOM can never
                 // show/submit a type the lock disagrees with, by React's own
                 // reconciliation, not an imperative sync call.
                 value={effectiveFlightType}
-                {...register('flightType', {
-                  onChange: (event: { target: { value: string } }) => {
-                    const next = event.target.value as FlightTypeDto;
-                    setSelectedFlightType(next);
-                    if (next !== 'SCHOOL') setIsSolo(false);
-                  },
-                })}
-              >
-                <option value="TOURISM">{labels.flightTypes.private}</option>
-                <option value="SCHOOL">{labels.flightTypes.school}</option>
-                <option value="AERIAL_WORK">{labels.flightTypes.other}</option>
-              </Select>
-            </Field>
+                onChange={(id) => {
+                  setSelectedFlightType(id as FlightTypeDto);
+                  if (id !== 'SCHOOL') setIsSolo(false);
+                }}
+                initialOptions={flightTypeComboOptions}
+                placeholder={labels.picker.placeholder}
+                emptyText={labels.picker.noResults}
+                disabled={isLocked}
+                hint={
+                  isLocked
+                    ? labels.fields.studentOnlyHint
+                    : showStudentOnlyCorrectionWarning
+                      ? labels.fields.studentOnlyCorrectionHint.replace('{type}', flightTypeLabel(correctingFlight!.flightType))
+                      : undefined
+                }
+              />
+            </div>
+            {/* Story 19.5 (P4/P5, D-1/D-2): the dual/solo choice is a `Toggle`
+                — on = solo — in a full-width cell right after the field that
+                makes it appear, and only on SCHOOL (A19). */}
+            {effectiveFlightType === 'SCHOOL' ? (
+              <div className="fld wide">
+                <Toggle
+                  id="flight-solo-toggle"
+                  label={labels.fields.soloMode}
+                  checked={isSolo}
+                  onChange={setIsSolo}
+                  onText={labels.fields.soloModes.solo}
+                  offText={labels.fields.soloModes.dual}
+                />
+              </div>
+            ) : null}
             <Field label={labels.fields.departure} error={errors.departureAirfield ? labels.requiredField : undefined}>
               <Input aria-invalid={Boolean(errors.departureAirfield)} {...register('departureAirfield')} />
             </Field>
@@ -1038,21 +1060,6 @@ export function FlightEditor({
             ) : null}
           </div>
 
-          {effectiveFlightType === 'SCHOOL' ? (
-            <fieldset style={{ marginTop: 14 }}>
-              <legend className="fld-label">{labels.fields.soloMode}</legend>
-              <div style={{ marginTop: 8, display: 'flex', gap: 16 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5 }}>
-                  <input type="radio" name="flight-solo-mode" checked={!isSolo} onChange={() => setIsSolo(false)} />
-                  {labels.fields.soloModes.dual}
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5 }}>
-                  <input type="radio" name="flight-solo-mode" checked={isSolo} onChange={() => setIsSolo(true)} />
-                  {labels.fields.soloModes.solo}
-                </label>
-              </div>
-            </fieldset>
-          ) : null}
 
           {noAircraft ? <p style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 10 }}>{labels.fields.noAircraftAvailable}</p> : null}
           {noPerson ? <p style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 4 }}>{labels.fields.noPersonAvailable}</p> : null}

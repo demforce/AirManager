@@ -34,6 +34,14 @@ export type SearchComboboxOption = {
   id: string;
   label: string;
   meta?: string;
+  /**
+   * Story 19.5 (AD-2c): shown but not selectable — the row is
+   * `aria-disabled="true"` and stays reachable with the arrow keys (allowed
+   * by the WAI-ARIA listbox pattern, so a screen reader still reads the
+   * reason carried by `label`); click and Enter on it change nothing and
+   * leave the popup open. The booking forms' out-of-service aircraft (AOG-1).
+   */
+  disabled?: boolean;
 };
 
 export type SearchComboboxProps = {
@@ -44,16 +52,25 @@ export type SearchComboboxProps = {
   /** Selected option's `id`, or `''` for "nothing selected". */
   value: string;
   onChange: (id: string) => void;
-  /** Server-side search, called debounced while the user types a non-empty query. */
-  fetchOptions: (query: string) => Promise<SearchComboboxOption[]>;
+  /**
+   * Server-side search, called debounced while the user types a non-empty
+   * query. Optional (story 19.5, AD-2a): without it the combobox runs in
+   * STATIC mode — the client-side filter of `initialOptions` is the final
+   * result, no debounce, no network.
+   */
+  fetchOptions?: (query: string) => Promise<SearchComboboxOption[]>;
   /**
    * The page's server-rendered first page of candidates (≤100, story 5.4's
    * `OPTIONS_PAGE_SIZE`/AC 1) — shown verbatim on focus (browse mode, no
    * fetch: the ≤100 case works with ZERO extra network calls) and filtered
    * client-side as an optimistic placeholder the instant the user starts
    * typing, replaced by `fetchOptions`'s authoritative results once they
-   * resolve. A caller that needs a "no selection" choice reachable from the
-   * keyboard (the flight filter bar's "Tutti i velivoli", the optional
+   * resolve. In static mode (no `fetchOptions`, story 19.5) it is instead the
+   * COMPLETE list — a short fixed one (Tipo di volo) or a list the server has
+   * already scoped to what the actor may pick (the booking forms, whose
+   * actors cannot call the search APIs). A caller that needs a "no
+   * selection" choice reachable from the keyboard (the flight filter bar's
+   * "Tutti i velivoli", the optional
    * istruttore's "Nessun istruttore") prepends a `{ id: '', label: ... }`
    * entry here — this component has no built-in "clear" affordance by
    * design (exact prop contract, story TD-3).
@@ -65,6 +82,8 @@ export type SearchComboboxProps = {
   disabled?: boolean;
   /** Story 14.2, AC 1: same contract as `Field`'s own `error` prop (this component renders its OWN `.fld`, see the doc-comment above) — sets `aria-invalid` on the input and an inline `.fld-error` message right below it. */
   error?: string;
+  /** Story 19.5 (AD-2b): same contract as `Field`'s own `hint` prop — a neutral `.fld-hint` in the same slot as `error`, linked through `aria-describedby` (a disabled input's only programmatic explanation, review F4 14.3); `error` always wins. */
+  hint?: string;
 };
 
 const DEBOUNCE_MS = 250;
@@ -94,7 +113,14 @@ function findLabel(id: string, options: SearchComboboxOption[]): string {
  * `initialOptions` as a placeholder, superseded ~250ms later by
  * `fetchOptions`'s server-authoritative results (a monotonic sequence
  * counter discards a stale response that resolves after a newer one — no
- * `AbortController` needed for a same-origin JSON fetch this small).
+ * `AbortController` needed for a same-origin JSON fetch this small). With
+ * no `fetchOptions` (static mode, story 19.5) the client-side filter is the
+ * final result.
+ *
+ * Escape with the popup OPEN closes only the popup (story 19.5, AD-3) — the
+ * event stops there, so the surrounding `SlideOver`/`MobileSheet` (which
+ * listen on `window`) close only on a second Escape, the same rule as
+ * `CalendarPopover` (15.10) and as a native `<select>`'s own popup.
  *
  * The committed selection's label is tracked in its OWN state
  * (`committedLabel`, set only at the moment of an actual selection or a
@@ -114,6 +140,7 @@ export function SearchCombobox({
   emptyText,
   disabled = false,
   error,
+  hint,
 }: SearchComboboxProps) {
   const [committedLabel, setCommittedLabel] = useState<string>(() => findLabel(value, initialOptions));
   const [query, setQuery] = useState<string>(committedLabel);
@@ -171,10 +198,14 @@ export function SearchCombobox({
   // `window` for an inner scrollable container) + `resize`, both closing the
   // popup, EXCEPT when the scroll originated INSIDE the listbox itself
   // (`overflow-y: auto`, scrolling through the options must not close it).
+  // Story 19.5: nor inside this component's own root — the `<input>` scrolls
+  // its TEXT horizontally when a query or a `select()`ed label is longer than
+  // the field (the booking forms' half-width cells, measured), and that
+  // `scroll` reaches this capture listener too while the trigger never moved.
   useEffect(() => {
     if (!open) return;
     function close(event: Event) {
-      if (event.target instanceof Node && listboxRef.current?.contains(event.target)) return;
+      if (event.target instanceof Node && (listboxRef.current?.contains(event.target) || wrapperRef.current?.contains(event.target))) return;
       setOpen(false);
       setActiveIndex(-1);
     }
@@ -228,6 +259,7 @@ export function SearchCombobox({
     }
     const clientMatches = initialOptions.filter((option) => option.label.toLowerCase().includes(q.toLowerCase()));
     openWithOptions(clientMatches);
+    if (!fetchOptions) return; // static mode (story 19.5): the client filter is final
 
     const seq = ++seqRef.current;
     debounceRef.current = setTimeout(() => {
@@ -291,13 +323,19 @@ export function SearchCombobox({
         // Only swallow Enter when it actually commits a highlighted option —
         // otherwise it falls through to the surrounding <form>'s native
         // submit, same as a plain <select> never intercepted Enter either.
+        // A highlighted DISABLED option (story 19.5) swallows it too, but
+        // commits nothing: Enter on it must neither select nor submit.
         event.preventDefault();
-        selectOption(options[activeIndex]);
+        if (!options[activeIndex].disabled) selectOption(options[activeIndex]);
       }
       return;
     }
     if (event.key === 'Escape' && open) {
       event.preventDefault();
+      // Story 19.5 (AD-3): React listens on the document, the panels on
+      // `window` (bubble) — stopping here keeps the first Escape from closing
+      // the whole panel (and resetting a booking form) along with the popup.
+      event.stopPropagation();
       setOpen(false);
       setActiveIndex(-1);
       setQuery(committedLabel);
@@ -335,7 +373,7 @@ export function SearchCombobox({
         aria-activedescendant={activeOptionId}
         aria-autocomplete="list"
         aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
+        aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
         autoComplete="off"
         disabled={disabled}
         placeholder={placeholder}
@@ -358,6 +396,10 @@ export function SearchCombobox({
       {error ? (
         <span id={`${id}-error`} className="fld-error" role="alert">
           {error}
+        </span>
+      ) : hint ? (
+        <span id={`${id}-hint`} className="fld-hint">
+          {hint}
         </span>
       ) : null}
       {open && anchor
@@ -410,8 +452,11 @@ export function SearchCombobox({
                     id={`${id}-option-${option.id}`}
                     role="option"
                     aria-selected={option.id === value}
+                    aria-disabled={option.disabled ? 'true' : undefined}
                     onMouseEnter={() => setActiveIndex(index)}
-                    onClick={() => selectOption(option)}
+                    onClick={() => {
+                      if (!option.disabled) selectOption(option);
+                    }}
                     className={`combo-option${index === activeIndex ? ' active' : ''}`}
                   >
                     {option.label}

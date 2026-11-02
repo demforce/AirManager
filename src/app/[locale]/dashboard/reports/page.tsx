@@ -74,7 +74,6 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
       keys: {
         SCHOOL: t('movementMix.keys.SCHOOL'),
         TOURISM: t('movementMix.keys.TOURISM'),
-        AERIAL_WORK: t('movementMix.keys.AERIAL_WORK'),
       },
     },
     instructors: {

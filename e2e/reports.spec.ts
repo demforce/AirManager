@@ -107,7 +107,7 @@ type RegisterFlightParams = {
   aircraftId: string;
   personId: string;
   instructorPersonId?: string;
-  flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
+  flightType: 'TOURISM' | 'SCHOOL';
   minutes: number;
   /** Story 16.2 — the takeoff clock time (UTC, `HH:MM`); defaults to `10:00`, what every pre-existing call site used implicitly. The DAY deliberately stays "today": these KPIs are the CURRENT Rome month's, so only the HOUR may move to keep two flights on the same aircraft from overlapping. */
   takeoffTimeUtc?: string;
@@ -142,7 +142,7 @@ type StatsDto = {
   kpis: { revenueCents: number; flightMinutes: number; movements: number; fleetUtilization: number | null };
   series: { months: string[]; revenueCents: number[]; flightMinutes: number[] };
   fleet: { registration: string; minutes: number; revenueCents: number }[];
-  movementMix: { key: 'SCHOOL' | 'TOURISM' | 'AERIAL_WORK'; count: number }[];
+  movementMix: { key: 'SCHOOL' | 'TOURISM'; count: number }[];
   instructors: { name: string; minutes: number; owedCents: number | null }[];
   topPilots: { name: string; minutes: number; spentCents: number }[];
 };
@@ -218,8 +218,7 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
     expect(after.kpis.movements - before.kpis.movements).toBe(2); // 2 flights
     expect(mixCount(after, 'SCHOOL') - mixCount(before, 'SCHOOL')).toBe(1);
     expect(mixCount(after, 'TOURISM') - mixCount(before, 'TOURISM')).toBe(1);
-    expect(mixCount(after, 'AERIAL_WORK') - mixCount(before, 'AERIAL_WORK')).toBe(0);
-    expect(after.movementMix.map((mix) => mix.key)).toEqual(['SCHOOL', 'TOURISM', 'AERIAL_WORK']);
+    expect(after.movementMix.map((mix) => mix.key)).toEqual(['SCHOOL', 'TOURISM']);
 
     // Uniquely-identified rows: exact assertions, no delta needed.
     const fleetRow = after.fleet.find((row) => row.registration === aircraft.registration);

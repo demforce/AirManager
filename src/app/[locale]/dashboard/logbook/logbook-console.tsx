@@ -97,7 +97,7 @@ export type LogbookConsoleLabels = {
   /** Story 13.5, AC 6 — single `ExportMenu` dropdown (pattern already used by fleet/pilots/billing), replacing the two separate export buttons. */
   exportMenu: { label: string; xlsLabel: string; pdfLabel: string };
   pagination: { prev: string; next: string };
-  flightTypes: { private: string; school: string; other: string };
+  flightTypes: { private: string; school: string };
   table: {
     date: string;
     route: string;
@@ -215,9 +215,7 @@ function personLabel(person: { firstName: string; lastName: string }): string {
 }
 
 function flightTypeLabel(type: FlightTypeDto, labels: LogbookConsoleLabels['flightTypes']): string {
-  if (type === 'TOURISM') return labels.private;
-  if (type === 'SCHOOL') return labels.school;
-  return labels.other;
+  return type === 'SCHOOL' ? labels.school : labels.private;
 }
 
 const COLS = '92px 150px minmax(150px,1.5fr) 110px 130px 64px 55px 55px 100px minmax(130px,1.2fr) 150px';
@@ -684,7 +682,6 @@ export function LogbookConsole({
             <option value="">{labels.filters.allTypes}</option>
             <option value="TOURISM">{labels.flightTypes.private}</option>
             <option value="SCHOOL">{labels.flightTypes.school}</option>
-            <option value="AERIAL_WORK">{labels.flightTypes.other}</option>
           </select>
           <select
             className="input logbook-filter-inpanel"
@@ -744,7 +741,7 @@ export function LogbookConsole({
             {items.map((flight) => {
               const pic = flightPicPerson(flight);
               const lineage = statusBadgeAndLineage(flight);
-              const typeTone: BadgeTone = flight.flightType === 'SCHOOL' ? 'info' : flight.flightType === 'AERIAL_WORK' ? 'warn' : '';
+              const typeTone: BadgeTone = flight.flightType === 'SCHOOL' ? 'info' : '';
               return (
                 <div key={flight.id} className="lb-row" data-testid="flight-row" style={{ gridTemplateColumns: COLS }}>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
@@ -1116,7 +1113,6 @@ export function LogbookConsole({
                 <option value="">{labels.filters.allTypes}</option>
                 <option value="TOURISM">{labels.flightTypes.private}</option>
                 <option value="SCHOOL">{labels.flightTypes.school}</option>
-                <option value="AERIAL_WORK">{labels.flightTypes.other}</option>
               </select>
             </div>
           </div>

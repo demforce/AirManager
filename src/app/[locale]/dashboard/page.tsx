@@ -790,7 +790,7 @@ function buildFlightEditorLabels(
       takeoffs: t('editor.fields.takeoffs'),
       landings: t('editor.fields.landings'),
     },
-    flightTypes: { private: t('flightTypes.private'), school: t('flightTypes.school'), other: t('flightTypes.other') },
+    flightTypes: { private: t('flightTypes.private'), school: t('flightTypes.school') },
     errors: {
       FLIGHT_TIMES_INVALID: t('editor.errors.FLIGHT_TIMES_INVALID'),
       NO_AIRCRAFT_RATE: t('editor.errors.NO_AIRCRAFT_RATE'),

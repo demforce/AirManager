@@ -1,15 +1,17 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { DateTimeInput } from '@/components/ui/datetime-input';
-import { Field, Input, Select } from '@/components/ui/field';
+import { Field, Input } from '@/components/ui/field';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatDateOnly } from '@/lib/time';
 import { SlideOver } from '@/components/ui/slide-over';
-import type { AircraftOption } from './new-booking-form';
+import { aircraftOptionLabel, type AircraftOption } from './new-booking-form';
 import type { BookingRowDto } from './bookings-table';
 
 export type EditBookingFormLabels = {
@@ -17,7 +19,8 @@ export type EditBookingFormLabels = {
   subtitle: string;
   cancel: string;
   save: string;
-  selectPlaceholder: string;
+  /** Story 19.5 (D-7): the velivolo picker's placeholder and empty row — the create form's own two texts. */
+  picker: { placeholder: string; noResults: string };
   aircraft: string;
   outOfServiceSuffix: string;
   startsAt: string;
@@ -106,7 +109,8 @@ function valuesFromBooking(booking: BookingRowDto | null): FormValues {
  * "Modifica" (story 12.3, AC 3) — the SAME `PATCH /api/v1/bookings/{id}`
  * mechanics as the legacy `bookings-list.tsx#MoveBookingForm` this replaces
  * (was inline in the "Prossime prenotazioni" table row, now its own
- * `SlideOver`), re-skinned with `Field`/`Input`/`Select`. `booking-move-*`/
+ * `SlideOver`), re-skinned with `Field`/`Input` and, since story 19.5, a
+ * `SearchCombobox` for the velivolo (the create form's own). `booking-move-*`/
  * `move-booking-*` testids are kept UNCHANGED to minimize e2e churn, same
  * rationale as `new-booking-form.tsx`'s own doc-comment — the submit button
  * stays inside `[data-testid="move-booking-form"]`, not `SlideOver`'s
@@ -124,11 +128,27 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
   // Story AOG-1a, AC 7(e) — the fermo date in the out-of-service 422 goes through the app's own date formatter, in the reader's own locale.
   const displayLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [formError, setFormError] = useState<string | null>(null);
+  // Story 19.5 (AD-5): same `Controller` + `focusFirstInvalid` bridge as the
+  // create form — the combobox forwards no `ref` for RHF's own focus.
+  const formRef = useRef<HTMLFormElement | null>(null);
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(formSchema), values: valuesFromBooking(booking) });
+  } = useForm<FormValues>({ resolver: zodResolver(formSchema), values: valuesFromBooking(booking), shouldFocusError: false });
+
+  // Static mode (story 19.5, D-4/D-5): the server-rendered list, out-of-service
+  // aircraft listed with their reason but not selectable.
+  const aircraftComboOptions = useMemo<SearchComboboxOption[]>(
+    () =>
+      aircraftOptions.map((aircraft) => ({
+        id: aircraft.id,
+        label: aircraftOptionLabel(aircraft, labels.outOfServiceSuffix),
+        disabled: aircraft.status === 'OUT_OF_SERVICE',
+      })),
+    [aircraftOptions, labels.outOfServiceSuffix],
+  );
 
   // Review 12.3 F4: `formError` used to leak between rows — a caller can swap
   // `booking` to a DIFFERENT row while the SlideOver stays open (clicking
@@ -209,20 +229,34 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
   return (
     <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel}>
       {booking ? (
-        <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="move-booking-form">
+        <form
+          ref={formRef}
+          onSubmit={(event) => void handleSubmit(onSubmit, () => setTimeout(() => focusFirstInvalid(formRef.current), 0))(event)}
+          noValidate
+          data-testid="move-booking-form"
+        >
           <div className="form-grid">
-            <Field label={labels.aircraft} error={fieldErrorLabel(errors.aircraftId) ?? undefined}>
-              <Select aria-invalid={Boolean(errors.aircraftId)} {...register('aircraftId')}>
-                <option value="">{labels.selectPlaceholder}</option>
-                {aircraftOptions.map((aircraft) => (
-                  <option key={aircraft.id} value={aircraft.id} disabled={aircraft.status === 'OUT_OF_SERVICE'}>
-                    {aircraft.status === 'OUT_OF_SERVICE'
-                      ? `${aircraft.registration} — ${labels.outOfServiceSuffix.replace('{reason}', aircraft.statusReason ?? '')}`
-                      : aircraft.registration}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            {/* Bare `.fld` wrapper: the combobox renders its own label. The id
+                (= testid) is distinct from the create form's `booking-aircraft`
+                — both forms are mounted on the same page. */}
+            <div className="fld">
+              <Controller
+                name="aircraftId"
+                control={control}
+                render={({ field, fieldState }) => (
+                  <SearchCombobox
+                    id="move-booking-aircraft"
+                    label={labels.aircraft}
+                    value={field.value}
+                    onChange={field.onChange}
+                    initialOptions={aircraftComboOptions}
+                    placeholder={labels.picker.placeholder}
+                    emptyText={labels.picker.noResults}
+                    error={fieldErrorLabel(fieldState.error) ?? undefined}
+                  />
+                )}
+              />
+            </div>
 
             <Field label={labels.startsAt} error={fieldErrorLabel(errors.startsAt) ?? undefined}>
               <DateTimeInput aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />

@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { ensureValidSeedExpiries, selectFromCombobox } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
+const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -274,5 +275,153 @@ test.describe('SearchCombobox positioning (story 14.1, AC 1/4 — the dropdown m
     await page.mouse.wheel(0, 240);
 
     await expect(page.locator('.combo-listbox')).toHaveCount(0);
+  });
+});
+
+/**
+ * Story 19.5 (AD-2/AD-3): the booking forms' choice fields became the same
+ * `SearchCombobox` as the flight form, in STATIC mode (no `fetchOptions`), and
+ * the first Escape on an open popup now closes only the popup. The one place
+ * in the suite where a test presses Escape on a picker on purpose: it is the
+ * subject under test (same as 15.10's `CalendarPopover`).
+ */
+test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (story 19.5, AC 19/20/21)', () => {
+  /** A run-unique aircraft, no rate needed (bookings never price). */
+  async function createAircraft(page: Page): Promise<{ id: string; registration: string }> {
+    const registration = `I-TB${uniqueSuffix()}`.toUpperCase().slice(0, 20);
+    const response = await page.request.post('/api/v1/aircraft', { data: { registration, type: 'Ultraleggero 3 assi', model: 'Combobox 19.5' } });
+    expect(response.status()).toBe(201);
+    return { id: ((await response.json()) as { id: string }).id, registration };
+  }
+
+  test('the first Escape on an open popup closes only the popup — the panel stays open, the value unchanged — and the second closes the panel, in the booking form AND the flight form (AC 20)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const listbox = page.locator('.combo-listbox');
+    const openPanels = page.locator('.slideover.open');
+
+    await page.goto('/it/dashboard/bookings');
+    await page.waitForLoadState('networkidle');
+    await page.getByTestId('new-booking-button').click();
+    const instructor = page.getByTestId('new-booking-form').getByTestId('booking-instructor');
+    await expect(instructor).toHaveValue('Nessuno');
+    await instructor.click();
+    await page.keyboard.press('ArrowDown'); // moves the highlight, commits nothing
+    await expect(listbox).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(listbox).toHaveCount(0);
+    await expect(openPanels).toHaveCount(1);
+    await expect(instructor).toHaveValue('Nessuno');
+    await page.keyboard.press('Escape');
+    await expect(openPanels).toHaveCount(0);
+
+    await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+    const flightType = page.getByTestId('flight-type-select');
+    await flightType.click();
+    await page.keyboard.press('ArrowDown');
+    await expect(listbox).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(listbox).toHaveCount(0);
+    await expect(openPanels).toHaveCount(1);
+    await expect(flightType).toHaveValue('Turismo');
+    await page.keyboard.press('Escape');
+    await expect(openPanels).toHaveCount(0);
+  });
+
+  test('a pilot books through the static velivolo combobox: focus on the first invalid field, the filtered option survives the debounce, 201, ZERO calls to the aircraft/people search APIs, the picker empty again after the success (AC 19/21)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    await page.context().clearCookies();
+    // The seed pilot: its booking stays PENDING (the suite's rule for that
+    // shared identity, `bookings.spec.ts#FUTURE_DAY`), on a run-unique aircraft.
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+
+    const searchCalls: string[] = [];
+    page.on('request', (request) => {
+      if (/^\/api\/v1\/(aircraft|people)/.test(new URL(request.url()).pathname)) searchCalls.push(request.url());
+    });
+
+    await page.goto('/it/dashboard/bookings');
+    await page.waitForLoadState('networkidle');
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    const aircraftCombobox = form.getByTestId('booking-aircraft');
+
+    // AC 19: an empty submit marks every required field and focuses the
+    // FIRST invalid one in DOM order — for a pilot, the velivolo.
+    await form.getByRole('button', { name: 'Prenota' }).click();
+    await expect(form.locator('.fld-error')).toHaveCount(3);
+    await expect(aircraftCombobox).toHaveAttribute('aria-invalid', 'true');
+    await expect(aircraftCombobox).toBeFocused();
+
+    await aircraftCombobox.fill(aircraft.registration);
+    const option = page.getByRole('listbox').getByRole('option', { name: aircraft.registration, exact: true });
+    await expect(option).toBeVisible();
+    // Past the 250ms debounce a `fetchOptions` would have fired: for a pilot
+    // the search API answers 403, and the list would collapse to «Nessun
+    // risultato.» — the client-filtered option must still be there.
+    await page.waitForTimeout(600);
+    await expect(option).toBeVisible();
+    await option.click();
+    // Picking an option clears that field's own error.
+    await expect(aircraftCombobox).toHaveAttribute('aria-invalid', 'false');
+    await expect(form.locator('.fld-error')).toHaveCount(2);
+
+    await form.getByLabel('Inizio').fill('2031-03-12T09:00');
+    await form.getByLabel('Fine', { exact: true }).fill('2031-03-12T10:00');
+    const created = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/bookings' && response.request().method() === 'POST');
+    await form.getByRole('button', { name: 'Prenota' }).click();
+    expect((await created).status()).toBe(201);
+    await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    // AC 19: `reset` after the success empties the combobox too.
+    await expect(aircraftCombobox).toHaveValue('');
+    expect(searchCalls).toEqual([]);
+  });
+
+  test('staff: an empty submit focuses the person picker, and closing the panel resets every picker (velivolo empty, istruttore «Nessuno») (AC 19)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+
+    await page.goto('/it/dashboard/bookings');
+    await page.waitForLoadState('networkidle');
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    const person = form.getByTestId('booking-person');
+    const aircraftCombobox = form.getByTestId('booking-aircraft');
+    const instructor = form.getByTestId('booking-instructor');
+
+    await form.getByRole('button', { name: 'Prenota' }).click();
+    await expect(form.locator('.fld-error')).toHaveCount(4);
+    await expect(person).toHaveAttribute('aria-invalid', 'true');
+    await expect(aircraftCombobox).toHaveAttribute('aria-invalid', 'true');
+    await expect(person).toBeFocused();
+
+    // The focused person picker has its browse popup open over the velivolo
+    // field below it: Tab moves on to the velivolo (closing that popup) —
+    // never Escape (CLAUDE.md).
+    await page.keyboard.press('Tab');
+    await expect(aircraftCombobox).toBeFocused();
+    await selectFromCombobox(aircraftCombobox, aircraft.registration, aircraft.registration);
+    await expect(aircraftCombobox).toHaveAttribute('aria-invalid', 'false');
+    await expect(form.locator('.fld-error')).toHaveCount(3);
+    await expect(instructor).toHaveValue('Nessuno');
+    await instructor.click();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(instructor).not.toHaveValue('Nessuno');
+
+    await form.getByRole('button', { name: 'Annulla' }).click();
+    await expect(page.locator('.slideover.open')).toHaveCount(0);
+    await page.getByTestId('new-booking-button').click();
+    await expect(page.locator('.slideover.open')).toHaveCount(1);
+    await expect(aircraftCombobox).toHaveValue('');
+    await expect(instructor).toHaveValue('Nessuno');
+    await expect(person).toHaveValue('');
+    await expect(form.locator('.fld-error')).toHaveCount(0);
   });
 });

@@ -279,15 +279,16 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
     await loginExpectingDashboard(pilotPage, PILOT_EMAIL);
     const me = (await (await pilotPage.request.get('/api/v1/me')).json()) as { person: { id: string } };
 
-    // The form's own `<select>` disables a grounded option, so the 422 is
+    // The form's own velivolo picker disables a grounded option, so the 422 is
     // reached the way it really happens: the aircraft is grounded AFTER the
     // page rendered, under the operator's feet.
     await pilotPage.goto('/it/dashboard/bookings');
     await pilotPage.getByTestId('new-booking-button').click();
     const form = pilotPage.getByTestId('new-booking-form');
-    // Selected by VALUE (the id), never by option text: the label of a grounded
-    // option carries the reason, and this test grounds the aircraft mid-flow.
-    await form.locator('select[name="aircraftId"]').selectOption(aircraft.id);
+    // Picked by its bare registration: the options were rendered while the
+    // aircraft was still operational (a grounded one would carry the reason in
+    // its label, and be disabled) — this test grounds it mid-flow.
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(`${futureDay}T09:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${futureDay}T10:00`);
     await ground(page, aircraft.id, reason, until);
@@ -312,7 +313,7 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
     await row.getByTestId('booking-move-action').click();
     const moveForm = pilotPage.getByTestId('move-booking-form');
     await ground(page, moveTargetAog.id, reason, until);
-    await moveForm.locator('select[name="aircraftId"]').selectOption(moveTargetAog.id);
+    await selectFromCombobox(moveForm.getByLabel('Velivolo'), moveTargetAog.registration, moveTargetAog.registration);
     await moveForm.getByTestId('move-booking-save').click();
     const moveError = pilotPage.getByTestId('move-booking-form-error');
     await expect(moveError).toContainText(reason);
@@ -323,7 +324,7 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
     await pilotPage.goto('/en/dashboard/bookings');
     await pilotPage.getByTestId('new-booking-button').click();
     const enForm = pilotPage.getByTestId('new-booking-form');
-    await enForm.locator('select[name="aircraftId"]').selectOption(enBooking.id);
+    await selectFromCombobox(enForm.getByLabel('Aircraft'), enBooking.registration, enBooking.registration);
     await enForm.getByLabel('Starts').fill(`${futureDay}T14:00`);
     await enForm.getByLabel('Ends', { exact: true }).fill(`${futureDay}T15:00`);
     await ground(page, enBooking.id, reason, until);
@@ -350,7 +351,7 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
     await pilotPage.goto('/it/dashboard/bookings');
     await pilotPage.getByTestId('new-booking-button').click();
     const form = pilotPage.getByTestId('new-booking-form');
-    await form.locator('select[name="aircraftId"]').selectOption(aircraft.id);
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(`${futureDay}T09:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${futureDay}T10:00`);
     await ground(page, aircraft.id, reason);

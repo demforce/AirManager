@@ -291,7 +291,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
-    await page.getByTestId('flight-form').getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Tipo di volo'), 'Scuola', 'Scuola');
     // 60' via takeoff/landing times.
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
@@ -552,11 +552,23 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // AC 2: forced + locked to SCHOOL, with a clear reason — never a choice
     // the service (STUDENT_FLIGHT_MUST_BE_SCHOOL) would reject.
     const flightTypeSelect = page.getByTestId('flight-type-select');
-    await expect(flightTypeSelect).toHaveValue('SCHOOL');
+    // Story 19.5: a combobox — its DOM value is the option's LABEL.
+    await expect(flightTypeSelect).toHaveValue('Scuola');
     await expect(flightTypeSelect).toBeDisabled();
     // Scoped to the form (lezione 103-F1): a page-level `getByText` could
     // also match unrelated copy elsewhere on the page.
     await expect(page.getByTestId('flight-form').locator('.fld-hint')).toContainText('Allievo senza brevetto');
+    // The disabled input's only programmatic explanation (review F4 14.3):
+    // still linked to it now that the control is a combobox (story 19.5, AC 9).
+    await expect(flightTypeSelect).toHaveAttribute('aria-describedby', 'flight-type-select-hint');
+    await expect(page.locator('#flight-type-select-hint')).toContainText('Allievo senza brevetto');
+    // Story 19.5 (AC 14): with the type locked on SCHOOL the solo switch is
+    // there and works — left on dual for the registration below.
+    const soloSwitch = page.getByRole('switch', { name: 'Volo solista', exact: true });
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
 
     // No dead end: the forced value is one the service actually accepts,
     // given the (unchanged) instructor requirement on every SCHOOL flight.
@@ -622,7 +634,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // the form already knows this person's profile at this point (it may
     // not — the prefilled person is not guaranteed to be on the server-
     // rendered options page, review's own "fuori dalle prime 100" case).
-    await expect(flightTypeSelect).toHaveValue('TOURISM');
+    await expect(flightTypeSelect).toHaveValue('Turismo');
     await expect(flightTypeSelect).toBeEnabled();
 
     // F2's own repro path: typing the person's OWN name into the picker
@@ -632,10 +644,12 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await personCombobox.click();
     await personCombobox.fill(pilot.lastName);
     await expect(page.getByRole('listbox').getByRole('option', { name: `${pilot.lastName} ${pilot.firstName}`, exact: true })).toBeVisible();
-    // NB: never `Escape` here — `SlideOver`'s window-level handler closes the
-    // WHOLE panel (slide-over.tsx:29-31), and the assertions below would then
-    // race the closing animation and read stale/absent nodes (that is exactly
-    // how this test first failed). Leaving the combobox popup open is fine:
+    // NB: never `Escape` here — since story 19.5 the first one closes only the
+    // popup, but one more (or one with the popup already closed) and
+    // `SlideOver`'s window-level handler closes the WHOLE panel, and the
+    // assertions below would then race the closing animation and read
+    // stale/absent nodes (that is exactly how this test first failed).
+    // Leaving the combobox popup open is fine:
     // the assertions below read the select's state, not its visibility, and
     // filling "Atterraggi" further down closes the popup naturally.
 
@@ -644,9 +658,10 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // invariant `disabled ⇒ value === 'SCHOOL'` holds trivially here since
     // correct mode never disables at all), and the correction hint now
     // explains the situation, naming the on-file type.
-    await expect(flightTypeSelect).toHaveValue('TOURISM');
+    await expect(flightTypeSelect).toHaveValue('Turismo');
     await expect(flightTypeSelect).toBeEnabled();
     await expect(page.getByTestId('flight-form').locator('.fld-hint')).toContainText('Turismo');
+    await expect(flightTypeSelect).toHaveAttribute('aria-describedby', 'flight-type-select-hint');
 
     // A cycles-only correction goes through untouched: type unchanged, no
     // instructor needed (still TOURISM), no new SCHOOL charge. `exact: true`:
@@ -1356,5 +1371,182 @@ test.describe('Aircraft price from the profile, frozen on the flight (Story 19.3
     const rows = ((await list.json()) as { items: Array<{ takeoffAt: string; breakdown: Breakdown }> }).items;
     const firstRow = rows.find((row) => row.takeoffAt === `${today}T09:00:00.000Z`);
     expect(firstRow?.breakdown).toMatchObject({ aircraftRateCentsPerHour: 14000, aircraftAmountCents: 7000, aircraftPriceCategory: 'PILOT' });
+  });
+});
+
+test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch (Story 19.5)', () => {
+  test('a SCHOOL flight registered SOLO from the UI: Tipo di volo is a combobox, the switch appears only on SCHOOL, is reached by Tab, toggled by Space/Enter/click without submitting, and isSolo + PIC follow it (AC 9/10/13/14/15a/16)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsSolo195!');
+    const instructor = await createInstructorWithRate(page, 4000);
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    const form = page.getByTestId('flight-form');
+
+    // AC 10: the four choice fields are the SAME component — no native
+    // select, no radio left in the form, one label + `.input` per field.
+    await expect(form.locator('[role="combobox"]')).toHaveCount(4);
+    await expect(form.locator('select')).toHaveCount(0);
+    await expect(form.locator('input[type="radio"]')).toHaveCount(0);
+    const structure = await form.locator('[role="combobox"]').evaluateAll((inputs) =>
+      inputs.map((input) => input.classList.contains('input') && input.closest('.fld')?.querySelector(':scope > .fld-label') !== null),
+    );
+    expect(structure).toEqual([true, true, true, true]);
+
+    // AC 9: Tipo di volo — default «Turismo», a two-option popup, static
+    // (typing in it calls no search API), driven from the keyboard. Done
+    // BEFORE the three server-searched pickers: their debounced search could
+    // otherwise land inside the listener below.
+    const searchCalls: string[] = [];
+    page.on('request', (request) => {
+      if (/\/api\/v1\/(aircraft|people)/.test(new URL(request.url()).pathname)) searchCalls.push(request.url());
+    });
+    const typeCombobox = form.getByLabel('Tipo di volo');
+    await expect(typeCombobox).toHaveAttribute('role', 'combobox');
+    await expect(typeCombobox).toHaveValue('Turismo');
+    const soloSwitch = form.getByRole('switch', { name: 'Volo solista', exact: true });
+    // AC 14: never on a TOURISM flight.
+    await expect(soloSwitch).toHaveCount(0);
+    await typeCombobox.click();
+    const typeOptions = page.getByRole('listbox').getByRole('option');
+    await expect(typeOptions).toHaveText(['Turismo', 'Scuola']);
+    await typeCombobox.fill('scu');
+    await expect(typeOptions).toHaveText(['Scuola']);
+    await page.keyboard.press('Enter');
+    await expect(typeCombobox).toHaveValue('Scuola');
+    expect(searchCalls).toEqual([]);
+
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
+
+    // AC 13: the switch, off = dual, its own visible state text.
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+    await expect(soloSwitch).toHaveText('Doppio comando');
+    await expect(soloSwitch).toHaveAttribute('data-testid', 'flight-solo-toggle');
+    // AC 15d: a 44px full-cell target at the desktop width too.
+    expect((await soloSwitch.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+    // AC 15a: Tab goes Tipo di volo -> switch -> Partenza; Space and Enter toggle it.
+    await typeCombobox.focus();
+    await page.keyboard.press('Tab');
+    await expect(soloSwitch).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await expect(soloSwitch).toHaveText('Solista');
+    await page.keyboard.press('Enter');
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+    // Neither key submitted the form: an empty-times submit would light up
+    // the required-field errors (and no result panel ever appears).
+    await expect(form.locator('.fld-error')).toHaveCount(0);
+    await expect(page.getByTestId('flight-result-panel')).toHaveCount(0);
+    await page.keyboard.press('Tab');
+    await expect(form.getByLabel('Aeroporto di partenza')).toBeFocused();
+
+    // AC 14: back to TOURISM removes the switch AND clears isSolo; back to
+    // SCHOOL shows it again, off. The exact-name lookup resolving in both
+    // states is the "same accessible name on and off" check (AC 13).
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await selectFromCombobox(typeCombobox, 'Turismo', 'Turismo');
+    await expect(soloSwitch).toHaveCount(0);
+    await selectFromCombobox(typeCombobox, 'Scuola', 'Scuola');
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+
+    // AC 16: the value sent is the switch's own state, and the PIC follows it.
+    const listResponse = await page.request.get(`/api/v1/flights?personId=${pilot.personId}&pageSize=10`);
+    expect(listResponse.status()).toBe(200);
+    const items = ((await listResponse.json()) as { items: Array<{ flightType: string; isSolo: boolean }> }).items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ flightType: 'SCHOOL', isSolo: true });
+    await page.getByTestId('flight-result-close').click();
+    const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
+    await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${pilot.lastName} ${pilot.firstName}`);
+  });
+
+  test('correcting a SOLO SCHOOL flight opens the switch ON, Tipo di volo on the recorded value, the form still four comboboxes (AC 9/10/14)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsSolo195b!');
+    const instructor = await createInstructorWithRate(page, 4000);
+    const response = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        instructorPersonId: instructor.personId,
+        departureAirfield: 'Base',
+        arrivalAirfield: 'Base',
+        flightType: 'SCHOOL',
+        isSolo: true,
+        ...flightTimes(PAST_DATE, 30),
+      },
+    });
+    expect(response.status()).toBe(201);
+
+    // Through the URL, never the 100-option velivolo filter (review 19.3 F1).
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
+    const row = page.getByTestId('flight-row');
+    await expect(row).toHaveCount(1);
+    await row.getByTestId('flight-correct-action').click();
+    const form = page.getByTestId('flight-form');
+    await expect(form).toBeVisible();
+
+    await expect(form.locator('[role="combobox"]')).toHaveCount(4);
+    await expect(form.locator('select')).toHaveCount(0);
+    await expect(form.locator('input[type="radio"]')).toHaveCount(0);
+    await expect(page.getByTestId('flight-type-select')).toHaveValue('Scuola');
+    await expect(page.getByTestId('flight-type-select')).toBeEnabled();
+    const soloSwitch = form.getByRole('switch', { name: 'Volo solista', exact: true });
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await expect(soloSwitch).toHaveText('Solista');
+  });
+
+  test('the removed AERIAL_WORK type is a 422 on register, correct, list and both exports, absent from the OpenAPI; the registry page ignores it and offers two types (AC 3/4)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsAerial195!');
+    const body = { aircraftId: aircraft.id, personId: pilot.personId, departureAirfield: 'Base', arrivalAirfield: 'Base', ...flightTimes(PAST_DATE, 30) };
+
+    const register = await page.request.post('/api/v1/flights', { data: { ...body, flightType: 'AERIAL_WORK' } });
+    expect(register.status()).toBe(422);
+    expect(((await register.json()) as { error: { code: string } }).error.code).toBe('VALIDATION_ERROR');
+
+    const valid = await page.request.post('/api/v1/flights', { data: { ...body, flightType: 'TOURISM' } });
+    expect(valid.status()).toBe(201);
+    const flightId = ((await valid.json()) as { flight: { id: string } }).flight.id;
+    const correct = await page.request.post(`/api/v1/flights/${flightId}/correct`, { data: { ...body, flightType: 'AERIAL_WORK', reason: 'Tipo rimosso' } });
+    expect(correct.status()).toBe(422);
+    expect(((await correct.json()) as { error: { code: string } }).error.code).toBe('VALIDATION_ERROR');
+
+    for (const url of ['/api/v1/flights?flightType=AERIAL_WORK', '/api/v1/flights?flightType=AERIAL_WORK&format=xlsx', '/api/v1/flights/pdf?flightType=AERIAL_WORK']) {
+      const listed = await page.request.get(url);
+      expect(listed.status(), url).toBe(422);
+      expect(((await listed.json()) as { error: { code: string } }).error.code, url).toBe('VALIDATION_ERROR');
+    }
+
+    const openapi = await page.request.get('/api/v1/openapi.json');
+    expect(openapi.status()).toBe(200);
+    expect(await openapi.text()).not.toContain('AERIAL_WORK');
+
+    // A hand-typed URL is dropped by `sanitizeFlightType`: the unfiltered
+    // registry, no error, the type filter on «Tutti i tipi».
+    const pageResponse = await page.goto('/it/dashboard/logbook?flightType=AERIAL_WORK');
+    expect(pageResponse?.status()).toBe(200);
+    const typeFilter = page.getByTestId('flight-filter-type');
+    await expect(typeFilter).toHaveValue('');
+    await expect(typeFilter.locator('option')).toHaveText(['Tutti i tipi', 'Turismo', 'Scuola']);
   });
 });

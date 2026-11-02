@@ -372,6 +372,14 @@ test.describe('review 15.10 MAJOR-2 — the modal context includes the portals t
     // (`fixed-popover.ts`), so the FIRST Escape closes only the popover — the
     // panel survives, the focus returns to the trigger — and a second one
     // closes the panel. Measured, both before and after this fix.
+    // Story 19.5: the back-tabs above end on the person picker, a
+    // `SearchCombobox` since that story, whose focus opens a popup of its own
+    // (kept or not, depending on whether the `.so-body` scroll that revealed
+    // the field closed it — the 14.1 F4 rule, measured both ways). The focus
+    // goes back into the calendar first, so the sequence below measures the
+    // calendar popover alone, as it always did.
+    await popover.locator('.cal-foot .btn').first().focus();
+    await expect(page.locator('.combo-listbox')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(popover).toHaveCount(0);
     await expect(page.locator('.slideover.open')).toHaveCount(1);

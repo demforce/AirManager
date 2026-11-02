@@ -233,12 +233,11 @@ export async function getStats(actor: Actor, query: StatsQuery, now: Date = new 
     }
   }
 
-  // --- movementMix (ratifica utente 1: fixed order, always all 3 keys) ---
+  // --- movementMix (ratifica utente 1: fixed order, always both keys — story 19.5) ---
   const countByType = new Map(typeGroups.map((group) => [group.flightType, group._count._all]));
   const movementMix = [
     { key: 'SCHOOL' as const, count: countByType.get('SCHOOL') ?? 0 },
     { key: 'TOURISM' as const, count: countByType.get('TOURISM') ?? 0 },
-    { key: 'AERIAL_WORK' as const, count: countByType.get('AERIAL_WORK') ?? 0 },
   ];
 
   // --- instructors ---------------------------------------------------------

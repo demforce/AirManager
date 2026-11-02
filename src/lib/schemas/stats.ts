@@ -71,8 +71,8 @@ export const statsFleetItemSchema = z.object({
   revenueCents: z.number().int(),
 });
 
-/** Movement composition key (ratifica utente 1) — the 3 real `FlightType` values. */
-export const statsMovementMixKeySchema = z.enum(['SCHOOL', 'TOURISM', 'AERIAL_WORK']);
+/** Movement composition key (ratifica utente 1) — the 2 real `FlightType` values (story 19.5). */
+export const statsMovementMixKeySchema = z.enum(['SCHOOL', 'TOURISM']);
 
 export const statsMovementMixItemSchema = z.object({
   key: statsMovementMixKeySchema,

@@ -387,4 +387,8 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       expect(refs).not.toContain('#/components/parameters/IdempotencyKey');
     });
   });
+
+  it('no longer documents the removed AERIAL_WORK flight type anywhere (story 19.5, AC 3)', () => {
+    expect(JSON.stringify(doc)).not.toContain('AERIAL_WORK');
+  });
 });

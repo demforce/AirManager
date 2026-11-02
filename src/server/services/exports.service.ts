@@ -213,13 +213,8 @@ export async function exportAircraftXlsx(actor: Actor, query: ListAircraftQuery)
 
 // --- Flights (`GET /api/v1/flights`) ----------------------------------------
 
-function flightTypeLabel(
-  flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK',
-  labels: { private: string; school: string; other: string },
-): string {
-  if (flightType === 'TOURISM') return labels.private;
-  if (flightType === 'SCHOOL') return labels.school;
-  return labels.other;
+function flightTypeLabel(flightType: 'TOURISM' | 'SCHOOL', labels: { private: string; school: string }): string {
+  return flightType === 'SCHOOL' ? labels.school : labels.private;
 }
 
 export async function exportFlightsXlsx(actor: Actor, query: ListFlightsQuery): Promise<XlsxExport> {
@@ -229,7 +224,7 @@ export async function exportFlightsXlsx(actor: Actor, query: ListFlightsQuery): 
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'FlightsPage' });
-  const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school'), other: t('form.flightTypes.other') };
+  const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school') };
 
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
     { header: t('list.table.date'), value: (row) => formatDateOnly(row.flightDate, locale) },
@@ -574,7 +569,7 @@ export async function exportFlightsPdf(actor: Actor, query: ListFlightsQuery): P
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'FlightsPage' });
-  const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school'), other: t('form.flightTypes.other') };
+  const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school') };
 
   // Story 11.3 (AC 3): relative `width` weights, NOT equal `flex:1` anymore —
   // found via the real-PDF render check (Dev Notes, T3): with 12 equal

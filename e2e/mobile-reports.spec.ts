@@ -514,10 +514,10 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
         const segAlt = (await page.evaluate('__c.bg(".util-bar .seg")')) as number[];
         for (const ratio of segAlt) expect(ratio).toBeGreaterThanOrEqual(3);
 
-        // 3) the three "Composizione movimenti" bands AND their legend dots,
+        // 3) the two "Composizione movimenti" bands AND their legend dots,
         // which share the same tone map (the dots were not in the list either).
-        const bands = (await page.evaluate('__c.bg(".flow-bar-in, .flow-bar-accent, .flow-bar-muted")')) as number[];
-        expect(bands.length).toBeGreaterThanOrEqual(6);
+        const bands = (await page.evaluate('__c.bg(".flow-bar-in, .flow-bar-accent")')) as number[];
+        expect(bands.length).toBeGreaterThanOrEqual(4);
         for (const ratio of bands) expect(ratio).toBeGreaterThanOrEqual(3);
 
         // 4) `.chart-label` is TEXT: the floor is 4.5, not 3.

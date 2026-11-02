@@ -408,6 +408,7 @@ come testo storico: dove contraddicono questa tabella, vale questa tabella.
 | FR-9 | Eliminato (nessun contaore) |
 | FR-10 | Prezzo allievo + prezzo pilota per velivolo, scelto dal profilo della persona (profili pilota/allievo esclusivi); validFrom ≥ oggi; storico non mostrato |
 | FR-11 | Tariffe istruttore con validFrom ≥ oggi; storico non mostrato |
+| FR-14 | Tipo volo: Turismo o Scuola (Lavoro aereo eliminato); doppio comando/solista solo sui voli Scuola |
 | FR-16 | Annullare = cancellare volo e addebito; modificare = aggiornamento in place |
 | FR-21 | Check su scadenze, currency, saldo (copertura del costo), quota associativa per voli e prenotazioni; avviso + conferma per l'admin, nessuna deroga per piloti/istruttori |
 | FR-22, FR-23, FR-24 | Eliminati (dominio PPR rimosso, §4.7) |

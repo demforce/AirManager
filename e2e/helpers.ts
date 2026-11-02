@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 /** A comfortably far-future date — never itself the boundary under test. */
 export const FAR_FUTURE_DATE = '2099-12-31';
@@ -87,4 +87,17 @@ export function todayRome(): string {
 export function addDaysIso(date: string, days: number): string {
   const [year, month, day] = date.split('-').map(Number) as [number, number, number];
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Types into a `SearchCombobox` and clicks the matching option (story 19.5:
+ * the booking forms' choice fields became comboboxes) — same body as the
+ * local copies in `flights.spec.ts`/`flight-reversal.spec.ts`. `combobox`
+ * must already resolve to the specific `<input>`; the option lookup is scoped
+ * to the popup (`role=listbox`) with `exact: true`, never page-level.
+ */
+export async function selectFromCombobox(combobox: Locator, query: string, optionLabel: string): Promise<void> {
+  await combobox.click();
+  await combobox.fill(query);
+  await combobox.page().getByRole('listbox').getByRole('option', { name: optionLabel, exact: true }).click();
 }

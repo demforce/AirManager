@@ -70,7 +70,7 @@ type RegisterFlightParams = {
   aircraftId: string;
   personId: string;
   flightDate: string;
-  flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
+  flightType: 'TOURISM' | 'SCHOOL';
   minutes: number;
 };
 

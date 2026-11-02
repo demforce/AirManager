@@ -1,16 +1,18 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { useRouter } from '@/i18n/navigation';
+import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { DateTimeInput } from '@/components/ui/datetime-input';
-import { Field, Input, Select } from '@/components/ui/field';
+import { Field, Input } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
 import { Segmented } from '@/components/ui/segmented';
 import { SlideOver } from '@/components/ui/slide-over';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatDateOnly } from '@/lib/time';
 
 export type NewBookingFormMode = 'staff' | 'instructor' | 'pilot';
@@ -31,7 +33,8 @@ export type InstructorOption = { instructorProfileId: string; firstName: string;
 export type NewBookingFormLabels = {
   title: string;
   subtitle: string;
-  selectPlaceholder: string;
+  /** Story 19.5 (D-7): the pickers' placeholder and empty row — the same two texts as the flight form's own `picker`. */
+  picker: { placeholder: string; noResults: string };
   aircraft: string;
   /** `{reason}` placeholder, client-filled (same `t.raw` pattern as `flights-manager.tsx`'s `packageNote`). */
   outOfServiceSuffix: string;
@@ -178,13 +181,21 @@ type ApiErrorBody = {
 /** `POST /api/v1/bookings`'s success envelope (story 7.4, AC 1) — `{ booking, warnings }`, replacing the bare item this route answered before this story. */
 type CreateBookingResponseBody = { booking: { id: string }; warnings: Array<{ typeName: string; expiresAt: string }> };
 
+/** Story AOG-1 / 19.5 (D-5): an out-of-service aircraft is listed WITH its reason but cannot be picked — same label the flight form's picker uses. Shared with the move form. */
+export function aircraftOptionLabel(aircraft: AircraftOption, outOfServiceSuffix: string): string {
+  if (aircraft.status !== 'OUT_OF_SERVICE') return aircraft.registration;
+  return `${aircraft.registration} — ${outOfServiceSuffix.replace('{reason}', aircraft.statusReason ?? '')}`;
+}
+
 /**
  * "Nuova prenotazione" (story 12.3, AC 4) — the SAME 7.1/7.3/7.4 mechanics
  * (mode-scoped picker, expiry block + staff "Forza prenotazione", success/
  * warning banners) as the legacy `new-booking-form.tsx`, re-skinned inside a
- * `SlideOver` with `Field`/`Input`/`Select` (12.1 primitives) instead of the
- * legacy Tailwind markup — Contesto: "parità funzionale COMPLETA col form
- * legacy". `data-testid="new-booking-form"`/`booking-form-*`/`force-booking-*`
+ * `SlideOver` with `Field`/`Input` (12.1 primitives) instead of the legacy
+ * Tailwind markup, and with one `SearchCombobox` per choice field since story
+ * 19.5 (A15/A18: the flight form's own dropdown) — Contesto: "parità
+ * funzionale COMPLETA col form legacy".
+ * `data-testid="new-booking-form"`/`booking-form-*`/`force-booking-*`
  * are kept UNCHANGED (Contesto: "per minimizzare il churn e2e") — which is
  * why the submit/cancel buttons stay INSIDE this `<form>` element rather
  * than `SlideOver`'s separate `footer` slot: e2e locates them via
@@ -237,12 +248,48 @@ export function NewBookingForm({
 
   const resolver = useMemo(() => zodResolver(buildFormSchema(mode, bookingTarget)), [mode, bookingTarget]);
 
+  // Story 19.5 (AD-5): the choice fields are `SearchCombobox`es bridged with
+  // RHF's `Controller`; the combobox forwards no `ref`, so RHF's own
+  // `shouldFocusError` would skip them and land on «Inizio» — off, and the
+  // invalid branch focuses the first `aria-invalid` field in DOM order
+  // instead (story 14.2's `focusFirstInvalid`).
+  const formRef = useRef<HTMLFormElement | null>(null);
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver, defaultValues: DEFAULT_VALUES });
+  } = useForm<FormValues>({ resolver, defaultValues: DEFAULT_VALUES, shouldFocusError: false });
+
+  // Story 19.5 (D-4): static mode — the comboboxes filter these server-rendered
+  // lists locally (no `fetchOptions`): a pilot or an instructor cannot call the
+  // people/aircraft search APIs, and the lists are exactly what each actor may
+  // pick today.
+  const personComboOptions = useMemo<SearchComboboxOption[]>(
+    () => personOptions.map((person) => ({ id: person.id, label: `${person.lastName} ${person.firstName}` })),
+    [personOptions],
+  );
+  const aircraftComboOptions = useMemo<SearchComboboxOption[]>(
+    () =>
+      aircraftOptions.map((aircraft) => ({
+        id: aircraft.id,
+        label: aircraftOptionLabel(aircraft, labels.outOfServiceSuffix),
+        disabled: aircraft.status === 'OUT_OF_SERVICE',
+      })),
+    [aircraftOptions, labels.outOfServiceSuffix],
+  );
+  const instructorComboOptions = useMemo<SearchComboboxOption[]>(
+    () => [
+      { id: '', label: labels.noInstructor },
+      ...instructorOptions.map((instructor) => ({ id: instructor.instructorProfileId, label: `${instructor.lastName} ${instructor.firstName}` })),
+    ],
+    [instructorOptions, labels.noInstructor],
+  );
+  const studentComboOptions = useMemo<SearchComboboxOption[]>(
+    () => studentOptions.map((student) => ({ id: student.id, label: `${student.lastName} ${student.firstName}` })),
+    [studentOptions],
+  );
 
   function fieldErrorLabel(fieldError: { message?: string } | undefined): string | null {
     if (!fieldError?.message) {
@@ -425,46 +472,75 @@ export function NewBookingForm({
 
   return (
     <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.force.cancel}>
-      <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="new-booking-form">
+      <form
+        ref={formRef}
+        onSubmit={(event) => void handleSubmit(onSubmit, () => setTimeout(() => focusFirstInvalid(formRef.current), 0))(event)}
+        noValidate
+        data-testid="new-booking-form"
+      >
         <div className="form-grid">
+          {/* `SearchCombobox` renders its OWN `.fld` + `<label>` (story TD-3):
+              these cells use a bare `.fld`/`.fld.wide` wrapper, never a
+              `Field`, which would double the label — same as the flight form. */}
           {mode === 'staff' ? (
-            <Field label={labels.person} wide error={fieldErrorLabel(errors.personId) ?? undefined}>
-              <Select aria-invalid={Boolean(errors.personId)} {...register('personId')}>
-                <option value="">{labels.selectPlaceholder}</option>
-                {personOptions.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.lastName} {person.firstName}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <div className="fld wide">
+              <Controller
+                name="personId"
+                control={control}
+                render={({ field, fieldState }) => (
+                  <SearchCombobox
+                    id="booking-person"
+                    label={labels.person}
+                    value={field.value}
+                    onChange={field.onChange}
+                    initialOptions={personComboOptions}
+                    placeholder={labels.picker.placeholder}
+                    emptyText={labels.picker.noResults}
+                    error={fieldErrorLabel(fieldState.error) ?? undefined}
+                  />
+                )}
+              />
+            </div>
           ) : null}
           {mode === 'staff' && personOptions.length === 0 ? <p className="fld-label">{labels.noPersonAvailable}</p> : null}
 
-          <Field label={labels.aircraft} error={fieldErrorLabel(errors.aircraftId) ?? undefined}>
-            <Select aria-invalid={Boolean(errors.aircraftId)} {...register('aircraftId')}>
-              <option value="">{labels.selectPlaceholder}</option>
-              {aircraftOptions.map((aircraft) => (
-                <option key={aircraft.id} value={aircraft.id} disabled={aircraft.status === 'OUT_OF_SERVICE'}>
-                  {aircraft.status === 'OUT_OF_SERVICE'
-                    ? `${aircraft.registration} — ${labels.outOfServiceSuffix.replace('{reason}', aircraft.statusReason ?? '')}`
-                    : aircraft.registration}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <div className="fld">
+            <Controller
+              name="aircraftId"
+              control={control}
+              render={({ field, fieldState }) => (
+                <SearchCombobox
+                  id="booking-aircraft"
+                  label={labels.aircraft}
+                  value={field.value}
+                  onChange={field.onChange}
+                  initialOptions={aircraftComboOptions}
+                  placeholder={labels.picker.placeholder}
+                  emptyText={labels.picker.noResults}
+                  error={fieldErrorLabel(fieldState.error) ?? undefined}
+                />
+              )}
+            />
+          </div>
 
           {mode === 'staff' ? (
-            <Field label={labels.instructorOptional}>
-              <Select {...register('instructorProfileId')}>
-                <option value="">{labels.noInstructor}</option>
-                {instructorOptions.map((instructor) => (
-                  <option key={instructor.instructorProfileId} value={instructor.instructorProfileId}>
-                    {instructor.lastName} {instructor.firstName}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <div className="fld">
+              <Controller
+                name="instructorProfileId"
+                control={control}
+                render={({ field }) => (
+                  <SearchCombobox
+                    id="booking-instructor"
+                    label={labels.instructorOptional}
+                    value={field.value}
+                    onChange={field.onChange}
+                    initialOptions={instructorComboOptions}
+                    placeholder={labels.picker.placeholder}
+                    emptyText={labels.picker.noResults}
+                  />
+                )}
+              />
+            </div>
           ) : null}
 
           {/* Story 14.7, AC 1: one binary AirOps `Segmented` control instead of
@@ -511,16 +587,24 @@ export function NewBookingForm({
           ) : null}
 
           {mode === 'instructor' && bookingTarget === 'student' ? (
-            <Field label={labels.student} error={fieldErrorLabel(errors.studentId) ?? undefined}>
-              <Select aria-invalid={Boolean(errors.studentId)} {...register('studentId')}>
-                <option value="">{labels.selectPlaceholder}</option>
-                {studentOptions.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.lastName} {student.firstName}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <div className="fld">
+              <Controller
+                name="studentId"
+                control={control}
+                render={({ field, fieldState }) => (
+                  <SearchCombobox
+                    id="booking-student"
+                    label={labels.student}
+                    value={field.value}
+                    onChange={field.onChange}
+                    initialOptions={studentComboOptions}
+                    placeholder={labels.picker.placeholder}
+                    emptyText={labels.picker.noResults}
+                    error={fieldErrorLabel(fieldState.error) ?? undefined}
+                  />
+                )}
+              />
+            </div>
           ) : null}
           {mode === 'instructor' && bookingTarget === 'student' && studentOptions.length === 0 ? <p className="fld-label">{labels.noStudentAvailable}</p> : null}
 

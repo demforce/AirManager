@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
-import { todayRome } from './helpers';
+import { selectFromCombobox, todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -458,7 +458,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T10:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -490,14 +490,14 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const formAfterApproval = page.getByTestId('new-booking-form');
 
     // Overlapping attempt on the SAME run-unique aircraft -> 409, never conflated with a 422.
-    await formAfterApproval.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(formAfterApproval.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await formAfterApproval.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:30`);
     await formAfterApproval.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T10:30`);
     await formAfterApproval.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-error')).toContainText('già prenotato');
 
     // Back-to-back: starts exactly when the first (APPROVED) booking ends -> semi-open, no overlap, 201.
-    await formAfterApproval.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(formAfterApproval.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await formAfterApproval.getByLabel('Inizio').fill(`${FUTURE_DAY}T10:00`);
     await formAfterApproval.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T11:00`);
     await formAfterApproval.getByRole('button', { name: 'Prenota' }).click();
@@ -518,8 +518,8 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(form.getByLabel('Pilota o allievo'), `${pilot.lastName} ${pilot.firstName}`, `${pilot.lastName} ${pilot.firstName}`);
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T13:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T14:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -530,7 +530,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(row).toContainText(`${pilot.firstName} ${pilot.lastName}`);
   });
 
-  test('a run-unique aircraft OUT_OF_SERVICE shows a disabled option and rejects a direct API attempt with the reason (422)', async ({
+  test('a run-unique aircraft OUT_OF_SERVICE shows a disabled option (click and Enter pick nothing) and rejects a direct API attempt with the reason (422)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -541,17 +541,32 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const oosResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/out-of-service`, { data: { reason } });
     expect(oosResponse.status()).toBe(200);
 
-    await page.goto('/it/dashboard/bookings');
+    await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    const aircraftOption = form.getByLabel('Velivolo').locator('option', { hasText: aircraft.registration });
-    await expect(aircraftOption).toHaveText(new RegExp(reason));
-    // `toBeDisabled()` is unreliable for a plain `<option>` in this Chromium
-    // build (pre-existing, unrelated to this story: the DOM `disabled`
-    // property, `hasAttribute('disabled')`, and `:disabled` all agree the
-    // option IS disabled, yet `toBeDisabled()` still reports "enabled") —
-    // asserting the attribute directly is the same check without that quirk.
-    await expect(aircraftOption).toHaveAttribute('disabled', '');
+    // Story 19.5 (D-5, AC 18): the velivolo picker is a `SearchCombobox`; the
+    // grounded aircraft is listed WITH its reason, `aria-disabled`, and picks
+    // nothing — the same contract the native `<option disabled>` had.
+    const aircraftCombobox = form.getByLabel('Velivolo');
+    await aircraftCombobox.click();
+    await aircraftCombobox.fill(aircraft.registration);
+    const listbox = page.getByRole('listbox');
+    const aircraftOption = listbox.getByRole('option', { name: new RegExp(reason) });
+    await expect(aircraftOption).toHaveText(`${aircraft.registration} — ${reason} (fuori servizio)`);
+    await expect(aircraftOption).toHaveAttribute('aria-disabled', 'true');
+    // `force`: Playwright itself treats an `aria-disabled` option as not
+    // enabled and would wait forever — the click must reach the row to prove
+    // the row ignores it.
+    await aircraftOption.click({ force: true });
+    await expect(listbox).toBeVisible();
+    // It is the only (hence active) option: Enter commits nothing AND submits
+    // nothing (a submit would light up the required-field errors).
+    await page.keyboard.press('Enter');
+    await expect(listbox).toBeVisible();
+    await expect(form.locator('.fld-error')).toHaveCount(0);
+    // Leaving the field reverts the typed text to the (empty) selection.
+    await form.getByLabel('Note', { exact: true }).click();
+    await expect(aircraftCombobox).toHaveValue('');
 
     // The service re-verifies regardless of the disabled UI control (AD-5) — a direct API attempt confirms the 422.
     const response = await page.request.post('/api/v1/bookings', {
@@ -582,19 +597,14 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     // Story 14.7, AC 1: the "per me"/"per un allievo" radio pair became one
     // `Segmented` control — its options render as `<button>`s, not radios.
     await form.getByRole('button', { name: 'Per un allievo' }).click();
-    // Pre-existing bug uncovered by review 12.3 F1 (out of scope to fix in
-    // product code here): `Field`'s implicit `<label>` wraps the `<select>`
-    // as a DOM child, so the browser's computed accessible name concatenates
-    // the label text with EVERY `<option>`'s text — `getByLabel('Allievo',
-    // { exact: true })` therefore never matches (it never equals the bare
-    // "Allievo" string). `select[name="studentId"]` targets the SAME control
-    // precisely (matches `register('studentId')` in `new-booking-form.tsx`),
-    // sidestepping the polluted accessible name entirely.
-    await form.locator('select[name="studentId"]').selectOption({ label: `${student.lastName} ${student.firstName}` });
+    // Story 19.5 (AC 22): the combobox's `<label htmlFor>` is a SIBLING of the
+    // input, so its accessible name is exactly "Allievo" — `exact: true` keeps
+    // it from also matching "Pilota o allievo" elsewhere on the page.
+    await selectFromCombobox(form.getByLabel('Allievo', { exact: true }), `${student.lastName} ${student.firstName}`, `${student.lastName} ${student.firstName}`);
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T15:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T16:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -623,7 +633,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
     await expect(form.getByRole('button', { name: 'Per me' })).toHaveClass('on');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T17:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T18:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -1141,7 +1151,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T03:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -1159,7 +1169,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // change BOTH the aircraft and the interval.
     await row.getByTestId('booking-move-action').click();
     const moveForm = page.getByTestId('move-booking-form');
-    await moveForm.getByLabel('Velivolo').selectOption({ label: aircraft2.registration });
+    await selectFromCombobox(moveForm.getByLabel('Velivolo'), aircraft2.registration, aircraft2.registration);
     await moveForm.getByLabel('Inizio').fill(`${FUTURE_DAY}T13:00`);
     await moveForm.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T14:00`);
     await moveForm.getByTestId('move-booking-save').click();
@@ -1214,13 +1224,13 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T03:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T05:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T06:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -1459,7 +1469,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T06:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T07:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -1490,7 +1500,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // list, so it needs a slot that outranks EVERYTHING else in it, not
     // merely a day that avoids `FUTURE_DAY`'s own accumulated volume.
     const slot = soonestFutureSlot();
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(slot.startsAt);
     await form.getByLabel('Fine', { exact: true }).fill(slot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -1525,8 +1535,8 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     // assertion above for the rationale (only "outranks everything else in
     // the globally-sorted list" survives this DB's accumulated volume).
     const slot = soonestFutureSlot();
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(form.getByLabel('Pilota o allievo'), `${pilot.lastName} ${pilot.firstName}`, `${pilot.lastName} ${pilot.firstName}`);
     await form.getByLabel('Inizio').fill(slot.startsAt);
     await form.getByLabel('Fine', { exact: true }).fill(slot.endsAt);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -1632,7 +1642,7 @@ test.describe('Booking expiry block (Story 7.4, AC 1/2)', () => {
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await form.getByLabel('Inizio').fill(`${DAY_1}T12:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${DAY_1}T13:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
@@ -2223,15 +2233,15 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraftA.registration });
-    await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraftA.registration, aircraftA.registration);
+    await selectFromCombobox(form.getByLabel('Pilota o allievo'), `${pilot.lastName} ${pilot.firstName}`, `${pilot.lastName} ${pilot.firstName}`);
     await form.getByLabel('Inizio').fill(`${DAY}T09:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${DAY}T10:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();
     // Same aircraft AND same person: the aircraft message, as before the story.
     await expect(page.getByTestId('booking-form-error')).toContainText('Il velivolo è già prenotato');
 
-    await form.getByLabel('Velivolo').selectOption({ label: aircraftB.registration });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraftB.registration, aircraftB.registration);
     await form.getByRole('button', { name: 'Prenota' }).click();
     // A free aircraft: the PERSON is what is busy, and the form says so.
     const error = page.getByTestId('booking-form-error');
@@ -2256,8 +2266,8 @@ test.describe('One person in one place (Story 16.3, ops F2/F4/F9, ratifiche R-16
     await gotoBookingsAndWaitForHydration(page);
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraftB.registration });
-    await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraftB.registration, aircraftB.registration);
+    await selectFromCombobox(form.getByLabel('Pilota o allievo'), `${pilot.lastName} ${pilot.firstName}`, `${pilot.lastName} ${pilot.firstName}`);
     await form.getByLabel('Inizio').fill(`${DAY}T09:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${DAY}T10:00`);
     await form.getByRole('button', { name: 'Prenota' }).click();

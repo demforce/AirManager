@@ -772,14 +772,13 @@ html[data-theme="dark"] .stat-tone-warn{ color: var(--warn); }
    movimenti" bands 2.73 / 2.04 / 4.85 / 3.61 — with their legend DOTS
    carrying the identical four values (a second unlisted family). Every
    tone gets the same 70/30 ink mix so that a band strip stays ONE palette
-   instead of darkened bands next to untouched ones; `--ink-3` was already
-   above the 3:1 floor and is mixed for that reason only, never to reach it.
-   No token changes value, no new literal. */
+   instead of darkened bands next to untouched ones. No token changes value,
+   no new literal. (Story 19.5 removed the third flight type, and with it
+   the class of its `--ink-3` band.) */
 .flow-bar-in,
 .util-bar .seg.flown{ background: color-mix(in oklch, var(--ok) 70%, var(--ink)); }
 .flow-bar-out{ background: color-mix(in oklch, var(--bad) 70%, var(--ink)); }
 .flow-bar-accent{ background: color-mix(in oklch, var(--accent) 70%, var(--ink)); }
-.flow-bar-muted{ background: color-mix(in oklch, var(--ink-3) 70%, var(--ink)); }
 
 /* Story 13.9: block-level alert/confirmation box for the (auth) forms
    (login/forgot-password/set-password) — same soft-bg + colored-text pairs
@@ -1227,6 +1226,49 @@ html[data-theme="dark"] .fld-error{ color: var(--bad); }
   color: var(--ink-3);
 }
 
+/* Story 19.5 (AD-4): `Toggle` (`ui/toggle.tsx`), the on/off switch that
+   replaces the dual/solo radios — a full-cell button, 44px tall at every
+   width (the PO's «bottonone»), the track + thumb on the left and the state
+   text after it. Off = a neutral `.input`-like surface; on = the same pair as
+   `.btn.on` (accent-soft fill, accent border, accent-ink text), so a pressed
+   switch reads like every other pressed control in the app. Only `transform`
+   is animated on the thumb; contrast measured in both themes (story Dev
+   Agent Record §H). No global focus ring exists in this file, so the switch
+   carries its own, keyboard-only. */
+.toggle{
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; min-height: 44px;
+  padding: 8px 12px;
+  font: inherit; font-size: 13.5px; font-weight: 500; text-align: left;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t);
+}
+.toggle:hover{ background: var(--bg-sunken); }
+.toggle[aria-checked="true"]{ background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.toggle:focus-visible{ outline: 2px solid var(--ink); outline-offset: 2px; }
+.toggle-track{
+  position: relative; flex-shrink: 0;
+  width: 36px; height: 20px;
+  border-radius: 999px;
+  background: var(--ink-3);
+}
+.toggle[aria-checked="true"] .toggle-track{ background: var(--accent-ink); }
+.toggle-thumb{
+  position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--panel);
+  transition: transform var(--t);
+}
+.toggle[aria-checked="true"] .toggle-thumb{ transform: translateX(16px); }
+@media (prefers-reduced-motion: reduce){
+  .toggle, .toggle-thumb{ transition: none; }
+}
+
 .segmented{
   display: inline-flex; padding: 2px; border-radius: var(--radius-xs);
   background: var(--bg-sunken); border: 1px solid var(--border);
@@ -1455,8 +1497,15 @@ html[data-theme="dark"] .btn.mini.bad{ color: var(--bad); }
   font-size: 13.5px;
   color: var(--ink-2);
 }
-.combo-option-empty{ cursor: default; color: var(--ink-3); }
 .combo-option.active{ background: var(--panel-2); color: var(--ink); }
+/* Story 19.5 (AD-2c): a DISABLED option (`SearchComboboxOption.disabled`, the
+   booking forms' out-of-service aircraft) reads like the empty row — same
+   token, no new colour. Declared AFTER `.active` so a disabled row the arrow
+   keys land on keeps the active background (where the cursor is) but stays
+   muted (it cannot be picked). The empty row never takes `.active`, so the
+   move changes nothing for it. */
+.combo-option-empty,
+.combo-option[aria-disabled="true"]{ cursor: default; color: var(--ink-3); }
 .combo-meta{ margin-left: 8px; font-size: 12px; color: var(--ink-3); }
 
 /* ---------- schedule week view ---------- */

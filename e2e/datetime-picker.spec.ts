@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { selectFromCombobox } from './helpers';
 
 /**
  * Story TD-7 (`CalendarPopover` extended with a date+time mode, `DateInput`/
@@ -111,7 +112,9 @@ async function hitTestsOwnControl(page: Page, popoverSelector: string, controlSe
   return page.evaluate(
     ({ popoverSelector, controlSelector, edge }) => {
       const popover = document.querySelector(popoverSelector);
-      const control = document.querySelector(controlSelector);
+      // Story 19.5: looked up INSIDE the popover — a page-level lookup of
+      // `.fld input[type="text"]` now finds the booking form's comboboxes first.
+      const control = popover?.querySelector(controlSelector);
       if (!popover || !control) return false;
       (popover as HTMLElement).scrollTop = edge === 'bottom' ? (popover as HTMLElement).scrollHeight : 0;
       const rect = control.getBoundingClientRect();
@@ -132,8 +135,8 @@ test.describe('TD-7: CalendarPopover date+time picker', () => {
     await page.waitForLoadState('networkidle');
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    await form.getByLabel('Pilota o allievo').selectOption({ label: `${pilot.lastName} ${pilot.firstName}` });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(form.getByLabel('Pilota o allievo'), `${pilot.lastName} ${pilot.firstName}`, `${pilot.lastName} ${pilot.firstName}`);
 
     const startsAtWrapper = form.locator('span.date-input:has(input[name="startsAt"])');
     const endsAtWrapper = form.locator('span.date-input:has(input[name="endsAt"])');

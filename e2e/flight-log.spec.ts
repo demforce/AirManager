@@ -156,7 +156,7 @@ type RegisterFlightParams = {
   aircraftId: string;
   personId: string;
   flightDate: string;
-  flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
+  flightType: 'TOURISM' | 'SCHOOL';
   minutes: number;
   /** Story 16.2 — the takeoff clock time (UTC, `HH:MM`), so two flights of the SAME test can share an aircraft and a day without overlapping (409 `FLIGHT_OVERLAP`). Defaults to `10:00`, the value every pre-existing call site used implicitly. */
   takeoffTimeUtc?: string;
@@ -206,7 +206,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
       aircraftId: aircraft.id,
       personId: pilot.personId,
       flightDate: '2020-03-01',
-      flightType: 'AERIAL_WORK',
+      flightType: 'TOURISM',
       minutes: 50,
     });
     const cancelResponse = await page.request.post(`/api/v1/flights/${toCancel.id}/cancel`, { data: { reason: 'Errore di prova' } });
@@ -281,8 +281,13 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await page.getByTestId('flight-filter-reset').click();
     await expect(page.getByTestId('flight-row')).toHaveCount(2);
 
+    // Story 19.5: both of this pilot's flights are TOURISM (the third type is
+    // gone), so the type filter narrows to none on SCHOOL and keeps both on
+    // TOURISM.
+    await page.getByTestId('flight-filter-type').selectOption('SCHOOL');
+    await expect(page.getByTestId('flight-row')).toHaveCount(0);
     await page.getByTestId('flight-filter-type').selectOption('TOURISM');
-    await expect(page.getByTestId('flight-row')).toHaveCount(1);
+    await expect(page.getByTestId('flight-row')).toHaveCount(2);
     await expect(page.getByTestId('flight-row').first()).toContainText('Turismo');
   });
 
@@ -314,7 +319,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
 
     // Four flights spanning two aircraft, two people, two types, two periods.
     await registerFlight(page, { aircraftId: aircraftA.id, personId: personA.personId, flightDate: '2020-05-01', flightType: 'TOURISM', minutes: 30 });
-    await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'AERIAL_WORK', minutes: 45 });
+    await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'TOURISM', minutes: 45 });
 
     // Velivolo filter: only aircraftA's flight. Set through the URL, not the
     // native select: its options stop at the first 100 registrations
@@ -338,10 +343,11 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-person'), personB.lastName);
 
     // Combined persona + periodo + tipo: the RUN-UNIQUE person keyed with
-    // dateFrom/dateTo bracketing only the June flight and tipo AERIAL_WORK -> that
-    // one flight. The person filter is what keeps the assertion run-unique
-    // (lesson 6.3 F1): periodo+tipo alone match the June/AERIAL_WORK flights EVERY
-    // past execution of this very test left in an accumulated DB.
+    // dateFrom/dateTo bracketing only the June flight, then tipo SCHOOL -> no
+    // row (the discriminating half: the June flight is TOURISM) and tipo
+    // TOURISM -> that one flight. The person filter is what keeps the assertion
+    // run-unique (lesson 6.3 F1): periodo+tipo alone match the June/TOURISM
+    // flights EVERY past execution of this very test left in an accumulated DB.
     await page.getByTestId('flight-filter-person').fill(personB.lastName);
     // EVERY filter change navigates and remounts the subtree (same M1 race
     // as the reset) — settle each step on its URL effect before touching the
@@ -352,12 +358,17 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page).toHaveURL(/dateFrom=2020-06-01/);
     await page.getByTestId('flight-filter-date-to').fill('2020-06-30');
     await expect(page).toHaveURL(/dateTo=2020-06-30/);
-    await page.getByTestId('flight-filter-type').selectOption('AERIAL_WORK');
-    await expect(page).toHaveURL(/flightType=AERIAL_WORK/);
+    await page.getByTestId('flight-filter-type').selectOption('SCHOOL');
+    await expect(page).toHaveURL(/flightType=SCHOOL/);
+    await expect(page.getByTestId('flight-row')).toHaveCount(0);
+    await page.getByTestId('flight-filter-type').selectOption('TOURISM');
+    await expect(page).toHaveURL(/flightType=TOURISM/);
     rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(personB.lastName);
-    await expect(rows.first()).toContainText('Lavoro aereo');
+    // The type cell's own badge (the row's first `.badge`), exact — never a
+    // substring match on the whole row.
+    await expect(rows.first().locator('.badge').first()).toHaveText('Turismo');
 
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-date-from'), '2020-06-01');
     // Both flights still reachable after the reset — each located through its

@@ -144,7 +144,7 @@ async function createInstructor(page: Page, tag: string): Promise<Person> {
 type FlightOverrides = {
   personId?: string;
   instructorPersonId?: string;
-  flightType?: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
+  flightType?: 'TOURISM' | 'SCHOOL';
   departureAirfield?: string;
   arrivalAirfield?: string;
   takeoffs?: number;
@@ -1026,10 +1026,14 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     await page.getByTestId('flight-row-mobile').first().click();
     await page.getByTestId('flight-correct-action-mobile').click();
     await expect(page.getByTestId('flight-form')).toBeVisible();
+    // Story 19.5 (AC 10): in correzione at 375 too, the four choice fields are
+    // the same combobox — no native select, no radio.
+    await expect(page.getByTestId('flight-form').locator('[role="combobox"]')).toHaveCount(4);
+    await expect(page.getByTestId('flight-form').locator('select, input[type="radio"]')).toHaveCount(0);
 
     const typeSelect = page.getByTestId('flight-type-select');
     await expect(typeSelect).toBeEnabled();
-    await expect(typeSelect).toHaveValue('TOURISM');
+    await expect(typeSelect).toHaveValue('Turismo');
     // The `studentOnlyCorrectionHint` that accompanies this case is NOT asserted
     // here: in correzione the profile of the flight's person is known only if
     // that person is inside the server-rendered `personOptions` page, capped at
@@ -1048,7 +1052,52 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     await page.getByTestId('flight-person').fill(pilot.lastName);
     await page.getByRole('listbox').getByRole('option', { name: pilot.label, exact: true }).click();
     await expect(typeSelect).toBeDisabled();
-    await expect(typeSelect).toHaveValue('SCHOOL');
+    await expect(typeSelect).toHaveValue('Scuola');
+  });
+
+  test('the «Volo solista» switch at 375: one node, a 44px full-cell target inside the viewport, toggled by a tap (story 19.5, AC 15d/f)', async ({ page, browser }) => {
+    await login(page, ADMIN_EMAIL);
+    // A real touch context (same pattern as `aog-impact-email.spec.ts`): the
+    // switch must toggle on a TAP, not only on a mouse click.
+    const phone = await browser.newContext({ viewport: PHONE, hasTouch: true, isMobile: true, storageState: await page.context().storageState() });
+    const tapPage = await phone.newPage();
+    await tapPage.goto('/it/dashboard/logbook');
+    await tapPage.getByTestId('logbook-new-button').tap();
+    const form = tapPage.getByTestId('flight-form');
+    await expect(form).toBeVisible();
+    await expect(form.locator('[role="combobox"]')).toHaveCount(4);
+    await expect(form.locator('select, input[type="radio"]')).toHaveCount(0);
+
+    await tapPage.getByTestId('flight-type-select').tap();
+    await tapPage.getByRole('listbox').getByRole('option', { name: 'Scuola', exact: true }).tap();
+    const soloSwitch = tapPage.getByTestId('flight-solo-toggle');
+    // ONE tree at every width (AC 15f): no `-mobile` twin.
+    await expect(soloSwitch).toHaveCount(1);
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+
+    const geometry = await soloSwitch.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const cell = el.closest('.fld.wide')!.getBoundingClientRect();
+      return {
+        height: rect.height,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        cellWidth: cell.width,
+        innerWidth: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+      };
+    });
+    expect(geometry.height).toBeGreaterThanOrEqual(44);
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.innerWidth);
+    expect(Math.round(geometry.width)).toBe(Math.round(geometry.cellWidth));
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.innerWidth);
+
+    await soloSwitch.tap();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await expect(soloSwitch).toHaveText('Solista');
+    await phone.close();
   });
 
   test('the Idempotency-Key travels on the registration only, never on a correction, and is regenerated after every response', async ({ page }) => {

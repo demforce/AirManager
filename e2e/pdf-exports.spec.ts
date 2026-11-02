@@ -93,7 +93,7 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
  */
 async function registerFlight(
   page: Page,
-  params: { aircraftId: string; personId: string; flightDate: string; flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK'; minutes: number },
+  params: { aircraftId: string; personId: string; flightDate: string; flightType: 'TOURISM' | 'SCHOOL'; minutes: number },
 ): Promise<void> {
   const { flightDate, minutes, ...rest } = params;
   const takeoffAt = `${flightDate}T10:00:00.000Z`;

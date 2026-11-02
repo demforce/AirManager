@@ -36,7 +36,7 @@ const OPTIONS_PAGE_SIZE = 100;
 const FLIGHTS_PAGE_SIZE = 20;
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const FLIGHT_TYPES: readonly FlightTypeDto[] = ['TOURISM', 'SCHOOL', 'AERIAL_WORK'];
+const FLIGHT_TYPES: readonly FlightTypeDto[] = ['TOURISM', 'SCHOOL'];
 const FLIGHT_STATUSES: readonly FlightStatusDto[] = ['REGISTERED', 'CANCELLED'];
 
 /** Hand-edited URL defense (same pattern as the legacy `flights/page.tsx#sanitizeDateParam`). */
@@ -262,7 +262,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
           empty: t('table.empty'),
           exportMenu: { label: t('exportMenu.label'), xlsLabel: t('exportMenu.xlsLabel'), pdfLabel: t('exportMenu.pdfLabel') },
           pagination: { prev: '←', next: '→' },
-          flightTypes: { private: t('flightTypes.private'), school: t('flightTypes.school'), other: t('flightTypes.other') },
+          flightTypes: { private: t('flightTypes.private'), school: t('flightTypes.school') },
           table: {
             date: t('table.date'),
             route: t('table.route'),
@@ -342,7 +342,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
               takeoffs: t('editor.fields.takeoffs'),
               landings: t('editor.fields.landings'),
             },
-            flightTypes: { private: t('flightTypes.private'), school: t('flightTypes.school'), other: t('flightTypes.other') },
+            flightTypes: { private: t('flightTypes.private'), school: t('flightTypes.school') },
             errors: {
               FLIGHT_TIMES_INVALID: t('editor.errors.FLIGHT_TIMES_INVALID'),
               NO_AIRCRAFT_RATE: t('editor.errors.NO_AIRCRAFT_RATE'),

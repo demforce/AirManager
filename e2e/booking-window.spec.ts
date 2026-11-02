@@ -6,6 +6,7 @@
 // (otherwise Playwright first runs its `chromium`/`settings` dependencies).
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { selectFromCombobox } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -37,7 +38,7 @@ async function createAircraft(page: Page): Promise<{ id: string; registration: s
   return { id: aircraft.id, registration };
 }
 
-async function createPilotPerson(page: Page): Promise<{ personId: string }> {
+async function createPilotPerson(page: Page): Promise<{ personId: string; label: string }> {
   const suffix = uniqueSuffix();
   // `AAA` prefix: the staff person picker on /dashboard/bookings loads ONE page
   // of `listPeople` (100 rows, `lastName asc` — `page.tsx#OPTIONS_PAGE_SIZE`),
@@ -53,7 +54,9 @@ async function createPilotPerson(page: Page): Promise<{ personId: string }> {
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
-  return { personId: person.id };
+  // `label`: the picker's "Cognome Nome" option text (story 19.5: the picker is
+  // a combobox, picked by its visible label — the value is the id behind it).
+  return { personId: person.id, label: `AAABooking-${suffix} Orario` };
 }
 
 async function setScheduling(
@@ -170,11 +173,11 @@ test.describe.serial('BOOKING_OUTSIDE_WINDOW (Story 12.11, AC 4, ratifica utente
     await page.waitForLoadState('networkidle');
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
-    await form.getByLabel('Velivolo').selectOption({ label: aircraft.registration });
-    // THIS run's pilot, by id — never `{ index: 1 }`: the shared dev DB is full
-    // of people other specs gave expired documents to, and `EXPIRED_DOCUMENTS`
-    // would answer first (measured: it did).
-    await form.getByLabel('Pilota o allievo').selectOption(pilot.personId);
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    // THIS run's pilot, by its run-unique label — never the first option: the
+    // shared dev DB is full of people other specs gave expired documents to,
+    // and `EXPIRED_DOCUMENTS` would answer first (measured: it did).
+    await selectFromCombobox(form.getByLabel('Pilota o allievo'), pilot.label, pilot.label);
     // 10:00-11:00 Rome (winter CET) — outside the 14:00-18:00 window above.
     await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T09:00`);
     await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T10:00`);

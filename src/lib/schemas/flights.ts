@@ -5,8 +5,8 @@ import { z } from './zod-with-openapi';
 
 // --- Flight logging with automatic charges (story 5.1, Task 4, AC 1/2/3/4) --
 
-/** Mirrors the Prisma `FlightType` enum (story 5.1; values renamed to the real-world taxonomy in story 9.4) — see the Prisma model doc for what each value means. */
-export const flightTypeSchema = z.enum(['TOURISM', 'SCHOOL', 'AERIAL_WORK']);
+/** Mirrors the Prisma `FlightType` enum (story 5.1; values renamed to the real-world taxonomy in story 9.4; two values only since story 19.5) — see the Prisma model doc for what each value means. */
+export const flightTypeSchema = z.enum(['TOURISM', 'SCHOOL']);
 
 export type FlightTypeDto = z.infer<typeof flightTypeSchema>;
 
