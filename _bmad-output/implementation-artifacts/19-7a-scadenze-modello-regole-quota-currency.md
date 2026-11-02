@@ -562,3 +562,88 @@ Modificati:
 ### Change Log
 
 - 2026-11-02 — `83c4a0c` feat(19.7a): implementazione completa (22 AC); questo commit docs: Dev Agent Record e Status → review.
+- 2026-11-02 — `b2314e8` fix(19.7a): fix di review F1-F5; commit docs successivo: Review Record e report di review. Status resta review.
+
+## Review Record — 19.7a
+
+- **Review adversarial** (`review-19-7a`, Opus 5.5, 2026-11-02): **SHIPPABLE-WITH-FIXES**. Arbitro su DB fresco **rosso**: 508 passed, 1 failed deterministico (`mobile-billing.spec.ts:1073`), 40 did not run (la catena serializzata, poi verde a parte 40/40); totale 549 = delta atteso. Report: `19-7a-review-report.md`, committato con questo record. Finding: F1 blocker, F2 medium, F3-F5 low.
+- **Fix** (`fix-19-7a`, Opus 5.5, commit **`b2314e8`**). Decisioni della sessione principale: F1 asserzione indipendente dall'ordine; F2 il solista non conta per l'istruttore (nessuna conferma PO necessaria: è la lettera di CR §4.5); F3 validazione sotto lock di riga; F4 tipo quota trovato per `kind`, scelta del meccanismo delegata; F5 ordine totale.
+
+### F1 (blocker) — sonda `utilBarWidths` indipendente dall'ordine; chiude TD 19.1-g
+
+- **Fix** (`e2e/mobile-billing.spec.ts`, `NEIGHBOUR_PROBE`): l'insieme delle larghezze si confronta **ordinato decrescente** (`.sort((a, b) => b - a)`), con un commento che dice perché. Le attese restano `[281, 0]` e `[]`: nessuna è stata indebolita.
+- **Perché basta**: l'ordine del `Set` è l'ordine DOM delle righe, cioè un dato globale (quanti velivoli hanno minuti nell'anno decide se il primo per registrazione resta fra i top-8 visibili). L'invariante voluto dal commento della sonda è la **larghezza** delle barre, e quella resta asserita.
+- **TD 19.1-g chiuso** (era nel §7 della 19.1: «da confrontare come insieme»): è esattamente questo caso. La riga della 19.1 non è stata toccata (regola: niente file story di altre story); la chiusura è registrata qui, come la 19.8 ha fatto per il TD 19.1-a.
+- **Prove** (gemello `airmanager_fix197a` = catena completa + seed base, build di produzione su :3000, `E2E_REUSE_SERVER=1`):
+  1. pre-fix, `flights.spec.ts` + `expiry-rules-currency.spec.ts`, poi sullo stesso DB 8 velivoli OPERATIONAL con minuti nell'anno (6 `I-FL` + 2 «Regole 19.7a»);
+  2. `mobile-billing.spec.ts:1073` con l'asserzione **originale** → **rosso**, stesso diff dell'arbitro: `utilBarWidths` `[0, 281]` invece di `[281, 0]`;
+  3. con il fix, stesso DB → `mobile-billing.spec.ts` intero **26 passed**;
+  4. **discriminanza** (mutante dello spec che inietta `.util-rows{ padding-inline: 40px !important; }` su Statistiche, cioè una regola che raggiunge `.util-*`) → **rosso**, `281 → 237`; ripristino con sha256 identico (`6c646738…71d0b7`). Un primo mutante su `width` di `.util-bar` era passato: a 375 px la barra ha `flex: 0 0 100%` e `width` non la muove — un mutante sbagliato, non una sonda cieca.
+  5. dopo il fix del server (sotto), di nuovo **dopo** `expiry-rules-currency.spec.ts` sullo stesso DB: `mobile-billing.spec.ts` **24 passed, 2 skipped** (i due `test.skip` previsti dallo spec quando il movimento seminato è già stato consumato da un run precedente sullo stesso DB).
+
+### F2 (medium) — il volo Scuola solista non conta per la currency dell'istruttore
+
+- **Fix** (`currency.service.ts#loadOnBoardFlightDates`): il ramo `InstructorProfile` della CTE `on_board` prende `AND f."isSolo" = false`. Il ramo `personId` non cambia: il solista conta per l'allievo che lo vola. Doc-comment del modulo aggiornato («a dual flight counts for both; a SOLO counts for the student only»). `isSolo` esiste solo su un volo SCHOOL (`SOLO_REQUIRES_SCHOOL`), quindi il filtro non tocca altri voli.
+- **D-7 corretto**: «a bordo» = `Flight.personId = P` oppure l'istruttore del volo è P **e il volo non è solista**. La regola TS pura `computeCurrency` riceve solo date e non duplica la definizione: nessun altro punto da cambiare.
+- **19.7b** (non ancora implementata): la sua forma SQL della currency (§2 di `19-7b-registro-scadenze-unificato.md`, ramo `JOIN "InstructorProfile" ip …`, D-15) **deve rispettare la stessa regola**: `AND f."isSolo" = false` sul ramo istruttore, altrimenti la parità SQL/TS di D-15 fallisce sul primo solista.
+- **Osservazione fuori scope** (non cambiata): `flights.service.ts#scanBlockingDocuments` scansiona i documenti dell'istruttore anche su un volo solista. È comportamento pre-19.7a; se un istruttore che non è a bordo debba avere la visita valida è materia del servizio unico dei check della 19.9.
+- **Guardie**:
+  - unit `currency.service.test.ts` «a SOLO counts for the student only»: il ramo istruttore contiene il filtro, quello della persona no;
+  - e2e AC 15 esteso (stesso test, nessun test nuovo): G pilota+istruttore il cui unico volo è il solista dell'allievo H a oggi−20, supervisionato → G **«Non current»**, H nessun badge (current). Il titolo del test dice ora «a supervised solo does not». `registerFlightOn` accetta `isSolo?: boolean` (additivo, il contratto per la 19.7b non cambia).
+  - **pre-fix** (build di HEAD `552dc48`, gemello): `expiry-rules-currency.spec.ts:376` **rosso** a `:420`, `Expected: "Non current"`, `element(s) not found` (G risultava current); gli altri 5 test dello spec verdi. **Fix**: verde (serie sotto).
+
+### F3 (low) — validazione D-3 sotto lock di riga
+
+- **Fix** (`expiry-types.service.ts#updateExpiryType`): lettura, validazione e update dentro **un** `prisma.$transaction`, con `SELECT "id" FROM "ExpiryType" WHERE "id" = … FOR UPDATE` come prima istruzione e la lettura Prisma subito dopo (il pattern di `accounts.service.ts#recordAdjustment`). In READ COMMITTED la lettura dopo il lock vede il risultato già committato della PATCH concorrente, quindi la seconda delle due valida lo stato **finale**. Ordine dei controlli invariato: 404 → 409 `MEMBERSHIP_TYPE_LOCKED` → 422 `MEDICAL_TYPE_FIELDS` → nome duplicato; il backstop P2002 resta fuori dalla transazione.
+- **Perché non il CHECK**: una riga di service chiude la corsa senza riaprire AD-1 («nessun altro DDL») né toccare `migrate diff`; la 19.8, che estrae questi controlli nei suoi core transazionali, eredita una funzione che già legge sotto lock.
+- **Guardie**:
+  - unit «validates against the row read UNDER a FOR UPDATE lock»: `$queryRaw` con `FOR UPDATE` sull'id, chiamato **prima** della lettura, e la PATCH `{ scope: PILOTS }` su una riga che nel frattempo è diventata MEDICAL → 422, nessun update;
+  - sonda di concorrenza (`scratchpad/fix197a/probes.ts`, 25 tipi run-unique, `PATCH {kind: MEDICAL}` ‖ `PATCH {scope: PILOTS}` in `Promise.all`, stato finale letto in SQL):
+
+    | | esiti | righe MEDICAL con `scope ≠ ALL` |
+    |---|---|---|
+    | pre-fix (HEAD `552dc48`) | `200/200 → MEDICAL/PILOTS` ×23, `200/422` ×1, `422/200` ×1 | **23/25** |
+    | fix | `200/422 → MEDICAL/ALL/true` ×20, `422/200 → RATING/PILOTS/true` ×5 | **0/25** |
+
+    Tipi della sonda cancellati a fine run (0 residui); nessun 500 nel log del server.
+
+### F4 (low) — il tipo quota si trova per `kind`, un omonimo viene riallineato
+
+- **Fix** (`membership.service.ts#chargeMembershipFee`): `findFirst({ where: { kind: 'MEMBERSHIP' } })`; **solo se assente**, `upsert` per nome con `update: { kind: 'MEMBERSHIP', scope: 'ALL', blocksBooking: false, isActive: true }` (prima `update: {}`). Doc-comment aggiornati.
+- **Scelta fra le due strade** proposte dalla sessione principale — riallineare l'omonimo invece di rifiutare la creazione di un rating con quel nome:
+  - nessuna superficie nuova (codice d'errore, OpenAPI, messaggio i18n nella card Ratings);
+  - è la semantica che la migrazione 19.7a già dà al nome (passo 3: la riga «Quota associativa» diventa la quota, qualunque fosse il suo `kind`);
+  - **ripara** anche un'installazione dirottata prima del fix (al primo addebito successivo), cosa che il rifiuto da solo non farebbe;
+  - resta senza corse: l'upsert su `name @unique` è nativo (`INSERT … ON CONFLICT`), due primi addebiti concorrenti non creano due righe, e una PATCH admin concorrente sulla stessa riga ora prende il lock di F3 e vede il `kind` aggiornato (409).
+  - Finestra residua, dichiarata: prima del **primo addebito in assoluto** un admin può avere nella card Ratings un rating chiamato «Quota associativa». Nessun lettore lo scambia per la quota (`getMembershipStatus` filtra per `kind`: `missing`, vero perché nessuno ha pagato); al primo addebito diventa la quota.
+- **Invariante AD-2** («esattamente un tipo MEMBERSHIP»): creato solo da questo upsert, dalla migrazione e dal seed, sempre sul nome unico; `expiry-types.service.ts` rifiuta `kind: MEMBERSHIP` in scrittura e blocca PATCH/DELETE del tipo.
+- **Guardie**:
+  - unit `membership.service.test.ts`: «no MEMBERSHIP type yet» (ricerca per `kind`, poi upsert con l'`update` di riallineamento) e «the MEMBERSHIP type exists» (nessun upsert, l'`Expiry` va sull'id trovato per `kind`);
+  - riproduzione del reviewer (`probes.ts`, gemello `airmanager_fix197a_noseed`: catena + seed, poi riga quota cancellata per simulare la produzione; rating creato con `scope: PILOTS, blocksBooking: true`):
+
+    | | tipo MEMBERSHIP dopo l'addebito | rating «Quota associativa» | `Expiry` della persona | PATCH `isActive: false` | card Ratings |
+    |---|---|---|---|---|---|
+    | pre-fix | `[]` | presente | `Quota associativa:RATING:2027-11-02` | 200 | 1 riga |
+    | fix | `Quota associativa:ALL/false/true` (**stessa riga** del rating) | assente | `Quota associativa:MEMBERSHIP:2027-11-02` | **409** | 0 righe |
+
+### F5 (low) — ordine totale della «visita migliore» nel badge Piloti
+
+- **Fix** (`expiries.service.ts#listBlockingExpiriesByPerson`): a parità di `expiresAt` vince il **nome minore** (confronto `<`, lo stesso di `pilotRowFlag` che consuma questo risultato). È un ordine totale: il nome è unico per tipo e c'è una sola riga per (persona, tipo). Scelto il nome invece dell'id suggerito per esempio, così il chip è leggibile e coerente con il tie-break del suo consumatore.
+- **Guardia**: unit «two visits expiring the SAME day» con le righe nei **due** ordini → sempre «Visita medica classe 1».
+
+### Prove trasversali
+
+- **Unit, discriminanza** (i file di test nuovi sui quattro service di HEAD `552dc48`, rimessi con `git show`, poi ripristinati con sha256 verificato): **5 failed / 166** — esattamente i 5 test nuovi o riscritti (F2, F3, F4 ×2, F5). Sul fix: **166 passed**, anche con `env -u DATABASE_URL -u AUTH_SECRET`.
+- **e2e sul fix** (build dei gate, gemello `airmanager_fix197a` già usato per il pre-fix, `E2E_REUSE_SERVER=1`, retries CI):
+  - project `chromium`: `expiry-rules-currency`, `expiry-types`, `membership-fee`, `mobile-registries`, `person-save`, `people-management` → **64 passed, 0 flaky**, `E2E_EXIT=0`;
+  - poi `mobile-billing.spec.ts` sullo stesso DB → **24 passed, 2 skipped** (vedi F1), `E2E_EXIT=0`;
+  - catena con `--no-deps --workers=1`: `settings`, `mobile-membership-fee`, `mobile-settings` (card Ratings/Visite e quota) → **21 passed**, `E2E_EXIT=0`.
+  - Nel run pre-fix di `flights.spec.ts` (retries 0) è fallito anche `flights.spec.ts:1027` (E5) alla registrazione iniziale (`:1037`, 422 invece di 201): è il flaky noto delle guardie 16.2 (TD 16.2-g), su build pre-fix e spec non toccato.
+- **Gate** (sul contenuto committato): `PASS lint (34s) · PASS typecheck (5s) · PASS test (11s) — Tests 1943 passed (1943) · PASS build (31s)`.
+- **Delta**: unit **1939 → 1943** (+4: currency 1, expiry-types 1, membership 1 nuovo + 1 riscritto, expiries 1). e2e atteso per l'arbitro **549 → 549** (il caso F2 è dentro il test AC 15 esistente; nessun test aggiunto o rimosso). L'arbitro completo su DB fresco resta alla sessione principale.
+
+### Stato della macchina
+
+- Server :3000/:3001 fermati per PID, porte libere; `scripts/e2e.sh status` = DONE, ultimo run = la catena (`E2E_EXIT=0`).
+- Gemelli `airmanager_fix197a` e `airmanager_fix197a_noseed` **eliminati**; `airmanager` e `airmanager_load` mai toccati.
+- `.next` = build dei gate sul contenuto committato (`b2314e8`). Script, output e log delle prove in `scratchpad/fix197a/`.
