@@ -721,3 +721,71 @@ e2e mirati: §F (serie finale 101 passed, `E2E_EXIT=0`). L'arbitro full-suite su
 ### Change Log
 
 - 2026-11-02 — Implementazione completa della story 19.4 (`e160065`): `PATCH /people/{id}` composito atomico con lock `Person`, editor pilota e istruttore a Salva unico, scadenze in bozza, profili esclusivi nei due form, tariffa allievo R-19-f, OpenAPI, i18n, e2e. Status → review.
+- 2026-11-02 — Fix di review (`f3f6cf9`): F1 (campi opzionali vuoti = `null`, chiude il TD 19.4-d), F2 (messaggio per codice, errori di riga sulla riga via `details.expiryTypeId`), F3 (GET tariffe fallito mostrato come errore). Status resta review.
+
+## Review Record — 19.4
+
+- **Review adversarial** (Opus 5.5, 2026-11-02): **SHIPPABLE DOPO IL FIX DI F1**. Il reviewer ha trovato 1 medium, 2 low e 3 note INFO. Report: `19-4-review-report.md`. Il suo arbitro su DB fresco ha dato **519/519**, `E2E_EXIT=0`.
+- **Fix** (fix-subagent Opus 5.5, commit **`f3f6cf9`**). Cosa correggere l'ha deciso la sessione principale: F1, F2 e F3 tutti in questo fix. F2 non è stato rinviato alla 19.12.
+
+### F1 (medium) — corretto
+
+- **Causa**: il diff (`person-save.ts#savedFormOf`) tratta `''` come `null`, il resolver `updatePersonSchema` no (`min(1)` su telefono e indirizzo, `z.email()` sull'email). Un campo opzionale digitato e poi svuotato finiva quindi nel form come `''`, e `handleSubmit` bloccava l'intero Salva su «Campo obbligatorio.» senza mandare nessuna richiesta.
+- **Fix**: `blankToNull` (`src/lib/person-save.ts`) è il `setValueAs` di `email`/`phone`/`address` in tutti e tre i form anagrafica con lo stesso resolver «trim + min(1)»: modifica pilota, modifica istruttore e «Nuovo» del pannello pilota. Il «Nuovo» usa `createPersonBaseSchema`, che ha la stessa trappola, e sta nello stesso file. Effetti:
+  - un campo vuoto mai toccato, o toccato e svuotato, vale `null`: è valido e non entra nel diff;
+  - un valore salvato poi svuotato entra nel diff come `null` e il server lo azzera. Questo **chiude il TD 19.4-d**: il server accettava già `null` su questi tre campi.
+  - Il form di accesso (`AccessSection`), dove l'email è obbligatoria, resta invariato.
+- **Nota minore del reviewer, corretta**: `onInvalid` dei due editor ora azzera `saveError`. L'errore server del tentativo precedente non resta più accanto ai nuovi errori di campo.
+- **Guardie e2e** (tutte **rosse 3/3 sul pre-fix**, ferme alla riga del toast perché il Salva viene bloccato senza richiesta; verdi sul fix):
+  - `person-save` «an optional field typed into and emptied again…» (editor pilota): indirizzo vuoto digitato e svuotato → Salva ancora disabilitato; telefono salvato svuotato + rating nuovo → **1 PATCH** con body `{ phone: null, expiries: { set: [...] } }`; sul server `phone = null` e la riga c'è.
+  - Gemello nell'editor istruttore: telefono digitato e svuotato, email salvata svuotata, compenso → body `{ email: null, payoutRateCents: 3000 }`; sul server `email = null`.
+  - «Nuovo»: telefono digitato e svuotato → creazione con `phone: null`.
+
+### F2 (low) — corretto
+
+- **Mappatura** (`personSaveError`, `src/lib/person-save.ts`, al posto di `personSaveErrorSection`): restituisce sezione, motivo ed eventuale `expiryTypeId`. Ogni codice del contratto del `PATCH /people/{id}` ha un messaggio suo:
+
+  | Codice | Sezione | Messaggio IT |
+  |---|---|---|
+  | `PERSON_ARCHIVED` | Scadenze | «La persona è archiviata: ripristinala per aggiungere nuove scadenze.» |
+  | `EXPIRY_TYPE_NOT_FOUND` | sulla riga | «Questo tipo non esiste più: togli la riga.» |
+  | `EXPIRY_TYPE_INACTIVE` | sulla riga | «Questo tipo è stato disattivato: togli la riga.» |
+  | `SCOPE_MISMATCH` | sulla riga | «Questo tipo non vale per i profili attivi: togli la riga o attiva il profilo a cui si applica.» |
+  | `EXPIRY_CONFLICT` | sulla riga | «Una scadenza di questo tipo è stata registrata nel frattempo: chiudi e riapri la scheda per vederla.» |
+  | `INSTRUCTOR_PROFILE_INACTIVE` | Compenso o Tariffa allievo | «Il profilo istruttore non è più attivo: compenso e tariffa allievo non si possono salvare.» |
+  | `VALIDATION_ERROR` di un blocco | quella sezione | «Alcuni dati non sono validi: correggili e salva di nuovo.» |
+  | `FORBIDDEN` / `NOT_FOUND` / `UNAUTHENTICATED` | banner del form | permessi / persona inesistente / sessione scaduta |
+
+  Restano invariati `CONFLICT` (email), `STUDENT_PROFILE_EXCLUSIVE`, `RATE_VALID_FROM_IN_PAST` (sul campo «In vigore da») e `VALIDATION_ERROR` su un campo anagrafica (sul campo). **«Si è verificato un errore. Riprova.» resta solo per `INTERNAL_ERROR`, errori di rete e corpi non-envelope.**
+- **Server, additivo**: i quattro errori su UNA riga portano `details: { expiryTypeId }` (`people.service.ts#updatePerson`/`assertExpiryTypeCreatable`). `assertScopeCompatible` (`expiries.service.ts`) accetta un `details` opzionale; `registerExpiry` non lo passa e resta invariato. Lo strato HTTP inoltrava già i `details` di `ValidationError`/`ConflictError` (16.2 AD-3). La descrizione OpenAPI del `PATCH` lo documenta. `PERSON_ARCHIVED` resta senza `details`, perché riguarda tutte le righe nuove e non una sola. `parseApiError` espone `details`; chi lo chiamava già leggeva solo `code`/`fieldErrors` e non cambia.
+- **UI**: `ExpiryDraftEditor` ha una prop `rowError`. Il messaggio compare sotto la riga (`expiry-error-{typeId}`, `role="alert"`, `tabIndex=-1`, stile `.fld-error` come «Data obbligatoria») e riceve il focus. Il fallback è l'errore di sezione, usato se manca l'id o la riga non è nella bozza. Se l'utente toglie la riga, l'errore sparisce con lei e non risale alla sezione. Le etichette sono condivise: `pilot-editor-labels.ts#buildPersonSaveErrorLabels(PilotsPage, PeoplePage)`, usata anche da `instructors/page.tsx`, così le due superfici non formulano diversamente lo stesso rifiuto. Il «Nuovo» non è toccato da F2: il suo `POST` ha il proprio banner.
+- **i18n**: 10 chiavi nuove in `PilotsPage.editor.saveErrors.*` più `InstructorsPage.studentRate.loadError` (F3). Tolte le chiavi rimaste orfane: `InstructorsPage.studentRate.genericError` e `InstructorsPage.editor.errors.generic`, con i rispettivi campi del tipo `InstructorEditorLabels`, insieme a `errors.conflictEmail`. Totale **1672 → 1681**, parità IT/EN **0/0**.
+- **Guardie**:
+  - **unit** `person-save.test.ts`: ogni codice instradato con sezione e motivo, l'id di riga letto da `details` (assente o non stringa → `null`), 500 e `null` → `generic`. Un test legge i codici dalla **descrizione OpenAPI** del `PATCH /people/{id}` (generata da `generateOpenApiDocument`), aggiunge i generici AD-8 delle sue risposte e asserisce che nessuno cada in `generic`: un codice documentato in futuro fa fallire il test finché non viene mappato.
+  - `people.service.test.ts` asserisce `details.expiryTypeId` sui quattro codici: **rosso 3/3** con il service di HEAD. Il primo test copre insieme NOT_FOUND e INACTIVE.
+  - `api-field-errors.test.ts`: `details` passato o `null`.
+  - **e2e** (ognuno **rosso 3/3 sul pre-fix**, verde sul fix):
+    - `person-save` AC 16 riscritto: tipo disattivato a pannello aperto → messaggio **sulla riga**, con focus, e nessun errore di sezione. Pre-fix: `element(s) not found`.
+    - «a new scadenza on a person archived meanwhile…»: `pilot-ratings-error` = messaggio di `PERSON_ARCHIVED`, con focus, e telefono non salvato. Pre-fix: `Received: "Si è verificato un errore. Riprova."`.
+    - «the instructor profile deactivated meanwhile…»: `instructor-payout-rate-error` = messaggio di `INSTRUCTOR_PROFILE_INACTIVE`, con focus.
+
+### F3 (low) — corretto
+
+- **Fix**: quando la lettura fallisce, `fetchInstructorRates` restituisce `null` invece di `[]`. L'editor tiene `ratesLoadError`, anche dopo la rilettura che segue un Salva riuscito, e mette il messaggio «Impossibile caricare le tariffe: quella in vigore non è nota.» nello slot dell'hint del campo prezzo: sotto il campo, rosso, `role="alert"` e collegato via `aria-describedby`. Non compaiono né il placeholder né «Nessuna tariffa in vigore», e il campo non è marcato invalido. Un errore di validazione del prezzo, quando c'è, ha la precedenza nello stesso slot.
+- **Guardia e2e** `instructor-rates` «a failed read of the rates says so…»: tariffa reale seminata, poi GET intercettato con 500 → descrizione accessibile = messaggio di caricamento, nessun placeholder, nessun «Nessuna tariffa in vigore». **Rosso 3/3 sul pre-fix** (`Received: "Nessuna tariffa in vigore"`).
+
+### Note INFO
+
+- **I1** (`expiry-editor.tsx#precompileExpiresAt` usa la data UTC): preesistente (13.8) e fuori dal diff di F1-F3. Registrato come **TD 19.4-e**: fra le 00:00 e l'01:00/02:00 di Roma precompila la data un giorno indietro. Il grep di AC 26 non lo intercetta (`todayDateOnly\b` ≠ `todayDateOnlyUtc`).
+- **I2** (ricontrollo «tipo attivo» con la mappa letta prima della transazione): innocuo, è la stessa finestra di `registerExpiry`. Nessuna azione.
+- **I3** (persone legacy con Allievo e Pilota entrambi attivi): coerente con lo «stato finale». Nessuna azione.
+
+### Discriminanza, gate, delta
+
+- **e2e sul pre-fix**: build di produzione dei sorgenti di HEAD con gli spec del fix, sul DB gemello `airmanager_fix194`, filtrata su `review 19.4|AC 16, P7` → **7 failed / 0 passed**, ciascuno 3/3. Le righe di fallimento sono riportate sopra per ogni guardia.
+- **Ripristino**: i 17 file del fix sono stati copiati da parte prima dello scambio e riportati; `sha256sum` confrontato: 17/17 identici.
+- **e2e sul fix**: build dei gate, gemello, serie mirata sugli spec che toccano gli editor (`person-save`, `instructor-rates`, `instructor-compensation`, `people-management`, `person-detail`, `person-profiles`, `expiry-registration`, `user-management`, `mobile-registries`) → **86 passed** (1.9m), 0 failed, 0 flaky, `E2E_EXIT=0`.
+- **Verifica UI** (`playwright-core`, Chromium 1228, Europe/Rome): errore di riga a 1280 e a 375, con testo atteso, focus sull'errore e overflow 0. Errore di caricamento tariffe a 1280 sotto il campo prezzo, senza placeholder. Coerenza AirOps: `.fld-error` e il ritmo dei messaggi di riga già esistenti. Screenshot nello scratchpad, `fix194/shots/`.
+- `npm run gates` (sul contenuto committato): `PASS lint · PASS typecheck · PASS test — Tests 1839 passed (1839) · PASS build`. **Unit 1834 → 1839.**
+- **Delta e2e atteso per l'arbitro: 519 → 525** (+5 in `person-save.spec.ts`, +1 in `instructor-rates.spec.ts`).
+- **Stato macchina**: il DB `airmanager` non è stato toccato dal fix. Tutte le prove sono state fatte sul gemello `airmanager_fix194`, creato come copia dell'`airmanager` appena resettato e poi rimosso; `airmanager_load` non è mai stato toccato. I server avviati sono stati fermati per PID; `:3000` è libero e non ci sono processi `next`. Ultimo run e2e: `DONE — E2E_EXIT=0`, cioè la serie mirata, non un arbitro. Nessuno stash. File untracked dell'utente, `sprint-status.yaml` e story file di altre story non toccati.
