@@ -1671,27 +1671,61 @@
   "SettingsPage": {
     "title": "Settings",
     "sub": "Club setup · scheduling · notifications",
+    "save": "Save",
+    "saved": "Settings saved.",
+    "saveBar": {
+      "clean": "No changes",
+      "dirty": "Unsaved changes: {sections}",
+      "saving": "Saving…"
+    },
+    "errors": {
+      "required": "Required field.",
+      "invalidAmount": "Enter a valid amount.",
+      "integerRange": "Enter a whole number from {min} to {max}.",
+      "invalidValue": "Invalid value.",
+      "duplicateName": "This name is already used in this list.",
+      "invalidItem": "This entry was not accepted: check its fields.",
+      "stale": "This entry was deleted by another user: reload the page.",
+      "systemCategory": "System category: it cannot be renamed or deleted.",
+      "checkFields": "Nothing was saved: fix the highlighted fields.",
+      "forbidden": "You do not have permission to change the settings.",
+      "generic": "Could not save. Please try again."
+    },
+    "rowState": {
+      "new": "New",
+      "changed": "Changed",
+      "removed": "To be deleted"
+    },
+    "actions": {
+      "restore": "Restore"
+    },
     "club": {
       "title": "Club",
       "sub": "Identity used across the console and exported PDFs",
-      "identityHeading": "Identity",
       "icao": "Home airfield (ICAO)",
       "contactEmail": "Contact email",
+      "contactEmailHint": "Receives the SMTP test email.",
       "metarStation": "METAR station",
       "metarStationHint": "Station for the sidebar weather card. Empty = use the field's ICAO.",
-      "membershipFee": "Annual membership fee",
-      "membershipFeeHint": "Prefilled amount for the \"Membership fee\" action in Expiries.",
-      "save": "Save",
-      "saved": "Settings saved.",
-      "error": "Could not save. Please try again.",
       "invalidEmail": "Enter a valid email address.",
       "form": {
-        "nameLabel": "Airfield name",
-        "save": "Save",
-        "saved": "Settings saved.",
-        "error": "Could not save the settings. Please try again.",
-        "requiredField": "Required field."
+        "nameLabel": "Airfield name"
       }
+    },
+    "membership": {
+      "title": "Membership fee",
+      "sub": "Amount of the annual fee",
+      "fee": "Annual amount",
+      "feeHint": "Valid for 12 months from payment. Prefills the \"Membership fee\" action in Expiries."
+    },
+    "currency": {
+      "title": "Currency",
+      "sub": "Recent flights required to fly without an instructor",
+      "minFlights": "Minimum flights",
+      "windowDays": "Window",
+      "flightsSuffix": "flights",
+      "daysSuffix": "days",
+      "hint": "Anyone with fewer flights than this within the window can only fly with an instructor."
     },
     "scheduling": {
       "title": "Scheduling",
@@ -1704,9 +1738,6 @@
       "minutesSuffix": "min",
       "daysSuffix": "days",
       "hint": "Aircraft can be booked between {open} and {close} local time, in {slot}-minute increments, up to {days} days in advance. Minimum slot duration and turnaround margin are advisory (they never block saving a booking).",
-      "save": "Save",
-      "saved": "Settings saved.",
-      "error": "Could not save. Please try again.",
       "invalidRange": "The closing time must be after the opening time."
     },
     "smtp": {
@@ -1716,6 +1747,7 @@
       "testEmailSent": "Test email sent.",
       "testEmailFailed": "Send failed. Check the SMTP configuration.",
       "testEmailNoContact": "Set a contact email on the Club card first.",
+      "testEmailNeedsSave": "Save your changes before sending the test email.",
       "host": "SMTP host",
       "port": "Port",
       "security": "Security",
@@ -1729,9 +1761,6 @@
       "pass": "Password",
       "passHint": "Leave blank to keep the current password.",
       "passConfigured": "Password already configured",
-      "save": "Save",
-      "saved": "Settings saved.",
-      "error": "Could not save. Please try again.",
       "invalidHost": "Invalid host: it cannot be a private, local, or internal address."
     },
     "treasury": {
@@ -1741,10 +1770,6 @@
       "openingBank": "Bank opening balance",
       "openingDate": "Opening date",
       "hint": "The Billing page's cash position starts from these amounts on the date given, adding every movement recorded since.",
-      "save": "Save",
-      "saved": "Settings saved.",
-      "error": "Could not save. Please try again.",
-      "invalidAmount": "Enter a valid amount.",
       "requiredDate": "Required field."
     },
     "ratings": {
@@ -1778,10 +1803,7 @@
         "edit": "Edit",
         "deactivate": "Deactivate",
         "reactivate": "Reactivate",
-        "delete": "Delete",
-        "confirmDelete": "Confirm?",
-        "confirmYes": "Yes",
-        "confirmCancel": "Cancel"
+        "delete": "Delete"
       },
       "form": {
         "createTitle": "New rating",
@@ -1792,21 +1814,10 @@
         "validityHint": "Prefills the expiry at registration (today + months). Set 0 for ratings that never expire.",
         "blocksBooking": "Blocks bookings and flights",
         "blocksBookingHint": "An expired or missing document of this type prevents new bookings and logging/correcting flights.",
-        "submitCreate": "Create",
-        "submitSave": "Save",
-        "cancel": "Cancel",
-        "requiredField": "Required field.",
-        "conflictError": "A type with this name already exists.",
-        "genericError": "Could not save. Please try again."
+        "conflictError": "A type with this name already exists."
       },
       "feedback": {
-        "created": "Rating created.",
-        "updated": "Rating updated.",
-        "deactivated": "Rating deactivated.",
-        "reactivated": "Rating reactivated.",
-        "deleted": "Rating deleted.",
-        "deleteInUseError": "This type is in use: deactivate it instead of deleting it.",
-        "genericError": "Could not complete the operation."
+        "deleteInUseError": "This type is in use: deactivate it instead of deleting it."
       },
       "hint": "Set validity to 0 for ratings that never expire (e.g. night rating). Expiries appear on the Expiries page.",
       "mobile": {
@@ -1823,7 +1834,6 @@
       "addAction": "Add medical check",
       "table": {
         "name": "Medical check name",
-        "scope": "Scope",
         "validity": "Validity",
         "status": "Status",
         "actions": "Actions",
@@ -1831,60 +1841,32 @@
         "monthsSuffix": "months",
         "noExpiry": "never expires"
       },
-      "scope": {
-        "PILOTS": "Pilots",
-        "STUDENTS": "Students",
-        "INSTRUCTORS": "Instructors",
-        "ALL": "Everyone"
-      },
       "status": {
         "active": "Active",
         "inactive": "Deactivated"
-      },
-      "blocksBooking": {
-        "yes": "Blocks bookings"
       },
       "actions": {
         "edit": "Edit",
         "deactivate": "Deactivate",
         "reactivate": "Reactivate",
-        "delete": "Delete",
-        "confirmDelete": "Confirm?",
-        "confirmYes": "Yes",
-        "confirmCancel": "Cancel"
+        "delete": "Delete"
       },
       "form": {
         "createTitle": "New medical check",
         "editTitle": "Edit medical check",
         "name": "Medical check name",
-        "scope": "Scope",
         "validity": "Validity",
         "validityHint": "Prefills the expiry at registration (today + months). Set 0 for medical checks that never expire.",
-        "blocksBooking": "Blocks bookings and flights",
-        "blocksBookingHint": "An expired or missing document of this type prevents new bookings and logging/correcting flights.",
-        "submitCreate": "Create",
-        "submitSave": "Save",
-        "cancel": "Cancel",
-        "requiredField": "Required field.",
-        "conflictError": "A type with this name already exists.",
-        "genericError": "Could not save. Please try again."
+        "conflictError": "A type with this name already exists."
       },
       "feedback": {
-        "created": "Medical check created.",
-        "updated": "Medical check updated.",
-        "deactivated": "Medical check deactivated.",
-        "reactivated": "Medical check reactivated.",
-        "deleted": "Medical check deleted.",
-        "deleteInUseError": "This type is in use: deactivate it instead of deleting it.",
-        "genericError": "Could not complete the operation."
+        "deleteInUseError": "This type is in use: deactivate it instead of deleting it."
       },
       "hint": "Medical checks are separate from ratings: they have their own expiry date and are never free text. Expiries appear on the Expiries page.",
       "mobile": {
         "openDetail": "Open detail",
         "close": "Close",
-        "empty": "No medical in this catalogue.",
-        "yes": "Yes",
-        "no": "No"
+        "empty": "No medical in this catalogue."
       }
     },
     "cashCategories": {
@@ -1907,30 +1889,16 @@
         "rename": "Rename",
         "deactivate": "Deactivate",
         "reactivate": "Reactivate",
-        "delete": "Delete",
-        "confirmDelete": "Delete this category?",
-        "confirmYes": "Confirm",
-        "confirmCancel": "Cancel"
+        "delete": "Delete"
       },
       "form": {
         "createTitle": "New category",
         "renameTitle": "Rename category",
         "name": "Name",
-        "submitCreate": "Create category",
-        "submitRename": "Save",
-        "cancel": "Cancel",
-        "requiredField": "The name is required.",
-        "conflictError": "A category with this name already exists.",
-        "genericError": "The operation failed. Try again."
+        "conflictError": "A category with this name already exists."
       },
       "feedback": {
-        "created": "Category created.",
-        "renamed": "Category renamed.",
-        "deactivated": "Category deactivated.",
-        "reactivated": "Category reactivated.",
-        "deleted": "Category deleted.",
-        "deleteInUseError": "This category has recorded movements and cannot be deleted: deactivate it instead.",
-        "genericError": "The operation failed. Try again."
+        "deleteInUseError": "This category has recorded movements and cannot be deleted: deactivate it instead."
       },
       "mobile": {
         "openDetail": "Open detail",

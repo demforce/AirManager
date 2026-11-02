@@ -55,7 +55,15 @@ type Fixture = Record<string, unknown>;
 const findMany = findManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const findUnique = findUniqueMock as unknown as { mockResolvedValue: (v: Fixture | null) => void };
 const upsert = upsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void };
+
+/**
+ * Story 19.8 (AD-3): the multi-key setters moved from the batch
+ * `$transaction([...])` to `$transaction((tx) => write*Core(tx, …))` — the
+ * callback runs on `prisma` itself here, so its upserts land on `upsertMock`.
+ */
+function runTransactionsOnPrisma(): void {
+  (transactionMock as unknown as { mockImplementation: (fn: (callback: (client: unknown) => unknown) => unknown) => void }).mockImplementation((callback) => callback(prisma));
+}
 
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
@@ -226,7 +234,7 @@ describe('app-settings.service — scheduling window (story 12.11, AC 1/4)', () 
 
   it('setSchedulingSettings (admin) writes all 5 keys together in one transaction', async () => {
     upsert.mockResolvedValue({});
-    transaction.mockResolvedValue([{}, {}, {}, {}, {}]);
+    runTransactionsOnPrisma();
 
     const result = await setSchedulingSettings(adminActor(), {
       openTime: '07:00',
@@ -238,8 +246,13 @@ describe('app-settings.service — scheduling window (story 12.11, AC 1/4)', () 
 
     expect(result).toEqual({ openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 });
     expect(transactionMock).toHaveBeenCalledTimes(1);
-    const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
-    expect(batch).toHaveLength(5);
+    expect(upsertMock.mock.calls.map((call) => (call[0] as { where: { key: string } }).where.key)).toEqual([
+      'sched.openTime',
+      'sched.closeTime',
+      'sched.minSlotMinutes',
+      'sched.turnaroundMinutes',
+      'sched.maxAdvanceDays',
+    ]);
   });
 });
 
@@ -286,24 +299,24 @@ describe('app-settings.service — SMTP settings (story 12.11, AC 1/2)', () => {
 
   it('setSmtpSettings WITHOUT pass writes only the 5 non-password keys (leaves the stored password untouched)', async () => {
     upsert.mockResolvedValue({});
-    transaction.mockResolvedValue([{}, {}, {}, {}, {}]);
+    runTransactionsOnPrisma();
     findMany.mockResolvedValue([]);
 
     await setSmtpSettings(adminActor(), SMTP_INPUT);
 
-    const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
-    expect(batch).toHaveLength(5);
+    expect(transactionMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledTimes(5);
+    expect(upsertMock.mock.calls.map((call) => (call[0] as { where: { key: string } }).where.key)).not.toContain('smtp.pass');
   });
 
   it('setSmtpSettings WITH a non-empty pass also writes the password key (6 writes)', async () => {
     upsert.mockResolvedValue({});
-    transaction.mockResolvedValue([{}, {}, {}, {}, {}, {}]);
+    runTransactionsOnPrisma();
     findMany.mockResolvedValue([]);
 
     await setSmtpSettings(adminActor(), { ...SMTP_INPUT, pass: 'new-secret' });
 
-    const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
-    expect(batch).toHaveLength(6);
+    expect(upsertMock).toHaveBeenCalledTimes(6);
   });
 
   it('getSmtpSettingsForMailer (internal, no Actor) DOES return the raw password', async () => {
@@ -317,7 +330,7 @@ describe('app-settings.service — SMTP settings (story 12.11, AC 1/2)', () => {
 
   it('setSmtpSettings ENCRYPTS the password before writing (CWE-312 fix) — the stored value is not the plaintext, and decrypts back to it', async () => {
     upsert.mockResolvedValue({});
-    transaction.mockResolvedValue([{}, {}, {}, {}, {}, {}]);
+    runTransactionsOnPrisma();
     findMany.mockResolvedValue([]);
 
     await setSmtpSettings(adminActor(), { ...SMTP_INPUT, pass: 'a-real-password' });
@@ -600,7 +613,7 @@ describe('treasury opening balances (story Billing-1, AC 3)', () => {
     });
 
     it('setTreasurySettings (admin) writes all 3 keys together in one transaction and echoes them back', async () => {
-      transaction.mockResolvedValue([{}, {}, {}]);
+      runTransactionsOnPrisma();
       const result = await setTreasurySettings(adminActor(), { openingCashCents: 150000, openingBankCents: -2500, openingDate: '2026-01-01' });
 
       expect(result).toEqual({ openingCashCents: 150000, openingBankCents: -2500, openingDate: '2026-01-01' });

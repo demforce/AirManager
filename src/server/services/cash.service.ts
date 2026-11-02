@@ -1,3 +1,4 @@
+import type { Prisma } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import type { CashReportQuery, ListCashCategoriesQuery, ListCashMovementsQuery, ReclassifyCashMovementInput, RecordCashMovementInput } from '@/lib/schemas/cash';
 import { APP_TIMEZONE } from '@/lib/time';
@@ -52,6 +53,15 @@ function isRecordNotFound(error: unknown): boolean {
  */
 const SYSTEM_CASH_CATEGORY_NAMES = new Set(['Ricariche', 'Compensi istruttori']);
 
+/**
+ * Story 19.8 (AD-5): every 409 of the categories keeps the generic
+ * `CONFLICT` code (contract — `cash-register.spec.ts` asserts it) and says
+ * WHICH rule it is in `details.reason`, read per row by the Impostazioni
+ * composite save.
+ */
+const CATEGORY_NAME_TAKEN_MESSAGE = 'A cash category with this name already exists.';
+const CATEGORY_IN_USE_MESSAGE = 'This category has recorded movements — deactivate it instead of deleting it.';
+
 export type CashCategoryListItem = {
   id: string;
   name: string;
@@ -98,15 +108,20 @@ export async function listCashCategories(actor: Actor, query: ListCashCategories
 export async function createCashCategory(actor: Actor, input: { name: string }): Promise<CashCategoryListItem> {
   authorize(actor, 'settings.manage');
 
+  return createCashCategoryCore(prisma, input);
+}
+
+/** The rules of {@link createCashCategory} on the caller's client, no `authorize` (story 19.8, AD-3). */
+export async function createCashCategoryCore(tx: Prisma.TransactionClient, input: { name: string }): Promise<CashCategoryListItem> {
   try {
-    const category = await prisma.cashCategory.create({
+    const category = await tx.cashCategory.create({
       data: { name: input.name },
       select: { id: true, name: true, isActive: true },
     });
     return { ...category, movementCount: 0, isSystem: SYSTEM_CASH_CATEGORY_NAMES.has(category.name) };
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new ConflictError('A cash category with this name already exists.');
+      throw new ConflictError(CATEGORY_NAME_TAKEN_MESSAGE, { reason: 'NAME_TAKEN' });
     }
     throw error;
   }
@@ -116,21 +131,35 @@ export async function createCashCategory(actor: Actor, input: { name: string }):
 export async function renameCashCategory(actor: Actor, id: string, input: { name: string }): Promise<CashCategoryListItem> {
   authorize(actor, 'settings.manage');
 
-  const existing = await prisma.cashCategory.findUnique({ where: { id }, select: { id: true, name: true } });
+  return updateCashCategoryCore(prisma, id, { name: input.name });
+}
+
+/**
+ * Rename and/or (de)activate in one write, no `authorize` (story 19.8,
+ * AD-3) — the composite save's update of a category. `isActive` is
+ * DECLARATIVE: `false` on an already inactive category is a no-op, unlike
+ * {@link deactivateCashCategory}'s 409 (the single routes keep theirs). Any
+ * `name` on a system category is a rename, refused like {@link renameCashCategory}.
+ */
+export async function updateCashCategoryCore(tx: Prisma.TransactionClient, id: string, input: { name?: string; isActive?: boolean }): Promise<CashCategoryListItem> {
+  const existing = await tx.cashCategory.findUnique({ where: { id }, select: { id: true, name: true } });
   if (!existing) {
     throw new NotFoundError('Cash category not found.');
   }
-  if (SYSTEM_CASH_CATEGORY_NAMES.has(existing.name)) {
+  if (input.name !== undefined && SYSTEM_CASH_CATEGORY_NAMES.has(existing.name)) {
     // Same class as the delete guard (review 3.4 F2): automatic flows
     // resolve system categories BY NAME — renaming "Ricariche" would break
     // every subsequent top-up as surely as deleting it.
-    throw new ConflictError('This is a system category required by automatic movements — it cannot be renamed.');
+    throw new ConflictError('This is a system category required by automatic movements — it cannot be renamed.', { reason: 'SYSTEM_CATEGORY' });
   }
 
   try {
-    const category = await prisma.cashCategory.update({
+    const category = await tx.cashCategory.update({
       where: { id },
-      data: { name: input.name },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      },
       select: { id: true, name: true, isActive: true, _count: { select: { movements: true } } },
     });
     return {
@@ -142,7 +171,7 @@ export async function renameCashCategory(actor: Actor, id: string, input: { name
     };
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new ConflictError('A cash category with this name already exists.');
+      throw new ConflictError(CATEGORY_NAME_TAKEN_MESSAGE, { reason: 'NAME_TAKEN' });
     }
     throw error;
   }
@@ -199,30 +228,41 @@ export async function reactivateCashCategory(actor: Actor, id: string): Promise<
 export async function deleteCashCategory(actor: Actor, id: string): Promise<void> {
   authorize(actor, 'settings.manage');
 
-  const existing = await prisma.cashCategory.findUnique({
+  await deleteCashCategoryCore(prisma, id, { missingOk: false });
+}
+
+/**
+ * The rules of {@link deleteCashCategory} on the caller's client, no
+ * `authorize` (story 19.8, AD-3). `missingOk`: the composite save treats a
+ * category that is already gone as done (a no-op), the single route keeps its 404.
+ */
+export async function deleteCashCategoryCore(tx: Prisma.TransactionClient, id: string, options: { missingOk: boolean }): Promise<void> {
+  const existing = await tx.cashCategory.findUnique({
     where: { id },
     select: { id: true, name: true, _count: { select: { movements: true } } },
   });
   if (!existing) {
+    if (options.missingOk) return;
     throw new NotFoundError('Cash category not found.');
   }
   if (SYSTEM_CASH_CATEGORY_NAMES.has(existing.name)) {
     // Review 3.4 F2: deleting an (unused) system category would break every
     // subsequent automatic movement — recordTopUp 500s until re-seeded.
-    throw new ConflictError('This is a system category required by automatic movements — it cannot be deleted.');
+    throw new ConflictError('This is a system category required by automatic movements — it cannot be deleted.', { reason: 'SYSTEM_CATEGORY' });
   }
   if (existing._count.movements > 0) {
-    throw new ConflictError('This category has recorded movements — deactivate it instead of deleting it.');
+    throw new ConflictError(CATEGORY_IN_USE_MESSAGE, { reason: 'IN_USE' });
   }
 
   try {
-    await prisma.cashCategory.delete({ where: { id } });
+    await tx.cashCategory.delete({ where: { id } });
   } catch (error) {
     if (isForeignKeyViolation(error)) {
-      throw new ConflictError('This category has recorded movements — deactivate it instead of deleting it.');
+      throw new ConflictError(CATEGORY_IN_USE_MESSAGE, { reason: 'IN_USE' });
     }
     if (isRecordNotFound(error)) {
       // Concurrent double-DELETE race (TD-1, AC 1): the other request won.
+      if (options.missingOk) return;
       throw new NotFoundError('Cash category not found.');
     }
     throw error;

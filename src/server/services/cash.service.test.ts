@@ -286,6 +286,12 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(categoryDeleteMock).not.toHaveBeenCalled();
     });
 
+    it('story 19.8 (AD-5): the 409 keeps code CONFLICT and names its rule in details.reason (additive on the single route)', async () => {
+      categoryFindUnique.mockResolvedValue({ id: 'cat_1', name: 'Carburante', _count: { movements: 5 } });
+
+      await expect(deleteCashCategory(adminActor(), 'cat_1')).rejects.toMatchObject({ code: 'CONFLICT', details: { reason: 'IN_USE' } });
+    });
+
     it('an unused category is deleted', async () => {
       categoryFindUnique.mockResolvedValue({ id: 'cat_1', _count: { movements: 0 } });
       categoryDelete.mockResolvedValue({ id: 'cat_1' });

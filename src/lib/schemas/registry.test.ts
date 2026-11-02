@@ -89,8 +89,33 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/people/{id}/membership-fee',
         // Story Billing-1, AC 3.
         '/api/v1/settings/treasury',
+        // Story 19.8 (AD-1, D-8): the composite save and the currency route.
+        '/api/v1/settings',
+        '/api/v1/settings/currency',
       ]),
     );
+  });
+
+  it('documents the composite PATCH /api/v1/settings: request with the 10 blocks (UpdateSettingsRequest), response SettingsSnapshot, errors 401/403/409/422 (story 19.8, AC 7)', () => {
+    type JsonSchema = { properties?: Record<string, unknown> };
+    type Operation = { requestBody?: { content: Record<string, { schema: JsonSchema }> }; responses: Record<string, { content?: Record<string, { schema: JsonSchema }> }> };
+    const patch = (doc.paths as Record<string, Record<string, Operation>>)['/api/v1/settings']?.['patch'];
+    const blocks = ['airfield', 'cashCategories', 'club', 'currency', 'expiryTypes', 'membershipFee', 'metarStation', 'scheduling', 'smtp', 'treasury'];
+
+    expect(Object.keys(patch?.requestBody?.content['application/json']?.schema.properties ?? {}).sort()).toEqual(blocks);
+    expect(Object.keys(patch?.responses['200']?.content?.['application/json']?.schema.properties ?? {}).sort()).toEqual(blocks);
+    expect(Object.keys(patch?.responses ?? {}).sort()).toEqual(['200', '401', '403', '409', '422', '500']);
+
+    // Named components, same convention as every other registered request/response.
+    const schemas = doc.components?.schemas as Record<string, JsonSchema> | undefined;
+    expect(Object.keys(schemas?.['UpdateSettingsRequest']?.properties ?? {}).sort()).toEqual(blocks);
+    expect(Object.keys(schemas?.['SettingsSnapshot']?.properties ?? {}).sort()).toEqual(blocks);
+  });
+
+  it('documents GET/PUT /api/v1/settings/currency — GET without a permission gate (401 only), PUT 401/403/422 (story 19.8, D-8)', () => {
+    const currency = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)['/api/v1/settings/currency'];
+    expect(Object.keys(currency?.['get']?.responses ?? {}).sort()).toEqual(['200', '401', '500']);
+    expect(Object.keys(currency?.['put']?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
   });
 
   it('documents a cookie-based session security scheme', () => {

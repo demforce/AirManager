@@ -3292,6 +3292,47 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 .cash-categories-mobile,
 .ranked-cap-foot{ display: none; }
 
+/* --- Impostazioni: one form, one Salva (story 19.8, AD-6, D-4) ---
+   The nine sections live in ONE `<form>`, so the column rhythm `.page` gave
+   its cards is restated on the form itself. The save bar is the form's LAST
+   child and `sticky`: it rides the bottom edge while the page scrolls and
+   settles under the last section at the end — the Salva "at the end of the
+   page" without a scroll to reach it after every change. Only existing
+   tokens: the card surface, border and radius, and `--shadow-md` (the
+   popovers' own lift) to separate it from the content passing beneath. */
+.settings-form{ display: flex; flex-direction: column; gap: 22px; }
+.settings-save-bar{
+  position: sticky; bottom: 12px; z-index: 3;
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 14px 12px 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.settings-save-status{ flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.settings-save-summary{ font-size: 12.5px; color: var(--ink-2); }
+/* `.btn` has no disabled look of its own (only `[aria-disabled]`, 13.11):
+   the Salva is disabled whenever nothing changed (D-5) and the test email
+   while SMTP has unsaved changes (D-9), so both take that same look here,
+   on this page's own classes. */
+.settings-save-bar > .btn:disabled,
+.settings-card > .card-head > .btn:disabled{ opacity: .4; cursor: default; }
+
+/* A catalogue row in draft (D-7) speaks with the SAME marks as the person
+   editor's draft rows (`.expiry-draft-row`, story 19.4): the accent bar for
+   what the Salva will write, struck-through ink for what it will delete. */
+.catalog-row[data-state="new"],
+.catalog-row[data-state="changed"],
+.mobile-row-catalog[data-state="new"],
+.mobile-row-catalog[data-state="changed"]{ box-shadow: inset 2px 0 0 var(--accent); }
+.catalog-row[data-state="removed"] .student-name,
+.mobile-row-catalog[data-state="removed"] .mobile-row-name{ text-decoration: line-through; color: var(--ink-4); }
+.catalog-row > .catalog-row-error{ grid-column: 1 / -1; margin: 0; }
+.expiry-types-mobile .catalog-row-error,
+.cash-categories-mobile .catalog-row-error{ margin: 0; padding: 0 16px 10px; }
+.catalog-panel{ padding: 18px 20px; border-bottom: 1px solid var(--border); }
+
 @media (max-width: 640px){
   /* --- Statistiche: the period toggle and the two metric toggles (AC 1) ---
      Both are `.segmented`s, and `.segmented` is shared with four surfaces
@@ -3351,15 +3392,10 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .settings-card .input{ min-height: 44px; }
   /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
   .settings-card textarea.input{ min-height: 88px; }
-  /* "Salva"/"Aggiungi"/"Invia email di prova"/"Annulla": full-width and 44px.
-     A card save is the end of a column of fields — on a phone it is the whole
-     column's width (57.66px measured before), not a chip lost against the left
-     margin. The `:only-child` is what tells a SAVE ROW (one button in its own
-     div, the shape all five save actions share) from the sheet's action column
-     and the head's own action, which are laid out by their own rules. */
+  /* "Aggiungi"/"Invia email di prova"/"Chiudi" and the row actions: 44px.
+     Story 19.8 removed the five per-card "Salva" rows the full-width rules
+     here served (the page's one Salva lives in `.settings-save-bar`, below). */
   .settings-card .btn{ min-height: 44px; justify-content: center; }
-  .settings-card div:has(> .btn.primary:only-child) > .btn.primary{ width: 100%; }
-  .settings-card form > div:has(> .btn) > .btn{ flex: 1 1 0; }
 
   /* The head: `.card-head` is shared by every card in the app, so the phone
      rule is hung on `.settings-card >` and touches only its DIRECT children.
@@ -3393,22 +3429,30 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .mobile-row-catalog > .mobile-row-side{ grid-column: 2; grid-row: 1; }
   .mobile-row-catalog > .mobile-row-side .badge{ white-space: nowrap; }
 
-  /* The sheet's action column: "Elimina" is a `secondStep` inside the same
-     sheet (R-15.8b-d), so no second overlay is ever stacked on it (AD-8) —
-     and the confirmation prose needs a line of its own. */
-  .catalog-sheet-step{ display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
-  .catalog-sheet-step .input{ min-height: 44px; }
+  /* The checkbox row of the expiry-type panel: `blocksBooking` is the
+     manoeuvre that feeds the 7.4/14.4 guards, and it was a 13px box in a 15px
+     row. Same idiom as `.membership-fee-override-label` (15.7): the `<label>`
+     around it is the real target and carries the 44px floor, the box itself
+     is 24px — the WCAG 2.2 minimum for a control that is not its own target
+     (review MINOR-2, PO decision 2026-08-05). The label's own `align-items`
+     is NOT set here: it comes from the inline `flex-start` in
+     `ratings-card.tsx`, which wins over any class rule (review LOW-1). Since
+     story 19.8 the panel is a group inside the page's form, not a `<form>`. */
+  .settings-card label:has(> input[type="checkbox"]){ min-height: 44px; }
+  .settings-card input[type="checkbox"]{ width: 24px; height: 24px; flex-shrink: 0; }
 
-  /* The checkbox row of the expiry-type form: `blocksBooking` is the manoeuvre
-     that feeds the 7.4/14.4 guards, and it was a 13px box in a 15px row. Same
-     idiom as `.membership-fee-override-label` (15.7): the `<label>` around it
-     is the real target and carries the 44px floor, the box itself is 24px —
-     the WCAG 2.2 minimum for a control that is not its own target (review
-     MINOR-2, PO decision 2026-08-05). The label's own `align-items` is NOT set
-     here: it comes from the inline `flex-start` of `ratings-card.tsx:588`,
-     which wins over any class rule (review LOW-1). */
-  .settings-card form label:has(> input[type="checkbox"]){ min-height: 44px; }
-  .settings-card form input[type="checkbox"]{ width: 24px; height: 24px; flex-shrink: 0; }
+  /* The one Salva (story 19.8, P7): ABOVE the fixed tab bar, never under it.
+     `bottom` is the tab bar's own height on this page — 67px, MEASURED at
+     320/375/390 in both locales (admin labels are one line, see `.main`
+     above), plus the same safe-area inset the bar adds to its own padding —
+     and the 8px gap of the desktop's float. The button takes the bar's whole
+     width at the 44px floor; the status line sits above it. */
+  .settings-save-bar{
+    bottom: calc(67px + 8px + env(safe-area-inset-bottom));
+    flex-direction: column; align-items: stretch; gap: 8px;
+    padding: 10px 12px;
+  }
+  .settings-save-bar > .btn{ min-height: 44px; justify-content: center; }
 }
 
 /* ---------- aree self mobile (story 15.9, epic 15 R1-R4) ----------

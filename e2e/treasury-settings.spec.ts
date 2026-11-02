@@ -64,26 +64,31 @@ test.describe('Impostazioni — card Tesoreria (story Billing-2, AC 4/6)', () =>
     await page.close();
   });
 
-  test('the card prefills from getTreasurySettings (server component, no GET route — D5) and round-trips through its own PUT response', async ({ page }) => {
+  test('the section prefills from the settings snapshot (server component, no GET route — D5) and round-trips through the Salva\'s own PATCH response', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await gotoSettingsAndWaitForHydration(page);
 
     await expect(page.getByTestId('treasury-settings-card')).toBeVisible();
-    await page.getByTestId('treasury-opening-cash-input').fill('123.45');
+    // Values different from whatever is stored, so the block is dirty (story 19.8, D-3).
+    const cash = (await page.getByTestId('treasury-opening-cash-input').inputValue()) === '123.45' ? '123.46' : '123.45';
+    await page.getByTestId('treasury-opening-cash-input').fill(cash);
     await page.getByTestId('treasury-opening-bank-input').fill('678.90');
     await page.getByTestId('treasury-opening-date-input').fill(SAFE_OPENING_DATE);
 
-    const [putResponse] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/treasury') && r.request().method() === 'PUT'),
-      page.getByTestId('treasury-settings-save').click(),
+    // Story 19.8: ONE Salva, ONE `PATCH /api/v1/settings` carrying only `treasury`.
+    const [patchResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith('/api/v1/settings') && r.request().method() === 'PATCH'),
+      page.getByTestId('settings-save').click(),
     ]);
-    expect(putResponse.status()).toBe(200);
-    expect(await putResponse.json()).toEqual({ openingCashCents: 12345, openingBankCents: 67890, openingDate: SAFE_OPENING_DATE });
-    await expect(page.getByTestId('treasury-settings-feedback')).toHaveText('Impostazioni salvate.');
+    expect(patchResponse.status()).toBe(200);
+    const expected = { openingCashCents: Math.round(Number(cash) * 100), openingBankCents: 67890, openingDate: SAFE_OPENING_DATE };
+    expect(patchResponse.request().postDataJSON()).toEqual({ treasury: expected });
+    expect(((await patchResponse.json()) as { treasury: unknown }).treasury).toEqual(expected);
+    await expect(page.getByTestId('toast').filter({ hasText: 'Impostazioni salvate.' })).toBeVisible();
 
     // A fresh navigation re-reads the server component — the saved values persist and prefill again.
     await gotoSettingsAndWaitForHydration(page);
-    await expect(page.getByTestId('treasury-opening-cash-input')).toHaveValue('123.45');
+    await expect(page.getByTestId('treasury-opening-cash-input')).toHaveValue(cash);
     await expect(page.getByTestId('treasury-opening-bank-input')).toHaveValue('678.90');
     await expect(page.getByTestId('treasury-opening-date-input')).toHaveValue(SAFE_OPENING_DATE);
   });
@@ -105,11 +110,12 @@ test.describe('Impostazioni — card Tesoreria (story Billing-2, AC 4/6)', () =>
     await page.getByTestId('treasury-opening-cash-input').fill(nextCash);
     await page.getByTestId('treasury-opening-bank-input').fill(nextBank);
     await page.getByTestId('treasury-opening-date-input').fill(SAFE_OPENING_DATE);
-    const [putResponse] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/treasury') && r.request().method() === 'PUT'),
-      page.getByTestId('treasury-settings-save').click(),
+    const [patchResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith('/api/v1/settings') && r.request().method() === 'PATCH'),
+      page.getByTestId('settings-save').click(),
     ]);
-    expect(putResponse.status()).toBe(200);
+    expect(patchResponse.status()).toBe(200);
+    expect(Object.keys(patchResponse.request().postDataJSON() as object)).toEqual(['treasury']);
 
     await page.goto('/it/dashboard/billing');
     await page.waitForSelector('[data-testid="billing-panel-treasury"]');

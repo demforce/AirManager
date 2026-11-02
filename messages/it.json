@@ -1671,27 +1671,61 @@
   "SettingsPage": {
     "title": "Impostazioni",
     "sub": "Configurazione club · pianificazione · notifiche",
+    "save": "Salva",
+    "saved": "Impostazioni salvate.",
+    "saveBar": {
+      "clean": "Nessuna modifica",
+      "dirty": "Modifiche non salvate: {sections}",
+      "saving": "Salvataggio in corso…"
+    },
+    "errors": {
+      "required": "Campo obbligatorio.",
+      "invalidAmount": "Inserisci un importo valido.",
+      "integerRange": "Inserisci un numero intero da {min} a {max}.",
+      "invalidValue": "Valore non valido.",
+      "duplicateName": "Questo nome è già usato in questa lista.",
+      "invalidItem": "Questa voce non è stata accettata: controlla i suoi campi.",
+      "stale": "Questa voce è stata eliminata da un altro utente: ricarica la pagina.",
+      "systemCategory": "Categoria di sistema: non si può rinominare né eliminare.",
+      "checkFields": "Nulla è stato salvato: correggi i campi evidenziati.",
+      "forbidden": "Non hai i permessi per modificare le impostazioni.",
+      "generic": "Non è stato possibile salvare. Riprova."
+    },
+    "rowState": {
+      "new": "Nuova",
+      "changed": "Modificata",
+      "removed": "Da eliminare"
+    },
+    "actions": {
+      "restore": "Ripristina"
+    },
     "club": {
       "title": "Club",
       "sub": "Identità usata nella console e nei PDF esportati",
-      "identityHeading": "Identità",
       "icao": "Aeroporto base (ICAO)",
       "contactEmail": "Email di contatto",
+      "contactEmailHint": "Riceve l'email di prova SMTP.",
       "metarStation": "Stazione METAR",
       "metarStationHint": "Stazione per il meteo in sidebar. Vuota = usa l'ICAO del campo.",
-      "membershipFee": "Quota associativa annuale",
-      "membershipFeeHint": "Importo precompilato nell'azione \"Quota associativa\" in Scadenze.",
-      "save": "Salva",
-      "saved": "Impostazioni salvate.",
-      "error": "Non è stato possibile salvare. Riprova.",
       "invalidEmail": "Inserisci un indirizzo email valido.",
       "form": {
-        "nameLabel": "Nome aviosuperficie",
-        "save": "Salva",
-        "saved": "Impostazioni salvate.",
-        "error": "Non è stato possibile salvare le impostazioni. Riprova.",
-        "requiredField": "Campo obbligatorio."
+        "nameLabel": "Nome aviosuperficie"
       }
+    },
+    "membership": {
+      "title": "Quota associativa",
+      "sub": "Importo della quota annuale",
+      "fee": "Importo annuale",
+      "feeHint": "Vale 12 mesi dal pagamento. Precompila l'azione «Quota associativa» in Scadenze."
+    },
+    "currency": {
+      "title": "Currency",
+      "sub": "Voli recenti richiesti per volare senza istruttore",
+      "minFlights": "Voli minimi",
+      "windowDays": "Finestra",
+      "flightsSuffix": "voli",
+      "daysSuffix": "giorni",
+      "hint": "Chi non ha almeno questo numero di voli nella finestra può volare solo con un istruttore."
     },
     "scheduling": {
       "title": "Pianificazione",
@@ -1704,9 +1738,6 @@
       "minutesSuffix": "min",
       "daysSuffix": "giorni",
       "hint": "Gli aeromobili possono essere prenotati tra le {open} e le {close} locali, in incrementi di {slot} minuti, fino a {days} giorni in anticipo. Durata minima slot e margine di turnaround sono indicativi (non impediscono il salvataggio di una prenotazione).",
-      "save": "Salva",
-      "saved": "Impostazioni salvate.",
-      "error": "Non è stato possibile salvare. Riprova.",
       "invalidRange": "L'orario di chiusura deve essere dopo quello di apertura."
     },
     "smtp": {
@@ -1716,6 +1747,7 @@
       "testEmailSent": "Email di prova inviata.",
       "testEmailFailed": "Invio non riuscito. Controlla la configurazione SMTP.",
       "testEmailNoContact": "Imposta prima un'email di contatto nella card Club.",
+      "testEmailNeedsSave": "Salva le modifiche prima di inviare l'email di prova.",
       "host": "Host SMTP",
       "port": "Porta",
       "security": "Sicurezza",
@@ -1729,9 +1761,6 @@
       "pass": "Password",
       "passHint": "Lascia vuoto per mantenere la password attuale.",
       "passConfigured": "Password già configurata",
-      "save": "Salva",
-      "saved": "Impostazioni salvate.",
-      "error": "Non è stato possibile salvare. Riprova.",
       "invalidHost": "Host non valido: non può essere un indirizzo privato, locale o interno."
     },
     "treasury": {
@@ -1741,10 +1770,6 @@
       "openingBank": "Saldo apertura banca",
       "openingDate": "Data di apertura",
       "hint": "I saldi di Liquidità in Contabilità partono da questi importi alla data indicata, sommando i movimenti registrati da allora.",
-      "save": "Salva",
-      "saved": "Impostazioni salvate.",
-      "error": "Non è stato possibile salvare. Riprova.",
-      "invalidAmount": "Inserisci un importo valido.",
       "requiredDate": "Campo obbligatorio."
     },
     "ratings": {
@@ -1778,10 +1803,7 @@
         "edit": "Modifica",
         "deactivate": "Disattiva",
         "reactivate": "Riattiva",
-        "delete": "Elimina",
-        "confirmDelete": "Confermi?",
-        "confirmYes": "Sì",
-        "confirmCancel": "Annulla"
+        "delete": "Elimina"
       },
       "form": {
         "createTitle": "Nuova Ratings",
@@ -1792,21 +1814,10 @@
         "validityHint": "Precompila la scadenza alla registrazione (oggi + mesi). Imposta 0 per le Ratings che non scadono mai.",
         "blocksBooking": "Blocca prenotazioni e voli",
         "blocksBookingHint": "Una scadenza di questo tipo, se scaduta o assente, impedisce nuove prenotazioni e la registrazione/correzione di voli.",
-        "submitCreate": "Crea",
-        "submitSave": "Salva",
-        "cancel": "Annulla",
-        "requiredField": "Campo obbligatorio.",
-        "conflictError": "Esiste già un tipo con questo nome.",
-        "genericError": "Non è stato possibile salvare. Riprova."
+        "conflictError": "Esiste già un tipo con questo nome."
       },
       "feedback": {
-        "created": "Ratings creata.",
-        "updated": "Ratings aggiornata.",
-        "deactivated": "Ratings disattivata.",
-        "reactivated": "Ratings riattivata.",
-        "deleted": "Ratings eliminata.",
-        "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
-        "genericError": "Non è stato possibile completare l'operazione."
+        "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo."
       },
       "hint": "Imposta la validità a 0 per le Ratings che non scadono mai (es. Ratings notturna). Le scadenze compaiono nella pagina Scadenze.",
       "mobile": {
@@ -1823,7 +1834,6 @@
       "addAction": "Aggiungi visita medica",
       "table": {
         "name": "Nome visita",
-        "scope": "Ambito",
         "validity": "Validità",
         "status": "Stato",
         "actions": "Azioni",
@@ -1831,60 +1841,32 @@
         "monthsSuffix": "mesi",
         "noExpiry": "senza scadenza"
       },
-      "scope": {
-        "PILOTS": "Piloti",
-        "STUDENTS": "Allievi",
-        "INSTRUCTORS": "Istruttori",
-        "ALL": "Tutti"
-      },
       "status": {
         "active": "Attivo",
         "inactive": "Disattivato"
-      },
-      "blocksBooking": {
-        "yes": "Blocca prenotazioni"
       },
       "actions": {
         "edit": "Modifica",
         "deactivate": "Disattiva",
         "reactivate": "Riattiva",
-        "delete": "Elimina",
-        "confirmDelete": "Confermi?",
-        "confirmYes": "Sì",
-        "confirmCancel": "Annulla"
+        "delete": "Elimina"
       },
       "form": {
         "createTitle": "Nuova visita medica",
         "editTitle": "Modifica visita medica",
         "name": "Nome visita",
-        "scope": "Ambito",
         "validity": "Validità",
         "validityHint": "Precompila la scadenza alla registrazione (oggi + mesi). Imposta 0 per le visite che non scadono mai.",
-        "blocksBooking": "Blocca prenotazioni e voli",
-        "blocksBookingHint": "Una scadenza di questo tipo, se scaduta o assente, impedisce nuove prenotazioni e la registrazione/correzione di voli.",
-        "submitCreate": "Crea",
-        "submitSave": "Salva",
-        "cancel": "Annulla",
-        "requiredField": "Campo obbligatorio.",
-        "conflictError": "Esiste già un tipo con questo nome.",
-        "genericError": "Non è stato possibile salvare. Riprova."
+        "conflictError": "Esiste già un tipo con questo nome."
       },
       "feedback": {
-        "created": "Visita medica creata.",
-        "updated": "Visita medica aggiornata.",
-        "deactivated": "Visita medica disattivata.",
-        "reactivated": "Visita medica riattivata.",
-        "deleted": "Visita medica eliminata.",
-        "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo.",
-        "genericError": "Non è stato possibile completare l'operazione."
+        "deleteInUseError": "Questo tipo è in uso: disattivalo invece di eliminarlo."
       },
       "hint": "Le visite mediche sono separate dai Ratings: hanno una propria scadenza e non sono mai testo libero. Le scadenze compaiono nella pagina Scadenze.",
       "mobile": {
         "openDetail": "Apri dettaglio",
         "close": "Chiudi",
-        "empty": "Nessuna visita in questo catalogo.",
-        "yes": "Sì",
-        "no": "No"
+        "empty": "Nessuna visita in questo catalogo."
       }
     },
     "cashCategories": {
@@ -1907,30 +1889,16 @@
         "rename": "Rinomina",
         "deactivate": "Disattiva",
         "reactivate": "Riattiva",
-        "delete": "Elimina",
-        "confirmDelete": "Eliminare questa categoria?",
-        "confirmYes": "Conferma",
-        "confirmCancel": "Annulla"
+        "delete": "Elimina"
       },
       "form": {
         "createTitle": "Nuova categoria",
         "renameTitle": "Rinomina categoria",
         "name": "Nome",
-        "submitCreate": "Crea categoria",
-        "submitRename": "Salva",
-        "cancel": "Annulla",
-        "requiredField": "Il nome è obbligatorio.",
-        "conflictError": "Esiste già una categoria con questo nome.",
-        "genericError": "Operazione non riuscita. Riprova."
+        "conflictError": "Esiste già una categoria con questo nome."
       },
       "feedback": {
-        "created": "Categoria creata.",
-        "renamed": "Categoria rinominata.",
-        "deactivated": "Categoria disattivata.",
-        "reactivated": "Categoria riattivata.",
-        "deleted": "Categoria eliminata.",
-        "deleteInUseError": "La categoria ha movimenti registrati e non può essere eliminata: disattivala invece.",
-        "genericError": "Operazione non riuscita. Riprova."
+        "deleteInUseError": "La categoria ha movimenti registrati e non può essere eliminata: disattivala invece."
       },
       "mobile": {
         "openDetail": "Apri dettaglio",

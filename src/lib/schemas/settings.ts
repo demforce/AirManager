@@ -1,5 +1,7 @@
 import { CURRENCY_LIMITS } from '@/lib/currency';
 import { env } from '@/lib/env';
+import { cashCategoryItemSchema, createCashCategorySchema } from './cash';
+import { createExpiryTypeSchema, expiryTypeItemSchema, expiryTypeKindInputSchema, updateExpiryTypeSchema } from './expiry-types';
 import { z } from './zod-with-openapi';
 
 // --- Airfield branding (story 10.2, AC 1) -----------------------------------
@@ -237,3 +239,119 @@ export const treasurySettingsDtoSchema = z.object({
 });
 
 export type TreasurySettingsDto = z.infer<typeof treasurySettingsDtoSchema>;
+
+// --- The Impostazioni page in one request (story 19.8, AD-1, A17) -----------
+// `PATCH /api/v1/settings`: every block is OPTIONAL and is exactly the body of
+// the single-setting PUT it mirrors; the two catalogue lists carry their
+// create/update/delete operations. Validated by the route BEFORE anything is
+// read, saved by `settings.service.ts#saveSettings` in ONE transaction.
+
+const listItemIdSchema = z.string().trim().min(1);
+
+/** `kind` is not editable from here: the list a type sits in IS its kind. */
+const expiryTypeUpdateItemSchema = z
+  .object({
+    id: listItemIdSchema,
+    name: updateExpiryTypeSchema.shape.name,
+    scope: updateExpiryTypeSchema.shape.scope,
+    isActive: updateExpiryTypeSchema.shape.isActive,
+    blocksBooking: updateExpiryTypeSchema.shape.blocksBooking,
+    validityMonths: updateExpiryTypeSchema.shape.validityMonths,
+  })
+  .refine((value) => Object.keys(value).length > 1, { message: 'At least one field besides id must be provided.' });
+
+/** `isActive` is DECLARATIVE here (`false` on an inactive category is a no-op), unlike the deactivate/reactivate routes. */
+const cashCategoryUpdateItemSchema = z
+  .object({
+    id: listItemIdSchema,
+    name: createCashCategorySchema.shape.name.optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 1, { message: 'At least one field besides id must be provided.' });
+
+type ListOps = { create?: { name: string }[]; update?: { id: string; name?: string }[]; delete?: string[] };
+
+/**
+ * The checks a list can fail before any query: an id at most once in
+ * `update` and in `delete` and never in both, a target name (already
+ * trimmed by the item schemas) at most once across `create` and `update`.
+ */
+function checkListOps(value: ListOps, ctx: z.RefinementCtx): void {
+  const updateIds = new Set<string>();
+  for (const [index, item] of (value.update ?? []).entries()) {
+    if (updateIds.has(item.id)) ctx.addIssue({ code: 'custom', path: ['update', index, 'id'], message: 'Duplicate id.' });
+    updateIds.add(item.id);
+  }
+  const deleteIds = new Set<string>();
+  for (const [index, id] of (value.delete ?? []).entries()) {
+    if (deleteIds.has(id) || updateIds.has(id)) ctx.addIssue({ code: 'custom', path: ['delete', index], message: 'Duplicate id.' });
+    deleteIds.add(id);
+  }
+  const names = new Set<string>();
+  const named: Array<[op: 'create' | 'update', index: number, name: string | undefined]> = [
+    ...(value.create ?? []).map((item, index): ['create', number, string] => ['create', index, item.name]),
+    ...(value.update ?? []).map((item, index): ['update', number, string | undefined] => ['update', index, item.name]),
+  ];
+  for (const [op, index, name] of named) {
+    if (name === undefined) continue;
+    if (names.has(name)) ctx.addIssue({ code: 'custom', path: [op, index, 'name'], message: 'Duplicate name.' });
+    names.add(name);
+  }
+}
+
+export const updateSettingsSchema = z
+  .object({
+    airfield: airfieldBrandingSchema.optional(),
+    club: clubIdentitySchema.optional(),
+    metarStation: metarStationInputSchema.optional(),
+    membershipFee: membershipFeeSettingSchema.optional(),
+    currency: currencySettingsSchema.optional(),
+    scheduling: schedulingSettingsSchema.optional(),
+    smtp: smtpSettingsInputSchema.optional(),
+    treasury: treasurySettingsSchema.optional(),
+    expiryTypes: z
+      .object({
+        // `kind` REQUIRED here (the single route defaults it to RATING): a
+        // visit created from the "Visite mediche" list never becomes a rating
+        // through a forgotten field, and MEMBERSHIP is never accepted.
+        create: z.array(createExpiryTypeSchema.extend({ kind: expiryTypeKindInputSchema })).max(50).optional(),
+        update: z.array(expiryTypeUpdateItemSchema).max(200).optional(),
+        delete: z.array(listItemIdSchema).max(200).optional(),
+      })
+      .superRefine(checkListOps)
+      .optional(),
+    cashCategories: z
+      .object({
+        create: z.array(createCashCategorySchema).max(50).optional(),
+        update: z.array(cashCategoryUpdateItemSchema).max(200).optional(),
+        delete: z.array(listItemIdSchema).max(200).optional(),
+      })
+      .superRefine(checkListOps)
+      .optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, { message: 'At least one block must be provided.' });
+
+export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
+
+/** What a client SENDS (defaults not yet applied) — the type the Impostazioni page builds its PATCH with. */
+export type UpdateSettingsBody = z.input<typeof updateSettingsSchema>;
+
+/**
+ * The whole page in one read (story 19.8, AD-4): what `/dashboard/settings`
+ * renders and what the PATCH answers with. `metarStation.station` is the
+ * station the admin TYPED (`''` = use the ICAO); `smtp` never carries the
+ * password; `expiryTypes` holds only RATING and MEDICAL (the membership-fee
+ * type is a system type, story 19.7a).
+ */
+export const settingsSnapshotSchema = z.object({
+  airfield: airfieldBrandingSchema,
+  club: clubIdentitySchema,
+  metarStation: metarStationDtoSchema,
+  membershipFee: membershipFeeSettingSchema,
+  currency: currencySettingsSchema,
+  scheduling: schedulingSettingsDtoSchema,
+  smtp: smtpSettingsDtoSchema,
+  treasury: treasurySettingsDtoSchema,
+  expiryTypes: z.array(expiryTypeItemSchema),
+  cashCategories: z.array(cashCategoryItemSchema),
+});

@@ -107,15 +107,18 @@ import { metarResponseSchema } from './metar';
 import {
   airfieldBrandingSchema,
   clubIdentitySchema,
+  currencySettingsSchema,
   membershipFeeSettingSchema,
   metarStationDtoSchema,
   metarStationInputSchema,
   schedulingSettingsDtoSchema,
   schedulingSettingsSchema,
+  settingsSnapshotSchema,
   smtpSettingsDtoSchema,
   smtpSettingsInputSchema,
   testEmailResultSchema,
   treasurySettingsSchema,
+  updateSettingsSchema,
 } from './settings';
 import { statsQuerySchema, statsResponseSchema } from './stats';
 import {
@@ -294,6 +297,8 @@ registry.register('CreateBookingResponse', createBookingResponseSchema);
 registry.register('UpdateBookingRequest', updateBookingSchema);
 registry.register('TransitionBookingRequest', transitionBookingSchema);
 registry.register('AirfieldBranding', airfieldBrandingSchema);
+registry.register('UpdateSettingsRequest', updateSettingsSchema);
+registry.register('SettingsSnapshot', settingsSnapshotSchema);
 registry.register('Stats', statsResponseSchema);
 // Story 12.13 (F5, review 12.11 action item) — the 9 routes story 12.11
 // shipped without ever registering: settings sub-resources, METAR, the
@@ -1722,6 +1727,51 @@ registry.registerPath({
   request: { body: { content: jsonContent(treasurySettingsSchema), required: true } },
   responses: {
     200: { description: 'The saved treasury opening balances.', content: jsonContent(treasurySettingsSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+// --- The Impostazioni page in one request (story 19.8, AD-1, A17) -----------
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/v1/settings',
+  summary: 'Save the settings page in one atomic request (story 19.8)',
+  description:
+    'ONE transaction for the whole Impostazioni page: either every block present is saved, or nothing is (A17). Every block is optional and is exactly the body of the matching single-setting PUT — `airfield` (`PUT /settings/airfield`), `club`, `metarStation`, `membershipFee`, `currency`, `scheduling`, `smtp`, `treasury`; an absent block is left untouched, an empty body is a 422. `smtp.pass` absent or empty keeps the stored password. The two catalogue lists carry operations: `expiryTypes` and `cashCategories` = `{ create, update, delete }`, applied per list in the order `delete → update → create` (so "delete X and create a new X" or "rename A to B and create A" work in one request; swapping the names of two existing rows does not — the first rename is a 409). `create` of an expiry type needs `kind` (`RATING` or `MEDICAL`, the same rules as `POST /expiry-types`); `update` carries the row `id` plus only the fields to change (`kind` is not editable here); a category\'s `isActive` is declarative (`false` on an inactive category is a no-op); `delete` of an id that no longer exists is a no-op, `update` of one is a 409 with `details.reason: NOT_FOUND`. In the request an id appears at most once per list and a name at most once across `create` and `update` (422). Errors: a shape 422 `VALIDATION_ERROR` keys `details.fieldErrors` by the FULL dotted path (`smtp.host`, `scheduling.closeTime`, `expiryTypes.create.0.name`, the root under `""`); a refused row answers the code of its rule — 409 `CONFLICT` with `details.reason` `NAME_TAKEN` / `IN_USE` / `SYSTEM_CATEGORY` / `NOT_FOUND`, 409 `MEMBERSHIP_TYPE_LOCKED`, 422 `MEDICAL_TYPE_FIELDS` — and always `details.item = { list, op, index, id? }` (`index` = position in the array sent). Not idempotent for `create`: a retry after a lost answer finds the name taken (409 `NAME_TAKEN`) and writes nothing twice. Answers the whole page as saved (`SettingsSnapshot`). Requires `settings.manage`, checked before anything is read.',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(updateSettingsSchema), required: true } },
+  responses: {
+    200: { description: 'The settings page after the save.', content: jsonContent(settingsSnapshotSchema) },
+    ...errorResponses(401, 403, 409, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/settings/currency',
+  summary: 'Read the currency settings (story 19.8, R-19-i)',
+  description:
+    '`{ minFlights, windowDays }` — a pilot or student is current with at least `minFlights` flights on board in the last `windowDays` days. Absent or invalid stored values read as the defaults (1 and 90). NO permission gate: the flight and booking checks of any actor read it.',
+  tags: ['Settings'],
+  security,
+  responses: {
+    200: { description: 'The current currency settings.', content: jsonContent(currencySettingsSchema) },
+    ...errorResponses(401),
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/v1/settings/currency',
+  summary: 'Set the currency settings (story 19.8, R-19-i)',
+  description: 'Body `{ minFlights, windowDays }` — integers, `minFlights` 1..99, `windowDays` 1..3650. Admin-only (`settings.manage`).',
+  tags: ['Settings'],
+  security,
+  request: { body: { content: jsonContent(currencySettingsSchema), required: true } },
+  responses: {
+    200: { description: 'The saved currency settings.', content: jsonContent(currencySettingsSchema) },
     ...errorResponses(401, 403, 422),
   },
 });

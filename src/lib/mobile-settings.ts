@@ -15,8 +15,8 @@
 import { joinSegments } from './mobile-sub-line';
 
 export type ExpiryTypeSubLineInput = {
-  /** Always present: `ExpiryScope` is a non-nullable enum with four values. */
-  scopeLabel: string;
+  /** A rating's scope. ABSENT for a medical visit (story 19.8, R-19-j: a visit has no scope — every one is `ALL`, so the word says nothing). */
+  scopeLabel?: string | null;
   /** "12 mesi" or the "senza scadenza" wording — always present, the card decides which. */
   validityLabel: string;
   /** Present ONLY when `blocksBooking` is true (the manoeuvre that feeds the 7.4/14.4 guards). */
@@ -36,7 +36,8 @@ export function expiryTypeSubLine(input: ExpiryTypeSubLineInput): string {
 export type ExpiryTypeSheetSubInput = {
   /** Which catalogue the type belongs to ("Abilitazioni" / "Visite mediche") — the card's own title. */
   catalogLabel: string;
-  scopeLabel: string;
+  /** Absent for a medical visit, same as {@link ExpiryTypeSubLineInput.scopeLabel}. */
+  scopeLabel?: string | null;
   blocksLabel?: string | null;
 };
 

@@ -174,14 +174,28 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-dri
     // 12.11: the catalogue moved onto the Impostazioni "Ratings" card.
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
+    // Story 19.8: the catalogue is a draft written by the page's ONE Salva —
+    // the "in uso" refusal comes back from it, on the row.
     await page.goto('/it/dashboard/settings');
+    await page.waitForLoadState('networkidle');
     const okTypeRow = page.getByTestId('rating-row').filter({ hasText: okType.name });
-    await okTypeRow.getByRole('button', { name: 'Elimina' }).click();
-    await okTypeRow.getByRole('button', { name: 'Sì' }).click();
-    await expect(page.getByTestId('ratings-feedback')).toContainText('in uso');
+    const saveCatalogue = async (): Promise<number> => {
+      const [response] = await Promise.all([
+        page.waitForResponse((r) => r.url().endsWith('/api/v1/settings') && r.request().method() === 'PATCH'),
+        page.getByTestId('settings-save').click(),
+      ]);
+      // Parallel `chromium` project: the catalogue alone, never a global setting (AC 20).
+      expect(Object.keys(response.request().postDataJSON() as object)).toEqual(['expiryTypes']);
+      return response.status();
+    };
+    await okTypeRow.getByTestId('rating-delete-button').click();
+    expect(await saveCatalogue()).toBe(409);
+    await expect(okTypeRow.getByTestId('rating-row-error')).toContainText('in uso');
     await expect(page.getByTestId('rating-row').filter({ hasText: okType.name })).toHaveCount(1);
 
-    await okTypeRow.getByRole('button', { name: 'Disattiva' }).click();
+    await okTypeRow.getByTestId('rating-delete-button').click(); // "Ripristina"
+    await okTypeRow.getByTestId('rating-toggle-button').click();
+    expect(await saveCatalogue()).toBe(200);
     await expect(page.getByTestId('rating-row').filter({ hasText: okType.name })).toContainText('Disattivato');
   });
 

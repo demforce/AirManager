@@ -26,11 +26,24 @@ import { prisma } from '@/server/db/prisma';
  * key some installs may still carry from before that story is never read or
  * written here anymore). A future story that needs another setting adds its
  * own pair here rather than widening these into something generic.
+ *
+ * Story 19.8 (AD-3): every setter's write lives in a `write*Core(tx, …)` —
+ * no `authorize` inside — so the Impostazioni composite PATCH
+ * (`settings.service.ts#saveSettings`) runs them all in ONE transaction
+ * after checking `settings.manage` once. Each setter below is `authorize`
+ * plus its core, so the single routes behave exactly as before.
  */
 
 const AIRFIELD_NAME_KEY = 'airfield.name';
 const AIRFIELD_ICAO_KEY = 'airfield.icao';
 const AIRFIELD_CONTACT_EMAIL_KEY = 'airfield.contactEmail';
+
+/** Upserts each `[key, value]` on `client` — a transaction's `tx`, or `prisma` itself for a setter that writes one key (story 19.8, AD-3). */
+async function upsertSettings(client: Prisma.TransactionClient, entries: Array<[string, string]>): Promise<void> {
+  for (const [key, value] of entries) {
+    await client.appSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+  }
+}
 
 /** Fresh-install default (story 10.2, AC 1) — no admin has configured branding yet. */
 const DEFAULT_AIRFIELD_NAME = 'AirManager';
@@ -92,13 +105,13 @@ export async function getAirfieldIcao(): Promise<string> {
 export async function setAirfieldIcao(actor: Actor, icao: string): Promise<string> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: AIRFIELD_ICAO_KEY },
-    update: { value: icao },
-    create: { key: AIRFIELD_ICAO_KEY, value: icao },
-  });
+  await writeAirfieldIcaoCore(prisma, icao);
 
   return icao;
+}
+
+export async function writeAirfieldIcaoCore(tx: Prisma.TransactionClient, icao: string): Promise<void> {
+  await upsertSettings(tx, [[AIRFIELD_ICAO_KEY, icao]]);
 }
 
 /**
@@ -116,13 +129,13 @@ export async function getAirfieldContactEmail(): Promise<string> {
 export async function setAirfieldContactEmail(actor: Actor, email: string): Promise<string> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: AIRFIELD_CONTACT_EMAIL_KEY },
-    update: { value: email },
-    create: { key: AIRFIELD_CONTACT_EMAIL_KEY, value: email },
-  });
+  await writeAirfieldContactEmailCore(prisma, email);
 
   return email;
+}
+
+export async function writeAirfieldContactEmailCore(tx: Prisma.TransactionClient, email: string): Promise<void> {
+  await upsertSettings(tx, [[AIRFIELD_CONTACT_EMAIL_KEY, email]]);
 }
 
 // --- Scheduling window (story 12.11, AC 1/4; ratifica utente 3) ------------
@@ -177,17 +190,19 @@ export async function getSchedulingSettings(): Promise<SchedulingSettingsDto> {
 export async function setSchedulingSettings(actor: Actor, input: SchedulingSettingsInput): Promise<SchedulingSettingsDto> {
   authorize(actor, 'settings.manage');
 
-  const entries: Array<[string, string]> = [
+  await prisma.$transaction((tx) => writeSchedulingSettingsCore(tx, input));
+
+  return { openTime: input.openTime, closeTime: input.closeTime, minSlotMinutes: input.minSlotMinutes, turnaroundMinutes: input.turnaroundMinutes, maxAdvanceDays: input.maxAdvanceDays };
+}
+
+export async function writeSchedulingSettingsCore(tx: Prisma.TransactionClient, input: SchedulingSettingsInput): Promise<void> {
+  await upsertSettings(tx, [
     [SCHED_OPEN_TIME_KEY, input.openTime],
     [SCHED_CLOSE_TIME_KEY, input.closeTime],
     [SCHED_MIN_SLOT_MINUTES_KEY, String(input.minSlotMinutes)],
     [SCHED_TURNAROUND_MINUTES_KEY, String(input.turnaroundMinutes)],
     [SCHED_MAX_ADVANCE_DAYS_KEY, String(input.maxAdvanceDays)],
-  ];
-
-  await prisma.$transaction(entries.map(([key, value]) => prisma.appSetting.upsert({ where: { key }, update: { value }, create: { key, value } })));
-
-  return { openTime: input.openTime, closeTime: input.closeTime, minSlotMinutes: input.minSlotMinutes, turnaroundMinutes: input.turnaroundMinutes, maxAdvanceDays: input.maxAdvanceDays };
+  ]);
 }
 
 // --- SMTP (story 12.11, AC 1/2) --------------------------------------------
@@ -239,35 +254,25 @@ export async function getSmtpSettings(actor: Actor): Promise<SmtpSettingsDto> {
 export async function setSmtpSettings(actor: Actor, input: SmtpSettingsInput): Promise<SmtpSettingsDto> {
   authorize(actor, 'settings.manage');
 
-  const writes = [
-    prisma.appSetting.upsert({ where: { key: SMTP_HOST_KEY }, update: { value: input.host }, create: { key: SMTP_HOST_KEY, value: input.host } }),
-    prisma.appSetting.upsert({
-      where: { key: SMTP_PORT_KEY },
-      update: { value: String(input.port) },
-      create: { key: SMTP_PORT_KEY, value: String(input.port) },
-    }),
-    prisma.appSetting.upsert({
-      where: { key: SMTP_SECURITY_KEY },
-      update: { value: input.security },
-      create: { key: SMTP_SECURITY_KEY, value: input.security },
-    }),
-    prisma.appSetting.upsert({ where: { key: SMTP_USER_KEY }, update: { value: input.user }, create: { key: SMTP_USER_KEY, value: input.user } }),
-    prisma.appSetting.upsert({ where: { key: SMTP_FROM_KEY }, update: { value: input.from }, create: { key: SMTP_FROM_KEY, value: input.from } }),
-  ];
-  if (input.pass) {
-    const encryptedPass = encryptSecret(input.pass);
-    writes.push(
-      prisma.appSetting.upsert({
-        where: { key: SMTP_PASS_KEY },
-        update: { value: encryptedPass },
-        create: { key: SMTP_PASS_KEY, value: encryptedPass },
-      }),
-    );
-  }
-
-  await prisma.$transaction(writes);
+  await prisma.$transaction((tx) => writeSmtpSettingsCore(tx, input));
 
   return getSmtpSettings(actor);
+}
+
+/** The 5 plain keys, plus `smtp.pass` ENCRYPTED only when `input.pass` is non-empty (absent or `''` = the stored password stays). */
+export async function writeSmtpSettingsCore(tx: Prisma.TransactionClient, input: SmtpSettingsInput): Promise<void> {
+  const entries: Array<[string, string]> = [
+    [SMTP_HOST_KEY, input.host],
+    [SMTP_PORT_KEY, String(input.port)],
+    [SMTP_SECURITY_KEY, input.security],
+    [SMTP_USER_KEY, input.user],
+    [SMTP_FROM_KEY, input.from],
+  ];
+  if (input.pass) {
+    entries.push([SMTP_PASS_KEY, encryptSecret(input.pass)]);
+  }
+
+  await upsertSettings(tx, entries);
 }
 
 /**
@@ -321,13 +326,13 @@ export async function getMetarStation(): Promise<string> {
 export async function setMetarStation(actor: Actor, station: string): Promise<string> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: METAR_STATION_KEY },
-    update: { value: station },
-    create: { key: METAR_STATION_KEY, value: station },
-  });
+  await writeMetarStationCore(prisma, station);
 
   return getMetarStation();
+}
+
+export async function writeMetarStationCore(tx: Prisma.TransactionClient, station: string): Promise<void> {
+  await upsertSettings(tx, [[METAR_STATION_KEY, station]]);
 }
 
 // --- Membership fee (story 12.11, AC 1, ratifica utente 1) -----------------
@@ -367,13 +372,13 @@ export async function getMembershipFeeCents(actor: Actor): Promise<number> {
 export async function setMembershipFeeCents(actor: Actor, cents: number): Promise<number> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: MEMBERSHIP_ANNUAL_FEE_CENTS_KEY },
-    update: { value: String(cents) },
-    create: { key: MEMBERSHIP_ANNUAL_FEE_CENTS_KEY, value: String(cents) },
-  });
+  await writeMembershipFeeCore(prisma, cents);
 
   return cents;
+}
+
+export async function writeMembershipFeeCore(tx: Prisma.TransactionClient, cents: number): Promise<void> {
+  await upsertSettings(tx, [[MEMBERSHIP_ANNUAL_FEE_CENTS_KEY, String(cents)]]);
 }
 
 // --- Currency (story 19.7a, R-19-i, D-10) ----------------------------------
@@ -447,13 +452,13 @@ export async function setCurrencySettings(actor: Actor, input: CurrencySettingsI
 export async function setAirfieldBranding(actor: Actor, input: AirfieldBrandingDto): Promise<AirfieldBrandingDto> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: AIRFIELD_NAME_KEY },
-    update: { value: input.name },
-    create: { key: AIRFIELD_NAME_KEY, value: input.name },
-  });
+  await writeAirfieldBrandingCore(prisma, input);
 
   return input;
+}
+
+export async function writeAirfieldBrandingCore(tx: Prisma.TransactionClient, input: AirfieldBrandingDto): Promise<void> {
+  await upsertSettings(tx, [[AIRFIELD_NAME_KEY, input.name]]);
 }
 
 // --- Treasury opening balances (story Billing-1, AC 3) ----------------------
@@ -537,23 +542,15 @@ export async function getTreasurySettings(actor: Actor): Promise<TreasurySetting
 export async function setTreasurySettings(actor: Actor, input: TreasurySettingsInput): Promise<TreasurySettingsDto> {
   authorize(actor, 'settings.manage');
 
-  await prisma.$transaction([
-    prisma.appSetting.upsert({
-      where: { key: TREASURY_OPENING_CASH_CENTS_KEY },
-      update: { value: String(input.openingCashCents) },
-      create: { key: TREASURY_OPENING_CASH_CENTS_KEY, value: String(input.openingCashCents) },
-    }),
-    prisma.appSetting.upsert({
-      where: { key: TREASURY_OPENING_BANK_CENTS_KEY },
-      update: { value: String(input.openingBankCents) },
-      create: { key: TREASURY_OPENING_BANK_CENTS_KEY, value: String(input.openingBankCents) },
-    }),
-    prisma.appSetting.upsert({
-      where: { key: TREASURY_OPENING_DATE_KEY },
-      update: { value: input.openingDate },
-      create: { key: TREASURY_OPENING_DATE_KEY, value: input.openingDate },
-    }),
-  ]);
+  await prisma.$transaction((tx) => writeTreasurySettingsCore(tx, input));
 
   return { openingCashCents: input.openingCashCents, openingBankCents: input.openingBankCents, openingDate: input.openingDate };
+}
+
+export async function writeTreasurySettingsCore(tx: Prisma.TransactionClient, input: TreasurySettingsInput): Promise<void> {
+  await upsertSettings(tx, [
+    [TREASURY_OPENING_CASH_CENTS_KEY, String(input.openingCashCents)],
+    [TREASURY_OPENING_BANK_CENTS_KEY, String(input.openingBankCents)],
+    [TREASURY_OPENING_DATE_KEY, input.openingDate],
+  ]);
 }

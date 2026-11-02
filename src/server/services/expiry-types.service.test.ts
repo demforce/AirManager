@@ -157,6 +157,13 @@ describe('expiry-types.service (story 6.1 — expiry-type catalogue, FR-35)', ()
       expect(createMock).not.toHaveBeenCalled();
     });
 
+    it('story 19.8 (AD-5): the 409 keeps code CONFLICT and names its rule in details.reason (additive on the single route)', async () => {
+      findFirst.mockResolvedValue({ id: 'et_existing' });
+      const input = createExpiryTypeSchema.parse({ name: 'Visita medica classe 2' });
+
+      await expect(createExpiryType(adminActor(), input)).rejects.toMatchObject({ code: 'CONFLICT', details: { reason: 'NAME_TAKEN' } });
+    });
+
     it('trims the name before persisting (blocksBooking defaults to false, story 7.4)', async () => {
       findFirst.mockResolvedValue(null);
       create.mockResolvedValue(fixture({ name: 'Nuovo tipo' }));

@@ -209,9 +209,17 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     await page.goto('/it/dashboard/settings');
     await expect(page.getByTestId('airfield-settings-form')).toBeVisible();
 
+    await page.waitForLoadState('networkidle');
     await page.getByTestId('airfield-name-input').fill(airfieldName);
-    await page.getByTestId('airfield-settings-save').click();
-    await expect(page.getByTestId('airfield-settings-feedback')).toBeVisible();
+    // Story 19.8: the page's ONE Salva. This spec runs in the parallel
+    // `chromium` project, so its PATCH must carry the name ALONE (AC 20) —
+    // never the other global settings on screen.
+    const [patchResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith('/api/v1/settings') && r.request().method() === 'PATCH'),
+      page.getByTestId('settings-save').click(),
+    ]);
+    expect(patchResponse.status()).toBe(200);
+    expect(patchResponse.request().postDataJSON()).toEqual({ airfield: { name: airfieldName } });
 
     const getResponse = await page.request.get('/api/v1/settings/airfield');
     expect(getResponse.status()).toBe(200);

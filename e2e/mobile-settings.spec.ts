@@ -14,14 +14,16 @@ import { seedAircraftRate } from './db-fixtures';
  * Last in the chain, and it RESTORES what it writes in `afterAll`, verified by
  * reading the settings back — nothing downstream inherits anything.
  *
- * Two deliberate restraints on what it writes:
- *  - the Club card is exercised as a NO-OP round trip (the five PUTs are fired
- *    with the values already on screen), so the five-endpoint contract is
- *    proven without moving a single stored value;
- *  - the Tesoreria card is exercised only through its per-field validation,
- *    which returns BEFORE any request — `treasury.*` feeds `getBillingSummary`
- *    for every `/dashboard/billing` spec, and there is no GET route to restore
- *    it from (D5).
+ * Story 19.8: the page has ONE "Salva" (`settings-save`, in the sticky
+ * `settings-save-bar`, above the tab bar on a phone) and ONE request,
+ * `PATCH /api/v1/settings`; the catalogues are drafts written by it. Two
+ * deliberate restraints on what this file writes:
+ *  - the only scalar block it SAVES is `scheduling` (restored in `afterAll`);
+ *    the Club email, the SMTP host and the Tesoreria are exercised through
+ *    their refusals (client check or server 422), which save nothing —
+ *    `treasury.*` feeds `getBillingSummary` for every `/dashboard/billing`
+ *    spec, and there is no GET route to restore it from (D5);
+ *  - every catalogue row it creates is run-unique and deleted again.
  */
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -213,9 +215,13 @@ const CHILDREN_OUT_OF_CARD = (): { cls: string; right: number; cardRight: number
   return out;
 };
 
-/** Controls covered at hit-test, split by WHAT covers them (tab bar = defect, sticky top bar = the declared 15.1 exception). */
-const COVERED = (): { testid: string | null; cls: string; by: 'tabbar' | 'topbar' | 'other' }[] => {
-  const out: { testid: string | null; cls: string; by: 'tabbar' | 'topbar' | 'other' }[] = [];
+/**
+ * Controls covered at hit-test, split by WHAT covers them (tab bar = defect,
+ * sticky top bar = the declared 15.1 exception, the sticky save bar of story
+ * 19.8 = the same kind of declared exception while the page scrolls under it).
+ */
+const COVERED = (): { testid: string | null; cls: string; by: 'tabbar' | 'topbar' | 'savebar' | 'other' }[] => {
+  const out: { testid: string | null; cls: string; by: 'tabbar' | 'topbar' | 'savebar' | 'other' }[] = [];
   for (const el of Array.from(document.querySelectorAll('.page a, .page button, .page input, .page select, .page textarea'))) {
     const rect = el.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) continue;
@@ -224,7 +230,7 @@ const COVERED = (): { testid: string | null; cls: string; by: 'tabbar' | 'topbar
     const cy = Math.min(Math.max(rect.y + rect.height / 2, 1), window.innerHeight - 1);
     const hit = document.elementFromPoint(cx, cy);
     if (!hit || hit === el || el.contains(hit) || hit.contains(el)) continue;
-    const by = hit.closest('.mobile-tabbar') ? 'tabbar' : hit.closest('.mobile-topbar') ? 'topbar' : 'other';
+    const by = hit.closest('.mobile-tabbar') ? 'tabbar' : hit.closest('.mobile-topbar') ? 'topbar' : hit.closest('.settings-save-bar') ? 'savebar' : 'other';
     out.push({ testid: el.getAttribute('data-testid'), cls: typeof el.className === 'string' ? el.className : '', by });
   }
   return out;
@@ -235,6 +241,24 @@ async function createExpiryType(page: Page, data: Record<string, unknown>): Prom
   expect(response.status()).toBe(201);
   const created = (await response.json()) as { id: string; name: string };
   return created;
+}
+
+/** Clicks the ONE Salva and returns the `PATCH /api/v1/settings` it sent, with its answer. */
+async function saveAndWait(page: Page) {
+  const [response] = await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/api/v1/settings') && r.request().method() === 'PATCH'),
+    page.getByTestId('settings-save').click(),
+  ]);
+  return { response, body: response.request().postDataJSON() as Record<string, unknown> };
+}
+
+/** Counts the `PATCH /api/v1/settings` requests the page sends from now on. */
+function countPatches(page: Page): { readonly count: number } {
+  const counter = { count: 0 };
+  page.on('request', (request) => {
+    if (request.method() === 'PATCH' && request.url().endsWith('/api/v1/settings')) counter.count += 1;
+  });
+  return counter;
 }
 
 test.describe.configure({ mode: 'serial' });
@@ -253,18 +277,15 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await context.close();
   });
 
-  test('AC 4: ogni controllo di form e ogni "Salva" e >= 44px a 320/375/390, e le sette testate non superano il pre-fix', async ({ page }) => {
+  test('AC 4 / 19.8 AC 18: ogni controllo e il Salva unico sono >= 44px a 320/375/390, il Salva prende tutta la barra, e le nove testate non superano il pre-fix', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
 
     await page.setViewportSize(DESKTOP);
     await gotoSettings(page);
-    // The desktop is the "before": on the DB this story was measured on it had
-    // 231 controls under the floor (201 of them 24.67px `.btn.mini`s), and it
-    // still has them at 1280 — the desktop is out of mandate. The number is
-    // NOT asserted: three of its four terms scale with the number of catalogue
-    // rows, and a count calibrated on one DB is the "baseline sensitive to the
-    // DATA" trap (15.8a correction 2). What is asserted is the PROPERTY: the
-    // desktop is full of them, the phone has none.
+    // The desktop is the "before": it still has its 24.67px `.btn.mini`s at
+    // 1280 — the desktop is out of mandate. The number is NOT asserted (it
+    // scales with the catalogue rows, the "baseline sensitive to the DATA"
+    // trap, 15.8a correction 2); the PROPERTY is: the phone has none.
     const desktopSmall = await page.evaluate(SMALL_TARGETS);
     expect(desktopSmall.length).toBeGreaterThan(25);
 
@@ -273,15 +294,15 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       await gotoSettings(page);
       expect(await page.evaluate(SMALL_TARGETS)).toEqual([]);
 
-      // ...and with the catalogue FORMS OPEN, a state this sweep never visited
-      // before (review MINOR-2): the `blocksBooking` checkbox lived there at
-      // 20x20, i.e. a second target under the floor that the AC declared as
-      // one. Every control of the three forms is swept here, not just that one.
+      // ...and with the three catalogue PANELS OPEN (review MINOR-2 of 15.8b:
+      // the `blocksBooking` checkbox lives there). Since 19.8 "Aggiungi" opens
+      // the panel on a NEW draft row — nothing is written, the reload below
+      // discards it (no unsaved-changes guard, D-6).
       for (const addButton of ['ratings-add-button', 'medical-add-button', 'cash-category-add-button']) await page.getByTestId(addButton).click();
       await expect(page.getByTestId('rating-form')).toBeVisible();
       await expect(page.getByTestId('medical-form')).toBeVisible();
       await expect(page.getByTestId('cash-category-form')).toBeVisible();
-      expect(await page.evaluate(SMALL_TARGETS), `forms open @${viewport.width}`).toEqual([]);
+      expect(await page.evaluate(SMALL_TARGETS), `panels open @${viewport.width}`).toEqual([]);
 
       // The checkbox is not its own target — the 44px label around it is — but
       // it is still the thing a finger aims at: >= 24px (PO decision), inside a
@@ -297,15 +318,24 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       expect(checkbox.w, `checkbox width @${viewport.width}`).toBeGreaterThanOrEqual(24);
       expect(checkbox.h, `checkbox height @${viewport.width}`).toBeGreaterThanOrEqual(24);
       expect(checkbox.labelH, `checkbox label height @${viewport.width}`).toBeGreaterThanOrEqual(TARGET_FLOOR);
+
+      // The ONE Salva: >= 44px and the bar's whole content width, not a chip.
+      const save = await page.getByTestId('settings-save').evaluate((el) => {
+        const bar = el.parentElement!;
+        const style = getComputedStyle(bar);
+        return { h: el.getBoundingClientRect().height, w: el.getBoundingClientRect().width, content: bar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) };
+      });
+      expect(save.h, `settings-save height @${viewport.width}`).toBeGreaterThanOrEqual(TARGET_FLOOR);
+      expect(save.w, `settings-save width @${viewport.width}`).toBeGreaterThan(save.content - 1);
     }
 
     await page.setViewportSize(PHONE);
     await gotoSettings(page);
     expect(await page.evaluate(() => document.documentElement.clientWidth)).toBe(375);
     const post = await headHeights(page);
-    expect(post).toHaveLength(7);
-    // The seven heads carry a 44px action and are STILL not taller than they
-    // were before this story — the arithmetic, measured, not promised (lesson
+    expect(post).toHaveLength(9);
+    // The heads carry a 44px action and are STILL not taller than they were
+    // before story 15.8b — the arithmetic, measured, not promised (lesson
     // 15.6 R-15.6-e / 15.5 F3). PRE is rendered in this same page, so fonts,
     // width and data are identical on both sides of the comparison.
     await page.addStyleTag({ content: PRE_FIX_HEAD_CSS });
@@ -313,97 +343,58 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     for (const [index, card] of post.entries()) {
       expect(card.head, `${card.testid} post[${card.parts}] vs pre[${pre[index]!.parts}]`).toBeLessThanOrEqual(pre[index]!.head);
     }
-    await page.reload();
-    await expect(page.getByTestId('club-settings-card')).toBeVisible();
-
-    // The saves are full-width, not a 56px chip against the left margin.
-    for (const testId of ['club-settings-save', 'scheduling-settings-save', 'smtp-settings-save', 'treasury-settings-save', 'airfield-settings-save']) {
-      const box = await page.getByTestId(testId).evaluate((el) => {
-        const rect = el.getBoundingClientRect();
-        const parent = el.parentElement!.getBoundingClientRect();
-        return { h: rect.height, w: rect.width, parentW: parent.width };
-      });
-      expect(box.h).toBeGreaterThanOrEqual(TARGET_FLOOR);
-      expect(box.w).toBeGreaterThan(box.parentW - 1);
-    }
   });
 
-  test('AC 4: le quattro card di form scrivono dal telefono con gli stessi endpoint e le stesse validazioni per-campo', async ({ page }) => {
+  test('19.8 AC 18: dal telefono un PATCH per caso — email e orari fermati dal client, host rifiutato dal server sul campo, una finestra valida salvata da sola, la tesoreria fermata senza richieste', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
     await gotoSettings(page);
+    const patches = countPatches(page);
 
-    // --- Club: THREE PUTs on one "Salva", fired with the values already on
-    // screen (a no-op round trip: the contract is proven, no stored value
-    // moves).
-    const [club, metar, membership] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/club') && r.request().method() === 'PUT'),
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/metar-station') && r.request().method() === 'PUT'),
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/membership-fee') && r.request().method() === 'PUT'),
-      page.getByTestId('club-settings-save').click(),
-    ]);
-    for (const response of [club, metar, membership]) expect(response.status()).toBe(200);
-    await expect(page.getByTestId('club-settings-feedback')).toBeVisible();
-
-    // --- Club: the 422 marks THAT field, inline, from the phone too.
+    // --- Club: a malformed email never leaves the phone, and its message is
+    // ONE node (`settings.spec.ts` reads it page-level).
     await page.getByTestId('club-contact-email-input').fill('not-an-email');
-    const [clubInvalid] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/club') && r.request().method() === 'PUT'),
-      page.getByTestId('club-settings-save').click(),
-    ]);
-    expect(clubInvalid.status()).toBe(422);
+    await page.getByTestId('settings-save').click();
     await expect(page.getByTestId('club-contact-email-input')).toHaveAttribute('aria-invalid', 'true');
-    // ...and the message is ONE node, which is what `settings.spec.ts:147`
-    // reads page-level.
     await expect(page.getByText('Inserisci un indirizzo email valido.')).toHaveCount(1);
+    await expect(page.getByTestId('club-contact-email-input')).toBeFocused();
 
-    // --- Pianificazione: `closeTime <= openTime` 422s with `fieldErrors.closeTime`.
+    // --- Pianificazione: `closeTime <= openTime` is the client mirror's (AD-9).
     await gotoSettings(page);
     await page.getByTestId('scheduling-open-time-input').fill('20:00');
     await page.getByTestId('scheduling-close-time-input').fill('08:00');
-    const [schedInvalid] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/scheduling') && r.request().method() === 'PUT'),
-      page.getByTestId('scheduling-settings-save').click(),
-    ]);
-    expect(schedInvalid.status()).toBe(422);
+    await page.getByTestId('settings-save').click();
     await expect(page.getByTestId('scheduling-close-time-input')).toHaveAttribute('aria-invalid', 'true');
+    await page.waitForTimeout(300);
+    expect(patches.count).toBe(0);
 
-    // ...and a valid window round-trips (restored in `afterAll`).
+    // ...and a valid window round-trips ALONE (restored in `afterAll`).
     await page.getByTestId('scheduling-open-time-input').fill('06:30');
     await page.getByTestId('scheduling-close-time-input').fill('22:30');
-    const [schedOk] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/scheduling') && r.request().method() === 'PUT'),
-      page.getByTestId('scheduling-settings-save').click(),
-    ]);
-    expect(schedOk.status()).toBe(200);
-    expect(await schedOk.json()).toMatchObject({ openTime: '06:30', closeTime: '22:30' });
+    const schedOk = await saveAndWait(page);
+    expect(schedOk.response.status()).toBe(200);
+    expect(Object.keys(schedOk.body)).toEqual(['scheduling']);
+    expect(((await schedOk.response.json()) as { scheduling: unknown }).scheduling).toMatchObject({ openTime: '06:30', closeTime: '22:30' });
 
-    // --- SMTP: the SSRF refusal marks the host field, from the phone.
+    // --- SMTP: the SSRF refusal is the server's — a 422 at `smtp.host`, on the field.
     await gotoSettings(page);
     await page.getByTestId('smtp-host-input').fill('127.0.0.1');
-    const [smtpInvalid] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/v1/settings/smtp') && r.request().method() === 'PUT'),
-      page.getByTestId('smtp-settings-save').click(),
-    ]);
-    expect(smtpInvalid.status()).toBe(422);
+    await page.getByTestId('smtp-from-input').fill('Mobile <ops@example.com>');
+    const smtpInvalid = await saveAndWait(page);
+    expect(smtpInvalid.response.status()).toBe(422);
+    expect(Object.keys(((await smtpInvalid.response.json()) as { error: { details: { fieldErrors: object } } }).error.details.fieldErrors)).toEqual(['smtp.host']);
     await expect(page.getByTestId('smtp-host-input')).toHaveAttribute('aria-invalid', 'true');
 
-    // --- Tesoreria: both per-field messages, and ZERO requests — the card
-    // returns before the PUT, so `treasury.*` is never touched by this spec.
+    // --- Tesoreria: both per-field messages, and ZERO requests.
     await gotoSettings(page);
-    let treasuryRequests = 0;
-    await page.route('**/api/v1/settings/treasury', (route) => {
-      treasuryRequests += 1;
-      return route.abort();
-    });
+    const before = patches.count;
     await page.getByTestId('treasury-opening-cash-input').fill('non-un-numero');
     await page.getByTestId('treasury-opening-date-input').fill('');
-    await page.getByTestId('treasury-settings-save').click();
+    await page.getByTestId('settings-save').click();
     await expect(page.getByTestId('treasury-opening-cash-input')).toHaveAttribute('aria-invalid', 'true');
     await expect(page.getByTestId('treasury-opening-date-input')).toHaveAttribute('aria-invalid', 'true');
     await page.waitForTimeout(300);
-    expect(treasuryRequests).toBe(0);
-    await page.unroute('**/api/v1/settings/treasury');
+    expect(patches.count).toBe(before);
   });
 
   test('AC 5: le tre tabelle diventano liste di card, e le azioni vivono SOLO nello sheet', async ({ page }) => {
@@ -445,14 +436,29 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       expect(await page.getByTestId(testId).evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(TARGET_FLOOR);
     }
 
-    // "Elimina" is a `secondStep` INSIDE the sheet: no second overlay ever
-    // stacks on it (AD-8), and the focus follows the step in both directions.
+    // Story 19.8 (D-7): "Elimina" is a switch of the draft, reversible until
+    // the Salva — no `secondStep` any more: the sheet keeps its rows, the
+    // button turns into "Ripristina" in place, and nothing is written.
+    const patches = countPatches(page);
     await page.getByTestId('rating-delete-button-mobile').click();
     await expect(page.locator('.mobile-sheet')).toHaveCount(1);
-    await expect(sheet.locator('.bottom-sheet-kv')).toHaveCount(0);
-    expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('rating-delete-confirm-mobile');
-    await page.getByTestId('rating-delete-cancel-mobile').click();
-    expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('rating-delete-button-mobile');
+    await expect(sheet.locator('.bottom-sheet-kv')).toHaveCount(4);
+    await expect(page.getByTestId('rating-delete-button-mobile')).toHaveText('Ripristina');
+    await expect(page.getByTestId('rating-edit-button-mobile')).toHaveCount(0);
+    expect(await page.getByTestId('rating-delete-button-mobile').evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(TARGET_FLOOR);
+    await page.getByTestId('rating-delete-button-mobile').click();
+    await expect(page.getByTestId('rating-delete-button-mobile')).toHaveText('Elimina');
+    expect(patches.count).toBe(0);
+    await sheet.getByRole('button', { name: 'Chiudi' }).click();
+
+    // A medical visit has no scope and no blocking flag in its sheet (R-19-j).
+    await page.getByTestId('medical-row-mobile').first().click();
+    const medicalSheet = page.getByTestId('mobile-medical-sheet');
+    expect(await medicalSheet.locator('.bottom-sheet-k').evaluateAll((els) => els.map((el) => el.textContent))).toEqual(['Validità', 'Stato']);
+    await medicalSheet.getByRole('button', { name: 'Chiudi' }).click();
+    await expect(page.getByTestId('medical-row-mobile').first()).not.toContainText('Tutti');
+
+    await page.getByTestId('rating-row-mobile').first().click();
 
     // "Modifica" closes the sheet and brings the (shared, in-page) form into
     // view instead of stacking a panel on the sheet.
@@ -500,77 +506,83 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     }
   });
 
-  test('AC 6: il CRUD di un tipo di scadenza dal telefono, col 409 "in uso" a toast e la conferma a due passi', async ({ page }) => {
+  test('19.8 AC 14: il CRUD di un tipo di scadenza dal telefono, in bozza fino al Salva, col 409 "in uso" sulla card', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
 
     const name = `Tipo mobile ${uniqueSuffix()}`;
     await gotoSettings(page);
+    const patches = countPatches(page);
 
-    // --- create, from the phone form (same inline form as the desktop).
+    // --- create, from the phone panel (same in-page panel as the desktop).
     await page.getByTestId('ratings-add-button').click();
     await page.getByTestId('rating-name-input').fill(name);
     await page.getByTestId('rating-scope-select').selectOption('ALL');
     await page.getByTestId('rating-validity-input').fill('18');
-    await page.getByTestId('rating-form-submit').click();
-    await expect(page.getByTestId('ratings-feedback')).toBeVisible();
+    await page.getByTestId('rating-form-close').click();
 
     const card = page.getByTestId('rating-row-mobile').filter({ hasText: name });
     await expect(card).toHaveCount(1);
+    await expect(card).toHaveAttribute('data-state', 'new');
+    await expect(card).toContainText('Nuova');
+    expect(patches.count).toBe(0);
+    const created = await saveAndWait(page);
+    expect(created.body).toEqual({ expiryTypes: { create: [{ name, kind: 'RATING', scope: 'ALL', blocksBooking: false, validityMonths: 18 }] } });
+    await expect(page.getByTestId('toast').filter({ hasText: 'Impostazioni salvate.' })).toBeVisible();
+    await expect(card).toHaveAttribute('data-state', 'saved');
     await expect(card).toContainText('Tutti');
     await expect(card).toContainText('18 mesi');
     await expect(card).toContainText('Attivo');
 
-    // --- edit from the sheet: `kind` is never re-sent, `validityMonths` <= 0
-    // becomes null ("senza scadenza").
+    // --- edit from the sheet: `kind` is never re-sent, validity 0 becomes null
+    // ("senza scadenza"), and the update carries that one field.
     await card.click();
     await page.getByTestId('rating-edit-button-mobile').click();
-    await page.getByTestId('rating-validity-input').fill('0');
-    const [patch] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/v1/expiry-types/') && r.request().method() === 'PATCH'),
-      page.getByTestId('rating-form-submit').click(),
-    ]);
-    expect(patch.status()).toBe(200);
-    expect(JSON.parse(patch.request().postData()!)).toEqual({ name, scope: 'ALL', blocksBooking: false, validityMonths: null });
-    await expect(page.getByTestId('rating-row-mobile').filter({ hasText: name })).toContainText('senza scadenza');
-
-    // --- deactivate from the sheet: the outcome is a TOAST on the phone, and
-    // the state is readable on the card.
-    await page.getByTestId('rating-row-mobile').filter({ hasText: name }).click();
-    await page.getByTestId('rating-toggle-button-mobile').click();
-    // Toasts live 2.6s and stack, so every assertion below picks its OWN by
-    // text — `getByTestId('toast')` alone is a strict-mode violation as soon as
-    // two actions follow each other quickly.
-    await expect(page.getByTestId('toast').filter({ hasText: 'Ratings disattivata.' })).toBeVisible();
-    // Closed with its own "Chiudi", not the scrim: the scrim spans the whole
-    // viewport, so a click on its CENTRE lands on the panel that covers it.
-    await page.getByTestId('mobile-rating-sheet').getByRole('button', { name: 'Chiudi' }).click();
-    await expect(page.getByTestId('rating-row-mobile').filter({ hasText: name })).toContainText('Disattivato');
-
-    // --- the 409 "in use" stays DISTINCT from the generic failure, and it is
-    // a toast on the phone (fulfilled, so no fixture has to be made unusable).
-    await page.getByTestId('rating-row-mobile').filter({ hasText: name }).click();
-    await page.route('**/api/v1/expiry-types/*', (route) => (route.request().method() === 'DELETE' ? route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":{"code":"CONFLICT"}}' }) : route.continue()));
-    await page.getByTestId('rating-delete-button-mobile').click();
-    await page.getByTestId('rating-delete-confirm-mobile').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Questo tipo è in uso: disattivalo invece di eliminarlo.' })).toBeVisible();
-    await page.unroute('**/api/v1/expiry-types/*');
-
-    // --- delete for real, through the two-step confirmation.
-    await gotoSettings(page);
-    await page.getByTestId('rating-row-mobile').filter({ hasText: name }).click();
-    await page.getByTestId('rating-delete-button-mobile').click();
-    const [del] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes('/api/v1/expiry-types/') && r.request().method() === 'DELETE'),
-      page.getByTestId('rating-delete-confirm-mobile').click(),
-    ]);
-    expect(del.status()).toBe(204); // `DELETE /expiry-types/{id}` answers 204 No Content
-    await expect(page.getByTestId('toast').filter({ hasText: 'Ratings eliminata.' })).toBeVisible();
     await expect(page.getByTestId('mobile-rating-sheet')).toHaveCount(0);
+    await page.getByTestId('rating-validity-input').fill('0');
+    await page.getByTestId('rating-form-close').click();
+    const edited = await saveAndWait(page);
+    expect(edited.response.status()).toBe(200);
+    expect(edited.body).toEqual({ expiryTypes: { update: [{ id: expect.any(String), validityMonths: null }] } });
+    await expect(card).toContainText('senza scadenza');
+
+    // --- deactivate from the sheet: the state is readable on the card at once, written by the Salva.
+    await card.click();
+    await page.getByTestId('rating-toggle-button-mobile').click();
+    await page.getByTestId('mobile-rating-sheet').getByRole('button', { name: 'Chiudi' }).click();
+    await expect(card).toContainText('Disattivato');
+    await expect(card).toHaveAttribute('data-state', 'changed');
+    await saveAndWait(page);
+
+    // --- a 409 "in use" from the Salva lands on THAT card (fulfilled, so no
+    // fixture has to be made unusable) — distinct from the generic failure.
+    await card.click();
+    await page.getByTestId('rating-delete-button-mobile').click();
+    await page.getByTestId('mobile-rating-sheet').getByRole('button', { name: 'Chiudi' }).click();
+    await expect(card).toHaveAttribute('data-state', 'removed');
+    await page.route('**/api/v1/settings', async (route) => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      const id = (route.request().postDataJSON() as { expiryTypes: { delete: string[] } }).expiryTypes.delete[0];
+      return route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'CONFLICT', message: 'in use', details: { reason: 'IN_USE', item: { list: 'expiryTypes', op: 'delete', index: 0, id } } } }),
+      });
+    });
+    await page.getByTestId('settings-save').click();
+    await expect(page.getByTestId('rating-row-error-mobile')).toHaveText('Questo tipo è in uso: disattivalo invece di eliminarlo.');
+    await expect(page.getByTestId('rating-row-error-mobile')).toBeFocused();
+    await page.unroute('**/api/v1/settings');
+
+    // --- delete for real: the same draft, saved again.
+    const deleted = await saveAndWait(page);
+    expect(deleted.response.status()).toBe(200);
+    expect((deleted.body['expiryTypes'] as { delete: string[] }).delete).toHaveLength(1);
     await expect(page.getByTestId('rating-row-mobile').filter({ hasText: name })).toHaveCount(0);
+    await expect(page.getByTestId('rating-row-error-mobile')).toHaveCount(0);
   });
 
-  test('AC 6: un tipo BLOCCANTE creato dal telefono produce il 422 FLIGHT_BLOCKED_BY_EXPIRY sulla registrazione di un volo', async ({ page }) => {
+  test('AC 6: un tipo BLOCCANTE creato dal telefono (e salvato dal Salva unico) produce il 422 FLIGHT_BLOCKED_BY_EXPIRY sulla registrazione di un volo', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
     await gotoSettings(page);
@@ -585,13 +597,11 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       await page.getByTestId('ratings-add-button').click();
       await page.getByTestId('rating-name-input').fill(name);
       await page.getByTestId('rating-scope-select').selectOption('PILOTS');
-      await page.getByLabel('Blocca prenotazioni').check();
-      const [created] = await Promise.all([
-        page.waitForResponse((r) => r.url().endsWith('/api/v1/expiry-types') && r.request().method() === 'POST'),
-        page.getByTestId('rating-form-submit').click(),
-      ]);
-      expect(created.status()).toBe(201);
-      blockingTypeId = ((await created.json()) as { id: string }).id;
+      await page.getByTestId('rating-form').getByLabel('Blocca prenotazioni').check();
+      const created = await saveAndWait(page);
+      expect(created.response.status()).toBe(200);
+      blockingTypeId = ((await created.response.json()) as { expiryTypes: { id: string; name: string }[] }).expiryTypes.find((type) => type.name === name)?.id ?? null;
+      expect(blockingTypeId).not.toBeNull();
       await expect(page.getByTestId('rating-row-mobile').filter({ hasText: name })).toContainText('Blocca prenotazioni');
 
       // A pilot without that document, and a flight that the 14.4 guard must refuse.
@@ -629,7 +639,7 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     }
   });
 
-  test('AC 6: le categorie di cassa dal telefono — e su quelle di SISTEMA "Elimina" resta ASSENTE, non disabilitata', async ({ page }) => {
+  test('19.8 AC 14: le categorie di cassa dal telefono, in bozza fino al Salva — e su quelle di SISTEMA "Elimina" resta ASSENTE, non disabilitata', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
     await gotoSettings(page);
@@ -637,8 +647,8 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     const name = `Cat mobile ${uniqueSuffix()}`;
     await page.getByTestId('cash-category-add-button').click();
     await page.getByTestId('cash-category-name-input').fill(name);
-    await page.getByTestId('cash-category-form-submit').click();
-    await expect(page.getByTestId('cash-categories-feedback')).toBeVisible();
+    await page.getByTestId('cash-category-form-close').click();
+    expect((await saveAndWait(page)).body).toEqual({ cashCategories: { create: [{ name }] } });
 
     const card = page.getByTestId('cash-category-row-mobile').filter({ hasText: name });
     await expect(card).toHaveCount(1);
@@ -649,20 +659,23 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await page.getByTestId('cash-category-rename-button-mobile').click();
     const renamed = `${name}-rinominata`;
     await page.getByTestId('cash-category-name-input').fill(renamed);
-    await page.getByTestId('cash-category-form-submit').click();
+    await page.getByTestId('cash-category-form-close').click();
+    await saveAndWait(page);
     await expect(page.getByTestId('cash-category-row-mobile').filter({ hasText: renamed })).toHaveCount(1);
 
-    // deactivate + reactivate from the sheet, announced by a toast
+    // deactivate from the sheet — on the card at once, written by the Salva
     await page.getByTestId('cash-category-row-mobile').filter({ hasText: renamed }).click();
     await page.getByTestId('cash-category-toggle-button-mobile').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Categoria disattivata.' })).toBeVisible();
     await page.getByTestId('mobile-cash-category-sheet').getByRole('button', { name: 'Chiudi' }).click();
     await expect(page.getByTestId('cash-category-row-mobile').filter({ hasText: renamed })).toContainText('Disattivata');
+    expect((await saveAndWait(page)).body).toEqual({ cashCategories: { update: [{ id: expect.any(String), isActive: false }] } });
 
-    // delete through the two-step confirmation
+    // delete: one tap marks it, the Salva removes it
     await page.getByTestId('cash-category-row-mobile').filter({ hasText: renamed }).click();
     await page.getByTestId('cash-category-delete-button-mobile').click();
-    await page.getByTestId('cash-category-delete-confirm-mobile').click();
+    await page.getByTestId('mobile-cash-category-sheet').getByRole('button', { name: 'Chiudi' }).click();
+    await expect(page.getByTestId('cash-category-row-mobile').filter({ hasText: renamed })).toHaveAttribute('data-state', 'removed');
+    await saveAndWait(page);
     await expect(page.getByTestId('cash-category-row-mobile').filter({ hasText: renamed })).toHaveCount(0);
 
     // A SYSTEM category has no delete action at all — absent, never disabled.
@@ -673,22 +686,38 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await expect(page.getByTestId('mobile-cash-category-sheet')).toHaveCount(1);
     await expect(page.getByTestId('cash-category-rename-button-mobile')).toHaveCount(1);
     await expect(page.getByTestId('cash-category-delete-button-mobile')).toHaveCount(0);
+    // ...and its name is read-only in the panel.
+    await page.getByTestId('cash-category-rename-button-mobile').click();
+    await expect(page.getByTestId('cash-category-name-input')).toHaveAttribute('readonly', '');
   });
 
   test('AC 9: la matrice dei testid e i due nomi letti PAGE-LEVEL dagli spec restano un solo nodo a 375 e a 1280', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
 
+    // Story 19.8 (AD-8): the single Salva and its bar, the two new sections;
+    // the five per-card saves, their feedbacks, the quota input of the Club
+    // card and the two-step delete of the sheets are gone.
     const singletons = [
-      'club-settings-card', 'club-settings-save', 'club-icao-input', 'club-contact-email-input', 'club-metar-station-input', 'club-membership-fee-input',
-      'airfield-settings-form', 'airfield-name-input', 'airfield-settings-save',
-      'scheduling-settings-card', 'scheduling-settings-save', 'scheduling-open-time-input', 'scheduling-close-time-input', 'scheduling-min-slot-input', 'scheduling-turnaround-input', 'scheduling-max-advance-input',
-      'smtp-settings-card', 'smtp-settings-save', 'smtp-host-input', 'smtp-port-input', 'smtp-security-select', 'smtp-from-input', 'smtp-user-input', 'smtp-pass-input', 'smtp-test-email-button',
-      'treasury-settings-card', 'treasury-settings-save', 'treasury-opening-cash-input', 'treasury-opening-bank-input', 'treasury-opening-date-input',
+      'settings-form', 'settings-save-bar', 'settings-save', 'settings-dirty-summary',
+      'club-settings-card', 'club-icao-input', 'club-contact-email-input', 'club-metar-station-input',
+      'airfield-settings-form', 'airfield-name-input',
+      'membership-settings-card', 'membership-settings-fee-input',
+      'currency-settings-card', 'currency-min-flights-input', 'currency-window-days-input',
+      'scheduling-settings-card', 'scheduling-open-time-input', 'scheduling-close-time-input', 'scheduling-min-slot-input', 'scheduling-turnaround-input', 'scheduling-max-advance-input',
+      'smtp-settings-card', 'smtp-host-input', 'smtp-port-input', 'smtp-security-select', 'smtp-from-input', 'smtp-user-input', 'smtp-pass-input', 'smtp-test-email-button',
+      'treasury-settings-card', 'treasury-opening-cash-input', 'treasury-opening-bank-input', 'treasury-opening-date-input',
       'ratings-settings-card', 'ratings-add-button', 'medical-settings-card', 'medical-add-button',
       'cash-categories-settings-card', 'cash-category-add-button',
       'mobile-rating-list', 'mobile-medical-list', 'mobile-cash-category-list',
     ];
-    const absentAtRest = ['mobile-rating-sheet', 'mobile-medical-sheet', 'mobile-cash-category-sheet', 'rating-edit-button-mobile', 'cash-category-delete-button-mobile', 'mobile-rating-empty'];
+    const absentAtRest = [
+      'mobile-rating-sheet', 'mobile-medical-sheet', 'mobile-cash-category-sheet', 'rating-edit-button-mobile', 'cash-category-delete-button-mobile', 'mobile-rating-empty',
+      'rating-form', 'medical-form', 'cash-category-form', 'settings-save-error', 'smtp-test-email-hint', 'rating-row-error', 'rating-row-error-mobile',
+      'club-settings-save', 'club-membership-fee-input', 'airfield-settings-save', 'scheduling-settings-save', 'smtp-settings-save', 'treasury-settings-save',
+      'rating-form-submit', 'medical-form-submit', 'cash-category-form-submit', 'ratings-feedback', 'medical-feedback', 'cash-categories-feedback',
+      'rating-delete-confirm-mobile', 'rating-delete-cancel-mobile', 'medical-delete-confirm-mobile', 'medical-delete-cancel-mobile',
+      'cash-category-delete-confirm-mobile', 'cash-category-delete-cancel-mobile', 'medical-scope-select',
+    ];
 
     for (const viewport of [PHONE, DESKTOP]) {
       await page.setViewportSize(viewport);
@@ -703,10 +732,13 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       expect(mobileRatings).toBe(desktopRatings);
       expect(await page.getByTestId('cash-category-row-mobile').count()).toBe(await page.getByTestId('cash-category-row').count());
 
-      // The two names the existing specs read PAGE-LEVEL.
+      // The two names the existing specs read PAGE-LEVEL — and a visit's panel has no checkbox.
       await page.getByTestId('ratings-add-button').click();
+      await page.getByTestId('medical-add-button').click();
       await expect(page.getByLabel('Blocca prenotazioni')).toHaveCount(1);
-      await page.getByTestId('rating-form').getByRole('button', { name: 'Annulla' }).click();
+      await expect(page.getByTestId('medical-form').getByRole('checkbox')).toHaveCount(0);
+      await page.getByTestId('rating-form-close').click();
+      await expect(page.getByTestId('rating-form')).toHaveCount(0);
     }
   });
 
@@ -720,11 +752,30 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
       expect(layoutScrollers(await page.evaluate(HIDDEN_SCROLLERS))).toEqual([]);
       expect(await page.evaluate(CLIPPED_WITHOUT_ELLIPSIS)).toEqual([]);
 
+      // Story 19.8 (AC 18): the save bar rides ABOVE the tab bar — its whole
+      // box, and the hit-test on the Salva lands on the Salva — at the top...
+      const barOverTabbar = async () =>
+        page.evaluate(() => {
+          const bar = document.querySelector('.settings-save-bar')!.getBoundingClientRect();
+          const tabbar = document.querySelector('.mobile-tabbar')!.getBoundingClientRect();
+          const save = document.querySelector('[data-testid="settings-save"]')!.getBoundingClientRect();
+          const hit = document.elementFromPoint(save.x + save.width / 2, save.y + save.height / 2);
+          return { gap: Math.round((tabbar.top - bar.bottom) * 100) / 100, hitsSave: hit?.closest('[data-testid="settings-save"]') !== null };
+        });
+      const atTop = await barOverTabbar();
+      expect(atTop.gap, `bar vs tab bar @${viewport.width}`).toBeGreaterThanOrEqual(0);
+      expect(atTop.hitsSave).toBe(true);
+
+      // ...and at the bottom, where nothing is left under the bar or the tab bar.
       await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
       await page.waitForTimeout(250);
       const covered = await page.evaluate(COVERED);
       expect(covered.filter((c) => c.by === 'tabbar')).toEqual([]);
+      expect(covered.filter((c) => c.by === 'savebar')).toEqual([]);
       expect(covered.filter((c) => c.by === 'other')).toEqual([]);
+      const atBottom = await barOverTabbar();
+      expect(atBottom.gap).toBeGreaterThanOrEqual(0);
+      expect(atBottom.hitsSave).toBe(true);
     }
 
     // The sheet (z 40) covers the tab bar with its scrim; the toasts (z 200)
@@ -765,10 +816,24 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await page.reload();
     await expect(page.getByTestId('club-settings-card')).toBeVisible();
 
-    // (iii) the 44px floor on the form controls: take it away and the sweep
-    // finds the 13 inputs and the saves again.
-    await page.addStyleTag({ content: '.settings-card .input{ min-height: 0 !important; } .settings-card .btn{ min-height: 0 !important; }' });
-    expect((await page.evaluate(SMALL_TARGETS)).length).toBeGreaterThan(20);
+    // (iii) the 44px floor on the form controls and on the one Salva: take it
+    // away and the sweep finds the inputs, the head actions and the Salva again.
+    await page.addStyleTag({ content: '.settings-card .input{ min-height: 0 !important; } .settings-card .btn{ min-height: 0 !important; } .settings-save-bar > .btn{ min-height: 0 !important; }' });
+    const shrunk = await page.evaluate(SMALL_TARGETS);
+    expect(shrunk.length).toBeGreaterThan(20);
+    expect(shrunk.map((target) => target.testid)).toContain('settings-save');
+
+    await page.reload();
+    await expect(page.getByTestId('club-settings-card')).toBeVisible();
+
+    // (iv) story 19.8: the bar's phone `bottom` is what keeps the Salva above
+    // the tab bar — put it back on the edge and the tab bar covers it.
+    await page.addStyleTag({ content: '.settings-save-bar{ bottom: 0 !important; }' });
+    const hitWithoutOffset = await page.evaluate(() => {
+      const save = document.querySelector('[data-testid="settings-save"]')!.getBoundingClientRect();
+      return document.elementFromPoint(save.x + save.width / 2, save.y + save.height / 2)?.closest('.mobile-tabbar') !== null;
+    });
+    expect(hitWithoutOffset).toBe(true);
 
     await page.reload();
     await expect(page.getByTestId('club-settings-card')).toBeVisible();

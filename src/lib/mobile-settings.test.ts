@@ -30,6 +30,18 @@ describe('expiryTypeSubLine', () => {
   });
 });
 
+describe('a medical visit: no scope, no blocking word (story 19.8, R-19-j)', () => {
+  it('the sub-line is the validity alone', () => {
+    expect(expiryTypeSubLine({ validityLabel: '60 mesi' })).toBe('60 mesi');
+  });
+
+  it('the sheet over-line is the catalogue alone, well formed inside the dialog name', () => {
+    const sub = expiryTypeSheetSub({ catalogLabel: 'Visite mediche' });
+    expect(sub).toBe('Visite mediche');
+    expectWellFormedSheetName(sub, 'Visita medica classe 2');
+  });
+});
+
 describe('expiryTypeSheetSub', () => {
   it('names the catalogue and the scope, and stays well formed inside the dialog name', () => {
     const sub = expiryTypeSheetSub({ catalogLabel: 'Abilitazioni', scopeLabel: 'Piloti' });
