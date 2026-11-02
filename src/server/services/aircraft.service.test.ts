@@ -34,6 +34,8 @@ vi.mock('@/server/db/prisma', () => ({
     user: {
       findMany: vi.fn(),
     },
+    // Review 19.3 F2: the `Aircraft` row lock of a rate write (`lockAircraftForRateWrite`).
+    $queryRaw: vi.fn(),
     $transaction: vi.fn(),
   },
 }));
@@ -509,11 +511,12 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       });
 
       it('runs the aircraft update and the rate upsert on the SAME tx inside ONE $transaction — the global client is never written', async () => {
+        const txQueryRaw = vi.fn().mockResolvedValue([{ archivedAt: null }]);
         const txAircraftUpdate = vi.fn().mockResolvedValue({ ...SELECTED_AIRCRAFT, model: 'Tecnam P2008' });
         const txRateUpsert = vi.fn().mockResolvedValue({ id: 'rate_1' });
         transaction.mockImplementation((arg: unknown) =>
           typeof arg === 'function'
-            ? (arg as (tx: unknown) => unknown)({ aircraft: { update: txAircraftUpdate }, aircraftRate: { upsert: txRateUpsert } })
+            ? (arg as (tx: unknown) => unknown)({ $queryRaw: txQueryRaw, aircraft: { update: txAircraftUpdate }, aircraftRate: { upsert: txRateUpsert } })
             : arg,
         );
         aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
@@ -531,6 +534,39 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         expect(updateMock).not.toHaveBeenCalled();
         expect(aircraftRateUpsertMock).not.toHaveBeenCalled();
         expect(result.model).toBe('Tecnam P2008');
+        // Review 19.3 F2: the Aircraft row lock is the FIRST statement, before both writes.
+        const [strings, ...values] = txQueryRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+        expect(strings.join('?')).toMatch(/FROM "Aircraft" WHERE "id" = \? FOR UPDATE/);
+        expect(values).toEqual(['aircraft_1']);
+        expect(txQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(txAircraftUpdate.mock.invocationCallOrder[0]!);
+        expect(txAircraftUpdate.mock.invocationCallOrder[0]).toBeLessThan(txRateUpsert.mock.invocationCallOrder[0]!);
+      });
+
+      it('a price left out is filled on the same tx, under the lock, from the rate in force on validFrom — before the upsert (review 19.3 D-1)', async () => {
+        const txQueryRaw = vi.fn().mockResolvedValue([{ archivedAt: null }]);
+        const txRateFindFirst = vi.fn().mockResolvedValue({ studentPriceCents: 11000, pilotPriceCents: 12000 });
+        const txRateUpsert = vi.fn().mockResolvedValue({ id: 'rate_1' });
+        transaction.mockImplementation((arg: unknown) =>
+          typeof arg === 'function'
+            ? (arg as (tx: unknown) => unknown)({
+                $queryRaw: txQueryRaw,
+                aircraft: { update: vi.fn().mockResolvedValue(SELECTED_AIRCRAFT) },
+                aircraftRate: { findFirst: txRateFindFirst, upsert: txRateUpsert },
+              })
+            : arg,
+        );
+        aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+
+        await updateAircraft(adminActor(), 'aircraft_1', { rate: { studentPriceCents: 9000, validFrom: '2026-08-10' } });
+
+        expect(txRateFindFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { aircraftId: 'aircraft_1', validFrom: { lte: new Date('2026-08-10T00:00:00.000Z') } } }),
+        );
+        expect(txRateUpsert).toHaveBeenCalledWith(
+          expect.objectContaining({ update: { studentPriceCents: 9000, pilotPriceCents: 12000, actorUserId: 'admin_1' } }),
+        );
+        expect(txQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(txRateFindFirst.mock.invocationCallOrder[0]!);
+        expect(txRateFindFirst.mock.invocationCallOrder[0]).toBeLessThan(txRateUpsert.mock.invocationCallOrder[0]!);
       });
 
       it('a rejected rate write rejects the whole update, and nothing is written outside the transaction', async () => {
@@ -538,7 +574,11 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         const txRateUpsert = vi.fn().mockRejectedValue(new Error('rate write failed'));
         transaction.mockImplementation((arg: unknown) =>
           typeof arg === 'function'
-            ? (arg as (tx: unknown) => unknown)({ aircraft: { update: txAircraftUpdate }, aircraftRate: { upsert: txRateUpsert } })
+            ? (arg as (tx: unknown) => unknown)({
+                $queryRaw: vi.fn().mockResolvedValue([{ archivedAt: null }]),
+                aircraft: { update: txAircraftUpdate },
+                aircraftRate: { upsert: txRateUpsert },
+              })
             : arg,
         );
         aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
@@ -569,11 +609,27 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         expect(updateMock).not.toHaveBeenCalled();
       });
 
-      it('an archived aircraft refuses a rate with a 409 before any write', async () => {
-        aircraftFindUnique.mockResolvedValue({ ...SELECTED_AIRCRAFT, archivedAt: new Date('2026-05-01T00:00:00.000Z') });
+      it('an archived aircraft refuses a rate with a 409 AIRCRAFT_ARCHIVED read under the row lock inside the transaction, before any write (review 19.3 F2/F3)', async () => {
+        // The pre-transaction read still sees it operational: the archive commits in between.
+        aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+        const txAircraftUpdate = vi.fn();
+        const txRateUpsert = vi.fn();
+        transaction.mockImplementation((arg: unknown) =>
+          typeof arg === 'function'
+            ? (arg as (tx: unknown) => unknown)({
+                $queryRaw: vi.fn().mockResolvedValue([{ archivedAt: new Date('2026-05-01T00:00:00.000Z') }]),
+                aircraft: { update: txAircraftUpdate },
+                aircraftRate: { upsert: txRateUpsert },
+              })
+            : arg,
+        );
 
-        await expect(updateAircraft(adminActor(), 'aircraft_1', { rate })).rejects.toThrow(ConflictError);
-        expect(transactionMock).not.toHaveBeenCalled();
+        const error = await updateAircraft(adminActor(), 'aircraft_1', { model: 'x', rate }).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(ConflictError);
+        expect(error).toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+        expect(txAircraftUpdate).not.toHaveBeenCalled();
+        expect(txRateUpsert).not.toHaveBeenCalled();
         expect(updateMock).not.toHaveBeenCalled();
       });
 
@@ -581,6 +637,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
         aircraftUpdate.mockResolvedValue(SELECTED_AIRCRAFT);
         mockInteractiveTransaction();
+        vi.mocked(prisma.$queryRaw).mockResolvedValue([{ archivedAt: null }] as never);
         aircraftRateUpsertMock.mockResolvedValue({ id: 'rate_1' } as never);
         const authorizeMock = vi.mocked(authorize);
 

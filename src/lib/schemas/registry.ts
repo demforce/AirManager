@@ -1040,7 +1040,7 @@ registry.registerPath({
   path: '/api/v1/aircraft/{id}',
   summary: 'Update an aircraft (registration, type, model; optional rate)',
   description:
-    'Partial update of registration, type, model; the optional `rate` block (story 19.3, the editor\'s single Save) is saved in the SAME transaction — a rejected rate rolls the identity change back too. With `rate`: requires `settings.manage` on top of `aircraft.manage`; an archived aircraft answers 409; `validFrom` must be today or later (Europe/Rome, 422 `RATE_VALID_FROM_IN_PAST`); a rate already on that `validFrom` is rewritten (no 409). Registration conflicts are a 409. The response is the aircraft (no rate fields). Archive and the out-of-service/return-to-service actions stay separate endpoints.',
+    'Partial update of registration, type, model; the optional `rate` block (story 19.3, the editor\'s single Save) is saved in the SAME transaction — a rejected rate rolls the identity change back too. With `rate`: requires `settings.manage` on top of `aircraft.manage`; an archived aircraft answers 409 `AIRCRAFT_ARCHIVED` (checked under a row lock on the aircraft, so a concurrent archive never leaves a rate behind); `validFrom` must be today or later (Europe/Rome, 422 `RATE_VALID_FROM_IN_PAST`); a rate already on that `validFrom` is rewritten (no 409). Either price may be omitted, never both («leave empty to keep it»): it takes that column of the rate in force ON `validFrom` — a scheduled change before that date included — and a 422 `VALIDATION_ERROR` answers when no rate is in force on `validFrom`. Registration conflicts are a 409. The response is the aircraft (no rate fields). Archive and the out-of-service/return-to-service actions stay separate endpoints.',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams, body: { content: jsonContent(updateAircraftSchema), required: true } },
@@ -1145,7 +1145,7 @@ registry.registerPath({
   path: '/api/v1/aircraft/{id}/rates',
   summary: 'Record or rewrite an aircraft rate (AD-4)',
   description:
-    'Story 4.1, rules rewritten by story 19.3 (R-19-e/R-19-f): two billed prices, `studentPriceCents` and `pilotPriceCents` (both mandatory) — a flight takes the column of the flying person\'s profile. `validFrom` must be today or later on the Europe/Rome calendar (422 `RATE_VALID_FROM_IN_PAST` otherwise); a second write on the same `(aircraftId, validFrom)` REWRITES that row and answers 201 with it (never a 409, never a second row) — registered flights keep the price they froze. An archived aircraft answers 409. Requires `settings.manage` (admin-only pricing configuration, story 3.4\'s cash-category pattern).',
+    'Story 4.1, rules rewritten by story 19.3 (R-19-e/R-19-f): two billed prices, `studentPriceCents` and `pilotPriceCents` (both mandatory) — a flight takes the column of the flying person\'s profile. `validFrom` must be today or later on the Europe/Rome calendar (422 `RATE_VALID_FROM_IN_PAST` otherwise); a second write on the same `(aircraftId, validFrom)` REWRITES that row and answers 201 with it (never a 409, never a second row) — registered flights keep the price they froze. An archived aircraft answers 409 `AIRCRAFT_ARCHIVED`. Requires `settings.manage` (admin-only pricing configuration, story 3.4\'s cash-category pattern).',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams, body: { content: jsonContent(createAircraftRateSchema), required: true } },

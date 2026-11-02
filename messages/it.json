@@ -1054,6 +1054,7 @@
         "required": "Campo obbligatorio.",
         "generic": "Si è verificato un errore. Riprova.",
         "conflictRegistration": "Esiste già un velivolo con queste marche.",
+        "aircraftArchived": "Il velivolo è stato archiviato nel frattempo e non accetta nuove tariffe: nessuna modifica è stata salvata.",
         "conflictStatus": "Lo stato del velivolo è già cambiato nel frattempo.",
         "invalidPrice": "Il prezzo deve essere un importo positivo (es. 160,00).",
         "invalidDate": "Inserisci una data valida.",

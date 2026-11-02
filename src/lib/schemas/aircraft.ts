@@ -8,16 +8,16 @@ import { z } from './zod-with-openapi';
  * `pilotPriceCents` — the flight takes the column of the flying person's
  * profile. Both are integer euro cents (AD-2), always > 0, capped at the
  * Postgres INTEGER max so an absurd value fails as a clean 422 instead of a
- * driver overflow error → 500 (review 2.4 F2), and BOTH are mandatory ("leave
- * empty to keep it" is a UI rule, the client fills the field with the current
- * price — D-1). `validFrom` is a calendar date only (`YYYY-MM-DD`, same
+ * driver overflow error → 500 (review 2.4 F2), and BOTH are mandatory here
+ * (only the `rate` block of `PATCH /aircraft/{id}` may omit one,
+ * `updateAircraftRateSchema`). `validFrom` is a calendar date only (`YYYY-MM-DD`, same
  * `z.iso.date()` pattern as `recordCashMovementSchema.effectiveDate`); the
  * service rejects one in the past (`RATE_VALID_FROM_IN_PAST`, Europe/Rome
  * calendar) and REWRITES the row already on the same `(aircraftId,
  * validFrom)` instead of answering 409 (R-19-f). Declared above
  * `createAircraftSchema` (story 14.8) so the aircraft composites can embed it
  * as an optional `rate` block — same shape reused verbatim for the standalone
- * endpoint, the composite create and the composite update.
+ * endpoint and the composite create.
  */
 export const createAircraftRateSchema = z.object({
   studentPriceCents: z.number().int().positive().max(2_147_483_647),
@@ -26,6 +26,22 @@ export const createAircraftRateSchema = z.object({
 });
 
 export type CreateAircraftRateInput = z.infer<typeof createAircraftRateSchema>;
+
+/**
+ * The `rate` block of `PATCH /api/v1/aircraft/{id}` (story 19.3, R-19-f "leave
+ * empty to keep it", as ratified by review 19.3 D-1): `createAircraftRateSchema`
+ * with EITHER price omittable, never both. An omitted price is the one in
+ * force ON `validFrom`, not today's: the service fills it inside the write's
+ * transaction (`rates.service.ts#fillOmittedRatePrices`), so a change already
+ * scheduled before that date is kept instead of silently undone.
+ */
+export const updateAircraftRateSchema = createAircraftRateSchema
+  .partial({ studentPriceCents: true, pilotPriceCents: true })
+  .refine((rate) => rate.studentPriceCents !== undefined || rate.pilotPriceCents !== undefined, {
+    message: 'At least one price must be provided.',
+  });
+
+export type UpdateAircraftRateInput = z.infer<typeof updateAircraftRateSchema>;
 
 /**
  * Shared by the create/edit aircraft forms and `POST`/`PATCH /api/v1/aircraft`
@@ -56,14 +72,14 @@ export type CreateAircraftInput = z.infer<typeof createAircraftSchema>;
  * schema — `archivedAt` is never client-settable directly. `rate` (story
  * 19.3, A17 — the editor's ONE Salva) OPTIONALLY records or rewrites a rate
  * in the SAME transaction as the identity fields
- * (`aircraft.service.ts#updateAircraft`), reusing `createAircraftRateSchema`
- * verbatim, the same block `createAircraftSchema` carries.
+ * (`aircraft.service.ts#updateAircraft`): `updateAircraftRateSchema`, the
+ * block `createAircraftSchema` carries with one price omittable.
  */
 export const updateAircraftSchema = z.object({
   registration: z.string().trim().toUpperCase().min(1).optional(),
   type: z.string().trim().min(1).optional(),
   model: z.string().trim().min(1).optional(),
-  rate: createAircraftRateSchema.optional(),
+  rate: updateAircraftRateSchema.optional(),
 });
 
 export type UpdateAircraftInput = z.infer<typeof updateAircraftSchema>;

@@ -1054,6 +1054,7 @@
         "required": "This field is required.",
         "generic": "Something went wrong. Please try again.",
         "conflictRegistration": "An aircraft with this registration already exists.",
+        "aircraftArchived": "The aircraft was archived in the meantime and cannot take new rates: nothing was saved.",
         "conflictStatus": "The aircraft's status already changed in the meantime.",
         "invalidPrice": "The price must be a positive amount (e.g. 160.00).",
         "invalidDate": "Enter a valid date.",

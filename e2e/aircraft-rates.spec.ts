@@ -263,6 +263,60 @@ test.describe('Aircraft rates: two prices, decorrenza from today, the editor\'s 
     await expect(studentField(page)).toHaveAttribute('placeholder', '120,00');
   });
 
+  test('a price left empty keeps the one in force on "In vigore da", a scheduled change included — never today\'s (review 19.3 D-1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page, 'R9');
+    await seedAircraftRate(aircraft.id, { studentPriceCents: 10000, pilotPriceCents: 10000, validFrom: PAST_DATE });
+    const [in10, in20, in30, in40] = [10, 20, 30, 40].map((days) => addDaysIso(todayRome(), days));
+    for (const rate of [
+      { studentPriceCents: 11000, pilotPriceCents: 12000, validFrom: in10 },
+      { studentPriceCents: 11500, pilotPriceCents: 13000, validFrom: in30 },
+    ]) {
+      expect((await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: rate })).status()).toBe(201);
+    }
+    await openEditor(page, aircraft);
+
+    const saveAndWait = async () => {
+      const patched = page.waitForResponse((response) => response.request().method() === 'PATCH' && new URL(response.url()).pathname === `/api/v1/aircraft/${aircraft.id}`);
+      await save(page).click();
+      expect((await patched).status()).toBe(200);
+    };
+
+    // Between the two scheduled changes: the pilot keeps 120,00 (from +10), not today's 100,00.
+    await studentField(page).fill('90,00');
+    await validFromField(page).fill(in20);
+    await saveAndWait();
+    // After both: the pilot keeps 130,00 (from +30) — the nearest scheduled one, the only one the editor shows, would say 120,00.
+    await studentField(page).fill('95,00');
+    await validFromField(page).fill(in40);
+    await saveAndWait();
+
+    expect(await ratesOf(page, aircraft.id)).toEqual([
+      { studentPriceCents: 9500, pilotPriceCents: 13000, validFrom: in40 },
+      { studentPriceCents: 11500, pilotPriceCents: 13000, validFrom: in30 },
+      { studentPriceCents: 9000, pilotPriceCents: 12000, validFrom: in20 },
+      { studentPriceCents: 11000, pilotPriceCents: 12000, validFrom: in10 },
+      { studentPriceCents: 10000, pilotPriceCents: 10000, validFrom: PAST_DATE },
+    ]);
+  });
+
+  test('a Salva on an aircraft archived meanwhile names the archive, not the registration (review 19.3 F3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page, 'R10');
+    await openEditor(page, aircraft);
+    // Archived from elsewhere while the panel is open.
+    expect((await page.request.post(`/api/v1/aircraft/${aircraft.id}/archive`)).status()).toBe(200);
+
+    await studentField(page).fill('120,00');
+    await pilotField(page).fill('140,00');
+    await save(page).click();
+
+    await expect(page.getByTestId('identity-form-error')).toHaveText(
+      'Il velivolo è stato archiviato nel frattempo e non accetta nuove tariffe: nessuna modifica è stata salvata.',
+    );
+    expect(await ratesOf(page, aircraft.id)).toEqual([]);
+  });
+
   test('an archived aircraft shows a sentence instead of the rate fields, and its Salva never carries a rate (AC 22)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page, 'R7');
@@ -357,10 +411,16 @@ test.describe('Aircraft rates: two prices, decorrenza from today, the editor\'s 
     const search = await page.request.get(`/api/v1/aircraft?q=${encodeURIComponent(fresh.registration)}&includeArchived=true`);
     expect(((await search.json()) as { items: unknown[] }).items).toHaveLength(0);
 
-    // PATCH with a rate on an archived aircraft → 409.
+    // PATCH or POST /rates with a rate on an archived aircraft → 409 with its own code (review 19.3 F3).
     const archived = await createAircraft(page, 'A3');
     expect((await page.request.post(`/api/v1/aircraft/${archived.id}/archive`)).status()).toBe(200);
-    expect((await page.request.patch(`/api/v1/aircraft/${archived.id}`, { data: { rate: rate(today) } })).status()).toBe(409);
+    for (const response of [
+      await page.request.patch(`/api/v1/aircraft/${archived.id}`, { data: { rate: rate(today) } }),
+      await page.request.post(`/api/v1/aircraft/${archived.id}/rates`, { data: rate(today) }),
+    ]) {
+      expect(response.status()).toBe(409);
+      expect((await response.json()).error.code).toBe('AIRCRAFT_ARCHIVED');
+    }
   });
 
   test('a pilot gets a 403 AD-8 envelope from POST /api/v1/aircraft/{id}/rates', async ({ page }) => {

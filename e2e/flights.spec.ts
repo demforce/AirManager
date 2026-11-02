@@ -485,9 +485,9 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     });
     expect(response.status()).toBe(201);
 
-    await page.goto('/it/dashboard/logbook');
-    // Native select since the 2026-07-21 filter-UI change.
-    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraft.registration });
+    // The filter goes in the URL: the "Velivolo" select lists only the first
+    // 100 registrations, fewer than a full suite creates (review 19.3 F1).
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
     await expect(page).toHaveURL(/aircraftId=/);
 
     const row = page.getByTestId('flight-row').first();

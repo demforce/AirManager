@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAircraftRateSchema } from '@/lib/schemas/aircraft';
+import { createAircraftRateSchema, updateAircraftRateSchema } from '@/lib/schemas/aircraft';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
@@ -10,23 +10,34 @@ vi.mock('@/server/db/prisma', () => {
     upsert: vi.fn(),
     findUniqueOrThrow: vi.fn(),
   };
+  // Review 19.3 F2: the `Aircraft` row lock (`lockAircraftForRateWrite`) is a
+  // raw query on the transaction's client.
+  const $queryRaw = vi.fn();
   return {
     prisma: {
       aircraft: {
         findUnique: vi.fn(),
       },
       aircraftRate,
+      $queryRaw,
       // The interactive transaction runs its callback on a `tx` that IS the
       // same mocked delegates — enough to assert the write and the read land
       // inside it (`$transaction` called) and nowhere else.
-      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback({ aircraftRate })),
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback({ aircraftRate, $queryRaw })),
     },
   };
 });
 
 const { prisma } = await import('@/server/db/prisma');
-const { assertRateValidFromNotPast, createAircraftRate, getEffectiveRate, getEffectiveRates, getNextScheduledRates, listAircraftRates } =
-  await import('./rates.service');
+const {
+  assertRateValidFromNotPast,
+  createAircraftRate,
+  fillOmittedRatePrices,
+  getEffectiveRate,
+  getEffectiveRates,
+  getNextScheduledRates,
+  listAircraftRates,
+} = await import('./rates.service');
 const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
 
 const aircraftFindUniqueMock = vi.mocked(prisma.aircraft.findUnique);
@@ -35,6 +46,7 @@ const rateFindManyMock = vi.mocked(prisma.aircraftRate.findMany);
 const rateUpsertMock = vi.mocked(prisma.aircraftRate.upsert);
 const rateFindUniqueOrThrowMock = vi.mocked(prisma.aircraftRate.findUniqueOrThrow);
 const transactionMock = vi.mocked(prisma.$transaction);
+const queryRawMock = vi.mocked(prisma.$queryRaw);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as aircraft.service.test.ts).
@@ -82,6 +94,8 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2; t
     rateUpsertMock.mockReset();
     rateFindUniqueOrThrowMock.mockReset();
     transactionMock.mockClear();
+    queryRawMock.mockReset();
+    queryRawMock.mockResolvedValue([{ archivedAt: null }] as never);
   });
 
   afterEach(() => {
@@ -143,10 +157,30 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2; t
       expect(rateUpsertMock).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictError for an archived aircraft', async () => {
-      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1', archivedAt: new Date('2026-01-01T00:00:00.000Z') });
-      await expect(createAircraftRate(adminActor(), 'aircraft_1', rateInput('2026-07-07'))).rejects.toThrow(ConflictError);
+    it('an archived aircraft is a 409 AIRCRAFT_ARCHIVED read under the Aircraft row lock INSIDE the transaction, nothing written (review 19.3 F2/F3)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      queryRawMock.mockResolvedValue([{ archivedAt: new Date('2026-01-01T00:00:00.000Z') }] as never);
+
+      const error = await createAircraftRate(adminActor(), 'aircraft_1', rateInput('2026-07-07')).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+      expect(transactionMock).toHaveBeenCalledTimes(1);
       expect(rateUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('locks the Aircraft row FOR UPDATE as the first statement of the transaction, before the upsert (review 19.3 F2 — order Aircraft → AircraftRate)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      rateUpsert.mockResolvedValue({ id: 'rate_1' });
+      rateFindUniqueOrThrow.mockResolvedValue(rateFixture());
+
+      await createAircraftRate(adminActor(), 'aircraft_1', rateInput('2026-07-07'));
+
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      const [strings, ...values] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+      expect(strings.join('?')).toMatch(/SELECT "archivedAt" FROM "Aircraft" WHERE "id" = \? FOR UPDATE/);
+      expect(values).toEqual(['aircraft_1']);
+      expect(queryRawMock.mock.invocationCallOrder[0]).toBeLessThan(rateUpsertMock.mock.invocationCallOrder[0]!);
     });
 
     it('a past validFrom is a 422 RATE_VALID_FROM_IN_PAST before any write or transaction (AC 4)', async () => {
@@ -394,6 +428,51 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2; t
       expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, validFrom: '2026-07-07' }).success).toBe(false);
       expect(createAircraftRateSchema.safeParse({ pilotPriceCents: 16000, validFrom: '2026-07-07' }).success).toBe(false);
       expect(createAircraftRateSchema.safeParse({ studentPriceCents: 15300, validFrom: '2026-07-07' }).success).toBe(false);
+    });
+  });
+
+  describe('updateAircraftRateSchema (review 19.3 D-1 — the PATCH rate block, one price omittable)', () => {
+    it('accepts either price alone, or both; rejects a block with neither', () => {
+      expect(updateAircraftRateSchema.safeParse({ studentPriceCents: 15300, validFrom: '2026-07-07' }).success).toBe(true);
+      expect(updateAircraftRateSchema.safeParse({ pilotPriceCents: 16000, validFrom: '2026-07-07' }).success).toBe(true);
+      expect(updateAircraftRateSchema.safeParse(rateInput('2026-07-07')).success).toBe(true);
+      expect(updateAircraftRateSchema.safeParse({ validFrom: '2026-07-07' }).success).toBe(false);
+    });
+
+    it('keeps the price bounds of the create block', () => {
+      expect(updateAircraftRateSchema.safeParse({ studentPriceCents: 0, validFrom: '2026-07-07' }).success).toBe(false);
+      expect(updateAircraftRateSchema.safeParse({ pilotPriceCents: 2_147_483_648, validFrom: '2026-07-07' }).success).toBe(false);
+    });
+  });
+
+  describe('fillOmittedRatePrices (review 19.3 D-1 — an omitted price is the one in force ON validFrom)', () => {
+    const tx = { aircraftRate: prisma.aircraftRate } as unknown as Parameters<typeof fillOmittedRatePrices>[0];
+
+    it('both prices given: returned as they are, nothing read', async () => {
+      await expect(fillOmittedRatePrices(tx, 'aircraft_1', rateInput('2026-08-10', 13000, 15000))).resolves.toEqual(rateInput('2026-08-10', 13000, 15000));
+      expect(rateFindFirstMock).not.toHaveBeenCalled();
+    });
+
+    it('an omitted price takes that column of the row in force on validFrom (max validFrom <= it) — a scheduled change, not today\'s price', async () => {
+      // Today 100, scheduled 120 from D1; saving only the student price from D2 > D1 keeps the pilot at 120.
+      rateFindFirst.mockResolvedValue({ studentPriceCents: 11000, pilotPriceCents: 12000 });
+
+      const filled = await fillOmittedRatePrices(tx, 'aircraft_1', { studentPriceCents: 9000, validFrom: '2026-08-10' });
+
+      expect(filled).toEqual({ studentPriceCents: 9000, pilotPriceCents: 12000, validFrom: '2026-08-10' });
+      expect(rateFindFirstMock).toHaveBeenCalledWith({
+        where: { aircraftId: 'aircraft_1', validFrom: { lte: new Date('2026-08-10T00:00:00.000Z') } },
+        select: { studentPriceCents: true, pilotPriceCents: true },
+        orderBy: [{ validFrom: 'desc' }],
+      });
+    });
+
+    it('nothing in force on validFrom: a 422, nothing to keep', async () => {
+      rateFindFirst.mockResolvedValue(null);
+
+      await expect(fillOmittedRatePrices(tx, 'aircraft_1', { pilotPriceCents: 16000, validFrom: '2026-08-10' })).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+      });
     });
   });
 });

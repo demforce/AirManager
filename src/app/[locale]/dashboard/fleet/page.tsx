@@ -242,6 +242,7 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               required: t('editor.errors.required'),
               generic: t('editor.errors.generic'),
               conflictRegistration: t('editor.errors.conflictRegistration'),
+              aircraftArchived: t('editor.errors.aircraftArchived'),
               conflictStatus: t('editor.errors.conflictStatus'),
               invalidPrice: t('editor.errors.invalidPrice'),
               invalidDate: t('editor.errors.invalidDate'),

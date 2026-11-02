@@ -1,6 +1,6 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
-import type { CreateAircraftRateInput } from '@/lib/schemas/aircraft';
+import type { CreateAircraftRateInput, UpdateAircraftRateInput } from '@/lib/schemas/aircraft';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
@@ -79,6 +79,64 @@ export function assertRateValidFromNotPast(validFrom: string): void {
 }
 
 /**
+ * The "an archived aircraft takes no rate" rule of every rate write on an
+ * existing aircraft (`createAircraftRate`, `aircraft.service.ts#updateAircraft`),
+ * checked as the FIRST statement of the write's transaction, under a row lock
+ * on the `Aircraft` (review 19.3 F2: checked before the transaction, a
+ * concurrent `archiveAircraft` could commit in between and leave a new rate on
+ * an archived aircraft). `FOR UPDATE`, the mode of every other `Aircraft` lock
+ * (`flights.service.ts#registerFlight`, the booking writes): order
+ * `Aircraft → AircraftRate`, and nothing locks an `AircraftRate` first. The
+ * 409 carries its own code, `AIRCRAFT_ARCHIVED` (review 19.3 F3), so a client
+ * can tell it apart from a registration `CONFLICT`.
+ */
+export async function lockAircraftForRateWrite(tx: Prisma.TransactionClient, aircraftId: string): Promise<void> {
+  const [aircraft] = await tx.$queryRaw<Array<{ archivedAt: Date | null }>>`
+    SELECT "archivedAt" FROM "Aircraft" WHERE "id" = ${aircraftId} FOR UPDATE`;
+  if (!aircraft) {
+    throw new NotFoundError('Aircraft not found.');
+  }
+  if (aircraft.archivedAt !== null) {
+    throw new ConflictError('Cannot add a rate to an archived aircraft.', undefined, 'AIRCRAFT_ARCHIVED');
+  }
+}
+
+/**
+ * "Leave empty to keep it" (R-19-f, review 19.3 D-1) for the `rate` block of
+ * `PATCH /aircraft/{id}`: an omitted price takes that column of the rate in
+ * force ON `validFrom` (the row with the maximum `validFrom <= validFrom`,
+ * AD-4) — possibly a scheduled change, possibly the very row being rewritten
+ * — so leaving a price empty never undoes a change scheduled before that
+ * date. Runs on the caller's `tx` AFTER `lockAircraftForRateWrite`: every rate
+ * write on an existing aircraft holds that lock, so the row read here cannot
+ * change before the upsert. A 422 when nothing is in force on `validFrom`
+ * (nothing to keep — the editor makes both fields required then).
+ */
+export async function fillOmittedRatePrices(
+  tx: Prisma.TransactionClient,
+  aircraftId: string,
+  rate: UpdateAircraftRateInput,
+): Promise<CreateAircraftRateInput> {
+  const { studentPriceCents, pilotPriceCents, validFrom } = rate;
+  if (studentPriceCents !== undefined && pilotPriceCents !== undefined) {
+    return { studentPriceCents, pilotPriceCents, validFrom };
+  }
+  const inForce = await tx.aircraftRate.findFirst({
+    where: { aircraftId, validFrom: { lte: parseDateOnlyUtc(validFrom) } },
+    select: { studentPriceCents: true, pilotPriceCents: true },
+    orderBy: [{ validFrom: 'desc' }],
+  });
+  if (!inForce) {
+    throw new ValidationError('Both prices are required: no rate is in force on validFrom.');
+  }
+  return {
+    studentPriceCents: studentPriceCents ?? inForce.studentPriceCents,
+    pilotPriceCents: pilotPriceCents ?? inForce.pilotPriceCents,
+    validFrom,
+  };
+}
+
+/**
  * The ONLY writer of `AircraftRate` (story 19.3, AD-2): inserts the rate, or
  * rewrites the prices (and the actor) of the row already on that
  * `(aircraftId, validFrom)` — callers have already checked
@@ -131,18 +189,16 @@ export async function upsertAircraftRateCore(
 export async function createAircraftRate(actor: Actor, aircraftId: string, input: CreateAircraftRateInput): Promise<AircraftRateListItem> {
   authorize(actor, 'settings.manage');
 
-  const aircraft = await prisma.aircraft.findUnique({ where: { id: aircraftId }, select: { id: true, archivedAt: true } });
+  const aircraft = await prisma.aircraft.findUnique({ where: { id: aircraftId }, select: { id: true } });
   if (!aircraft) {
     throw new NotFoundError('Aircraft not found.');
-  }
-  if (aircraft.archivedAt !== null) {
-    throw new ConflictError('Cannot add a rate to an archived aircraft.');
   }
   assertRateValidFromNotPast(input.validFrom);
 
   // The response carries the actor's email (a nested read), which would
   // turn the upsert into a non-native read-then-write: write flat, read after.
   const rate = await prisma.$transaction(async (tx) => {
+    await lockAircraftForRateWrite(tx, aircraftId);
     const id = await upsertAircraftRateCore(tx, aircraftId, input, actor.userId);
     return tx.aircraftRate.findUniqueOrThrow({ where: { id }, select: RATE_SELECT });
   });

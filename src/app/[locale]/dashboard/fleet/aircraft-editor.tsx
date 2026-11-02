@@ -32,6 +32,7 @@ import {
   type AogBookingImpactDto,
   type CreateAircraftInput,
   type UpdateAircraftInput,
+  type UpdateAircraftRateInput,
 } from '@/lib/schemas/aircraft';
 import type { FleetConsoleItem, RatePrices, ScheduledRate } from './fleet-console';
 
@@ -125,6 +126,8 @@ export type AircraftEditorLabels = {
     required: string;
     generic: string;
     conflictRegistration: string;
+    /** Review 19.3 F3 — the 409 `AIRCRAFT_ARCHIVED` of a Salva with a rate, when the aircraft was archived elsewhere while the panel was open. */
+    aircraftArchived: string;
     conflictStatus: string;
     invalidPrice: string;
     invalidDate: string;
@@ -248,14 +251,27 @@ export function AircraftEditor({ target, onClose, onMutated, totalMinutes, local
    * history: every write has `validFrom >= today`, so a rate saved for TODAY
    * becomes the current one, and a future one only competes with the known
    * next scheduled rate (the nearer wins; on the same date, the saved one).
+   * A price left out took the one in force on `validFrom` (review 19.3 D-1),
+   * known exactly here whenever the saved row is shown: the current rate for
+   * a row of today or one before the next scheduled, that scheduled row for a
+   * rewrite of it — a later row never becomes the line.
    */
-  function handleRateSaved(saved: ScheduledRate, today: string): void {
-    const prices = { studentPriceCents: saved.studentPriceCents, pilotPriceCents: saved.pilotPriceCents };
-    setRates((previous) =>
-      saved.validFrom === today
+  function handleRateSaved(saved: UpdateAircraftRateInput, today: string): void {
+    setRates((previous) => {
+      const inForce = previous.scheduled !== null && previous.scheduled.validFrom <= saved.validFrom ? previous.scheduled : previous.current;
+      // Non-null: a price can be left out only when a rate is in effect today (`IdentitySection#priceError`).
+      const prices = {
+        studentPriceCents: saved.studentPriceCents ?? inForce!.studentPriceCents,
+        pilotPriceCents: saved.pilotPriceCents ?? inForce!.pilotPriceCents,
+      };
+      return saved.validFrom === today
         ? { ...previous, current: prices }
-        : { ...previous, scheduled: previous.scheduled !== null && previous.scheduled.validFrom < saved.validFrom ? previous.scheduled : saved },
-    );
+        : {
+            ...previous,
+            scheduled:
+              previous.scheduled !== null && previous.scheduled.validFrom < saved.validFrom ? previous.scheduled : { ...prices, validFrom: saved.validFrom },
+          };
+    });
   }
 
   /* Story 15.10 (R-15.10-f): the identity submit moves from the in-body
@@ -365,8 +381,8 @@ type IdentitySectionProps =
       onBusyChange: (busy: boolean) => void;
       onClose: () => void;
       onSaved: (updated: EditableAircraft) => void;
-      /** Story 19.3 (D-6) — the rate this Salva wrote, and the "today" it was checked against. */
-      onRateSaved: (saved: ScheduledRate, today: string) => void;
+      /** Story 19.3 (D-6) — the rate block this Salva sent (a price left out = kept, review 19.3 D-1), and the "today" it was checked against. */
+      onRateSaved: (saved: UpdateAircraftRateInput, today: string) => void;
     };
 
 function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
@@ -399,7 +415,7 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
 
   // Touched = at least one price typed; the date alone writes nothing (AD-6).
   const rateTouched = !archived && (studentPrice.trim().length > 0 || pilotPrice.trim().length > 0);
-  /** `null` = valid; otherwise the message for that price field. An empty field inherits the rate in effect today (D-1) and is required only without one. */
+  /** `null` = valid; otherwise the message for that price field. An empty field keeps the price in force on "In vigore da" (review 19.3 D-1) and is required only without a rate in effect today. */
   function priceError(value: string): string | null {
     if (!rateTouched) return null;
     if (value.trim().length === 0) return currentRate === null ? labels.errors.required : null;
@@ -466,11 +482,14 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
     // ONE composite body (story 14.8 for the create, story 19.3 / A17 for the
     // update): the server writes identity and rate in one `$transaction`, so a
     // rejected rate never leaves a half-saved form behind. An empty price is
-    // the price in effect today (D-1: what you see is what you save).
+    // left out of the body: the server keeps the one in force on `validFrom`
+    // (review 19.3 D-1), so a change scheduled before that date survives —
+    // today's price would silently undo it. (A creation has no rate in effect:
+    // both prices are required there, `priceError`.)
     const rate = rateTouched
       ? {
-          studentPriceCents: studentPrice.trim().length > 0 ? parseCents(studentPrice) : currentRate!.studentPriceCents,
-          pilotPriceCents: pilotPrice.trim().length > 0 ? parseCents(pilotPrice) : currentRate!.pilotPriceCents,
+          ...(studentPrice.trim().length > 0 && { studentPriceCents: parseCents(studentPrice) }),
+          ...(pilotPrice.trim().length > 0 && { pilotPriceCents: parseCents(pilotPrice) }),
           validFrom: trimmedValidFrom,
         }
       : null;
@@ -508,7 +527,13 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
           return;
         }
       }
-      setFormError(code === 'CONFLICT' ? labels.errors.conflictRegistration : labels.errors.generic);
+      setFormError(
+        code === 'AIRCRAFT_ARCHIVED'
+          ? labels.errors.aircraftArchived
+          : code === 'CONFLICT'
+            ? labels.errors.conflictRegistration
+            : labels.errors.generic,
+      );
       return;
     }
 

@@ -15,7 +15,7 @@ import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { computeAogImpact, type AogBookingImpact, type AogImpact, type ImpactedApprovedBooking } from './aog-impact';
 import { ConflictError, NotFoundError } from './errors';
-import { assertRateValidFromNotPast, upsertAircraftRateCore } from './rates.service';
+import { assertRateValidFromNotPast, fillOmittedRatePrices, lockAircraftForRateWrite, upsertAircraftRateCore } from './rates.service';
 
 export type AircraftListItem = {
   id: string;
@@ -244,11 +244,14 @@ export async function createAircraft(actor: Actor, input: CreateAircraftInput): 
  * transaction as the identity fields, so a rejected rate never leaves a
  * half-saved form behind. Archiving and the availability actions stay
  * separate endpoints (AC 2). With `rate`: the stricter `settings.manage`
- * (same split as `createAircraft`), an archived aircraft is a 409 (same
- * message as `createAircraftRate`), a past `validFrom` a 422
- * `RATE_VALID_FROM_IN_PAST` — all before any write. Without `rate` the
- * update is the single non-transactional call it always was. The response
- * carries no rate (`AircraftListItem` is unchanged).
+ * (same split as `createAircraft`) and a past `validFrom` a 422
+ * `RATE_VALID_FROM_IN_PAST`, before the transaction; an archived aircraft a
+ * 409 `AIRCRAFT_ARCHIVED`, checked inside it under the `Aircraft` row lock
+ * (`lockAircraftForRateWrite`, review 19.3 F2) — all before any write. A
+ * price omitted from `rate` is the one in force on its `validFrom`
+ * (`fillOmittedRatePrices`, review 19.3 D-1), read under that same lock.
+ * Without `rate` the update is the single non-transactional call it always
+ * was. The response carries no rate (`AircraftListItem` is unchanged).
  */
 export async function updateAircraft(actor: Actor, id: string, patch: UpdateAircraftInput): Promise<AircraftListItem> {
   authorize(actor, 'aircraft.manage');
@@ -264,9 +267,6 @@ export async function updateAircraft(actor: Actor, id: string, patch: UpdateAirc
   }
 
   if (patch.rate) {
-    if (existing.archivedAt !== null) {
-      throw new ConflictError('Cannot add a rate to an archived aircraft.');
-    }
     assertRateValidFromNotPast(patch.rate.validFrom);
   }
 
@@ -286,8 +286,9 @@ export async function updateAircraft(actor: Actor, id: string, patch: UpdateAirc
   try {
     aircraft = rate
       ? await prisma.$transaction(async (tx) => {
+          await lockAircraftForRateWrite(tx, id);
           const updated = await tx.aircraft.update({ where: { id }, data, select: AIRCRAFT_SELECT });
-          await upsertAircraftRateCore(tx, id, rate, actor.userId);
+          await upsertAircraftRateCore(tx, id, await fillOmittedRatePrices(tx, id, rate), actor.userId);
           return updated;
         })
       : await prisma.aircraft.update({ where: { id }, data, select: AIRCRAFT_SELECT });

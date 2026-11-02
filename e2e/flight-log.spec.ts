@@ -316,11 +316,11 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await registerFlight(page, { aircraftId: aircraftA.id, personId: personA.personId, flightDate: '2020-05-01', flightType: 'TOURISM', minutes: 30 });
     await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'AERIAL_WORK', minutes: 45 });
 
-    await page.goto('/it/dashboard/logbook');
-
-    // Velivolo filter: only aircraftA's flight. (Native selects since the
-    // 2026-07-21 filter-UI change — the value they hold is the entity ID.)
-    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraftA.registration });
+    // Velivolo filter: only aircraftA's flight. Set through the URL, not the
+    // native select: its options stop at the first 100 registrations
+    // (`OPTIONS_PAGE_SIZE`), fewer than a full suite creates (review 19.3 F1).
+    // The select's change handler is the one the Tipo select below exercises.
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftA.id}`);
     let rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(aircraftA.registration);
@@ -365,11 +365,11 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // orders by flightDate desc with a 20-row page, so on an accumulated DB
     // recent-dated flights from other runs bury these 2020-dated rows past
     // the cap (review TD-3 M1/D1 lesson: assert on run-unique observables).
-    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraftA.registration });
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftA.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
     await expect(page.getByTestId('flight-row').first()).toContainText(aircraftA.registration);
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-aircraft'), aircraftA.id);
-    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraftB.registration });
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftB.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
     await expect(page.getByTestId('flight-row').first()).toContainText(aircraftB.registration);
   });

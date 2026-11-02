@@ -331,9 +331,10 @@ model Aircraft {
 /// today or later (Europe/Rome calendar, A16 — `RATE_VALID_FROM_IN_PAST`),
 /// and a row whose `validFrom` is today or later is REWRITTEN in place by a
 /// second write on the same day (`@@unique([aircraftId, validFrom])` backs
-/// the upsert, `rates.service.ts#upsertAircraftRateCore`) — a past row can
-/// never change, so a registered flight's frozen price never disagrees with
-/// the history. The history stays in the DB (and on `GET .../rates` for API
+/// the upsert, `rates.service.ts#upsertAircraftRateCore`) — a row before
+/// today never changes; today's row can still be rewritten, and a flight
+/// already registered today keeps the price it froze (AD-4: both prices were
+/// legitimate at that instant). The history stays in the DB (and on `GET .../rates` for API
 /// clients); the UI shows only the current rate and the next scheduled one.
 model AircraftRate {
   id                 String   @id @default(cuid())
