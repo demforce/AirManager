@@ -4,7 +4,7 @@ baseline_commit: 3876e72
 
 # Story 19.5: Form volo — due tipi, dropdown uniformi, bottone doppio comando/solista
 
-Status: **review** — dev 2026-11-02 (Dev Agent Record sotto). Era: ready-for-dev — 2026-11-01. **Nessuna domanda PO aperta** (v. §0.3: otto scelte di interpretazione prese su delega, ognuna ricondotta a una ratifica chiusa o a un vincolo tecnico misurato). **Modello dev: Opus 5 xhigh (UI)** — la story scrive una primitiva AirOps nuova (`Toggle`), allarga una primitiva condivisa (`SearchCombobox`, 5 call site) e tocca tre form (volo, prenotazione nuova, modifica prenotazione) oltre a enum Prisma, migrazione, Zod/OpenAPI, statistiche, export, seed, i18n ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-5-form-volo-tipi-dropdown-toggle`.
+Status: **review** — dev 2026-11-02 (Dev Agent Record sotto); review FIXES-REQUIRED e fix di F1-F4 (Review Record in fondo), arbitro alla sessione principale. Era: ready-for-dev — 2026-11-01. **Nessuna domanda PO aperta** (v. §0.3: otto scelte di interpretazione prese su delega, ognuna ricondotta a una ratifica chiusa o a un vincolo tecnico misurato). **Modello dev: Opus 5 xhigh (UI)** — la story scrive una primitiva AirOps nuova (`Toggle`), allarga una primitiva condivisa (`SearchCombobox`, 5 call site) e tocca tre form (volo, prenotazione nuova, modifica prenotazione) oltre a enum Prisma, migrazione, Zod/OpenAPI, statistiche, export, seed, i18n ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-5-form-volo-tipi-dropdown-toggle`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`3876e72`** (HEAD al 2026-11-01: la 19.1 è già nel codice da `08eb558`; 19.2, 19.3 e 19.4 esistono solo come story file). Il dev della 19.5 parte **DOPO i commit di 19.2, 19.3 e 19.4**, che toccano **gli stessi file** in punti diversi:
 > - **19.2** — `flight-editor.tsx` (via «Contaore iniziale/finale» e «Note»: campi `:1062-1070`, payload `:594-611`, `:626`, chiavi label `:58`, `:83-85`, `:89`; il test e2e F1/F2 di `flights.spec.ts:610-700` diventa «correzione solo-cicli»), `logbook-console.tsx` (righe dello sheet), `logbook/page.tsx` e `dashboard/page.tsx` (label del `FlightEditor`), `exports.service.ts` (colonna velivoli), `seed-load.ts`, `messages/*.json`, i commenti `segmented.tsx:24`/`new-booking-form.tsx:480`, e — attenzione — le righe dei selettori `^=` citate da `CLAUDE.md`.
@@ -635,3 +635,92 @@ L'arbitro full-suite su DB fresco resta alla sessione principale (atteso **532**
 ## Change Log
 
 - 2026-11-02 — Dev 19.5: `FlightType` a due valori (migrazione `AERIAL_WORK → TOURISM`), `SearchCombobox` statico con hint/opzione disabilitata/Escape, `Toggle` «Volo solista», form volo e form prenotazione uniformati; Status → review.
+- 2026-11-02 — Fix di review 19.5 (F1-F4): pilota run-unique in due e2e, `isSolo` azzerato quando il tipo in vigore lascia Scuola, combobox che riapre al click e parte dal valore corrente; Status resta review.
+
+## Review Record — 19.5
+
+- **Review adversarial** (Opus 5.5, 2026-11-02): **FIXES-REQUIRED**. Il reviewer ha trovato 1 high, 3 medium e 3 dismiss. Report: `19-5-review-report.md`. Il suo arbitro su DB fresco ha dato **490 passed, 1 failed, 1 flaky, 40 did not run** (`E2E_EXIT=1`). Il test rosso è F1. Il flaky è E3 di `flights.spec.ts:987` (TD 16.2-g). I 40 non eseguiti sono la catena serializzata, che dipende dal project `chromium`; rieseguita a parte ha dato 40/40.
+- **Fix** (fix-subagent Opus 5.5, commit **`d08784a`**). La sessione principale ha deciso di correggere F1-F4 subito. F4 non è stato rinviato al TD 19.5-a.
+
+### F1 (high) — corretto
+
+- **Causa**: il test nuovo `typeahead-pickers.spec.ts` (era `:334`, ora `:387`) prenotava come pilota di seed. `expiry-dashboard.spec.ts:40` e `mobile-expiries-movements.spec.ts:399`/`:541` danno a quella persona scadenze **non bloccanti** con data anteriore al giorno prenotato. Con quelle scadenze la prenotazione riesce (201) ma la pagina mostra `booking-form-warning` invece di `booking-form-success`. In full suite i due spec girano prima, quindi il test falliva in modo deterministico.
+- **Fix**: pilota run-unique con login, creato con lo stesso schema di `bookings.spec.ts` (regola 16.3). La copia locale di `createPilotWithLogin` sta nel describe; `waitForMailpitMessage` ed `extractSetPasswordUrl` stanno in testa al file, come negli altri spec. `PILOT_EMAIL` è stato tolto dal file.
+- **Censimento** dei test nuovi o modificati dalla 19.5 che usano un'identità di seed. Lo script nello scratchpad (`census.py`) attribuisce ogni hunk di `git diff a5fe9a6..ca10919 -- e2e/` al suo test. Un secondo grep cerca su tutta la suite i test che fanno login come pilota/allievo/istruttore di seed e asseriscono `booking-form-success`: escono **solo** i due test qui sotto.
+
+  | Test | Identità | Percorso | Esito |
+  |---|---|---|---|
+  | `typeahead-pickers.spec.ts:387` (nuovo) | pilota di seed | `booking-form-success` | **corretto** (sopra) |
+  | `bookings.spec.ts:1139` (modificato: solo il passo di selezione) | pilota di seed | `booking-form-success` su `FUTURE_DAY` 2031-03-10 | **corretto**: stessa classe, latente. In full suite passava solo perché `b…` gira prima di `e…`/`m…`. Ora usa un pilota run-unique con il `createPilotWithLogin` già presente nel file. |
+  | `aircraft-out-of-service-until.spec.ts:260`, `:339` (modificati: solo il passo di selezione) | pilota di seed | 422 `AIRCRAFT_OUT_OF_SERVICE` (`booking-form-error`) | **invariati**: le scadenze non bloccanti, cioè lo stato globale che ha colpito F1, compaiono solo nel banner di successo e non toccano questo percorso. L'identità è precedente alla 19.5 ed è motivata nel test. Verdi nella serie sul gemello inquinato. |
+
+- **Prova** (gemello `airmanager_fix195`, build di produzione di HEAD, `--retries=0`). Prima girano `expiry-dashboard` e `mobile-expiries-movements` (20 passed): il pilota di seed esce con 3 scadenze non bloccanti (2026-11-27, 2026-12-02, 2026-12-17). Poi le versioni di HEAD di `typeahead-pickers:334` e di `bookings:1139` falliscono **entrambe**, 2 failed su 2, con lo stesso errore:
+  ```
+  Locator: getByTestId('booking-form-success')  Expected: visible  Error: element(s) not found
+  > 1158 |  (bookings)      > 380 |  (typeahead)
+  - paragraph: "Prenotazione creata. Attenzione: i seguenti documenti risultano scaduti (non bloccanti):"
+  ```
+  Le versioni corrette passano sullo stesso DB inquinato, 2 passed su 2. Passano anche nella serie finale, su un gemello nuovo inquinato allo stesso modo prima della serie.
+
+### F2 (medium) — corretto
+
+- **Causa**: `isSolo` veniva azzerato solo dall'`onChange` del combobox «Tipo di volo». Il caso scoperto è quello del lucchetto allievo che si scioglie per un cambio di persona: il tipo **in vigore** torna Turismo senza passare dall'`onChange`. Il bottone sparisce ma `isSolo` resta `true`, e il form invia `{TOURISM, isSolo:true}` → 422 `SOLO_REQUIRES_SCHOOL`. Tornando a Scuola, il bottone riappare acceso.
+- **Fix** (`flight-editor.tsx`): stato aggiustato durante il render, con lo stesso pattern documentato da React che il `SearchCombobox` usa per la propria riconciliazione. `soloResetType` ricorda l'ultimo `effectiveFlightType` visto; quando cambia e non è `SCHOOL`, `setIsSolo(false)`. Copre ogni causa del cambio. L'azzeramento dentro l'`onChange` del combobox era ormai un duplicato ed è stato tolto, così la regola sta in un punto solo. `isLocked`, `effectiveFlightType` e il payload sono invariati.
+- **Guardia e2e** `flights.spec.ts:1478`, «review F2: the student lock releasing on a change of person clears isSolo…». Passi: allievo (tipo bloccato su Scuola) → bottone ON → pilota (Turismo, bottone assente) → di nuovo allievo → bottone **spento**. Poi ON → pilota → registrazione: body `{flightType:'TOURISM', isSolo:false}` e **201**. **Rossa sul pre-fix**: build di HEAD, `:1521`, `Expected: "false"`, `Received: "true"`.
+
+### F3 (medium) — corretto
+
+- **Causa 1**: `openWithOptions` metteva sempre `activeIndex = 0`. Un Invio su un campo compilato e rifocalizzato committava quindi la prima riga.
+- **Fix 1** (`search-combobox.tsx#openBrowseMode`): in sfoglia (focus, click, ↓/↑ a popup chiuso) l'opzione attiva iniziale è quella già selezionata, se `initialOptions` la contiene. Altrimenti resta 0, come prima. `openWithOptions` ha un secondo parametro opzionale; la ricerca digitata non cambia.
+- **Causa 2**, trovata dalla prova di discriminanza: Chromium invia `mouseenter` quando il popup riaperto compare sotto un puntatore **fermo**. Succede per esempio con la riga cliccata un attimo prima, quando l'utente esce dal campo con Tab e rientra con Shift+Tab. `onMouseEnter` spostava allora l'attiva sulla riga sotto il puntatore e annullava il Fix 1. È la variante «o quella sotto il puntatore» del report.
+- **Fix 2**: `onMouseMove` al posto di `onMouseEnter` sulle righe: l'attiva segue solo un movimento reale. Nessuna regola CSS `:hover` sulle righe, quindi niente doppia evidenziazione. Il doc-comment del componente è stato corretto: ora descrive Invio e il click come si comportano davvero.
+- **Guardia e2e** `typeahead-pickers.spec.ts:481`, «review F3/F4…», con due parti:
+  - «Tipo di volo»: «Scuola» non è mai la prima riga.
+  - Velivolo della prenotazione staff, il caso riprodotto dal reviewer: dopo la scelta, Tab e Shift+Tab. Una precondizione esplicita controlla che la prima riga non sia il velivolo del run.
+  - In entrambe le parti si asserisce `aria-activedescendant` sul valore corrente; poi Invio, e il valore resta quello.
+- **Discriminanza**:
+  - **Fix 1**: mutante con il solo `openBrowseMode` riportato a HEAD, Fix 2 e F4 mantenuti. Rosso a `:509`, `Expected: "flight-type-select-option-SCHOOL"`, `Received: "flight-type-select-option-TOURISM"`. Il file è stato ripristinato con sha256 identico (`761e37cd…`, `sha256sum -c` OK).
+  - **Fix 2**: build con il Fix 1 ma con `onMouseEnter`. Rosso a `:541`: l'attiva era la prima riga (`…cmvyr5oea000b5lpv2cum3mtq`) invece del velivolo del run.
+  - **Su HEAD**: con uno spec usa e getta senza il passo F4, poi cancellato, la parte del velivolo staff fallisce: `aria-activedescendant` sulla prima riga e, dopo Invio, `Received: "I-ABCD"`.
+
+### F4 (medium) — corretto
+
+- **Fix** (`search-combobox.tsx#handleClick`): un click sul campo apre la sfoglia **solo** se il popup è chiuso, con il testo selezionato come al focus. Si applica a un campo già focalizzato, per esempio dopo una scelta, o con un tap su telefono. Non riapre in loop dopo una scelta: il `mousedown` dell'opzione tiene il focus sull'input e il click arriva sull'opzione, non sull'input. Al primo click su un campo non focalizzato il popup è già aperto dal focus, quindi il click non fa niente. Un click dentro un popup già aperto sposta solo il cursore.
+- **Guardia**: stessa e2e `:481`. Dopo la scelta di «Scuola» il popup resta chiuso, anche dopo 300 ms (`aria-expanded="false"`). Un secondo click sul campo focalizzato lo riapre con le due opzioni e l'attiva su «Scuola». **Rossa su HEAD** a `:507`: `.combo-listbox`, `Expected: 1`, `Received: 0`.
+- **Telefono** (sonda `playwright-core` a 375 px con `hasTouch`, solo `tap()`). Primo tap → popup; tap su «Scuola» → chiuso e campo focalizzato; secondo tap sul campo → `aria-expanded=true` con attiva `…-option-SCHOOL`; `scrollWidth` 375; tap su «Turismo» → chiuso e switch assente. Desktop, velivolo staff: terza riga scelta su 141 → click di nuovo → attiva = riga scelta → Invio → invariato. Screenshot `fix195/flight-type-reopened-375.png` e `fix195/booking-aircraft-reopened-1280.png` (scratchpad): stessa `.combo-listbox` AirOps, riga attiva sul valore corrente.
+- **TD 19.5-a, ridotto**: la parte «un click sul campo già focalizzato non lo riapre» è **chiusa** da F4. Resta aperta la parte «dopo `focusFirstInvalid` o un Tab il popup aperto dal focus copre i campi sotto». Risolverla vuol dire non aprire più al focus ma solo al click o con ↓, come il combobox editabile dell'APG. Sarebbe un cambio del contratto TD-3 «FOCUS = browse» per tutti i call site e per gli e2e che lo usano, per esempio il passo Tab → velivolo del test staff e la sequenza 15.10 di `mobile-a11y-sweep`: è una decisione di design, non un fix. Con F4 ora l'utente ha un'uscita: Escape (il primo chiude solo il popup) o Tab, e un click o un tap riapre.
+
+### Dismiss del report (nessuna azione)
+
+D1 (422 prima del 403 per `AERIAL_WORK` da non-admin, ordine del handler preesistente), D2 (copy «Nessuno», 19.12), D3 (`phone.close()` fuori dal `finally`, igiene): non toccati.
+
+### Call site storici del `SearchCombobox`
+
+I 5 call site storici sono `transaction-person`, `membership-fee-person`, `flight-aircraft`, `flight-person` e `flight-instructor`. Il loro codice non cambia. Cambia, come per tutti, il comportamento del componente, solo nei tre punti dei fix:
+- Invio su un campo rifocalizzato e compilato ricommitta il valore corrente.
+- Un click sul campo focalizzato riapre il popup.
+- L'evidenziazione segue solo il mouse che si muove davvero.
+
+Un valore vuoto con la riga `''` in testa («Nessun istruttore», «Tutti i velivoli») parte sull'indice 0 come prima. I loro spec sono tutti verdi nella serie: `billing`, `mobile-billing`, `membership-fee`, `mobile-membership-fee`, `flights`, `flight-reversal`, `typeahead-pickers` (i test TD-3/14.1 sono invariati).
+
+### Discriminanza, gate, delta
+
+- **e2e sul pre-fix** (build di HEAD con gli spec del fix, gemello `airmanager_fix195`, `--retries=0`):
+  - F1 su HEAD (spec di HEAD, DB inquinato): **2 failed / 2**.
+  - Spec corretti: **2 passed**.
+  - F2 e F3/F4: **2 failed / 2**.
+  - Mutante F3 (Fix 1): **1 failed**.
+  - Build intermedia senza il Fix 2: **1 failed**.
+  - Le righe di fallimento sono riportate sopra per ogni guardia. I log sono nello scratchpad: `f1-prefix.log`, `guards-prefix.log`, `f3-probe-prefix.log`, `guards-fix1.log`, `guards-f3-mutant.log`.
+- **e2e sul fix** (build dei gate, gemello **nuovo**, `E2E_REUSE_SERVER=1`):
+  1. `expiry-dashboard` e `mobile-expiries-movements` girano per primi (20 passed) e inquinano il pilota di seed: 3 scadenze non bloccanti.
+  2. Serie mirata di 17 spec del project `chromium`: `typeahead-pickers`, `bookings`, `flights`, `flight-reversal`, `flight-log`, `mobile-logbook`, `datetime-picker`, `aircraft-out-of-service-until`, `mobile-a11y-sweep`, `mobile-ink-targets`, `billing`, `mobile-billing`, `membership-fee`, `expiry-types`, `people-management`, `home-dashboard`, `mobile-planning`. Risultato: **239 passed** (5.9m), 0 failed, 0 flaky, `E2E_EXIT=0`.
+  3. `--project=booking-window --project=mobile-membership-fee --no-deps --workers=1`: **6 passed**, `E2E_EXIT=0`.
+- `npm run gates` (sul contenuto committato): `PASS lint (21s) · PASS typecheck (6s) · PASS test (8s) — Tests 1843 passed (1843) · PASS build (31s)`. **Unit invariati: 1843.**
+- **Delta e2e atteso per l'arbitro: 532 → 534**: +1 in `flights.spec.ts` (F2), +1 in `typeahead-pickers.spec.ts` (F3/F4). F1 modifica due test senza aggiungerne. L'arbitro full-suite su DB fresco resta alla sessione principale.
+- **Stato macchina**:
+  - Il DB `airmanager` non è stato toccato dal fix, e `airmanager_load` mai.
+  - Tutte le prove sono state fatte sul gemello `airmanager_fix195`, creato due volte (migrate + seed) e poi rimosso.
+  - I server avviati sono stati fermati per PID: `:3000` è libero e non restano processi `next`.
+  - ⚠️ L'ultimo run di `scripts/e2e.sh status` è il **mutante F3 rosso voluto** (`E2E_EXIT=1`), non un esito del fix. Gli esiti del fix sono i log `series-*.log` nello scratchpad.
+  - Nessuno stash. File untracked dell'utente, `sprint-status.yaml` e story file di altre story non toccati.
