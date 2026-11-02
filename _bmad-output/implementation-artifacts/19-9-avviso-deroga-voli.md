@@ -4,7 +4,7 @@ baseline_commit: eef77ef
 
 # Story 19.9: Avviso con deroga admin — registrazione voli
 
-Status: **ready-for-dev** — 2026-11-01. **Nessuna domanda PO aperta**: Q-19.9-a = **SÌ** (sessione principale) e Q-19.9-b = **SEMPRE** (PO, contro la raccomandazione), registrate sotto le domande e applicate agli AC marcati `[Q-a = SÌ]`/`[Q-b]`; contratto esteso per Q-19.10-a = B (date di riferimento per check, AD-2). **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI (avviso unico nel form volo desktop e pannello mobile, registro senza badge, sheet mobile, riepilogo) oltre a un servizio nuovo, una migrazione, Zod/OpenAPI, permessi, seed ed e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-9-avviso-deroga-voli`. **Assorbe la 16.4** (superseded) per la parte voli (§0.2, D-13, D-14). La deroga sull'addebito della quota associativa è della **19.10** (decisione della sessione principale, §6).
+Status: **review** — 2026-11-02 (dev, Dev Agent Record sotto); story file del 2026-11-01. **Nessuna domanda PO aperta**: Q-19.9-a = **SÌ** (sessione principale) e Q-19.9-b = **SEMPRE** (PO, contro la raccomandazione), registrate sotto le domande e applicate agli AC marcati `[Q-a = SÌ]`/`[Q-b]`; contratto esteso per Q-19.10-a = B (date di riferimento per check, AD-2). **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI (avviso unico nel form volo desktop e pannello mobile, registro senza badge, sheet mobile, riepilogo) oltre a un servizio nuovo, una migrazione, Zod/OpenAPI, permessi, seed ed e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-9-avviso-deroga-voli`. **Assorbe la 16.4** (superseded) per la parte voli (§0.2, D-13, D-14). La deroga sull'addebito della quota associativa è della **19.10** (decisione della sessione principale, §6).
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` è misurato su **`eef77ef`** (HEAD al 2026-11-01: 19.1 e 19.2 committate, 19.3-19.8 solo come story file). Il dev parte **DOPO il commit di 19.3 … 19.8**, che toccano **gli stessi file**:
 > - **19.3** aggiunge `aircraftPriceCategory` a `resolveFlightInput`/`OriginalFlightIdentity` (prezzo dal profilo, Q-19.3-b) e `e2e/db-fixtures.ts` (`seedAircraftRate`, `seedInstructorRate`), `todayRome()`/`addDaysIso()` in `e2e/helpers.ts`.
@@ -456,18 +456,18 @@ Mirati da far girare prima della consegna: `flight-requirements`, `flights`, `ai
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento**: `git log --oneline -10` (19.3-19.8 committate), `scripts/e2e.sh status`, `:3000` libero; API reali di `getCurrencyStatus`/`getMembershipStatus`/`getMedicalRequirementFailure`/helper di scrittura 19.6/`registerFlightOn`/`db-fixtures`; censimenti di §3.6 e grep di AC 22 su HEAD; righe slittate annotate nel record; risposte PO a Q-19.9-a/b lette dal file.
-- [ ] **T1 — Schema e migrazione** (AC 1).
-- [ ] **T2 — Servizio e Zod condiviso** (AC 2-6): `requirements.service.ts`, `schemas/requirements.ts`, helper d'errore.
-- [ ] **T3 — Integrazione voli** (AC 7-12): `resolveFlightInput` (AD-3), `updateFlight` (pre-lettura), timbro, DTO senza `forceReason`, permesso (AD-5).
-- [ ] **T4 — Chip Piloti** (AC 19).
-- [ ] **T5 — OpenAPI** (AC 21).
-- [ ] **T6 — UI** (AC 13-17): componente, formatter, form volo, registro, sheet, `mobile-logbook.ts`, label delle pagine.
-- [ ] **T7 — i18n** (AC 23).
-- [ ] **T8 — Seed** (AC 24).
-- [ ] **T9 — Unit** (§4.1) + sonde §4.3 (a)-(j) con sha256.
-- [ ] **T10 — e2e** (AC 25-26): helper E-R1/E-R2/E-R5/E-R6, spec nuovo, spec riscritti di §3.6; delta dei test.
-- [ ] **T11 — Verifica** (AC 20, 22, 27, 28, 29): grep, gates, e2e mirati, screenshot, call-site di TD-19.9-a/b ricontrollati; Dev Agent Record compilato.
+- [x] **T0 — Riallineamento**: `git log --oneline -10` (19.3-19.8 committate), `scripts/e2e.sh status`, `:3000` libero; API reali di `getCurrencyStatus`/`getMembershipStatus`/`getMedicalRequirementFailure`/helper di scrittura 19.6/`registerFlightOn`/`db-fixtures`; censimenti di §3.6 e grep di AC 22 su HEAD; righe slittate annotate nel record; risposte PO a Q-19.9-a/b lette dal file.
+- [x] **T1 — Schema e migrazione** (AC 1).
+- [x] **T2 — Servizio e Zod condiviso** (AC 2-6): `requirements.service.ts`, `schemas/requirements.ts`, helper d'errore.
+- [x] **T3 — Integrazione voli** (AC 7-12): `resolveFlightInput` (AD-3), `updateFlight` (pre-lettura), timbro, DTO senza `forceReason`, permesso (AD-5).
+- [x] **T4 — Chip Piloti** (AC 19).
+- [x] **T5 — OpenAPI** (AC 21).
+- [x] **T6 — UI** (AC 13-17): componente, formatter, form volo, registro, sheet, `mobile-logbook.ts`, label delle pagine.
+- [x] **T7 — i18n** (AC 23).
+- [x] **T8 — Seed** (AC 24).
+- [x] **T9 — Unit** (§4.1) + sonde §4.3 (a)-(j) con sha256.
+- [x] **T10 — e2e** (AC 25-26): helper E-R1/E-R2/E-R5/E-R6, spec nuovo, spec riscritti di §3.6; delta dei test.
+- [x] **T11 — Verifica** (AC 20, 22, 27, 28, 29): grep, gates, e2e mirati, screenshot, call-site di TD-19.9-a/b ricontrollati; Dev Agent Record compilato.
 
 ---
 
@@ -475,28 +475,183 @@ Mirati da far girare prima della consegna: `flight-requirements`, `flights`, `ai
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), dev subagent `dev-19-9` (unico dev della story, UI → Opus). Skill applicate: `karpathy-guidelines`, `design-taste-frontend` (lettura: avviso in-form di un gestionale AirOps, token esistenti, dial 2/1/5), `ui-ux-pro-max` (focus visibile, `role=alert` per l'errore, bersagli 44 px, gap 8 px).
+
 ### §A — Riallineamento sul HEAD (T0)
+
+- HEAD di partenza **`7f4e76e`** (19.1-19.8 committate; `baseline_commit` del frontmatter lasciato a `eef77ef`, la misura del file). `scripts/e2e.sh status`: DONE, arbitro 19.8 `567 passed`; `:3000` libero; nessun run altrui. `.next/dev/types/validator.ts` stantio spostato nello scratchpad.
+- **Contratti 19.7a/19.6 letti sul codice** (nessuna differenza di nome rispetto a AD-2/AD-3, due di forma):
+  - `getCurrencyStatus(personId, atDate, options?: { excludeFlightId?: string })` → `CurrencyResult { current, expiresAt, lastFlightDate, flightsInWindow }`: **non** restituisce X/Y → il servizio legge `getCurrencySettings()` **solo quando la currency fallisce** (AD-2 lo prevedeva). `excludeFlightId: null` è passato come `undefined`.
+  - `getMembershipStatus(personId, dateOnly)` → `{ status: valid|expired|missing, expiresAt }`; `getMedicalRequirementFailure(personId, dateOnly)` → `{ typeName, expiresAt | null } | null` (un documento per persona).
+  - `buildFlightWrite(resolved, input)` (19.6) era chiamato da `registerFlight`/`updateFlight` **fuori** dalla transazione, dopo `resolveFlightInput`: ora è chiamato **una volta** dentro `resolveFlightInput` (che restituisce `{ resolved, write }`), così il saldo si confronta col totale che diventa il `FLIGHT_CHARGE` (trappola 1).
+  - La pre-lettura di `updateFlight` non aveva né `isSolo` né l'importo dell'addebito: aggiunti `isSolo` e `charge: { select: { amountCents } }`.
+  - La 19.6 aveva già rinominato `statusBadgeAndLineage`/`statusChip` in `forcedLineage`/`forcedChip` (`logbook-console.tsx:349`, `:374`): tolti quelli (il grep di AC 17 cerca anche i nomi nuovi, §E).
+  - `registerFlightOn` in `e2e/helpers.ts:101` (19.7a/19.7b, con `isSolo`); `seedAircraftRate`/`seedInstructorRate` in `e2e/db-fixtures.ts`; `todayRome`/`addDaysIso` in `helpers.ts`.
+- **Righe slittate** (eef77ef → 7f4e76e): `flights.service.ts` 403 `:608` (era `:604`), ramo fuori servizio `:686-707` (`:647-703`), scansioni `:369-437` (`:361-441`), ramo documenti e timbro `:821-850` (`:801-846`), `toListItem` `:248`, `FlightListItem.forceReason` `:157-158`; `schema.prisma` campi deroga `:948-959`, doc relazione `:437`; `bookings.service.ts#findBlockingExpiredDocuments` `:482`; `expiries.service.ts#listBlockingExpiriesByPerson` `:698`; `logbook/page.tsx` `:81-84` (`canForceExpiry`), `:161`, `:275-278`; `dashboard/page.tsx:530`, `buildFlightEditorLabels` `:753-851`; `mobile-logbook.ts:13-24`.
+- **Censimenti** rieseguiti: §3.6 sul HEAD = 24 spec che toccano `api/v1/flights` o i token di deroga (in più rispetto al file: `expiry-rules-currency.spec.ts` della 19.7a, che asseriva `FLIGHT_BLOCKED_BY_EXPIRY`, ed `expiries-registry.spec.ts` via `registerFlightOn`); `grep -rn 'data-testid\^=' e2e/` → nessun selettore a prefisso su `requirements-`/`flight-`; il catalogo del seed **non ha RATING bloccanti** (solo le tre visite, `prisma/seed.ts:357-361`), quindi su un DB fresco l'unico EXPIRY di una persona nuova è la visita mancante.
+- **Correzione della sessione principale** applicata (messaggio del lead, R-19-i/R-19-j «a bordo», Q-19.9-a «istruttore a bordo»): sul volo **Scuola solista** l'istruttore non è a bordo → niente documenti né quota sua (`instructor: solo ? null : …` in `resolveFlightInput`); lo scan della 19.7a che lo controllava (`scanBlockingDocuments`) è sparito con questa story. Conseguenza su AC 25 (f): vedi §G D-a.
+- Q-19.9-a (SÌ) e Q-19.9-b (SEMPRE) lette dal file e applicate.
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Prova |
+|---|---|
+| 1 | Migrazione `20261102210000_flight_drop_force_reason` (una, forward, dopo `20261102200100`); §C. Doc di `forcedAt` riscritto (`schema.prisma:948-956`), relazione `User.flightsForced` allineata. |
+| 2 | `requirements.service.test.ts` «contract and order»: elenco completo persona+istruttore nell'ordine AD-2, ogni voce valida per `requirementFailureSchema`; blocchi `false/null` → nessuna lettura (7 mock mai chiamati); tre date diverse → ogni lettura la sua (sonda j rossa); nessuna `$transaction`, nessun `authorize`. |
+| 3 | Stessa suite «EXPIRY»: (a) scaduto ieri, (b)(f)(e) `where` = `{ personId, expiryType: { kind: 'RATING', blocksBooking: true, isActive: true } }` senza scope (sonda d rossa), (c) scadenza = giorno → valido, (d) mancanti con `scope in […]` + `expiries: { none: { personId } }`, ambiti da `hasActive*` (anche `INSTRUCTORS`, per la 19.10), (g) medico una volta con `(personId, expiryDateOnly)`, (h) istruttore `ALL+INSTRUCTORS`, (i) ordine per nome. e2e (b) di AC 25 anche dopo la disattivazione del tipo: nessuna voce (16.4 sull'app vera). |
+| 4 | «MEMBERSHIP»: persona e istruttore al `membershipDateOnly`; valid/expired/missing. |
+| 5 | «CURRENCY»: argomenti passati così come sono, current → niente e nessuna lettura impostazioni; 2026-07-01 → 2026-10-01 = 92; mai volato → `null/null`. |
+| 6 | «BALANCE»: SUM+credito < costo (`where: { account: { personId } }`), uguale coperto (sonda f rossa), senza conto = 0. |
+| 7 | `flights.service.test.ts` «registerFlight — requirements»: 422 con l'elenco, transazione mai aperta; precedenze nuove nei «guards»: fuori servizio + persona archiviata → `PERSON_ARCHIVED`, + data futura → `FLIGHT_DATE_IN_FUTURE`, requisito fallito + nessuna tariffa → `NO_AIRCRAFT_RATE` (sonda h rossa). `grep -n "'AIRCRAFT_OUT_OF_SERVICE')" flights.service.ts` → 0. |
+| 8 | Argomenti di `evaluateRequirements`: tre date = giorno di Roma (anche decollo 00:30 Roma), `documents: true`, currency su Turismo senza istruttore e Scuola solista, `null` su Scuola in doppio e Turismo con istruttore, `balance` `null` con `noCharge` (sonda b rossa) altrimenti `{ costCents: 20000, creditCents: 0 }` = `-amountCents` del `FLIGHT_CHARGE` scritto. |
+| 9 | Unit: voce `AIRCRAFT_OUT_OF_SERVICE` prima, con `registration`; modifica che tiene il velivolo → nessuna voce; che sposta → voce; deroga → timbro. e2e `aircraft-out-of-service-until.spec.ts` riscritto (4 test di volo + quello senza permesso): UI su entrambi i montaggi, elenco = fuori servizio + lo stesso elenco del controllo operativo, data passata ancora in elenco, perimetro AD-4 via API con un pilota in regola (modifica sullo stesso velivolo 200 senza timbro, spostamento → elenco con la sola voce di fermo). |
+| 10 | Unit: deroga → `forcedAt`/`forcedByUserId` senza `forceReason`; `force` senza voci → nessun campo `forced*` (sonda c rossa); 403 con `flights.manage` ma senza `requirements.force` prima di `aircraft.findUnique` e di `evaluateRequirements` (permesso concesso a INSTRUCTOR nel solo test, sonda e rossa); `forceReason` nel body scartato da Zod; modifica che deroga riscrive il timbro, senza voci non tocca i campi. e2e: `forceReason` assente dagli item, `force` senza voci → `forcedAt: null` (AC 25 a). |
+| 11 | Unit «requirements of an edit» (a) (b) (c) per ramo (sonde a, i rosse). e2e `flight-requirements.spec.ts`: (b) il solo volo solista spostato al giorno **dopo** → sola voce CURRENCY (§G D-f; mutante a: 200 invece di 422); (c) allungato → BALANCE 6000/9000, accorciato → 200, saldo negativo e soli atterraggi → BALANCE 4000/6000 (mutante i: 200). |
+| 12 | e2e: pilota a 0 € → sola voce BALANCE 0/6000; dopo un volo derogato in rosso (−60 €) un volo senza addebito → 201 senza timbro (mutante b: 422 BALANCE −6000/0, §G D-g); unit `balance: null`. |
+| 13 | e2e «one warning…»: un item per voce nell'ordine del server (confronto con la risposta intercettata), testi esatti di EXPIRY scaduto, MEMBERSHIP mancante, CURRENCY mai volato (X/Y letti da `/api/v1/settings/currency`), BALANCE «saldo 0,00 €, costo 60,00 €»; titolo, bottoni, nessuna textarea, nessun banner, focus sull'avviso. |
+| 14 | Stesso test: reinvio = **stesso body + `force: true`**, una richiesta, stesso endpoint; 500 → `requirements-proceed-error`, avviso aperto; poi successo senza notice. PUT in modifica (test «an edit shows the warning…»): seconda PUT = prima + `force`, nessuna chiave. 409 sul reinvio in registrazione e in modifica: `flights.spec.ts` E8 riscritto (avviso chiuso, banner col volo in conflitto). Chiave nuova sul reinvio dopo il 422: `mobile-logbook.spec.ts` idempotenza. |
+| 15 | Stesso test: cambio dell'orario di atterraggio (campo RHF) e del toggle «Senza addebito» (stato fuori RHF) chiudono l'avviso; «Annulla» lo chiude; nessuna richiesta finché non si ripreme «Registra» (conteggio POST = 3 su 3 submit; mutante g: avviso ancora presente). |
+| 16 | `mobile-logbook.spec.ts` «the requirements warning at 375px»: in fondo al form, in viewport e col focus, `scrollWidth − clientWidth` del pannello ≤ 0, nessun item oltre il bordo, due bottoni ≥ 44 px, «Procedi comunque» = una POST in più e riepilogo. Sostituisce i due casi di deroga dal telefono. |
+| 17 | e2e: nessun «Deroga» sulla riga desktop (flights.spec, AOG), sulla card mobile (nessun `.mobile-row-flag` né `.badge`) né nello sheet (nessuna riga «Deroga», nessun badge) per voli derogati; riepilogo senza notice; `flight-balance-alert` dopo «Procedi comunque» su un saldo che non copre (test riscritto, voce BALANCE asserita). Grep di AC 17 → 0 (§E). |
+| 18 | e2e: `forcedAt` valorizzato per un volo derogato (AC 25 h, flights.spec), `null` per `force: true` senza voci (AC 25 a) e per un volo in regola; nessuna chiave `forceReason`; nessuna superficie UI lo mostra (AC 17). |
+| 19 | `expiries.service.test.ts`: `where` della parte RATING con `isActive: true` accanto a `kind: 'RATING'`; MEDICAL invariata. |
+| 20 | §E: `forceExpiry` → solo l'asserzione d'assenza di `registry.test.ts`; `requirements.force` solo in `ALL_PERMISSIONS`; unit rbac nuovo (ADMIN sì, gli altri tre ruoli invariati). |
+| 21 | `GET /api/v1/openapi.json` sull'app costruita (gemello): `RequirementFailure` con 5 varianti (`EXPIRY MEMBERSHIP CURRENCY BALANCE AIRCRAFT_OUT_OF_SERVICE`), `RequirementsNotMetDetails.failures`; `REQUIREMENTS_NOT_MET` 1 volta nella descrizione di POST e 1 in quella di PUT; `RegisterFlightRequest` ha `force`, non `forceReason`; item volo con `forcedAt`, senza `forceReason`; 0 occorrenze di `FLIGHT_BLOCKED_BY_EXPIRY`/`flights.forceExpiry`; le sole `forceReason` sono di `CreateBookingRequest`/`POST /bookings` (19.10). Unit `registry.test.ts` nuovo. |
+| 22 | §E (residui = asserzioni d'assenza e il letterale del tipo di voce, §G D-h). |
+| 23 | 18 chiavi tolte da entrambi i file, `Requirements` (16 chiavi) aggiunto; parità 0/0; plurali «1 volo / 0 voli / 2 voli», «1 giorno / 92 giorni», minimo «1 volo» IT e «3 flights» EN nei unit del formatter coi cataloghi veri; e2e EN con la voce CURRENCY esatta. |
+| 24 | `seed-demo.ts` con `force: true` e commento; su DB fresco `npx prisma db seed` + `npm run seed:demo` verdi (24 voli, 10 col timbro silenzioso); `seed-load.ts` invariato, passa il typecheck (non eseguito). |
+| 25 | `flight-requirements.spec.ts` (13 test): (a)-(e) ogni check da solo, (f) combinati in doppio e da solista, (g) doppio senza currency, (h) `force` → 201 col timbro, (i) pilota con `force` → 403; AC 11-16 come sopra. |
+| 26 | §F; spec mirati verdi (§I); l'arbitro completo resta alla sessione principale. |
+| 27 | `npm run gates` verde (§I); ogni test unit nuovo/toccato verde con `env -u DATABASE_URL -u AUTH_SECRET` (requirements, formatter, flights, boundary). |
+| 28 | §H. |
+| 29 | §J; nessuna riga su alert job, contatori, «oggi» UTC. |
+
 ### §C — Migrazione: gemello, conteggi prima/dopo, `\d "Flight"`, `migrate diff`
+
+- Gemello `airmanager_d199` = `pg_dump` di `airmanager` (HEAD) + 3 voli sonda (uno con `forceReason`, `forcedAt`, `forcedByUserId`): prima `count | forceReason | forcedAt | forcedByUserId` = `3|1|1|1`; `prisma migrate deploy` → `20261102210000_flight_drop_force_reason` applicata; dopo `3|1|1` (`forcedAt`, `forcedByUserId` intatti); `\d "Flight"` → solo `forcedAt`, `forcedByUserId` e la FK `Flight_forcedByUserId_fkey`; `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` → `-- This is an empty migration.`
+- **Catena da zero**: due DB vuoti (`airmanager_d199e2e`, `airmanager_d199demo`) → `migrate deploy` «All migrations have been successfully applied», `prisma db seed` verde («6 expiry types ready»); sul secondo `npm run seed:demo` verde (24 voli, `count(forcedAt) = 10`), `migrate diff` vuoto, `\d "Flight"` senza `forceReason`.
+- Tutti e tre i gemelli **eliminati** a fine lavoro (`pg_database`: `airmanager`, `airmanager_audit`, `airmanager_load` e i template). `airmanager` e `airmanager_audit` mai toccati.
 
 ### §D — Sonde e discriminanze §4.3 (a)-(j) con sha256
 
+Unit (uno script applica il mutante, esegue `flights.service.test.ts` + `requirements.service.test.ts`, ripristina e confronta lo sha256; `flights.service.ts` `bed71fbb0111ff23…`, `requirements.service.ts` `9b1c5c979e590…`):
+
+| Sonda | Mutante | Esito |
+|---|---|---|
+| (a) | `excludeFlightId: null` | 2 rossi: «(b) an original DUAL made solo…», «(b) a solo moved to another date…» |
+| (b) | saldo valutato anche con `noCharge` | 2 rossi: «a no-charge flight skips the balance», «(c) a no-charge edit skips the balance» |
+| (c) | timbro se `force` | 1 rosso: «force: true with NOTHING to derogate … stamps NOTHING» |
+| (d) | via `isActive: true` dallo scan scaduti | 1 rosso: «(b)(f) the expired scan filters in SQL…» |
+| (e) | 403 dopo la lettura del velivolo | 1 rosso: «force by an actor holding flights.manage but NOT requirements.force…» |
+| (f) | `<=` | 1 rosso: «equal is covered» |
+| (h) | check prima delle tariffe | 15 rossi, fra cui «a failing requirement on a flight with no aircraft rate answers NO_AIRCRAFT_RATE» |
+| (i) | saldo solo se il costo sale | 1 rosso: «(c) [Q-19.9-b = SEMPRE] … even when the edit lowers the cost» |
+| (j) | `expiryDateOnly` a `getMembershipStatus` | 1 rosso: «each check reads ITS reference day…» |
+
+Ogni ripristino: sha256 identico (`restored sha256 OK` per tutte e nove).
+
+e2e (quattro mutanti in **una** build, server fermato prima della build: (a), (b)+(i) sulla stessa espressione del saldo — `samePerson && costo ≤ addebito ? null : …`, senza `noCharge` — e (g) `callback: () => undefined` nel `subscribe` del form): `flight-requirements.spec.ts` → **5 failed, 8 passed**: (b) modifica 200 invece di 422 [a]; (c) soli atterraggi 200 invece di 422 [i]; AC 12 422 `BALANCE −6000/0` invece di 201 [b]; AC 13-15 avviso ancora presente dopo il cambio d'orario [g]; la modifica UI non mostra più l'avviso [i, atteso]. Ripristino: `flights.service.ts` `bed71fbb…`, `flight-editor.tsx` `a9c5c357…` identici; poi `npm run gates` di nuovo verde sul codice ripristinato.
+
 ### §E — Grep di AC 20 e 22, parità i18n (verbatim)
+
+```
+### AC 20   grep -rn "forceExpiry" src e2e
+src/lib/schemas/registry.test.ts:298:      expect(operation?.description).not.toMatch(/FLIGHT_BLOCKED_BY_EXPIRY|forceReason|flights\.forceExpiry/);
+rbac.ts:60  | 'requirements.force';      rbac.ts:76  'requirements.force',   (solo ALL_PERMISSIONS)
+### AC 22.1
+src/lib/schemas/registry.test.ts:298:   (stessa asserzione d'assenza)
+### AC 22.2
+src/server/services/flights.service.ts:666:    ? [{ type: 'AIRCRAFT_OUT_OF_SERVICE', registration: aircraft.registration, ...outOfServiceDetails(aircraft) }]
+grep -n "'AIRCRAFT_OUT_OF_SERVICE')" src/server/services/flights.service.ts  → 0   (nessun 422 con quel codice)
+### AC 22.3
+e2e/flight-requirements.spec.ts:260:    expect(Object.keys(flight)).not.toContain('forceReason');
+e2e/flights.spec.ts:741:    expect(listBody.items[0]).not.toHaveProperty('forceReason');
+### AC 17   grep -rnE "statusBadgeAndLineage|statusChip|flightBadgeKind|FlightBadgeKind|forcedLineage|forcedChip" src  → 0
+```
+
+i18n: percorsi foglia `it` 1624 → 1622, `en` 1624 → 1622 (−18 +16), `diff` dei percorsi it/en vuoto (0/0); `diff` HEAD→nuovo di `it`: 18 percorsi tolti, esattamente le 18 chiavi di AD-7.
 
 ### §F — Delta test (unit ed e2e, prima/dopo; mappa dei test di deroga 14.4/AOG-1a → nuovi)
 
+- **Unit**: 2054 → **2083** (79 → 81 file). Nuovi: `requirements.service.test.ts` 21, `requirement-failures.test.ts` 8; `rbac.test.ts` +1, `registry.test.ts` +1, `mobile-logbook.test.ts` −2 (`flightBadgeKind`); `flights.service.test.ts` 184 → 184 (riscritti: guard-rail 14.4/F5/F6/19.7a e AOG → «requirements» e «requirements of an edit»); `flights-expiry-boundary.integration.test.ts` 5 → 5 (ora sul servizio vero, prisma mockato).
+- **e2e**: atteso all'arbitro **567 → 579** (+12): `flight-requirements.spec.ts` +13 (nuovo); `mobile-logbook.spec.ts` 27 → 26 (via «the only chip a row can carry is «Deroga»» e «the anomaly chip PAINTS its dot», + «a derogated flight carries NO chip at all»). Nessuno spec entra nella catena serializzata.
+- **Riscritti** (stesso conteggio): `flights.spec.ts` (describe 14.4 → «Requirements warning & admin deroga» 4 test; E6 con pilota in regola; E8 sul reinvio; 19.5 F2 legge il 422 `REQUIREMENTS_NOT_MET`; 6 registrazioni/modifiche UI con `submitPastRequirements`; fixture API con `force`), `aircraft-out-of-service-until.spec.ts` (5 test di volo), `mobile-logbook.spec.ts` (avviso a 375, chiusura/riapertura, idempotenza, sheet e allievo senza deroga), `expiry-rules-currency.spec.ts` (regola mediche letta dalle voci EXPIRY), `mobile-settings.spec.ts` (AC 6: voce EXPIRY del tipo creato dal telefono), `flight-delete-update.spec.ts`, `flight-no-charge.spec.ts`, `typeahead-pickers.spec.ts` (E-R2); `force: true` sulle fixture (E-R1) di `billing`, `exports`, `flight-log`, `instructor-compensation`, `mobile-registries`, `mobile-reports`, `my-account`, `my-compensation`, `pdf-exports`, `people-management`, `person-detail`, `reports`, `registerFlightOn`; commenti in `aog-impact-email`.
+- **Mappa 14.4/AOG-1a → 19.9**: «422 FLIGHT_BLOCKED_BY_EXPIRY + Forza registrazione + motivo vuoto rifiutato + badge» → avviso con la voce EXPIRY esatta, nessuna textarea, «Procedi comunque», timbro solo nel DTO, riga senza «Deroga»; «istruttore bloccato» → voce `(istruttore)`; «saldo in rosso, D1» → voce BALANCE + `flight-balance-alert` dopo la deroga; «AIRCRAFT_OUT_OF_SERVICE 422 + MAJOR-1 documents» → prima voce dell'elenco unico; «E8 force 409» → E8 sul reinvio; «deroga dal telefono» → AC 16.
+
 ### §G — Deviazioni motivate
+
+- **D-a (lead)**: sul volo Scuola **solista** l'istruttore non è a bordo → né documenti né quota sua (AD-3 lo passava sempre). Siccome la currency vale solo per i solisti, **AC 25 (f) non può avere insieme** voci dell'istruttore e CURRENCY: è diviso in due elenchi esatti — doppio (EXPIRY persona, EXPIRY istruttore, MEMBERSHIP persona, MEMBERSHIP istruttore, BALANCE) e solista (EXPIRY persona, MEMBERSHIP persona, CURRENCY, BALANCE). AC 2 resta sul servizio, che non conosce la politica.
+- **D-b**: la prop `error` di `RequirementsWarning` è un **booleano** (la copy `Requirements.proceedError` è del componente): la 19.10 la usa solo per l'errore non riconosciuto o di rete (suo AD-6), quindi non serve una stringa.
+- **D-c**: `resolveFlightInput` restituisce `{ resolved, write }` e chiama `buildFlightWrite` una volta (parametro `Omit<ResolvedFlightInput, 'forceStamp'>`); i due chiamanti usano quel `write`.
+- **D-d**: scan degli scaduti con i filtri di tipo nel `where` (16.4 AD-1) e il giorno confrontato come stringa `YYYY-MM-DD` (la convenzione degli scan precedenti, e il confine di AC 3 (c) resta provabile a unità); ordine per nome in JS (`localeCompare 'it'`, come `medical-requirement.ts`); mancanti in **una** query con `expiries: { none: { personId } }` (prima erano due).
+- **D-e**: X/Y della currency letti solo quando fallisce (vedi §A).
+- **D-f**: e2e di AC 11 (b) sposta il volo al giorno **dopo**, non «prima»: un volo datato dopo la nuova data non conta comunque, e la sonda (a) sarebbe rimasta verde.
+- **D-g**: e2e di AC 12 esteso con un saldo **negativo**: il costo di un volo senza addebito è 0, quindi solo un saldo < 0 distingue «non valutato» da «valutato e coperto» (sonda b).
+- **D-h**: i residui dei grep di AC 20/22 sono asserzioni d'assenza (precedente: 19.8 §E) e il letterale `type: 'AIRCRAFT_OUT_OF_SERVICE'` della voce, richiesto da D-2; nessun 422 con quel codice dai voli.
+- **D-i**: in e2e l'assenza dei testid rimossi è espressa sul contenuto (`not.toContainText('Deroga')`, nessun `.badge`/`.mobile-row-flag`) invece di `flight-forced-badge` count 0 (E-R4), per tenere a 0 il grep di AC 22.1.
+- **D-j**: modifiche di soli commenti fuori perimetro dichiarato: `bookings.service.ts` (doc di `findBlockingExpiredDocuments` ed `ExpiredDocument`: citavano `findMissingBlockingDocuments` e il riuso dai voli, ora falsi), `aircraft-status.ts` (quarto chiamante = la voce dei voli).
+- **D-k**: orfani rimossi: in `airops.css` le regole `.mobile-row-flight > .mobile-row-flag` (+ `.b-dot`) della card volo; nel form `registrationOf`/`optionRegistrations`/`searchedRegistrations` (la marca arriva nella voce); il test e2e del pallino del chip (il chip non esiste più).
+- **D-l**: guardia del corpo stantio con `subscribe` di RHF (valori) invece di `watch()`, che fa saltare la memoizzazione del React Compiler (`react-hooks/incompatible-library`, eccezione già evitata da `new-booking-form.tsx`); gli stati fuori RHF la chiudono nei propri handler.
+- **D-m**: il 403 di `requirements.force` ha un unit (permesso concesso a INSTRUCTOR nel solo test, ripristinato in `finally`): il commento precedente lo dichiarava senza test, AC 10 lo chiede.
+- **D-n**: `flights.spec.ts` E6 rende il pilota «in regola» (currency da un volo senza addebito su un altro velivolo) perché il 409 arrivi al primo invio; E8 usa due piloti nuovi (non serve più il pilota con la visita scaduta).
+- **D-o**: `flight-requirements.spec.ts` (b) usa un **allievo** in doppio e un tipo `scope: 'STUDENTS'`: col tipo `PILOTS` il test (a), in parallelo, l'ha visto come documento mancante (misurato: flaky al primo giro).
 
 ### §H — Verifica UI (screenshot)
 
+Script throwaway `playwright-core` (chromium-1228, `localhost`, build di produzione sul gemello), 1280×900 e 375×812, tema chiaro e scuro (`data-theme`), in `scratchpad/shots/{desktop,phone}-*.png`: (1) avviso con 8 voci (fuori servizio, 3 tipi ambientali + visita mancanti, quota, currency, saldo); (2) errore di reinvio; (3) riepilogo dopo «Procedi comunque» (con `flight-balance-alert`, nessuna notice); (4) registro e card, (4b) cella azioni desktop = «Annulla | Modifica» senza badge; (5) sheet mobile senza riga né badge di deroga; (6) avviso nel form in modifica (sola voce BALANCE). Misure: overflow `.so-body` 0 e pagina 0 in tutti i passi; focus sull'avviso alla comparsa; bottoni 34,84 px a 1280 e **44 px** a 375; `.so-foot` 60 px (1280) e 69 px (375) in ogni passo, regole `.so-foot` non toccate dal diff di `airops.css`. Pannello `--warn-soft`/`--warn` come la sezione di deroga che sostituisce; leggibile in scuro (ink su warn-soft scuro).
+
 ### §I — Gate ed esiti verbatim
 
+- `npm run gates` (due volte; l'ultima sul codice ripristinato dopo le sonde): `PASS lint (49s)`, `PASS typecheck (6s)`, `PASS test (21s) — Tests 2083 passed (2083)`, `PASS build (56s)`.
+- `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` su `requirements.service.test.ts` (21), `requirement-failures.test.ts` + `mobile-logbook.test.ts` (18), `flights.service.test.ts` (184), `flights-expiry-boundary.integration.test.ts` (5): verdi.
+- e2e mirati (`scripts/e2e.sh`, build una volta + `E2E_REUSE_SERVER=1`, gemello fresco `airmanager_d199e2e`):
+  1. 8 spec (`flight-requirements`, `flights`, `aircraft-out-of-service-until`, `mobile-logbook`, `flight-delete-update`, `flight-no-charge`, `expiry-rules-currency`, `typeahead-pickers`): 101 passed, 2 failed, 1 did not run — due difetti dei test (sovrapposizione dei due voli di currency sullo stesso velivolo; locator ambiguo con il tipo `ALL` mancante anche per il pilota), corretti;
+  2. `flight-requirements` + `flights`: 41 passed, 1 flaky (D-o, corretto);
+  3. 20 spec (E-R1 e superfici collegate: `people-management`, `mobile-reports`, `exports`, `my-compensation`, `person-detail`, `flight-log`, `pdf-exports`, `instructor-compensation`, `my-account`, `mobile-registries`, `aog-impact-email`, `expiries-registry`, `billing`, `mobile-primitives`, `mobile-ink-targets`, `home-dashboard`, `mobile-a11y-sweep`, `mobile-overview`, `membership-fee`, `flight-requirements`): **185 passed**;
+  4. catena (`--project=reports --project=mobile-settings --no-deps --workers=1`): **17 passed**;
+  5. `--workers=1` `expiry-dashboard` → `mobile-expiries-movements` → `flight-requirements` → `aircraft-out-of-service-until` (pilota di seed dopo gli spec delle scadenze): **42 passed**.
+  L'arbitro completo su DB fresco è della sessione principale (atteso 579).
+
 ### §J — TD-19.9-a/b: call-site ricontrollati sul HEAD (D-14)
+
+- **TD-19.9-a**: alert job `expiry-alerts.service.ts:114` `where: { expiresAt: { lte: horizon } }` — né persone archiviate né tipi disattivati filtrati (→ 17.8); registro e contatori `expiries.service.ts#registryRowsSql` (`:414-445`) filtrano le persone archiviate (19.7b F1) ma **non** i tipi disattivati; prenotazioni `bookings.service.ts:478` `findBlockingExpiredDocuments` senza `isActive` (→ 19.10, che lo sostituisce col servizio di questa story, dove la regola è già nel `where`).
+- **TD-19.9-b**: `todayDateOnlyUtc()` oggi in **4** call-site (erano 6): `expiry-alerts.service.ts:110`, `expiries.service.ts:139`, `:247`, `:296`; registro e contatori sono già su «oggi» di Roma (19.7b).
+- **TD-19.9-c (nuovo, proposto)**: `flights.spec.ts#deactivateBlockingType` gira in coda al test, non in un `finally`: un test rosso lascia attivo un tipo `scope: 'ALL'` bloccante, che diventa un documento mancante di ogni persona nuova (misurato al giro 1: tre tipi rimasti dai tre tentativi del test fallito). Pre-esistente (14.4); severità bassa, owner proposto: chi tocca ancora quel describe (19.10 o 19.12).
+
+### Contratti definitivi per la 19.10
+
+- **Servizio** `src/server/services/requirements.service.ts`: `evaluateRequirements(input: RequirementsInput): Promise<RequirementFailure[]>` (sola lettura, nessun attore, nessun client/tx, letture su `prisma`, sequenziali; blocchi `false/null` = nessuna query); `throwRequirementsNotMet(failures): never` = `ValidationError('Requirements not met: <tipi>.', { failures }, 'REQUIREMENTS_NOT_MET')`; esportati anche `type RequirementsInput` e `type RequirementFailure`. `RequirementsInput` = `{ expiryDateOnly, membershipDateOnly, person: { id, name, hasActivePilot, hasActiveStudent, hasActiveInstructor }, instructor: { personId, name } | null, documents, currency: { dateOnly, excludeFlightId: string | null } | null, balance: { costCents, creditCents } | null }` — tutte e tre le date obbligatorie. `instructor` = l'istruttore **a bordo**: la politica (null sul solista) è del chiamante.
+- **Semantica**: EXPIRY scaduti = RATING `blocksBooking` di tipo **attivo**, senza scope, `expiresAt < expiryDateOnly`; mancanti = RATING `blocksBooking` attivi con scope in `ALL` + ambiti di `hasActive*` (istruttore: `ALL+INSTRUCTORS`) senza alcuna riga; poi un documento medico (`getMedicalRequirementFailure`). Ordine: EXPIRY persona, EXPIRY istruttore, MEMBERSHIP persona, MEMBERSHIP istruttore, CURRENCY, BALANCE; dentro EXPIRY scaduti per nome, mancanti per nome, medico. BALANCE: `SUM(amountCents)` del conto della persona (0 senza) + `creditCents` < `costCents`; uguale coperto; `balanceCents` nella voce = saldo + credito.
+- **Zod/OpenAPI** `src/lib/schemas/requirements.ts`: `requirementFailureSchema` (`discriminatedUnion('type')`: `EXPIRY { role, personName, typeName, expiresAt|null }`, `MEMBERSHIP { role, personName, expiresAt|null }`, `CURRENCY { role:'person', personName, lastFlightDate|null, daysSinceLastFlight|null, flightsInWindow, minFlights, windowDays }`, `BALANCE { role:'person', personName, balanceCents, costCents }`, `AIRCRAFT_OUT_OF_SERVICE { registration, reason|null, outOfServiceUntil|null }`), `requirementsNotMetDetailsSchema`; componenti `RequirementFailure`, `RequirementsNotMetDetails` già registrati. Il file importa solo Zod.
+- **Permesso** `requirements.force` (solo ADMIN) — `flights.forceExpiry` non esiste più.
+- **UI** `src/components/dashboard/requirements-warning.tsx` `RequirementsWarning({ failures, canProceed, onProceed, onCancel, submitting, error: boolean, moneyLocale, title? })`; testid `requirements-warning` (`tabIndex=-1`, `role=group`, `aria-labelledby` sul titolo, focus + `scrollIntoView` al montaggio), `requirements-warning-item` (`data-type`), `requirements-proceed`, `requirements-cancel`, `requirements-proceed-error` (`role=alert`); stile `.req-warning*` in `airops.css` (44 px sotto 640 px). Formatter puro `src/lib/requirement-failures.ts#describeRequirementFailure(failure, { formatDate, formatMoney }) → { who, key, values }`. i18n `Requirements.{title, proceed, cancel, proceedError, who, role.{person,instructor}, failure.{expiryExpired, expiryMissing, membershipExpired, membershipMissing, currency, currencyNever, balance, outOfService, outOfServiceUntil}}`.
+- **DTO volo**: `forcedAt` resta (timbro silenzioso), `forceReason` non c'è più; `Booking.forceReason` intatto.
+- **e2e** (`e2e/helpers.ts`): `ensureFlightRequirements(page, { personId, scope, topUpCents }) → { balanceCents }` (quota `E2E_MEMBERSHIP_FEE_CENTS` = 1000 addebitata dopo la ricarica: `topUpCents` deve coprirla), `ownFailures(failures, ownTypeNames?)`, `submitPastRequirements(page)`, `type E2eRequirementFailure`; `registerFlightOn` ora con `force: true` e `noCharge?`.
 
 ### Completion Notes List
 
 - Story file scritto dallo story writer (2026-11-01, ricognizione su `eef77ef`); contratto AD-2 concordato con lo writer della 19.10.
+- 2026-11-02, dev: implementati i 29 AC (servizio unico, integrazione in registrazione e modifica, via `forceReason`/badge/notice, permesso `requirements.force`, avviso unico desktop e telefono, chip Piloti 16.4, OpenAPI, i18n, seed, e2e). Gate verdi, sonde (a)-(j) rosse sul mutante e sha256 identici al ripristino, spec mirati verdi su gemello fresco (§I), gemelli eliminati. Deviazioni in §G (D-a è la correzione del lead sul solista), TD-19.9-a/b ricontrollati e TD-19.9-c proposto (§J). Commit dell'implementazione: `0e13807`.
 
 ### File List
+
+- `prisma/migrations/20261102210000_flight_drop_force_reason/migration.sql` (nuovo)
+- `prisma/schema.prisma`, `prisma/seed-demo.ts`
+- `src/server/services/requirements.service.ts` (nuovo), `src/server/services/requirements.service.test.ts` (nuovo)
+- `src/server/services/flights.service.ts`, `src/server/services/flights.service.test.ts`, `src/server/services/flights-expiry-boundary.integration.test.ts`
+- `src/server/services/expiries.service.ts`, `src/server/services/expiries.service.test.ts`
+- `src/server/services/bookings.service.ts` (solo commenti), `src/server/services/aircraft-status.ts` (solo commento)
+- `src/server/auth/rbac.ts`, `src/server/auth/rbac.test.ts`
+- `src/lib/schemas/requirements.ts` (nuovo), `src/lib/schemas/flights.ts`, `src/lib/schemas/registry.ts`, `src/lib/schemas/registry.test.ts`
+- `src/lib/requirement-failures.ts` (nuovo), `src/lib/requirement-failures.test.ts` (nuovo), `src/lib/mobile-logbook.ts`, `src/lib/mobile-logbook.test.ts`
+- `src/components/dashboard/requirements-warning.tsx` (nuovo)
+- `src/app/[locale]/dashboard/logbook/flight-editor.tsx`, `src/app/[locale]/dashboard/logbook/logbook-console.tsx`, `src/app/[locale]/dashboard/logbook/page.tsx`, `src/app/[locale]/dashboard/page.tsx`, `src/app/[locale]/dashboard/dispatch-flight-button.tsx`
+- `src/styles/airops.css`
+- `messages/it.json`, `messages/en.json`
+- `e2e/flight-requirements.spec.ts` (nuovo), `e2e/helpers.ts`
+- `e2e/aircraft-out-of-service-until.spec.ts`, `e2e/aog-impact-email.spec.ts`, `e2e/billing.spec.ts`, `e2e/expiry-rules-currency.spec.ts`, `e2e/exports.spec.ts`, `e2e/flight-delete-update.spec.ts`, `e2e/flight-log.spec.ts`, `e2e/flight-no-charge.spec.ts`, `e2e/flights.spec.ts`, `e2e/instructor-compensation.spec.ts`, `e2e/mobile-logbook.spec.ts`, `e2e/mobile-registries.spec.ts`, `e2e/mobile-reports.spec.ts`, `e2e/mobile-settings.spec.ts`, `e2e/my-account.spec.ts`, `e2e/my-compensation.spec.ts`, `e2e/pdf-exports.spec.ts`, `e2e/people-management.spec.ts`, `e2e/person-detail.spec.ts`, `e2e/reports.spec.ts`, `e2e/typeahead-pickers.spec.ts`
+- `_bmad-output/implementation-artifacts/19-9-avviso-deroga-voli.md` (questo record)
+
+### Change Log
+
+- 2026-11-02 — Implementazione della story 19.9 (avviso unico con deroga admin sulla registrazione e modifica dei voli; assorbe la 16.4 per i voli); Status → review.
