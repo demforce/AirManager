@@ -4,7 +4,7 @@ baseline_commit: 869c9cf
 
 # Story 19.7b: Registro Scadenze unificato — currency, quote e visite «Mancante» in ogni vista
 
-Status: **ready-for-dev** — 2026-11-01. Seconda metà della 19.7, **divisa dalla sessione principale**: la **19.7a** (`19-7a-scadenze-modello-regole-quota-currency.md`) consegna modello, regole e funzioni di valutazione; questa costruisce il **registro unificato** (documenti ∪ righe derivate) con filtro Categoria, contatori, ricadute su Panoramica/Avvisi/export/API e la guardia di prestazioni. **Nessuna domanda PO aperta.** **Modello dev: Opus 5 xhigh (UI)**: registro Scadenze desktop + faccia mobile con il pannello Filtri, widget Scadenze della Panoramica e feed Avvisi mobile, oltre a SQL grezzo, DTO, OpenAPI, export ed e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-7b-registro-scadenze-unificato`. Taglia: L.
+Status: **review** — dev 2026-11-02 (Dev Agent Record in fondo); story scritta il 2026-11-01. Seconda metà della 19.7, **divisa dalla sessione principale**: la **19.7a** (`19-7a-scadenze-modello-regole-quota-currency.md`) consegna modello, regole e funzioni di valutazione; questa costruisce il **registro unificato** (documenti ∪ righe derivate) con filtro Categoria, contatori, ricadute su Panoramica/Avvisi/export/API e la guardia di prestazioni. **Nessuna domanda PO aperta.** **Modello dev: Opus 5 xhigh (UI)**: registro Scadenze desktop + faccia mobile con il pannello Filtri, widget Scadenze della Panoramica e feed Avvisi mobile, oltre a SQL grezzo, DTO, OpenAPI, export ed e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-7b-registro-scadenze-unificato`. Taglia: L.
 
 > ⚠️ **Dipendenza dura**: il dev parte **DOPO il commit della 19.7a** (e quindi di 19.1…19.6). Consuma da lei, **senza rinominarli** (19.7a §5.12): `computeCurrency` e `CURRENCY_DEFAULTS` (`src/lib/currency.ts`), `getCurrencySettings`, `loadOnBoardFlightDates`/`listCurrencyByPerson` (`currency.service.ts`), `evaluateMedicalRequirement`/`getMedicalRequirementFailure`, `ExpiryTypeKind.MEMBERSHIP`, il campo `category` degli item di `GET /api/v1/expiries`, le chiavi `ExpiriesPage.registry.category.{MEDICAL,RATING,MEMBERSHIP}`, gli helper e2e `ensureValidSeedExpiries` (una visita sola) e `registerFlightOn`. Al T0: leggere il **codice committato** della 19.7a (non questo file) e correggere qui ogni nome o riga che non torna.
 >
@@ -308,13 +308,13 @@ Fixture: persone via API con suffisso unico; visite **prima**, **poi** `ensureVa
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento**: `git log`; codice committato della 19.7a (nomi e righe dei contratti di §5.12 della 19.7a); censimenti di §3 su HEAD.
-- [ ] **T1 — Registro unificato** (AC 1, 2, 8): frammento SQL, lista, totale, contatori, DTO, OpenAPI.
-- [ ] **T2 — Guardia di prestazioni** (AC 14), subito dopo T1 e prima della UI: se la soglia non regge, ci si ferma prima di costruire sopra.
-- [ ] **T3 — Scadenze UI** (AC 3-5, 9-10).
-- [ ] **T4 — Panoramica, Avvisi, export** (AC 6-7).
-- [ ] **T5 — e2e** (AC 11-13, 17): spec a rischio, helper, spec nuovo.
-- [ ] **T6 — Residui, i18n, gate, verifica UI** (AC 15-19).
+- [x] **T0 — Riallineamento**: `git log`; codice committato della 19.7a (nomi e righe dei contratti di §5.12 della 19.7a); censimenti di §3 su HEAD.
+- [x] **T1 — Registro unificato** (AC 1, 2, 8): frammento SQL, lista, totale, contatori, DTO, OpenAPI.
+- [x] **T2 — Guardia di prestazioni** (AC 14), subito dopo T1 e prima della UI: se la soglia non regge, ci si ferma prima di costruire sopra.
+- [x] **T3 — Scadenze UI** (AC 3-5, 9-10).
+- [x] **T4 — Panoramica, Avvisi, export** (AC 6-7).
+- [x] **T5 — e2e** (AC 11-13, 17): spec a rischio, helper, spec nuovo.
+- [x] **T6 — Residui, i18n, gate, verifica UI** (AC 15-19).
 
 ---
 
@@ -322,24 +322,199 @@ Fixture: persone via API con suffisso unico; visite **prima**, **poi** `ensureVa
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), dev subagent unico della story (`dev-19-7b`), skill `bmad-dev-story` + `karpathy-guidelines`, `design-taste-frontend`, `ui-ux-pro-max`. Implementazione: commit `450a0f6` su `dev`. HEAD di partenza `f4c1e6a` (19.7a chiusa, fix `b2314e8` incluso); il `baseline_commit: 869c9cf` del frontmatter resta quello delle misure della story.
+
 ### §A — Riallineamento sul HEAD e sulla 19.7a (T0)
+
+Censimenti di §3 rieseguiti con `git show HEAD:` su `f4c1e6a`. Scostamenti rispetto a `869c9cf` (il disegno non cambia):
+
+| Punto | Story (`869c9cf`) | HEAD `f4c1e6a` |
+|---|---|---|
+| `expiries.service.ts` `ExpiryDashboardItem` / `DASHBOARD_SELECT` / `toDashboardItem` | `:320` / `:341` / `:361` | `:343` / `:366` / `:386` |
+| `expiresAtRangeForStatus` / `…ForWindow` | `:394` / `:415` | `:420` / `:441` |
+| `listAllExpiries` / `getExpiryTierCounts` | `:441` / `:504` | `:467` / `:530` |
+| `exports.service.ts` xlsx / colore PDF / pdf | `:415` / `:662` / `:664` | `:409` / `:651` / `:653` |
+| `dashboard/page.tsx` scan limit / `listAllExpiries` / `buildOverviewAlerts` / `<ScadenzeWidget` | `:81` / `:304` / `:485` / `:719` | `:79` / `:300` / `:475` / `:709` |
+| `scadenze-widget.tsx` `iconToneOf` / `badgeToneOf` / finestra / `dayLabel` / sottoriga | `:28` / `:33` / `:67` / `:71` / `:106` | invariati |
+| `overview-alerts.ts` `typeName` / `daysUntil` / `rankOf` / `weightOf` / salto tier 4 | `:41` / `:43` / `:107` / `:122` / `:137` | invariati |
+| `schemas/expiries.ts` stato / query / item | `:16-20` / `:142-150` / `:160-174` | `:18` / `:144` / `:162` |
+| `registry.ts` `GET /expiries` / `/pdf` | `:1310` / — | `:1313` / `:1331` |
+| `expiries/page.tsx` `sanitizeWindow` / `typeOptions` / `exportFilterQuery` | `:28` / — / `:110` | `:28` / `:83` / `:110` |
+| `scadenze-console.tsx` `handleReset` / `panelActiveCount` / sheet / select tipo | `:269` / `:310` / `:362` / `:412` | `:272` / `:313` / `:365` / `:420` |
+| e2e `helpers.ts` lettura registro / `expiry-dashboard.spec.ts` stat card / `mobile-overview.spec.ts` locator | `:63` / `:144` / `:442` | `:63` / `:144` / `:442` |
+| chiavi i18n | — | 1653 per lingua |
+
+**Contratti 19.7a consumati** (codice committato, nomi invariati): `getCurrencySettings()` (`app-settings.service.ts:404`, letto una volta per chiamata del registro), la regola di `computeCurrency` (`src/lib/currency.ts`) e la definizione «a bordo» di `loadOnBoardFlightDates` (`currency.service.ts`) **con il fix F2** — `f."isSolo" = false` sul ramo istruttore —, `ExpiryTypeKind.MEMBERSHIP`, la regola D-4 (la partizione «scaduta / mancante» con «almeno un tipo MEDICAL attivo»), le chiavi `ExpiriesPage.registry.category.*`, gli helper e2e `ensureValidSeedExpiries` e `registerFlightOn` (con `isSolo`). `listCurrencyByPerson` e `getMedicalRequirementFailure` non servono al registro (la SQL li rispecchia, D-15): la parità si prova sulla pagina Piloti.
+
+**Censimento e2e §3.6 ripetuto** (`grep -rnE "scadenze-stat-|scadenze-row|scadenze-widget|mobile-overview-alert|/api/v1/expiries|expiries/pdf" e2e` più gli spec che chiamano `ensureValidSeedExpiries`): oltre ai punti della story è emerso **`expiry-rules-currency.spec.ts:322`** (19.7a: `window=all&personQuery=<persona>` con `toHaveCount(1)` — la persona ha ora anche la sua currency e la visita «Mancante»), ristretto con `category=MEMBERSHIP` (§G D-g). Nessun altro spec conta righe del registro senza `expiryTypeId`.
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Esito | Prova |
+|---|---|---|
+| 1 | ✅ | Unit `expiries.service.test.ts` (riscritti su `$queryRaw`): quattro rami dell'unione, soggetti currency senza istruttore e membri con istruttore, gemella SQL di `computeCurrency` (due sedili, `isSolo = false` e `<>` sul ramo istruttore, X e Y legati dalle impostazioni, `today` come stringa), parametri legati per ogni filtro (`category` ×4, `expiryTypeId`, `scope`, `personId`, `personQuery` `50%_x\` → `%50\%\_x\\%` con `ESCAPE '\'`, `window` ×4 con le `NULL`, `status` ×4 incluso `missing`, AND e precedenza della finestra), mappatura documento / currency con e senza data / quota «Mancante» / visita «Mancante» (validata anche contro `expiryDashboardItemSchema`), `getCurrencySettings` letto una volta, «oggi» di Roma con fake timer alle 23:30Z del 14/03 → `2026-03-15`, ieri `2026-03-14`, `daysUntil 0`. |
+| 2 | ✅ | Unit: una sola query `COUNT(*) FILTER`, `expired` = `IS NULL OR < oggi`. Sonda §D su DB demo: contatori della pagina 14/0/5/2 = conteggio a mano, sottotitolo «21 da gestire» = somma. Nessun e2e confronta un contatore globale per uguaglianza (AC 11). |
+| 3 | ✅ | e2e `expiries-registry.spec.ts` «currency rows in every view» (fixture 19.7a AC 15 + solista G/H): vista `window=all` = 20 righe di pagina 1 con documenti, currency e «Mancante» insieme, B prima di C prima di A; `category=CURRENCY` = A, B, C, D, F, G, H con celle esatte (A `oggi`/«0 g»/«≤ 7 giorni»/«1 volo negli ultimi 90 giorni»; B ieri/«1g fa»/«Scaduto»; C e G «—»/«—»/«Mancante»; D +80 «Valido»; H +70), E assente; `window=expired` B e C sì, A e D no; finestra predefinita A sì, D no; 375 px card e sheet di A («Ambito» e «Note» = «—»); **stessi A-D, G, H sulla pagina Piloti** con i badge della 19.7a AC 15. Sonde §E (a) e (c). |
+| 4 | ✅ | e2e «membership fee in the registry»: F quota addebitata → documento con la data restituita dall'addebito, «Valido»; G istruttore → «Mancante», data e giorni «—»; H archiviata e I senza profili → nessuna riga; `category=MEMBERSHIP` e `expiryTypeId=<tipo quota>` → le sole due righe quota. |
+| 5 | ✅ | e2e «medical visits in the registry»: J → una riga «Visita medica / Visita medica / — / — / Mancante»; K (sola classe 2 scaduta) → la sua riga «Scaduto» e nient'altro; L (visita valida) → solo il documento; `expiryTypeId=<classe 2>` → K e L, non J. Unit: la guardia `EXISTS (… "kind" = 'MEDICAL' AND "isActive")` sul ramo; sonda SQL reale §E (nessun tipo attivo → 3 → 0 righe). Sonda §E (d). |
+| 6 | ✅ | Unit `overview-alerts.test.ts` (+3: rango scaduto e peso −1 fra una scaduta da 10 giorni e una in scadenza, tie con «scaduta ieri», mai saltata, tetto che nasconde le «Mancante» dopo i documenti più vecchi); `registryTierOf` unit (`expiry-status.test.ts`); widget: helper puro condiviso + verifica UI (scelta motivata in §G D-e) — screenshot widget «7g» con «Volante Piero · Currency · Mancante» in rosso. `mobile-overview.spec.ts:416-447` verde 3/3 col locator ristretto. |
+| 7 | ✅ | Unit `exports.service.test.ts` (+3: xlsx IT/EN e PDF con currency, quota e visita «Mancante»: tipo = categoria, ambito «—», scadenza «—», «Mancante»/«Missing», rosso `#9F2F2D`); e2e: xlsx di `category=CURRENCY&personQuery=<suffisso>` = A, B, C, D, F, G, H e nessun documento; `export-menu-xls`/`-pdf` con `category=CURRENCY`. |
+| 8 | ✅ | e2e: item di A `{ id: currency:<A>, source: DERIVED, category: CURRENCY, expiryTypeId: null, typeName: null, expiresAt: oggi, status: expiring, daysUntil: 0, currency: { lastFlightDate: oggi−90, flightsInWindow: 1, minFlights: 1, windowDays: 90 } }`, totale 7; `status=missing` → solo righe senza data; `PATCH /api/v1/expiries/currency:<A>` → 404; pilota → 403 già provato da `expiry-dashboard.spec.ts:189` (§G D-k). OpenAPI: descrizioni di `GET /expiries`, `/pdf`, `PATCH`, `DELETE` aggiornate, schemi nuovi `registryStatusSchema`/`registryCategorySchema`, item con `source`, `category` a 4, campi nullabili, `currency`; `registry.test.ts` verde senza path nuovi. |
+| 9 | ✅ | e2e desktop: `scadenze-filter-category` naviga con `category=…`, «Visite mediche» offre solo visite (letto dopo la pagina, inattivi inclusi, contro le corse), cambiare categoria toglie `expiryTypeId`, «Currency» toglie il select dei tipi, export presente in ogni vista; e2e 375: categoria + ricerca digitata in **una** navigazione, «Filtri (1)», «Filtri (2)» con il tipo, «Azzera filtri» toglie la categoria. `mobile-expiries-movements.spec.ts:333` (budget testata) verde nelle serie. |
+| 10 | ✅ | e2e su `/en/dashboard/expiries`: A «Currency / 1 flight in the last 90 days / 02/11/2026 / 0 d / ≤ 7 days», C «0 flights … / — / — / Missing». |
+| 11 | ✅ | `expiry-dashboard.spec.ts:144` riscritto a **forbice** (non filtrato → filtrato → non filtrato, il filtrato uguale a uno dei due, `> 0` sul primo) dentro `toPass`; resta nel project parallelo (§G D-j). 3 run mirati consecutivi `--retries=0` insieme a `mobile-overview` e allo spec nuovo che crea persone: 27/27 ×3. |
+| 12 | ✅ | `mobile-overview.spec.ts:442` → `filter({ hasText: pilot.lastName }).filter({ hasText: '· <tipo registrato>' })`: 3/3 (stessi run di AC 11). |
+| 13 | ✅ | `ensureValidSeedExpiries` filtra `source === 'DOCUMENT'` (AD-5); i 21 spec che lo usano nella serie 2: verdi. |
+| 14 | ✅ | §C: `airmanager_load` in `BEGIN READ ONLY`, (a) 150-170 ms, (b) 163-176 ms, (c) 128-140 ms, (d) 122-134 ms — tutte ≤ 300 ms. (e) totali 11 141 e 19 061 contro i tetti: TD 19.7b-a. |
+| 15 | ✅ | 12 chiavi per lingua (1653 → 1665), parità 0/0, tutte lette (`expiries/page.tsx`, `dashboard/page.tsx`, `exports.service.ts` per `registry.category.*` e `registry.status.missing`). |
+| 16 | ✅ | `npm run gates` verde (§I); suite intera con `env -u DATABASE_URL -u AUTH_SECRET npx vitest run`: 76 file / 1966 test. |
+| 17 | ⏳ arbitro | Serie mirate verdi (§F). Arbitro completo su DB fresco alla sessione principale: **delta atteso 549 → 555** (+6 dello spec nuovo, nessun test rimosso; `npx playwright test --list` → «Total: 555 tests in 65 files»). |
+| 18 | ✅ | `grep -rn "expiresAtRangeFor\|DASHBOARD_SELECT\|toDashboardItem" src` → nessun risultato. |
+| 19 | ✅ | §H. |
+
 ### §C — Guardia di prestazioni (AC 14): database, adattamenti, piani, tempi, totali vs tetti
+
+- **Database**: `SELECT current_database(), current_setting('transaction_read_only')` → `airmanager_load|on`, ogni misura dentro `BEGIN READ ONLY; … EXPLAIN (ANALYZE, BUFFERS) <SELECT>; ROLLBACK;` (docker exec, `psql -At`). Nessuna scrittura, nessun indice, nessuna migrazione su quel DB. Volumi: 5 007 persone, 60 487 voli, 13 612 `Expiry`, 4 044 soggetti currency, 4 364 membri.
+- **SQL misurata** = quella emessa dal service: generata dal codice (`listAllExpiries`/`getExpiryTierCounts` con `$queryRaw` mockato in un test temporaneo, `?` sostituiti dai valori legati, oggi `2026-11-02`, X=1, Y=90), poi un solo adattamento letterale perché lo schema di `airmanager_load` precede la 19.7a: `"kind" = 'MEMBERSHIP'` → `"name" = 'Quota associativa'` (l'enum lì è `{RATING,MEDICAL}`). Su quel DB restano righe Licenza e la colonna `Flight.status`: contate come righe (la volumetria è quella che conta).
+- **Tempi** (`Execution Time`, tre giri a caldo, poi un quarto per i piani salvati):
+
+| Query | Giri | Righe |
+|---|---|---|
+| (a) vista predefinita `window=60`, pagina 1 (righe + totale in **una** query, `COUNT(*) OVER ()`) | 154.7 / 149.7 / 167.3 / 170.2 ms | totale 11 141 |
+| (b) `window=all`, pagina 1 | 166.0 / 168.2 / 175.6 / 163.0 ms | totale 19 061 |
+| (c) contatori (una `COUNT … FILTER`) | 130.1 / 127.6 / 139.9 / 136.1 ms | — |
+| (d) `category=CURRENCY`, pagina 1 | 133.7 / 128.3 / 121.8 / 133.7 ms | totale 4 044 |
+
+  **Soglia 300 ms: rispettata da tutte.** Il JIT del server pesa ~45 ms di ogni giro (stima di costo sopra `jit_above_cost`); non toccato.
+- **Piano** (a): `Bitmap Index Scan on "Expiry_expiresAt_idx"` per i documenti; la currency è un `HashAggregate` sui 74 091 posti a bordo (`Seq Scan on "Flight"` 60 487 + `Index Scan using "Flight_instructorProfileId_idx"` 13 605) seguito da un sort per persona dell'array (4 590 gruppi) e un `Hash Left Join` sui 4 044 soggetti; `top-N heapsort` finale per la chiave D-20.
+- **Forma scelta misurando** (prima della UI, T2): la forma di riferimento di AD-1 (`UNION` + `ROW_NUMBER()` su tutti i posti) misurava 358 ms a freddo e 250 ms a caldo sulla pagina 1; `UNION ALL` con `ip."personId" <> f."personId"` (equivalente, §G D-b) 219 ms; aggregazione senza il join coi soggetti 203 ms; X-esima data presa dall'array aggregato per persona (`HashAggregate` al posto del sort globale di 74 000 cuid su collation) **145 ms**. Nessun bisogno di `LATERAL` né di indici nuovi.
+- **(e) Totali contro i tetti**: (a) 11 141 > 2 000 (PDF) **e > 10 000 (xlsx)**; (b) 19 061 > entrambi. Prima della story la vista predefinita aveva 5 692 righe (xlsx sotto il tetto) e «Tutte» 13 612 (xlsx già sopra). Su un club da 5 000 persone l'export della vista predefinita risponde quindi `EXPORT_TOO_LARGE` finché non si restringe un filtro: comportamento esistente del tetto, tetti invariati per §6 — **TD 19.7b-a** da decidere col PO.
 
 ### §D — Sonda dei contatori (AC 2) e righe derivate del DB demo (§3.4)
 
+Gemello `airmanager_demo197b` = `migrate deploy` + `db seed` + `seed:demo` su HEAD; build di produzione della story su :3000. SQL a mano, scritta **indipendentemente** dal frammento del service (la currency con `UNION` + `ROW_NUMBER()`, la forma TS della 19.7a; soggetti e membri con `IN` sui profili attivi; oggi `2026-11-02`, X=1, Y=90):
+
+```sql
+WITH subj AS (SELECT p.id FROM "Person" p WHERE p."archivedAt" IS NULL AND (p.id IN (SELECT "personId" FROM "PilotProfile" WHERE "deactivatedAt" IS NULL) OR p.id IN (SELECT "personId" FROM "StudentProfile" WHERE "deactivatedAt" IS NULL))),
+memb AS (… + OR p.id IN (SELECT "personId" FROM "InstructorProfile" WHERE "deactivatedAt" IS NULL)),
+seats AS (SELECT f.id, f."personId" pid, f."flightDate" d FROM "Flight" f WHERE f."flightDate" <= '2026-11-02'
+          UNION SELECT f.id, ip."personId", f."flightDate" FROM "Flight" f JOIN "InstructorProfile" ip ON ip.id = f."instructorProfileId" WHERE NOT f."isSolo" AND f."flightDate" <= '2026-11-02'),
+nth AS (SELECT pid, d FROM (SELECT pid, d, ROW_NUMBER() OVER (PARTITION BY pid ORDER BY d DESC, id DESC) rn FROM seats) x WHERE rn = 1),
+cur AS (SELECT s.id, n.d + 90 exp FROM subj s LEFT JOIN nth n ON n.pid = s.id),
+fee_missing AS (SELECT m.id FROM memb m WHERE NOT EXISTS (SELECT 1 FROM "Expiry" e JOIN "ExpiryType" t ON t.id = e."expiryTypeId" WHERE e."personId" = m.id AND t.kind = 'MEMBERSHIP')),
+visit_missing AS (SELECT m.id FROM memb m WHERE EXISTS (SELECT 1 FROM "ExpiryType" WHERE kind = 'MEDICAL' AND "isActive") AND NOT EXISTS (SELECT 1 FROM "Expiry" e JOIN "ExpiryType" t ON t.id = e."expiryTypeId" WHERE e."personId" = m.id AND t.kind = 'MEDICAL'))
+SELECT src, count(*) FILTER (WHERE exp IS NULL OR exp < :today) expired, … w7, w30, w60, beyond, missing, total
+FROM (documents ∪ cur ∪ fee_missing ∪ visit_missing) GROUP BY ROLLUP (src);
+```
+
+| sorgente | scaduti | ≤ 7 | ≤ 30 | ≤ 60 | oltre | di cui «Mancante» | totale |
+|---|---|---|---|---|---|---|---|
+| documenti | 4 | 0 | 4 | 2 | 13 | 0 | 23 |
+| currency | 2 | 0 | 1 | 0 | 6 | 2 | 9 |
+| quota mai pagata | 5 | 0 | 0 | 0 | 0 | 5 | 5 |
+| visita mancante | 3 | 0 | 0 | 0 | 0 | 3 | 3 |
+| **totale** | **14** | **0** | **5** | **2** | 19 | 10 | 40 |
+
+Pagina (playwright-core, build di produzione): `scadenze-stat-*` = **14 / 0 / 5 / 2** = il conteggio a mano; sottotitolo «Scadenze certificati e Ratings · **21** da gestire» = 14 + 0 + 5 + 2. **Righe derivate del demo** (effetto atteso di B): 9 currency (Volante Piero e Allieva Sara «Mancante», Colombo Stefano a 26 giorni, sei oltre i 60), 5 quote mai pagate (Volante, Istruttrice Ines, Allieva Sara, Rinaldi, Colombo), 3 visite mancanti (Volante, Istruttrice Ines, Allieva Sara) — i tre soggetti del seed base senza visite. Ordine della vista predefinita (D-20): i quattro documenti scaduti dal più vecchio (−63, −33, −10, −2 giorni), poi le dieci «Mancante», poi i documenti e la currency in scadenza.
+
 ### §E — Sonde e discriminanze §4.3 (a)-(d)
+
+Mutanti del service costruiti e serviti su :3000 contro il gemello e2e, uno per volta per (c2) e insieme per (a)+(b)+(d) (toccano test diversi); ripristino con sha256 verificato (`expiries.service.ts` `56cb7b0d…18d8`, spec `9f83240d…02ab` e `9c234c2d…5569`), build reale ricostruita e serie di controllo verde (19 passed).
+
+- **(a) Ordinamento D-20** — `ORDER BY r."expiresAt" ASC NULLS FIRST` al posto di `COALESCE(…, ieri)`: AC 3 **rosso** a `expiries-registry.spec.ts:167` (`indexOf(b) < indexOf(c)`: C, «Mancante», all'indice 0; B all'11). Con la chiave D-20: verde.
+- **(b) Escape di `personQuery`** — build della story: `personQuery=%` → `total 0`, `_` → 0; mutante senza `escapeLikePattern`: `%` → **2 832**, `_` → **2 832** = il totale non filtrato 2 832.
+- **(c) Parità SQL/TS (D-15)** — (c1) mutante dello **spec** (A a oggi−91, B spostato a −92 per non sovrapporsi): **entrambi rossi** — registro (SQL) a `expiries-registry.spec.ts:168` (A ora scaduta ieri finisce prima di C) e 19.7a AC 15 (Piloti, TS) a `expiry-rules-currency.spec.ts:414` `Expected "Currency 0gg" / Received "Non current"`. (c2) mutante della **SQL** `c."xthFlightDate" + Y - 1`: **solo** il registro rosso (`:168`), la 19.7a AC 15 **verde** — l'e2e del registro sorveglia l'implementazione SQL.
+- **(d) Doppioni medici (D-22)** — ramo «visita mancante» scritto su «nessuna visita **valida**» (`AND x."expiresAt" >= oggi`): AC 5 **rosso** a `:354`, K ha una seconda riga `Visita medica / — / — / Mancante`.
+- **Requisito spento** (Q-19.7-c) — sul gemello demo, in una transazione poi annullata: righe «visita mancante» 3; `UPDATE "ExpiryType" SET "isActive" = false WHERE "kind" = 'MEDICAL'` → **0** (quote 5 e currency 9 invariate); `ROLLBACK`.
 
 ### §F — Delta test (unit ed e2e, prima/dopo)
 
+**Unit**: HEAD `f4c1e6a` 1943 → **1966** (+23): `expiries.service.test.ts` 78 → 90 (blocchi `listAllExpiries`/`getExpiryTierCounts` riscritti su `$queryRaw`), `exports.service.test.ts` 30 → 33, `overview-alerts.test.ts` 14 → 17, `expiry-status.test.ts` 13 → 15, `mobile-expiries.test.ts` 7 → 10. `people.service.test.ts` invariato nel numero (solo il mock della catena env, §G D-f). Nessun test eliminato senza sostituto: quelli che asserivano il `where` Prisma ora asseriscono il frammento SQL equivalente.
+
+**e2e** (gemello `airmanager_e2e197b` = `migrate deploy` + `db seed` su HEAD, build di produzione una volta, `E2E_REUSE_SERVER=1 scripts/e2e.sh`, `CI=1` → retries 2 salvo dove detto):
+1. spec nuovo da solo: 6/6 (un primo giro rosso per un errore dello spec — `window=all` passato all'API, che non lo accetta: «Tutte» è l'assenza del filtro — corretto);
+2. serie `--project=chromium` su 33 spec (lo spec nuovo, i 20 che usano `ensureValidSeedExpiries`, i consumatori del registro: home-dashboard, mobile-ink-targets, mobile-expiries-movements, expiry-dashboard, expiry-registration, expiry-types, expiry-alerts, membership-fee, mobile-registries, mobile-overview, bookings, mobile-a11y-sweep, mobile-shell): **352 passed, 1 flaky** (`flights.spec.ts:1027` E5, il flaky noto TD 16.2-g, spec non toccato), 8.5 min;
+3. catena serializzata con `--no-deps --workers=1` (reports, mobile-metar, mobile-membership-fee, mobile-settings) sullo stesso DB: 22 passed;
+4. AC 11/12: `expiry-dashboard` + `mobile-overview` + spec nuovo, `--retries=0`, tre volte di fila: 27/27, 27/27, 27/27;
+5. dopo le sonde, build reale ricostruita: spec nuovo + `expiry-rules-currency` + `expiry-dashboard` 19 passed.
+
+Test e2e nuovi: `e2e/expiries-registry.spec.ts` (6). Cambiati: `expiry-dashboard.spec.ts` (1 test, AC 11), `mobile-overview.spec.ts` (1 test, AC 12), `expiry-rules-currency.spec.ts` (1 test, URL), `helpers.ts` (`ensureValidSeedExpiries`). **Delta arbitro atteso: 549 → 555.**
+
 ### §G — Deviazioni motivate
+
+- **D-a (AD-1, lista + totale)** — l'alternativa che AD-1 consente: righe e totale nella **stessa** query con `COUNT(*) OVER ()`; solo una pagina oltre la fine (nessuna riga che porti il totale) esegue un conteggio a parte con gli stessi filtri. Niente transazione interattiva: una query sola nel caso normale (misurato: il `WindowAgg` costa ~1 ms in più della pagina sola).
+- **D-b (AD-1, forma della currency)** — invece di `UNION` + `ROW_NUMBER()`: `UNION ALL` con `ip."personId" <> f."personId"` sul ramo istruttore (le sole coppie (volo, persona) che `UNION` potrebbe fondere sono quelle in cui il pilota è anche l'istruttore del volo — vietato dal service, `INSTRUCTOR_SAME_AS_PILOT` —, così l'equivalenza col `UNION` della TS vale per costruzione) e l'X-esima data presa per persona dall'array aggregato (`unnest(array_agg(…)) ORDER BY d DESC OFFSET X−1 LIMIT 1`). Stessa semantica di D-6/D-7 della 19.7a (più F2), misurata 358/250 → 145 ms (§C) e sorvegliata dalla parità e2e (§E c).
+- **D-c (AD-3, card mobile)** — la card nomina una riga senza tipo con la sua **categoria** («Currency · 02/11/2026 · 0 g», «Visita medica»), non col dettaglio della currency: a 375 px «3 voli negli ultimi 90 giorni» riempiva da solo la riga e l'ellissi mangiava la data (misurato sul demo). Il dettaglio resta nella colonna «Certificato» della tabella e nella sovrariga dello sheet («Currency · 1 volo negli ultimi 90 giorni»).
+- **D-d (AD-3, tono del badge Currency)** — neutro (`''`, come la quota): l'unico tono libero è `ok`, e un «Currency» verde accanto a uno stato rosso si leggerebbe «current»; una categoria è una classificazione, mai uno stato (skill `ui-ux-pro-max`: colore mai unico portatore di significato).
+- **D-e (AD-4/AC 6, widget)** — `registryTierOf(daysUntil | null)` in `src/lib/expiry-status.ts` (puro, unit) usato da tabella, card, sheet, widget e Avvisi, invece di ripetere `null → tier 0` in cinque punti; il widget non ha un helper estratto in più: la sua sola logica nuova è `daysUntil === null ||` nel filtro della finestra, provata dalla verifica UI (screenshot «7g» con le due currency «Mancante» rosse).
+- **D-f (§3.7)** — `people.service.test.ts` mocka `./app-settings.service`: `people.service.ts` importa `expiries.service.ts`, che ora trascina la catena env (rosso con `env -u DATABASE_URL -u AUTH_SECRET` senza il mock). Fuori dall'elenco di §3.7, stessa causa.
+- **D-g (§3.6)** — `expiry-rules-currency.spec.ts:322` (test 19.7a del badge quota) ristretto con `category=MEMBERSHIP`: la persona di fixture ha ora anche la currency e la visita «Mancante».
+- **D-h (AD-4)** — `OverviewAlertExpiry` riceve `category` (il chiamante nomina con essa la riga senza tipo nel titolo dell'avviso: «Volante Piero · Currency»).
+- **D-i (AC 3)** — fixture estesa con F (allievo di D), G (pilota+istruttore il cui unico volo è il **solista** supervisionato di H) e H: `category=CURRENCY` mostra A, B, C, D, F, G, H (E assente), G «Mancante» anche nel registro (F2 della 19.7a nella SQL).
+- **D-j (AC 11)** — scelta la forbice, non la catena serializzata: lo spec resta nel project parallelo (nessuna scrittura di settings), e la forbice è dentro `toPass` (20 s) per il caso improbabile di due cambi concorrenti nella stessa forbice; verde 3/3 con `--retries=0` accanto a uno spec che crea persone.
+- **D-k (AC 8)** — «pilota → 403» non duplicato: `expiry-dashboard.spec.ts:189` lo asserisce già (verde nelle serie).
+- **D-l (AC 3)** — l'etichetta dei giorni a zero è «0 g» (il suffisso esistente `registry.daysSuffix` è « g»), non «0g» come scritto nell'AC.
+
+**TD aperti**
+- **TD 19.7b-a** — tetti degli export: con 5 000 persone la vista predefinita conta 11 141 righe (§C e) e l'export risponde `EXPORT_TOO_LARGE` sia in xlsx (10 000) sia in PDF (2 000) finché non si restringe un filtro; prima della story l'xlsx della vista predefinita (5 692) passava. Tetti invariati per §6: da decidere (alzare il tetto xlsx, oppure esportare i soli documenti nella vista predefinita).
+- **TD 19.7b-b** — la riga «quota mai pagata» richiede l'esistenza del tipo `MEMBERSHIP`: su un'installazione di produzione senza seed (il tipo nasce al primo addebito, 19.7a F4) nessuno compare «Mancante» finché non si addebita la prima quota.
+- **TD 19.7b-c** — la pagina Scadenze calcola l'unione due volte per caricamento (righe+totale, contatori): 170 + 136 ms sul DB di carico, sotto soglia; fondibili in una query se il volume crescesse.
+- **TD 19.7b-d** — testata desktop della card: 106.8 px a 1280 (due righe, come prima) e 149.8 px a 1024 (tre righe) col select Categoria in più; nessun trabocco orizzontale.
 
 ### §H — Verifica UI (screenshot)
 
+Script throwaway `playwright-core` su Chromium locale (`~/.cache/ms-playwright/chromium-1228`, nessun Playwright MCP su questa macchina) contro la build di produzione su gemello demo; screenshot e script in `scratchpad/s197b/shots/`.
+- **Registro 1280 chiaro e scuro, vista predefinita**: documenti scaduti, dieci «Mancante» (badge Currency/Visita medica/Quota associativa, «—» in data e giorni, «Mancante» rosso col punto), poi i documenti e la currency in scadenza; tinta e inchiostro del tier 0 sulle «Mancante»; paginazione 1 / 2 (21 righe). Badge di categoria interi nella colonna da 132 px a 1280 e 1024 (`badgesFit: true`), nessun overflow orizzontale.
+- **Viste Currency, Quota associativa, Visite mediche** a 1280 e 375: «Currency» con il dettaglio ICU («0 voli / 2 voli / 3 voli negli ultimi 90 giorni»), select dei tipi assente con Currency.
+- **375**: card currency (`Currency · data · giorni`, «Mancante» per chi non ha voli), sheet di una «Mancante» (`CURRENCY · 0 VOLI NEGLI ULTIMI 90 GIORNI`, Scadenza/Giorni/Ambito/Note «—», Stato «Mancante») e di Colombo Stefano (28/11/2026, 26 g, ≤ 30 giorni); pannello Filtri aperto con Categoria e Tipo (44 px), «Filtri (1)» con la sola categoria.
+- **Panoramica**: widget desktop «7g» → 14 voci, le due currency «Mancante» rosse dopo i documenti scaduti; Avvisi mobile: i quattro documenti scaduti, poi «Volante Piero · Currency — Mancante».
+- **EN** (e2e): «1 flight in the last 90 days», «Missing», «≤ 7 days».
+
 ### §I — Gate ed esiti verbatim
+
+```
+$ npm run gates
+PASS  lint (24s)
+PASS  typecheck (3s)
+PASS  test (9s) — Tests  1966 passed (1966)
+PASS  build (30s)
+$ env -u DATABASE_URL -u AUTH_SECRET npx vitest run
+ Test Files  76 passed (76)
+      Tests  1966 passed (1966)
+$ grep -rn "expiresAtRangeFor\|DASHBOARD_SELECT\|toDashboardItem" src
+(nessun risultato)
+$ npx playwright test --list | tail -1
+Total: 555 tests in 65 files
+```
+
+Gemelli `airmanager_e2e197b` e `airmanager_demo197b` **eliminati**; `airmanager` mai scritto, `airmanager_load` solo letto in `BEGIN READ ONLY`. Server fermati per PID, :3000 libera; `scripts/e2e.sh status` = DONE `E2E_EXIT=0`. `.next` = build dei gate sul contenuto committato. Il container `wonderful_curie` (Playwright) trovato attivo non è di questa sessione: lasciato com'era.
 
 ### Completion Notes List
 
+- Registro unificato in SQL grezzo sopra un solo frammento (`registryRowsSql`): documenti ∪ currency (gemella SQL di `computeCurrency`, con F2) ∪ quota mai pagata ∪ visita mancante (D-22); lista + totale in una query (`COUNT(*) OVER ()`), contatori in una `COUNT … FILTER`; filtri legati con `Prisma.sql`, `personQuery` escapato; un solo «oggi» di Roma; ordinamento D-20.
+- DTO e OpenAPI: `source`, `category` a 4, campi nullabili, `status: missing`, `currency`; query `category` e `status=missing`.
+- UI: filtro Categoria (desktop e pannello mobile), select dei tipi limitato alla categoria e assente per la currency, export con la categoria, righe «Mancante» col tier 0, dettaglio currency risolto nel server; widget e Avvisi della Panoramica, export xlsx/PDF con le righe derivate.
+- e2e: spec nuovo (6 test), tre spec a rischio riscritti/ristretti, helper AD-5. Prestazioni sotto soglia senza indici nuovi.
+
 ### File List
+
+Nuovi:
+- `e2e/expiries-registry.spec.ts`
+
+Modificati:
+- `src/server/services/expiries.service.ts`, `src/server/services/expiries.service.test.ts`
+- `src/server/services/exports.service.ts`, `src/server/services/exports.service.test.ts`
+- `src/server/services/people.service.test.ts`
+- `src/lib/schemas/expiries.ts`, `src/lib/schemas/registry.ts`
+- `src/lib/expiry-status.ts`, `src/lib/expiry-status.test.ts`
+- `src/lib/mobile-expiries.ts`, `src/lib/mobile-expiries.test.ts`
+- `src/lib/overview-alerts.ts`, `src/lib/overview-alerts.test.ts`
+- `src/app/[locale]/dashboard/expiries/page.tsx`, `src/app/[locale]/dashboard/expiries/scadenze-console.tsx`
+- `src/app/[locale]/dashboard/page.tsx`, `src/components/dashboard/scadenze-widget.tsx`
+- `messages/it.json`, `messages/en.json`
+- `e2e/helpers.ts`, `e2e/expiry-dashboard.spec.ts`, `e2e/mobile-overview.spec.ts`, `e2e/expiry-rules-currency.spec.ts`
+- `_bmad-output/implementation-artifacts/19-7b-registro-scadenze-unificato.md` (questo record, Status → review)
+
+### Change Log
+
+- 2026-11-02 — `450a0f6` feat(19.7b): implementazione completa (19 AC); questo commit docs: Dev Agent Record e Status → review.
