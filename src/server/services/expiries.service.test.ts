@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseDateOnlyUtc, todayDateOnlyUtc } from '@/lib/date-only';
+import { Prisma } from '@/generated/prisma/client';
+import { parseDateOnlyUtc } from '@/lib/date-only';
 import { EXPIRY_WARNING_DAYS } from '@/lib/expiry-status';
-import { listAllExpiriesQuerySchema, registerExpirySchema, updateExpirySchema } from '@/lib/schemas/expiries';
+import { expiryDashboardItemSchema, listAllExpiriesQuerySchema, registerExpirySchema, updateExpirySchema } from '@/lib/schemas/expiries';
+import { APP_TIMEZONE } from '@/lib/time';
+import { addDaysDateOnly, todayDateOnlyInZone } from '@/lib/zoned-time';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
@@ -17,7 +20,6 @@ vi.mock('@/server/db/prisma', () => ({
     expiry: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
-      count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -26,8 +28,15 @@ vi.mock('@/server/db/prisma', () => ({
       deleteMany: vi.fn(),
     },
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
   },
 }));
+
+// `app-settings.service.ts` drags `@/server/crypto/secret-box` -> `@/lib/env`
+// (eager validation) into the test: mocked at the boundary (CLAUDE.md). The
+// registry (story 19.7b) reads the currency settings X/Y from it.
+const getCurrencySettingsMock = vi.fn();
+vi.mock('./app-settings.service', () => ({ getCurrencySettings: (...args: unknown[]) => getCurrencySettingsMock(...args) }));
 
 const { prisma } = await import('@/server/db/prisma');
 const {
@@ -48,12 +57,12 @@ const typeFindUniqueMock = vi.mocked(prisma.expiryType.findUnique);
 const typeFindManyMock = vi.mocked(prisma.expiryType.findMany);
 const expiryFindUniqueMock = vi.mocked(prisma.expiry.findUnique);
 const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
-const expiryCountMock = vi.mocked(prisma.expiry.count);
 const expiryCreateMock = vi.mocked(prisma.expiry.create);
 const expiryUpdateMock = vi.mocked(prisma.expiry.update);
 const expiryDeleteMock = vi.mocked(prisma.expiry.delete);
 const sentAlertDeleteManyMock = vi.mocked(prisma.sentAlert.deleteMany);
 const transactionMock = vi.mocked(prisma.$transaction);
+const queryRawMock = vi.mocked(prisma.$queryRaw);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as every other `*.service.test.ts`).
@@ -62,7 +71,6 @@ const personFindUnique = personFindUniqueMock as unknown as { mockResolvedValue:
 const typeFindUnique = typeFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryFindUnique = expiryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryFindMany = expiryFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
-const expiryCount = expiryCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const expiryCreate = expiryCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
 const expiryUpdate = expiryUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryDelete = expiryDeleteMock as unknown as { mockResolvedValue: (v: Fixture) => void; mockRejectedValue: (v: unknown) => void };
@@ -112,18 +120,41 @@ function expiryFixture(overrides: Partial<Record<string, unknown>> = {}): Record
   };
 }
 
-function dashboardExpiryFixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+/** One row as the registry SQL returns it (story 19.7b): dates already `YYYY-MM-DD` strings (`to_char`), the window `total` on every row. */
+function registryRowFixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
     id: 'exp_1',
+    source: 'DOCUMENT',
+    category: 'MEDICAL',
     personId: 'person_1',
-    person: { firstName: 'Mario', lastName: 'Rossi' },
+    personFirstName: 'Mario',
+    personLastName: 'Rossi',
     expiryTypeId: 'type_1',
-    expiryType: { name: 'Visita medica classe 2', scope: 'ALL', kind: 'MEDICAL' },
-    expiresAt: parseDateOnlyUtc('2026-12-31'),
+    typeName: 'Visita medica classe 2',
+    typeScope: 'ALL',
+    expiresAt: '2026-12-31',
     notes: null,
+    lastFlightDate: null,
+    flightsInWindow: null,
+    total: 1,
     ...overrides,
   };
 }
+
+/** The SQL text and bound values of the n-th `$queryRaw` call, nested `Prisma.sql` fragments flattened the way Prisma does (same helper as `currency.service.test.ts`). */
+function rawCall(index = 0): { sql: string; values: unknown[] } {
+  const [strings, ...values] = queryRawMock.mock.calls[index] as unknown as [TemplateStringsArray, ...unknown[]];
+  const query = Prisma.sql(strings, ...values);
+  return { sql: query.sql.trim(), values: query.values };
+}
+
+/** The WHERE clause of the registry list query — the text between `JOIN "Person" p …` and `ORDER BY`. */
+function whereOf(sql: string): string {
+  const afterJoin = sql.split('JOIN "Person" p ON p."id" = r."personId"')[1] ?? '';
+  return afterJoin.split('ORDER BY')[0]!.trim();
+}
+
+const romeToday = () => todayDateOnlyInZone(APP_TIMEZONE);
 
 describe('expiries.service (story 6.2 — person expiries, computed status, FR-36)', () => {
   beforeEach(() => {
@@ -132,13 +163,15 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     typeFindManyMock.mockReset();
     expiryFindUniqueMock.mockReset();
     expiryFindManyMock.mockReset();
-    expiryCountMock.mockReset();
     expiryCreateMock.mockReset();
     expiryUpdateMock.mockReset();
     expiryDeleteMock.mockReset();
     sentAlertDeleteManyMock.mockReset();
     transactionMock.mockReset();
     mockTransaction();
+    queryRawMock.mockReset();
+    getCurrencySettingsMock.mockReset();
+    getCurrencySettingsMock.mockResolvedValue({ minFlights: 1, windowDays: 90 });
   });
 
   // --- Authorization matrix (AD-5) -------------------------------------
@@ -171,12 +204,12 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
 
     it('listAllExpiries rejects a pilot (needs expiries.manage) without querying anything', async () => {
       await expect(listAllExpiries(pilotActor(), { page: 1, pageSize: 20 })).rejects.toThrow(ForbiddenError);
-      expect(expiryFindManyMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
+      expect(getCurrencySettingsMock).not.toHaveBeenCalled();
     });
 
     it('listAllExpiries allows staff', async () => {
-      expiryFindMany.mockResolvedValue([]);
-      expiryCount.mockResolvedValue(0);
+      queryRawMock.mockResolvedValue([] as never);
 
       await expect(listAllExpiries(adminActor(), { page: 1, pageSize: 20 })).resolves.toMatchObject({ total: 0 });
     });
@@ -216,229 +249,351 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     });
   });
 
-  // --- listAllExpiries: the urgency dashboard (story 6.4, AC 1) ---------
+  // --- listAllExpiries: the UNIFIED registry (story 6.4 AC 1; story 19.7b) ---
 
-  describe('listAllExpiries', () => {
-    it('maps rows into ExpiryDashboardItem shape (personFirstName/personLastName/typeName/typeScope denormalized, status computed)', async () => {
-      expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: parseDateOnlyUtc('2020-01-01') })]);
-      expiryCount.mockResolvedValue(1);
+  describe('listAllExpiries — the unified registry SQL (story 19.7b, AD-1)', () => {
+    it('ONE query: documents ∪ currency ∪ never-paid fee ∪ missing visit, the window total on every row', async () => {
+      queryRawMock.mockResolvedValue([] as never);
 
+      await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
+
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      const { sql } = rawCall();
+      // Documents: the type's kind is the category.
+      expect(sql).toMatch(/FROM "Expiry" e JOIN "ExpiryType" t ON t\."id" = e\."expiryTypeId"/);
+      // Currency subjects (19.7a D-8): not archived, ACTIVE pilot or student profile — no instructor.
+      const subjects = sql.slice(sql.indexOf('"currencySubjects" AS ('), sql.indexOf('"members" AS ('));
+      expect(subjects).toMatch(/p\."archivedAt" IS NULL/);
+      expect(subjects).toMatch(/"PilotProfile" pp WHERE pp\."personId" = p\."id" AND pp\."deactivatedAt" IS NULL/);
+      expect(subjects).toMatch(/"StudentProfile" sp WHERE sp\."personId" = p\."id" AND sp\."deactivatedAt" IS NULL/);
+      expect(subjects).not.toMatch(/InstructorProfile/);
+      // Fee and visit: + an active instructor profile (Q-19.7-b = A, D-22).
+      const members = sql.slice(sql.indexOf('"members" AS ('), sql.indexOf('"onBoard" AS ('));
+      expect(members).toMatch(/"InstructorProfile" ip WHERE ip\."personId" = p\."id" AND ip\."deactivatedAt" IS NULL/);
+      expect(sql).toMatch(/'currency:' \|\| s\."id", 'DERIVED', 'CURRENCY'/);
+      expect(sql).toMatch(/'membership:' \|\| m\."id", 'DERIVED', 'MEMBERSHIP'/);
+      expect(sql).toMatch(/WHERE "kind" = 'MEMBERSHIP'\) mt\s+WHERE NOT EXISTS \(SELECT 1 FROM "Expiry" x WHERE x\."personId" = m\."id" AND x\."expiryTypeId" = mt\."id"\)/);
+      expect(sql).toMatch(/'medical:' \|\| m\."id", 'DERIVED', 'MEDICAL'/);
+      expect(sql).toMatch(/\(COUNT\(\*\) OVER \(\)\)::int AS "total"/);
+    });
+
+    it('missing visit (D-22): only for someone with NO medical row at all, and only while a MEDICAL type is active (Q-19.7-c)', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
+
+      const { sql } = rawCall();
+      const medical = sql.slice(sql.indexOf("'medical:'"), sql.indexOf('SELECT r."id"'));
+      // No active MEDICAL type -> the requirement is off: the branch yields no row at all.
+      expect(medical).toMatch(/WHERE EXISTS \(SELECT 1 FROM "ExpiryType" WHERE "kind" = 'MEDICAL' AND "isActive"\)/);
+      // ANY medical row, valid or expired, of an active type or not: an expired visit is already a red document row.
+      expect(medical).toMatch(
+        /AND NOT EXISTS \(SELECT 1 FROM "Expiry" x JOIN "ExpiryType" xt ON xt\."id" = x\."expiryTypeId" WHERE x\."personId" = m\."id" AND xt\."kind" = 'MEDICAL'\)/,
+      );
+      expect(medical).not.toMatch(/expiresAt/);
+    });
+
+    it('currency = the SQL twin of computeCurrency (D-15): both seats, a supervised solo skipped, flights up to today, X-th date + Y', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-06-15T10:00:00.000Z'));
+      try {
+        getCurrencySettingsMock.mockResolvedValue({ minFlights: 3, windowDays: 45 });
+        queryRawMock.mockResolvedValue([] as never);
+
+        await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
+
+        const { sql, values } = rawCall();
+        const onBoard = sql.slice(sql.indexOf('"onBoard" AS ('), sql.indexOf('"currency" AS ('));
+        const [personSeat, instructorSeat] = onBoard.split(/\bUNION ALL\b/) as [string, string];
+        expect(personSeat).toMatch(/SELECT f\."personId", f\."flightDate" FROM "Flight" f WHERE f\."flightDate" <= \?::date/);
+        expect(personSeat).not.toMatch(/isSolo/);
+        // Review 19.7a F2: the instructor of a SOLO is not on board. `<>` makes UNION ALL count what the TS UNION counts.
+        expect(instructorSeat).toMatch(/JOIN "InstructorProfile" ip ON ip\."id" = f\."instructorProfileId"/);
+        expect(instructorSeat).toMatch(/WHERE f\."isSolo" = false AND ip\."personId" <> f\."personId" AND f\."flightDate" <= \?::date/);
+        const currency = sql.slice(sql.indexOf('"currency" AS ('), sql.indexOf('"registryRows" AS ('));
+        expect(currency).toMatch(/ORDER BY d DESC OFFSET \?::int - 1 LIMIT 1\) AS "xthFlightDate"/);
+        expect(currency).toMatch(/COUNT\(\*\) FILTER \(WHERE ob\."flightDate" >= \?::date - \?::int\)/);
+        expect(sql).toMatch(/c\."xthFlightDate" \+ \?::int, NULL, c\."lastFlightDate", COALESCE\(c\."flightsInWindow", 0\)/);
+        // today twice (seats), X, today and Y (window), Y (expiry): X and Y from the settings, today as a string.
+        expect(values.slice(0, 6)).toEqual(['2026-06-15', '2026-06-15', 3, '2026-06-15', 45, 45]);
+        expect(getCurrencySettingsMock).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('ONE "today" for every row, Rome\'s (D-21): at 00:30 in Rome (23:30Z the day before) today is already Rome\'s day', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-14T23:30:00.000Z'));
+      try {
+        queryRawMock.mockResolvedValue([registryRowFixture({ expiresAt: '2026-03-15' })] as never);
+
+        const result = await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
+
+        const { values } = rawCall();
+        expect(values).toContain('2026-03-15');
+        expect(values).not.toContain('2026-03-13');
+        // The ordering key's "yesterday" is Rome's yesterday too.
+        expect(values.at(-3)).toBe('2026-03-14');
+        expect(result.items[0]).toMatchObject({ daysUntil: 0, status: 'expiring' });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('orders by COALESCE(expiresAt, yesterday), id (D-20): a missing row sorts as if it expired yesterday', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
+
+      const { sql, values } = rawCall();
+      expect(sql).toMatch(/ORDER BY COALESCE\(r\."expiresAt", \?::date\), r\."id"\s+LIMIT \? OFFSET \?$/);
+      expect(sql).not.toMatch(/NULLS (FIRST|LAST)/);
+      expect(values.slice(-3)).toEqual([addDaysDateOnly(romeToday(), -1), 20, 0]);
+    });
+
+    it('paginates with LIMIT/OFFSET from page/pageSize, the total from the SAME query', async () => {
+      queryRawMock.mockResolvedValue([registryRowFixture({ total: 57 })] as never);
+
+      const result = await listAllExpiries(adminActor(), { page: 3, pageSize: 20 });
+
+      expect(rawCall().values.slice(-2)).toEqual([20, 40]);
+      expect(result).toMatchObject({ total: 57, page: 3, pageSize: 20 });
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('a page past the end has no row to carry the total: ONE count with the SAME filters', async () => {
+      queryRawMock.mockResolvedValueOnce([] as never).mockResolvedValueOnce([{ total: 41 }] as never);
+
+      const result = await listAllExpiries(adminActor(), { category: 'CURRENCY', page: 9, pageSize: 20 });
+
+      expect(queryRawMock).toHaveBeenCalledTimes(2);
+      const count = rawCall(1);
+      expect(count.sql).toMatch(/SELECT \(COUNT\(\*\)\)::int AS "total" FROM "registryRows" r JOIN "Person" p ON p\."id" = r\."personId"\s+WHERE r\."category" = \?$/);
+      expect(count.values.at(-1)).toBe('CURRENCY');
+      expect(result).toMatchObject({ items: [], total: 41, page: 9 });
+    });
+
+    it('an empty FIRST page is simply total 0 — no second query', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await expect(listAllExpiries(adminActor(), { page: 1, pageSize: 20 })).resolves.toMatchObject({ total: 0, items: [] });
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('no filter -> no WHERE', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
+
+      expect(whereOf(rawCall().sql)).toBe('');
+    });
+
+    it.each(['MEDICAL', 'RATING', 'MEMBERSHIP', 'CURRENCY'] as const)('category=%s -> r."category" = ? (bound, never interpolated)', async (category) => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { category, page: 1, pageSize: 20 });
+
+      const { sql, values } = rawCall();
+      expect(whereOf(sql)).toBe('WHERE r."category" = ?');
+      expect(values).toContain(category);
+    });
+
+    it('expiryTypeId, scope and personId are exact matches on the row; rows without a type never match the first two', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { expiryTypeId: 'type_1', personId: 'person_1', scope: 'PILOTS', page: 1, pageSize: 20 });
+
+      const { sql, values } = rawCall();
+      expect(whereOf(sql)).toBe('WHERE r."expiryTypeId" = ? AND r."personId" = ? AND r."typeScope" = ?');
+      expect(values).toEqual(expect.arrayContaining(['type_1', 'person_1', 'PILOTS']));
+    });
+
+    it('personQuery: case-insensitive substring of first or last name, with %, _ and \\ escaped (parity with Prisma contains)', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { personQuery: '50%_x\\', page: 1, pageSize: 20 });
+
+      const { sql, values } = rawCall();
+      expect(whereOf(sql)).toBe(`WHERE (p."firstName" ILIKE ? ESCAPE '\\' OR p."lastName" ILIKE ? ESCAPE '\\')`);
+      expect(values.filter((value) => value === '%50\\%\\_x\\\\%')).toHaveLength(2);
+    });
+
+    it('window=expired -> missing rows OR expiresAt < today (D-19)', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { window: 'expired', page: 1, pageSize: 20 });
+
+      const { sql, values } = rawCall();
+      expect(whereOf(sql)).toBe('WHERE (r."expiresAt" IS NULL OR r."expiresAt" < ?::date)');
+      expect(values.at(-4)).toBe(romeToday());
+    });
+
+    it.each([
+      ['7', 7],
+      ['30', 30],
+      ['60', 60],
+    ] as const)('window=%s -> missing rows OR expiresAt <= today + %d, NO lower bound', async (window, days) => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { window, page: 1, pageSize: 20 });
+
+      const { sql, values } = rawCall();
+      expect(whereOf(sql)).toBe('WHERE (r."expiresAt" IS NULL OR r."expiresAt" <= ?::date + ?::int)');
+      expect(values.slice(-5, -3)).toEqual([romeToday(), days]);
+    });
+
+    it.each([
+      ['expired', 'WHERE r."expiresAt" < ?::date', []],
+      ['expiring', 'WHERE r."expiresAt" >= ?::date AND r."expiresAt" <= ?::date + ?::int', [EXPIRY_WARNING_DAYS]],
+      ['ok', 'WHERE r."expiresAt" > ?::date + ?::int', [EXPIRY_WARNING_DAYS]],
+      ['missing', 'WHERE r."expiresAt" IS NULL', []],
+    ] as const)('status=%s -> the same boundary as the per-row status', async (status, where, extra) => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { status, page: 1, pageSize: 20 });
+
+      const { sql, values } = rawCall();
+      expect(whereOf(sql)).toBe(where);
+      for (const value of extra) expect(values).toContain(value);
+    });
+
+    it('window wins over status (one or the other, never both), and every filter is AND-combined', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+
+      await listAllExpiries(adminActor(), { category: 'RATING', personQuery: 'Ros', window: '7', status: 'ok', page: 1, pageSize: 20 });
+
+      expect(whereOf(rawCall().sql)).toBe(
+        `WHERE r."category" = ? AND (p."firstName" ILIKE ? ESCAPE '\\' OR p."lastName" ILIKE ? ESCAPE '\\') AND (r."expiresAt" IS NULL OR r."expiresAt" <= ?::date + ?::int)`,
+      );
+    });
+  });
+
+  describe('listAllExpiries — row -> DTO (story 19.7b, AD-2)', () => {
+    async function mapOne(row: Record<string, unknown>) {
+      queryRawMock.mockResolvedValue([row] as never);
       const result = await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
+      // Every mapped item satisfies the wire schema the OpenAPI document publishes.
+      expect(expiryDashboardItemSchema.safeParse(result.items[0]).success).toBe(true);
+      return result.items[0]!;
+    }
 
-      expect(result.items[0]).toMatchObject({
+    it('a document: source DOCUMENT, its type, status/daysUntil from today, no currency', async () => {
+      const item = await mapOne(registryRowFixture({ expiresAt: addDaysDateOnly(romeToday(), -5), notes: 'nota' }));
+
+      expect(item).toEqual({
         id: 'exp_1',
+        source: 'DOCUMENT',
+        category: 'MEDICAL',
         personId: 'person_1',
         personFirstName: 'Mario',
         personLastName: 'Rossi',
         expiryTypeId: 'type_1',
         typeName: 'Visita medica classe 2',
         typeScope: 'ALL',
-        category: 'MEDICAL',
-        expiresAt: '2020-01-01',
+        expiresAt: addDaysDateOnly(romeToday(), -5),
+        notes: 'nota',
         status: 'expired',
+        daysUntil: -5,
+        currency: null,
       });
     });
 
-    it('orders by expiresAt asc, id asc (urgency first, stable tie-break)', async () => {
-      expiryFindMany.mockResolvedValue([]);
-      expiryCount.mockResolvedValue(0);
-
-      await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
-
-      expect(expiryFindManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({ orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }] }),
+    it('a currency row WITH a date: no type, its facts and the settings it was computed with', async () => {
+      getCurrencySettingsMock.mockResolvedValue({ minFlights: 2, windowDays: 60 });
+      const item = await mapOne(
+        registryRowFixture({
+          id: 'currency:person_1',
+          source: 'DERIVED',
+          category: 'CURRENCY',
+          expiryTypeId: null,
+          typeName: null,
+          typeScope: null,
+          expiresAt: addDaysDateOnly(romeToday(), 12),
+          lastFlightDate: addDaysDateOnly(romeToday(), -3),
+          flightsInWindow: 4,
+        }),
       );
+
+      expect(item).toMatchObject({
+        id: 'currency:person_1',
+        source: 'DERIVED',
+        category: 'CURRENCY',
+        expiryTypeId: null,
+        typeName: null,
+        typeScope: null,
+        status: 'expiring',
+        daysUntil: 12,
+        currency: { lastFlightDate: addDaysDateOnly(romeToday(), -3), flightsInWindow: 4, minFlights: 2, windowDays: 60 },
+      });
     });
 
-    it('paginates via skip/take derived from page/pageSize, and total reflects the SAME filtered where', async () => {
-      expiryFindMany.mockResolvedValue([]);
-      expiryCount.mockResolvedValue(57);
-
-      const result = await listAllExpiries(adminActor(), { page: 3, pageSize: 20 });
-
-      expect(expiryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ skip: 40, take: 20 }));
-      expect(result).toMatchObject({ total: 57, page: 3, pageSize: 20 });
-    });
-
-    it('expiryTypeId filter: an id that does not exist yields an empty page, not an error (a filter, never a lookup)', async () => {
-      expiryFindMany.mockResolvedValue([]);
-      expiryCount.mockResolvedValue(0);
-
-      const result = await listAllExpiries(adminActor(), { expiryTypeId: 'type_missing', page: 1, pageSize: 20 });
-
-      expect(expiryFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { expiryTypeId: 'type_missing' } }));
-      expect(result).toMatchObject({ total: 0, items: [] });
-    });
-
-    it('scope filter maps to the TYPE relation, not a field on Expiry itself', async () => {
-      expiryFindMany.mockResolvedValue([]);
-      expiryCount.mockResolvedValue(0);
-
-      await listAllExpiries(adminActor(), { scope: 'INSTRUCTORS', page: 1, pageSize: 20 });
-
-      expect(expiryFindManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { expiryType: { scope: 'INSTRUCTORS' } } }),
+    it('a currency row WITHOUT a date (fewer than X flights ever): missing, no daysUntil', async () => {
+      const item = await mapOne(
+        registryRowFixture({ id: 'currency:person_1', source: 'DERIVED', category: 'CURRENCY', expiryTypeId: null, typeName: null, typeScope: null, expiresAt: null, flightsInWindow: 0 }),
       );
-    });
 
-    it('expiryTypeId + scope + status combine in AND (all three keys present in the same where)', async () => {
-      expiryFindMany.mockResolvedValue([]);
-      expiryCount.mockResolvedValue(0);
-
-      await listAllExpiries(adminActor(), { expiryTypeId: 'type_1', scope: 'PILOTS', status: 'ok', page: 1, pageSize: 20 });
-
-      const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as Record<string, unknown>;
-      expect(where).toMatchObject({ expiryTypeId: 'type_1', expiryType: { scope: 'PILOTS' } });
-      expect(where).toHaveProperty('expiresAt');
-    });
-
-    // --- status -> expiresAt range mapping (Contesto: never post-filtered in JS) ---
-
-    describe('status filter -> expiresAt date range (same today/EXPIRY_WARNING_DAYS boundary as computeExpiryStatus)', () => {
-      it('status=expired -> expiresAt < today', async () => {
-        expiryFindMany.mockResolvedValue([]);
-        expiryCount.mockResolvedValue(0);
-
-        await listAllExpiries(adminActor(), { status: 'expired', page: 1, pageSize: 20 });
-
-        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { lt: Date } };
-        expect(where.expiresAt).toEqual({ lt: todayDateOnlyUtc() });
-      });
-
-      it('status=expiring -> today <= expiresAt <= today + EXPIRY_WARNING_DAYS (inclusive both ends)', async () => {
-        expiryFindMany.mockResolvedValue([]);
-        expiryCount.mockResolvedValue(0);
-
-        await listAllExpiries(adminActor(), { status: 'expiring', page: 1, pageSize: 20 });
-
-        const today = todayDateOnlyUtc();
-        const horizon = new Date(today.getTime() + EXPIRY_WARNING_DAYS * 86_400_000);
-        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { gte: Date; lte: Date } };
-        expect(where.expiresAt).toEqual({ gte: today, lte: horizon });
-      });
-
-      it('status=ok -> expiresAt > today + EXPIRY_WARNING_DAYS', async () => {
-        expiryFindMany.mockResolvedValue([]);
-        expiryCount.mockResolvedValue(0);
-
-        await listAllExpiries(adminActor(), { status: 'ok', page: 1, pageSize: 20 });
-
-        const today = todayDateOnlyUtc();
-        const horizon = new Date(today.getTime() + EXPIRY_WARNING_DAYS * 86_400_000);
-        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { gt: Date } };
-        expect(where.expiresAt).toEqual({ gt: horizon });
-      });
-
-      // Boundary: the filter range and the per-row `computeExpiryStatus` MUST
-      // agree exactly at the EXPIRY_WARNING_DAYS edge (Contesto: "i due
-      // DEVONO combaciare").
-      it('a scadenza at exactly today + EXPIRY_WARNING_DAYS is `expiring` in BOTH the filter and the per-row status', async () => {
-        const today = todayDateOnlyUtc();
-        const atHorizon = new Date(today.getTime() + EXPIRY_WARNING_DAYS * 86_400_000);
-        expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: atHorizon })]);
-        expiryCount.mockResolvedValue(1);
-
-        const filtered = await listAllExpiries(adminActor(), { status: 'expiring', page: 1, pageSize: 20 });
-        expect(filtered.items).toHaveLength(1);
-        expect(filtered.items[0]?.status).toBe('expiring');
-      });
-
-      it('a scadenza at today + EXPIRY_WARNING_DAYS + 1 day is `ok` in BOTH the filter and the per-row status', async () => {
-        const today = todayDateOnlyUtc();
-        const beyondHorizon = new Date(today.getTime() + (EXPIRY_WARNING_DAYS + 1) * 86_400_000);
-        expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: beyondHorizon })]);
-        expiryCount.mockResolvedValue(1);
-
-        const filtered = await listAllExpiries(adminActor(), { status: 'ok', page: 1, pageSize: 20 });
-        expect(filtered.items).toHaveLength(1);
-        expect(filtered.items[0]?.status).toBe('ok');
+      expect(item).toMatchObject({
+        expiresAt: null,
+        status: 'missing',
+        daysUntil: null,
+        currency: { lastFlightDate: null, flightsInWindow: 0, minFlights: 1, windowDays: 90 },
       });
     });
 
-    // --- daysUntil (story 12.11, AC 3) -------------------------------------
+    it('a fee never paid (Q-19.7-b = A): the membership type, missing', async () => {
+      const item = await mapOne(
+        registryRowFixture({ id: 'membership:person_1', source: 'DERIVED', category: 'MEMBERSHIP', expiryTypeId: 'type_fee', typeName: 'Quota associativa', typeScope: 'ALL', expiresAt: null }),
+      );
 
-    it('daysUntil is the SAME daysUntilUtc arithmetic status is derived from (negative = already expired)', async () => {
-      const today = todayDateOnlyUtc();
-      expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: new Date(today.getTime() - 5 * 86_400_000) })]);
-      expiryCount.mockResolvedValue(1);
+      expect(item).toMatchObject({ source: 'DERIVED', category: 'MEMBERSHIP', expiryTypeId: 'type_fee', typeName: 'Quota associativa', status: 'missing', daysUntil: null, currency: null });
+    });
+
+    it('a missing visit (Q-19.7-c): no type, missing', async () => {
+      const item = await mapOne(
+        registryRowFixture({ id: 'medical:person_1', source: 'DERIVED', category: 'MEDICAL', expiryTypeId: null, typeName: null, typeScope: null, expiresAt: null }),
+      );
+
+      expect(item).toMatchObject({ source: 'DERIVED', category: 'MEDICAL', expiryTypeId: null, typeName: null, typeScope: null, expiresAt: null, status: 'missing', daysUntil: null, currency: null });
+    });
+
+    // The per-row status and the status filter MUST agree at the EXPIRY_WARNING_DAYS edge.
+    it('a row at exactly today + EXPIRY_WARNING_DAYS is `expiring`, one day later `ok`', async () => {
+      queryRawMock.mockResolvedValue([
+        registryRowFixture({ id: 'at', expiresAt: addDaysDateOnly(romeToday(), EXPIRY_WARNING_DAYS), total: 2 }),
+        registryRowFixture({ id: 'beyond', expiresAt: addDaysDateOnly(romeToday(), EXPIRY_WARNING_DAYS + 1), total: 2 }),
+      ] as never);
 
       const result = await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
 
-      expect(result.items[0]?.daysUntil).toBe(-5);
-    });
-
-    // --- window filter (story 12.11, AC 3 — the registry's segmented filter) ---
-
-    describe('window filter -> expiresAt range (prototype\'s own d<=N semantics, no lower bound except "expired")', () => {
-      it('window=expired -> expiresAt < today', async () => {
-        expiryFindMany.mockResolvedValue([]);
-        expiryCount.mockResolvedValue(0);
-
-        await listAllExpiries(adminActor(), { window: 'expired', page: 1, pageSize: 20 });
-
-        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { lt: Date } };
-        expect(where.expiresAt).toEqual({ lt: todayDateOnlyUtc() });
-      });
-
-      it.each([
-        ['7', 7],
-        ['30', 30],
-        ['60', 60],
-      ] as const)('window=%s -> expiresAt <= today + %d days, NO lower bound', async (window, days) => {
-        expiryFindMany.mockResolvedValue([]);
-        expiryCount.mockResolvedValue(0);
-
-        await listAllExpiries(adminActor(), { window, page: 1, pageSize: 20 });
-
-        const where = expiryFindManyMock.mock.calls[0]?.[0]?.where as { expiresAt: { lte: Date } };
-        expect(where.expiresAt).toEqual({ lte: new Date(todayDateOnlyUtc().getTime() + days * 86_400_000) });
-      });
-
-      it('an already-expired row matches window=7 too (no lower bound, mirrors the prototype\'s d<=7)', async () => {
-        expiryFindMany.mockResolvedValue([dashboardExpiryFixture({ expiresAt: parseDateOnlyUtc('2020-01-01') })]);
-        expiryCount.mockResolvedValue(1);
-
-        const result = await listAllExpiries(adminActor(), { window: '7', page: 1, pageSize: 20 });
-        expect(result.items).toHaveLength(1);
-      });
-    });
-
-    it('personId filter is an exact match, AND-combinable with the others', async () => {
-      expiryFindMany.mockResolvedValue([]);
-      expiryCount.mockResolvedValue(0);
-
-      await listAllExpiries(adminActor(), { personId: 'person_1', expiryTypeId: 'type_1', page: 1, pageSize: 20 });
-
-      expect(expiryFindManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { personId: 'person_1', expiryTypeId: 'type_1' } }),
-      );
+      expect(result.items.map((item) => item.status)).toEqual(['expiring', 'ok']);
     });
   });
 
-  // --- getExpiryTierCounts: the registry's 4 stat cards (story 12.11, AC 3) ---
+  // --- getExpiryTierCounts: the registry's 4 stat cards (story 12.11, AC 3; 19.7b) ---
 
   describe('getExpiryTierCounts', () => {
     it('is gated expiries.manage', async () => {
       await expect(getExpiryTierCounts(pilotActor())).rejects.toThrow(ForbiddenError);
-      expect(expiryCountMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
-    it('computes EXCLUSIVE bands (not cumulative) — 4 separate COUNT queries with non-overlapping ranges', async () => {
-      expiryCountMock.mockResolvedValueOnce(2 as never); // expired
-      expiryCountMock.mockResolvedValueOnce(3 as never); // within7
-      expiryCountMock.mockResolvedValueOnce(5 as never); // within30
-      expiryCountMock.mockResolvedValueOnce(7 as never); // within60
+    it('ONE query over the whole unified registry, EXCLUSIVE bands, and a missing row counts as EXPIRED (D-19)', async () => {
+      queryRawMock.mockResolvedValue([{ expired: 2, within7: 3, within30: 5, within60: 7 }] as never);
 
       const result = await getExpiryTierCounts(adminActor());
 
       expect(result).toEqual({ expired: 2, within7: 3, within30: 5, within60: 7 });
-
-      const today = todayDateOnlyUtc();
-      const plus = (days: number) => new Date(today.getTime() + days * 86_400_000);
-      expect(expiryCountMock).toHaveBeenNthCalledWith(1, { where: { expiresAt: { lt: today } } });
-      expect(expiryCountMock).toHaveBeenNthCalledWith(2, { where: { expiresAt: { gte: today, lte: plus(7) } } });
-      expect(expiryCountMock).toHaveBeenNthCalledWith(3, { where: { expiresAt: { gt: plus(7), lte: plus(30) } } });
-      expect(expiryCountMock).toHaveBeenNthCalledWith(4, { where: { expiresAt: { gt: plus(30), lte: plus(60) } } });
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      const { sql } = rawCall();
+      expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" IS NULL OR r\."expiresAt" < \?::date\)\)::int AS "expired"/);
+      expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" >= \?::date AND r\."expiresAt" <= \?::date \+ 7\)\)::int AS "within7"/);
+      expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" > \?::date \+ 7 AND r\."expiresAt" <= \?::date \+ 30\)\)::int AS "within30"/);
+      expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" > \?::date \+ 30 AND r\."expiresAt" <= \?::date \+ 60\)\)::int AS "within60"/);
+      // Unfiltered: the stat cards count the full set, whatever the table shows.
+      expect(sql).toMatch(/FROM "registryRows" r$/);
+      expect(sql).toMatch(/'currency:'/);
+      expect(getCurrencySettingsMock).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -721,17 +876,17 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       expect(result.map((row) => row.typeKind)).toEqual(['MEDICAL', 'MEMBERSHIP']);
     });
 
-    it('listAllExpiries carries category = the type kind', async () => {
-      expiryFindMany.mockResolvedValue([
-        dashboardExpiryFixture(),
-        dashboardExpiryFixture({ id: 'exp_r', expiryType: { name: 'Rating SEP', scope: 'PILOTS', kind: 'RATING' } }),
-        dashboardExpiryFixture({ id: 'exp_q', expiryType: { name: 'Quota associativa', scope: 'ALL', kind: 'MEMBERSHIP' } }),
-      ]);
-      expiryCount.mockResolvedValue(3);
+    it('listAllExpiries carries category = the type kind (the SQL reads it from ExpiryType.kind, never the name)', async () => {
+      queryRawMock.mockResolvedValue([
+        registryRowFixture({ total: 3 }),
+        registryRowFixture({ id: 'exp_r', category: 'RATING', typeName: 'Rating SEP', typeScope: 'PILOTS', total: 3 }),
+        registryRowFixture({ id: 'exp_q', category: 'MEMBERSHIP', typeName: 'Quota associativa', total: 3 }),
+      ] as never);
 
       const result = await listAllExpiries(adminActor(), { page: 1, pageSize: 20 });
 
       expect(result.items.map((item) => item.category)).toEqual(['MEDICAL', 'RATING', 'MEMBERSHIP']);
+      expect(rawCall().sql).toMatch(/'DOCUMENT' AS "source", t\."kind"::text AS "category"/);
     });
   });
 

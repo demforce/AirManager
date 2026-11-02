@@ -197,7 +197,10 @@
       "today": "today",
       "ago": "{n}d ago",
       "inDays": "in {n}d",
-      "seeAll": "+{count} more · See all"
+      "seeAll": "+{count} more · See all",
+      "currency": "Currency",
+      "medical": "Medical",
+      "missing": "Missing"
     },
     "fleetCard": {
       "cardTitle": "Aircraft",
@@ -1354,7 +1357,15 @@
         "allPilots": "All pilots",
         "pilot": "Pilot",
         "personSearchPlaceholder": "Search pilot…",
-        "reset": "Clear filters"
+        "reset": "Clear filters",
+        "categoryLabel": "Category",
+        "category": {
+          "all": "All categories",
+          "MEDICAL": "Medical visits",
+          "RATING": "Ratings",
+          "MEMBERSHIP": "Membership fee",
+          "CURRENCY": "Currency"
+        }
       },
       "table": {
         "pilot": "Pilot",
@@ -1380,7 +1391,8 @@
         "within7": "≤ 7 days",
         "within30": "≤ 30 days",
         "within60": "≤ 60 days",
-        "ok": "Valid"
+        "ok": "Valid",
+        "missing": "Missing"
       },
       "daysAgoSuffix": "d ago",
       "daysSuffix": " d",
@@ -1432,7 +1444,11 @@
       "category": {
         "MEDICAL": "Medical",
         "RATING": "Rating",
-        "MEMBERSHIP": "Membership fee"
+        "MEMBERSHIP": "Membership fee",
+        "CURRENCY": "Currency"
+      },
+      "currency": {
+        "detail": "{count, plural, one {# flight} other {# flights}} in the last {days} days"
       }
     },
     "own": {

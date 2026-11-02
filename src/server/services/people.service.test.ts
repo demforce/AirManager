@@ -65,6 +65,12 @@ vi.mock('./auth-tokens.service', () => ({
   sendInviteEmail: vi.fn(),
 }));
 
+// Story 19.7b: `expiries.service.ts` (imported by this service) now reads the
+// currency settings from `app-settings.service.ts`, which drags
+// `@/server/crypto/secret-box` -> `@/lib/env` (eager validation) into the test
+// — mocked at the boundary (CLAUDE.md). No test here reaches the registry.
+vi.mock('./app-settings.service', () => ({ getCurrencySettings: vi.fn() }));
+
 // Story 19.4 (AD-7, AC 9): every permission of the composite belongs to the
 // ADMIN alone today, so "has people.manage but not payouts.manage" is no real
 // role — this deny-list makes the REAL `authorize` refuse one permission at a

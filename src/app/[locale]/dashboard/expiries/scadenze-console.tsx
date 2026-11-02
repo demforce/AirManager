@@ -26,20 +26,27 @@ import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { tierOf } from '@/lib/expiry-status';
+import { registryTierOf } from '@/lib/expiry-status';
 import { expiryCardSubLine, expiryDaysLabel, expirySheetSub } from '@/lib/mobile-expiries';
 import { formatCents, parseCents } from '@/lib/money';
 import { randomIdempotencyKey } from '@/lib/use-idempotency-key';
-import type { ExpiryDashboardItemDto, ExpiryWindowDto } from '@/lib/schemas/expiries';
+import type { ExpiryDashboardItemDto, ExpiryWindowDto, RegistryCategoryDto } from '@/lib/schemas/expiries';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { formatDateOnly } from '@/lib/time';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
-type TypeOption = { id: string; name: string };
-type Category = ExpiryDashboardItemDto['category'];
+type Category = RegistryCategoryDto;
+/** `kind` = the category the type belongs to (story 19.7b): the tipo select offers only the types of the chosen category. */
+type TypeOption = { id: string; name: string; kind: Exclude<Category, 'CURRENCY'> };
 
-/** Free-text pilot filter (story 13.5, AC 9) — `personQuery` replaces the old `SearchCombobox`-driven `personId`, same idiom as `pilots-console.tsx`'s own name filter. */
-export type ScadenzeFilters = { window: ExpiryWindowDto | 'all'; expiryTypeId: string; personQuery: string };
+/**
+ * Free-text pilot filter (story 13.5, AC 9) — `personQuery` replaces the old
+ * `SearchCombobox`-driven `personId`, same idiom as `pilots-console.tsx`'s own
+ * name filter. `category` (story 19.7b, D-11): `''` = every category.
+ */
+export type ScadenzeFilters = { window: ExpiryWindowDto | 'all'; category: Category | ''; expiryTypeId: string; personQuery: string };
+
+const CATEGORY_VALUES: readonly Category[] = ['MEDICAL', 'RATING', 'MEMBERSHIP', 'CURRENCY'];
 
 /**
  * Same debounce-before-navigating idiom as `pilots-console.tsx`/`fleet-console.tsx`,
@@ -78,12 +85,22 @@ export type ScadenzeConsoleLabels = {
   cardTitle: string;
   shown: string;
   segmented: { win60: string; win30: string; win7: string; expired: string; all: string };
-  filters: { allTypes: string; allPilots: string; pilot: string; personSearchPlaceholder: string; reset: string };
+  filters: {
+    /** Story 19.7b: the Categoria filter — its label (the select's accessible name, the panel field's label) and its options. */
+    categoryLabel: string;
+    category: Record<'all' | Category, string>;
+    allTypes: string;
+    allPilots: string;
+    pilot: string;
+    personSearchPlaceholder: string;
+    reset: string;
+  };
   table: { pilot: string; type: string; certificate: string; expiresAt: string; daysLeft: string; status: string; empty: string };
-  /** The row's category badge, by `item.category` (= the type's `kind`, story 19.7a D-12) — never deduced from the name. */
+  /** The row's category badge, by `item.category` (= the type's `kind`, story 19.7a D-12; `CURRENCY`, 19.7b) — never deduced from the name. */
   category: Record<Category, string>;
   statCards: { expired: string; expiredNote: string; within7: string; within7Note: string; within30: string; within30Note: string; within60: string; within60Note: string };
-  status: { expired: string; within7: string; within30: string; within60: string; ok: string };
+  /** `missing` (story 19.7b): a row with no date — currency never acquired, fee never paid, no visit. */
+  status: { expired: string; within7: string; within30: string; within60: string; ok: string; missing: string };
   daysAgoSuffix: string;
   daysSuffix: string;
   exportMenu: { label: string; xlsLabel: string; pdfLabel: string };
@@ -130,6 +147,8 @@ export type ScadenzeConsoleLabels = {
 
 export type ScadenzeConsoleProps = {
   items: ExpiryDashboardItemDto[];
+  /** Story 19.7b: the currency row's "Certificato", by row id — an ICU plural, so resolved on the server. */
+  currencyDetails: Record<string, string>;
   page: number;
   totalPages: number;
   totalShown: number;
@@ -151,8 +170,11 @@ const COLS = 'minmax(140px,1.4fr) 132px minmax(150px,1.5fr) 130px 120px 130px';
 
 const WINDOW_VALUES = ['60', '30', '7', 'expired', 'all'] as const;
 
-/** Category badge tone — the prototype's `catTone` (`ScadenzeView.jsx`: medico=info, abilitazione=warn), keyed on the type's `kind` since story 19.7a (D-12); the membership fee takes the neutral tone. */
-const CATEGORY_TONE: Record<Category, BadgeTone> = { MEDICAL: 'info', RATING: 'warn', MEMBERSHIP: '' };
+/**
+ * Category badge tone — the prototype's `catTone` (`ScadenzeView.jsx`: medico=info, abilitazione=warn), keyed on the type's `kind` since story 19.7a (D-12); the membership fee takes the neutral tone, and so does the currency (story 19.7b):
+ * the only tone left is `ok`, and a green "Currency" beside a red status would read as "current" — a category is a classification, never a state.
+ */
+const CATEGORY_TONE: Record<Category, BadgeTone> = { MEDICAL: 'info', RATING: 'warn', MEMBERSHIP: '', CURRENCY: '' };
 
 /** Tier tone (Contesto: `ScadenzeView.jsx:12-20`) — `tierOf` itself is shared, `@/lib/expiry-status` (story 12.12). */
 const TIER_TONE: Record<0 | 1 | 2 | 3 | 4, BadgeTone> = { 0: 'bad', 1: 'bad', 2: 'warn', 3: 'info', 4: '' };
@@ -200,6 +222,7 @@ async function searchPersonFilter(query: string): Promise<SearchComboboxOption[]
 
 export function ScadenzeConsole({
   items,
+  currencyDetails,
   page,
   totalPages,
   totalShown,
@@ -238,6 +261,7 @@ export function ScadenzeConsole({
   function buildQuery(next: ScadenzeFilters): Record<string, string> {
     const query: Record<string, string> = {};
     if (next.window !== '60') query['window'] = next.window;
+    if (next.category) query['category'] = next.category;
     if (next.expiryTypeId) query['expiryTypeId'] = next.expiryTypeId;
     if (next.personQuery) query['personQuery'] = next.personQuery;
     return query;
@@ -270,7 +294,7 @@ export function ScadenzeConsole({
    * panel as its home and leaves the desktop head without it, as today.
    */
   function handleReset(): void {
-    const cleared: ScadenzeFilters = { window: '60', expiryTypeId: '', personQuery: '' };
+    const cleared: ScadenzeFilters = { window: '60', category: '', expiryTypeId: '', personQuery: '' };
     setFilters(cleared);
     setPersonQueryInput('');
     navigate(cleared);
@@ -309,8 +333,18 @@ export function ScadenzeConsole({
     navigate(next);
   }
 
-  /** How many of the filters the phone HIDES inside the panel are active — the count on its trigger. A filter one cannot see is a filter one forgets; finestra and pilota are not counted because they are in plain sight (chips and search box). */
-  const panelActiveCount = filters.expiryTypeId !== '' ? 1 : 0;
+  /** How many of the filters the phone HIDES inside the panel are active — the count on its trigger. A filter one cannot see is a filter one forgets; finestra and pilota are not counted because they are in plain sight (chips and search box). Categoria and tipo both live in the panel (story 19.7b). */
+  const panelActiveCount = (filters.category !== '' ? 1 : 0) + (filters.expiryTypeId !== '' ? 1 : 0);
+
+  /**
+   * Story 19.7b (AD-3): the tipo select offers only the types of the chosen
+   * category, and does not exist at all for the currency, which has no type.
+   * A category change clears the tipo — a type of another category would AND
+   * the two filters into an empty page.
+   */
+  function typeOptionsOf(category: Category | ''): TypeOption[] {
+    return category === '' ? typeOptions : typeOptions.filter((type) => type.kind === category);
+  }
 
   /**
    * The outcome of the reminders job. On the phone the `role="status"`
@@ -351,6 +385,24 @@ export function ScadenzeConsole({
     return expiryDaysLabel(daysUntil, { ago: labels.daysAgoSuffix, left: labels.daysSuffix });
   }
 
+  /**
+   * Story 19.7b — ONE reading of a registry row for the table, the card and
+   * the sheet. A missing row (no date) is tier 0: the expired tint, ink and
+   * badge tone (D-19), «Mancante» as its status, no date and no day count.
+   * The certificate of a row without a type is what the row IS: the currency's
+   * own detail, or — for a missing visit — `null`, the category saying it all.
+   */
+  function viewOf(item: ExpiryDashboardItemDto) {
+    const tier = registryTierOf(item.daysUntil);
+    return {
+      tier,
+      certificate: item.typeName ?? currencyDetails[item.id] ?? null,
+      dateLabel: item.expiresAt === null ? null : formatDateOnly(item.expiresAt, locale),
+      daysLabel: item.daysUntil === null ? null : daysLabelOf(item.daysUntil),
+      statusLabel: item.status === 'missing' ? labels.status.missing : statusLabelOf(tier),
+    };
+  }
+
   /** Re-read from `items` on every render, so a refresh never leaves the sheet showing the copy it was opened with. */
   const sheetItem = items.find((item) => item.id === sheetId) ?? null;
 
@@ -363,11 +415,12 @@ export function ScadenzeConsole({
    * sheet's own action.
    */
   function sheetRows(item: ExpiryDashboardItemDto): BottomSheetRow[] {
+    const view = viewOf(item);
     return [
-      { k: labels.table.expiresAt, v: formatDateOnly(item.expiresAt, locale) },
-      { k: labels.table.daysLeft, v: daysLabelOf(item.daysUntil) },
-      { k: labels.table.status, v: statusLabelOf(tierOf(item.daysUntil)) },
-      { k: labels.mobile.scopeLabel, v: labels.mobile.scope[item.typeScope] },
+      { k: labels.table.expiresAt, v: view.dateLabel ?? labels.mobile.noValue },
+      { k: labels.table.daysLeft, v: view.daysLabel ?? labels.mobile.noValue },
+      { k: labels.table.status, v: view.statusLabel },
+      { k: labels.mobile.scopeLabel, v: item.typeScope === null ? labels.mobile.noValue : labels.mobile.scope[item.typeScope] },
       { k: labels.mobile.notes, v: item.notes ?? labels.mobile.noValue },
     ];
   }
@@ -415,17 +468,34 @@ export function ScadenzeConsole({
           <select
             className="input scadenze-filter-inpanel"
             style={{ width: 'auto', minWidth: 140, fontSize: 12 }}
-            value={filters.expiryTypeId}
-            onChange={(event) => handleFilterChange({ expiryTypeId: event.target.value })}
-            data-testid="scadenze-filter-type"
+            aria-label={labels.filters.categoryLabel}
+            value={filters.category}
+            onChange={(event) => handleFilterChange({ category: event.target.value as Category | '', expiryTypeId: '' })}
+            data-testid="scadenze-filter-category"
           >
-            <option value="">{labels.filters.allTypes}</option>
-            {typeOptions.map((type) => (
-              <option key={type.id} value={type.id}>
-                {type.name}
+            <option value="">{labels.filters.category.all}</option>
+            {CATEGORY_VALUES.map((category) => (
+              <option key={category} value={category}>
+                {labels.filters.category[category]}
               </option>
             ))}
           </select>
+          {filters.category !== 'CURRENCY' ? (
+            <select
+              className="input scadenze-filter-inpanel"
+              style={{ width: 'auto', minWidth: 140, fontSize: 12 }}
+              value={filters.expiryTypeId}
+              onChange={(event) => handleFilterChange({ expiryTypeId: event.target.value })}
+              data-testid="scadenze-filter-type"
+            >
+              <option value="">{labels.filters.allTypes}</option>
+              {typeOptionsOf(filters.category).map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
           {/* Width moved out of the inline style into `.scadenze-search`: an
               inline `width` cannot be overridden by a media query, and the
               phone head gives this box its own full-width row (15.5/15.6). */}
@@ -487,7 +557,8 @@ export function ScadenzeConsole({
             </div>
           ) : (
             items.map((item) => {
-              const tier = tierOf(item.daysUntil);
+              const view = viewOf(item);
+              const tier = view.tier;
               return (
                 <div key={item.id} className="student-row" data-testid="scadenze-row" style={{ gridTemplateColumns: COLS, background: TIER_ROW_TINT[tier] }}>
                   <div>
@@ -498,9 +569,9 @@ export function ScadenzeConsole({
                   <div>
                     <Badge tone={CATEGORY_TONE[item.category]}>{labels.category[item.category]}</Badge>
                   </div>
-                  <div style={{ fontSize: 12.5 }}>{item.typeName}</div>
+                  <div style={{ fontSize: 12.5 }}>{view.certificate ?? labels.category[item.category]}</div>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
-                    {formatDateOnly(item.expiresAt, locale)}
+                    {view.dateLabel ?? labels.mobile.noValue}
                   </div>
                   {/* Story 15.10 (R-15.10-i): this cell sits on the row's OWN
                       tier tint, so the pair to measure is ink-on-tint, not
@@ -513,11 +584,11 @@ export function ScadenzeConsole({
                       because they PASS on their own tint (`--accent-ink` on
                       `--warn-soft` 11.32, `--ink-2` on `--panel` 9.99). */}
                   <div className={`mono num${TIER_DAYS_TONE[tier]}`} style={{ fontWeight: 600, ...(TIER_DAYS_INK[tier] === null ? null : { color: TIER_DAYS_INK[tier]! }) }}>
-                    {daysLabelOf(item.daysUntil)}
+                    {view.daysLabel ?? labels.mobile.noValue}
                   </div>
                   <div data-testid="scadenze-status-badge">
                     <Badge tone={TIER_TONE[tier]} dot>
-                      {statusLabelOf(tier)}
+                      {view.statusLabel}
                     </Badge>
                   </div>
                 </div>
@@ -563,14 +634,18 @@ export function ScadenzeConsole({
               </p>
             ) : (
               items.map((item) => {
-                const tier = tierOf(item.daysUntil);
+                const view = viewOf(item);
                 const personName = `${item.personLastName} ${item.personFirstName}`;
+                // The card names a row without a type by its CATEGORY, not by the currency's
+                // detail: at 375px "3 voli negli ultimi 90 giorni" alone fills the line and
+                // the ellipsis would eat the date. The detail is the sheet's over-line.
+                const what = item.typeName ?? labels.category[item.category];
                 return (
                   <button
                     key={item.id}
                     type="button"
                     className="mobile-row mobile-row-expiry"
-                    aria-label={`${labels.mobile.openDetail}: ${personName} · ${item.typeName}`}
+                    aria-label={`${labels.mobile.openDetail}: ${personName} · ${what}`}
                     onClick={() => setSheetId(item.id)}
                     data-testid="scadenze-row-mobile"
                   >
@@ -579,12 +654,12 @@ export function ScadenzeConsole({
                         <span className="mobile-row-name">{personName}</span>
                       </span>
                       <span className="mobile-row-sub">
-                        {expiryCardSubLine({ typeName: item.typeName, dateLabel: formatDateOnly(item.expiresAt, locale), daysLabel: daysLabelOf(item.daysUntil) })}
+                        {expiryCardSubLine({ typeName: what, dateLabel: view.dateLabel, daysLabel: view.daysLabel })}
                       </span>
                     </span>
                     <span className="mobile-row-side">
-                      <Badge tone={TIER_TONE[tier]} dot>
-                        {statusLabelOf(tier)}
+                      <Badge tone={TIER_TONE[view.tier]} dot>
+                        {view.statusLabel}
                       </Badge>
                     </span>
                   </button>
@@ -665,24 +740,45 @@ export function ScadenzeConsole({
         >
           <div className="scadenze-filter-panel" data-testid="mobile-scadenze-filter-panel">
             <div className="fld">
-              <label className="fld-label" htmlFor="scadenze-filter-type-mobile">
-                {labels.table.type}
+              <label className="fld-label" htmlFor="scadenze-filter-category-mobile">
+                {labels.filters.categoryLabel}
               </label>
               <select
-                id="scadenze-filter-type-mobile"
+                id="scadenze-filter-category-mobile"
                 className="input"
-                value={filterDraft.expiryTypeId}
-                onChange={(event) => setFilterDraft({ ...filterDraft, expiryTypeId: event.target.value })}
-                data-testid="scadenze-filter-type-mobile"
+                value={filterDraft.category}
+                onChange={(event) => setFilterDraft({ ...filterDraft, category: event.target.value as Category | '', expiryTypeId: '' })}
+                data-testid="scadenze-filter-category-mobile"
               >
-                <option value="">{labels.filters.allTypes}</option>
-                {typeOptions.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.name}
+                <option value="">{labels.filters.category.all}</option>
+                {CATEGORY_VALUES.map((category) => (
+                  <option key={category} value={category}>
+                    {labels.filters.category[category]}
                   </option>
                 ))}
               </select>
             </div>
+            {filterDraft.category !== 'CURRENCY' ? (
+              <div className="fld">
+                <label className="fld-label" htmlFor="scadenze-filter-type-mobile">
+                  {labels.table.type}
+                </label>
+                <select
+                  id="scadenze-filter-type-mobile"
+                  className="input"
+                  value={filterDraft.expiryTypeId}
+                  onChange={(event) => setFilterDraft({ ...filterDraft, expiryTypeId: event.target.value })}
+                  data-testid="scadenze-filter-type-mobile"
+                >
+                  <option value="">{labels.filters.allTypes}</option>
+                  {typeOptionsOf(filterDraft.category).map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
           </div>
         </SlideOver>
       ) : null}
@@ -695,11 +791,11 @@ export function ScadenzeConsole({
           open
           onClose={closeSheet}
           testId="mobile-scadenze-sheet"
-          sub={expirySheetSub({ category: labels.category[sheetItem.category], typeName: sheetItem.typeName })}
+          sub={expirySheetSub({ category: labels.category[sheetItem.category], typeName: viewOf(sheetItem).certificate })}
           title={`${sheetItem.personLastName} ${sheetItem.personFirstName}`}
           badge={
-            <Badge tone={TIER_TONE[tierOf(sheetItem.daysUntil)]} dot>
-              {statusLabelOf(tierOf(sheetItem.daysUntil))}
+            <Badge tone={TIER_TONE[viewOf(sheetItem).tier]} dot>
+              {viewOf(sheetItem).statusLabel}
             </Badge>
           }
           rows={sheetRows(sheetItem)}

@@ -62,9 +62,14 @@ export async function ensureValidSeedExpiries(page: Page, personId: string, scop
 
   const existingResponse = await page.request.get(`/api/v1/expiries?personId=${personId}&pageSize=100`);
   expect(existingResponse.status()).toBe(200);
-  const existing = (await existingResponse.json()) as { items: { expiryTypeId: string; category: string }[] };
-  const alreadyRegisteredTypeIds = new Set(existing.items.map((item) => item.expiryTypeId));
-  const hasVisit = existing.items.some((item) => item.category === 'MEDICAL');
+  // The registry also lists rows DERIVED at read time (story 19.7b, AD-5): a
+  // "missing visit" row is a MEDICAL row that is not a visit, a "never paid"
+  // row carries the fee type without being a fee. Only registered documents count.
+  const existing = ((await existingResponse.json()) as { items: { source: string; expiryTypeId: string | null; category: string }[] }).items.filter(
+    (item) => item.source === 'DOCUMENT',
+  );
+  const alreadyRegisteredTypeIds = new Set(existing.map((item) => item.expiryTypeId));
+  const hasVisit = existing.some((item) => item.category === 'MEDICAL');
 
   const toRegister = [...ratings.filter((type) => !alreadyRegisteredTypeIds.has(type.id)), ...(firstMedical !== undefined && !hasVisit ? [firstMedical] : [])];
   for (const type of toRegister) {

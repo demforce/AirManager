@@ -109,11 +109,30 @@ export type UpdateExpiryInput = z.infer<typeof updateExpirySchema>;
 // --- Expiry dashboard (epic 6, story 6.4, AC 1; FR-38) ----------------------
 // The staff-facing "Tutte le scadenze" landing (`/dashboard/expiries`) — every
 // scadenza across every person, ordered by urgency. `status` is NEVER
-// post-filtered client-side: it maps to an `expiresAt` date range in the
-// service (`expiries.service.ts#listAllExpiries`'s doc-comment), using the
-// SAME `today`/`EXPIRY_WARNING_DAYS` boundary the per-row `status` field
-// (`expiryStatusSchema`, computed via `computeExpiryStatus`) already uses —
-// the two always agree by construction.
+// post-filtered client-side: it maps to an `expiresAt` predicate in the
+// service's SQL (`expiries.service.ts#listAllExpiries`'s doc-comment), using
+// the SAME `today`/`EXPIRY_WARNING_DAYS` boundary the per-row `status` field
+// (`computeExpiryStatus`) already uses — the two always agree by construction.
+//
+// Story 19.7b (Q-19.7-a/b/c): the registry is UNIFIED — the registered
+// documents plus rows DERIVED at read time (one currency row per pilot or
+// student, a "missing" row for whoever never paid the membership fee or has no
+// medical visit at all). A derived row may have no type and no date.
+
+/**
+ * The registry row's status (story 19.7b): the three bands of
+ * `expiryStatusSchema` plus `missing` — a row without a date (currency never
+ * acquired, membership fee never paid, no medical visit). Distinct from
+ * `expiryStatusSchema`, which stays the status of a person's OWN scadenze.
+ */
+export const registryStatusSchema = z.enum(['ok', 'expiring', 'expired', 'missing']);
+
+export type RegistryStatusDto = z.infer<typeof registryStatusSchema>;
+
+/** The registry row's category (story 19.7b): the type's `kind` for a document, `CURRENCY` for the derived currency row. */
+export const registryCategorySchema = z.enum(['MEDICAL', 'RATING', 'MEMBERSHIP', 'CURRENCY']);
+
+export type RegistryCategoryDto = z.infer<typeof registryCategorySchema>;
 
 /**
  * `GET /api/v1/expiries` query (AC 1). Every filter optional and
@@ -142,9 +161,11 @@ export const expiryWindowSchema = z.enum(['60', '30', '7', 'expired']);
 export type ExpiryWindowDto = z.infer<typeof expiryWindowSchema>;
 
 export const listAllExpiriesQuerySchema = paginationQuerySchema.extend({
+  /** Story 19.7b: `MEDICAL` includes the "missing visit" rows, `MEMBERSHIP` the "never paid" ones, `CURRENCY` the derived currency rows. */
+  category: registryCategorySchema.optional(),
   expiryTypeId: z.string().trim().min(1).optional(),
   scope: expiryScopeSchema.optional(),
-  status: expiryStatusSchema.optional(),
+  status: registryStatusSchema.optional(),
   window: expiryWindowSchema.optional(),
   personId: z.string().trim().min(1).optional(),
   personQuery: z.string().trim().min(1).optional(),
@@ -157,23 +178,38 @@ export type ListAllExpiriesQuery = z.infer<typeof listAllExpiriesQuerySchema>;
  * One entry of `GET /api/v1/expiries` (AC 1). Mirrors
  * `expiries.service.ts`'s `ExpiryDashboardItem` — `personFirstName`/
  * `personLastName`/`typeName`/`typeScope` denormalized at read time (never
- * snapshotted, same choice as `expiryItemSchema`).
+ * snapshotted, same choice as `expiryItemSchema`). Story 19.7b: a row is a
+ * registered DOCUMENT or a DERIVED one (`currency:`/`membership:`/`medical:`
+ * + person id — no endpoint accepts those ids); `expiresAt: null` = missing.
  */
 export const expiryDashboardItemSchema = z.object({
   id: z.string(),
+  /** `DOCUMENT` = a registered `Expiry` row; `DERIVED` = computed at read time, never stored (story 19.7b). */
+  source: z.enum(['DOCUMENT', 'DERIVED']),
+  /** The row's category (story 19.7a D-12, 19.7b): the type's `kind` for a document, `CURRENCY` for the currency row — the registry badge reads it, never the name. */
+  category: registryCategorySchema,
   personId: z.string(),
   personFirstName: z.string(),
   personLastName: z.string(),
-  expiryTypeId: z.string(),
-  typeName: z.string(),
-  typeScope: expiryScopeSchema,
-  /** The row's category = its type's `kind` (story 19.7a, D-12) — the registry badge reads it, never the name. Additive: story 19.7b extends it with `CURRENCY` for its derived rows. */
-  category: expiryTypeKindSchema,
-  expiresAt: z.iso.date(),
+  /** `null` on the currency row and on the "missing visit" row (a requirement, not one type); the "never paid" row carries the membership type. */
+  expiryTypeId: z.string().nullable(),
+  typeName: z.string().nullable(),
+  typeScope: expiryScopeSchema.nullable(),
+  /** Last valid day; `null` = missing (currency never acquired, fee never paid, no visit). */
+  expiresAt: z.iso.date().nullable(),
   notes: z.string().nullable(),
-  status: expiryStatusSchema,
-  /** Calendar-day count `expiresAt - today` (story 12.11, AC 3) — same `daysUntilUtc` arithmetic `status` is derived from; negative = already expired. Powers the registry's colored "Giorni" column (`{d}g` / `{|d|}g fa`). */
-  daysUntil: z.number().int(),
+  status: registryStatusSchema,
+  /** Calendar-day count `expiresAt - today` (story 12.11, AC 3) — same `daysUntilUtc` arithmetic `status` is derived from; negative = already expired, `null` = missing. Powers the registry's colored "Giorni" column (`{d}g` / `{|d|}g fa`). */
+  daysUntil: z.number().int().nullable(),
+  /** Only on the `CURRENCY` row: the facts behind it and the settings X/Y it was computed with (story 19.7a D-6). */
+  currency: z
+    .object({
+      lastFlightDate: z.iso.date().nullable(),
+      flightsInWindow: z.number().int(),
+      minFlights: z.number().int(),
+      windowDays: z.number().int(),
+    })
+    .nullable(),
 });
 
 export type ExpiryDashboardItemDto = z.infer<typeof expiryDashboardItemSchema>;

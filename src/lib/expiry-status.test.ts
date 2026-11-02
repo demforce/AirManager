@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeExpiryStatus, daysUntilUtc, EXPIRY_ALERT_THRESHOLDS, EXPIRY_WARNING_DAYS } from './expiry-status';
+import { computeExpiryStatus, daysUntilUtc, EXPIRY_ALERT_THRESHOLDS, EXPIRY_WARNING_DAYS, registryTierOf, tierOf } from './expiry-status';
 
 /** Same UTC-midnight convention as `date-only.ts` — every test date is explicit, never `new Date()`. */
 function utcDate(isoDateOnly: string): Date {
@@ -70,5 +70,16 @@ describe('daysUntilUtc (story 6.3 — the shared day-boundary arithmetic, extrac
 describe('EXPIRY_ALERT_THRESHOLDS (story 6.3, Contesto)', () => {
   it('is exactly [60, 30, 7, 0], in that order', () => {
     expect(EXPIRY_ALERT_THRESHOLDS).toEqual([60, 30, 7, 0]);
+  });
+});
+
+describe('registryTierOf (story 19.7b, D-19)', () => {
+  it('a missing row (no date) is tier 0, like an expired one', () => {
+    expect(registryTierOf(null)).toBe(0);
+    expect(registryTierOf(null)).toBe(tierOf(-1));
+  });
+
+  it('a dated row keeps tierOf\'s boundaries', () => {
+    expect([-1, 0, 7, 8, 30, 31, 60, 61].map(registryTierOf)).toEqual([0, 1, 1, 2, 2, 3, 3, 4]);
   });
 });

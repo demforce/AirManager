@@ -1,7 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
-import type { ExpiryItemDto, ExpiryWindowDto } from '@/lib/schemas/expiries';
+import type { ExpiryItemDto, ExpiryWindowDto, RegistryCategoryDto } from '@/lib/schemas/expiries';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getMembershipFeeCents } from '@/server/services/app-settings.service';
@@ -16,6 +16,7 @@ type PageProps = {
   searchParams: Promise<{
     page?: string;
     window?: string;
+    category?: string;
     expiryTypeId?: string;
     personQuery?: string;
   }>;
@@ -27,6 +28,13 @@ const WINDOWS: readonly ExpiryWindowDto[] = ['60', '30', '7', 'expired'];
 
 function sanitizeWindow(value: string | undefined): ExpiryWindowDto | 'all' {
   return value && (WINDOWS as readonly string[]).includes(value) ? (value as ExpiryWindowDto) : value === 'all' ? 'all' : '60';
+}
+
+const CATEGORIES: readonly RegistryCategoryDto[] = ['MEDICAL', 'RATING', 'MEMBERSHIP', 'CURRENCY'];
+
+/** Story 19.7b (D-11): the Categoria filter; anything else in the URL is "every category". */
+function sanitizeCategory(value: string | undefined): RegistryCategoryDto | '' {
+  return value && (CATEGORIES as readonly string[]).includes(value) ? (value as RegistryCategoryDto) : '';
 }
 
 /** Same server-DTO-to-wire-DTO conversion as the pre-12.11 page (`pendingProposal.createdAt` Date -> ISO string) — `MyExpiries` receives its data as a plain server-component prop, but the DTO's own schema expects the wire shape. */
@@ -70,6 +78,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     const canChargeMembershipFee = hasPermission(actor, 'finance.manage');
 
     const window = sanitizeWindow(sp.window);
+    const category = sanitizeCategory(sp.category) || undefined;
     const expiryTypeId = sp.expiryTypeId || undefined;
     const personQuery = sp.personQuery || undefined;
 
@@ -80,13 +89,15 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     const personOptions = peopleResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
 
     const allTypes = await listExpiryTypes(actor, { includeInactive: false });
-    const typeOptions = allTypes.map((type) => ({ id: type.id, name: type.name }));
+    // `kind` lets the console offer only the types of the chosen category (story 19.7b, AD-3).
+    const typeOptions = allTypes.map((type) => ({ id: type.id, name: type.name, kind: type.kind }));
 
     const tierCounts = await getExpiryTierCounts(actor);
     const membershipFeeCents = await getMembershipFeeCents(actor);
 
     const registryQuery = {
       ...(window !== 'all' ? { window } : {}),
+      category,
       expiryTypeId,
       personQuery,
       pageSize: REGISTRY_PAGE_SIZE,
@@ -107,11 +118,19 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     // screen it was exported from. `listAllExpiriesQuerySchema` already
     // accepts both fields; `window: 'all'` is not one of its values (it is
     // the ABSENCE of the filter), same shape as `registryQuery` above.
-    const exportFilterQuery = { ...(window !== 'all' ? { window } : {}), expiryTypeId, personQuery, scope: undefined, status: undefined };
+    const exportFilterQuery = { ...(window !== 'all' ? { window } : {}), category, expiryTypeId, personQuery, scope: undefined, status: undefined };
     const exportHref = buildExportHref('/api/v1/expiries', exportFilterQuery, locale);
     const exportPdfHref = buildPdfExportHref('/api/v1/expiries/pdf', exportFilterQuery, locale);
 
-    const filters: ScadenzeFilters = { window, expiryTypeId: expiryTypeId ?? '', personQuery: personQuery ?? '' };
+    const filters: ScadenzeFilters = { window, category: category ?? '', expiryTypeId: expiryTypeId ?? '', personQuery: personQuery ?? '' };
+
+    // The currency row's "Certificato" (story 19.7b, AD-3): an ICU plural, so
+    // it is resolved HERE, on the server, and handed over by row id.
+    const currencyDetails = Object.fromEntries(
+      registryResult.items.flatMap((item) =>
+        item.currency === null ? [] : [[item.id, t('registry.currency.detail', { count: item.currency.flightsInWindow, days: item.currency.windowDays })]],
+      ),
+    );
 
     return (
       <main className="page">
@@ -124,6 +143,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
 
         <ScadenzeConsole
           items={registryResult.items}
+          currencyDetails={currencyDetails}
           page={page}
           totalPages={registryTotalPages}
           totalShown={registryResult.total}
@@ -152,6 +172,14 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               all: t('registry.segmented.all'),
             },
             filters: {
+              categoryLabel: t('registry.filters.categoryLabel'),
+              category: {
+                all: t('registry.filters.category.all'),
+                MEDICAL: t('registry.filters.category.MEDICAL'),
+                RATING: t('registry.filters.category.RATING'),
+                MEMBERSHIP: t('registry.filters.category.MEMBERSHIP'),
+                CURRENCY: t('registry.filters.category.CURRENCY'),
+              },
               allTypes: t('registry.filters.allTypes'),
               allPilots: t('registry.filters.allPilots'),
               pilot: t('registry.filters.pilot'),
@@ -171,6 +199,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               MEDICAL: t('registry.category.MEDICAL'),
               RATING: t('registry.category.RATING'),
               MEMBERSHIP: t('registry.category.MEMBERSHIP'),
+              CURRENCY: t('registry.category.CURRENCY'),
             },
             statCards: {
               expired: t('registry.statCards.expired'),
@@ -188,6 +217,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               within30: t('registry.status.within30'),
               within60: t('registry.status.within60'),
               ok: t('registry.status.ok'),
+              missing: t('registry.status.missing'),
             },
             daysAgoSuffix: t('registry.daysAgoSuffix'),
             daysSuffix: t('registry.daysSuffix'),

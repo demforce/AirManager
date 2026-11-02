@@ -319,7 +319,9 @@ test.describe('Story 19.7a — the membership fee has its own category (AC 11, A
       ['it', 'Quota associativa'],
       ['en', 'Membership fee'],
     ] as const) {
-      await page.goto(`/${locale}/dashboard/expiries?window=all&personQuery=${encodeURIComponent(person.lastName)}`);
+      // `category=MEMBERSHIP` (story 19.7b): the person also has derived rows of their own now (a currency and a
+      // missing visit), and this test is about the fee's badge.
+      await page.goto(`/${locale}/dashboard/expiries?window=all&category=MEMBERSHIP&personQuery=${encodeURIComponent(person.lastName)}`);
       const rows = page.getByTestId('scadenze-row');
       await expect(rows).toHaveCount(1);
       // The category cell is the row's second column (badge), the certificate the third.

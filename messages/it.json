@@ -197,7 +197,10 @@
       "today": "oggi",
       "ago": "{n}g fa",
       "inDays": "tra {n}g",
-      "seeAll": "+{count} altre · Vedi tutte"
+      "seeAll": "+{count} altre · Vedi tutte",
+      "currency": "Currency",
+      "medical": "Visita medica",
+      "missing": "Mancante"
     },
     "fleetCard": {
       "cardTitle": "Aeromobili",
@@ -1354,7 +1357,15 @@
         "allPilots": "Tutti i piloti",
         "pilot": "Pilota",
         "personSearchPlaceholder": "Cerca pilota…",
-        "reset": "Azzera filtri"
+        "reset": "Azzera filtri",
+        "categoryLabel": "Categoria",
+        "category": {
+          "all": "Tutte le categorie",
+          "MEDICAL": "Visite mediche",
+          "RATING": "Ratings",
+          "MEMBERSHIP": "Quota associativa",
+          "CURRENCY": "Currency"
+        }
       },
       "table": {
         "pilot": "Pilota",
@@ -1380,7 +1391,8 @@
         "within7": "≤ 7 giorni",
         "within30": "≤ 30 giorni",
         "within60": "≤ 60 giorni",
-        "ok": "Valido"
+        "ok": "Valido",
+        "missing": "Mancante"
       },
       "daysAgoSuffix": "g fa",
       "daysSuffix": " g",
@@ -1432,7 +1444,11 @@
       "category": {
         "MEDICAL": "Visita medica",
         "RATING": "Rating",
-        "MEMBERSHIP": "Quota associativa"
+        "MEMBERSHIP": "Quota associativa",
+        "CURRENCY": "Currency"
+      },
+      "currency": {
+        "detail": "{count, plural, one {# volo} other {# voli}} negli ultimi {days} giorni"
       }
     },
     "own": {

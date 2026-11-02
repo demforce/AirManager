@@ -425,21 +425,25 @@ test.describe('story 15.3 — "In corso ora" and the "Avvisi" feed', () => {
     // match one of the person's active profiles (`SCOPE_MISMATCH`).
     const candidates = [...types].sort((a, b) => Number(b.scope === 'ALL') - Number(a.scope === 'ALL'));
     const expiresAt = new Date(Date.now() - 3650 * 86_400_000).toISOString().slice(0, 10);
-    let registered = false;
+    let registeredTypeName: string | null = null;
     for (const type of candidates) {
       const response = await page.request.post('/api/v1/expiries', { data: { personId: pilot.id, expiryTypeId: type.id, expiresAt } });
       if (response.status() === 201) {
-        registered = true;
+        registeredTypeName = type.name;
         break;
       }
     }
-    expect(registered, 'no expiry type matched the fixture pilot profile').toBe(true);
+    expect(registeredTypeName, 'no expiry type matched the fixture pilot profile').not.toBeNull();
 
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard');
     const feed = page.getByTestId('mobile-overview-alerts');
     await expect(feed).toBeVisible();
-    await expect(feed.getByTestId('mobile-overview-alert-row').filter({ hasText: pilot.lastName })).toHaveCount(1);
+    // Story 19.7b: the fixture pilot also has derived rows of their own (a currency never acquired, a fee never
+    // paid, maybe a missing visit) — the voice under test is the one of the TYPE registered above.
+    await expect(
+      feed.getByTestId('mobile-overview-alert-row').filter({ hasText: pilot.lastName }).filter({ hasText: `· ${registeredTypeName!}` }),
+    ).toHaveCount(1);
     // Every voice leads somewhere it can be acted on (AC 4).
     await expect(feed.getByTestId('mobile-overview-alert-row').first()).toHaveAttribute('href', /\/dashboard\//);
   });

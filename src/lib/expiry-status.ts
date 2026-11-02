@@ -93,3 +93,15 @@ export function tierOf(daysUntil: number): ExpiryTier {
   if (daysUntil <= 60) return 3;
   return 4;
 }
+
+/**
+ * The tier of a row of the unified Scadenze registry (story 19.7b, D-19):
+ * `daysUntil` is `null` on a "missing" row (currency never acquired,
+ * membership fee never paid, no medical visit), which reads — and counts — as
+ * expired, tier 0. Every reader of the registry goes through this, so a
+ * missing row is red in the table, the card, the sheet, the widget and the
+ * Avvisi feed alike.
+ */
+export function registryTierOf(daysUntil: number | null): ExpiryTier {
+  return daysUntil === null ? 0 : tierOf(daysUntil);
+}
