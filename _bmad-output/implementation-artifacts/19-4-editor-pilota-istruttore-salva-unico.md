@@ -4,7 +4,7 @@ baseline_commit: 72e7e1b
 
 # Story 19.4: Editor pilota e istruttore a Salva unico
 
-Status: **review** — 2026-11-02, implementazione `e160065` (Dev Agent Record in fondo). Scritta il 2026-11-01 (con due domande PO aperte, §❓: nessuna blocca la scrittura del backend, entrambe toccano solo la resa di due campi dell'editor istruttore; Q-19.4-b coincide con la Q-19.3-d, e la Q-19.3-c tocca il controllo dei profili, AD-9). Contratti backend della 19.3 concordati col suo writer e riportati nel banner. **Modello dev: Opus 5 xhigh (UI)** — la story riscrive due editor e il componente scadenze condiviso, oltre a service, schema Zod, OpenAPI ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-4-editor-pilota-istruttore-salva-unico`.
+Status: **done** — 2026-11-02 (review SHIPPABLE dopo il fix di F1 → fix `f3f6cf9` + docs `abe9708` (F1 campi opzionali svuotati, F2 messaggi per ogni codice d'errore, F3 lettura tariffe fallita); arbitro finale della sessione principale su DB fresco **525/525, 0 flaky, exit 0**). Storico — **review** — 2026-11-02, implementazione `e160065` (Dev Agent Record in fondo). Scritta il 2026-11-01 (con due domande PO aperte, §❓: nessuna blocca la scrittura del backend, entrambe toccano solo la resa di due campi dell'editor istruttore; Q-19.4-b coincide con la Q-19.3-d, e la Q-19.3-c tocca il controllo dei profili, AD-9). Contratti backend della 19.3 concordati col suo writer e riportati nel banner. **Modello dev: Opus 5 xhigh (UI)** — la story riscrive due editor e il componente scadenze condiviso, oltre a service, schema Zod, OpenAPI ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-4-editor-pilota-istruttore-salva-unico`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`72e7e1b`**. Il dev della 19.4 parte **DOPO il commit di 19.1, 19.2 e 19.3**, che toccano gli stessi file:
 > - **19.2** toglie il codice fiscale da **entrambi** gli editor (`pilot-editor.tsx:56/261/287/311/323/347-349/459/594/663-665`, `instructor-editor.tsx:51/205/283/345-347`), da `updatePersonSchema`/`createPersonBaseSchema` (`src/lib/schemas/people.ts:22`, `:36`) e da `people.service.ts` (`assertUnique` diventa solo-email, AD-2 della 19.2): le righe slittano, e `fiscalCode` **non** deve ricomparire in nulla di quanto scritto qui.
@@ -789,3 +789,9 @@ e2e mirati: §F (serie finale 101 passed, `E2E_EXIT=0`). L'arbitro full-suite su
 - `npm run gates` (sul contenuto committato): `PASS lint · PASS typecheck · PASS test — Tests 1839 passed (1839) · PASS build`. **Unit 1834 → 1839.**
 - **Delta e2e atteso per l'arbitro: 519 → 525** (+5 in `person-save.spec.ts`, +1 in `instructor-rates.spec.ts`).
 - **Stato macchina**: il DB `airmanager` non è stato toccato dal fix. Tutte le prove sono state fatte sul gemello `airmanager_fix194`, creato come copia dell'`airmanager` appena resettato e poi rimosso; `airmanager_load` non è mai stato toccato. I server avviati sono stati fermati per PID; `:3000` è libero e non ci sono processi `next`. Ultimo run e2e: `DONE — E2E_EXIT=0`, cioè la serie mirata, non un arbitro. Nessuno stash. File untracked dell'utente, `sprint-status.yaml` e story file di altre story non toccati.
+
+### Chiusura (sessione principale, 2026-11-02)
+
+- **Arbitro finale**: DB `airmanager` resettato, `CI=1 scripts/e2e.sh start` su HEAD `abe9708`: **525 passed, 0 flaky, 0 failed, E2E_EXIT=0** (13,3 min) — delta 504 → 519 (dev) → 525 (fix: +6) confermato.
+- Il reviewer si era fermato per limite di sessione a metà delle sonde: ripreso dal suo transcript, l'arbitro (staccato con `setsid`) era sopravvissuto verde (519/519).
+
