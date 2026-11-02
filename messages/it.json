@@ -447,6 +447,18 @@
         "generic": "Si è verificato un errore. Riprova.",
         "conflictEmail": "Esiste già una persona con questa email.",
         "profilesExclusive": "Il profilo allievo non può essere attivato insieme a pilota o istruttore."
+      },
+      "saveErrors": {
+        "personArchived": "La persona è archiviata: ripristinala per aggiungere nuove scadenze.",
+        "expiryTypeNotFound": "Questo tipo non esiste più: togli la riga.",
+        "expiryTypeInactive": "Questo tipo è stato disattivato: togli la riga.",
+        "scopeMismatch": "Questo tipo non vale per i profili attivi: togli la riga o attiva il profilo a cui si applica.",
+        "expiryConflict": "Una scadenza di questo tipo è stata registrata nel frattempo: chiudi e riapri la scheda per vederla.",
+        "instructorProfileInactive": "Il profilo istruttore non è più attivo: compenso e tariffa allievo non si possono salvare.",
+        "invalid": "Alcuni dati non sono validi: correggili e salva di nuovo.",
+        "forbidden": "Non hai i permessi per salvare una di queste modifiche.",
+        "notFound": "Questa persona non esiste più.",
+        "unauthenticated": "La sessione è scaduta: accedi di nuovo."
       }
     },
     "toast": {
@@ -546,7 +558,6 @@
         "owedTotal": "Totale dovuto"
       },
       "errors": {
-        "generic": "Si è verificato un errore. Riprova.",
         "invalidRate": "Inserisci un importo valido (es. 30,00) o lascia vuoto."
       }
     },
@@ -556,10 +567,10 @@
       "price": "Prezzo (€/h)",
       "validFrom": "In vigore da",
       "next": "Dal {date}: {price}/h",
+      "loadError": "Impossibile caricare le tariffe: quella in vigore non è nota.",
       "requiredField": "Campo obbligatorio.",
       "invalidPrice": "Il prezzo deve essere un importo positivo (es. 45,00).",
-      "invalidDate": "Inserisci una data valida.",
-      "genericError": "Si è verificato un errore. Riprova."
+      "invalidDate": "Inserisci una data valida."
     },
     "pay": {
       "title": "Registra pagamento",

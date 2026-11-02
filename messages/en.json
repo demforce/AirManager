@@ -447,6 +447,18 @@
         "generic": "Something went wrong. Please try again.",
         "conflictEmail": "A person with this email already exists.",
         "profilesExclusive": "The student profile cannot be activated together with pilot or instructor."
+      },
+      "saveErrors": {
+        "personArchived": "This person is archived: restore them to add new expiries.",
+        "expiryTypeNotFound": "This type no longer exists: remove the row.",
+        "expiryTypeInactive": "This type has been deactivated: remove the row.",
+        "scopeMismatch": "This type does not apply to the active profiles: remove the row or activate the profile it applies to.",
+        "expiryConflict": "An expiry of this type was registered meanwhile: close and reopen the panel to see it.",
+        "instructorProfileInactive": "The instructor profile is no longer active: compensation and student rate cannot be saved.",
+        "invalid": "Some of the data is not valid: correct it and save again.",
+        "forbidden": "You are not allowed to save one of these changes.",
+        "notFound": "This person no longer exists.",
+        "unauthenticated": "Your session has expired: sign in again."
       }
     },
     "toast": {
@@ -546,7 +558,6 @@
         "owedTotal": "Total owed"
       },
       "errors": {
-        "generic": "Something went wrong. Please try again.",
         "invalidRate": "Enter a valid amount (e.g. 30.00) or leave it empty."
       }
     },
@@ -556,10 +567,10 @@
       "price": "Price (€/h)",
       "validFrom": "In effect from",
       "next": "From {date}: {price}/h",
+      "loadError": "Could not load the rates: the one in effect is unknown.",
       "requiredField": "Required field.",
       "invalidPrice": "Price must be a positive amount (e.g. 45.00).",
-      "invalidDate": "Enter a valid date.",
-      "genericError": "Something went wrong. Please try again."
+      "invalidDate": "Enter a valid date."
     },
     "pay": {
       "title": "Record payout",

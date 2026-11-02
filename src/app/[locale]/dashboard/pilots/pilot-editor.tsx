@@ -41,7 +41,7 @@ import { isExpiryScopeCompatible, type ProfileFlags } from '@/lib/expiry-scope';
 import { formatDateOnly } from '@/lib/time';
 import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
-import { changedIdentityFields, IDENTITY_FIELDS, personSaveErrorSection, type PersonSaveSection } from '@/lib/person-save';
+import { blankToNull, changedIdentityFields, IDENTITY_FIELDS, personSaveError, type PersonSaveErrorLabels, type PersonSaveSection } from '@/lib/person-save';
 import {
   createPersonBaseSchema,
   updatePersonSchema,
@@ -94,6 +94,8 @@ export type PilotEditorLabels = {
   archive: { sectionTitle: string; archive: string; unarchive: string; confirmArchive: string; confirmUnarchive: string; confirmYes: string; confirmCancel: string };
   /** `profilesExclusive` — story 19.3: the create's 422 `STUDENT_PROFILE_EXCLUSIVE`, in the form banner. */
   errors: { required: string; generic: string; conflictEmail: string; profilesExclusive: string };
+  /** The edit form's failed Salva, one message per reason (review 19.4 F2) — shared with the instructor editor. */
+  saveErrors: PersonSaveErrorLabels;
 };
 
 export type ToastLabels = {
@@ -402,7 +404,8 @@ function EditPersonForm({
 
   /** Same "did the user try to save" flag as `NewPersonForm` (story 14.2): the plain-state errors below derive from it. */
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [saveError, setSaveError] = useState<{ section: PersonSaveSection; message: string } | null>(null);
+  /** `expiryTypeId` — the expiry row the error is shown on instead of the section (review 19.4 F2). */
+  const [saveError, setSaveError] = useState<{ section: PersonSaveSection; message: string; expiryTypeId: string | null } | null>(null);
 
   const changedIdentity = changedIdentityFields(identityValues, defaultValues);
   const profileChanges = profilesDetail && profileDraft ? profileChangesOf(profilesDetail, profileDraft) : {};
@@ -437,9 +440,10 @@ function EditPersonForm({
     expiries.pruneForProfiles(profileFlagsOf(next));
   }
 
-  /** RHF's INVALID branch (an anagrafica field failed `updatePersonSchema`): flips the plain-state errors on too, so every problem shows at once. */
+  /** RHF's INVALID branch (an anagrafica field failed `updatePersonSchema`): flips the plain-state errors on too, so every problem shows at once — and drops the previous attempt's server error. */
   function onInvalid(): void {
     setSubmitAttempted(true);
+    setSaveError(null);
   }
 
   async function onSubmit(values: UpdatePersonInput): Promise<void> {
@@ -467,30 +471,25 @@ function EditPersonForm({
     });
 
     if (!response.ok) {
-      const { code, fieldErrors } = await parseApiError(response);
-      const section = personSaveErrorSection(code, fieldErrors);
-      if (section === 'identity' && code !== 'CONFLICT') {
+      const parsed = await parseApiError(response);
+      const error = personSaveError(parsed);
+      if (error.reason === 'invalidField') {
         // Story 14.2, AC 3: a field-shaped 422 marks THAT field — the generic
         // `labels.errors.required` string, now targeted.
         for (const field of IDENTITY_FIELDS) {
-          if (fieldErrors.has(field)) setError(field, { type: 'server', message: labels.errors.required });
+          if (parsed.fieldErrors.has(field)) setError(field, { type: 'server', message: labels.errors.required });
         }
         setTimeout(() => focusFirstInvalid(identityRef.current), 0);
         return;
       }
-      const message =
-        section === 'identity'
-          ? labels.errors.conflictEmail
-          : section === 'profiles'
-            ? code === 'STUDENT_PROFILE_EXCLUSIVE'
-              ? labels.profiles.errors.exclusive
-              : labels.profiles.errors.generic
-            : section === 'expiries'
-              ? labels.ratings.genericError
-              : labels.errors.generic;
       // Only these three sections exist here: anything else is the form-wide banner.
-      const shown: PersonSaveSection = section === 'identity' || section === 'profiles' || section === 'expiries' ? section : 'form';
-      setSaveError({ section: shown, message });
+      const shown: PersonSaveSection = error.section === 'identity' || error.section === 'profiles' || error.section === 'expiries' ? error.section : 'form';
+      setSaveError({
+        section: shown,
+        // The student rate is the instructor editor's: never sent from here.
+        message: labels.saveErrors[error.reason === 'rateValidFromPast' ? 'generic' : error.reason],
+        expiryTypeId: error.expiryTypeId !== null && error.expiryTypeId in expiries.rows ? error.expiryTypeId : null,
+      });
       return;
     }
 
@@ -511,6 +510,7 @@ function EditPersonForm({
 
   const profileLabels = labels.profiles;
   const blockedHint = anyProfileBlocked(flags) ? exclusiveHintId : undefined;
+  const rowError = saveError?.expiryTypeId ? { typeId: saveError.expiryTypeId, message: saveError.message } : null;
 
   return (
     <form id="pilot-identity-form" ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)} noValidate data-testid="pilot-identity-form">
@@ -523,13 +523,13 @@ function EditPersonForm({
             <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
           </Field>
           <Field label={labels.identity.email} error={errors.email ? labels.errors.required : undefined}>
-            <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
+            <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email', { setValueAs: blankToNull })} />
           </Field>
           <Field label={labels.identity.phone} error={errors.phone ? labels.errors.required : undefined}>
-            <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
+            <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone', { setValueAs: blankToNull })} />
           </Field>
           <Field label={labels.identity.address} wide error={errors.address ? labels.errors.required : undefined}>
-            <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
+            <Input aria-invalid={Boolean(errors.address)} {...register('address', { setValueAs: blankToNull })} />
           </Field>
         </div>
         {saveError?.section === 'identity' ? <SectionError message={saveError.message} testId="pilot-identity-error" /> : null}
@@ -634,15 +634,15 @@ function EditPersonForm({
       <Section title={labels.ratings.sectionTitle}>
         <div ref={expiriesRef}>
           <div data-testid="pilot-ratings-editor">
-            <ExpiryDraftEditor draft={expiries} kind="RATING" profiles={flags} labels={labels.ratings} showMissingDates={submitAttempted} />
+            <ExpiryDraftEditor draft={expiries} kind="RATING" profiles={flags} labels={labels.ratings} showMissingDates={submitAttempted} rowError={rowError} />
           </div>
           <div className="fld-label" style={{ fontWeight: 600, fontSize: 13, marginTop: 20, marginBottom: 10 }}>
             {labels.medical.subHeading}
           </div>
           <div data-testid="pilot-medical-editor">
-            <ExpiryDraftEditor draft={expiries} kind="MEDICAL" profiles={flags} labels={labels.medical} showMissingDates={submitAttempted} />
+            <ExpiryDraftEditor draft={expiries} kind="MEDICAL" profiles={flags} labels={labels.medical} showMissingDates={submitAttempted} rowError={rowError} />
           </div>
-          {saveError?.section === 'expiries' ? <SectionError message={saveError.message} testId="pilot-ratings-error" /> : null}
+          {saveError?.section === 'expiries' && !rowError ? <SectionError message={saveError.message} testId="pilot-ratings-error" /> : null}
         </div>
       </Section>
 
@@ -1007,13 +1007,13 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
           <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
         </Field>
         <Field label={labels.identity.email} error={errors.email ? labels.errors.required : undefined}>
-          <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
+          <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email', { setValueAs: blankToNull })} />
         </Field>
         <Field label={labels.identity.phone} error={errors.phone ? labels.errors.required : undefined}>
-          <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
+          <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone', { setValueAs: blankToNull })} />
         </Field>
         <Field label={labels.identity.address} wide error={errors.address ? labels.errors.required : undefined}>
-          <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
+          <Input aria-invalid={Boolean(errors.address)} {...register('address', { setValueAs: blankToNull })} />
         </Field>
       </div>
 

@@ -7,6 +7,7 @@ import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { redirect } from '@/i18n/navigation';
 import { getCompensationSummary } from '@/server/services/instructor-compensation.service';
+import { buildPersonSaveErrorLabels } from '../pilots/pilot-editor-labels';
 import { InstructorsConsole, type InstructorRow } from './instructors-console';
 
 type PageProps = {
@@ -46,10 +47,11 @@ export default async function InstructorsPage({ params }: PageProps) {
   const t = await getTranslations('InstructorsPage');
   const tExport = await getTranslations('Export');
   // Story 19.4: the student rate field reads like the aircraft's (story 19.3)
-  // and the anagrafica's email conflict like the pilot editor's — the same
+  // and a failed Salva like the pilot editor's (review 19.4 F2) — the same
   // copy, not a duplicate.
   const tAircraft = await getTranslations('AircraftPage');
   const tPilots = await getTranslations('PilotsPage');
+  const tPeople = await getTranslations('PeoplePage');
 
   const activeCount = summary.length;
   const totalMinutes = summary.reduce((sum, row) => sum + row.totalMinutes, 0);
@@ -168,13 +170,14 @@ export default async function InstructorsPage({ params }: PageProps) {
               currentHint: tAircraft.raw('editor.rates.currentHint') as string,
               noCurrentRate: t('studentRate.noCurrentRate'),
               next: t.raw('studentRate.next') as string,
+              loadError: t('studentRate.loadError'),
               requiredField: t('studentRate.requiredField'),
               invalidPrice: t('studentRate.invalidPrice'),
               invalidDate: t('studentRate.invalidDate'),
               validFromPast: tAircraft('editor.errors.validFromPast'),
-              genericError: t('studentRate.genericError'),
             },
-            errors: { generic: t('editor.errors.generic'), invalidRate: t('editor.errors.invalidRate'), conflictEmail: tPilots('editor.errors.conflictEmail') },
+            errors: { invalidRate: t('editor.errors.invalidRate') },
+            saveErrors: buildPersonSaveErrorLabels(tPilots, tPeople),
           },
           profile: {
             closeLabel: t('profile.closeLabel'),

@@ -15,6 +15,8 @@ export type ParsedApiError = {
   code: string | null;
   /** Field names present in `error.details.fieldErrors` — empty when the response carries none (a non-422 error, or a service-level `ValidationError` without field-shaped `details`). */
   fieldErrors: Set<string>;
+  /** `error.details` as sent (e.g. the `expiryTypeId` of the row a person save refused, review 19.4 F2) — `null` when absent. */
+  details: Record<string, unknown> | null;
 };
 
 type ErrorEnvelopeBody = {
@@ -22,7 +24,7 @@ type ErrorEnvelopeBody = {
     code?: string;
     details?: {
       fieldErrors?: Record<string, string[]>;
-    };
+    } & Record<string, unknown>;
   };
 };
 
@@ -33,5 +35,6 @@ export async function parseApiError(response: Response): Promise<ParsedApiError>
   return {
     code: error?.code ?? null,
     fieldErrors: new Set(fieldErrors ? Object.keys(fieldErrors) : []),
+    details: error?.details ?? null,
   };
 }

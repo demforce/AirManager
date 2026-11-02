@@ -154,6 +154,22 @@ test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4
     await expect(panel.getByTestId('instructor-rates-next')).toHaveText(new RegExp(`^Dal ${ddmmyyyy(addDaysIso(today, 20))}: 52,00\\s€/h$`));
   });
 
+  test('a failed read of the rates says so — never «Nessuna tariffa in vigore» over a rate that exists (review 19.4 F3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const personId = await createInstructorPerson(page, uniquePerson('Lettura'));
+    await seedInstructorRate(personId, { priceCentsPerHour: 3500, validFrom: PAST_DATE });
+    await page.route(`**/api/v1/people/${personId}/instructor-rates`, (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' } }) }),
+    );
+
+    const panel = await openInstructorRatesPanel(page, personId);
+    const price = panel.getByTestId('instructor-rate-price');
+    await expect(price).toHaveAccessibleDescription('Impossibile caricare le tariffe: quella in vigore non è nota.');
+    await expect(price).not.toHaveAttribute('placeholder');
+    await expect(price).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(panel.getByText('Nessuna tariffa in vigore')).toHaveCount(0);
+  });
+
   test('a second rate on the same validFrom REWRITES it: one row, the new price in the placeholder (story 19.3 AC 26, story 19.4 AC 18)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const personId = await createInstructorPerson(page, uniquePerson('Giulia'));

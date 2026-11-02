@@ -918,11 +918,13 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       outside([]);
       await expect(updatePerson(adminActor(), 'person_1', { expiries: { set: [{ expiryTypeId: 'nope', expiresAt: '2030-01-01' }] } })).rejects.toMatchObject({
         code: 'EXPIRY_TYPE_NOT_FOUND',
+        details: { expiryTypeId: 'nope' },
       });
 
       outside([{ id: 'type_off', scope: 'ALL', isActive: false }]);
       await expect(updatePerson(adminActor(), 'person_1', { expiries: { set: [{ expiryTypeId: 'type_off', expiresAt: '2030-01-01' }] } })).rejects.toMatchObject({
         code: 'EXPIRY_TYPE_INACTIVE',
+        details: { expiryTypeId: 'type_off' },
       });
       expect(transactionMock).not.toHaveBeenCalled();
 
@@ -944,7 +946,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
           profiles: { pilot: { active: false } },
           expiries: { set: [{ expiryTypeId: 'type_pilots', expiresAt: '2030-01-01' }] },
         }),
-      ).rejects.toMatchObject({ code: 'SCOPE_MISMATCH' });
+      ).rejects.toMatchObject({ code: 'SCOPE_MISMATCH', details: { expiryTypeId: 'type_pilots' } });
       expect(calls.indexOf('pilotProfile.updateMany')).toBeLessThan(calls.indexOf('expiry.findMany'));
       expect(calls).not.toContain('expiry.create');
       expect(calls).not.toContain('person.update');
@@ -962,6 +964,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
 
       await expect(updatePerson(adminActor(), 'person_1', { expiries: { set: [{ expiryTypeId: 'type_all', expiresAt: '2030-01-01' }] } })).rejects.toMatchObject({
         code: 'EXPIRY_CONFLICT',
+        details: { expiryTypeId: 'type_all' },
       });
     });
 

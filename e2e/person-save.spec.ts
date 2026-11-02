@@ -56,6 +56,7 @@ async function patchPerson(page: Page, personId: string, data: Record<string, un
 type ProfileState = { deactivatedAt: string | null } | null;
 type PersonDetail = {
   firstName: string;
+  email: string | null;
   phone: string | null;
   profiles: { pilot: boolean; student: boolean; instructor: boolean };
   pilotProfile: ProfileState;
@@ -308,9 +309,11 @@ test.describe('Pilot editor — one Salva (story 19.4, AD-6)', () => {
     expect((await page.request.patch(`/api/v1/expiry-types/${ratingType}`, { data: { isActive: false } })).status()).toBe(200);
 
     await page.getByTestId('pilot-identity-submit').click();
-    const ratingsError = page.getByTestId('pilot-ratings-error');
-    await expect(ratingsError).toHaveText('Si è verificato un errore. Riprova.');
-    await expect(ratingsError).toBeFocused();
+    // Review 19.4 F2: the refusal says what to do, on the row it is about — not «Riprova» for the whole section.
+    const rowError = page.getByTestId(`expiry-error-${ratingType}`);
+    await expect(rowError).toHaveText('Questo tipo è stato disattivato: togli la riga.');
+    await expect(rowError).toBeFocused();
+    await expect(page.getByTestId('pilot-ratings-error')).toHaveCount(0);
     await expect(phone).toHaveValue('+39 333 6111111');
     await expect(page.getByTestId(`expiry-row-${ratingType}`)).toHaveAttribute('data-state', 'new');
     expect((await getPerson(page, personId)).phone).toBe('+39 333 6000000');
@@ -321,11 +324,77 @@ test.describe('Pilot editor — one Salva (story 19.4, AD-6)', () => {
     await page.getByTestId('pilot-identity-submit').click();
     await expect(page.getByTestId('pilot-identity-error')).toHaveText('Esiste già una persona con questa email.');
     await expect(page.getByTestId('pilot-ratings-error')).toHaveCount(0);
+    await expect(page.getByTestId(`expiry-error-${ratingType}`)).toHaveCount(0);
 
     await page.reload();
     await openPilotEditor(page, person.lastName);
     await expect(page.getByTestId('pilot-identity-form').getByLabel('Telefono', { exact: true })).toHaveValue('+39 333 6000000');
     await expect(page.getByTestId('pilot-identity-form').getByLabel('Email', { exact: true })).toHaveValue(person.email);
+  });
+
+  test('a new scadenza on a person archived meanwhile: the section says why instead of «Riprova», nothing is saved (review 19.4 F2)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('Archiviata');
+    const ratingType = await createExpiryType(page, 'ALL');
+    const personId = await createPerson(page, person);
+
+    await openPilotEditor(page, person.lastName);
+    await page.getByTestId('pilot-identity-form').getByLabel('Telefono', { exact: true }).fill('+39 333 9000000');
+    await page.getByTestId(`expiry-chip-${ratingType}`).click();
+    await page.getByTestId(`expiry-date-${ratingType}`).fill('2099-04-01');
+    expect((await page.request.post(`/api/v1/people/${personId}/archive`)).status()).toBe(200);
+
+    await page.getByTestId('pilot-identity-submit').click();
+    const ratingsError = page.getByTestId('pilot-ratings-error');
+    await expect(ratingsError).toHaveText('La persona è archiviata: ripristinala per aggiungere nuove scadenze.');
+    await expect(ratingsError).toBeFocused();
+    expect((await getPerson(page, personId)).phone).toBeNull();
+  });
+
+  test('an optional field typed into and emptied again does not block the Salva; a saved one emptied is cleared (review 19.4 F1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('Svuota');
+    const ratingType = await createExpiryType(page, 'ALL');
+    const personId = await createPerson(page, { ...person, phone: '+39 333 8000000' });
+
+    await openPilotEditor(page, person.lastName);
+    const form = page.getByTestId('pilot-identity-form');
+    const submit = page.getByTestId('pilot-identity-submit');
+    // Empty on the server, typed into and emptied again: unchanged, nothing to save.
+    await form.getByLabel('Indirizzo', { exact: true }).fill('Via Roma 1');
+    await form.getByLabel('Indirizzo', { exact: true }).fill('');
+    await expect(submit).toBeDisabled();
+    // Saved, then emptied: a change — the phone is cleared.
+    await form.getByLabel('Telefono', { exact: true }).fill('');
+    await page.getByTestId(`expiry-chip-${ratingType}`).click();
+    await page.getByTestId(`expiry-date-${ratingType}`).fill('2099-03-01');
+
+    const writes = recordWrites(page);
+    await submit.click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Dati aggiornati.' })).toBeVisible();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.body).toEqual({ phone: null, expiries: { set: [{ expiryTypeId: ratingType, expiresAt: '2099-03-01' }] } });
+    expect((await getPerson(page, personId)).phone).toBeNull();
+    expect((await getExpiries(page, personId)).map((expiry) => expiry.expiryTypeId)).toContain(ratingType);
+  });
+
+  test('the «Nuovo» form: an optional field typed into and emptied again does not block the creation (review 19.4 F1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('NuovoVuoto');
+
+    await page.goto('/it/dashboard/pilots');
+    await page.getByTestId('pilots-new-button').click();
+    const form = page.getByTestId('pilot-identity-form');
+    await form.getByLabel('Nome', { exact: true }).fill(person.firstName);
+    await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
+    await form.getByLabel('Telefono', { exact: true }).fill('+39 1');
+    await form.getByLabel('Telefono', { exact: true }).fill('');
+
+    const writes = recordWrites(page);
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Pilota creato' })).toBeVisible();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.body).toMatchObject({ firstName: person.firstName, lastName: person.lastName, phone: null });
   });
 
   test('"Archivia" is an action of its own: it neither sends nor drops the draft (AC 22)', async ({ page }) => {
@@ -388,5 +457,43 @@ test.describe('Instructor editor — one Salva (story 19.4, AD-10)', () => {
     await expect(page.getByTestId(`expiry-row-${ratingType}`)).toHaveAttribute('data-state', 'saved');
     await expect(page.getByTestId('instructor-payout-rate')).toHaveValue('33,50');
     await expect(page.getByTestId('instructor-rate-price')).toHaveAttribute('placeholder', '47,00');
+  });
+
+  test('an optional field typed into and emptied again does not block the Salva; the saved email emptied is cleared (review 19.4 F1)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('IstrSvuota');
+    const personId = await createPerson(page, { ...person, profiles: { instructor: {} } });
+
+    await page.goto('/it/dashboard/instructors');
+    await page.getByTestId(`instructor-edit-${personId}`).click();
+    const form = page.getByTestId('instructor-identity-form');
+    await expect(form.getByLabel('Email', { exact: true })).toHaveValue(person.email);
+    await form.getByLabel('Telefono', { exact: true }).fill('+39 1');
+    await form.getByLabel('Telefono', { exact: true }).fill('');
+    await form.getByLabel('Email', { exact: true }).fill('');
+    await page.getByTestId('instructor-payout-rate').fill('30,00');
+
+    const writes = recordWrites(page);
+    await page.getByTestId('instructor-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Modifiche salvate.' }).last()).toBeVisible();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.body).toEqual({ email: null, payoutRateCents: 3000 });
+    expect((await getPerson(page, personId)).email).toBeNull();
+  });
+
+  test('the instructor profile deactivated meanwhile: the compensation section says so instead of «Riprova» (review 19.4 F2)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('IstrSpento');
+    const personId = await createPerson(page, { ...person, profiles: { instructor: {} } });
+
+    await page.goto('/it/dashboard/instructors');
+    await page.getByTestId(`instructor-edit-${personId}`).click();
+    await page.getByTestId('instructor-payout-rate').fill('31,00');
+    expect((await page.request.post(`/api/v1/people/${personId}/profiles/instructor/deactivate`)).status()).toBe(200);
+
+    await page.getByTestId('instructor-identity-submit').click();
+    const payoutError = page.getByTestId('instructor-payout-rate-error');
+    await expect(payoutError).toHaveText('Il profilo istruttore non è più attivo: compenso e tariffa allievo non si possono salvare.');
+    await expect(payoutError).toBeFocused();
   });
 });

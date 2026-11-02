@@ -29,6 +29,16 @@ describe('parseApiError', () => {
 
     expect(result.code).toBe('CONFLICT');
     expect(result.fieldErrors.size).toBe(0);
+    expect(result.details).toBeNull();
+  });
+
+  it('passes a domain error\'s own details through (review 19.4 F2: the row a person save refused)', async () => {
+    const response = jsonResponse({ error: { code: 'EXPIRY_TYPE_INACTIVE', message: 'Deactivated.', details: { expiryTypeId: 'type_1' } } });
+
+    const result = await parseApiError(response);
+
+    expect(result.details).toEqual({ expiryTypeId: 'type_1' });
+    expect(result.fieldErrors.size).toBe(0);
   });
 
   it('degrades to code null / empty fields on a non-JSON body', async () => {

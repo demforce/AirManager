@@ -8,6 +8,7 @@
  * before this extraction.
  */
 import type { getTranslations } from 'next-intl/server';
+import type { PersonSaveErrorLabels } from '@/lib/person-save';
 import type { PilotEditorLabels, ToastLabels } from './pilot-editor';
 
 type Translator = Awaited<ReturnType<typeof getTranslations>>;
@@ -115,6 +116,31 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       conflictEmail: t('editor.errors.conflictEmail'),
       profilesExclusive: t('editor.errors.profilesExclusive'),
     },
+    saveErrors: buildPersonSaveErrorLabels(t, tProfiles),
+  };
+}
+
+/**
+ * The messages of a failed person Salva (review 19.4 F2), one per reason —
+ * shared by the pilot editor and the instructor editor (`instructors/page.tsx`),
+ * so the two never word the same refusal differently. `t` = `PilotsPage`,
+ * `tProfiles` = `PeoplePage`.
+ */
+export function buildPersonSaveErrorLabels(t: Translator, tProfiles: Translator): PersonSaveErrorLabels {
+  return {
+    conflictEmail: t('editor.errors.conflictEmail'),
+    profilesExclusive: tProfiles('profilesPanel.errors.exclusive'),
+    personArchived: t('editor.saveErrors.personArchived'),
+    expiryTypeNotFound: t('editor.saveErrors.expiryTypeNotFound'),
+    expiryTypeInactive: t('editor.saveErrors.expiryTypeInactive'),
+    scopeMismatch: t('editor.saveErrors.scopeMismatch'),
+    expiryConflict: t('editor.saveErrors.expiryConflict'),
+    instructorProfileInactive: t('editor.saveErrors.instructorProfileInactive'),
+    invalid: t('editor.saveErrors.invalid'),
+    forbidden: t('editor.saveErrors.forbidden'),
+    notFound: t('editor.saveErrors.notFound'),
+    unauthenticated: t('editor.saveErrors.unauthenticated'),
+    generic: t('editor.errors.generic'),
   };
 }
 

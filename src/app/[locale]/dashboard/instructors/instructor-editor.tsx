@@ -35,7 +35,7 @@ import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
 import type { ProfileFlags } from '@/lib/expiry-scope';
 import { formatCents, parseCents } from '@/lib/money';
-import { changedIdentityFields, IDENTITY_FIELDS, personSaveErrorSection, type PersonSaveSection } from '@/lib/person-save';
+import { blankToNull, changedIdentityFields, IDENTITY_FIELDS, personSaveError, type PersonSaveErrorLabels, type PersonSaveSection } from '@/lib/person-save';
 import { updatePersonSchema, type InstructorRateItemDto, type PersonDetailDto, type UpdatePersonCompositeInput, type UpdatePersonInput } from '@/lib/schemas/people';
 import { APP_TIMEZONE, formatDateOnly, formatMinutes } from '@/lib/time';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
@@ -77,13 +77,16 @@ export type InstructorEditorLabels = {
     noCurrentRate: string;
     /** `t.raw` template with `{date}`/`{price}` — the one line of the next scheduled rate (Q-19.4-b). */
     next: string;
+    /** The rates could not be read (review 19.4 F3): shown INSTEAD of the current rate's hint — never "no rate in effect". */
+    loadError: string;
     requiredField: string;
     invalidPrice: string;
     invalidDate: string;
     validFromPast: string;
-    genericError: string;
   };
-  errors: { generic: string; invalidRate: string; conflictEmail: string };
+  errors: { invalidRate: string };
+  /** A failed Salva, one message per reason (review 19.4 F2) — the pilot editor's own (`pilot-editor-labels.ts#buildPersonSaveErrorLabels`). */
+  saveErrors: PersonSaveErrorLabels;
 };
 
 type ToastLabels = { saved: string };
@@ -216,9 +219,10 @@ async function fetchPersonIdentity(personId: string): Promise<PersonIdentity | n
   return identityOf((await response.json()) as PersonIdentity);
 }
 
-async function fetchInstructorRates(personId: string): Promise<InstructorRateItemDto[]> {
+/** `null` = the read failed (review 19.4 F3): an empty list would read as "no rate in effect" and invite a rate "from today" over the real one. */
+async function fetchInstructorRates(personId: string): Promise<InstructorRateItemDto[] | null> {
   const response = await fetch(`/api/v1/people/${personId}/instructor-rates`);
-  if (!response.ok) return [];
+  if (!response.ok) return null;
   return (await response.json()) as InstructorRateItemDto[];
 }
 
@@ -301,6 +305,7 @@ function EditInstructorForm({
   const [identity, setIdentity] = useState<PersonIdentity | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [rates, setRates] = useState<InstructorRateItemDto[] | null>(null);
+  const [ratesLoadError, setRatesLoadError] = useState(false);
 
   // Fetch-on-mount: the promise callbacks set state, never the effect body
   // itself (the React Compiler's `react-hooks/set-state-in-effect` rule).
@@ -315,7 +320,9 @@ function EditInstructorForm({
       setIdentity(result);
     });
     void fetchInstructorRates(personId).then((result) => {
-      if (!cancelled) setRates(result);
+      if (cancelled) return;
+      setRates(result);
+      setRatesLoadError(result === null);
     });
     return () => {
       cancelled = true;
@@ -347,7 +354,8 @@ function EditInstructorForm({
   const [validFromServerPast, setValidFromServerPast] = useState(false);
 
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [saveError, setSaveError] = useState<{ section: PersonSaveSection; message: string } | null>(null);
+  /** `expiryTypeId` — the rating row the error is shown on instead of the section (review 19.4 F2). */
+  const [saveError, setSaveError] = useState<{ section: PersonSaveSection; message: string; expiryTypeId: string | null } | null>(null);
 
   // D-10: the rate in effect today and the next scheduled one, from the list
   // (`validFrom` desc) — max `validFrom <= today`, min `validFrom > today`.
@@ -398,6 +406,7 @@ function EditInstructorForm({
 
   function onInvalid(): void {
     setSubmitAttempted(true);
+    setSaveError(null);
   }
 
   async function onSubmit(values: UpdatePersonInput): Promise<void> {
@@ -426,31 +435,27 @@ function EditInstructorForm({
     });
 
     if (!response.ok) {
-      const { code, fieldErrors } = await parseApiError(response);
-      const section = personSaveErrorSection(code, fieldErrors, body.payoutRateCents !== undefined);
-      if (section === 'identity' && code !== 'CONFLICT') {
+      const parsed = await parseApiError(response);
+      const error = personSaveError(parsed, body.payoutRateCents !== undefined);
+      if (error.reason === 'invalidField') {
         // Review F1 of story 14.2: the field-shaped 422 marks THAT field.
         for (const field of IDENTITY_FIELDS) {
-          if (fieldErrors.has(field)) setError(field, { type: 'server', message: labels.identity.requiredField });
+          if (parsed.fieldErrors.has(field)) setError(field, { type: 'server', message: labels.identity.requiredField });
         }
         setTimeout(() => focusFirstInvalid(identityRef.current), 0);
         return;
       }
-      if (code === 'RATE_VALID_FROM_IN_PAST') {
+      if (error.reason === 'rateValidFromPast') {
         setValidFromServerPast(true);
         setTimeout(() => focusFirstInvalid(rateRef.current), 0);
         return;
       }
-      const shown: PersonSaveSection = section === 'profiles' ? 'form' : section;
-      const message =
-        shown === 'identity'
-          ? labels.errors.conflictEmail
-          : shown === 'expiries'
-            ? labels.ratings.genericError
-            : shown === 'instructorRate'
-              ? labels.studentRate.genericError
-              : labels.errors.generic;
-      setSaveError({ section: shown, message });
+      setSaveError({
+        // No profiles section here: the form-wide banner.
+        section: error.section === 'profiles' ? 'form' : error.section,
+        message: labels.saveErrors[error.reason],
+        expiryTypeId: error.expiryTypeId !== null && error.expiryTypeId in expiries.rows ? error.expiryTypeId : null,
+      });
       return;
     }
 
@@ -468,6 +473,7 @@ function EditInstructorForm({
     onSaved({ firstName: updated.firstName, lastName: updated.lastName, payoutRateCents: savedPayout });
     const [nextRates] = await Promise.all([fetchInstructorRates(personId), expiries.reload()]);
     setRates(nextRates);
+    setRatesLoadError(nextRates === null);
   }
 
   if (loadError) {
@@ -495,6 +501,7 @@ function EditInstructorForm({
 
   const studentRate = labels.studentRate;
   const showRateErrors = submitAttempted || validFromServerPast;
+  const rowError = saveError?.expiryTypeId ? { typeId: saveError.expiryTypeId, message: saveError.message } : null;
 
   return (
     <form id="instructor-identity-form" ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)} noValidate data-testid="instructor-identity-form">
@@ -507,13 +514,13 @@ function EditInstructorForm({
             <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
           </Field>
           <Field label={labels.identity.email} error={errors.email ? labels.identity.requiredField : undefined}>
-            <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
+            <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email', { setValueAs: blankToNull })} />
           </Field>
           <Field label={labels.identity.phone} error={errors.phone ? labels.identity.requiredField : undefined}>
-            <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone')} />
+            <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone', { setValueAs: blankToNull })} />
           </Field>
           <Field label={labels.identity.address} wide error={errors.address ? labels.identity.requiredField : undefined}>
-            <Input aria-invalid={Boolean(errors.address)} {...register('address')} />
+            <Input aria-invalid={Boolean(errors.address)} {...register('address', { setValueAs: blankToNull })} />
           </Field>
         </div>
         {saveError?.section === 'identity' ? <SectionError message={saveError.message} testId="instructor-identity-error" /> : null}
@@ -527,8 +534,9 @@ function EditInstructorForm({
             profiles={INSTRUCTOR_PROFILE_FLAGS}
             labels={labels.ratings}
             showMissingDates={submitAttempted}
+            rowError={rowError}
           />
-          {saveError?.section === 'expiries' ? <SectionError message={saveError.message} testId="instructor-ratings-error" /> : null}
+          {saveError?.section === 'expiries' && !rowError ? <SectionError message={saveError.message} testId="instructor-ratings-error" /> : null}
         </div>
       </Section>
 
@@ -557,7 +565,8 @@ function EditInstructorForm({
           <div className="form-grid">
             <Field
               label={studentRate.price}
-              error={showRateErrors ? (ratePriceError ?? undefined) : undefined}
+              // A failed read takes the hint's place (review 19.4 F3) — announced, but the field itself is not invalid.
+              error={showRateErrors && ratePriceError !== null ? ratePriceError : ratesLoadError ? studentRate.loadError : undefined}
               hint={
                 rates === null
                   ? undefined

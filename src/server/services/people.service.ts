@@ -549,7 +549,7 @@ type CompositeExpiryType = { id: string; scope: ExpiryScope; isActive: boolean }
 /** A row the composite is about to CREATE needs an active type (same 422 codes as the composite create, `assertExpiryTypesValidForComposite`). */
 function assertExpiryTypeCreatable(type: CompositeExpiryType): void {
   if (!type.isActive) {
-    throw new ValidationError(`Expiry type ${type.id} is deactivated.`, undefined, 'EXPIRY_TYPE_INACTIVE');
+    throw new ValidationError(`Expiry type ${type.id} is deactivated.`, { expiryTypeId: type.id }, 'EXPIRY_TYPE_INACTIVE');
   }
 }
 
@@ -607,7 +607,9 @@ function assertExpiryTypeCreatable(type: CompositeExpiryType): void {
  * InstructorProfile` and the flight registry's `Aircraft → Account`.
  *
  * Every 409 but the email's carries its own code (AD-5), so a client can tell
- * which section failed.
+ * which section failed; the expiry errors about ONE row (`EXPIRY_TYPE_NOT_FOUND`,
+ * `EXPIRY_TYPE_INACTIVE`, `SCOPE_MISMATCH`, `EXPIRY_CONFLICT`) also name it in
+ * `details.expiryTypeId` (review 19.4 F2), so the editor shows the error on it.
  */
 export async function updatePerson(actor: Actor, id: string, patch: UpdatePersonCompositeInput): Promise<PersonDetail> {
   authorize(actor, 'people.manage');
@@ -635,7 +637,7 @@ export async function updatePerson(actor: Actor, id: string, patch: UpdatePerson
     for (const typeId of ids) {
       const type = expiryTypeById.get(typeId);
       if (!type) {
-        throw new ValidationError(`Expiry type ${typeId} not found.`, undefined, 'EXPIRY_TYPE_NOT_FOUND');
+        throw new ValidationError(`Expiry type ${typeId} not found.`, { expiryTypeId: typeId }, 'EXPIRY_TYPE_NOT_FOUND');
       }
       // An existing row may still move its date on a since-deactivated type (as `updateExpiry` allows).
       if (!registered.has(typeId)) assertExpiryTypeCreatable(type);
@@ -708,7 +710,7 @@ export async function updatePerson(actor: Actor, id: string, patch: UpdatePerson
         // Read before the transaction (step 4); re-checked here for a row deleted meanwhile.
         const type = expiryTypeById.get(entry.expiryTypeId)!;
         assertExpiryTypeCreatable(type);
-        assertScopeCompatible(type.scope, finalProfiles);
+        assertScopeCompatible(type.scope, finalProfiles, { expiryTypeId: entry.expiryTypeId });
         try {
           await tx.expiry.create({
             data: { personId: id, expiryTypeId: entry.expiryTypeId, expiresAt: nextExpiresAt, actorUserId: actor.userId },
@@ -716,7 +718,7 @@ export async function updatePerson(actor: Actor, id: string, patch: UpdatePerson
         } catch (error) {
           // A concurrent `POST /expiries` created the same (person, type) row first.
           if (isUniqueViolation(error)) {
-            throw new ConflictError('An expiry of this type was registered meanwhile.', undefined, 'EXPIRY_CONFLICT');
+            throw new ConflictError('An expiry of this type was registered meanwhile.', { expiryTypeId: entry.expiryTypeId }, 'EXPIRY_CONFLICT');
           }
           throw error;
         }

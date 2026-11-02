@@ -153,9 +153,10 @@ type ScopeCheckPerson = {
  * ACTIVE (`deactivatedAt === null`) — a deactivated or never-activated
  * profile is treated the same as "no profile", both fail the check. Exported
  * for the person composite (`people.service.ts#updatePerson`, story 19.4),
- * which runs it against the profiles as they are AFTER its own profile writes.
+ * which runs it against the profiles as they are AFTER its own profile writes
+ * and passes `details` naming the row (review 19.4 F2).
  */
-export function assertScopeCompatible(scope: ExpiryScope, person: ScopeCheckPerson): void {
+export function assertScopeCompatible(scope: ExpiryScope, person: ScopeCheckPerson, details?: Record<string, unknown>): void {
   if (scope === 'ALL') {
     return;
   }
@@ -168,7 +169,7 @@ export function assertScopeCompatible(scope: ExpiryScope, person: ScopeCheckPers
   if (!isCompatible) {
     throw new ValidationError(
       "This expiry type's scope does not match any of the person's active profiles.",
-      undefined,
+      details,
       'SCOPE_MISMATCH',
     );
   }

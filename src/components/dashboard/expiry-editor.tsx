@@ -195,6 +195,8 @@ export type ExpiryDraftEditorProps = {
   labels: ExpiryDraftEditorLabels;
   /** Marks the rows still missing their date — only once the user has tried to save. */
   showMissingDates: boolean;
+  /** The server's refusal of ONE row after a failed Salva (review 19.4 F2), shown under that row — focusable, so the editor can move the focus onto it. */
+  rowError?: { typeId: string; message: string } | null;
 };
 
 /**
@@ -205,7 +207,7 @@ export type ExpiryDraftEditorProps = {
  * "Rimuovi") drops it again. Nothing here asks for confirmation: everything
  * is reversible until the Salva.
  */
-export function ExpiryDraftEditor({ draft, kind, profiles, labels, showMissingDates }: ExpiryDraftEditorProps) {
+export function ExpiryDraftEditor({ draft, kind, profiles, labels, showMissingDates, rowError = null }: ExpiryDraftEditorProps) {
   if (draft.status === 'error') {
     return (
       <p className="fld-label" style={{ color: 'var(--bad)' }}>
@@ -273,6 +275,11 @@ export function ExpiryDraftEditor({ draft, kind, profiles, labels, showMissingDa
                 {missing ? (
                   <p role="alert" className="fld-error" style={{ flexBasis: '100%', fontFamily: 'var(--font-ui)' }}>
                     {labels.requiredDate}
+                  </p>
+                ) : null}
+                {rowError?.typeId === typeId ? (
+                  <p role="alert" tabIndex={-1} className="fld-error" data-testid={`expiry-error-${typeId}`} style={{ flexBasis: '100%', fontFamily: 'var(--font-ui)' }}>
+                    {rowError.message}
                   </p>
                 ) : null}
               </div>
