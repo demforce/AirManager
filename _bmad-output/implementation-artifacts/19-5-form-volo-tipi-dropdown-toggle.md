@@ -4,7 +4,7 @@ baseline_commit: 3876e72
 
 # Story 19.5: Form volo — due tipi, dropdown uniformi, bottone doppio comando/solista
 
-Status: **ready-for-dev** — 2026-11-01. **Nessuna domanda PO aperta** (v. §0.3: otto scelte di interpretazione prese su delega, ognuna ricondotta a una ratifica chiusa o a un vincolo tecnico misurato). **Modello dev: Opus 5 xhigh (UI)** — la story scrive una primitiva AirOps nuova (`Toggle`), allarga una primitiva condivisa (`SearchCombobox`, 5 call site) e tocca tre form (volo, prenotazione nuova, modifica prenotazione) oltre a enum Prisma, migrazione, Zod/OpenAPI, statistiche, export, seed, i18n ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-5-form-volo-tipi-dropdown-toggle`.
+Status: **review** — dev 2026-11-02 (Dev Agent Record sotto). Era: ready-for-dev — 2026-11-01. **Nessuna domanda PO aperta** (v. §0.3: otto scelte di interpretazione prese su delega, ognuna ricondotta a una ratifica chiusa o a un vincolo tecnico misurato). **Modello dev: Opus 5 xhigh (UI)** — la story scrive una primitiva AirOps nuova (`Toggle`), allarga una primitiva condivisa (`SearchCombobox`, 5 call site) e tocca tre form (volo, prenotazione nuova, modifica prenotazione) oltre a enum Prisma, migrazione, Zod/OpenAPI, statistiche, export, seed, i18n ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Chiave sprint-status: `19-5-form-volo-tipi-dropdown-toggle`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`3876e72`** (HEAD al 2026-11-01: la 19.1 è già nel codice da `08eb558`; 19.2, 19.3 e 19.4 esistono solo come story file). Il dev della 19.5 parte **DOPO i commit di 19.2, 19.3 e 19.4**, che toccano **gli stessi file** in punti diversi:
 > - **19.2** — `flight-editor.tsx` (via «Contaore iniziale/finale» e «Note»: campi `:1062-1070`, payload `:594-611`, `:626`, chiavi label `:58`, `:83-85`, `:89`; il test e2e F1/F2 di `flights.spec.ts:610-700` diventa «correzione solo-cicli»), `logbook-console.tsx` (righe dello sheet), `logbook/page.tsx` e `dashboard/page.tsx` (label del `FlightEditor`), `exports.service.ts` (colonna velivoli), `seed-load.ts`, `messages/*.json`, i commenti `segmented.tsx:24`/`new-booking-form.tsx:480`, e — attenzione — le righe dei selettori `^=` citate da `CLAUDE.md`.
@@ -403,20 +403,20 @@ Mirati prima della consegna: `flights`, `flight-reversal`, `flight-log`, `mobile
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento** (AC tutti): `git log --oneline -6` (19.2, 19.3, 19.4 committate), `scripts/e2e.sh status`, `:3000` libero; rieseguire i comandi di §3.6 e i grep di AC 8; annotare gli scostamenti di riga. Verificare **sul baseline** il comportamento di Escape col `<select>` nativo aperto del form prenotazione (D-6) e riportarlo.
-- [ ] **T1 — Schema e migrazione** (AC 1, 2): enum + doc-comment; migrazione AD-1; prova sui dati sul gemello; `migrate diff` vuoto; `npx prisma generate`.
-- [ ] **T2 — Contratti e server** (AC 3, 5, 6): `flights.ts`, `stats.ts`, `stats.service.ts`, `exports.service.ts`; `registry.test.ts`.
-- [ ] **T3 — `SearchCombobox`** (AC 20, 21, 23, 24): AD-2 (a)(b)(c), AD-3; doc-comment; CSS dell'opzione disabilitata.
-- [ ] **T4 — `Toggle`** (AC 12, 15): `ui/toggle.tsx` + blocco `.toggle*` in `airops.css`; misure di contrasto e focus nei due temi.
-- [ ] **T5 — Form volo** (AC 9, 10, 11, 13, 14, 16): AD-6; label in `logbook/page.tsx` e `dashboard/page.tsx` (via `other`).
-- [ ] **T6 — Registro e statistiche** (AC 4, 5): `logbook-console.tsx`, `logbook/page.tsx`, `reports/*`, `.flow-bar-muted`.
-- [ ] **T7 — Form prenotazione** (AC 17, 18, 19, 22): AD-5 su `new-booking-form.tsx`, `edit-booking-form.tsx`, `booking-labels.ts`.
-- [ ] **T8 — i18n** (AC 25): §3.8 su entrambi i file; parità misurata.
-- [ ] **T9 — Seed** (AC 7): `seed-load.ts` (solo typecheck); `db seed` + `seed:demo` su DB fresco.
-- [ ] **T10 — Unit** (AC 26).
-- [ ] **T11 — e2e** (AC 3, 4, 9, 13-22): §3.6 (riformulazioni + nuovi test); helper `selectFromCombobox` in `e2e/helpers.ts`.
-- [ ] **T12 — Documenti** (AC 27): riga FR-14 nel PRD; `CLAUDE.md` riga 41 (AD-3); se le modifiche agli spec fanno slittare le righe `^=` citate in `CLAUDE.md`, aggiornarle nello stesso commit.
-- [ ] **T13 — Verifica** (AC 8, 28, 29): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, prove di discriminanza §4.3, screenshot 1280/375; Dev Agent Record compilato (righe effettive, conteggi test prima/dopo, delta e2e per l'arbitro).
+- [x] **T0 — Riallineamento** (AC tutti): `git log --oneline -6` (19.2, 19.3, 19.4 committate), `scripts/e2e.sh status`, `:3000` libero; rieseguire i comandi di §3.6 e i grep di AC 8; annotare gli scostamenti di riga. Verificare **sul baseline** il comportamento di Escape col `<select>` nativo aperto del form prenotazione (D-6) e riportarlo.
+- [x] **T1 — Schema e migrazione** (AC 1, 2): enum + doc-comment; migrazione AD-1; prova sui dati sul gemello; `migrate diff` vuoto; `npx prisma generate`.
+- [x] **T2 — Contratti e server** (AC 3, 5, 6): `flights.ts`, `stats.ts`, `stats.service.ts`, `exports.service.ts`; `registry.test.ts`.
+- [x] **T3 — `SearchCombobox`** (AC 20, 21, 23, 24): AD-2 (a)(b)(c), AD-3; doc-comment; CSS dell'opzione disabilitata.
+- [x] **T4 — `Toggle`** (AC 12, 15): `ui/toggle.tsx` + blocco `.toggle*` in `airops.css`; misure di contrasto e focus nei due temi.
+- [x] **T5 — Form volo** (AC 9, 10, 11, 13, 14, 16): AD-6; label in `logbook/page.tsx` e `dashboard/page.tsx` (via `other`).
+- [x] **T6 — Registro e statistiche** (AC 4, 5): `logbook-console.tsx`, `logbook/page.tsx`, `reports/*`, `.flow-bar-muted`.
+- [x] **T7 — Form prenotazione** (AC 17, 18, 19, 22): AD-5 su `new-booking-form.tsx`, `edit-booking-form.tsx`, `booking-labels.ts`.
+- [x] **T8 — i18n** (AC 25): §3.8 su entrambi i file; parità misurata.
+- [x] **T9 — Seed** (AC 7): `seed-load.ts` (solo typecheck); `db seed` + `seed:demo` su DB fresco.
+- [x] **T10 — Unit** (AC 26).
+- [x] **T11 — e2e** (AC 3, 4, 9, 13-22): §3.6 (riformulazioni + nuovi test); helper `selectFromCombobox` in `e2e/helpers.ts`.
+- [x] **T12 — Documenti** (AC 27): riga FR-14 nel PRD; `CLAUDE.md` riga 41 (AD-3); se le modifiche agli spec fanno slittare le righe `^=` citate in `CLAUDE.md`, aggiornarle nello stesso commit.
+- [x] **T13 — Verifica** (AC 8, 28, 29): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, prove di discriminanza §4.3, screenshot 1280/375; Dev Agent Record compilato (righe effettive, conteggi test prima/dopo, delta e2e per l'arbitro).
 
 ---
 
@@ -424,26 +424,214 @@ Mirati prima della consegna: `flights`, `flight-reversal`, `flight-log`, `mobile
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), dev subagent `dev-19-5` (UI → Opus), 2026-11-02. Skill lette e applicate: `karpathy-guidelines`, `design-taste-frontend` (design read: «UI di prodotto AirOps, preservare» — il perimetro landing non si applica, prese le regole su stati, contrasto, focus, reduced-motion, niente em-dash nei testi nuovi), `ui-ux-pro-max` (target 44×44, focus visibile, contrasto 4.5/3, transizioni 150-300 ms solo su `transform`).
+
 ### §A — Riallineamento sul HEAD (T0) e comportamento Escape sul baseline
+
+- `git log`: HEAD `a5fe9a6` (19.1-19.4 committate, fix 16.3 `411b73c` già dentro). `:3000` libero, ultimo run e2e = arbitro 19.4 `525 passed`, `E2E_EXIT=0`. `airmanager` non toccato (tutte le prove su gemelli `airmanager_t195{a,b,e,f,g}`).
+- **Scostamenti di riga misurati su `a5fe9a6`** (story su `3876e72`): `schema.prisma` enum `:824-838` (era `:871-884`), colonna `:918` (`:957`), doc `isSolo` `:919-926`; `flight-editor.tsx` `Select` `:26`, `flightTypeSchema` `:34`, `flightTypes` `:83` (`:87`), commento `:319` (`:333`), `flightTypeLabel` `:457-461` (`:471-475`), campo tipo `:969-999` (`:1005-1035`), fieldset radio `:1041-1055` (`:1086-1100`); `logbook-console.tsx` `flightTypeLabel` `:217-221`, filtri `:685-687` e `:1117-1119`, badge `:747`; `logbook/page.tsx` `:39`, `:265`, `:345`; `dashboard/page.tsx` `:793` (`:807`); `exports.service.ts` `:215-222`, `:232`, `:577`; `seed-load.ts` `:619-620` (`:627-628`); `airops.css` `.fld-hint` `:1225`, `.combo-option-empty` `:1458` (`:1440`), opzioni 44px `:3603` (`:3585`); i18n `flightTypes.other` `:1063`/`:1202`, `movementMix.keys.AERIAL_WORK` `:2240`, `selectPlaceholder` `:1536` — **1681 chiavi per file** al HEAD (non 1760: 19.2-19.4 le hanno cambiate). e2e: `flights.spec.ts:294`, `:557`, `:630-664`; `flight-reversal.spec.ts:183` (`:188`); `mobile-logbook.spec.ts:76`, `:1030-1057`; `flight-log.spec.ts:159/209/317/341-360`; `reports.spec.ts:110/145/221-222`; prenotazioni come §3.6 (+1 riga). I due test «solo allievo» erano già riscritti da 19.3/19.4 (deattivazione pilota → profilo allievo): nessun conflitto con l'esclusività dei profili.
+- **D-6 sul baseline** (dev server su `airmanager`, PRIMA di ogni modifica, script `playwright-core`):
+  ```
+  booking: <select> velivolo aperto (click) + Escape -> slideover.open 1, valore conservato (cmvynau4m000bxbpvtihw6ybu)
+  booking: <select> velivolo focalizzato ma chiuso + Escape -> slideover.open 0
+  flight:  SearchCombobox velivolo con popup aperto + Escape -> slideover.open 0 listbox 0
+  ```
+  Il popup nativo consuma il primo Escape; il combobox no (chiudeva l'intero pannello): D-6/AD-3 confermate come necessarie.
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Esito | Prova |
+|---|---|---|
+| 1 | ✅ | enum `{TOURISM SCHOOL}`, doc riscritto (A5), doc `isSolo` invariato e vero; `enum_range` = `{TOURISM,SCHOOL}` (§C) |
+| 2 | ✅ | `20261102120000_flight_type_two_values`, catena da zero, prova sui dati, `migrate diff` vuoto (§C) |
+| 3 | ✅ | `flightTypeSchema` a due valori; e2e `flights.spec` «the removed AERIAL_WORK type…»: `POST /flights`, `POST /flights/{id}/correct`, `GET /flights?flightType=…`, `?format=xlsx`, `/flights/pdf?…` → 422 `VALIDATION_ERROR`; `/api/v1/openapi.json` senza la stringa; unit `registry.test.ts` |
+| 4 | ✅ | filtri desktop e mobile a tre opzioni (e2e: `['Tutti i tipi','Turismo','Scuola']`); badge senza ramo `warn`; `FLIGHT_TYPES` a due; URL `?flightType=AERIAL_WORK` → 200, filtro su «Tutti i tipi» |
+| 5 | ✅ | `movementMix` a due chiavi (unit + e2e `reports.spec`); card a due bande e due pallini (screenshot `reports-mix-1280`); `.flow-bar-muted` rimossa con la frase del commento |
+| 6 | ✅ | `flightTypeLabel` dell'export a due rami, etichette solo Turismo/Scuola (`exports`/`pdf-exports` verdi) |
+| 7 | ✅ | `seed-load.ts` senza `isAerialWork` (solo typecheck, non eseguito: il PRNG cambia flusso, atteso); `db seed` + `seed:demo` verdi su gemello fresco migrato (`airmanager_t195a`: 22 TOURISM, 2 SCHOOL); `seed.ts`/`seed-demo.ts` non usavano il terzo valore (grep) |
+| 8 | ⚠️ | grep 2 e 3 = 0; grep 1 = **14 righe, tutte nei test negativi richiesti da AC 3/26** (§E, §G-1) |
+| 9 | ✅ | `flight-type-select` = `input[role=combobox]`, popup a due opzioni, `toHaveValue('Turismo'/'Scuola')`, correzione sul valore registrato; lucchetto 14.3: `disabled`, «Scuola», hint collegato (`aria-describedby="flight-type-select-hint"`); in correzione mai disabilitato con hint nuovo; ↓/Invio selezionano; 0 richieste di ricerca digitando nel tipo |
+| 10 | ✅ | 4 combobox, 0 select, 0 radio in nuova voce e correzione a 1280 (flights) e 375 (mobile-logbook); stessa struttura `.fld › .fld-label + .input` (e2e) |
+| 11 | ✅ | «Pianifica volo» dalla Panoramica: due tipi, «Volo solista», nessuna chiave grezza (probe + screenshot `panoramica-dispatch-1280`) |
+| 12 | ✅ | `src/components/ui/toggle.tsx` (API AD-4), blocco `.toggle*` in `airops.css` solo token, nessuno stile inline |
+| 13 | ✅ | e2e: switch per nome esatto in entrambi gli stati, «Doppio comando» → «Solista», nessun invio da click/Spazio/Invio, `isSolo` inviato = `aria-checked` |
+| 14 | ✅ | e2e: assente su Turismo, Scuola-solista → Turismo lo toglie e azzera, di nuovo Scuola spento; presente e funzionante con tipo bloccato (allievo); correzione di un Scuola solista → acceso |
+| 15 | ✅ | (a) Tab tipo → switch → Partenza, Spazio/Invio commutano (e2e); (b)(c) misure §H; (d) 44px a 1280 e 375, larghezza = cella, `scrollWidth ≤ innerWidth` (e2e mobile con `hasTouch`); (e) reduced-motion 0s (misura §H); (f) un solo nodo a 375 |
+| 16 | ✅ | e2e: Scuola solista da UI → `isSolo: true` via API, PIC = persona; doppio → PIC istruttore (test esistente `:279`) |
+| 17 | ✅ | probe e e2e: staff 3 combobox, pilota 1, istruttore «Per un allievo» 2, modifica 1; 0 `select`; payload invariato (stessi campi RHF, nessun cambio a `onSubmit`) |
+| 18 | ✅ | e2e `bookings.spec` riscritto: testo «MARCHE — motivo (fuori servizio)», `aria-disabled`, click (forzato) senza effetto e popup aperto, Invio non seleziona né invia (`.fld-error` 0), uscendo dal campo torna vuoto; i 422 AOG-1a (`aircraft-out-of-service-until`) verdi |
+| 19 | ✅ | e2e `typeahead-pickers`: invio a vuoto → errori per campo, focus sul primo invalido (staff `booking-person`, pilota `booking-aircraft`), scelta = errore tolto; dopo il successo e alla chiusura combobox vuoti / «Nessuno» |
+| 20 | ✅ | e2e: primo Escape chiude solo il popup (form prenotazione e form volo, valore invariato), il secondo il pannello; baseline §A |
+| 21 | ✅ | e2e: pilota, 0 richieste a `/api/v1/aircraft|people`, opzione viva dopo 600 ms, 201 |
+| 22 | ✅ | `form.getByLabel('Allievo', { exact: true })` → `booking-student`; commento e `select[name="studentId"]` rimossi |
+| 23 | ✅ | i 5 call site esistenti non toccati; `typeahead-pickers.spec` vecchi test verdi senza modifiche |
+| 24 | ✅ | (a)-(d) come sopra; opzioni disabilitate 44px a 375 (misura §H) |
+| 25 | ✅ | 4 rimosse, 2 nuove, 2 testi cambiati; 1681 → 1679 per file, parità 0/0 (§E) |
+| 26 | ✅ | `stats.service.test` a due chiavi (movements 5, minuti 270); nuovi `flights.test.ts` (3) e registry (1); unit A5 verde |
+| 27 | ✅ | riga FR-14 nel change record del PRD; `CLAUDE.md` riga 41 aggiornata |
+| 28 | ✅ | gates verdi (§I); e2e mirati §F |
+| 29 | ✅ | §H |
+
 ### §C — Migrazione: catena, prova sui dati, `migrate diff`
+
+```
+# (1) catena da zero, gemello airmanager_t195a
+$ npx prisma migrate deploy
+  └─ 20261102120000_flight_type_two_values/
+All migrations have been successfully applied.
+$ SELECT enum_range(NULL::"FlightType")   -> {TOURISM,SCHOOL}
+
+# (2) prova sui dati, gemello airmanager_t195b: migrato fino a 20261102000000 (cartella 19.5 spostata e rimessa),
+#     db seed + seed:demo (24 voli, nessun CANCELLED nel seed demo -> due REGISTERED)
+UPDATE "Flight" SET "flightType"='AERIAL_WORK' WHERE id IN (...) RETURNING ...
+cmvyng8rt003b80pvkhm6y21a|AERIAL_WORK|REGISTERED|f
+cmvyng8r0003980pvd3ar4b4m|AERIAL_WORK|REGISTERED|f
+$ npx prisma migrate deploy   (dopo la discriminanza §D-1, `migrate resolve --rolled-back`)
+All migrations have been successfully applied.
+cmvyng8rt003b80pvkhm6y21a|TOURISM|REGISTERED|f
+cmvyng8r0003980pvd3ar4b4m|TOURISM|REGISTERED|f
+{TOURISM,SCHOOL}          TOURISM|22  SCHOOL|2
+
+# (3) Prisma 7 non ha più --shadow-database-url: stesso controllo con --from-config-datasource sui due gemelli migrati
+$ npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script   (t195a e t195b)
+-- This is an empty migration.
+-- This is an empty migration.
+
+# (4)
+$ npx prisma generate
+✔ Generated Prisma Client (7.8.0) to ./src/generated/prisma
+```
+`airmanager_load` non toccato: quando verrà migrato, l'`UPDATE` rimappa i suoi voli.
 
 ### §D — Discriminanza (§4.3) con sha256
 
+Ogni mutazione su build di produzione dedicata (gemello `airmanager_t195f`, `--retries=0`), poi ripristino byte-identico.
+
+| # | Mutazione | Esito | sha256 prima → mutato → ripristino |
+|---|---|---|---|
+| 1 | migrazione senza l'`UPDATE` | **rossa**: `ERROR: invalid input value for enum "FlightType_new": "AERIAL_WORK"` (psql sul gemello popolato; `migrate deploy` fallito e registrato come failed) | `3a52c4fa…` → `5342a4d1…` → `3a52c4fa…` |
+| 2 | via `event.stopPropagation()` | **rosso** `typeahead-pickers.spec.ts:314` `.slideover.open` atteso 1, ricevuto 0 dopo il primo Escape | `search-combobox.tsx` `3880c549…` → `6738a8c3…` (2+3 insieme, test indipendenti) → `3880c549…` |
+| 3 | click senza il controllo `disabled` | **rosso** `bookings.spec.ts:561` listbox non più visibile (l'opzione fuori servizio selezionata) | idem |
+| 4a | `aria-checked={false}` costante | **rosso** `flights.spec.ts:1439` `aria-checked` atteso "true", ricevuto "false" | `toggle.tsx` `c495b836…` → `33ba4d84…` → `c495b836…` |
+| 4b | via `aria-labelledby` | **rosso** `flights.spec.ts:1428` `getByRole('switch', { name: 'Volo solista', exact: true })` non trovato | `c495b836…` → `146d8af0…` → `c495b836…` |
+| 5 | `fetchOptions` su `/api/v1/aircraft` nel velivolo della prenotazione | **rosso** `typeahead-pickers.spec.ts:369` opzione sparita dopo il debounce (403 del pilota) | `new-booking-form.tsx` `6949ec00…` → `a8889223…` → `6949ec00…` |
+
+Discriminanza gratuita in più: il fix §G-2 (`SearchCombobox` chiuso dallo scroll del proprio input) — l'e2e di AC 22 era **rosso 3/3** prima del fix (traccia: popup aperto dopo il click, chiuso dopo il `fill` di un nome più lungo del campo), verde dopo.
+
 ### §E — Grep di AC 8 e parità i18n (verbatim)
+
+```
+--- grep1 (14 righe: SOLO i test negativi di AC 3/26)
+src/lib/schemas/registry.test.ts:391  it('no longer documents the removed AERIAL_WORK flight type anywhere (story 19.5, AC 3)'
+src/lib/schemas/registry.test.ts:392  expect(JSON.stringify(doc)).not.toContain('AERIAL_WORK');
+src/lib/schemas/flights.test.ts:7,11,13,16,18   (flightTypeSchema / listFlightsQuerySchema rifiutano il valore)
+e2e/flights.spec.ts:1513,1521,1528,1532,1540,1544   (test AC 3: 422 su POST/correct/list/export, OpenAPI, pagina)
+--- grep2
+--- grep3
+--- selectPlaceholder (src, messages): nessuna riga
+```
+i18n: `it.json` 1681 → **1679**, `en.json` 1681 → **1679**; `diff` dei percorsi = vuoto (**parità 0/0**). Rimosse: `FlightsPage.form.flightTypes.other`, `LogbookPage.flightTypes.other`, `ReportsPage.movementMix.keys.AERIAL_WORK`, `BookingsPage.form.selectPlaceholder`; nuove `BookingsPage.form.picker.{placeholder,noResults}`; cambiate `LogbookPage.editor.fields.soloMode` («Volo solista»/«Solo flight») e `…studentOnlyCorrectionHint` (testo §3.8, sempre letto con `t.raw`). Orfane preesistenti segnalate e non cancellate: `FlightsPage.form.soloMode`/`soloModes`.
 
 ### §F — Delta test (unit ed e2e, prima/dopo)
 
+- **Unit**: 1839 → **1843** (+3 `src/lib/schemas/flights.test.ts`, +1 `registry.test.ts`; `stats.service.test.ts` modificato). `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` sui tre file: verdi (nessun import verso env eager).
+- **e2e nuovi (+7)**: `flights.spec.ts` +3 (Scuola solista da UI; correzione di un solista; `AERIAL_WORK` rifiutato), `mobile-logbook.spec.ts` +1 (switch a 375, tap), `typeahead-pickers.spec.ts` +3 (Escape; pilota in modalità statica; staff focus/reset). Nessun test rimosso. **Delta atteso per l'arbitro: 525 → 532.**
+- **Serie mirata** (build una volta + `E2E_REUSE_SERVER=1`, DB gemelli, 16 spec del project `chromium` + `booking-window`/`reports` con `--no-deps --workers=1`):
+  1. gemello `t195e` fresco: 194 passed, 6 failed, 1 flaky → cause e correzioni in §G-2..§G-6;
+  2. stesso DB, dopo i fix: 197 passed, 4 failed — 2 per il tetto di 100 persone del picker staff su DB accumulato (311 persone ordinate prima di «Pilota-…»: classe nota, identica col `<select>`), 1 lista Panoramica affollata da due run, 1 il test 15.10 (§G-5, prima versione dell'adattamento instabile);
+  3. gemello `t195f` **fresco**: 199 passed, 1 failed (15.10, corretto come §G-5, poi `--repeat-each=5` → 5 passed), 1 flaky noto (`flights.spec.ts:987` E3, POST paralleli 422/409, solo API, verde al retry); `booking-window` + `reports`: **9 passed**;
+  4. finale su gemello `t195g` fresco: vedi §I.
+
 ### §G — Deviazioni motivate
+
+1. **AC 8 grep 1 non a zero**: le 14 righe sono i test negativi che AC 3 e AC 26 prescrivono (il valore rimosso va nominato per provarne il rifiuto). Nessun residuo in codice, commenti, i18n, seed o schema.
+2. **Fix di `SearchCombobox` fuori da AD-2** (`search-combobox.tsx`, effetto di chiusura su scroll): lo `scroll` orizzontale del testo dentro l'`<input>` (query o etichetta `select()`ata più lunga del campo — le celle a mezza larghezza dei form prenotazione) arrivava al listener in cattura e chiudeva il popup. Ora sono ignorati gli scroll nati dentro la radice del componente, come già quelli della listbox; lo scroll di un antenato chiude ancora (test 14.1 F4 verde). Misurato con la traccia Playwright; e2e di AC 22 rosso 3/3 prima.
+3. **`datetime-picker.spec.ts#hitTestsOwnControl`**: il controllo è cercato DENTRO il popover (`popover.querySelector`) — la ricerca a livello pagina di `.fld input[type="text"]` trovava ora il combobox «Pilota o allievo» prima del campo ora del calendario (2 test rossi).
+4. **`flight-log.spec.ts` (vista pilota)**: oltre a `:161`/`:209`, l'ultimo passo filtrava `TOURISM` aspettandosi 1 riga (l'altra era `AERIAL_WORK`): ora `SCHOOL` → 0 e `TOURISM` → 2.
+5. **`mobile-a11y-sweep.spec.ts` (15.10, popover + Tab)**: i sei Shift+Tab finiscono sul picker persona, che all'arrivo del focus apre il suo popup (tenuto o chiuso dallo scroll di `.so-body`, misurato in entrambi i modi) e lasciava `aria-owns` sul popup già chiuso (la sincronizzazione del focus trap è sul solo `focusin`). Il test riporta il focus nel calendario prima della sequenza di Escape, che così misura il solo popover come sempre.
+6. **`typeahead-pickers` staff**: dopo l'invio a vuoto il popup del picker persona (focalizzato) copre il velivolo: il test passa al campo con Tab, mai Escape (`CLAUDE.md`).
+7. **`aircraft-out-of-service-until.spec.ts`** usa il suo `selectFromCombobox` locale preesistente (regola di §3.6: le copie locali non si toccano), non quello nuovo di `helpers.ts`.
+8. **`aircraftOptionLabel`** esportata da `new-booking-form.tsx` e riusata dalla modifica (le due copie inline del suffisso diventano una).
+9. **Placeholder «Cerca…» anche sul combobox Tipo di volo**, come gli altri tre campi (visibile solo se l'utente svuota il testo).
+10. **`Toggle`: binario senza transizione di colore** — si anima solo il `transform` del pomello (AD-4 «si anima solo `transform`»); il bottone mantiene la transizione di sfondo/bordo come `.btn`.
+11. **Regola CSS dell'opzione disabilitata spostata dopo `.combo-option.active`** (unita a `.combo-option-empty`): una riga disabilitata raggiunta con le frecce tiene lo sfondo attivo ma il testo resta attenuato; per la riga vuota non cambia nulla (non è mai `.active`).
+12. **Test mobile dello switch in un contesto touch** (`hasTouch`/`isMobile`, schema di `aog-impact-email.spec.ts`): `tap()` reale.
+13. **`sprint-status.yaml` non toccato** (istruzione della sessione principale), nonostante i passi 4/9 del workflow.
+
+**TD aperti** (§7): **19.5-a** il focus su un `SearchCombobox` apre il popup in sfoglia: dopo `focusFirstInvalid` il popup copre i campi sotto (form prenotazione staff: la persona copre il velivolo) e un click sul campo già focalizzato non lo riapre (serve digitare o ↓) — comportamento TD-3 del componente, più visibile ora nei form prenotazione. **19.5-b** un focus da tastiera che fa scorrere `.so-body` per mostrare il campo apre il popup e lo scroll lo richiude subito (regola 14.1 F4), e `aria-owns` del pannello resta sul popup chiuso finché non arriva un `focusin` (`focus-trap.ts`, 15.10). **19.5-c** orfane i18n preesistenti `FlightsPage.form.soloMode`/`soloModes`.
 
 ### §H — Verifica UI (screenshot, misure di contrasto e di geometria)
 
+Script `playwright-core` throwaway nello scratchpad (Chromium `chromium-1228`), dev server su gemello `t195a` (seed + demo, un velivolo messo fuori servizio a mano), **1280×900** e **375×812**, tema chiaro e scuro (`data-theme`). Screenshot (non committati): form volo nuovo Turismo (senza switch); Scuola spento/acceso in chiaro e scuro; switch col focus da tastiera (chiaro e scuro); tipo bloccato per allievo con hint; popup «Tipo di volo»; correzione di un Scuola solista (switch acceso); prenotazione staff col popup velivolo sull'opzione fuori servizio; pilota e istruttore «Per un allievo» a 375; modifica prenotazione; «Composizione movimenti» a due bande; «Pianifica volo» dalla Panoramica.
+
+```
+form volo 1280/375: combobox 4, select 0, radio 0; switch 479x44 (1280) / 335x44 (375); scrollWidth 1280/1280, 375/375
+Toggle, contrasto (canvas -> WCAG):
+  chiaro OFF  testo 17.79  binario/fondo 4.59  pomello/binario 4.85  (hover: testo 17.01, binario 4.39)
+  chiaro ON   testo 11.13  binario/fondo 11.13 pomello/binario 12.94
+  scuro  OFF  testo 14.77  binario/fondo 5.36  pomello/binario 5.72   (hover: 17.67 / 6.42)
+  scuro  ON   testo 9.74   binario/fondo 9.74  pomello/binario 13.42
+  anello di focus (--ink) sul fondo del pannello: 18.79 chiaro / 15.74 scuro
+focus-visible: dopo click del mouse -> outline none; da tastiera -> 2px solid
+reduced-motion: transition 0s (bottone, pomello); no-preference: 0.16s, pomello solo transform
+opzione disabilitata: testo 4.59 (chiaro, riposo e attiva) / 5.36 (scuro); cursor default; 44px a 375 (55px a 1280: il testo va a capo)
+Escape (combobox aperto): prenotazione staff/pilota/istruttore e form volo -> 1° popup chiuso + pannello aperto, 2° pannello chiuso
+rete: 0 richieste a /api/v1/aircraft|people nei form prenotazione (admin, pilota, istruttore) e digitando nel tipo
+Panoramica «Pianifica volo»: tipi ['Turismo','Scuola'], switch «Doppio comando», nessuna chiave grezza
+```
+Il bordo del bottone spento (1.3:1 sul pannello) è decorativo come quello di `.input`: l'oggetto che identifica lo stato è il binario (≥ 4.39). `.so-foot`/`.so-actions` invariati.
+
 ### §I — Gate ed esiti verbatim
+
+```
+$ npm run gates          (sul contenuto di b28e000, dopo il ripristino delle mutazioni)
+PASS  lint (21s)
+PASS  typecheck (3s)
+PASS  test (8s) — Tests  1843 passed (1843)
+PASS  build (30s)
+```
+```
+serie finale, gemello airmanager_t195g fresco (migrate + db seed), build di produzione unica, E2E_REUSE_SERVER=1:
+  16 spec project chromium (flights, flight-reversal, flight-log, mobile-logbook, bookings, datetime-picker,
+  aircraft-out-of-service-until, typeahead-pickers, mobile-reports, exports, pdf-exports, home-dashboard,
+  mobile-planning, mobile-a11y-sweep, mobile-ink-targets, mobile-primitives)   -> 201 passed (5.6m)  E2E_EXIT=0
+  booking-window + reports  --no-deps --workers=1                                -> 9 passed (16.3s)  E2E_EXIT=0
+```
+**Stato macchina a fine lavoro**: `:3000` libero (server fermati per PID), nessun run e2e attivo, gemelli `airmanager_t195{a,b,e,f,g}` cancellati, `airmanager` e `airmanager_load` intatti, nessuno stash, file untracked dell'utente non toccati.
+
+L'arbitro full-suite su DB fresco resta alla sessione principale (atteso **532**). Il DB `airmanager` non ha la migrazione (non è stato toccato): il reset dell'arbitro la applica.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created (story writer, 2026-11-01, ricognizione su `3876e72`).
+- Dev 2026-11-02 (Opus 5.5): T0-T13 completati su `a5fe9a6`. Due tipi di volo (migrazione forward provata su gemello, discriminanza inclusa), `SearchCombobox` con modalità statica/hint/opzione disabilitata/Escape, primitiva `Toggle`, form volo e form prenotazione uniformati, registro/statistiche/export/seed/i18n allineati. Gates verdi (unit 1839 → 1843), e2e serie finale 201 + 9 passed su gemello fresco, delta atteso arbitro 525 → 532. Deviazioni §G (fix scroll-input del combobox, tre adattamenti di test esistenti), TD 19.5-a/b/c.
 
 ### File List
+
+### File List
+
+- `prisma/schema.prisma` (enum `FlightType` a due valori, doc)
+- `prisma/migrations/20261102120000_flight_type_two_values/migration.sql` (nuovo)
+- `prisma/seed-load.ts`
+- `src/lib/schemas/flights.ts`, `src/lib/schemas/stats.ts`
+- `src/lib/schemas/flights.test.ts` (nuovo), `src/lib/schemas/registry.test.ts`
+- `src/server/services/stats.service.ts`, `src/server/services/stats.service.test.ts`
+- `src/server/services/exports.service.ts`
+- `src/components/search-combobox.tsx`
+- `src/components/ui/toggle.tsx` (nuovo)
+- `src/styles/airops.css`
+- `src/app/[locale]/dashboard/logbook/flight-editor.tsx`
+- `src/app/[locale]/dashboard/logbook/logbook-console.tsx`
+- `src/app/[locale]/dashboard/logbook/page.tsx`
+- `src/app/[locale]/dashboard/page.tsx`
+- `src/app/[locale]/dashboard/reports/page.tsx`, `src/app/[locale]/dashboard/reports/reports-console.tsx`
+- `src/app/[locale]/dashboard/bookings/new-booking-form.tsx`, `src/app/[locale]/dashboard/bookings/edit-booking-form.tsx`, `src/app/[locale]/dashboard/bookings/booking-labels.ts`
+- `messages/it.json`, `messages/en.json`
+- `e2e/helpers.ts`, `e2e/flights.spec.ts`, `e2e/flight-reversal.spec.ts`, `e2e/flight-log.spec.ts`, `e2e/mobile-logbook.spec.ts`, `e2e/bookings.spec.ts`, `e2e/booking-window.spec.ts`, `e2e/datetime-picker.spec.ts`, `e2e/aircraft-out-of-service-until.spec.ts`, `e2e/typeahead-pickers.spec.ts`, `e2e/reports.spec.ts`, `e2e/mobile-reports.spec.ts`, `e2e/exports.spec.ts`, `e2e/pdf-exports.spec.ts`, `e2e/mobile-a11y-sweep.spec.ts`
+- `CLAUDE.md` (riga 41, Escape e i pannelli)
+- `_bmad-output/planning-artifacts/prds/prd-AirManager-2026-07-04/prd.md` (riga FR-14 del change record)
+- `_bmad-output/implementation-artifacts/19-5-form-volo-tipi-dropdown-toggle.md` (questo file)
+
+## Change Log
+
+- 2026-11-02 — Dev 19.5: `FlightType` a due valori (migrazione `AERIAL_WORK → TOURISM`), `SearchCombobox` statico con hint/opzione disabilitata/Escape, `Toggle` «Volo solista», form volo e form prenotazione uniformati; Status → review.
