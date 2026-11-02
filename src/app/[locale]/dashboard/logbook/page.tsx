@@ -299,6 +299,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             correctSubmit: t('editor.correctSubmit'),
             conflictError: t('editor.conflictError'),
             notFoundError: t('editor.notFoundError'),
+            concurrentEditError: t('editor.concurrentEditError'),
             requiredField: t('editor.requiredField'),
             invalidCycles: t('editor.invalidCycles'),
             fields: {

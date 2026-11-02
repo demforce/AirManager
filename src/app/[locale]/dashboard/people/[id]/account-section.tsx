@@ -28,6 +28,7 @@ import { Field, Input, Select } from '@/components/ui/field';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { parseApiError } from '@/lib/api-field-errors';
 import { accountMovementSheetSub, accountMovementSubLine, linkedBadgeText } from '@/lib/mobile-self';
 import { formatCents, formatSignedCents, parseCents } from '@/lib/money';
 import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
@@ -106,6 +107,8 @@ export type AccountSectionLabels = {
     invalidAmount: string;
     requiredReason: string;
     conflictError: string;
+    /** Review 19.6 F1 — the 422 `ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE` (a flight charge as original): the row action is hidden on those rows, so this only answers a request the page did not expect. */
+    flightChargeError: string;
     genericError: string;
     success: string;
   };
@@ -234,9 +237,9 @@ export function AccountSection({
     return linkedBadgeText(labels.adjustmentBadge, originalDateLabel(row));
   }
 
-  /** Story 3.3: the row action is absent on an already-corrected movement and on a package purchase — the same gate on both faces. */
+  /** Story 3.3 + review 19.6 F1 (story 16.6b Q4): the row action exists only on a MANUAL movement not yet corrected — the same rule as `transactions.service.ts#toAccountRow`'s `actionable`, the same gate on both faces. A flight charge is corrected by editing or deleting its flight, a package purchase on the cash register. */
   function rowIsAdjustable(row: AccountMovementRow): boolean {
-    return !row.hasReversal && row.type !== 'PACKAGE_PURCHASE';
+    return !row.hasReversal && (row.type === 'TOP_UP' || row.type === 'ADJUSTMENT');
   }
 
   /** `--ok`/`--bad` as TEXT are 2.73:1 / 3.96:1 in the light theme (measured): `.stat-tone-*` is the ratified medicine (story 15.8a), and it replaces the inline colour rather than being added next to it — an inline style wins over any class rule. */
@@ -762,7 +765,10 @@ function AdjustmentForm({
     regenerateIdempotencyKey();
 
     if (!response.ok) {
-      setFormError(response.status === 409 ? labels.conflictError : labels.genericError);
+      const { code } = await parseApiError(response);
+      setFormError(
+        code === 'ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE' ? labels.flightChargeError : response.status === 409 ? labels.conflictError : labels.genericError,
+      );
       return;
     }
 

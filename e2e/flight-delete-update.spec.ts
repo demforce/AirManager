@@ -379,4 +379,77 @@ test.describe('Flight delete and edit in place (Story 19.6, P2/P3 — R-19-c)', 
     expect(await listAircraftFlights(page, aircraft.id)).toEqual([]);
     expect((await readAccount(page, pilot.personId)).flightCharges).toEqual([]);
   });
+
+  test("a manual rettifica on a flight's charge is a 422 ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE — nothing written, no row action on either face of the statement, and the flight stays editable and deletable (review F1, story 16.6b Q4)", async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+    const registered = await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.personId, PAST_DATE, 60) });
+    expect(registered.status()).toBe(201);
+    const flightId = ((await registered.json()) as { flight: { id: string } }).flight.id;
+    const [charge] = (await readAccount(page, pilot.personId)).flightCharges;
+    // A top-up on the same statement: the positive control of the row action below.
+    const topUp = await page.request.post(`/api/v1/people/${pilot.personId}/account/top-ups`, {
+      data: { amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-01-15', description: `Ricarica di controllo ${uniqueSuffix()}` },
+    });
+    expect(topUp.status()).toBe(200);
+    const topUpId = ((await topUp.json()) as { recentMovements: Array<{ id: string; type: string }> }).recentMovements.find((movement) => movement.type === 'TOP_UP')!.id;
+
+    const adjustment = await page.request.post(`/api/v1/people/${pilot.personId}/account/adjustments`, {
+      data: { amountCents: 12000, reason: `Rettifica del volo ${uniqueSuffix()}`, originalMovementId: charge!.id },
+    });
+    expect(adjustment.status()).toBe(422);
+    expect(((await adjustment.json()) as { error: { code: string } }).error.code).toBe('ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE');
+    const movements = (await (await page.request.get(`/api/v1/people/${pilot.personId}/account/movements?pageSize=100`)).json()) as { items: Array<{ type: string }> };
+    expect(movements.items.map((movement) => movement.type).sort()).toEqual(['FLIGHT_CHARGE', 'TOP_UP']);
+    expect((await readAccount(page, pilot.personId)).balanceCents).toBe(-7000);
+
+    // The statement offers the rettifica on the top-up only — desktop row...
+    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await expect(page.getByTestId(`account-adjustment-row-${topUpId}`)).toHaveCount(1);
+    await expect(page.getByTestId(`account-adjustment-row-${charge!.id}`)).toHaveCount(0);
+    // ...and phone sheet (one predicate, two faces).
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.getByTestId('account-movement-row-mobile').filter({ hasText: 'Ricarica di controllo' }).click();
+    await expect(page.getByTestId('mobile-account-sheet')).toBeVisible();
+    await expect(page.getByTestId('mobile-account-adjust-action')).toHaveCount(1);
+    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.getByTestId('account-movement-row-mobile').filter({ hasText: 'Addebito volo' }).click();
+    await expect(page.getByTestId('mobile-account-sheet')).toBeVisible();
+    await expect(page.getByTestId('mobile-account-adjust-action')).toHaveCount(0);
+
+    // The refused rettifica consumed nothing: the flight is still edited and deleted normally.
+    expect((await page.request.put(`/api/v1/flights/${flightId}`, { data: flightBody(aircraft.id, pilot.personId, PAST_DATE, 30) })).status()).toBe(200);
+    expect((await page.request.delete(`/api/v1/flights/${flightId}`)).status()).toBe(204);
+    const account = await readAccount(page, pilot.personId);
+    expect(account.flightCharges).toEqual([]);
+    expect(account.balanceCents).toBe(5000);
+  });
+
+  test('edit (desktop): a 409 FLIGHT_MODIFIED_CONCURRENTLY says another user changed the flight, not the manual-rettifica sentence (review F3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+    expect((await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.personId, PAST_DATE, 60) })).status()).toBe(201);
+
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
+    await expect(page).toHaveURL(/aircraftId=/);
+    await page.getByTestId('flight-row').filter({ hasText: aircraft.registration }).getByTestId('flight-correct-action').click();
+    await expect(page.locator('.so-title')).toHaveText('Modifica volo');
+    // The race itself lives inside the server (pre-read vs Flight lock) and is
+    // proved by the unit tests; here only the editor's answer to its 409.
+    await page.route('**/api/v1/flights/*', (route) =>
+      route.request().method() === 'PUT'
+        ? route.fulfill({
+            status: 409,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: { code: 'FLIGHT_MODIFIED_CONCURRENTLY', message: 'The flight was modified concurrently: reload it and retry.' } }),
+          })
+        : route.continue(),
+    );
+    await page.getByRole('button', { name: 'Salva modifiche' }).click();
+    await expect(page.getByTestId('flight-form-error')).toHaveText('Il volo è stato modificato da un altro utente nel frattempo: ricaricalo e riprova.');
+  });
 });

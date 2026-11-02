@@ -250,6 +250,7 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
       invalidAmount: tAccount('adjustments.invalidAmount'),
       requiredReason: tAccount('adjustments.requiredReason'),
       conflictError: tAccount('adjustments.conflictError'),
+      flightChargeError: tAccount('adjustments.flightChargeError'),
       genericError: tAccount('adjustments.genericError'),
       success: tAccount('adjustments.success'),
     },

@@ -398,6 +398,12 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       expect(Object.keys(paths['/api/v1/flights/{id}']?.['delete']?.responses ?? {}).sort()).toEqual(['204', '401', '403', '404', '409', '500']);
     });
 
+    it('documents the two codes of review 19.6: 409 FLIGHT_MODIFIED_CONCURRENTLY on PUT, 422 ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE on the rettifica', () => {
+      const described = paths as unknown as Record<string, Record<string, { description?: string }>>;
+      expect(described['/api/v1/flights/{id}']?.['put']?.description).toContain('FLIGHT_MODIFIED_CONCURRENTLY');
+      expect(described['/api/v1/people/{id}/account/adjustments']?.['post']?.description).toContain('ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE');
+    });
+
     it('no longer documents the storno/correction paths, their schemas, the status filter nor the reversal type', () => {
       expect(Object.keys(paths)).not.toContain('/api/v1/flights/{id}/cancel');
       expect(Object.keys(paths)).not.toContain('/api/v1/flights/{id}/correct');

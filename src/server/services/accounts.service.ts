@@ -8,7 +8,7 @@ import { getMailSender } from '@/server/adapters/mail';
 import { buildNegativeBalanceAlertEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { ConflictError, ForbiddenError, NotFoundError } from './errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 /** The cash category top-ups land in (story 3.1, AC 2) — seeded, never created on the fly (Dev Notes). */
 const TOP_UP_CASH_CATEGORY_NAME = 'Ricariche';
@@ -571,6 +571,10 @@ export async function sendNegativeBalanceAlert(
  * `ConflictError` (409). To correct a wrong adjustment, Dev Notes says to
  * record another one, either standalone or linked to the adjustment itself
  * (an `ADJUSTMENT` row can itself be `originalMovementId` for a later one).
+ * A `FLIGHT_CHARGE` original is a 422 `ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE`
+ * (story 16.6b Q4, anticipated by review 19.6 F1): a flight's charge is
+ * corrected by editing or deleting its flight. The original is read under
+ * the `Account` lock below, never before it (review 19.6 F1/F2).
  *
  * No `effectiveDate` in the input (Task 2's signature is deliberately just
  * `amountCents`/`reason`/`originalMovementId`) — a rettifica always values
@@ -605,29 +609,6 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
   }
 
   const originalMovementId = input.originalMovementId ?? null;
-  if (originalMovementId) {
-    // Ownership pre-check BEFORE any write (same "never reveal someone
-    // else's data" rationale as `assertReadAccess`): a movement id from a
-    // different account is reported exactly like an unknown one.
-    const original = await prisma.accountMovement.findUnique({
-      where: { id: originalMovementId },
-      select: { id: true, accountId: true, type: true, reversal: { select: { id: true } } },
-    });
-    if (!original || original.accountId !== account.id) {
-      throw new NotFoundError('Movement not found.');
-    }
-    if (original.type === 'PACKAGE_PURCHASE') {
-      // TD-1, AC 6: a PACKAGE_PURCHASE row is a zero-amount marker (story
-      // 4.4) — the real payment is external to the account, so there is
-      // nothing here for a rettifica to correct. Correcting a wrong sale
-      // goes through the cash register instead.
-      throw new ConflictError('A package purchase is a zero-amount marker — correct the sale on the cash register instead.');
-    }
-    if (original.reversal) {
-      throw new ConflictError('This movement already has a linked adjustment.');
-    }
-  }
-
   const thresholdCents = await getNegativeBalanceThresholdCents();
   const reason = input.reason;
 
@@ -637,6 +618,46 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
     // F1 pattern) — `Account` has no balance column, the lock is a pure
     // serialization mutex around the SUM read below.
     await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR UPDATE`;
+
+    if (originalMovementId) {
+      // Read UNDER the lock (review 19.6 F1/F2): a flight charge is the one
+      // movement that can be deleted or moved to another account
+      // (`flights.service.ts#deleteFlight`/`updateFlight`), both under this
+      // same `Account` lock — so the row checked here is the row the insert
+      // below links to, and one deleted meanwhile is a 404, never a P2003/500.
+      // Ownership check BEFORE any write (same "never reveal someone else's
+      // data" rationale as `assertReadAccess`): a movement id from a
+      // different account is reported exactly like an unknown one.
+      const original = await tx.accountMovement.findUnique({
+        where: { id: originalMovementId },
+        select: { id: true, accountId: true, type: true, reversal: { select: { id: true } } },
+      });
+      if (!original || original.accountId !== account.id) {
+        throw new NotFoundError('Movement not found.');
+      }
+      if (original.type === 'FLIGHT_CHARGE') {
+        // Story 16.6b Q4, anticipated by review 19.6 F1: since story 19.6
+        // (AD-3 exception) a flight's charge lives and dies with its flight.
+        // A rettifica linked to it would become a stray credit when the
+        // flight is deleted, or stay on the old account when the flight
+        // changes person.
+        throw new ValidationError(
+          'A flight charge is corrected by editing or deleting the flight, not by a manual adjustment.',
+          undefined,
+          'ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE',
+        );
+      }
+      if (original.type === 'PACKAGE_PURCHASE') {
+        // TD-1, AC 6: a PACKAGE_PURCHASE row is a zero-amount marker (story
+        // 4.4) — the real payment is external to the account, so there is
+        // nothing here for a rettifica to correct. Correcting a wrong sale
+        // goes through the cash register instead.
+        throw new ConflictError('A package purchase is a zero-amount marker — correct the sale on the cash register instead.');
+      }
+      if (original.reversal) {
+        throw new ConflictError('This movement already has a linked adjustment.');
+      }
+    }
 
     const aggregate = await tx.accountMovement.aggregate({
       where: { accountId: account.id },
@@ -658,8 +679,8 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
-        // Concurrent-race backstop for the pre-check above (TOCTOU): two
-        // requests linking to the same original at once.
+        // DB-level backstop for the check above (two requests linking to the
+        // same original are already serialized by the `Account` lock).
         throw new ConflictError('This movement already has a linked adjustment.');
       }
       throw error;

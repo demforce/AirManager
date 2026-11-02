@@ -272,7 +272,11 @@ const ORIGINAL_FLIGHT_ROW = {
   flightType: 'TOURISM' as const,
   aircraftPriceCategory: 'PILOT' as const,
   instructorProfile: null as { personId: string } | null,
+  updatedAt: new Date('2020-01-15T12:00:00.000Z'),
 };
+
+/** `updateFlight`'s `Flight` lock row when nothing changed since the pre-read (review 19.6 F3: same `updatedAt`). */
+const LOCKED_FLIGHT = { aircraftId: 'aircraft_1', updatedAt: ORIGINAL_FLIGHT_ROW.updatedAt };
 
 /** The flight's one `FLIGHT_CHARGE` (`loadFlightCharge`'s shape) — no manual adjustment points at it. */
 const CHARGE_ROW = { id: 'movement_orig', accountId: 'account_1', reversal: null as { id: string } | null };
@@ -1600,6 +1604,20 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(tx.$queryRaw.mock.calls[2]?.[1]).toBe('account_1');
     });
 
+    // Review F1: `recordAdjustment` shares ONLY the Account lock with this
+    // path — the rettifica check must read after it, or a rettifica committed
+    // in between is missed and survives the delete as a stray credit.
+    it('reads the charge under the Flight lock, then checks for a manual rettifica AFTER the Account lock (review F1)', async () => {
+      const tx = txStub();
+
+      await deleteFlight(adminActor(), 'flight_orig');
+
+      expect(tx.accountMovement.findUnique).toHaveBeenCalledTimes(2);
+      expect(tx.accountMovement.findUnique.mock.invocationCallOrder[0]!).toBeLessThan(tx.$queryRaw.mock.invocationCallOrder[2]!);
+      expect(tx.$queryRaw.mock.invocationCallOrder[2]!).toBeLessThan(tx.accountMovement.findUnique.mock.invocationCallOrder[1]!);
+      expect(tx.accountMovement.findUnique.mock.invocationCallOrder[1]!).toBeLessThan(tx.accountMovement.delete.mock.invocationCallOrder[0]!);
+    });
+
     it('deletes the charge BEFORE the flight, both on the tx — the RESTRICT FK makes the reverse order fail by design (AC 7)', async () => {
       const tx = txStub();
 
@@ -1682,7 +1700,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementFindUnique.mockResolvedValue(CHARGE_ROW);
       flightUpdate.mockResolvedValue(UPDATED_ROW);
-      queryRaw.mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }]).mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([LOCKED_FLIGHT]).mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     });
 
@@ -1760,7 +1778,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(sql[2]).toMatch(/FROM "Account" WHERE "id" IN \(\?\) ORDER BY "id" FOR UPDATE/);
     });
 
-    it('ONE transaction, in order: locks -> overlap guard -> charge read -> account upsert -> Account lock -> saldo-prima -> flight.update -> charge update -> saldo-dopo', async () => {
+    it('ONE transaction, in order: locks -> overlap guard -> charge read -> account upsert -> Account lock -> rettifica check -> saldo-prima -> flight.update -> charge update -> saldo-dopo', async () => {
       await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
 
       const order = (mock: { mock: { invocationCallOrder: number[] } }, index = 0) => mock.mock.invocationCallOrder[index]!;
@@ -1768,7 +1786,9 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(order(flightFindFirstMock)).toBeLessThan(order(accountMovementFindUniqueMock));
       expect(order(accountMovementFindUniqueMock)).toBeLessThan(order(accountUpsertMock));
       expect(order(accountUpsertMock)).toBeLessThan(order(queryRawMock, 2));
-      expect(order(queryRawMock, 2)).toBeLessThan(order(accountMovementAggregateMock, 0));
+      // Review F1: the rettifica check reads AFTER the Account lock, the one lock `recordAdjustment` shares.
+      expect(order(queryRawMock, 2)).toBeLessThan(order(accountMovementFindUniqueMock, 1));
+      expect(order(accountMovementFindUniqueMock, 1)).toBeLessThan(order(accountMovementAggregateMock, 0));
       expect(order(accountMovementAggregateMock, 0)).toBeLessThan(order(flightUpdateMock));
       expect(order(flightUpdateMock)).toBeLessThan(order(accountMovementUpdateMock));
       expect(order(accountMovementUpdateMock)).toBeLessThan(order(accountMovementAggregateMock, 1));
@@ -1784,9 +1804,25 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       expect(accountMovementUpdateMock).not.toHaveBeenCalled();
     });
 
+    // Review F3: the exemptions (AOG same aircraft, R-14.4-b, Q-19.3-b) are
+    // decided on the pre-read; a concurrent edit committed before this lock
+    // was granted changed that identity — never write on top of it.
+    it('409 FLIGHT_MODIFIED_CONCURRENTLY when the flight changed between the pre-read and the Flight lock — no further lock, nothing written (review F3)', async () => {
+      queryRawMock.mockReset();
+      queryRaw.mockResolvedValueOnce([{ aircraftId: 'aircraft_2', updatedAt: new Date('2020-01-15T12:00:00.001Z') }]);
+
+      const attempt = updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+      await expect(attempt).rejects.toThrow(ConflictError);
+      await expect(attempt).rejects.toMatchObject({ code: 'FLIGHT_MODIFIED_CONCURRENTLY' });
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      expect(flightUpdateMock).not.toHaveBeenCalled();
+      expect(accountMovementUpdateMock).not.toHaveBeenCalled();
+    });
+
     it('an aircraft gone under the lock answers 404 and writes nothing (AC 13)', async () => {
       queryRawMock.mockReset();
-      queryRaw.mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([LOCKED_FLIGHT]).mockResolvedValueOnce([]);
 
       await expect(updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT)).rejects.toThrow('Aircraft not found.');
       expect(flightUpdateMock).not.toHaveBeenCalled();
@@ -1823,7 +1859,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-WXYZ' });
       queryRawMock.mockReset();
       queryRaw
-        .mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }])
+        .mockResolvedValueOnce([LOCKED_FLIGHT])
         .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2' });
@@ -1923,7 +1959,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue({ ...AOG_AIRCRAFT, id: 'aircraft_2', registration: 'I-AOGX' });
       queryRawMock.mockReset();
       queryRaw
-        .mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }])
+        .mockResolvedValueOnce([LOCKED_FLIGHT])
         .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       const input = registerFlightSchema.parse({ ...UPDATE_INPUT, aircraftId: 'aircraft_2', force: true, forceReason: 'Velivolo corretto a posteriori' });
@@ -2356,7 +2392,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
       accountMovementFindUnique.mockResolvedValue(CHARGE_ROW);
       flightUpdate.mockResolvedValue({ ...CREATED_FLIGHT_ROW, id: 'flight_orig' });
-      queryRaw.mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }]).mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
+      queryRaw.mockResolvedValueOnce([LOCKED_FLIGHT]).mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
       getAccountOverviewMock.mockResolvedValue(ACCOUNT_OVERVIEW);
     });
 
@@ -2392,7 +2428,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-ZZZZ' });
       queryRawMock.mockReset();
       queryRaw
-        .mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }])
+        .mockResolvedValueOnce([LOCKED_FLIGHT])
         .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       const store = stubOverlapStore([
@@ -2413,7 +2449,7 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       aircraftFindUnique.mockResolvedValue({ ...AIRCRAFT, id: 'aircraft_2', registration: 'I-ZZZZ' });
       queryRawMock.mockReset();
       queryRaw
-        .mockResolvedValueOnce([{ aircraftId: 'aircraft_1' }])
+        .mockResolvedValueOnce([LOCKED_FLIGHT])
         .mockResolvedValueOnce([{ id: 'aircraft_1' }, { id: 'aircraft_2' }])
         .mockResolvedValueOnce([]);
       const store = stubOverlapStore([ORIGINAL_IN_STORE]);

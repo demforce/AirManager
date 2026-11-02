@@ -60,7 +60,7 @@ const {
   recordAdjustment,
   recordTopUp,
 } = await import('./accounts.service');
-const { ConflictError, NotFoundError } = await import('./errors');
+const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
 
 const accountFindUniqueMock = vi.mocked(prisma.account.findUnique);
 const accountFindManyMock = vi.mocked(prisma.account.findMany);
@@ -791,7 +791,6 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       await expect(
         recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_x' }),
       ).rejects.toThrow(NotFoundError);
-      expect(transactionMock).not.toHaveBeenCalled();
       expect(accountMovementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -818,7 +817,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       await expect(
         recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
       ).rejects.toThrow(ConflictError);
-      expect(transactionMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
     });
 
     it('throws ConflictError when the original is a PACKAGE_PURCHASE (zero-amount marker, story TD-1 AC 6)', async () => {
@@ -834,8 +833,38 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       await expect(
         recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
       ).rejects.toThrow(ConflictError);
-      expect(transactionMock).not.toHaveBeenCalled();
       expect(accountMovementCreateMock).not.toHaveBeenCalled();
+    });
+
+    // Story 16.6b Q4, anticipated by review 19.6 F1: a flight's charge lives
+    // and dies with its flight (AD-3 exception) — a rettifica linked to it
+    // would become a stray credit when the flight is deleted.
+    it('422 ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE when the original is a FLIGHT_CHARGE — nothing written (story 16.6b Q4, review 19.6 F1)', async () => {
+      personFindUnique.mockResolvedValue(PERSON);
+      accountFindUnique.mockResolvedValue(ACCOUNT);
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', type: 'FLIGHT_CHARGE', reversal: null });
+
+      const attempt = recordAdjustment(adminActor(), 'person_1', { amountCents: 12000, reason: 'Volo non dovuto', originalMovementId: 'movement_1' });
+
+      await expect(attempt).rejects.toThrow(ValidationError);
+      await expect(attempt).rejects.toMatchObject({ code: 'ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE' });
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
+    });
+
+    // Review 19.6 F1/F2: the only lock a flight delete/edit shares with this
+    // path is the Account row, so the original must be read UNDER it — a
+    // charge deleted meanwhile is then a clean 404 (never a P2003/500), and
+    // the row checked is the row the insert links to.
+    it('reads the original UNDER the Account lock: lock -> original read -> balance read -> create (review 19.6 F1/F2)', async () => {
+      mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', type: 'TOP_UP', reversal: null });
+
+      await recordAdjustment(adminActor(), 'person_1', { amountCents: -2500, reason: 'Importo errato', originalMovementId: 'movement_1' });
+
+      const order = (mock: { mock: { invocationCallOrder: number[] } }) => mock.mock.invocationCallOrder[0]!;
+      expect(order(queryRawMock)).toBeLessThan(order(accountMovementFindUniqueMock));
+      expect(order(accountMovementFindUniqueMock)).toBeLessThan(order(accountMovementAggregateMock));
+      expect(order(accountMovementAggregateMock)).toBeLessThan(order(accountMovementCreateMock));
     });
 
     it('maps a concurrent P2002 on the unique reversalOfId to ConflictError (TOCTOU backstop)', async () => {

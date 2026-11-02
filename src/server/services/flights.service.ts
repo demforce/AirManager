@@ -62,9 +62,11 @@ import { getEffectiveRate } from './rates.service';
  * `deleteFlight` deletes the charge, then the flight. `AccountMovement.flightId`
  * is `@unique` with `ON DELETE RESTRICT`, so the reverse order fails by
  * construction and no movement is ever orphaned. Every OTHER movement stays
- * append-only with storno: a charge a manual rettifica already points at
- * (`reversalOfId`) makes its flight neither editable nor deletable (409),
- * because deleting the charge would turn that rettifica into a stray credit.
+ * append-only with storno. A manual rettifica can no longer target a charge
+ * (`recordAdjustment` answers 422 since review F1); one recorded before that
+ * guard (`reversalOfId`) still makes its flight neither editable nor
+ * deletable (409), because deleting the charge would turn that rettifica
+ * into a stray credit.
  * Nothing is written on the `Aircraft` row: since story 19.2 (R-19-b) an
  * aircraft's hours are the sum of its flights, so the flight row alone moves
  * them.
@@ -1233,26 +1235,41 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
 
 /**
  * The flight's `FLIGHT_CHARGE` — exactly one per flight (`flightId @unique`,
- * AD-7), read under the caller's `Flight` lock. Absent => a broken invariant
- * (`registerFlightCore` creates it in the same transaction as the flight):
- * thrown as a plain `Error`, never a half-done delete or edit. Linked to a
- * manual rettifica (`reversalOfId`, story 3.3) => 409, unchanged since review
- * 5.3 M1: deleting or rewriting that charge would leave the rettifica as a
- * stray credit or debit on the account — the books were already settled by
- * hand (D-8).
+ * AD-7), read under the caller's `Flight` lock, which also keeps its
+ * `accountId` stable (only `updateFlight`, under that same lock, moves it).
+ * Absent => a broken invariant (`registerFlightCore` creates it in the same
+ * transaction as the flight): thrown as a plain `Error`, never a half-done
+ * delete or edit.
  */
 async function loadFlightCharge(tx: Prisma.TransactionClient, flightId: string): Promise<{ id: string; accountId: string }> {
   const charge = await tx.accountMovement.findUnique({
     where: { flightId },
-    select: { id: true, accountId: true, reversal: { select: { id: true } } },
+    select: { id: true, accountId: true },
   });
   if (!charge) {
     throw new Error(`Flight ${flightId} has no FLIGHT_CHARGE movement.`);
   }
-  if (charge.reversal) {
+  return { id: charge.id, accountId: charge.accountId };
+}
+
+/**
+ * D-8: a charge a manual rettifica points at (`reversalOfId`, story 3.3) =>
+ * 409, unchanged since review 5.3 M1 — deleting or rewriting it would leave
+ * the rettifica as a stray credit or debit on the account. Since review 19.6
+ * F1 `accounts.service.ts#recordAdjustment` refuses a `FLIGHT_CHARGE`
+ * original (422), so only a rettifica recorded before that guard can match:
+ * this stays as the defence for those legacy rows. The caller must already
+ * hold the charge's `Account` lock — the one lock `recordAdjustment` shares
+ * with this path — so nothing committed before it can be missed.
+ */
+async function assertChargeNotAdjusted(tx: Prisma.TransactionClient, chargeId: string): Promise<void> {
+  const charge = await tx.accountMovement.findUnique({
+    where: { id: chargeId },
+    select: { reversal: { select: { id: true } } },
+  });
+  if (charge?.reversal) {
     throw new ConflictError("This flight's charge has already been reversed by a manual adjustment.");
   }
-  return { id: charge.id, accountId: charge.accountId };
 }
 
 /**
@@ -1265,9 +1282,10 @@ async function loadFlightCharge(tx: Prisma.TransactionClient, flightId: string):
  * ONE `prisma.$transaction`, lock order Flight -> Aircraft -> Account (module
  * doc-comment): the `Flight` row `FOR UPDATE` (0 rows => 404 — a second
  * delete, or a concurrent one that won), its CURRENT `Aircraft` row (kept for
- * the macro order with `updateFlight`), the charge (`loadFlightCharge`: 409
- * when a manual rettifica points at it), the charge's `Account` row. Then the
- * charge is deleted BEFORE the flight: with `AccountMovement.flightId`
+ * the macro order with `updateFlight`), the charge (`loadFlightCharge`), the
+ * charge's `Account` row, then the D-8 check (`assertChargeNotAdjusted`: 409
+ * when a manual rettifica points at it). Then the charge is deleted BEFORE
+ * the flight: with `AccountMovement.flightId`
  * `ON DELETE RESTRICT` the opposite order fails, by design. A `TrainingNote`
  * linked to the flight keeps its row, its `flightId` going `NULL` (`ON DELETE
  * SET NULL`). No balance read, no alert: the balance can only go up.
@@ -1285,6 +1303,7 @@ export async function deleteFlight(actor: Actor, flightId: string): Promise<void
 
     const charge = await loadFlightCharge(tx, flightId);
     await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${charge.accountId} FOR UPDATE`;
+    await assertChargeNotAdjusted(tx, charge.id);
 
     await tx.accountMovement.delete({ where: { id: charge.id } });
     await tx.flight.delete({ where: { id: flightId } });
@@ -1304,12 +1323,15 @@ export async function deleteFlight(actor: Actor, flightId: string): Promise<void
  *
  * ONE `prisma.$transaction`, lock order Flight -> Aircraft -> Account (module
  * doc-comment): the `Flight` row `FOR UPDATE` (0 rows => 404: deleted in the
- * meantime — never a P2025/500 from the update below); the current and new
- * `Aircraft` rows in one ordered query (404 if one is gone); the overlap
- * guard on the NEW aircraft, excluding this flight; the charge
- * (`loadFlightCharge`, 409 with a manual rettifica); the new person's
+ * meantime — never a P2025/500 from the update below; a different
+ * `updatedAt` than the pre-read's => 409 `FLIGHT_MODIFIED_CONCURRENTLY`,
+ * review F3: the exemptions above were decided on an identity a concurrent
+ * edit has since rewritten); the current and new `Aircraft` rows in one
+ * ordered query (404 if one is gone); the overlap guard on the NEW aircraft,
+ * excluding this flight; the charge (`loadFlightCharge`); the new person's
  * account get-or-create, then the charge's and the new person's `Account`
- * rows in one ordered query; the new account's balance; `Flight.update`;
+ * rows in one ordered query; the D-8 check (`assertChargeNotAdjusted`, 409
+ * with a manual rettifica); the new account's balance; `Flight.update`;
  * `AccountMovement.update` of the existing charge (account, amount,
  * description, value date = the new `flightDate`); the new account's
  * balance, re-read. `actorUserId` on both rows stays whoever registered the
@@ -1332,6 +1354,7 @@ export async function updateFlight(actor: Actor, flightId: string, input: Regist
       flightType: true,
       aircraftPriceCategory: true,
       instructorProfile: { select: { personId: true } },
+      updatedAt: true,
     },
   });
   if (!original) {
@@ -1349,10 +1372,15 @@ export async function updateFlight(actor: Actor, flightId: string, input: Regist
   const thresholdCents = await getNegativeBalanceThresholdCents();
 
   const { flight, balanceBeforeCents, balanceAfterCents } = await prisma.$transaction(async (tx) => {
-    const lockedFlight = await tx.$queryRaw<Array<{ aircraftId: string }>>`
-      SELECT "aircraftId" FROM "Flight" WHERE "id" = ${flightId} FOR UPDATE`;
+    const lockedFlight = await tx.$queryRaw<Array<{ aircraftId: string; updatedAt: Date }>>`
+      SELECT "aircraftId", "updatedAt" FROM "Flight" WHERE "id" = ${flightId} FOR UPDATE`;
     if (lockedFlight.length === 0) {
       throw new NotFoundError('Flight not found.');
+    }
+    // Review F3: `updateFlight` is the only writer of a Flight row after its
+    // creation (under this same lock), and every write bumps `updatedAt`.
+    if (lockedFlight[0]!.updatedAt.getTime() !== original.updatedAt.getTime()) {
+      throw new ConflictError('The flight was modified concurrently: reload it and retry.', undefined, 'FLIGHT_MODIFIED_CONCURRENTLY');
     }
 
     const aircraftIds = Array.from(new Set([lockedFlight[0]!.aircraftId, resolved.aircraft.id]));
@@ -1381,6 +1409,7 @@ export async function updateFlight(actor: Actor, flightId: string, input: Regist
     });
     const accountIds = Array.from(new Set([charge.accountId, account.id]));
     await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" IN (${Prisma.join(accountIds)}) ORDER BY "id" FOR UPDATE`;
+    await assertChargeNotAdjusted(tx, charge.id);
 
     const before = await readBalanceCents(tx, account.id);
 

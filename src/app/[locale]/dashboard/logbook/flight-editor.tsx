@@ -58,6 +58,8 @@ export type FlightEditorLabels = {
   conflictError: string;
   /** Story 19.6 — a 404 on an edit: the flight was deleted in the meantime. */
   notFoundError: string;
+  /** Review 19.6 F3 — a 409 `FLIGHT_MODIFIED_CONCURRENTLY` on an edit: another edit of the same flight was saved first. */
+  concurrentEditError: string;
   requiredField: string;
   /** Story 16.2 (AC 18) — the `<form>` is `noValidate`, so `min={1}` on the two cycle inputs is a hint, not a gate: this is the message a typed `0` gets, in the same bottom banner as `errors.FLIGHT_TIMES_INVALID`. */
   invalidCycles: string;
@@ -691,6 +693,10 @@ export function FlightEditor({
       }
       if (isCorrecting && response.status === 404) {
         setFormError(labels.notFoundError);
+        return;
+      }
+      if (isCorrecting && response.status === 409 && blockedBody?.error?.code === 'FLIGHT_MODIFIED_CONCURRENTLY') {
+        setFormError(labels.concurrentEditError);
         return;
       }
       if (isCorrecting && response.status === 409) {

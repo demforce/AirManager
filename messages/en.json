@@ -762,6 +762,7 @@
       "invalidAmount": "Enter a valid non-zero amount.",
       "requiredReason": "A reason is required.",
       "conflictError": "This movement already has a linked adjustment.",
+      "flightChargeError": "A flight charge is corrected by editing or deleting the flight in the flight log, not with an adjustment.",
       "genericError": "Could not record the adjustment. Please try again.",
       "success": "Adjustment recorded."
     },
@@ -1209,6 +1210,7 @@
       "correctSubmit": "Save changes",
       "conflictError": "This flight's charge was adjusted by hand: the flight cannot be edited.",
       "notFoundError": "This flight no longer exists: it has been deleted.",
+      "concurrentEditError": "The flight was changed by another user in the meantime: reload it and try again.",
       "requiredField": "Required field.",
       "invalidCycles": "Takeoffs and landings must be at least 1.",
       "fields": {

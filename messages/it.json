@@ -762,6 +762,7 @@
       "invalidAmount": "Inserisci un importo valido diverso da zero.",
       "requiredReason": "Il motivo è obbligatorio.",
       "conflictError": "Questo movimento ha già una rettifica collegata.",
+      "flightChargeError": "L'addebito di un volo si corregge modificando o eliminando il volo dal registro voli, non con una rettifica.",
       "genericError": "Impossibile registrare la rettifica. Riprova.",
       "success": "Rettifica registrata."
     },
@@ -1209,6 +1210,7 @@
       "correctSubmit": "Salva modifiche",
       "conflictError": "L'addebito di questo volo è stato rettificato a mano: il volo non si può modificare.",
       "notFoundError": "Questo volo non esiste più: è stato eliminato.",
+      "concurrentEditError": "Il volo è stato modificato da un altro utente nel frattempo: ricaricalo e riprova.",
       "requiredField": "Campo obbligatorio.",
       "invalidCycles": "Decolli e atterraggi devono essere almeno 1.",
       "fields": {
