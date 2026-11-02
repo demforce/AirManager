@@ -4,7 +4,7 @@ baseline_commit: 72e7e1b
 
 # Story 19.4: Editor pilota e istruttore a Salva unico
 
-Status: **ready-for-dev** — 2026-11-01 (con due domande PO aperte, §❓: nessuna blocca la scrittura del backend, entrambe toccano solo la resa di due campi dell'editor istruttore; Q-19.4-b coincide con la Q-19.3-d, e la Q-19.3-c tocca il controllo dei profili, AD-9). Contratti backend della 19.3 concordati col suo writer e riportati nel banner. **Modello dev: Opus 5 xhigh (UI)** — la story riscrive due editor e il componente scadenze condiviso, oltre a service, schema Zod, OpenAPI ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-4-editor-pilota-istruttore-salva-unico`.
+Status: **review** — 2026-11-02, implementazione `e160065` (Dev Agent Record in fondo). Scritta il 2026-11-01 (con due domande PO aperte, §❓: nessuna blocca la scrittura del backend, entrambe toccano solo la resa di due campi dell'editor istruttore; Q-19.4-b coincide con la Q-19.3-d, e la Q-19.3-c tocca il controllo dei profili, AD-9). Contratti backend della 19.3 concordati col suo writer e riportati nel banner. **Modello dev: Opus 5 xhigh (UI)** — la story riscrive due editor e il componente scadenze condiviso, oltre a service, schema Zod, OpenAPI ed e2e. Review: **Opus 5 xhigh adversarial**, come sempre. Un solo dev subagent. Chiave sprint-status: `19-4-editor-pilota-istruttore-salva-unico`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` di questo file è misurato su **`72e7e1b`**. Il dev della 19.4 parte **DOPO il commit di 19.1, 19.2 e 19.3**, che toccano gli stessi file:
 > - **19.2** toglie il codice fiscale da **entrambi** gli editor (`pilot-editor.tsx:56/261/287/311/323/347-349/459/594/663-665`, `instructor-editor.tsx:51/205/283/345-347`), da `updatePersonSchema`/`createPersonBaseSchema` (`src/lib/schemas/people.ts:22`, `:36`) e da `people.service.ts` (`assertUnique` diventa solo-email, AD-2 della 19.2): le righe slittano, e `fiscalCode` **non** deve ricomparire in nulla di quanto scritto qui.
@@ -538,17 +538,17 @@ Mirati da far girare prima della consegna: `person-profiles`, `people-management
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento** (tutti): `git log --oneline -6` (19.1, 19.2, 19.3 committate); verificare sul codice committato della 19.3 i contratti della tabella del banner (nomi di `assertPilotStudentExclusive`, `upsertInstructorRateCore`, `assertRateValidFromNotPast`, codici `PILOT_STUDENT_PROFILES_EXCLUSIVE`/`RATE_VALID_FROM_IN_PAST`, statement del lock, `minDate` via `min`, `seedInstructorRate`/`todayRome`) e annotare nel Dev Agent Record §A ogni differenza; esiti di Q-19.4-a, Q-19.4-b (≡ Q-19.3-d) e Q-19.3-c; `scripts/e2e.sh status`, `:3000` libero; rieseguire i censimenti di §3.1 e §3.4.
-- [ ] **T1 — Contratto** (AC 1-5, 12): `updatePersonCompositeSchema` + tipo; route; `registry.ts` + `registry.test.ts`.
-- [ ] **T2 — Service** (AC 1-11): estrazioni `deactivateProfileCore`, `updateExpiryDateCore`, export `assertScopeCompatible`; `updatePerson` composito nell'ordine di AD-2; codici di AD-5; lock e doc-comment di AD-3 (+ `bookings.service.ts:81-82`).
-- [ ] **T3 — Unit** (AC 1-10): §3.5; comando env eager.
-- [ ] **T4 — Componente scadenze in bozza** (AC 13-17, 20): AD-8.
-- [ ] **T5 — Editor pilota** (AC 13-17, 22, 24-25): AD-6, AD-9; `edit-person-button.tsx`; label.
-- [ ] **T6 — Editor istruttore** (AC 18-21): AD-10; R-19-f con la data di Roma e il minimo; Q-19.4-a/b.
-- [ ] **T7 — i18n** (AC 27): §3.6, parità misurata.
-- [ ] **T8 — e2e** (AC 6, 9-11, 13-25): §3.4 (riscritture + spec nuovo).
-- [ ] **T9 — Discriminanza** (§4.3) con sha256.
-- [ ] **T10 — Verifica** (AC 23, 26, 28, 29): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato (righe effettive, delta test, deviazioni).
+- [x] **T0 — Riallineamento** (tutti): `git log --oneline -6` (19.1, 19.2, 19.3 committate); verificare sul codice committato della 19.3 i contratti della tabella del banner (nomi di `assertPilotStudentExclusive`, `upsertInstructorRateCore`, `assertRateValidFromNotPast`, codici `PILOT_STUDENT_PROFILES_EXCLUSIVE`/`RATE_VALID_FROM_IN_PAST`, statement del lock, `minDate` via `min`, `seedInstructorRate`/`todayRome`) e annotare nel Dev Agent Record §A ogni differenza; esiti di Q-19.4-a, Q-19.4-b (≡ Q-19.3-d) e Q-19.3-c; `scripts/e2e.sh status`, `:3000` libero; rieseguire i censimenti di §3.1 e §3.4.
+- [x] **T1 — Contratto** (AC 1-5, 12): `updatePersonCompositeSchema` + tipo; route; `registry.ts` + `registry.test.ts`.
+- [x] **T2 — Service** (AC 1-11): estrazioni `deactivateProfileCore`, `updateExpiryDateCore`, export `assertScopeCompatible`; `updatePerson` composito nell'ordine di AD-2; codici di AD-5; lock e doc-comment di AD-3 (+ `bookings.service.ts:81-82`).
+- [x] **T3 — Unit** (AC 1-10): §3.5; comando env eager.
+- [x] **T4 — Componente scadenze in bozza** (AC 13-17, 20): AD-8.
+- [x] **T5 — Editor pilota** (AC 13-17, 22, 24-25): AD-6, AD-9; `edit-person-button.tsx`; label.
+- [x] **T6 — Editor istruttore** (AC 18-21): AD-10; R-19-f con la data di Roma e il minimo; Q-19.4-a/b.
+- [x] **T7 — i18n** (AC 27): §3.6, parità misurata.
+- [x] **T8 — e2e** (AC 6, 9-11, 13-25): §3.4 (riscritture + spec nuovo).
+- [x] **T9 — Discriminanza** (§4.3) con sha256.
+- [x] **T10 — Verifica** (AC 23, 26, 28, 29): grep a zero, OpenAPI servito, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/375; Dev Agent Record compilato (righe effettive, delta test, deviazioni).
 
 ---
 
@@ -556,26 +556,168 @@ Mirati da far girare prima della consegna: `person-profiles`, `people-management
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), dev subagent unico della story (`dev-19-4`), 2026-11-02.
+
 ### §A — Riallineamento sul HEAD (T0) e verifica dei contratti 19.3
+
+- Partenza da **`bb92494`** (19.1 `08eb558`, 19.2 `b0d142c`, 19.3 `2e66d40` + fix `8b5a023`, chiusura 19.3 con arbitro 504/504). `:3000` libero ed `e2e.sh status` DONE prima di ogni build/run; `.next/dev/types/validator.ts` assente. Implementazione in **`e160065`**.
+- **Decisioni PO applicate**: Q-19.4-a = **A** (compenso precompilato, vuoto = `null`); Q-19.4-b = **A** (riga `instructor-rates-next` con la sola prossima tariffa); **Q-19.3-c = B** (l'allievo esclude pilota **e** istruttore): AD-9/AC 25 estesi — nessuno dei due form permette Allievo con Pilota né con Istruttore.
+- **Contratti 19.3 verificati sul codice** (nomi definitivi, al posto dei provvisori del banner): `assertStudentProfileExclusive(tx, personId)` (legge anche l'istruttore, codice **`STUDENT_PROFILE_EXCLUSIVE`** — non `assertPilotStudentExclusive`/`PILOT_STUDENT_PROFILES_EXCLUSIVE`); lock `SELECT "id" FROM "Person" WHERE "id" = ${personId} FOR NO KEY UPDATE` primo statement di `upsertProfile` (era `:745` su `bb92494`, ora `:929`); `assertRateValidFromNotPast(validFrom)` `rates.service.ts:75` (import pulito); `upsertInstructorRateCore(tx, instructorProfileId, input, actorUserId)` `instructor-rates.service.ts:95`, ritorna l'id; `DateInput` inoltra il `min` come `minDate` (`date-input.tsx:101`); `seedInstructorRate` (`e2e/db-fixtures.ts`), `todayRome`/`addDaysIso` (`e2e/helpers.ts:82`/`:87`). Il doc-comment del modulo prenotazioni era già stato corretto dalla 19.3 (cita `upsertProfile`): il composito è aggiunto alla stessa frase (`bookings.service.ts:83-90`).
+- **Scostamenti di riga** rispetto a `72e7e1b` (censimenti §3 rieseguiti su `bb92494`): `people.service.ts` 794 righe — `createPerson` 460, `updatePerson` 544-575, core 632-669, `assertStudentProfileExclusive` 692, `upsertProfile` 736-760, `deactivateProfile` 770-794; `expiries.service.ts` `assertScopeCompatible` 156, `updateExpiry` 262-290; `registry.ts` PATCH `:437`; `pilot-editor.tsx` 1515 righe (`IdentitySection` 231, `NewPersonForm` 444, `ProfilesSection` 857, form di profilo 947/1065/1182, `RatingsSection` 1292, `AccessSection` 1329, `ArchiveSection` 1463); `instructor-editor.tsx` 438; `instructor-rates-panel.tsx` 249 (`todayDateOnly` UTC `:71`); `expiry-editor.tsx` 329 (`LiveExpiryEditor` 83); i18n **1714** chiavi per file. Census e2e di §3.4: stessi spec; `mobile-expiries-movements.spec.ts` intercetta solo `my-expiry-row-mobile` (altra famiglia, non toccata).
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Esito | Prova |
+|---|---|---|
+| 1 | ✅ | unit «an anagrafica-only body behaves as before» (chiamate = lock + `person.update`, `PersonDetail` con i tre profili) + i 4 unit storici di `updatePerson` invariati; e2e `api-v1` verde |
+| 2 | ✅ | unit «profiles are declarative» (`updateMany` a 0 righe = 200); e2e `person-profiles` «activates the pilot profile» |
+| 3 | ✅ | unit: ordine disattivazioni → attivazioni → **una** `assertStudentProfileExclusive` prima di `expiry.findMany`; 422 con Allievo attivo e con entrambi `active: true`, `account.upsert` già avvenuto e `person.update` mai; e2e Allievo → Pilota = **un** PATCH `{ student: {active:false}, pilot: {active:true,…} }` |
+| 4 | ✅ | unit: create/update con wipe `SentAlert`/data uguale senza scrittura/remove; 422 `EXPIRY_TYPE_NOT_FOUND`/`_INACTIVE` **prima** di `$transaction`; riga esistente su tipo disattivato → 200; `SCOPE_MISMATCH` dopo la disattivazione; 409 `PERSON_ARCHIVED`; P2002 → 409 `EXPIRY_CONFLICT`; schema: tipo in set+remove o duplicato → rifiutato |
+| 5 | ✅ | unit: compenso solo se diverso (anche `null`), tariffa via `upsertInstructorRateCore`, attivazione + compenso + tariffa nello stesso body; 409 `INSTRUCTOR_PROFILE_INACTIVE`; 422 `RATE_VALID_FROM_IN_PAST` prima della transazione |
+| 6 | ✅ | e2e `person-save` AC 6a (422 `SCOPE_MISMATCH`, telefono T0, Pilota attivo, nessuna riga) e AC 6b (409, nome N0, Istruttore attivo, compenso 3000 dal riepilogo) sul DB reale; discriminanza §D-1 |
+| 7 | ✅ | unit «every write … runs on tx»: nessun `prisma.<modello>` di scrittura chiamato (tx distinto); 409 al passo 8 propaga e `person.update` non chiamato |
+| 8 | ✅ | unit: primo statement `$queryRaw` con `FROM "Person"` e `FOR NO KEY UPDATE`, unico; `person.update` ultima scrittura; 403/404/409 email/422 → `$transaction` mai chiamata |
+| 9 | ✅ | e2e: PILOTA e ISTRUTTORE → 403 `FORBIDDEN`; unit con `authorize` reale + deny-list (`vi.hoisted`) per `payouts.manage`/`settings.manage`/`expiries.manage`: con la parte → 403 prima di ogni query, senza → salva |
+| 10 | ✅ | unit (secondo invio: nessun `sentAlert.deleteMany`/`expiry.update`/`instructorProfile.update`); e2e: stesso body due volte → 200 ×2, snapshot persona+scadenze+tariffe+compenso **identico** |
+| 11 | ✅ | e2e `Promise.all` → `[200, 422]`, un solo profilo di volo attivo; discriminanza §D-2 (9/10 rosse senza lock) |
+| 12 | ✅ | `registry.test` (+2); `/api/v1/openapi.json` servito: `UpdatePersonRequest` con `profiles/expiries/payoutRateCents/instructorRate`, 200 con i tre profili, 401/403/404/409/422/500, i 7 codici nella description |
+| 13 | ✅ | e2e AC 13/14: in `.so-body` 0 «Salva»/«Attiva»/«Modifica»/«Riattiva»/«Disattiva»/«Aggiungi», 0 testid rimossi, `pilot-identity-submit` in `.so-foot` con `form="pilot-identity-form"`; 1280 e 375 (screenshot §H) |
+| 14 | ✅ | e2e: telefono + Pilota + rating nuovo + data visita medica → richieste non-GET `/api/v1/` = `['PATCH']`; dopo reload e riapertura tutte e quattro presenti |
+| 15 | ✅ | e2e: aperto → disabilitato; modifica → abilitato; ripristino a mano → disabilitato; body = `{ phone }`; dopo il Salva disabilitato; discriminanza §D-3 |
+| 16 | ✅ | e2e: tipo disattivato in corsa → `pilot-ratings-error` **con focus**, telefono e riga `new` conservati, telefono vecchio sul DB; email occupata → `pilot-identity-error` «Esiste già una persona con questa email.»; reload: niente salvato |
+| 17 | ✅ | e2e `person-profiles`: controlli esclusi disabilitati con descrizione accessibile; transizione in un PATCH; Allievo «Disattivato» con «Data inizio corso» visibile, riga lista con «Pilota» e senza «Allievo»; potatura della riga nuova PILOTS togliendo Pilota |
+| 18 | ✅ | e2e `instructor-rates`: placeholder `35,00` (fixture SQL passata) e hint, valore vuoto, «In vigore da» = `min` = oggi Roma, 0 testid di storico/form; dopo Salva placeholder `40,00`; data +30 → placeholder invariato, riga `instructor-rates-next`; senza tariffa: niente placeholder, hint «Nessuna tariffa in vigore»; due programmate → solo la più vicina; riscrittura stessa data → una riga, placeholder `99,00` |
+| 19 | ✅ | e2e `instructor-compensation` (riga 30,00 €/h e dovuto) e `person-save` AC 20 (`payoutRateCents: 3350`, campo precompilato `33,50` dopo reload); svuotato → `null`: unit «cleared» (lato client `payoutCentsOf('') = null`) |
+| 20 | ✅ | e2e `person-save` istruttore: un PATCH con nome+rating+compenso+tariffa, toast «Modifiche salvate.», tutto presente dopo reload, «Annulla» nel footer; `mobile-registries`: 0 submit di sezione, 1 solo `type="submit"` nel pannello a 375 |
+| 21 | ✅ | e2e UI (data digitata ieri → errore di campo, 0 richieste, bozza intatta, nome vecchio sul DB); e2e API (422 + nome vecchio); unit `person-save.test` (`RATE_VALID_FROM_IN_PAST` → sezione tariffa) |
+| 22 | ✅ | e2e «Archivia»: unica scrittura `…/archive`, telefono non salvato conservato, Salva abilitato; `people-management:95` e `user-management:102` verdi invariati |
+| 23 | ✅ | `mobile-a11y-sweep:281-322` verde invariato (il bottone `disabled` resta il bersaglio di `elementFromPoint`, misurato — trappola 12); `mobile-registries` riscritto verde; 375 senza overflow; popover «In vigore da» a 375 dentro il viewport (left 47.5, right 327.5, 7 giorni disabilitati) |
+| 24 | ✅ | `person-detail.spec.ts` verde invariato; `edit-person-button.tsx` senza refresh alla chiusura; `expiry-registration` chiude l'editor dopo il Salva e trova la scheda già aggiornata |
+| 25 | ✅ | e2e «Nuovo»: Pilota → Allievo disabilitato (Istruttore no), Allievo → Pilota e Istruttore disabilitati; `people-management` creazione e `person-profiles` helper verdi senza modifiche |
+| 26 | ✅ con residui motivati | §E |
+| 27 | ✅ | §E: 1714 → **1672**, parità 0/0 |
+| 28 | ✅ | §F, §I |
+| 29 | ✅ | §H |
+
 ### §C — Censimento dei lock (AD-3)
 
-### §D — Discriminanza (atomicità, lock, diff) con sha256
+`grep -rn "FOR UPDATE\|FOR NO KEY UPDATE" src/server` (no test): nuovo `people.service.ts:650` `Person FOR NO KEY UPDATE` (con `"archivedAt"`), **primo** statement della transazione di `updatePerson`; seguono solo righe della **stessa** persona: profili/`Account` (core) → `Expiry`/`SentAlert` → `InstructorProfile` (`update`) → `InstructorRate` (upsert) → `Person` (`UPDATE` dell'anagrafica, per ultimo). Invariati: `upsertProfile` `:929` (`Person` → profilo → `Account`); prenotazioni `Booking → Aircraft → Person → InstructorProfile` (`bookings.service.ts:348-350`); registro voli `Aircraft → Account` (`flights.service.ts:1173/1202`, `1393/1402`, `1522/1562`); tariffa velivolo `Aircraft` (`rates.service.ts:95`); `accounts.service.ts:639`, `membership.service.ts:103` (`Account`). Nessuna transazione prende `Account`/`InstructorProfile` e poi `Person`; l'ordine `Person → InstructorProfile` è quello delle prenotazioni; chi tiene `Account FOR UPDATE` tocca la persona solo col `FOR KEY SHARE` delle FK, compatibile con `FOR NO KEY UPDATE`. Doc-comment di `updatePerson` (`:557-611`) e del modulo prenotazioni aggiornati.
+
+### §D — Discriminanza (§4.3) con sha256
+
+Mutazioni sul sorgente, build di produzione dedicata, e2e con `--retries=0`, ripristino con `cp` dall'originale e confronto sha256 (16 hex). File: `people.service.ts` `d47107c2a598373c`, `pilot-editor.tsx` `adaa418e43478584`.
+
+| # | Mutazione | Esito | sha256 prima → dopo |
+|---|---|---|---|
+| 1 | `return prisma.$transaction(async (tx) => {…})` → stessa funzione eseguita su `prisma` (nessuna transazione) | e2e AC 6a **rossa 3/3** (`--repeat-each=3`): Pilota disattivato rimasto salvato (`after.profiles.pilot` false); unit **16 rossi** (i test a `tx` distinto) | `d47107c2a598373c` → identico |
+| 2 | lock senza `FOR NO KEY UPDATE` (stessa SELECT, nessun lock di riga) | e2e AC 11 **rossa 9/10** (`--repeat-each=10`): `[200, 500]` — i due `Account` upsert concorrenti collidono (P2002 → 500) invece del 422; unit **2 rossi** (forma/ordine del lock) | `d47107c2a598373c` → identico |
+| 3 | client: il body porta tutta l'anagrafica (`IDENTITY_FIELDS` al posto di `changedIdentity`) | e2e AC 15 **rossa 3/3** (body con `firstName/lastName/email/address` in più) | `adaa418e43478584` → identico |
+
+1 e 3 nella stessa build (server vs client, indipendenti); 2 in una build a parte. Dopo il ripristino: `grep -c DISCRIMINANCE` = 0, `npm run gates` verde e build di produzione rifatta prima della serie finale.
 
 ### §E — Grep di AC 26 e parità i18n (verbatim)
 
+```
+$ grep -rn "LiveExpiryEditor\|PayoutRateForm\|ProfilesSection\|PilotProfileForm\|StudentProfileForm\|InstructorProfileForm\|ProfileSubShell" src e2e
+(0 righe)
+$ grep -rn "fetch(`/api/v1/people/${…}/profiles\|/api/v1/expiries\|instructor-compensation/${\|/instructor-rates`, {" pilots/ instructor-editor.tsx instructor-rates-panel.tsx expiry-editor.tsx
+(0 righe — instructor-rates-panel.tsx non esiste più)
+$ grep -rnE "expiry-add-(form|date|confirm)|expiry-edit-|expiry-remove-confirm-|instructor-payout-rate-submit|instructor-rates-(form|submit)\b|instructor-rate-history" src e2e
+e2e/instructor-rates.spec.ts:103   (asserzione di ASSENZA, AC 18)
+e2e/mobile-registries.spec.ts:833  (asserzione di ASSENZA, AC 20/23)
+e2e/person-save.spec.ts:239        (asserzione di ASSENZA, AC 13)
+e2e/person-save.spec.ts:363        (asserzione di ASSENZA, AC 20)
+$ grep -rn "R-15.10-f" src e2e
+aircraft-editor.tsx:277, airops.css:1132, airops.css:3630, mobile-ink-targets.spec.ts:571, mobile-a11y-sweep.spec.ts:269 (storici), mobile-registries.spec.ts:806 («superseding R-15.10-f»)
+$ grep -n "todayDateOnly\b\|toISOString().slice(0, 10)" instructors/*.tsx expiry-editor.tsx
+instructors-console.tsx:442-472 (form «Paga», periodEnd/yearStart: censimento della 16.9, non toccato)
+```
+
+Residui motivati: (a) le 4 righe del grep 3 sono le asserzioni di assenza che AC 13/18/20 chiedono (stessa eccezione di 19.2 §G-1 e 19.3 §H-7); (b) grep 4: solo riferimenti storici, nessuno afferma «i submit di sezione restano»; (c) grep 5: il «Paga» della console è il caso 5 della 16.9 (TD 19.4-b), fuori dagli editor.
+
+**i18n**: 1714 → **1672** chiavi per file (−47: `PeoplePage.profilesPanel.actions.*` 9, `PilotsPage.editor.{ratings,medical}.{addAction,cancel,save,edit,confirmRemove,confirmYes,confirmCancel}` 14, `InstructorsPage.editor.ratings.*` 7, `editor.payoutRate.save`, `editor.identity.save`, `studentRate.{current,loadError,submit,rateAdded,conflictError,historyTitle,historyEmpty,historyValidFrom,historyPrice,historyActor,historyWhen,historyShowAll}` 12, `toast.{rateSet,identitySaved,genericError}` 3 — ognuna verificata senza consumatori; +5: `restore` ×3, `InstructorsPage.toast.saved`, `InstructorsPage.studentRate.next`). Copy riusate, non duplicate: hint e «decorrenza nel passato» da `AircraftPage.editor.{rates.currentHint,errors.validFromPast}`, email occupata da `PilotsPage.editor.errors.conflictEmail`, hint di esclusività = `PeoplePage.profilesPanel.errors.exclusive`; il Salva istruttore usa `InstructorsPage.editor.save` («Salva modifiche», prima inutilizzata). `diff <(jq … it.json | sort) <(jq … en.json | sort)` **vuoto**.
+
 ### §F — Delta test (unit ed e2e, prima/dopo)
+
+- **Unit**: 1804 → **1834** (+30): `people.service.test` +19 (17 `it` + 2 dal ciclo RBAC a 3 casi), `registry.test` +2, `expiries.service.test` +1 (core estratto), `person-save.test` nuovo +8. Env eager: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` di people/expiries/instructor-rates/rates/person-save → 226 passed.
+- **e2e**: +15 → **delta atteso arbitro 504 → 519**: `person-save.spec.ts` nuovo (11), `person-profiles` 11 → 13, `instructor-rates` 4 → 6; `people-management`, `expiry-registration`, `instructor-compensation`, `mobile-registries` invariati nel numero. Nessuno spec nella catena serializzata (nessuna AppSettings, nessun aggregato globale: le asserzioni sul compenso leggono la riga del proprio istruttore run-unique).
+- **Run mirati** (build di produzione, `E2E_REUSE_SERVER=1 scripts/e2e.sh start --project=chromium …`):
+  1. primi 6 spec → 49 passed, **1 failed** (AC 16: focus non arrivato all'errore di sezione) + **1 flaky** (`instructor-rates` AC 18). Cause misurate e corrette: (i) il focus differito con `setTimeout` girava prima del commit dell'errore (log `focusin`: il Salva disabilitato lasciava il focus su `<body>`) → focus in un effetto dopo il commit; (ii) la pagina Istruttori fa `key={JSON.stringify({ count: items.length })}` sulla console (12.7): il `router.refresh()` del Salva la rimonta e chiude l'editor se nel frattempo uno spec parallelo ha creato un istruttore (snapshot dell'errore: 11 istruttori, pannello chiuso) → i test della pagina Istruttori riaprono l'editor dopo il Salva o leggono l'API (TD 19.4-a).
+  2. **serie finale** sulla build del commit: person-save, person-profiles, instructor-rates, people-management, expiry-registration, instructor-compensation, mobile-registries, mobile-a11y-sweep, person-detail, user-management, api-v1 → **101 passed**, `E2E_EXIT=0`.
+- Login `LoginAttempt` (TD-6) controllato prima della serie finale: solo tentativi riusciti (admin 66, pilot 7, instructor 1), nessun lock.
 
 ### §G — Deviazioni motivate
 
+1. **Controllo dei profili a spunta, non `Segmented`** (AD-9 lo raccomandava): con Q-19.3-c = B la regola è a tre vie (allievo ⟂ pilota **e** istruttore, pilota + istruttore ammesso) e un gruppo a scelta singola + checkbox avrebbe comunque richiesto opzioni disabilitate; ogni profilo ha già il suo riquadro (AD-9). Regola unica `isProfileBlocked` nei due form: un controllo **non spuntato** è disabilitato mentre è spuntato un profilo che lo esclude (uno spuntato si può sempre togliere: nessuna persona salvata in uno stato vietato resta bloccata), attenuato con `cursor: not-allowed` e collegato via `aria-describedby` alla riga di spiegazione (copy `PeoplePage.profilesPanel.errors.exclusive`). Testid: `pilot-editor-profile-{type}-active`, campi `pilot-editor-profile-pilot-license-number`/`-license-type`, `pilot-editor-profile-student-course-start`; nel «Nuovo» restano `new-person-activate-*` (test di creazione invariati).
+2. **`instructor-rates-panel.tsx` cancellato**, la sezione confluisce in `instructor-editor.tsx` (scelta che AD-10 lasciava al dev): lo stato della tariffa serve al Salva unico dell'editor.
+3. **Il lock legge anche `"archivedAt"`** (`SELECT "id", "archivedAt" … FOR NO KEY UPDATE`): il 409 `PERSON_ARCHIVED` è deciso sotto il lock, così un `archivePerson` concorrente (che aggiorna la stessa riga) non può infilarsi fra controllo e creazione — stessa lezione di 19.3 F2. Modo invariato.
+4. **P2002 su `Expiry`** → 409 **`EXPIRY_CONFLICT`** (nome scelto dal dev, AD-5).
+5. **Lettura finale**: con chiavi d'anagrafica l'`UPDATE` restituisce già il `PersonDetail` (`select: PERSON_DETAIL_SELECT`, dentro `tx`, dopo ogni scrittura); senza, `findUniqueOrThrow`.
+6. **Tipi delle scadenze**: esistenza verificata prima della transazione per tutti i tipi di `set`; tipo attivo verificato prima per le creazioni previste e **di nuovo** dentro la transazione per le creazioni effettive (riga cancellata nel frattempo), con la stessa mappa — nessuna query in più.
+7. **Esclusività chiamata se è presente un qualunque blocco di profilo** (istruttore compreso, Q-19.3-c), non solo pilota/allievo.
+8. **`updateExpiry`** ora scrive la data tramite `updateExpiryDateCore` e poi note/attore con la `select` in un secondo `UPDATE` della stessa transazione (asserzioni dei suoi unit invariate).
+9. **Lato client un modulo condiviso** `src/lib/person-save.ts` (diff dell'anagrafica con `''` ≡ `null`, trappola 13; classificatore codice → sezione di AD-5) usato dai due editor, ognuno coi propri messaggi.
+10. **Testid di errore di sezione** nuovi: `pilot-profiles-error`, `pilot-ratings-error`, `pilot-save-error`, `instructor-ratings-error`, `instructor-rates-error`, `instructor-save-error` (restano `pilot-identity-error`, `instructor-identity-error`, `instructor-payout-rate-error`); messaggi = i `genericError` della sezione (AD-5), salvo email occupata ed esclusività.
+11. **Ramo in sola lettura dell'istruttore** (`!canManagePeople`, irraggiungibile oggi — AD-7): resta l'anagrafica in sola lettura; ratings/compenso/tariffa vivono nel form, quindi non compaiono senza form.
+12. **`fetchPersonExpiries` fallisce invece di restituire `[]`**: una lista vuota per errore offrirebbe come chip tipi già registrati (il Salva darebbe `EXPIRY_CONFLICT`).
+13. **La data salvata delle righe vive nel `DateInput`** (non più testo `mono`): l'asserzione «contiene 31/12/2099» di `people-management` diventa `toHaveValue('2099-12-31')` + `data-state="saved"` + `GET` dell'API.
+14. **Focus dopo un Salva fallito in un effetto post-commit** (misura in §F-1); il focus del primo campo invalido lato client resta col `setTimeout` esistente (misurato funzionante: `pilot-editor-profile-pilot-license-number`, `instructor-rate-valid-from`).
+15. **`aria-pressed` sui chip** della bozza (sono interruttori).
+16. **e2e della pagina Istruttori**: riaprono l'editor dopo il Salva (`saveAndReopen`) o leggono l'API; il riallineamento in place dopo il Salva è provato sull'editor pilota (AC 15) e verificato a mano sull'istruttore (§H).
+17. **`sprint-status.yaml` non toccato** (istruzione della sessione principale), nonostante il passo 4/9 del workflow.
+
+**TD aperti** (da riportare nel §7): **19.4-a** la pagina Istruttori rimonta `InstructorsConsole` quando cambia il numero di istruttori (`instructors/page.tsx:93`, 12.7): un Salva con `router.refresh()` chiude l'editor se nel frattempo il conteggio è cambiato (D-4 violato in quella corsa; esisteva già col vecchio submit del compenso); **19.4-b** form «Paga» della console con «oggi» UTC (`instructors-console.tsx:442-472`, caso della 16.9); **19.4-c** `today` dell'editor istruttore fissato al mount (gemello di 19.3-c, il 422 server è mappato sul campo); **19.4-d** (preesistente, osservato) un campo anagrafica opzionale svuotato non si può salvare: `updatePersonSchema` rifiuta `''` (`min(1)`) e mostra «Campo obbligatorio» — invariato da questa story.
+
 ### §H — Verifica UI (screenshot)
 
+Script `playwright-core` throwaway nello scratchpad (Chromium `chromium-1228`, `timezoneId: 'Europe/Rome'`), app reale su build di produzione, **1280×900** e **375×812**: editor pilota pulito / con bozza (riga rimossa barrata con «Ripristina», riga nuova con barra d'accento, Istruttore spuntato) / con errore di sezione, editor pilota dalla scheda persona, form «Nuovo» con Allievo (Pilota e Istruttore disabilitati + spiegazione), editor istruttore pulito / con tariffa programmata / con errore di data, popover «In vigore da».
+
+```
+scrollWidth == innerWidth in tutte le schermate (1280/1280, 375/375)
+.so-foot: "Annulla | Salva modifiche" (pilota, scheda, istruttore) · Salva disabilitato a form pulito: true (pilota e istruttore, 1280 e 375)
+focus dopo errore di sezione: pilot-ratings-error · dopo validazione client: pilot-editor-profile-pilot-license-number / instructor-rate-valid-from
+popover «In vigore da» @375: left 47.5 right 327.5 top 51.5 bottom 441.7 (viewport 375×812), 7 giorni disabilitati; @1280: dentro (992-1272)
+editor istruttore dopo il Salva: placeholder 48,00, prezzo vuoto, compenso 35,00, riga tabella 35,00 €/h
+```
+
+Coerenza AirOps (skill `design-taste-frontend` letta: design read «UI di prodotto AirOps, preservare» — il suo perimetro landing non si applica, prese solo le regole su stati, contrasto, label visibili; `ui-ux-pro-max` consultata: controlli disabilitati riconoscibili e spiegati, errori vicino al problema con `role="alert"`, feedback del submit): stessi `Section`, `Field`, `Badge`, `.form-grid`, `.expiry-chip` di prima; una sola regola CSS nuova (`.expiry-draft-row[data-state=…]`, token esistenti: barra `--accent` come il chip selezionato, `--ink-4` + barrato per la rimozione).
+
 ### §I — Gate ed esiti verbatim
+
+```
+$ npm run gates          (ultimo, sul contenuto di e160065)
+PASS  lint (29s)
+PASS  typecheck (12s)
+PASS  test (11s) — Tests  1834 passed (1834)
+PASS  build (31s)
+```
+e2e mirati: §F (serie finale 101 passed, `E2E_EXIT=0`). L'arbitro full-suite su DB fresco resta alla sessione principale (atteso **519**).
+
+**Stato macchina a fine lavoro**: `:3000` libero (server fermati per task), nessun run e2e attivo, nessun DB gemello creato (le prove girano sul DB `airmanager` con fixture run-unique: contiene i dati dei run mirati — consigliato il reset prima dell'arbitro), nessuno stash; file untracked dell'utente, cancellazione di `.claude/skills/design-taste-frontend/SKILL.md`, `sprint-status.yaml` e story file di altre story non toccati.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created (story writer, 2026-11-01, ricognizione su `72e7e1b`).
+- Dev 2026-11-02: tutte le task T0-T10 completate; implementazione `e160065`; Status → review.
 
 ### File List
+
+- `src/server/services/people.service.ts`, `people.service.test.ts`
+- `src/server/services/expiries.service.ts`, `expiries.service.test.ts`
+- `src/server/services/instructor-rates.service.ts` (doc), `bookings.service.ts` (doc)
+- `src/lib/schemas/people.ts`, `registry.ts`, `registry.test.ts`
+- `src/lib/person-save.ts` (nuovo), `src/lib/person-save.test.ts` (nuovo), `src/lib/expiry-scope.ts` (commento)
+- `src/app/api/v1/people/[id]/route.ts`
+- `src/components/dashboard/expiry-editor.tsx`
+- `src/app/[locale]/dashboard/pilots/pilot-editor.tsx`, `pilot-editor-labels.ts`
+- `src/app/[locale]/dashboard/people/[id]/edit-person-button.tsx`
+- `src/app/[locale]/dashboard/instructors/instructor-editor.tsx`, `instructors-console.tsx`, `page.tsx`
+- `src/app/[locale]/dashboard/instructors/instructor-rates-panel.tsx` (cancellato)
+- `src/styles/airops.css`
+- `messages/it.json`, `messages/en.json`
+- `e2e/person-save.spec.ts` (nuovo), `person-profiles.spec.ts`, `instructor-rates.spec.ts`, `people-management.spec.ts`, `expiry-registration.spec.ts`, `instructor-compensation.spec.ts`, `mobile-registries.spec.ts`
+- `_bmad-output/implementation-artifacts/19-4-editor-pilota-istruttore-salva-unico.md` (questo record)
+
+### Change Log
+
+- 2026-11-02 — Implementazione completa della story 19.4 (`e160065`): `PATCH /people/{id}` composito atomico con lock `Person`, editor pilota e istruttore a Salva unico, scadenze in bozza, profili esclusivi nei due form, tariffa allievo R-19-f, OpenAPI, i18n, e2e. Status → review.
