@@ -448,6 +448,19 @@ export function FlightEditor({
   // single derivation for both, per the review's own fix note.
   const effectiveFlightType: FlightTypeDto = isLocked ? 'SCHOOL' : selectedFlightType;
 
+  // Review F2 (19.5, AC 14): `isSolo` exists only on SCHOOL, so it is cleared
+  // whenever the type IN EFFECT leaves SCHOOL — whatever moved it: the
+  // combobox, or the student lock releasing on a change of person, which
+  // never passes through the combobox's `onChange`. Adjusted during render
+  // (the same React pattern as `SearchCombobox`'s own reconciliation): a
+  // hidden switch can never submit `isSolo: true` on a TOURISM flight (422
+  // `SOLO_REQUIRES_SCHOOL`) nor come back on with SCHOOL.
+  const [soloResetType, setSoloResetType] = useState<FlightTypeDto>(effectiveFlightType);
+  if (effectiveFlightType !== soloResetType) {
+    setSoloResetType(effectiveFlightType);
+    if (effectiveFlightType !== 'SCHOOL') setIsSolo(false);
+  }
+
   // Review F1 (14.3): correcting a flight whose person is student-only TODAY
   // but whose recorded type is NOT SCHOOL — a real, if rare, state (ratifica
   // R-14.3-b: a license is for life, so losing every profile is unusual, but
@@ -987,10 +1000,7 @@ export function FlightEditor({
                 // show/submit a type the lock disagrees with, by React's own
                 // reconciliation, not an imperative sync call.
                 value={effectiveFlightType}
-                onChange={(id) => {
-                  setSelectedFlightType(id as FlightTypeDto);
-                  if (id !== 'SCHOOL') setIsSolo(false);
-                }}
+                onChange={(id) => setSelectedFlightType(id as FlightTypeDto)}
                 initialOptions={flightTypeComboOptions}
                 placeholder={labels.picker.placeholder}
                 emptyText={labels.picker.noResults}

@@ -1142,9 +1142,14 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const aircraft2 = await createAircraft(page);
+    // Review 19.5 F1: a run-unique pilot, never the seed one — other specs give
+    // that shared identity non-blocking expired documents, which turn the
+    // `booking-form-success` below into `booking-form-warning`.
+    const pilotPassword = `PilotaModifica${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
 
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
     const me = await (await page.request.get('/api/v1/me')).json();
     const pilotPersonId = me.person.id as string;
 

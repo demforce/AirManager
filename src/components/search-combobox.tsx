@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { anchorPositionStyle, computeFixedPopoverAnchor, POPOVER_PORTAL_Z_INDEX, type FixedPopoverAnchor } from './ui/fixed-popover';
 
@@ -102,15 +102,17 @@ function findLabel(id: string, options: SearchComboboxOption[]): string {
  * `aria-owns`): `aria-expanded`/`aria-controls`/`aria-activedescendant` on
  * the input, `role="option"`/`aria-selected` on each row. Keyboard: arrow
  * down/up move the active option (opening the popup first if it was
- * closed), Enter commits the active option (falls through to the
- * surrounding `<form>`'s native submit when the popup is closed — a filled
- * field still submits on Enter, same as a `<select>` did), Escape closes
- * and reverts the visible text to the committed selection.
+ * closed), Enter commits the active option — on a refocused, filled field
+ * that is the current selection, so the value never changes (review 19.5
+ * F3) — and falls through to the surrounding `<form>`'s native submit when
+ * the popup is closed (after a pick or an Escape), Escape closes and
+ * reverts the visible text to the committed selection.
  *
  * FOCUS = browse (`initialOptions` verbatim, zero fetch, text pre-selected
  * so typing replaces it — same "click a select, see everything" UX as
- * before). TYPING = search: an immediate client-side filter of
- * `initialOptions` as a placeholder, superseded ~250ms later by
+ * before), and so is a click on the already-focused field while the popup
+ * is closed (review 19.5 F4). TYPING = search: an immediate client-side
+ * filter of `initialOptions` as a placeholder, superseded ~250ms later by
  * `fetchOptions`'s server-authoritative results (a monotonic sequence
  * counter discards a stale response that resolves after a newer one — no
  * `AbortController` needed for a same-origin JSON fetch this small). With
@@ -217,7 +219,7 @@ export function SearchCombobox({
     };
   }, [open]);
 
-  function openWithOptions(nextOptions: SearchComboboxOption[]): void {
+  function openWithOptions(nextOptions: SearchComboboxOption[], initialActive = nextOptions.length > 0 ? 0 : -1): void {
     // Invalidate any pending/in-flight search (review TD-3 D3): without the
     // seq bump, a fetch scheduled by earlier typing could resolve AFTER a
     // blur→refocus reopened browse mode and clobber `nextOptions` with stale
@@ -226,7 +228,7 @@ export function SearchCombobox({
     seqRef.current += 1;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setOptions(nextOptions);
-    setActiveIndex(nextOptions.length > 0 ? 0 : -1);
+    setActiveIndex(initialActive);
     // Story 14.1, AC 1: re-measured on every call (focus, arrow key, or each
     // keystroke while typing) — cheap (one `getBoundingClientRect` + pure
     // math) and keeps the popover correctly placed even if the page
@@ -245,9 +247,16 @@ export function SearchCombobox({
     setOpen(true);
   }
 
-  /** Browse mode (focus, or an arrow key while closed) — `initialOptions` verbatim, no fetch. */
+  /**
+   * Browse mode (focus, a click on the focused field, or an arrow key while
+   * closed) — `initialOptions` verbatim, no fetch. The active option starts
+   * on the committed selection when the list holds it (review 19.5 F3), so
+   * Enter on a refocused, filled field re-commits that same value — as a
+   * `<select>` would — instead of replacing it with the first row.
+   */
   function openBrowseMode(): void {
-    openWithOptions(initialOptions);
+    const selectedIndex = initialOptions.findIndex((option) => option.id === value);
+    openWithOptions(initialOptions, selectedIndex >= 0 ? selectedIndex : undefined);
   }
 
   /** Search mode (typing) — optimistic client filter now, server-authoritative results ~250ms later. */
@@ -284,6 +293,19 @@ export function SearchCombobox({
     if (disabled) return;
     openBrowseMode();
     event.target.select();
+  }
+
+  // Review 19.5 F4: the popup opens on FOCUS, so a click on a field that
+  // already holds it (right after a pick — the normal case on a phone, where
+  // the field stays focused) used to do nothing. Only while closed: a click
+  // in the field of an open popup just moves the caret, and the first click
+  // on an unfocused field finds the popup already opened by its own focus. A
+  // pick never loops into a reopen: the option's `mousedown` keeps the focus
+  // on the input, and the click lands on the option, not here.
+  function handleClick(event: MouseEvent<HTMLInputElement>): void {
+    if (disabled || open) return;
+    openBrowseMode();
+    event.currentTarget.select();
   }
 
   function handleChange(event: ChangeEvent<HTMLInputElement>): void {
@@ -380,6 +402,7 @@ export function SearchCombobox({
         value={query}
         onChange={handleChange}
         onFocus={handleFocus}
+        onClick={handleClick}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         data-testid={id}
@@ -453,7 +476,12 @@ export function SearchCombobox({
                     role="option"
                     aria-selected={option.id === value}
                     aria-disabled={option.disabled ? 'true' : undefined}
-                    onMouseEnter={() => setActiveIndex(index)}
+                    // Review 19.5 F3: `mousemove`, not `mouseenter` — Chromium
+                    // fires `mouseenter` when a reopened popup lands under a
+                    // pointer that never moved (measured: the row clicked a
+                    // moment before), which stole the active row from the
+                    // committed selection; only a real move retargets it.
+                    onMouseMove={() => setActiveIndex(index)}
                     onClick={() => {
                       if (!option.disabled) selectOption(option);
                     }}

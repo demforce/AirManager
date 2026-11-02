@@ -1475,6 +1475,67 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
     await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${pilot.lastName} ${pilot.firstName}`);
   });
 
+  test('review F2: the student lock releasing on a change of person clears isSolo — the switch comes back off, and the TOURISM flight sends isSolo:false (AC 14)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const suffix = uniqueSuffix();
+    const studentLastName = `SoloLock-${suffix}`;
+    const pilotLastName = `SoloUnlock-${suffix}`;
+    const studentResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Allievo', lastName: studentLastName } });
+    expect(studentResponse.status()).toBe(201);
+    const student = (await studentResponse.json()) as { id: string };
+    expect((await page.request.put(`/api/v1/people/${student.id}/profiles/student`, { data: { courseStartDate: PAST_DATE } })).status()).toBe(200);
+    const pilotResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Pilota', lastName: pilotLastName } });
+    expect(pilotResponse.status()).toBe(201);
+    const pilot = (await pilotResponse.json()) as { id: string };
+    expect(
+      (await page.request.put(`/api/v1/people/${pilot.id}/profiles/pilot`, { data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' } })).status(),
+    ).toBe(200);
+    await ensureValidSeedExpiries(page, pilot.id, 'PILOTS');
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    const form = page.getByTestId('flight-form');
+    const typeCombobox = form.getByLabel('Tipo di volo');
+    const personCombobox = page.getByLabel('Pilota o allievo');
+    const soloSwitch = form.getByRole('switch', { name: 'Volo solista', exact: true });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+
+    // The student lock: Scuola, disabled, the switch there — turned ON.
+    await selectFromCombobox(personCombobox, studentLastName, `${studentLastName} Allievo`);
+    await expect(typeCombobox).toHaveValue('Scuola');
+    await expect(typeCombobox).toBeDisabled();
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+
+    // A pilot releases the lock: the type falls back to Turismo without the
+    // combobox's `onChange`, and the switch leaves the DOM...
+    await selectFromCombobox(personCombobox, pilotLastName, `${pilotLastName} Pilota`);
+    await expect(typeCombobox).toHaveValue('Turismo');
+    await expect(soloSwitch).toHaveCount(0);
+    // ...and back on Scuola it is OFF again (the discriminating half).
+    await selectFromCombobox(personCombobox, studentLastName, `${studentLastName} Allievo`);
+    await expect(typeCombobox).toHaveValue('Scuola');
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+
+    // ON once more, then the pilot: the TOURISM registration sends isSolo:false
+    // and succeeds — never the 422 SOLO_REQUIRES_SCHOOL of a hidden switch.
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await selectFromCombobox(personCombobox, pilotLastName, `${pilotLastName} Pilota`);
+    await expect(soloSwitch).toHaveCount(0);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    const posted = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/v1/flights' && request.method() === 'POST');
+    const answered = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/flights' && response.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Registra volo' }).click();
+    expect((await posted).postDataJSON()).toMatchObject({ personId: pilot.id, flightType: 'TOURISM', isSolo: false });
+    expect((await answered).status()).toBe(201);
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+  });
+
   test('correcting a SOLO SCHOOL flight opens the switch ON, Tipo di volo on the recorded value, the form still four comboboxes (AC 9/10/14)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraftWithRate(page, 12000);

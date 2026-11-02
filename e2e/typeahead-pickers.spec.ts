@@ -4,8 +4,8 @@ import { ensureValidSeedExpiries, selectFromCombobox } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
+const MAILPIT_API = 'http://localhost:8025/api/v1';
 
 if (!SEED_PASSWORD) {
   throw new Error('e2e/typeahead-pickers.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
@@ -23,6 +23,31 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
 /** Run-unique names (same pattern as the other specs, for the dirty/parallel DB). */
 function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+type MailpitMessageSummary = { ID: string; Subject: string };
+type MailpitFullMessage = { Text: string; Subject: string };
+
+/** Same Mailpit-polling helper as the other e2e specs. */
+async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
+    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
+    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
+    if (found) {
+      const messageResponse = await fetch(`${MAILPIT_API}/message/${found.ID}`);
+      return (await messageResponse.json()) as MailpitFullMessage;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
+}
+
+function extractSetPasswordUrl(emailText: string): URL {
+  const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(emailText);
+  if (!match) throw new Error(`Email body did not contain a /set-password link:\n${emailText}`);
+  return new URL(match[1]);
 }
 
 /** A safely-in-the-past date, before any run-unique aircraft/rate created below. */
@@ -294,6 +319,34 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
     return { id: ((await response.json()) as { id: string }).id, registration };
   }
 
+  /**
+   * A run-unique pilot with a login (same shape as `bookings.spec.ts`'s) —
+   * never the seed pilot (review 19.5 F1): other specs give that shared
+   * identity non-blocking expired documents, which turn a booking's
+   * `booking-form-success` into `booking-form-warning`.
+   */
+  async function createPilotWithLogin(page: Page, password: string): Promise<{ email: string }> {
+    const suffix = uniqueSuffix();
+    const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Pilota', lastName: `Combobox-${suffix}` } });
+    expect(personResponse.status()).toBe(201);
+    const person = (await personResponse.json()) as { id: string };
+    const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/pilot`, {
+      data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
+    });
+    expect(profileResponse.status()).toBe(200);
+
+    const email = `pilot-combobox-${suffix}@airmanager.local`;
+    const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
+    expect(userResponse.status()).toBe(201);
+    const url = extractSetPasswordUrl((await waitForMailpitMessage(email, 'invitato')).Text);
+    await page.goto(url.pathname + url.search);
+    await page.getByLabel('Nuova password').fill(password);
+    await page.getByLabel('Conferma password').fill(password);
+    await page.getByRole('button', { name: 'Imposta password' }).click();
+    await expect(page.getByTestId('set-password-success')).toBeVisible();
+    return { email };
+  }
+
   test('the first Escape on an open popup closes only the popup — the panel stays open, the value unchanged — and the second closes the panel, in the booking form AND the flight form (AC 20)', async ({
     page,
   }) => {
@@ -336,10 +389,10 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    const pilotPassword = `PilotaCombobox${uniqueSuffix()}!`;
+    const pilot = await createPilotWithLogin(page, pilotPassword);
     await page.context().clearCookies();
-    // The seed pilot: its booking stays PENDING (the suite's rule for that
-    // shared identity, `bookings.spec.ts#FUTURE_DAY`), on a run-unique aircraft.
-    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await loginExpectingDashboard(page, pilot.email, pilotPassword);
 
     const searchCalls: string[] = [];
     page.on('request', (request) => {
@@ -423,5 +476,71 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
     await expect(instructor).toHaveValue('Nessuno');
     await expect(person).toHaveValue('');
     await expect(form.locator('.fld-error')).toHaveCount(0);
+  });
+
+  test('review F3/F4: a click on the focused, filled field reopens its popup on the current value, and Enter on a refocused field keeps it — Tipo di volo and the staff velivolo', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const listbox = page.locator('.combo-listbox');
+
+    // --- Tipo di volo (two options: «Scuola» is never the first row) -------
+    await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('logbook-new-button').click();
+    const flightForm = page.getByTestId('flight-form');
+    await expect(flightForm).toBeVisible();
+    const flightType = flightForm.getByTestId('flight-type-select');
+    const soloSwitch = flightForm.getByRole('switch', { name: 'Volo solista', exact: true });
+    await flightType.click();
+    await page.getByRole('listbox').getByRole('option', { name: 'Scuola', exact: true }).click();
+    await expect(flightType).toHaveValue('Scuola');
+    await expect(flightType).toBeFocused();
+    // The pick closed the popup and nothing reopened it on its own.
+    await page.waitForTimeout(300);
+    await expect(listbox).toHaveCount(0);
+    await expect(flightType).toHaveAttribute('aria-expanded', 'false');
+
+    // F4: a second click on the field that kept the focus reopens browse
+    // mode — F3: on the current value, not on the first row.
+    await flightType.click();
+    await expect(listbox).toHaveCount(1);
+    await expect(page.getByRole('listbox').getByRole('option')).toHaveText(['Turismo', 'Scuola']);
+    await expect(flightType).toHaveAttribute('aria-activedescendant', 'flight-type-select-option-SCHOOL');
+    await page.keyboard.press('Enter');
+    await expect(flightType).toHaveValue('Scuola');
+    await expect(listbox).toHaveCount(0);
+
+    // F3 through the focus path: away (Tab, onto the switch) and back.
+    await page.keyboard.press('Tab');
+    await expect(soloSwitch).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(flightType).toBeFocused();
+    await expect(listbox).toHaveCount(1);
+    await expect(flightType).toHaveAttribute('aria-activedescendant', 'flight-type-select-option-SCHOOL');
+    await page.keyboard.press('Enter');
+    await expect(flightType).toHaveValue('Scuola');
+    await expect(soloSwitch).toHaveCount(1);
+
+    // --- staff booking: the velivolo (reviewer's repro) ---------------------
+    await page.goto('/it/dashboard/bookings');
+    await page.waitForLoadState('networkidle');
+    await page.getByTestId('new-booking-button').click();
+    const form = page.getByTestId('new-booking-form');
+    const aircraftCombobox = form.getByTestId('booking-aircraft');
+    await selectFromCombobox(aircraftCombobox, aircraft.registration, aircraft.registration);
+    await expect(aircraftCombobox).toHaveValue(aircraft.registration);
+    await page.keyboard.press('Tab');
+    await expect(form.getByTestId('booking-instructor')).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(aircraftCombobox).toBeFocused();
+    await expect(listbox).toHaveCount(1);
+    // Precondition that makes the check discriminating: this run's aircraft
+    // is not the list's first row (the row the old code made active).
+    await expect(page.getByRole('listbox').getByRole('option').first()).not.toHaveAttribute('id', `booking-aircraft-option-${aircraft.id}`);
+    await expect(aircraftCombobox).toHaveAttribute('aria-activedescendant', `booking-aircraft-option-${aircraft.id}`);
+    await page.keyboard.press('Enter');
+    await expect(aircraftCombobox).toHaveValue(aircraft.registration);
+    await expect(listbox).toHaveCount(0);
   });
 });
