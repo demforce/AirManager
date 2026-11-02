@@ -4,7 +4,7 @@ baseline_commit: 869c9cf
 
 # Story 19.7a: Scadenze — modello e regole (licenza, visite mediche, quota, currency)
 
-Status: **ready-for-dev** — 2026-11-01. Prima metà della 19.7, **divisa dalla sessione principale** in 19.7a (questa: modello, regole, funzioni di valutazione, righe Piloti) e **19.7b** (`19-7b-registro-scadenze-unificato.md`: registro Scadenze unificato con righe derivate, filtro Categoria, contatori, Panoramica, export, guardia prestazioni). **Nessuna domanda PO aperta.** **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI sulle righe Piloti (desktop, chip mobile, sheet), sul badge di categoria del registro Scadenze, sulla landing pilota e un tocco transitorio al form della card «Visite mediche» (D-18), oltre a schema, due migrazioni, regole di dominio pure, service, API/OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-7a-scadenze-modello-regole-quota-currency`.
+Status: **review** — 2026-11-02 (dev completato, implementazione `83c4a0c`; ready-for-dev dal 2026-11-01). Prima metà della 19.7, **divisa dalla sessione principale** in 19.7a (questa: modello, regole, funzioni di valutazione, righe Piloti) e **19.7b** (`19-7b-registro-scadenze-unificato.md`: registro Scadenze unificato con righe derivate, filtro Categoria, contatori, Panoramica, export, guardia prestazioni). **Nessuna domanda PO aperta.** **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI sulle righe Piloti (desktop, chip mobile, sheet), sul badge di categoria del registro Scadenze, sulla landing pilota e un tocco transitorio al form della card «Visite mediche» (D-18), oltre a schema, due migrazioni, regole di dominio pure, service, API/OpenAPI, seed ed e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-7a-scadenze-modello-regole-quota-currency`.
 
 > ⚠️ **Dipendenze e baseline**: ogni `file:riga` è misurato su **`869c9cf`** con `git show HEAD:<file>` (l'albero di lavoro contiene il lavoro in corso della 19.2). Il dev parte **DOPO il commit di 19.1…19.6**; la **19.7b parte dopo il commit di questa story** e ne consuma i contratti (§5.12). Le story precedenti toccano file di questa:
 > - **19.2** toglie `fiscalCode` (anche da `pilots/page.tsx:78`) e il contaore (`flights.service.ts` cambia molto); riscrive `seed-load.ts` in fasi vicine a quelle toccate qui.
@@ -349,18 +349,18 @@ Per le visite, **prima** le visite volute registrate a mano, **poi** `ensureVali
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento**: `git log`, censimenti di §3 su HEAD, righe corrette; API reale di `e2e/db-fixtures.ts` (19.3) e del componente scadenze in bozza (19.4); banner della 19.8.
-- [ ] **T1 — Schema e migrazioni** (AC 1).
-- [ ] **T2 — Regole pure** (AC 5, 13).
-- [ ] **T3 — Catalogo** (AC 3-4) + form della card «Visite mediche» (D-18).
-- [ ] **T4 — Scansioni** (AC 6-9).
-- [ ] **T5 — Quota** (AC 10-11).
-- [ ] **T6 — Currency: impostazioni e service** (AC 12, 14, 17).
-- [ ] **T7 — Piloti UI** (AC 15).
-- [ ] **T8 — Categoria da `kind` e landing** (AC 16).
-- [ ] **T9 — Seed** (AC 2).
-- [ ] **T10 — e2e** (AC 21): helper (`ensureValidSeedExpiries`, `registerFlightOn`), spec adattati, spec nuovo.
-- [ ] **T11 — Residui, i18n, gate, verifica UI** (AC 18-22).
+- [x] **T0 — Riallineamento**: `git log`, censimenti di §3 su HEAD, righe corrette; API reale di `e2e/db-fixtures.ts` (19.3) e del componente scadenze in bozza (19.4); banner della 19.8.
+- [x] **T1 — Schema e migrazioni** (AC 1).
+- [x] **T2 — Regole pure** (AC 5, 13).
+- [x] **T3 — Catalogo** (AC 3-4) + form della card «Visite mediche» (D-18).
+- [x] **T4 — Scansioni** (AC 6-9).
+- [x] **T5 — Quota** (AC 10-11).
+- [x] **T6 — Currency: impostazioni e service** (AC 12, 14, 17).
+- [x] **T7 — Piloti UI** (AC 15).
+- [x] **T8 — Categoria da `kind` e landing** (AC 16).
+- [x] **T9 — Seed** (AC 2).
+- [x] **T10 — e2e** (AC 21): helper (`ensureValidSeedExpiries`, `registerFlightOn`), spec adattati, spec nuovo.
+- [x] **T11 — Residui, i18n, gate, verifica UI** (AC 18-22).
 
 ---
 
@@ -368,26 +368,197 @@ Per le visite, **prima** le visite volute registrate a mano, **poi** `ensureVali
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), dev subagent unico della story (`dev-19-7a`), skill `bmad-dev-story` + `karpathy-guidelines`, `design-taste-frontend`, `ui-ux-pro-max`. Implementazione: commit `83c4a0c` su `dev` (HEAD di partenza `9f3e2dc`, 19.1…19.6 committate; il `baseline_commit: 869c9cf` del frontmatter resta quello delle misure della story).
+
 ### §A — Riallineamento sul HEAD (T0)
+
+Censimenti di §3 rieseguiti su `9f3e2dc`. Scostamenti di riga rispetto a `869c9cf` (il disegno non cambia):
+
+| Punto | Story (`869c9cf`) | HEAD `9f3e2dc` |
+|---|---|---|
+| `schema.prisma` `ExpiryScope` / `ExpiryTypeKind` / `ExpiryType` | `:1277` / `:1290` / `:1302` | `:1154` / `:1168` / `:1195` (la 19.2/19.6 hanno accorciato lo schema) |
+| `expiries.service.ts#listBlockingExpiriesByPerson` | `:547-567` | `:566-586` (ora `:608`) |
+| `bookings.service.ts#findBlockingExpiredDocuments` e chiamanti | `:465-479`; `:685`, `:1068`, `:1344` | `:471-487`; `:691`, `:1074`, `:1350` |
+| `flights.service.ts#findMissingBlockingDocuments` / `scanBlockingDocuments`, chiamanti | `:397-421` / `:441-462`; `:716`, `:861` | `:361-385` / `:405-426`; `:686`, `:812` |
+| `dashboard/page.tsx` landing | `:1039-1043` | `:1029-1033` |
+| filtro quota per nome nell'editor | `expiry-editor.tsx:39-45` | `components/dashboard/expiry-editor.tsx:43-49` (la 19.4 l'ha lasciato in `fetchExpiryTypes`, come previsto) |
+| `seed-load.ts` | `:1231`, `:1264` | `:1082`, `:1115` |
+| e2e: E8 di `flights.spec.ts`; `mobile-registries.spec.ts` Licenza | `:1198`/`:1209`; `:891`/`:923` | `:1161`/`:1172`; `:904`/`:936` |
+| chiavi i18n al HEAD | — | 1644 per lingua (non 1642: il fix della 19.6 ne ha aggiunte 2) |
+
+- **API reale 19.3** (`e2e/db-fixtures.ts`): `seedAircraftRate(aircraftId, { studentPriceCents, pilotPriceCents, validFrom })`, `seedInstructorRate(personId, { priceCentsPerHour, validFrom })`; `todayRome()`/`addDaysIso()` in `e2e/helpers.ts`. Usate tali e quali.
+- **19.4**: `assertScopeCompatible` è esportata (`expiries.service.ts:157`), il componente in bozza è `ExpiryDraftEditor`/`usePersonExpiryDraft`; nessuno dei due è stato toccato (D-3, trappola §5.6). Tolto solo il filtro per nome in `fetchExpiryTypes`.
+- **19.6**: nessuno stato `CANCELLED` — la query della currency conta ogni riga `Flight`.
+- **Banner 19.8**: contratti rispettati con i nomi concordati (vedi §B AC 12 e §H D-f/D-g). Il banner cita «migrazione + CHECK» e «indice unico parziale» per il tipo MEMBERSHIP: la 19.7a (scritta dopo, AD-1) dice «nessun altro DDL» — vale la 19.7a, l'invariante lo tengono migrazione, seed e service.
+- **Censimento e2e §3.6 ripetuto**: oltre ai punti elencati sono emersi `people-management.spec.ts:286-289` (cercava una visita con `scope === 'PILOTS'`), `mobile-registries.spec.ts:401`/`:484` (i piloti di fixture senza voli ora hanno il chip «Non current»), `mobile-expiries-movements.spec.ts:302` (etichetta «Abilitazione»). Corretti, §H D-e.
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Esito | Prova |
+|---|---|---|
+| 1 | ✅ | §C: gemello popolato + 6 fixture, conteggi prima/dopo, catalogo finale, `migrate diff` vuoto; sonda della migrazione unica che fallisce con «unsafe use of new value». |
+| 2 | ✅ | DB fresco (`migrate deploy` + `db seed` + `seed:demo`): catalogo identico a quello migrato (6 tipi, nessuna Licenza). `grep` in §F. Distribuzione currency demo in §E (tre stati presenti dopo lo spostamento di **due** voli di Stefano Colombo, §H D-a). |
+| 3 | ✅ | Unit `expiry-types.service.test.ts` (11 casi nuovi su create/PATCH di visite e rating); e2e API `expiry-rules-currency.spec.ts` «catalogue» (422 ×2, 201 ALL/true, 201 ALL/false, 201 INSTRUCTORS, PATCH 422 ×2 e 200); UI: `expiry-types.spec.ts` riscritto (visite «Tutti», form «Visite mediche» senza `medical-scope-select` né checkbox, body inviato esattamente `{ name, validityMonths: null, kind: 'MEDICAL' }`, risposta ALL/true, rinomina e disattiva verdi); form «Ratings» invariato (`mobile-settings.spec.ts` verde nella catena con `--no-deps`). |
+| 4 | ✅ | Unit (5 casi: lock su PATCH anche `isActive`, 404 prima del lock, DELETE prima del controllo «in uso», schema che rifiuta MEMBERSHIP su create/update e lo accetta come filtro); e2e API (422 ×2, 409 ×3, `?kind=MEMBERSHIP` → un elemento, `?kind=RATING&includeInactive=true` senza quota, tipo ancora presente dopo il DELETE rifiutato). |
+| 5 | ✅ | `src/lib/medical-requirement.test.ts` (8 casi: a-f + tie a ordine invertito + tipo disattivato). |
+| 6 | ✅ | e2e «flights» (a)-(e) su date di Roma passate e tariffe via fixture SQL; unit di scansione in `flights.service.test.ts` (5) e catena reale in `flights-expiry-boundary.integration.test.ts` (2: visita scaduta = un documento, mai raddoppiato; visita che scade il giorno del volo = 201). Discriminanza §D (a). |
+| 7 | ✅ | (a) e2e «bookings» (201, `warnings: []`); (b) unit `bookings.service.test.ts` (classe 2 + LAPL scadute → un documento, la LAPL; visita scaduta + rating bloccante scaduto → due documenti, la visita una volta; persona senza visite non bloccata; classe 2 scaduta + classe 1 valida → nessun blocco né warning). |
+| 8 | ✅ | `flights.spec.ts` «Blocking expiry guard-rail» e `bookings.spec.ts` (`createExpiryTypeForBooking`) verdi senza modifiche di logica (serie mirata 320/320, §G). |
+| 9 | ✅ | Unit `listBlockingExpiriesByPerson` (4 casi nuovi + 2 riscritti, mock fedele a SQL sul filtro `expiresAt`); `mobile-registries.spec.ts:355-380` verde. Mutante «orizzonte prima della riduzione» rosso, §D (d). |
+| 10 | ✅ | Unit `membership.service.test.ts` (create con `kind: 'MEMBERSHIP'`; `getMembershipStatus` ×4); `membership-fee.spec.ts` e `mobile-membership-fee.spec.ts` verdi. |
+| 11 | ✅ | `expiry-types.spec.ts` (quota in nessuna card); `people-management.spec.ts` (guardia su `?kind=MEMBERSHIP`, nessun chip); e2e «membership fee badge» (`window=all` + `personQuery`, badge «Quota associativa» / «Membership fee»); `grep` in §F. |
+| 12 | ✅ | `app-settings.service.test.ts` (15 casi: default, valori salvati, fallback per campo con `console.warn`, `ForbiddenError` prima di ogni query, core solo sul `tx` e senza `authorize`, schema ai bordi). |
+| 13 | ✅ | `src/lib/currency.test.ts` (11 casi, invariante `current === flightsInWindow >= X` su ognuno). |
+| 14 | ✅ | `currency.service.test.ts` (9 casi: UNION dei due sedili senza `UNION ALL`, `excludeFlightId` su entrambi, impostazioni lette a ogni chiamata, `atDate` legata così com'è con `::date`, soggetti D-8, mappatura `daysUntil`). La SQL è stata eseguita davvero su Postgres: distribuzione demo §E via `listCurrencyByPerson` e misura AC 17. |
+| 15 | ✅ | e2e «currency on the pilot rows» (A «Currency 0gg», B e C «Non current», D/F/E nessun badge, badge dentro la colonna da 110px, chip di C a 375, sheet di A «Fino al <oggi>»); unit `pilotRowFlag` (8 casi su ogni ramo di priorità). Mutante A a oggi−91 rosso, §D (c). |
+| 16 | ✅ | Unit (`typeKind`, `category`); `grep` §F; e2e badge EN «Membership fee»; e2e landing (visita più lontana, quota fuori dai «Ratings»). |
+| 17 | ✅ | §E: `EXPLAIN (ANALYZE, BUFFERS)` in `BEGIN READ ONLY … ROLLBACK` su `airmanager_load`. |
+| 18 | ✅ | §F. |
+| 19 | ✅ | §F: 1644 → 1653 per lingua, parità 0/0, le 9 chiavi tutte lette. |
+| 20 | ✅ | `npm run gates` verde (§J); ogni file di test nuovo/toccato passa con `env -u DATABASE_URL -u AUTH_SECRET` (suite completa 76 file / 1939 test eseguita così). |
+| 21 | ⏳ arbitro | Serie mirate verdi (§G). L'arbitro completo su DB fresco è della sessione principale: **delta atteso 543 → 549** (+6 del nuovo spec, nessun test rimosso). |
+| 22 | ✅ | §I. |
+
 ### §C — Migrazioni: gemello popolato, conteggi prima/dopo, `migrate diff`, catalogo finale
+
+Gemello `airmanager_twin197a`: catena **fino alla 19.6** (cartella di migrazioni copiata senza le due nuove) + `npx prisma db seed` + `npm run seed:demo` del HEAD, poi 6 fixture: F1 `SentAlert` su una riga Licenza, F2 `ExpiryUpdateProposal` PENDING su un'altra riga Licenza, F3 `SentAlert` su una classe 2 (deve restare), F4 tipo custom «Licenza estera» con una riga (il nome esatto deve risparmiarlo), F5 visita custom «Visita medica speciale» `PILOTS/false/disattiva`, F6 «Quota associativa» disattivata e messa a `PILOTS`.
+
+| Misura | Prima | Dopo |
+|---|---|---|
+| `Expiry` per tipo | Inglese ICAO 2, **Licenza 6**, Licenza estera 1, Quota 7, Rating SEP 5, classe 1 2, classe 2 6, LAPL 1, speciale 0 | Inglese ICAO 2, Licenza estera 1, Quota 7, Rating SEP 5, classe 1 2, classe 2 6, LAPL 1, speciale 0 (solo le 6 Licenza sparite) |
+| `ExpiryUpdateProposal` (totale / F2) | 1 / 1 | 0 / 0 |
+| `SentAlert` (totale / F1 / F3) | 2 / 1 / 1 | 1 / 0 / 1 |
+| tipi per `kind`/`scope` | RATING/PILOTS 5, MEDICAL/PILOTS 2, MEDICAL/STUDENTS 1, MEDICAL/INSTRUCTORS 1 | RATING/PILOTS 3, MEDICAL/ALL 4, MEMBERSHIP/ALL 1 |
+
+Catalogo finale (`SELECT "name","kind","scope","blocksBooking","isActive" FROM "ExpiryType" ORDER BY 1`): Inglese ICAO RATING/PILOTS/f/t · Licenza estera RATING/PILOTS/t/t · Quota associativa **MEMBERSHIP/ALL/f/t** · Rating SEP RATING/PILOTS/f/t · Visita medica classe 1, classe 2, LAPL **MEDICAL/ALL/t/t** · Visita medica speciale MEDICAL/ALL/t/f. `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` → `-- This is an empty migration.`
+
+Sonda della divisione (AD-1, trappola §5.1): clone del gemello, `ALTER TYPE … ADD VALUE 'MEMBERSHIP'` + `UPDATE … SET "kind" = 'MEMBERSHIP'` in **una** transazione (`psql -1`) → `ERROR: unsafe use of new value "MEMBERSHIP" of enum type "ExpiryTypeKind" — HINT: New enum values must be committed before they can be used.` Catena da zero (`migrate deploy` su DB vuoto) applicata senza errori su tre gemelli.
 
 ### §D — Sonde e discriminanze §4.3 (a)-(d)
 
+Build del codice pre-story ottenuta da `git archive 9f3e2dc` nello scratchpad (niente `git stash`, vietato), servita su :3001; codice della story su :3000. Stesso script di sonde (fixture via API + una tariffa via SQL).
+
+- **(a) Regola mediche** — pre-story su DB alla baseline: AC 6a (classe 2 scaduta + classe 1 valida + Licenza valida) → **422** `FLIGHT_BLOCKED_BY_EXPIRY` `[Visita medica classe 2, 2026-10-13, person]`; AC 6c (nessuna visita) → **422** `[Visita medica classe 2 (null), Licenza (null)]`. Story su DB migrato pulito: 6a → **201**; 6c → **422** con **un** documento `{ typeName: "Visita medica classe 1 / Visita medica classe 2 / Visita medica LAPL", expiresAt: null, role: "person" }`.
+- **(b) Trappola dello scope `ALL`** — codice pre-story su DB **migrato** (solo la migrazione, senza AD-3): pilota con la sola classe 2 valida → **422** `[Visita medica classe 1 (null), Visita medica LAPL (null)]`. Codice della story sullo stesso DB → **201**. (Il client pre-story non sa leggere una riga `MEMBERSHIP` via `GET /expiry-types`: le sonde leggono gli id dei tipi in SQL.)
+- **(c) Bordo currency** — mutante dello spec: il volo di A a oggi−91 (B spostato a −92 per non sovrapporsi sullo stesso velivolo) → rosso `Expected "Currency 0gg" / Received "Non current"`. Ripristino: sha256 `e1722d6d…b506a` identico prima e dopo.
+- **(d) Badge Piloti** — mutante di `listBlockingExpiriesByPerson` con `expiresAt: { lte: horizon }` anche sulla lettura delle visite → 2 rossi (forma della query e «classe 2 scaduta + classe 1 a +200 → nessuna voce»). Ripristino: sha256 `e06a5291…134b` identico.
+
 ### §E — Distribuzione currency demo (AC 2) e misura di AC 17
+
+**Demo** (DB fresco + `seed` + `seed:demo`, misurata con `listCurrencyByPerson` reale, oggi di Roma 2026-11-02, X=1/Y=90): current >30 — De Santis (88gg), Esposito (82), Fontana allievo (80), Greco (85), Marchetti (86), Romano (84); **≤30 — Colombo Stefano (26gg, scade 2026-11-28)**; **non current — Volante Piero `pilot@airmanager.local`, Allieva Sara `student@airmanager.local`** (soggetti del seed base, senza voli). Prima dello spostamento lo stato ≤30 mancava: spostati **due** voli di Stefano (`daysAgo` 44 → 66 e 18 → 64, riordinati in testa all'elenco cronologico) — §H D-a.
+
+**AC 17** — `SELECT current_database()` → `airmanager_load` (60487 voli, 5007 persone; schema più vecchio, la query usa solo colonne presenti), tutto dentro `BEGIN READ ONLY … ROLLBACK`, nessuna scrittura. Query letterale di `loadOnBoardFlightDates` con X=1, `atDate` 2026-11-02, finestra da 2026-08-04; i 20 id sono soggetti D-8 scelti in una sottoquery (il suo costo, ~5 ms, è dentro la misura):
+- 20 soggetti per cognome (nessun istruttore), a freddo: Bitmap Index Scan su `Flight_personId_idx` ×20, 281 righe, **Execution Time 84.6 ms** (shared hit=222 read=291), Planning 7.8 ms;
+- 20 soggetti con priorità agli istruttori (anche il ramo `InstructorProfile` lavora): primo giro **227.1 ms** (letture a freddo), rieseguito **47.6 ms**, Planning 1.8 ms.
 
 ### §F — Grep di AC 2, 11, 16, 18 e parità i18n (verbatim)
 
+```
+$ grep -rn "'Licenza'" prisma src e2e scripts | grep -v "prisma/migrations/"
+(nessun risultato)
+$ grep -rn MEMBERSHIP_FEE_TYPE_NAME src
+src/lib/expiry-scope.ts:27:export const MEMBERSHIP_FEE_TYPE_NAME = 'Quota associativa';
+src/server/services/membership.service.ts:2:import { MEMBERSHIP_FEE_TYPE_NAME } from '@/lib/expiry-scope';
+src/server/services/membership.service.ts:11:/** The fee type is upserted by NAME (`MEMBERSHIP_FEE_TYPE_NAME`, …
+src/server/services/membership.service.ts:142:      where: { name: MEMBERSHIP_FEE_TYPE_NAME },
+src/server/services/membership.service.ts:144:      create: { name: MEMBERSHIP_FEE_TYPE_NAME, kind: 'MEMBERSHIP', …
+$ grep -rn "categoryOf\|ExpiryCategory" src
+(nessun risultato)
+$ grep -rni "licenz" src --include=*.ts --include=*.tsx | grep -v src/generated
+src/app/[locale]/dashboard/page.tsx:1033:  // Ratifica PO 2026-07-18: la licenza è LIFETIME (mai una data di scadenza —   ← il KPI licenseType
+src/server/services/me.service.ts:16:    /** Story 12.12 (ratifica PO 2026-07-18: la licenza è LIFETIME, non scade): the ACTIVE `PilotProfile`'s `licenseType` …
+$ grep -rn "'Licenza'" e2e
+(nessun risultato)
+```
+
+(`src/generated/prisma/**` contiene solo il client rigenerato: nessuna stringa «Licenza» di dominio.) Per arrivare qui sono stati rinominati anche due dati di test estranei alla story (`'Licenza PPL'` → `'Rating SEP'` in `templates.test.ts` e `mobile-expiries.test.ts`) e i commenti «MAI riusare 'Licenza'» di `flights.spec.ts`/`bookings.spec.ts`.
+
+i18n: `messages/it.json` e `messages/en.json` 1644 → 1653, aggiunte `ExpiriesPage.registry.category.{MEDICAL,MEMBERSHIP,RATING}` e `PilotsPage.currency.{label,notCurrent,expiring,until,expiredOn,never}`, nessuna rimossa, parità it/en 0/0; tutte lette (`expiries/page.tsx`, `pilots/page.tsx`; `expiring`/`until`/`expiredOn` con `t.raw`).
+
 ### §G — Delta test (unit ed e2e, prima/dopo)
+
+**Unit**: HEAD `9f3e2dc` 73 file / **1847** test (misurati sull'albero estratto) → **76 file / 1939** (+3 file; +92 test = medical-requirement 8, currency 11, currency.service 9, expiry-types 16, app-settings 15, expiries 10, mobile-registries 8, flights 5, bookings 4, membership 4, boundary 2). Nessun test eliminato: rinominate le fixture «Licenza» (bookings, flights, boundary, mobile-registries), adattati i test di schema che pretendevano `scope` obbligatorio e il default Zod di `blocksBooking`, e la mappatura del badge (due letture).
+
+**e2e** (tutte su gemello `airmanager_e2e197a` = catena completa + seed base, build di produzione una volta, `E2E_REUSE_SERVER=1 scripts/e2e.sh`):
+1. spec nuovo da solo: 6/6;
+2. serie mirata `--project=chromium` su 30 spec (tutti i consumatori di `ensureValidSeedExpiries` + i toccati: expiry-types, people-management, mobile-registries, mobile-expiries-movements, expiry-dashboard, flights, bookings, membership-fee, aircraft-out-of-service-until, flight-no-charge, flight-delete-update, home-dashboard, person-save, expiry-registration, api-v1, person-detail, my-account, instructor-compensation, typeahead-pickers, mobile-logbook, mobile-self-public, billing, exports, pdf-exports, my-compensation, aog-impact-email, flight-log, expiry-alerts, mobile-reports, expiry-rules-currency): **320 passed, 0 failed, 0 flaky** (7.6 min);
+3. sullo stesso DB già inquinato dalla serie 2, catena con `--no-deps` (mobile-membership-fee, mobile-settings) + spec col pilota/allievo di seed (home-dashboard, mobile-overview, mobile-shell, mobile-a11y-sweep, mobile-ink-targets) + spec nuovo: **77 passed**;
+4. dopo l'allargamento della colonna Tipo (nuova build): expiry-rules-currency, expiry-dashboard, mobile-expiries-movements, mobile-a11y-sweep: **39 passed**.
+
+Test e2e nuovi: `e2e/expiry-rules-currency.spec.ts` (6). Cambiati: `expiry-types.spec.ts` (2 test), `flights.spec.ts` (E8), `mobile-registries.spec.ts` (3 test), `people-management.spec.ts` (2 test), `mobile-expiries-movements.spec.ts` (1 riga), `helpers.ts` (`ensureValidSeedExpiries`, `registerFlightOn`). **Delta arbitro atteso: 543 → 549.**
 
 ### §H — Deviazioni motivate
 
+- **D-a (AC 2)** — spostati **due** voli demo, non uno: ogni pilota demo ha ≥ 3 voli sparsi su 70 giorni, nessuno spostamento singolo produce lo stato ≤30. Scelto Stefano Colombo (voli a 70/44/18 → 70/66/64: scade fra 26 giorni); voli riordinati per tenere l'elenco cronologico (saldi sensati). La sua classe 2 (scaduta a −10) era valida alle date dei voli.
+- **D-b (AD-8)** — registro Scadenze: la colonna «Tipo» passa da 110 a 132 px. Con le etichette nuove il badge «Quota associativa» (125 px misurati) veniva tagliato dalla cella; misura dopo: 127/132 px in IT chiaro, «Membership fee» 107/132 px in EN scuro, nessun taglio. Unico tocco al registro oltre al badge.
+- **D-c (AD-3)** — `getMedicalRequirementFailure` non legge le visite della persona quando non c'è alcun tipo MEDICAL attivo (requisito spento: il risultato è `null` comunque). Una query in meno su ogni scansione delle installazioni senza visite.
+- **D-d (AD-6)** — lo sheet mobile calcola la riga «Documenti» con il solo flag dei documenti (`documentFlagOf`, `currency: null`), così un chip di currency più prioritario non nasconde un documento in scadenza; per i documenti il comportamento è identico a prima.
+- **D-e (§3.6)** — e2e corretti fuori dal censimento della story, tutti conseguenza diretta delle regole: `people-management.spec.ts:286-289` (la visita si cerca per nome, non più per `scope === 'PILOTS'`), `mobile-registries.spec.ts:401`/`:484` (un pilota di fixture senza voli porta ora il chip «Non current»: asserito come unico chip al posto di «nessun chip»), `mobile-expiries-movements.spec.ts:302` (l'etichetta «Abilitazione» diventa «Rating», asserita come «Rating · TipoMob» del sottotitolo).
+- **D-f (banner 19.8)** — niente CHECK né indice unico parziale sul tipo MEMBERSHIP (citati dal banner della 19.8, superati da AD-1 della 19.7a scritta dopo): invariante tenuto da migrazione + seed + `expiry-types.service.ts` + l'upsert per nome protetto da `name @unique`.
+- **D-g (contratto 19.8)** — oltre a `CURRENCY_DEFAULTS`, `src/lib/currency.ts` esporta **`CURRENCY_LIMITS`** (`{ minFlights: { min: 1, max: 99 }, windowDays: { min: 1, max: 3650 } }`), letto da `currencySettingsSchema` e dal getter: il mirror client della 19.8 legge di lì i limiti (come chiede il suo banner). `setCurrencySettings` restituisce i valori scritti (`CurrencySettings`). Nessun nome di §5.12 è cambiato.
+- **D-h** — `registerFlightOn` restituisce l'id del volo creato (la story non fissava il ritorno) e pretende 201 (stampa il corpo in caso contrario).
+
+**TD aperti**
+- **TD 19.7a-a** — una registrazione volo calcola la regola mediche due volte per persona (scansione delle scadute e dei mancanti, fino a 4 query in più per persona e istruttore). Corretto ma ridondante: il servizio unico dei check della 19.9 può leggerla una volta.
+- **TD 19.7a-b** — il badge Piloti mostra la visita migliore anche quando nessun tipo MEDICAL è attivo (requisito spento): D-13 alla lettera, caso limite di un'installazione che disattiva tutte le visite.
+- **TD 19.7a-c** — sul DB e2e longevo altri spec lasciano tipi MEDICAL attivi (`person-save.spec.ts` «Salva MEDICAL ALL …», le «Visita idoneità …» di `expiry-types.spec.ts` sono disattivate): entrano nel nome del documento «mancante» e possono essere la «prima visita attiva» scelta da `ensureValidSeedExpiries`. Innocuo (mai cancellati, gli spec che lo asseriscono leggono l'elenco attivo prima e dopo), da tenere presente nella 19.7b.
+- **TD 19.7a-d** — la tabella della card «Visite mediche» mostra ancora «Ambito: Tutti» e il badge «Blocca prenotazioni» su ogni visita: li toglie la 19.8 (D-18).
+
 ### §I — Verifica UI (screenshot)
+
+Script throwaway `playwright-core` su Chromium locale contro la build di produzione (nessun Playwright MCP su questa macchina), fixture dello spec nuovo:
+- **Piloti 1280 chiaro e scuro**: A «Currency 0gg» (warn, 94 px), B e C «Non current» (bad, 88 px) sotto la data, cella 110 px, `fits: true`; a **1024** i tre badge restano nella cella; D/E/F senza badge. Badge e testo da token AirOps (`.badge.warn`/`.badge.bad`), stato detto a parole oltre che dal colore.
+- **Piloti 375 chiaro e scuro**: chip A «Currency 0gg», B/C «Non current», D/E/F nessuno; sheet di A con la riga «CURRENCY — Fino al 02/11/2026» dopo «Stato».
+- **Registro Scadenze**: badge «Visita medica»/«Rating» (IT), «Medical»/«Rating» (EN); «Quota associativa» (IT chiaro) e «Membership fee» (EN scuro) interi dopo D-b.
+- **Impostazioni**: form «Nuova visita medica» con soli nome e validità (`medical-scope-select` assente), form «Ratings» con ambito e checkbox invariati.
+- **Landing pilota**: «Scadenza medico 21/05/2027» (la classe 1, non la classe 2 scaduta), «Ratings: Rating SEP» (niente quota).
 
 ### §J — Gate ed esiti verbatim
 
+```
+$ npm run gates
+PASS  lint (29s)
+PASS  typecheck (6s)
+PASS  test (16s) — Tests  1939 passed (1939)
+PASS  build (51s)
+$ env -u DATABASE_URL -u AUTH_SECRET npx vitest run
+ Test Files  76 passed (76)
+      Tests  1939 passed (1939)
+```
+
+Gemelli `airmanager_twin197a`, `airmanager_demo197a`, `airmanager_e2e197a`, `airmanager_base197a` eliminati a fine lavoro; `airmanager` e `airmanager_load` mai scritti (il secondo letto solo in transazione READ ONLY). Server fermati per PID.
+
 ### Completion Notes List
 
+- Modello: `ExpiryTypeKind.MEMBERSHIP` (D-1) e due migrazioni (AD-1); visite `ALL`/`true` come invariante dei dati (D-3), senza toccare `assertScopeCompatible`, `isExpiryScopeCompatible` né la validazione del composito persona.
+- Regole pure riusabili: `evaluateMedicalRequirement` (`src/lib/medical-requirement.ts`), `computeCurrency` + `CURRENCY_DEFAULTS`/`CURRENCY_LIMITS` (`src/lib/currency.ts`). Funzioni di service per 19.7b/19.9/19.10: `getMedicalRequirementFailure` (expiries), `getMembershipStatus` (membership), `getCurrencyStatus`/`loadOnBoardFlightDates`/`listCurrencyByPerson` (currency), `getCurrencySettings`/`writeCurrencySettingsCore`/`setCurrencySettings` (app-settings), `currencySettingsSchema` (schemas/settings).
+- Scansioni esistenti con la regola nuova: prenotazioni = solo scadute e solo la persona (D-5), voli = scadute + mancanti per persona e istruttore, mai due documenti medici.
+- UI: righe Piloti (badge desktop `pilot-currency-{id}`, chip mobile, riga «Currency» nello sheet), badge di categoria i18n nel registro, landing per `kind`, form «Visite mediche» ridotto. Nessun testid con suffisso `-mobile` su nomi con selettori `^=`.
+- Nessuna email, nessun check nuovo su voli/prenotazioni oltre alla regola mediche, nessuna route di impostazioni (confini 19.8/19.9/19.10 rispettati).
+
 ### File List
+
+Nuovi:
+- `prisma/migrations/20261102200000_expiry_kind_membership/migration.sql`
+- `prisma/migrations/20261102200100_expiries_licence_medical_membership/migration.sql`
+- `src/lib/medical-requirement.ts`, `src/lib/medical-requirement.test.ts`
+- `src/lib/currency.ts`, `src/lib/currency.test.ts`
+- `src/server/services/currency.service.ts`, `src/server/services/currency.service.test.ts`
+- `e2e/expiry-rules-currency.spec.ts`
+
+Modificati:
+- `prisma/schema.prisma`, `prisma/seed.ts`, `prisma/seed-demo.ts`, `prisma/seed-load.ts`
+- `src/server/services/expiries.service.ts`, `expiry-types.service.ts`, `membership.service.ts`, `bookings.service.ts`, `flights.service.ts`, `app-settings.service.ts` (+ i rispettivi `.test.ts`, più `flights-expiry-boundary.integration.test.ts`)
+- `src/server/adapters/mail/templates.test.ts`
+- `src/lib/schemas/expiry-types.ts`, `src/lib/schemas/expiries.ts`, `src/lib/schemas/settings.ts`, `src/lib/schemas/registry.ts`
+- `src/lib/expiry-status.ts`, `src/lib/expiry-scope.ts`, `src/lib/mobile-registries.ts` (+ test), `src/lib/mobile-expiries.ts` (+ test)
+- `src/app/[locale]/dashboard/pilots/page.tsx`, `src/app/[locale]/dashboard/pilots/pilots-console.tsx`
+- `src/app/[locale]/dashboard/expiries/page.tsx`, `src/app/[locale]/dashboard/expiries/scadenze-console.tsx`
+- `src/app/[locale]/dashboard/page.tsx`, `src/app/[locale]/dashboard/settings/ratings-card.tsx`, `src/components/dashboard/expiry-editor.tsx`
+- `messages/it.json`, `messages/en.json`
+- `e2e/helpers.ts`, `e2e/expiry-types.spec.ts`, `e2e/flights.spec.ts`, `e2e/bookings.spec.ts`, `e2e/mobile-registries.spec.ts`, `e2e/mobile-expiries-movements.spec.ts`, `e2e/people-management.spec.ts`
+- `_bmad-output/implementation-artifacts/19-7a-scadenze-modello-regole-quota-currency.md` (questo record, Status → review)
+
+### Change Log
+
+- 2026-11-02 — `83c4a0c` feat(19.7a): implementazione completa (22 AC); questo commit docs: Dev Agent Record e Status → review.
