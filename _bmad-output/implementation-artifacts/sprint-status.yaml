@@ -503,7 +503,7 @@ development_status:
   18-2-fold-liste: backlog
   18-3-indietro-chiude-navigazione-risponde: backlog
   18-4-filtri-pianificazione-mobile: backlog  # dopo 17.6
-  18-5-righe-tab-lessico: backlog
+  18-5-righe-tab-lessico: backlog  # CR 2026-11-01: il LESSICO di M6/M11/M13a-c passa alla 19.12b; qui restano layout e comportamento — riperimetrare prima del dev
   18-6-tema-di-sistema: backlog
   18-7-desktop-colonne-sticky-fermo-panoramica: backlog  # D1 residuo dopo 17.2
   epic-18-retrospective: optional
@@ -523,7 +523,8 @@ development_status:
   19-9-avviso-deroga-voli: done  # 2026-11-02 — feat 0e13807, record e05c9c3, review SHIPPABLE CON FIX (F1 major solista->doppio, F2 race saldo -> deciso sotto lock, F3 focus, F4 OpenAPI, F5 robustezza e2e), fix bdf7b9a, docs 53da24a; arbitro finale 579+1 flaky (ECONNRESET infra) = 580 exit 0; TD-19.9-c chiuso
   19-10-avviso-deroga-prenotazioni: ready-for-dev  # story file 2026-11-01 (39 AC, baseline eef77ef): stessi check su create/update/approve, costo stimato, own-path bloccato, R-19-o (lock Person IN (...) ORDER BY id), TD 16.3-g chiuso, deroga quota (AC 36-39); Q-19.10-a = oggi per quota/currency; dev Opus DOPO 19.9
   19-11-estratto-conto-periodo-progressivo: ready-for-dev  # story file 2026-11-01 (36 AC, baseline eef77ef), Q-19.11-a = A (più recenti in alto ovunque); indice (accountId, effectiveDate, createdAt, id) motivato (D-3); saldo progressivo in una $queryRaw (via la transazione interattiva: dirlo alla 17.5)
-  19-12-revisione-italiano: backlog
+  19-12a-glossario-parita-plurali: ready-for-dev  # split 2026-11-03 (decisione sessione principale): 13 AC; glossario docs/i18n/glossario-it.md, test di parita' con parser ICU, guardia t.raw x ICU, 24 plurali, chiavi morte; dev Opus DOPO 19.11
+  19-12b-passata-testi: ready-for-dev  # split 2026-11-03: 25 AC; passata in contesto con Q-19.12-a = B («Velivoli» + «Estratto conto», contro la raccomandazione), b = A currency Valida/Scaduta, c = A «Amministratore», d = A pagine d'errore minimali, e = A «Compenso istruttore»; export a pattern unico, email/PDF; la 18.5 va riperimetrata (lessico M6/M11/M13a-c passa qui); dev Opus DOPO 19.12a
   epic-19-retrospective: optional
 
 action_items:

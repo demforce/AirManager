@@ -315,4 +315,7 @@ AD-6 — Consumo pacchetti: già storico dalla 12.13; le PackageConsumption resi
 | Q-19.9-b | 19.9 | In modifica di un volo il check sul saldo si rifà **sempre** (al netto dell'addebito attuale), non solo se l'addebito aumenta (contro la raccomandazione). |
 | Q-19.10-a | 19.10 | Sulle prenotazioni **currency e quota si valutano alla data di oggi**; le scadenze dei documenti restano al giorno del volo (contro la raccomandazione). |
 | Q-19.11-a | 19.11 | Estratto conto: movimenti più recenti in alto ovunque (schermo, Excel, PDF). |
+| Q-19.12-a | 19.12b | Menu e titoli: «**Velivoli**» per la flotta ed «**Estratto conto**» per il conto personale (contro la raccomandazione). |
+| Q-19.12-b/c/d/e | 19.12b | currency «Valida/In scadenza/Scaduta» («Non current» → «Currency scaduta»); «Amministratore» ovunque; pagine d'errore 404 localizzate minimali; «Instructor payout» → «Compenso istruttore». |
+| Split | 19.12 | Divisa in **19.12a** (glossario, parità, plurali, chiavi morte) e **19.12b** (passata dei testi) — decisione della sessione principale per dimensione. |
 
