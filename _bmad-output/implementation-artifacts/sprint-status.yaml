@@ -278,7 +278,7 @@ development_status:
   # Template design: progetto claude.ai/design dcd71b3a-dbcf-494e-a543-29325a5435de (DesignSync, solo main session).
   # REGOLA MODELLO (utente 2026-07-29): dev e fix subagent su Opus 5 xhigh (epic tutto UI); review Opus 5 xhigh.
   # Ordine vincolante 15.1 -> 15.2 -> 15.3; il resto segue il valore d'uso.
-  epic-15: in-progress
+  epic-15: done  # stato corretto d'ufficio il 2026-11-03: 15.1-15.10 tutte done dal 2026-08-06 (v. commento della 15.10), il flag era rimasto in-progress
   # 15.1 chiusa 2026-07-30. Dev Opus 5 (prima story UI con la regola modello
   # nuova). Review Opus 5: il subagent ha eseguito il gate arbitro (302/302 su
   # DB fresco, che CONFERMA la diagnosi del dev: i suoi 11 rossi erano

@@ -2,7 +2,41 @@
 baseline_commit: 9272129
 ---
 
-# Story 16.7: Dati e sessioni protetti — `personId` mascherato, identità rinfrescata, rate limit atomico
+# Story 16.7: Dati e sessioni protetti — `personId` mascherato, identità rinfrescata
+
+> Titolo originale (2026-09-10): «… rate limit atomico». Il rate limit PPR (F12) esce col dominio PPR, rimosso nella 19.1 (`08eb558`; CR 2026-11-01 §4.3). La chiave sprint `16-7-dati-sessioni-rate-limit` resta.
+
+## §R — Riallineamento su `dev@56c6664` (2026-11-03, sessione principale) — **PREVALE su tutto il resto del file**
+
+Baseline del file: `9272129` (130 commit fa). Su HEAD il dominio PPR non esiste più (`08eb558`: via `ppr.service.ts`, `ppr-public.spec.ts`, `PprRequest`/`PprCounter`, `RateLimitError`/`RATE_LIMITED`/429, `ppr.manage`; resta solo `/ppr` in `src/proxy.ts:13`, tenuto per dare 404, Q-19.1-a = B). F6 e F8 restano aperti (confermati anche dall'audit 2026-11-02, README #8/#22, `security.md:77-78`).
+
+**OBSOLETE (non fare)**: AC-contratto 3 (F12), AC 11-14, AD-6/7/8, la riga PPR della tabella «tre scelte», fatti h/i/j/k, test §4 n. 5-7, le trappole §5 solo PPR (~15 test PPR, `$executeRaw` nel mock, `hashtext`, `::bigint`, SMTP sotto lock, pool/raffica), §6 su `x-forwarded-for` e pool (17.1 done), TD 16.7-c/d, i «probe già scritti» in uno scratchpad che non esiste più (l'output verbatim nella story vale come rosso atteso: i probe si riscrivono dentro i file di test). L'header di coordinamento con 16.2/16.3/16.4 è storico (16.3 done, 16.4 superseded; le regioni del mask restano disgiunte).
+
+**VALID**: F6 (`bookings.service.ts:278` azzera ancora 5 campi senza `personId`), F8 (`users.service.ts:182-191`, nessun bump di `tokenVersion`), R-16-f, AD-1/2/3 (una clausola in `isOwnRow` copre riga desktop `bookings-table.tsx:675` e sheet mobile `:519`), AC 1-4, 7-9, 15, 17 (delta su e2e **606** / unit **2211**).
+
+**NEEDS CHANGE**:
+- **AD-4**: il motivo n. 2 («user-management invia il form intero») non è più vero: l'unica PATCH UI è `pilots-console.tsx:265-269` e manda solo `{ isActive }`; relink/unlink si fanno solo via API (`src/lib/schemas/users.ts:32-37`). La regola «stesso `personId` ⇒ niente bump» resta (client API, futura app Flutter): cambia la ragione. L'audit propone anche `personId` nella `select` del recheck (`security.md:78`): AD-4 lo rifiuta con l'argomento verificabile che il ritorno per mismatch di versione a `jwt-active-check.ts:47-49` precede `:51` — resta com'è, il reviewer va avvisato.
+- **AD-5**: `@auth/core` non è dipendenza diretta: importare `encode`/`decode` da **`next-auth/jwt`** (che fa `export * from "@auth/core/jwt"`). Fallback più forte disponibile: leggere `User.tokenVersion` dal DB tramite `e2e/db-fixtures.ts` (pool `pg`, 19.3; oggi solo writer — un reader nuovo è una scelta da dichiarare nel record).
+- **AD-9**: via `ppr.service.ts`; restano 7 file di codice (2 solo se il typecheck li chiede), `jwt-active-check.ts` sempre a zero.
+- **AC 5**: il parametro è `?pageSize=50` (`perPage` non esiste: `paginationQuerySchema`, Zod lo scarta e tornano 20 righe). Il «prima» (16 id) veniva da `airmanager_load`, cancellato: rimisurare sul DB corrente e dichiarare.
+- **AC 6**: sulla Fedora locale non c'è il Playwright MCP: si usa lo script `@playwright/test` throwaway in /tmp (CLAUDE.md). La 6c diventa automatica, v. AC 16.
+- **AC 10**: «30 giorni assoluti, senza sliding» è sbagliato (audit S-16, `security.md:458-464`; `@auth/core/lib/actions/session.js:45-49` rifirma il JWT a ogni lettura di sessione). Formula: «fino a 30 giorni dall'ultimo uso (sessione scorrevole) → ≤ 15 min». Correggere anche «Il perché §2» e TD 16.7-b.
+- **AC 16**: via la discriminanza (3) (raffica coi lock). La (4), clausola `isOwnRow`, diventa un **e2e obbligatorio**: unlink via API dell'utente PILOT dell'AC 9 → nuovo login (`personId` null) → `/it/dashboard/bookings` → su una riga «Occupato» creata dal test `booking-cancel-action` (`bookings-table.tsx:780`) NON compare (la pagina si apre: `canManageOwn`, `bookings/page.tsx:133-134`). Mutanti/discriminanze solo su copia isolata con sha256.
+
+**Righe spostate (baseline → HEAD)**: `bookings.service.ts` — `BookingListItem.personId` :161, `SelectedBooking.personId` :203, `toListItem` :218-238, `maskBookingNames` :275-279 (return :278, `isOwn` :276, «ONLY masking signal» :262-264), 403 filtro :959-961, call-site :987 e :1055, `EditableBooking.personId` :1075, `assertOwnAccessAndTiming` :1122 (confronto :1125), `self.read` :956/:1029/:1692/:1709/:1722/:1742. `src/lib/schemas/bookings.ts` — `bookingItemSchema` :148-165, `personId` :152, lista :170, `createBookingResponseSchema.booking` :197, calendario :233. `registry.ts` — descrizioni lista :1426, calendario :1477, risposte singole :1501/:1516/:1535 (anche la descrizione PDF :1444 cita il masking). `bookings-table.tsx` — `BookingRowDto.personId` :45, `isOwnRow` :270-274 (clausola :272). Mapper: `bookings/page.tsx:392` (`ownPersonId` :465), `dashboard/page.tsx:384` (l'embed passa `canManageOwn={false}` :684). `exports.service.ts` :275-283 e :746-756; `users.service.ts` `findUnique` :155, `update` :182-191; `auth-tokens.service.ts` modello del bump :214-217; `proxy.ts` doc cookie/salt :79-80. Unit: `bookings.service.test.ts` :813/:817 (asserisce oggi il difetto), 403 :886-905, calendario :1003-1020; `users.service.test.ts` :195 e :207. e2e: `bookings.spec.ts` privacy :1929, lettura grezza :2022-2027, calendario allievo :729-733; `aog-impact-email.spec.ts` `createPilotPerson` :125-145, `setPassword` :616-629 (oggetto della mail «invito» dopo la 19.12b).
+
+**Fatti nuovi**:
+1. **Trappola fixture F8**: `SELECTED_USER` (`users.service.test.ts:56-65`) non ha `personId` → `null !== undefined` è vero e l'unlink bumpa anche senza cambio reale. Aggiungere `personId: 'person_1'` alla fixture.
+2. Persone run-unique; `createPilotPerson` chiama `ensureBookingRequirements` (`e2e/helpers.ts:337`), altrimenti 422 `REQUIREMENTS_NOT_MET`; prenotazione di terzi come admin senza requisiti = `force: true` (come `bookings.spec.ts:1950`). `personIdByEmail` in `helpers.ts:373`.
+3. TD-6: cap 10 tentativi/identifier/15 min (`login-throttle.ts:14,25`): utenti U e V dell'AC 9 run-unique.
+4. Lo spec nuovo non scrive AppSettings: suite principale, non catena.
+5. Nessuna stringa, migrazione o codice d'errore nuovo; il 401 dopo l'eviction è `UNAUTHENTICATED` (`handler.ts:42`). Test nuovi che importano `users.service` copiano le catene di mock esistenti.
+6. **Dalla 19.10 `forcedAt`** sulle prenotazioni significa «un admin ha derogato requisiti falliti (visita, currency, saldo, quota)» (`bookings.service.ts:171`) — v. ratifica Q-16.7-a.
+7. Fuori perimetro, NON toccare (al massimo TD): audit S-11 (guardia ultimo admin racy, `users.service.ts:166-180` vs `:182`, stessa funzione), S-8 (throttle forgot-password, stessa classe di F12), S-2 (open redirect, nessuna sovrapposizione). S-14 (istruttore vede i requisiti falliti dell'allievo) è già ratificato da R-19-h; la delega «mascheratura dei `details`» della 16.3 (`16-3-…md:561`) è chiusa dalla 16.3 stessa e da R-19-h.
+
+**Stima**: ~13 AC, 5-7 file di codice (< 20 righe di produzione + doc), 2 unit, 1 e2e modificato + `e2e/session-identity.spec.ts` nuovo. Nessuno split. Dev **Opus** (clausola di rendering in `isOwnRow`).
+
+**Ratifiche PO**: v. §R-PO (aggiunta dopo l'AskUserQuestion).
 
 Status: **ready-for-dev** — 2026-09-10. **Modello dev**: **Opus 5 xhigh**. La story è **backend al 95%**, ma il cambio di DTO di F6 **non si esaurisce nei tipi**: `bookings-table.tsx:242-246` decide *quali righe mostrano i pulsanti «Modifica»/«Annulla»* confrontando `booking.personId === ownPersonId`, e con `personId` azzerato quel confronto diventa `null === null` (⇒ **vero**) per un attore `PILOT` **senza persona collegata**. È **una clausola** di codice client, non un ridisegno — ma è **logica di rendering**, e la regola utente 2026-07-29 («Opus 5 xhigh se la story scrive codice UI») non ha soglia, come già deciso per la 16.3. Review: **Opus 5 xhigh adversarial**, come sempre.
 

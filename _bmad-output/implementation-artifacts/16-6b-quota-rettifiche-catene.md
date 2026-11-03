@@ -2,9 +2,43 @@
 baseline_commit: 9272129
 ---
 
-# Story 16.6b: Una quota per anno, e una rettifica che non consuma lo storno di un volo
+# Story 16.6b: Una quota che non raddoppia su un ritentativo, e catene di rettifica classificate alla radice
+
+> Titolo originale (2026-09-10): «Una quota per anno, e una rettifica che non consuma lo storno di un volo». Cambiato col riallineamento del 2026-11-03 (§R qui sotto).
 
 > ⚠️ **Q4 anticipata nella 19.6 (fix review F1, 2026-11-02): non va rifatta.** `recordAdjustment` risponde già **422 `ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE`** su un originale `FLIGHT_CHARGE` (letto dentro la transazione, sotto il lock `Account`) e `rowIsAdjustable` dell'estratto conto è già «`TOP_UP`/`ADJUSTMENT` non rettificato» (AC 10-11, AD-5); `FLIGHT_CHARGE_REVERSAL` e `cancelFlight` non esistono più dalla 19.6. Restano da fare Q1-Q3, Q5, Q6.
+
+## §R — Riallineamento su `dev@56c6664` (2026-11-03, sessione principale) — **PREVALE su tutto il resto del file**
+
+Il file sotto è misurato su `9272129` (2026-09-10). Da allora sono atterrati 16.1-16.3, 17.1, AOG-1a/1b e l'intero Epic 19 (CR `sprint-change-proposal-2026-11-01.md`). Dove il resto del file contraddice questa sezione, **vale questa sezione**.
+
+**Perimetro che resta** (tutto il resto è OBSOLETE):
+- **Q1 — chiave di idempotenza stabile nel modale quota** (VALID, più grave di prima: con il rinnovo cumulativo R-19-k un doppio addebito porta la scadenza a +24 mesi).
+- **Q5 — tipo radice della catena di rettifiche** (VALID): `TOP_UP ← A1 ← A2 ← A3` è ancora costruibile (`rowIsAdjustable` `account-section.tsx:278-280`, `actionable` `transactions.service.ts:287`), e A3 è classificata REVENUE.
+- **Q6 — discriminanze rosse**: ridotte a 2 (Q1 e2e, Q5 unit); il pin dei `NULL` (AC 14) è non-regressione, verde prima e dopo.
+
+**OBSOLETE (non rifare):**
+- Q2/Q3, AD-2, AD-3, AC 4-9, AC 18, §4.4 — superate da **R-19-k** (quota 12 mesi dal pagamento, rinnovo `max(oggi, scadenza) + 12`, già in `membership.service.ts:154`; il secondo addebito è voluto). Fuori: `membershipFeeDescription`, `MEMBERSHIP_FEE_ALREADY_CHARGED`, la frase del 409. `membership-fee.spec.ts:107` resta com'è.
+- Q4, AD-5, AC 10-11 — fatte in `2de0e8f` (19.6): `accounts.service.ts:721-731`, unit `accounts.service.test.ts:866`, e2e `flight-delete-update.spec.ts:387-430`.
+- AD-6, AC 17 — `handler.ts:64` porta già `|| error instanceof ConflictError` (`3138115`, 16.2).
+- AD-7 — nessuna modifica OpenAPI (Q1 solo client, `reversalRootType` interno).
+
+**NEEDS CHANGE:**
+- **AD-1 / AC 1-2 (Q1)**: dopo la 19.10 il `fetch` vive in `charge()` (`scadenze-console.tsx:920-926`, chiave `randomIdempotencyKey()` a `:923`) con DUE chiamanti: `submit()` (`:934-955`, ancora **senza try/catch**: su guasto di rete `setSubmitting(false)` a `:943` non arriva e il bottone `:1064` resta disabilitato per sempre) e `proceed()` («Procedi comunque», `:958-977`, try/catch presente ma chiave nuova a ogni tentativo). Fix: `useIdempotencyKey` nel modale, chiave usata da `charge()`, `regenerateIdempotencyKey()` dopo **qualunque risposta HTTP** in entrambi i rami (oggi: 200, 403, 404, 422 `REQUIREMENTS_NOT_MET`, 422 `IDEMPOTENCY_KEY_MISMATCH`, 409 `IDEMPOTENCY_IN_PROGRESS` — il 409 «già addebitata» non esiste più). Aggiornare i doc-comment `:871-872`, `:919` e `use-idempotency-key.ts:6`, `:33-35` («vendita pacchetto» ritirata nella 12.13), `:45` (6 call-site, 7 con la quota). `IDEMPOTENCY_KEY_HEADER` da `@/lib/use-idempotency-key`. Errore: riusa `labels.genericError` (nessuna chiave i18n nuova attesa).
+- **AC 3 (e2e Q1)**: `route.abort()` non basta (la richiesta non arriva al server, niente replay). Sul primo tentativo `const r = await route.fetch(); await route.abort();` (commit server, guasto lato client); poi asserire `Idempotency-Replayed: true` sul secondo tentativo, **una** sola riga «Quota associativa», `expiresAt` a +12 mesi (non +24). Sul pre-fix fallisce già prima (bottone disabilitato).
+  - Fixture: pilota run-unique (`createPilotPerson`) con `topUpAccount` ≥ importo (altrimenti la prima risposta è l'avviso 422 della 19.10); il bottone è disabilitato con quota a 0 (`:289`), quindi il test scrive `PUT /settings/membership-fee` (stato globale): stesso schema dei test `:215`/`:255` della 19.10 (`mode: 'serial'` nel file, project principale) → **registrare TD-16.6b-a** se resta lì, oppure spostarlo in `mobile-membership-fee.spec.ts` (in catena). Scelta del dev, dichiarata nel record. Nel `SearchCombobox` mai `Escape`.
+- **AD-4 / AC 12-16 (Q5)**: un solo writer di `AccountMovement.reversalOfId`: `accounts.service.ts:760` (`flights.service.ts` non ne scrive più; `FLIGHT_CHARGE_REVERSAL` eliminato dalla 19.6, enum `schema.prisma:544-549` a 4 valori; `ACCOUNT_REVENUE_OR` a 3 clausole `:129-138`). Migrazione **dopo** `20261103101004_account_movement_statement_index`, poi `npx prisma generate` (client in `src/generated/prisma`; se la 16.5 atterra prima, rigenerare). Le radici nuove possono essere solo `TOP_UP` o `ADJUSTMENT` (FLIGHT_CHARGE → 422, PACKAGE_PURCHASE → 409); una radice `FLIGHT_CHARGE` esiste solo in dati legacy. CHECK `(reversalOfId IS NULL) = (reversalRootType IS NULL)`: scelta tecnica del dev (precedente contrario: 19.7a D-f «nessun DDL»), motivata nel record.
+  - Predicato: scrivere `OR: [{ reversalRootType: null }, { reversalRootType: { not: 'TOP_UP' } }]`, NON `NOT: { reversalRootType: 'TOP_UP' }` (trappola dei NULL in Prisma 7.8.0), verificato sul DB reale (AC 14).
+  - Unit: `transactions.service.test.ts:331-347` e `:549-554` pinnano la forma letterale del `where` → riscritti; fixture F3 `:256-290` (con `reversalOf` annidato) → `reversalRootType`; in `accounts.service.test.ts` le fixture dell'originale senza `type` (`:749`, `:813`, `:835`, `:896`) vanno rese esplicite con la `select` allargata. Aggiornare il `Pick` di `SelectedAccountRow` (`:178`).
+  - **AC 16**: misura del backfill su un **gemello con fixture costruite** a profondità 0-3, comprese radici `FLIGHT_CHARGE` legacy (ricetta 19.6 §C) — `airmanager_load` non esiste più e `seed-load.ts` non scrive catene. Oggi sul DB locale: 11 righe con `reversalOfId`, profondità massima 1.
+- **AD-9**: in volo restano 16.5 (migrazione su `Flight`), 16.6a (stesso `accounts.service.ts`, `recordTopUp` vs `recordAdjustment`; stesso `transactions.service.test.ts`), 17.4 (backlog).
+
+**File**: restano `prisma/schema.prisma` (`AccountMovement` `:590-614`), la migrazione nuova, `accounts.service.ts` (solo `select` `:714-719` e `create` `:752-761`), `transactions.service.ts`, `scadenze-console.tsx`, `use-idempotency-key.ts` (doc), `e2e/membership-fee.spec.ts` (un test NUOVO). Escono `expiry-scope.ts`, `membership.service.ts`, `flights.service.ts`, `handler.ts`, `registry.ts`, `expiries/page.tsx`, `account-section.tsx`, `messages/*.json`, `account-adjustments.spec.ts`. Trappole §5 che restano: 1, 5, 6, 9, 10, 11, 12.
+
+**Fuori scope dichiarato**: il contratto dell'hook rigenera la chiave anche dopo un 409 `IDEMPOTENCY_IN_PROGRESS` (un terzo tentativo rapidissimo potrebbe addebitare due volte) — vale per tutti e 7 i form → TD, non qui. Vitest gira solo `src/**/*.test.ts` in environment `node`: Q1 si prova solo in e2e.
+
+**Ratifiche PO**: v. §R-PO in coda a questa sezione (aggiunta dopo l'AskUserQuestion).
+
 
 Status: **ready-for-dev** — 2026-09-10. **Modello dev: Opus 5 xhigh** (la story tocca UI: il `fetch` della quota associativa in `scadenze-console.tsx` — chiave di idempotenza, `try/catch`, bottone che oggi resta bloccato per sempre —, un ramo d'errore nuovo con la sua frase in due locale, e il predicato dell'azione di riga dell'estratto conto su **due facce**). Review: **Opus 5 xhigh adversarial**.
 
