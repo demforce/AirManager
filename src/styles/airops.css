@@ -3067,6 +3067,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 .mobile-sheet.export-menu-sheet{ display: block; }
 .export-menu-sheet .mobile-sheet-grabber{ display: none; }
 .export-menu-panel{ min-width: 180px; }
+/* Story 19.12b: the entries read «‹Contenuto› (Excel)» / «‹Contenuto› (PDF)» (D-2), and «Estratto conto (Excel)»
+   wrapped to two lines in 180px. One line each: the popover grows to its longest entry instead. */
+.export-menu-panel .pop-row > .btn{ white-space: nowrap; }
 
 @media (max-width: 640px){
   .billing-desktop-body{ display: none; }

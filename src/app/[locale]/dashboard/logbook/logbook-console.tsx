@@ -19,7 +19,7 @@
  * SCHOOL-solo flight's PIC is its own `person`; a SCHOOL-dual flight's PIC is
  * the `instructor` — shown in its OWN column (`flight-pic-cell`), distinct
  * from the "pilota" column (which always shows the flight's `person`, with
- * the instructor as a secondary "CFI" line when present) — an addition over
+ * the instructor as a secondary "Istruttore: …" line when present) — an addition over
  * the prototype's own 10 columns, needed to satisfy this exact assertion
  * (flights.spec.ts).
  */
@@ -147,6 +147,8 @@ export type LogbookConsoleLabels = {
     takeoffs: string;
     landings: string;
     times: string;
+    /** Story 19.12b — «Istruttore: {name}», `{name}` filled client-side (`t.raw`): the instructor line under the pilot, on the desktop row and on the card. */
+    instructorLine: string;
     filters: string;
     /** `{count}` filled client-side (`t.raw`) — the number of PANEL filters currently active. */
     filtersCount: string;
@@ -207,7 +209,9 @@ function flightTypeLabel(type: FlightTypeDto, labels: LogbookConsoleLabels['flig
   return type === 'SCHOOL' ? labels.school : labels.private;
 }
 
-const COLS = '92px 150px minmax(150px,1.5fr) 110px 130px 64px 55px 55px 100px minmax(130px,1.2fr) 150px';
+// The person column starts at 200px (was 150px, story 19.12b): its sub-line reads «Istruttore: ⟨nome⟩» instead of
+// «CFI ⟨nome⟩», and 200px keeps the room for the name the old 150px left (17 characters of 11px mono).
+const COLS = '92px 150px minmax(200px,1.5fr) 110px 130px 64px 55px 55px 100px minmax(130px,1.2fr) 150px';
 
 export function LogbookConsole({
   canManage,
@@ -333,9 +337,9 @@ export function LogbookConsole({
     })),
   ];
 
-  /** The card's mono sub-line and the sheet's rows share this: `CFI ⟨nome⟩`, the desktop's own second line under the pilot. */
+  /** The card's mono sub-line and the desktop's own second line under the pilot share this: «Istruttore: ⟨nome⟩». */
   function instructorLabel(flight: FlightListItemDto): string | null {
-    return flight.instructor ? `CFI ${personLabel(flight.instructor)}` : null;
+    return flight.instructor ? labels.mobile.instructorLine.replace('{name}', personLabel(flight.instructor)) : null;
   }
 
   /**
@@ -601,8 +605,15 @@ export function LogbookConsole({
               <div>{labels.table.aircraft}</div>
               <div>{labels.table.type}</div>
               <div>{labels.table.hours}</div>
-              <div>{labels.table.takeoffs}</div>
-              <div>{labels.table.landings}</div>
+              {/* Story 19.12b: the abbreviated heads stay (a 55px column) and carry the full word for assistive tech and as a tooltip. */}
+              <div title={labels.mobile.takeoffs}>
+                <span aria-hidden="true">{labels.table.takeoffs}</span>
+                <span className="sr-only">{labels.mobile.takeoffs}</span>
+              </div>
+              <div title={labels.mobile.landings}>
+                <span aria-hidden="true">{labels.table.landings}</span>
+                <span className="sr-only">{labels.mobile.landings}</span>
+              </div>
               <div>{labels.table.amount}</div>
               <div>{labels.table.pic}</div>
               <div>{labels.table.actions}</div>
@@ -621,7 +632,7 @@ export function LogbookConsole({
                   <div>
                     <div>{personLabel(flight.person)}</div>
                     {flight.instructor ? (
-                      <div className="student-sub mono">CFI {personLabel(flight.instructor)}</div>
+                      <div className="student-sub mono">{instructorLabel(flight)}</div>
                     ) : null}
                   </div>
                   <div className="mono" style={{ fontWeight: 600 }}>

@@ -16,7 +16,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
         expiresInDays: 7,
       });
 
-      expect(email.subject).toBe('Sei stato invitato ad AirManager');
+      expect(email.subject).toBe('Hai ricevuto un invito ad AirManager');
       expect(email.text).toContain('http://localhost:3000/it/set-password?token=abc123');
       expect(email.text).toContain('7 giorni');
     });
@@ -87,7 +87,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
 
       expect(email.subject).toContain('Visita medica classe 2');
       expect(email.text).toContain('Mario Rossi');
-      expect(email.text).toContain('scade oggi');
+      expect(email.text).toContain('La tua scadenza «Visita medica classe 2» scade oggi'); // story 19.12b: «» quotes
       expect(email.text).not.toMatch(/\b60\b|\b30\b|\b7\b/);
     });
 
@@ -170,7 +170,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
         ],
       });
 
-      expect(email.subject).toBe('Riepilogo alert scadenze');
+      expect(email.subject).toBe('Riepilogo avvisi di scadenza');
       expect(email.text).toContain('Mario Rossi');
       expect(email.text).toContain('scade oggi');
       expect(email.text).toContain('Chiara Bianchi');
@@ -285,8 +285,9 @@ describe('buildAircraftGroundedEmail (story AOG-1b, ratifica R-AOG-i)', () => {
     expect(email.text).toContain('rientro da definire');
     expect(email.text).not.toContain('fino al');
     // Never an empty value, never a bare dash where a value is announced.
-    expect(email.text).not.toMatch(/Fermo:\s*$/m);
-    expect(email.text).not.toContain('Fermo: —');
+    expect(email.text).toContain('Fuori servizio: rientro da definire');
+    expect(email.text).not.toMatch(/Fuori servizio:\s*$/m);
+    expect(email.text).not.toContain('Fuori servizio: —');
   });
 
   it('renders the English counterpart with the same structure', async () => {

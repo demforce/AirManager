@@ -785,7 +785,7 @@ export function FlightEditor({
         <button type="button" className="btn" onClick={onClose}>
           {labels.cancel}
         </button>
-        <button ref={submitButtonRef} type="submit" form="flight-editor-form" className="btn primary" disabled={isSubmitting || noAircraft || noPerson}>
+        <button ref={submitButtonRef} type="submit" form="flight-editor-form" className="btn primary" disabled={isSubmitting || noAircraft || noPerson} data-testid="flight-form-submit">
           <Icon.check /> {isCorrecting ? labels.correctSubmit : labels.submit}
         </button>
       </>

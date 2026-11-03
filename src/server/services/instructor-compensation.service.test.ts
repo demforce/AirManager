@@ -542,6 +542,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(movementArgs.data['instructorPayoutId']).toBe('payout_1');
       expect(movementArgs.data['actorUserId']).toBe('admin_1');
       expect(movementArgs.data['effectiveDate']).toEqual(parseDateOnlyUtc('2026-09-01'));
+      expect(movementArgs.data['description']).toBe('Compenso istruttore 2026-07-01 – 2026-07-15'); // story 19.12b, AD-5
 
       vi.useRealTimers();
     });

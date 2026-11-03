@@ -146,7 +146,7 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-dri
     await page.getByRole('button', { name: 'Chiudi' }).click();
 
     const okRow = page.getByTestId('person-expiry-row').filter({ hasText: okType.name });
-    await expect(okRow).toContainText('In regola');
+    await expect(okRow).toContainText('Valida');
 
     const expiringRow = page.getByTestId('person-expiry-row').filter({ hasText: expiringType.name });
     await expect(expiringRow).toContainText('In scadenza');

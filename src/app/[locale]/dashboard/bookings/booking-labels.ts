@@ -203,7 +203,7 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
       reopen: t('list.actions.reopen'),
       cancelPrompt: t('list.actions.cancelPrompt'),
       cancelConfirm: t('list.actions.cancelConfirm'),
-      dismiss: t('list.actions.dismiss'),
+      keep: t('list.actions.keep'),
       moveTitle: t('list.actions.moveTitle'),
       save: t('list.actions.save'),
       approveSuccess: t('list.actions.approveSuccess'),

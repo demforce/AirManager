@@ -118,7 +118,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
           empty: t('empty'),
           newPilot: t('newPilot'),
           exportLabel: tExport('button'),
-          exportXls: tExport('button'),
+          exportXls: t('exportMenu.xlsLabel'),
           pagination: { prev: t('pagination.prev'), next: t('pagination.next') },
           table: {
             name: t('table.name'),

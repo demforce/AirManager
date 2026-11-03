@@ -498,7 +498,7 @@ export async function recordPayout(actor: Actor, input: RecordInstructorPayoutIn
         categoryId: category.id,
         amountCents: -input.amountCents,
         paymentMethod: input.method,
-        description: `Instructor payout ${input.periodStart} – ${input.periodEnd}`,
+        description: `Compenso istruttore ${input.periodStart} – ${input.periodEnd}`,
         effectiveDate,
         actorUserId: actor.userId,
         instructorPayoutId: created.id,

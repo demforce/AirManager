@@ -104,6 +104,7 @@ export default async function InstructorsPage({ params }: PageProps) {
           newInstructor: t('newInstructor'),
           paymentCycleButton: t('paymentCycleButton'),
           exportLabel: tExport('button'),
+          exportXls: t('exportMenu.xlsLabel'),
           table: {
             name: t('table.name'),
             rate: t('table.rate'),

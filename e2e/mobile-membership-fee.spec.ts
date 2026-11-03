@@ -130,7 +130,7 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     }
     await page.setViewportSize(PHONE);
 
-    const combobox = panel.getByRole('combobox', { name: 'Pilota' });
+    const combobox = panel.getByRole('combobox', { name: 'Persona' });
     await combobox.click();
     await combobox.fill(pilot.lastName);
     await page.getByRole('option', { name: `${pilot.lastName} ${pilot.firstName}`, exact: true }).click();
@@ -155,7 +155,7 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     await page.goto('/it/dashboard/expiries');
     await page.getByTestId('scadenze-membership-fee-button').click();
     const panel = page.getByTestId('membership-fee-panel');
-    const combobox = panel.getByRole('combobox', { name: 'Pilota' });
+    const combobox = panel.getByRole('combobox', { name: 'Persona' });
     await combobox.click();
     await combobox.fill(pilot.lastName);
     await page.getByRole('option', { name: `${pilot.lastName} ${pilot.firstName}`, exact: true }).click();

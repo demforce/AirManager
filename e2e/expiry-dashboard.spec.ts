@@ -105,11 +105,11 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     await expect(rows).toHaveCount(3);
     // Ordered expired -> within60(30d here) -> ok (urgency first, expiresAt asc).
     await expect(rows.nth(0)).toContainText(expiredPerson.lastName);
-    await expect(rows.nth(0).getByTestId('scadenze-status-badge')).toHaveText('Scaduto');
+    await expect(rows.nth(0).getByTestId('scadenze-status-badge')).toHaveText('Scaduta');
     await expect(rows.nth(1)).toContainText(within30Person.lastName);
-    await expect(rows.nth(1).getByTestId('scadenze-status-badge')).toHaveText('≤ 30 giorni');
+    await expect(rows.nth(1).getByTestId('scadenze-status-badge')).toHaveText('≤ 30 gg');
     await expect(rows.nth(2)).toContainText(okPerson.lastName);
-    await expect(rows.nth(2).getByTestId('scadenze-status-badge')).toHaveText('Valido');
+    await expect(rows.nth(2).getByTestId('scadenze-status-badge')).toHaveText('Valida');
 
     // Row tint: the expired row's background is a non-transparent tint (Contesto: `TIER_ROW_TINT`).
     const expiredRowBg = await rows.nth(0).evaluate((element) => getComputedStyle(element).backgroundColor);
@@ -132,7 +132,7 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
 
     await page.goto(`/it/dashboard/expiries?expiryTypeId=${type.id}`);
     await expect(page.getByTestId('scadenze-row')).toHaveCount(0);
-    await expect(page.getByText('Nulla in questa finestra.')).toBeVisible();
+    await expect(page.getByText('Nessuna scadenza in questo intervallo.')).toBeVisible();
 
     await page.getByTestId('scadenze-window-all').click();
     await expect(page).toHaveURL(/window=all/);
@@ -143,7 +143,7 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
 
   /**
    * Story 19.7b (AC 11): the unified registry counts derived rows too — a
-   * currency row per pilot/student who flew enough — so «≤ 7 giorni» moves
+   * currency row per pilot/student who flew enough — so «≤ 7 gg» moves
    * whenever ANY concurrent spec registers a document or a flight. Two reads compared for equality are a flake
    * by construction (lesson Billing-2 F4). A SCISSOR read instead: unfiltered,
    * filtered, unfiltered; a filter that leaked into the stat cards would make

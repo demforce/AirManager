@@ -197,7 +197,7 @@ test.describe('Flight «senza addebito» (Story 19.6, P1 — R-19-d)', () => {
     await form.getByLabel('Ora atterraggio').fill('11:00');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     // Story 19.9: no balance check on a no-charge flight, but the fee and the currency still apply.
     await submitPastRequirements(page);
 
@@ -208,7 +208,7 @@ test.describe('Flight «senza addebito» (Story 19.6, P1 — R-19-d)', () => {
 
     // AC 22: the only flight of this aircraft is worth 0 of revenue.
     await page.reload();
-    await expect(page.locator('.kpi', { hasText: 'Ricavo' }).locator('.kpi-value')).toHaveText(/^0,00\s€$/);
+    await expect(page.locator('.kpi', { hasText: 'Addebiti' }).locator('.kpi-value')).toHaveText(/^0,00\s€$/);
 
     // A normal flight on the same aircraft, to prove the wording shows ONLY on the no-charge one.
     expect((await page.request.post('/api/v1/flights', { data: flightBody(aircraft.id, pilot.personId, '2020-01-02', 60) })).status()).toBe(201);

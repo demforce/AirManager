@@ -101,7 +101,7 @@ test.describe('Person profiles (Story 2.2), adapted to the Piloti editor (Story 
     // With Allievo ticked, Pilota cannot be ticked (R-19-e): the control is disabled and says why.
     await expect(page.getByTestId('pilot-editor-profile-pilot-active')).toBeDisabled();
     await expect(page.getByTestId('pilot-editor-profile-pilot-active')).toHaveAccessibleDescription(
-      "Allievo non può essere attivo insieme a Pilota o Istruttore: disattiva prima l'altro profilo.",
+      "Il profilo allievo non può essere attivo insieme a pilota o istruttore: disattiva prima l'altro profilo.",
     );
 
     // The student gets the license: untick Allievo, tick Pilota, ONE Salva.
@@ -295,7 +295,7 @@ test.describe('Exclusive student profile (Story 19.3, AC 13-16)', () => {
     for (const type of ['pilot', 'instructor']) {
       await expect(page.getByTestId(`pilot-editor-profile-${type}-active`)).toBeDisabled();
       await expect(page.getByTestId(`pilot-editor-profile-${type}-active`)).toHaveAccessibleDescription(
-        "Allievo non può essere attivo insieme a Pilota o Istruttore: disattiva prima l'altro profilo.",
+        "Il profilo allievo non può essere attivo insieme a pilota o istruttore: disattiva prima l'altro profilo.",
       );
     }
 
@@ -317,7 +317,7 @@ test.describe('Exclusive student profile (Story 19.3, AC 13-16)', () => {
     await expect(form.getByTestId('new-person-activate-student')).toBeDisabled();
     await expect(form.getByTestId('new-person-activate-instructor')).toBeEnabled();
     await expect(form.getByTestId('new-person-activate-student')).toHaveAccessibleDescription(
-      "Allievo non può essere attivo insieme a Pilota o Istruttore: disattiva prima l'altro profilo.",
+      "Il profilo allievo non può essere attivo insieme a pilota o istruttore: disattiva prima l'altro profilo.",
     );
 
     await form.getByTestId('new-person-activate-pilot').uncheck();

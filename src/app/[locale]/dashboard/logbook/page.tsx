@@ -368,6 +368,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             takeoffs: t('mobile.takeoffs'),
             landings: t('mobile.landings'),
             times: t('mobile.times'),
+            // `t.raw`: the {name} placeholder is filled CLIENT-side, like `filtersCount` below.
+            instructorLine: t.raw('mobile.instructorLine'),
             filters: t('mobile.filters'),
             // `t.raw`: the {count} placeholder is filled CLIENT-side (same
             // reasoning as `editor.fields.studentOnlyCorrectionHint` above).

@@ -105,7 +105,7 @@ async function createPilotWithLogin(page: Page, password: string, tag: string): 
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
   expect(userResponse.status()).toBe(201);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);

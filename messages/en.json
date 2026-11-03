@@ -19,7 +19,7 @@
       "fleet": "Aircraft",
       "scadenze": "Expiries",
       "logbook": "Flight log",
-      "myAccount": "My transactions",
+      "myAccount": "Account statement",
       "myCompensation": "My payouts",
       "billing": "Billing",
       "reports": "Reports",
@@ -33,7 +33,7 @@
       "fleet": "Aircraft",
       "scadenze": "Expiries",
       "logbook": "Flight log",
-      "myAccount": "My transactions",
+      "myAccount": "Account statement",
       "myCompensation": "My payouts",
       "billing": "Billing",
       "reports": "Reports",
@@ -110,9 +110,9 @@
       "sub": "No view is available for your role."
     },
     "overview": {
-      "title": "Operational overview",
+      "title": "Operations overview",
       "aogCount": "{count} AOG",
-      "dispatchButton": "Dispatch flight",
+      "dispatchButton": "Log flight",
       "kpis": {
         "flightsToday": "Flights today",
         "fleetAvailable": "Fleet available",
@@ -162,7 +162,7 @@
       },
       "logbookCta": "My logbook",
       "bookCta": "Book a flight",
-      "accountLink": "My account",
+      "accountLink": "Account statement",
       "profileCta": "My profile",
       "noValue": "—"
     },
@@ -444,6 +444,9 @@
       "inviteResent": "Invite resent.",
       "genericError": "Something went wrong. Please try again.",
       "lastAdminError": "Cannot suspend the last active admin."
+    },
+    "exportMenu": {
+      "xlsLabel": "People (Excel)"
     }
   },
   "InstructorsPage": {
@@ -590,6 +593,9 @@
       "saved": "Changes saved.",
       "payoutRecorded": "Payout recorded.",
       "instructorAdded": "Instructor profile activated."
+    },
+    "exportMenu": {
+      "xlsLabel": "Instructors (Excel)"
     }
   },
   "PersonDetailPage": {
@@ -682,8 +688,8 @@
       "reset": "Last 12 months",
       "required": "Enter both dates.",
       "invalidRange": "The start date cannot be after the end date.",
-      "openingAt": "Opening balance on {date}",
-      "closingAt": "Closing balance on {date}"
+      "openingAt": "Balance at the start of {date}",
+      "closingAt": "Balance at the end of {date}"
     },
     "adjustmentBadge": {
       "ofDate": "Adjusts the movement of {date}"
@@ -713,13 +719,18 @@
       "emptyPeriod": "No movements in this period.",
       "openDetail": "Open movement detail",
       "close": "Close"
+    },
+    "exportMenu": {
+      "xlsLabel": "Account statement (Excel)",
+      "pdfLabel": "Account statement (PDF)"
     }
   },
   "MyAccountPage": {
-    "title": "My transactions",
+    "title": "Account statement",
     "sub": "Top-ups, flight charges and adjustments on your account.",
     "balanceLabel": "Current balance",
-    "noAccount": "No active account"
+    "noAccount": "No active account",
+    "cardHeading": "Movements"
   },
   "MyCompensationPage": {
     "title": "My payouts",
@@ -757,7 +768,7 @@
     }
   },
   "CashReportPage": {
-    "title": "Financial report",
+    "title": "Cash report",
     "summary": {
       "totalIn": "Inflows",
       "totalOut": "Outflows",
@@ -895,6 +906,9 @@
       "unarchived": "Aircraft restored.",
       "setOutOfService": "Aircraft marked out of service.",
       "returnedToService": "Aircraft returned to service."
+    },
+    "exportMenu": {
+      "xlsLabel": "Aircraft (Excel)"
     }
   },
   "FlightsPage": {
@@ -1077,7 +1091,8 @@
       "filters": "Filters",
       "filtersCount": "Filters ({count})",
       "filtersTitle": "Logbook filters",
-      "apply": "Apply"
+      "apply": "Apply",
+      "instructorLine": "Instructor: {name}"
     },
     "cancelModal": {
       "title": "Cancel flight",
@@ -1096,7 +1111,7 @@
     "titleOwn": "My expiries",
     "descriptionOwn": "Your registered expiries, with the computed status.",
     "dashboard": {
-      "heading": "All expiries",
+      "heading": "Expiries",
       "table": {
         "person": "Person",
         "type": "Type",
@@ -1160,8 +1175,8 @@
       "daysSuffix": " d",
       "exportMenu": {
         "label": "Export",
-        "xlsLabel": "Excel (.xlsx)",
-        "pdfLabel": "PDF"
+        "xlsLabel": "Expiries (Excel)",
+        "pdfLabel": "Expiries (PDF)"
       },
       "reminders": {
         "button": "Send reminders",
@@ -1328,8 +1343,8 @@
       "filteredSummary": "{total} total",
       "newButton": "New booking",
       "exportLabel": "Export",
-      "exportXls": "Export XLS",
-      "exportPdf": "Export PDF",
+      "exportXls": "Bookings (Excel)",
+      "exportPdf": "Bookings (PDF)",
       "periodFrom": "From {date}",
       "periodUntil": "Until {date}",
       "empty": "No bookings.",
@@ -1378,7 +1393,8 @@
           "BOOKING_NOT_STARTED": "This booking has not started yet: it can only be marked as flown or no-show after its start time.",
           "conflict": "The aircraft is already booked for that interval, or this booking is no longer valid. Reload the page and try again.",
           "generic": "The operation failed. Please try again."
-        }
+        },
+        "keep": "No, keep it"
       },
       "denyModal": {
         "title": "Reject booking",
@@ -1442,8 +1458,7 @@
     }
   },
   "Export": {
-    "button": "Export Excel",
-    "buttonPdf": "Export PDF",
+    "button": "Export",
     "pdfTooLarge": "PDF not available: the period has more than {max, number} movements. Narrow the period or use the Excel export.",
     "xlsTooLarge": "Excel not available: the period has more than {max, number} movements. Narrow the period."
   },
@@ -2012,5 +2027,17 @@
       "confirm": "Confirm",
       "invalidTime": "Enter a valid time (e.g. 09:30)."
     }
+  },
+  "ErrorPages": {
+    "notFound": {
+      "title": "Page not found",
+      "text": "The address you opened does not exist or is no longer available."
+    },
+    "error": {
+      "title": "Something went wrong",
+      "text": "The page could not be loaded. Try again; if the problem persists, go back to the overview."
+    },
+    "retry": "Try again",
+    "home": "Go to the overview"
   }
 }

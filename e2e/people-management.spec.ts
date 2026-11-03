@@ -324,7 +324,7 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await expect(row).toBeVisible();
     await expect(row.getByText('Senza accesso')).toHaveCount(0);
 
-    const inviteEmail = await waitForMailpitMessage(accessEmail, 'invitato');
+    const inviteEmail = await waitForMailpitMessage(accessEmail, 'invito');
     expect(inviteEmail.Text).toContain('set-password');
   });
 

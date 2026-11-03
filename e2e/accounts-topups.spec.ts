@@ -72,7 +72,7 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     await expect(page.getByTestId('account-balance')).toHaveText(/0,00\s€/);
 
     await page.getByRole('button', { name: 'Registra ricarica' }).click();
-    await page.getByLabel('Importo (EUR)').fill('100');
+    await page.getByLabel('Importo (€)').fill('100');
     await page.getByLabel('Metodo di pagamento').selectOption('CASH');
     await page.getByRole('button', { name: 'Conferma ricarica' }).click();
 

@@ -415,8 +415,8 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
       // ...and the row that declares it does not lie: it names both numbers.
       const foot = page.getByTestId('mobile-reports-fleet-cap');
       await expect(foot).toBeVisible();
-      await expect(foot).toContainText(`Prime ${RANKED_LIMIT} di ${total}`);
-      await expect(foot).toContainText(`Mostra tutte (${total - RANKED_LIMIT})`);
+      await expect(foot).toContainText(`Primi ${RANKED_LIMIT} di ${total}`);
+      await expect(foot).toContainText(`Mostra tutti (${total - RANKED_LIMIT})`);
       expect(await page.getByTestId('mobile-reports-fleet-cap-button').evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(TARGET_FLOOR);
 
       // Expanded FROM THE KEYBOARD, because that is where the defect lives: the

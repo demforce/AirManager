@@ -355,7 +355,7 @@ test.describe('Story 19.7a — the membership fee has its own category (AC 11, A
     const password = 'LandingPilot197a!';
     const user = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: pilot.id } });
     expect(user.status(), await user.text()).toBe(201);
-    const invite = await waitForMailpitMessage(email, 'invitato');
+    const invite = await waitForMailpitMessage(email, 'invito');
     const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(invite.Text);
     expect(match, invite.Text).toBeTruthy();
 
@@ -417,15 +417,15 @@ test.describe('Story 19.7a — currency on the pilot rows (AC 15)', () => {
     for (const person of [a, b, c, d, e, g, soloist]) {
       await expect(page.getByTestId(`pilot-row-${person.id}`)).toBeVisible();
     }
-    await expect(page.getByTestId(`pilot-currency-${a.id}`)).toHaveText('Currency 0gg');
-    await expect(page.getByTestId(`pilot-currency-${b.id}`)).toHaveText('Non current');
-    await expect(page.getByTestId(`pilot-currency-${c.id}`)).toHaveText('Non current');
+    await expect(page.getByTestId(`pilot-currency-${a.id}`)).toHaveText('Currency · 0 gg');
+    await expect(page.getByTestId(`pilot-currency-${b.id}`)).toHaveText('Currency scaduta');
+    await expect(page.getByTestId(`pilot-currency-${c.id}`)).toHaveText('Currency scaduta');
     // D's only flight is one they INSTRUCTED, 10 days ago: 80 days left, no badge.
     await expect(page.getByTestId(`pilot-currency-${d.id}`)).toHaveCount(0);
     await expect(page.getByTestId(`pilot-currency-${pupil.id}`)).toHaveCount(0);
     // G's only flight is a SOLO they supervised from the ground (review 19.7a F2, CR §4.5
     // "a bordo"): it counts for the student flying it, never for G.
-    await expect(page.getByTestId(`pilot-currency-${g.id}`)).toHaveText('Non current');
+    await expect(page.getByTestId(`pilot-currency-${g.id}`)).toHaveText('Currency scaduta');
     await expect(page.getByTestId(`pilot-currency-${soloist.id}`)).toHaveCount(0);
     // E flew (as B's instructor) but has no pilot/student profile: no currency at all.
     await expect(page.getByTestId(`pilot-currency-${e.id}`)).toHaveCount(0);
@@ -440,7 +440,7 @@ test.describe('Story 19.7a — currency on the pilot rows (AC 15)', () => {
 
     await page.setViewportSize(PHONE);
     await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(tag)}`);
-    await expect(page.getByTestId(`mobile-pilot-row-${c.id}`).locator('.mobile-row-flag')).toHaveText('Non current');
+    await expect(page.getByTestId(`mobile-pilot-row-${c.id}`).locator('.mobile-row-flag')).toHaveText('Currency scaduta');
     await expect(page.getByTestId(`mobile-pilot-row-${d.id}`).locator('.mobile-row-flag')).toHaveCount(0);
     await page.getByTestId(`mobile-pilot-row-${a.id}`).click();
     const sheet = page.getByTestId('mobile-pilot-sheet');

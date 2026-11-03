@@ -254,7 +254,7 @@ async function inviteUser(page: Page, personId: string, role: 'PILOT' | 'INSTRUC
   const email = `mob156-${role.toLowerCase()}-${uniqueSuffix().toLowerCase()}@airmanager.local`;
   const created = await page.request.post('/api/v1/users', { data: { email, roles: [role], personId } });
   expect(created.status(), await created.text()).toBe(201);
-  const invite = await waitForMailpitMessage(email, 'invitato');
+  const invite = await waitForMailpitMessage(email, 'invito');
   const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(invite.Text);
   expect(match, 'set-password link in the invite email').toBeTruthy();
   const url = new URL(match![1]);
@@ -425,16 +425,16 @@ test.describe('Registro voli mobile — sheet di dettaglio (story 15.6, AC 2/3)'
     );
     expect(rows['Data']).toBe('07/03/2020');
     expect(rows['Tratta']).toBe('Aviosuperficie Rovere→Campo Ulivi');
-    expect(rows['Pilota']).toBe(student.label);
+    expect(rows['Persona']).toBe(student.label);
     expect(rows['Istruttore']).toBe(instructor.label);
     // PIC of a SCHOOL dual flight is the instructor (story 11.2 / 12.8 AC 2).
     expect(rows['PIC']).toBe(instructor.label);
-    expect(rows['Aereo']).toBe(aircraft.registration);
+    expect(rows['Velivolo']).toBe(aircraft.registration);
     expect(rows['Tipo']).toBe('Scuola');
     expect(rows['Ore']).toBe('1:35');
     expect(rows['Decolli']).toBe('4');
     expect(rows['Atterraggi']).toBe('4');
-    expect(rows['Costo']).toBeTruthy();
+    expect(rows['Addebito']).toBeTruthy();
     // ...and what the desktop table has no room for (ratifica R-15.6-b).
     expect(rows['Orari']).toMatch(/^\d{2}:\d{2} – \d{2}:\d{2}$/);
     // Story 19.2: these two rows no longer exist, on any face.
@@ -484,8 +484,8 @@ test.describe('Registro voli mobile — sheet di dettaglio (story 15.6, AC 2/3)'
     // The placeholder belongs to what is DISPLAYED, never to the composed name.
     const instructorRow = sheet.locator('.bottom-sheet-kv').filter({ hasText: 'Istruttore' });
     await expect(instructorRow).toContainText('—');
-    // The card's sub-line simply drops the CFI segment instead of padding it.
-    await expect(page.getByTestId('flight-row-mobile').first()).not.toContainText('CFI');
+    // The card's sub-line simply drops the instructor segment instead of padding it.
+    await expect(page.getByTestId('flight-row-mobile').first()).not.toContainText('Istruttore:');
   });
 
   test('the admin gets both decisions on EVERY row, and "Modifica" closes the sheet before opening the panel', async ({ page }) => {
@@ -828,7 +828,7 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
       if (route.request().method() === 'POST') flightPosts += 1;
       await route.continue();
     });
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
 
     const warning = page.getByTestId('requirements-warning');
     await expect(warning).toBeVisible();
@@ -863,7 +863,7 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     // Review 19.9 F3: «Annulla» gives the focus back to the anchored submit, never to the body.
     await warning.getByTestId('requirements-cancel').click();
     await expect(warning).toHaveCount(0);
-    const submit = page.getByRole('button', { name: 'Registra volo' });
+    const submit = page.getByTestId('flight-form-submit');
     await expect(submit).toBeFocused();
     await expect(submit).toBeInViewport();
     await submit.click();
@@ -893,7 +893,7 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     // Data, tratta e movimenti arrivano gia' compilati dai default del form.
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await expect(page.getByTestId('requirements-warning')).toBeVisible();
 
     // Close and reopen: the panel is rebuilt (`key`), so nothing of the refused
@@ -1029,7 +1029,7 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     // Data, tratta e movimenti arrivano gia' compilati dai default del form.
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
 
@@ -1250,7 +1250,7 @@ test.describe('Registro voli mobile — le due facce (story 15.6, AC 12)', () =>
     // The name on the card is the flight's PILOT — the student — and the
     // sub-line is what tells the instructor why the row is theirs.
     await expect(card).toContainText(student.label);
-    await expect(card).toContainText(`CFI ${instructor.label}`);
+    await expect(card).toContainText(`Istruttore: ${instructor.label}`);
 
     await card.click();
     await expect(page.getByTestId('mobile-flight-sheet')).toHaveCount(1);
@@ -1293,7 +1293,7 @@ test.describe('Registro voli mobile — le due facce (story 15.6, AC 12)', () =>
     // The allievo is the flight's own person: they are the NAME on the card,
     // and the sub-line carries the instructor who signed the lesson.
     await expect(card).toContainText(student.label);
-    await expect(card).toContainText(`CFI ${instructor.label}`);
+    await expect(card).toContainText(`Istruttore: ${instructor.label}`);
     // Story 19.9 (A10): the fixture is derogated, and nothing says so — no badge, no motivo.
     await expect(card).not.toContainText('Deroga');
     for (const testId of ['flight-form', 'flight-cancel-action', 'flight-correct-action', 'flight-filter-aircraft', 'flight-filter-person', 'logbook-new-button']) {

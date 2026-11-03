@@ -18,7 +18,7 @@ type PageProps = {
 const ACCOUNT_PAGE_SIZE = 20;
 
 /**
- * "Le mie transazioni" (story 14.6, AC 1/2/3) — a dedicated, sidebar-linked
+ * "Estratto conto" ("Le mie transazioni" until story 19.12b; story 14.6, AC 1/2/3) — a dedicated, sidebar-linked
  * self-service estratto conto for PILOT/STUDENT, distinct from the
  * staff-facing scheda persona (`/dashboard/people/[id]`, out of scope per
  * the story's "fuori scope dichiarato"). Reuses the SAME `AccountSection`
@@ -91,11 +91,11 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
   const exportPdfHref = actor.personId ? buildPdfExportHref(`/api/v1/people/${actor.personId}/account/pdf`, exportPeriod, locale) : undefined;
 
   const labels: AccountSectionLabels = {
-    // Reuses the scheda persona's own card heading ("Estratto conto") rather
-    // than repeating the page's `<h1>` ("Le mie transazioni") verbatim on
-    // the card right below it — same text the staff-facing page already
-    // shows for this exact card.
-    heading: tAccount('kicker'),
+    // Its own card heading ("Movimenti", story 19.12b): the page's `<h1>` is
+    // "Estratto conto" now (PO Q-19.12-a), the same text the scheda persona
+    // uses for this card, so reusing that one would repeat the `<h1>`
+    // verbatim right below it.
+    heading: t('cardHeading'),
     balanceLabel: t('balanceLabel'),
     noAccount: t('noAccount'),
     empty: tAccount('table.empty'),
@@ -169,7 +169,7 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
         exportPdfHref={exportPdfHref}
         exportXlsUnavailable={statement.total > EXPORT_MAX_ROWS ? tExport('xlsTooLarge', { max: EXPORT_MAX_ROWS }) : undefined}
         exportPdfUnavailable={statement.total > PDF_EXPORT_MAX_ROWS ? tExport('pdfTooLarge', { max: PDF_EXPORT_MAX_ROWS }) : undefined}
-        exportLabels={{ label: tExport('button'), xls: tExport('button'), pdf: tExport('buttonPdf') }}
+        exportLabels={{ label: tExport('button'), xls: tAccount('exportMenu.xlsLabel'), pdf: tAccount('exportMenu.pdfLabel') }}
         statementBasePath="/dashboard/my-account"
         headingRepeatsPageHead={true}
         labels={labels}

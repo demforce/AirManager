@@ -339,14 +339,14 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     await expect(list.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toBeVisible();
 
     await list.getByRole('button', { name: 'Esporta' }).click();
-    const [download] = await Promise.all([page.waitForEvent('download'), list.getByRole('link', { name: 'Esporta PDF' }).click()]);
+    const [download] = await Promise.all([page.waitForEvent('download'), list.getByTestId('export-menu-pdf').click()]);
     expect(download.suggestedFilename()).toMatch(/^airmanager-bookings-\d{4}-\d{2}-\d{2}\.pdf$/);
     expect(await download.path()).toBeTruthy();
 
     // Was `pdfLabel=""` (xlsx-only) before this story — the XLS entry must
     // still be there and still work, unchanged.
     await list.getByRole('button', { name: 'Esporta' }).click();
-    const [xlsDownload] = await Promise.all([page.waitForEvent('download'), list.getByRole('link', { name: 'Esporta XLS' }).click()]);
+    const [xlsDownload] = await Promise.all([page.waitForEvent('download'), list.getByTestId('export-menu-xls').click()]);
     expect(xlsDownload.suggestedFilename()).toMatch(/^airmanager-bookings-\d{4}-\d{2}-\d{2}\.xlsx$/);
     expect(await xlsDownload.path()).toBeTruthy();
   });

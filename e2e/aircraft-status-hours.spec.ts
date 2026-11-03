@@ -71,7 +71,7 @@ test.describe('Aircraft operational status (Story 2.5)', () => {
 
     // The editor's own section reflects the reason, and the card badge flips to AOG.
     await expect(page.getByTestId('availability-current')).toContainText('Revisione motore programmata');
-    await expect(cardFor(page, aircraft.registration)).toContainText('AOG');
+    await expect(cardFor(page, aircraft.registration)).toContainText('Fuori servizio');
 
     // Returning to service: the reason is gone, the card badge flips back.
     await page.getByTestId('return-to-service-button').click();

@@ -413,7 +413,7 @@ test.describe('The warning in the flight form (story 19.9, AC 13-15)', () => {
     await page.goto('/it/dashboard/logbook');
     await fillNewFlight(page, aircraft, pilot);
     const answered = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/flights' && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     const serverFailures = ((await (await answered).json()) as RequirementsBody).error.details.failures;
 
     // AC 13: one item per failure, in the server's order, readable per type.
@@ -425,7 +425,7 @@ test.describe('The warning in the flight form (story 19.9, AC 13-15)', () => {
     await expect(items).toHaveCount(serverFailures.length);
     expect(await items.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-type')))).toEqual(serverFailures.map((failure) => failure.type));
     const who = `${pilot.serverName} (pilota/allievo) — `;
-    await expect(items.and(page.locator('[data-type="EXPIRY"]')).filter({ hasText: 'Visita medica classe 2' })).toHaveText(`${who}Visita medica classe 2: scaduto il ${formatDay(expired)}`);
+    await expect(items.and(page.locator('[data-type="EXPIRY"]')).filter({ hasText: 'Visita medica classe 2' })).toHaveText(`${who}Visita medica classe 2: scadenza del ${formatDay(expired)} superata`);
     await expect(items.and(page.locator('[data-type="MEMBERSHIP"]'))).toHaveText(`${who}Quota associativa mai pagata`);
     await expect(items.and(page.locator('[data-type="CURRENCY"]'))).toHaveText(
       `${who}Currency scaduta: nessun volo registrato (minimo ${minFlights} ${minFlights === 1 ? 'volo' : 'voli'} ${windowDays === 1 ? "nell'ultimo giorno" : `negli ultimi ${windowDays} giorni`})`,
@@ -441,21 +441,21 @@ test.describe('The warning in the flight form (story 19.9, AC 13-15)', () => {
     // AC 15: the stale-body guard — an RHF field, then a plain-state switch.
     await page.getByLabel('Ora atterraggio').fill('10:40');
     await expect(warning).toHaveCount(0);
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await expect(page.getByTestId('requirements-warning')).toBeVisible();
     const noCharge = page.getByTestId('flight-form').getByTestId('flight-no-charge-toggle');
     await noCharge.click();
     await expect(page.getByTestId('requirements-warning')).toHaveCount(0);
     await noCharge.click();
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await page.getByTestId('requirements-warning').getByTestId('requirements-cancel').click();
     await expect(page.getByTestId('requirements-warning')).toHaveCount(0);
     // Review F3: the focus goes back to the submit that opened the warning, never to the body.
-    await expect(page.getByRole('button', { name: 'Registra volo' })).toBeFocused();
+    await expect(page.getByTestId('flight-form-submit')).toBeFocused();
     expect(posts, 'no request from a change or from «Annulla» — only the three submits').toHaveLength(3);
 
     // AC 14: a failed resend keeps the warning open with its retry message...
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await expect(page.getByTestId('requirements-warning')).toBeVisible();
     const refused = posts[3]!;
     await page.route('**/api/v1/flights', (route) => (route.request().method() === 'POST' ? route.fulfill({ status: 500, body: '' }) : route.continue()), { times: 1 });

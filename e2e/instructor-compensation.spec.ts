@@ -138,7 +138,7 @@ test.describe('Instructor compensation (story 12.7)', () => {
     // Set the payout rate to 30,00 €/h via the editor's single Salva (story 19.4).
     await row.getByTestId(`instructor-edit-${instructor.personId}`).click();
     const rateForm = page.getByTestId('instructor-payout-rate-form');
-    await rateForm.getByLabel('Tariffa oraria').fill('30,00');
+    await rateForm.getByLabel('Compenso orario (€/h)').fill('30,00');
     await page.getByTestId('instructor-identity-submit').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Modifiche salvate.' })).toBeVisible();
 

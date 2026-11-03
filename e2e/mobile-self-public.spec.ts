@@ -68,7 +68,7 @@ async function waitForMailpitMessage(to: string, subjectIncludes: string, timeou
 }
 
 async function setPasswordFromInvite(page: Page, email: string, password: string): Promise<void> {
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(inviteEmail.Text);
   if (!match) throw new Error(`Email body did not contain a /set-password link:\n${inviteEmail.Text}`);
   const url = new URL(match[1]);

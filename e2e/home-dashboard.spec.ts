@@ -70,7 +70,7 @@ function extractSetPasswordUrl(emailText: string): URL {
 }
 
 async function setPasswordFromInvite(page: Page, email: string, password: string): Promise<void> {
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);

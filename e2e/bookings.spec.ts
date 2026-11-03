@@ -192,7 +192,7 @@ async function createInstructorWithLogin(
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['INSTRUCTOR'], personId: person.id } });
   expect(userResponse.status()).toBe(201);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);
@@ -228,7 +228,7 @@ async function createStudentWithLogin(
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['STUDENT'], personId: person.id } });
   expect(userResponse.status()).toBe(201);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);
@@ -265,7 +265,7 @@ async function createPilotWithLogin(
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
   expect(userResponse.status()).toBe(201);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);
@@ -1217,7 +1217,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // — a cancelled booking stays visible with an "Annullato" badge and no
     // actions, it no longer disappears from the list (unlike the legacy
     // "Prossime prenotazioni", which only ever fetched PENDING+APPROVED).
-    await expect(movedRow).toContainText('Annullato');
+    await expect(movedRow).toContainText('Annullata');
     await expect(movedRow.getByTestId('booking-cancel-action')).toHaveCount(0);
 
     // Gone from the timeline too (an own-path booking starts PENDING, story
@@ -1778,7 +1778,7 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     // push this row's rank onto a DIFFERENT page, so it is re-located here
     // rather than reusing the pre-approval `row` locator.
     const approvedRow = await findBookingRow(page, aircraft.registration);
-    await expect(approvedRow).toContainText('Approvato');
+    await expect(approvedRow).toContainText('Approvata');
     await expect(approvedRow.getByTestId('booking-approve-action')).toHaveCount(0);
     await expect(approvedRow.getByTestId('booking-reject-action')).toHaveCount(0);
     await expect(approvedRow.getByTestId('booking-flown-action')).toBeVisible();
@@ -1806,7 +1806,7 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     // test's own comment above) — the row's page can shift between actions
     // on a dirty, concurrently-written-to dev DB.
     const rejectedRow = await findBookingRow(page, aircraft.registration);
-    await expect(rejectedRow).toContainText('Rifiutato');
+    await expect(rejectedRow).toContainText('Rifiutata');
     await expect(rejectedRow).toContainText(reason);
     await expect(rejectedRow.getByTestId('booking-reject-action')).toHaveCount(0);
     await expect(rejectedRow.getByTestId('booking-approve-action')).toHaveCount(0);
@@ -1840,12 +1840,12 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione approvata.' })).toBeVisible();
 
     const approvedFlownRow = await findBookingRow(page, flownAircraft.registration);
-    await expect(approvedFlownRow).toContainText('Approvato');
+    await expect(approvedFlownRow).toContainText('Approvata');
     await approvedFlownRow.getByTestId('booking-flown-action').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione segnata come effettuata.' })).toBeVisible();
 
     const flownRow = await findBookingRow(page, flownAircraft.registration);
-    await expect(flownRow).toContainText('Effettuato');
+    await expect(flownRow).toContainText('Effettuata');
     await expect(flownRow.getByTestId('booking-flown-action')).toHaveCount(0);
     await expect(flownRow.getByTestId('booking-cancel-action')).toHaveCount(0);
     await expect(flownRow.getByTestId('booking-reopen-action')).toBeVisible();
@@ -1857,7 +1857,7 @@ test.describe('Booking approval workflow UI (Story 12.3, AC 3)', () => {
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione approvata.' })).toBeVisible();
 
     const approvedNoShowRow = await findBookingRow(page, noShowAircraft.registration);
-    await expect(approvedNoShowRow).toContainText('Approvato');
+    await expect(approvedNoShowRow).toContainText('Approvata');
     await approvedNoShowRow.getByTestId('booking-noshow-action').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione segnata come assente.' })).toBeVisible();
 

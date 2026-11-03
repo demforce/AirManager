@@ -493,7 +493,7 @@ test.describe('Instructor editor — one Salva (story 19.4, AD-10)', () => {
 
     await page.getByTestId('instructor-identity-submit').click();
     const payoutError = page.getByTestId('instructor-payout-rate-error');
-    await expect(payoutError).toHaveText('Il profilo istruttore non è più attivo: compenso e tariffa allievo non si possono salvare.');
+    await expect(payoutError).toHaveText('Il profilo istruttore non è più attivo: compenso e tariffa istruttore non si possono salvare.');
     await expect(payoutError).toBeFocused();
   });
 });

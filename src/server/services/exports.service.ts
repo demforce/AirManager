@@ -498,7 +498,7 @@ export async function exportInstructorCompensationXlsx(actor: Actor, query: Inst
     { header: t('table.owed'), value: (row) => (row.owedTotalCents === null ? null : row.owedTotalCents / 100), numFmt: MONEY_NUM_FMT },
   ];
 
-  return toXlsxExport('instructor-compensation', t('cardTitle'), columns, items);
+  return toXlsxExport('instructor-compensation', t('title'), columns, items);
 }
 
 // =============================================================================

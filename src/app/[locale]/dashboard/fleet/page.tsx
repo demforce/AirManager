@@ -146,7 +146,7 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
           empty: t('empty'),
           newAircraft: t('newAircraft'),
           exportLabel: tExport('button'),
-          exportXls: tExport('button'),
+          exportXls: t('exportMenu.xlsLabel'),
           pagination: { prev: t('pagination.prev'), next: t('pagination.next') },
           badge: {
             aog: t('badge.aog'),

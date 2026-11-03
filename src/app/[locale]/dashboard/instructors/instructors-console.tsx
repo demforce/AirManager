@@ -52,6 +52,7 @@ export type InstructorsConsoleLabels = {
   newInstructor: string;
   paymentCycleButton: string;
   exportLabel: string;
+  exportXls: string;
   table: { name: string; rate: string; hours: string; owed: string; actions: string; noValue: string };
   actions: { edit: string; pay: string };
   /** Story 15.5 — the phone face only (row + detail sheet). */
@@ -128,7 +129,7 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
               <Icon.cash /> {labels.paymentCycleButton}
             </button>
           ) : null}
-          {exportHref ? <ExportMenu label={labels.exportLabel} xlsLabel={labels.exportLabel} xlsHref={exportHref} pdfLabel="" /> : null}
+          {exportHref ? <ExportMenu label={labels.exportLabel} xlsLabel={labels.exportXls} xlsHref={exportHref} pdfLabel="" /> : null}
           {canManagePeople ? (
             <button type="button" className="btn primary" onClick={() => setAddInstructorOpen(true)} data-testid="instructors-new-button">
               <Icon.plus /> {labels.newInstructor}

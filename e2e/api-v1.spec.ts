@@ -300,7 +300,7 @@ test.describe('POST /api/v1/people — one-step composite create (story 13.1, AC
     expect(expiries.some((item) => item.typeName === pilotRatingType!.name && item.expiresAt === '2099-01-01')).toBe(true);
 
     // The invite really went out post-commit (AC 5's `access` block, fire-and-forget).
-    const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+    const inviteEmail = await waitForMailpitMessage(email, 'invito');
     expect(inviteEmail.Text).toContain('set-password');
   });
 

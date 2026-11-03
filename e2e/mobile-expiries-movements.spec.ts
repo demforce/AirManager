@@ -264,7 +264,7 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
     await page.goto('/it/dashboard/expiries?window=all&expiryTypeId=nonexistent-type-id');
     await expect(page.getByTestId('mobile-scadenze-empty')).toHaveCount(1);
     // The desktop string stays page-level readable (expiry-dashboard.spec.ts:135).
-    await expect(page.getByText('Nulla in questa finestra.')).toHaveCount(1);
+    await expect(page.getByText('Nessuna scadenza in questo intervallo.')).toHaveCount(1);
     // Pre-fix simulation (review 15.6 LOW-3): a second node WOULD be seen.
     await page.getByTestId('mobile-scadenze-empty').evaluate((node) => node.parentElement?.appendChild(node.cloneNode(true)));
     await expect(page.getByTestId('mobile-scadenze-empty')).toHaveCount(2);

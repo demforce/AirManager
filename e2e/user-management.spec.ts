@@ -118,7 +118,7 @@ async function createPilotWithAccess(page: Page, email: string): Promise<{ lastN
   await accessSection.getByLabel('Email').fill(email);
   await accessSection.getByLabel('Pilota', { exact: true }).check();
   await page.getByTestId('pilot-access-create').click();
-  await expect(page.getByTestId('toast').filter({ hasText: 'Utente creato' })).toBeVisible();
+  await expect(page.getByTestId('toast').filter({ hasText: 'Accesso creato' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Chiudi' }).first().click();
   return { lastName };
@@ -129,7 +129,7 @@ async function inviteAndSetPassword(page: Page, password: string): Promise<{ ema
   const email = uniqueEmail('invitee');
   const { lastName } = await createPilotWithAccess(page, email);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   await submitSetPassword(page, extractSetPasswordUrl(inviteEmail.Text), password);
 
   return { email, lastName };
@@ -193,13 +193,13 @@ test.describe('User management (Story 1.4)', () => {
     // Unknown email: same neutral confirmation, no distinguishing behavior.
     await page.goto('/it/forgot-password');
     await page.getByLabel('Email').fill('this-account-does-not-exist@airmanager.local');
-    await page.getByRole('button', { name: 'Invia link di reset' }).click();
+    await page.getByRole('button', { name: 'Invia link di reimpostazione' }).click();
     await expect(page.getByTestId('forgot-password-confirmation')).toBeVisible();
 
     // Real email: same confirmation, but a reset email actually arrives.
     await page.goto('/it/forgot-password');
     await page.getByLabel('Email').fill(email);
-    await page.getByRole('button', { name: 'Invia link di reset' }).click();
+    await page.getByRole('button', { name: 'Invia link di reimpostazione' }).click();
     await expect(page.getByTestId('forgot-password-confirmation')).toBeVisible();
 
     const resetEmail = await waitForMailpitMessage(email, 'Reimposta');

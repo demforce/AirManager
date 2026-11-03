@@ -101,7 +101,8 @@ test.describe('Account statement (Story 3.2; "Estratto conto" section, Story 13.
     await recordTopUp(page, pilotPersonId, 10000); // 100,00 €
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
-    await page.getByRole('link', { name: 'Il mio conto' }).click();
+    // Story 19.12b: «Estratto conto» is also the menu entry, so the landing's KPI link is read by its testid.
+    await page.getByTestId('kpi-balance').click();
     // Story 14.6 (review F5): the pilot's own statement now lives on the
     // self-service page; the KPI link points THERE instead of the staff-shaped
     // scheda persona (which stays reachable from the "Profilo" CTA). Story

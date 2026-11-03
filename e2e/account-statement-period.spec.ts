@@ -67,7 +67,7 @@ async function waitForInviteLink(email: string): Promise<URL> {
     const search = (await (await fetch(`http://localhost:8025/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`)).json()) as {
       messages: Array<{ ID: string; Subject: string }>;
     };
-    const found = search.messages.find((message) => message.Subject.includes('invitato'));
+    const found = search.messages.find((message) => message.Subject.includes('invito'));
     if (found) {
       const message = (await (await fetch(`http://localhost:8025/api/v1/message/${found.ID}`)).json()) as { Text: string };
       const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(message.Text);
@@ -328,7 +328,7 @@ test.describe('Estratto conto by period — the scheda persona (story 19.11, AC 
     await expect(page.getByTestId('mobile-account-empty')).toHaveText('Nessun movimento in questo periodo.');
     await expect(page.getByTestId('account-period-opening')).toHaveText(itMoney(closing));
     await expect(page.getByTestId('account-period-closing')).toHaveText(itMoney(closing));
-    await expect(page.getByTestId('account-period-summary')).toContainText(`Saldo iniziale al ${itDate(twelveMonthsBefore(today))}`);
+    await expect(page.getByTestId('account-period-summary')).toContainText(`Saldo all'inizio del ${itDate(twelveMonthsBefore(today))}`);
     await expect(page.getByTestId('account-opening-row')).toHaveCount(0);
     const defaultUrl = page.url();
 
@@ -358,8 +358,8 @@ test.describe('Estratto conto by period — the scheda persona (story 19.11, AC 
     await expect(rows).toHaveCount(20);
     await expect(page.getByTestId('account-period-opening')).toHaveText(itMoney(5000));
     await expect(page.getByTestId('account-period-closing')).toHaveText(itMoney(closing));
-    await expect(page.getByTestId('account-period-summary')).toContainText(`Saldo iniziale al ${itDate(FROM)}`);
-    await expect(page.getByTestId('account-period-summary')).toContainText(`Saldo finale al ${itDate(TO)}`);
+    await expect(page.getByTestId('account-period-summary')).toContainText(`Saldo all'inizio del ${itDate(FROM)}`);
+    await expect(page.getByTestId('account-period-summary')).toContainText(`Saldo alla fine del ${itDate(TO)}`);
     await expect(page.getByTestId('account-statement-header-row')).toContainText('Saldo');
     const balances = page.getByTestId('account-movement-balance');
     for (let index = 0; index < 20; index += 1) {

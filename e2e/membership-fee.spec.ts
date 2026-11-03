@@ -77,7 +77,7 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     const panel = page.getByTestId('membership-fee-panel');
     await expect(panel).toBeVisible();
 
-    const combobox = panel.getByRole('combobox', { name: 'Pilota' });
+    const combobox = panel.getByRole('combobox', { name: 'Persona' });
     await combobox.click();
     await combobox.fill(pilot.lastName);
     await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();
@@ -223,7 +223,7 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     const panel = page.getByTestId('membership-fee-panel');
     await expect(panel).toBeVisible();
 
-    const combobox = panel.getByRole('combobox', { name: 'Pilota' });
+    const combobox = panel.getByRole('combobox', { name: 'Persona' });
     await combobox.click();
     await combobox.fill(pilot.lastName);
     await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();
@@ -263,7 +263,7 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     const panel = page.getByTestId('membership-fee-panel');
     await expect(panel).toBeVisible();
 
-    const combobox = panel.getByRole('combobox', { name: 'Pilota' });
+    const combobox = panel.getByRole('combobox', { name: 'Persona' });
     await combobox.click();
     await combobox.fill(pilot.lastName);
     await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();

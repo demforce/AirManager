@@ -81,7 +81,8 @@ export type BookingsTableLabels = {
     reopen: string;
     cancelPrompt: string;
     cancelConfirm: string;
-    dismiss: string;
+    /** «No, mantienila» — closes the cancel confirmation; the forms' «Annulla» is `list.actions.dismiss` (story 19.12b, AC 9). */
+    keep: string;
     moveTitle: string;
     save: string;
     approveSuccess: string;
@@ -477,7 +478,10 @@ export function BookingsTable({
     };
   }
 
-  const cols = 'minmax(160px,1.6fr) 140px 140px 100px 130px minmax(180px,1fr)';
+  // Story 19.12b: «Segna come effettuata» / «Segna come assente» (measured 132.5px / 122.8px as `.btn.mini`) need a
+  // 200px actions column to keep the four actions on two lines, as «Effettuato» / «Assente» did in 180px; the
+  // 20px come from the person column's minimum, so the row's minimum width does not change.
+  const cols = 'minmax(140px,1.6fr) 140px 140px 100px 130px minmax(200px,1fr)';
 
   const sheetBooking = items.find((booking) => booking.id === sheetId) ?? null;
 
@@ -717,7 +721,7 @@ export function BookingsTable({
                         {labels.actions.cancelConfirm}
                       </button>
                       <button type="button" className="btn mini" disabled={busy} onClick={() => setConfirmingCancelId(null)}>
-                        {labels.actions.dismiss}
+                        {labels.actions.keep}
                       </button>
                     </div>
                   </div>
@@ -1054,7 +1058,7 @@ export function BookingsTable({
               <p className="fld-hint">{labels.actions.cancelPrompt}</p>
               <div className="bottom-sheet-actions">
                 <button type="button" className="btn" onClick={() => setSheetStep('none')} data-testid="booking-cancel-dismiss-mobile">
-                  {labels.actions.dismiss}
+                  {labels.actions.keep}
                 </button>
                 <button
                   type="button"

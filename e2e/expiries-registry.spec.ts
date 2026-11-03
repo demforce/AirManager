@@ -83,10 +83,10 @@ async function createAircraft(page: Page, rateSince: string): Promise<string> {
 /**
  * The currency fixture of story 19.7a AC 15, reproduced (never shared at
  * runtime): with X=1, Y=90 and Rome's today,
- * A pilot, one flight at today−90            -> ends TODAY, «≤ 7 giorni», «0 g»;
- * B student, one DUAL flight at today−91     -> ended YESTERDAY, «Scaduto», «1g fa»;
+ * A pilot, one flight at today−90            -> ends TODAY, «≤ 7 gg», «0 gg»;
+ * B student, one DUAL flight at today−91     -> ended YESTERDAY, «Scaduta», «1 gg fa»;
  * C pilot, no flight                         -> NO currency row (fewer than X flights ever);
- * D pilot+instructor, one flight INSTRUCTED at today−10 -> ends today+80, «Valido»;
+ * D pilot+instructor, one flight INSTRUCTED at today−10 -> ends today+80, «Valida»;
  * E instructor only (B's instructor)         -> no currency row at all;
  * F student flown by D at today−10           -> ends today+80;
  * G pilot+instructor whose only flight is H's SUPERVISED SOLO at today−20 -> NO currency row
@@ -171,10 +171,10 @@ test.describe('Story 19.7b — currency rows in every view of the registry (AC 3
     const currency = await readRows(page);
     expect(currency.map((row) => row[1])).toEqual(currency.map(() => 'Currency'));
     expect(currency.map((row) => row[0]).sort()).toEqual([a, b, d, f, h].map((person) => person.name).sort());
-    expect(rowsOf(currency, a, 'Currency')).toEqual([[a.name, 'Currency', '1 volo negli ultimi 90 giorni', formatDateOnly(TODAY), '0 g', '≤ 7 giorni']]);
-    expect(rowsOf(currency, b, 'Currency')).toEqual([[b.name, 'Currency', '0 voli negli ultimi 90 giorni', formatDateOnly(addDaysIso(TODAY, -1)), '1g fa', 'Scaduto']]);
-    expect(rowsOf(currency, d, 'Currency')).toEqual([[d.name, 'Currency', '1 volo negli ultimi 90 giorni', formatDateOnly(addDaysIso(TODAY, 80)), '80 g', 'Valido']]);
-    expect(rowsOf(currency, h, 'Currency')).toEqual([[h.name, 'Currency', '1 volo negli ultimi 90 giorni', formatDateOnly(addDaysIso(TODAY, 70)), '70 g', 'Valido']]);
+    expect(rowsOf(currency, a, 'Currency')).toEqual([[a.name, 'Currency', '1 volo negli ultimi 90 giorni', formatDateOnly(TODAY), '0 gg', '≤ 7 gg']]);
+    expect(rowsOf(currency, b, 'Currency')).toEqual([[b.name, 'Currency', '0 voli negli ultimi 90 giorni', formatDateOnly(addDaysIso(TODAY, -1)), '1 gg fa', 'Scaduta']]);
+    expect(rowsOf(currency, d, 'Currency')).toEqual([[d.name, 'Currency', '1 volo negli ultimi 90 giorni', formatDateOnly(addDaysIso(TODAY, 80)), '80 gg', 'Valida']]);
+    expect(rowsOf(currency, h, 'Currency')).toEqual([[h.name, 'Currency', '1 volo negli ultimi 90 giorni', formatDateOnly(addDaysIso(TODAY, 70)), '70 gg', 'Valida']]);
     expect(currency.some((row) => row[0] === c.name || row[0] === e.name || row[0] === g.name)).toBe(false);
 
     // --- «Scaduti»: B and nothing else of these people — never A nor D, and no row without a date.
@@ -195,7 +195,7 @@ test.describe('Story 19.7b — currency rows in every view of the registry (AC 3
     const cardOfA = page.getByTestId('scadenze-row-mobile').filter({ has: page.locator('.mobile-row-name', { hasText: new RegExp(`^${a.name}$`) }) });
     await expect(cardOfA).toHaveCount(1);
     // The card names the row by its category (the detail would push the date out of a 375px line), the sheet by its detail.
-    await expect(cardOfA.locator('.mobile-row-sub')).toHaveText(`Currency · ${formatDateOnly(TODAY)} · 0 g`);
+    await expect(cardOfA.locator('.mobile-row-sub')).toHaveText(`Currency · ${formatDateOnly(TODAY)} · 0 gg`);
     // A, B, D, F, H — no card for C or G.
     await expect(page.getByTestId('scadenze-row-mobile')).toHaveCount(5);
     await cardOfA.click();
@@ -207,8 +207,8 @@ test.describe('Story 19.7b — currency rows in every view of the registry (AC 3
     );
     expect(sheetRows).toEqual([
       ['Scadenza', formatDateOnly(TODAY)],
-      ['Giorni rimasti', '0 g'],
-      ['Stato', '≤ 7 giorni'],
+      ['Giorni rimasti', '0 gg'],
+      ['Stato', '≤ 7 gg'],
       ['Ambito', DASH],
       ['Note', DASH],
     ]);
@@ -217,11 +217,11 @@ test.describe('Story 19.7b — currency rows in every view of the registry (AC 3
     await page.setViewportSize(DESKTOP);
     await page.goto(`/it/dashboard/pilots?q=${search}`);
     await expect(page.getByTestId(`pilot-row-${a.id}`)).toBeVisible();
-    await expect(page.getByTestId(`pilot-currency-${a.id}`)).toHaveText('Currency 0gg');
-    await expect(page.getByTestId(`pilot-currency-${b.id}`)).toHaveText('Non current');
-    await expect(page.getByTestId(`pilot-currency-${c.id}`)).toHaveText('Non current');
+    await expect(page.getByTestId(`pilot-currency-${a.id}`)).toHaveText('Currency · 0 gg');
+    await expect(page.getByTestId(`pilot-currency-${b.id}`)).toHaveText('Currency scaduta');
+    await expect(page.getByTestId(`pilot-currency-${c.id}`)).toHaveText('Currency scaduta');
     await expect(page.getByTestId(`pilot-currency-${d.id}`)).toHaveCount(0);
-    await expect(page.getByTestId(`pilot-currency-${g.id}`)).toHaveText('Non current');
+    await expect(page.getByTestId(`pilot-currency-${g.id}`)).toHaveText('Currency scaduta');
     await expect(page.getByTestId(`pilot-currency-${h.id}`)).toHaveCount(0);
   });
 });
@@ -325,7 +325,7 @@ test.describe('Story 19.7b — the membership fee in the registry (AC 4)', () =>
       await page.goto(`/it/dashboard/expiries?window=all&personQuery=${search}${filter}`);
       // The paid fee and nothing else, in every view: no row for G's fee never paid (PO 2026-11-02), none for
       // F's currency never acquired or visit never registered, none for H (archived, review F1) nor I.
-      expect(await readRows(page)).toEqual([[paid.name, 'Quota associativa', 'Quota associativa', formatDateOnly(expiresAt), expect.any(String), 'Valido']]);
+      expect(await readRows(page)).toEqual([[paid.name, 'Quota associativa', 'Quota associativa', formatDateOnly(expiresAt), expect.any(String), 'Valida']]);
     }
   });
 });
@@ -348,8 +348,8 @@ test.describe('Story 19.7b — medical visits in the registry (AC 5)', () => {
     await page.goto(`/it/dashboard/expiries?window=all&category=MEDICAL&personQuery=${search}`);
     // J has no visit: no row at all (PO 2026-11-02) — only K's and L's documents, by date.
     expect(await readRows(page)).toEqual([
-      [k.name, 'Visita medica', 'Visita medica classe 2', formatDateOnly(addDaysIso(TODAY, -30)), '30g fa', 'Scaduto'],
-      [l.name, 'Visita medica', 'Visita medica classe 2', formatDateOnly(addDaysIso(TODAY, 200)), '200 g', 'Valido'],
+      [k.name, 'Visita medica', 'Visita medica classe 2', formatDateOnly(addDaysIso(TODAY, -30)), '30 gg fa', 'Scaduta'],
+      [l.name, 'Visita medica', 'Visita medica classe 2', formatDateOnly(addDaysIso(TODAY, 200)), '200 gg', 'Valida'],
     ]);
 
     await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${class2!.id}&personQuery=${search}`);
@@ -422,7 +422,7 @@ test.describe('Story 19.7b — the Categoria filter (AC 9)', () => {
     await expect(page.getByTestId('mobile-scadenze-filters-button')).toHaveText('Filtri (1)');
     const card = page.getByTestId('scadenze-row-mobile');
     await expect(card).toHaveCount(1);
-    await expect(card.locator('.mobile-row-sub')).toHaveText(`Currency · ${formatDateOnly(addDaysIso(TODAY, 80))} · 80 g`);
+    await expect(card.locator('.mobile-row-sub')).toHaveText(`Currency · ${formatDateOnly(addDaysIso(TODAY, 80))} · 80 gg`);
 
     // Category + tipo = two hidden filters.
     await page.getByTestId('mobile-scadenze-filters-button').click();

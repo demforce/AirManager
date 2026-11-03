@@ -458,7 +458,7 @@ test.describe('Impostazioni — one page, one Salva (story 19.8, AC 8-13, 16-17)
       await expect(page.getByTestId('smtp-from-input')).toHaveValue(`Sessione ${suffix} <ops@example.com>`);
       await expect(page.getByTestId('treasury-opening-cash-input')).toHaveValue('12.34');
       await expect(page.getByTestId('rating-row').filter({ hasText: ratingName })).toHaveAttribute('data-state', 'saved');
-      await expect(page.getByTestId('medical-row').filter({ hasText: visit.name })).toContainText('Disattivato');
+      await expect(page.getByTestId('medical-row').filter({ hasText: visit.name })).toContainText('Disattivata');
       await expect(page.getByTestId('cash-category-row').filter({ hasText: renamedCategory })).toHaveCount(1);
     } finally {
       if (createdRatingId) await page.request.delete(`/api/v1/expiry-types/${createdRatingId}`);

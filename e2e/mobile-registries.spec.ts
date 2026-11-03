@@ -287,7 +287,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     expect(widths[`mobile-fleet-card-${idle.id}`]).toBe('0%');
 
     // The caption declares the window, so the number is never ambiguous.
-    await expect(page.getByTestId(`mobile-fleet-card-${flown.id}`)).toContainText('Ore mese');
+    await expect(page.getByTestId(`mobile-fleet-card-${flown.id}`)).toContainText('Ore nel mese');
     await expect(page.getByTestId(`mobile-fleet-card-${flown.id}`)).toContainText('1:00');
 
     // Story 19.2 (R-19-b): the sheet's "Ore totali" is the same flight, summed
@@ -324,8 +324,8 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
         items.map((item) => [item.querySelector('.bottom-sheet-k')!.textContent!, item.querySelector('.bottom-sheet-v')!.textContent!]),
       ),
     );
-    expect(Object.keys(rows)).toEqual(['Stato', 'Motivo AOG', 'Ore totali', 'Ore mese']);
-    expect(rows['Motivo AOG']).toBe('Revisione 15.5');
+    expect(Object.keys(rows)).toEqual(['Stato', 'Motivo', 'Ore totali', 'Ore nel mese']);
+    expect(rows['Motivo']).toBe('Revisione 15.5');
     expect(rows['Ore totali']).toBe('0:00');
 
     await sheet.getByTestId('aircraft-edit-mobile').click();
@@ -382,7 +382,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     expect(await heightOf(row)).toBeGreaterThanOrEqual(44);
     await expect(row).toHaveAttribute('aria-label', new RegExp(`${flagged.lastName} ${flagged.firstName}`));
     // The flag names the document and says it is expired.
-    await expect(row).toContainText(`${typeName} scaduto`);
+    await expect(row).toContainText(`Scadenza superata · ${typeName}`);
     // ...and it stays INSIDE the row, however long the type name is. An
     // `overflow: hidden` + ellipsis element is excluded from the hidden-scroller
     // sweep below by construction, so its containment needs its own assertion:
@@ -397,7 +397,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     // The clean fixture carries NO document chip: a row that always has one has
     // no signal. Its only chip is the currency's (story 19.7a, D-14) — a pilot
     // who never flew is genuinely not current.
-    await expect(page.getByTestId(`mobile-pilot-row-${clean.id}`).locator('.badge')).toHaveText(['Non current']);
+    await expect(page.getByTestId(`mobile-pilot-row-${clean.id}`).locator('.badge')).toHaveText(['Currency scaduta']);
 
     // Nothing on the page scrolls sideways behind the user's back.
     const geometry = await page.evaluate(() => ({
@@ -482,7 +482,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     await searchPilots(page, `Reg${tag}`);
     // Still not suspended: the row's only chip is the currency of a pilot who
     // never flew (story 19.7a, D-14), never "Sospeso".
-    await expect(page.getByTestId(`mobile-pilot-row-${pilot.id}`).locator('.badge')).toHaveText(['Non current']);
+    await expect(page.getByTestId(`mobile-pilot-row-${pilot.id}`).locator('.badge')).toHaveText(['Currency scaduta']);
 
     await page.getByTestId(`mobile-pilot-row-${pilot.id}`).click();
     await sheet.getByTestId('pilot-suspend-toggle-mobile').click();
@@ -557,7 +557,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     // unreachable (`instructor-name-{id}` lives in a `display: none` tree):
     // the three facts it owns are HERE, with their real values, not their
     // loading placeholder (review F2).
-    for (const text of ['Tariffa payout', 'Ore totali', 'Ore nel mese', 'Totale dovuto', 'Allievi recenti', 'Voli recenti come CFI']) {
+    for (const text of ['Compenso orario', 'Ore totali', 'Ore nel mese', 'Totale dovuto', 'Allievi recenti', 'Voli recenti come istruttore']) {
       await expect(sheet).toContainText(text);
     }
     await expect(sheet.getByTestId('instructor-profile-student-chip-mobile')).toHaveText(`${student.lastName} ${student.firstName}`);

@@ -429,7 +429,7 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
         exportPdfHref={exportPdfHref}
         exportXlsUnavailable={statement.total > EXPORT_MAX_ROWS ? tExport('xlsTooLarge', { max: EXPORT_MAX_ROWS }) : undefined}
         exportPdfUnavailable={statement.total > PDF_EXPORT_MAX_ROWS ? tExport('pdfTooLarge', { max: PDF_EXPORT_MAX_ROWS }) : undefined}
-        exportLabels={{ label: tExport('button'), xls: tExport('button'), pdf: tExport('buttonPdf') }}
+        exportLabels={{ label: tExport('button'), xls: tAccount('exportMenu.xlsLabel'), pdf: tAccount('exportMenu.pdfLabel') }}
         labels={accountLabels}
       />
 

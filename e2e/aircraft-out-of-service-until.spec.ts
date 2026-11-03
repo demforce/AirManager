@@ -202,8 +202,8 @@ test.describe('Aircraft out-of-service expected return date (story AOG-1a, AC 1/
     await expect(untilField).toBeVisible();
     // Label ABOVE the control and a hint that names what an empty value means
     // — never a placeholder-as-label.
-    await expect(page.getByLabel('Fermo fino al (compreso)')).toBeVisible();
-    await expect(page.getByText("Facoltativo: l'ultimo giorno di fermo. Vuoto = rientro da definire.")).toBeVisible();
+    await expect(page.getByLabel('Fuori servizio fino al (compreso)')).toBeVisible();
+    await expect(page.getByText("Facoltativo: l'ultimo giorno fuori servizio. Se vuoto, il rientro è da definire.")).toBeVisible();
 
     await page.getByTestId('out-of-service-reason').fill(reason);
     await untilField.fill(until);
@@ -213,7 +213,7 @@ test.describe('Aircraft out-of-service expected return date (story AOG-1a, AC 1/
 
     // --- face 2: OUT_OF_SERVICE — the date is STATED, and no longer writable ---
     await expect(page.getByTestId('return-to-service-button')).toBeVisible();
-    await expect(page.getByTestId('availability-current')).toHaveText(`Stato attuale: ${reason} · fermo fino al ${formatDateOnly(until, 'it')} compreso`);
+    await expect(page.getByTestId('availability-current')).toHaveText(`Stato attuale: ${reason} · fuori servizio fino al ${formatDateOnly(until, 'it')} compreso`);
     // AD-9: `setOutOfService`'s atomic guard makes a second call a 409, so the
     // form (date included) must NOT be offered here — a control that can only
     // fail is the dead end of lezione 14.6 F2.
@@ -316,7 +316,7 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
 
     const createError = pilotPage.getByTestId('booking-form-error');
     await expect(createError).toContainText(reason);
-    await expect(createError).toContainText(`Fermo fino al ${formatDateOnly(until, 'it')} compreso.`);
+    await expect(createError).toContainText(`Il velivolo è fuori servizio fino al ${formatDateOnly(until, 'it')} compreso: ${reason}.`);
 
     // --- spostamento: a live booking moved ONTO a grounded aircraft ---------
     // A SECOND run-unique aircraft, grounded the same way and for the same
@@ -337,7 +337,7 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
     await moveForm.getByTestId('move-booking-save').click();
     const moveError = pilotPage.getByTestId('move-booking-form-error');
     await expect(moveError).toContainText(reason);
-    await expect(moveError).toContainText(`Fermo fino al ${formatDateOnly(until, 'it')} compreso.`);
+    await expect(moveError).toContainText(`Il velivolo è fuori servizio fino al ${formatDateOnly(until, 'it')} compreso: ${reason}.`);
 
     // --- EN: the same constraint, said in the other language ---------------
     const enBooking = await createAircraft(page);
@@ -420,7 +420,7 @@ test.describe('The grounding on a flight: the first failure of the one warning, 
     await page.getByLabel('Data volo').fill(flightDay);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
 
     // Story 19.9 (AC 9, D-2): the grounding is the FIRST item of the one
     // warning — airframe, reason and the inclusive fermo — and the banner stays empty.
@@ -514,7 +514,7 @@ test.describe('The grounding on a flight: the first failure of the one warning, 
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
     const answered = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/flights' && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     const uiFailures = ((await (await answered).json()) as RequirementsBody).error.details.failures;
 
     const items = page.getByTestId('requirements-warning').getByTestId('requirements-warning-item');

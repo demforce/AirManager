@@ -372,14 +372,19 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
    * Review MAJOR-2 + decisione PO 6. The armed state used to put
    * `out-of-service-confirm` at the trigger's own origin, so a plain double
    * click armed AND confirmed: the aircraft was grounded and the emails fanned
-   * out with nobody reading a confirmation. Two things now stop it, and this
-   * test exercises both on the review's own gesture (a native double click):
-   * - the question in front of the pair moves the Conferma off the trigger's
-   *   LEFT EDGE (the review's reproduction point);
-   * - the trigger is full-width, so the Conferma still lies INSIDE its box,
-   *   right of the centred label. A double click THERE lands its second half on
-   *   the freshly rendered Conferma, and only the `event.detail > 1` check
-   *   stops it.
+   * out with nobody reading a confirmation. Since story 19.12b (decisione PO on
+   * review 19.12a F2) the question takes the trigger's row on its own and the
+   * Conferma/Annulla pair sits together on the row below, at the trigger's left
+   * edge. Whether the Conferma still covers a strip of the trigger depends on
+   * how many lines the question takes (measured at 1280: 13.6px under a
+   * one-line question, nothing under the two-line «non disponibile» one), so
+   * the test is built to stay discriminant in ANY layout:
+   * - a native double click at the trigger's left edge, at its centre and, when
+   *   the Conferma covers part of the trigger, in that strip, where the second
+   *   half lands on the freshly rendered Conferma;
+   * - the second half of a double click delivered to the Conferma wherever it
+   *   is born: a click with `detail: 2`, which is what the browser sends there.
+   * Without the `event.detail > 1` check the last two confirm.
    * What this proves and what it does not: Playwright's `dblclick` sets the
    * click count itself (CDP `clickCount` 1 then 2; under CDP Chromium does not
    * count mouse clicks on its own). The test therefore proves that the count
@@ -389,7 +394,7 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
    * The submit is scrolled into view first, as the review did, so this guard
    * does not depend on the fold (MINOR-1 has its own).
    */
-  test('a double click on the Fuori servizio trigger arms the second step and never confirms it, anywhere on the trigger (review MAJOR-2, decisione PO 6)', async ({ page }) => {
+  test('a double click on the Fuori servizio trigger arms the second step and never confirms it, wherever the Conferma is born (review MAJOR-2, decisione PO 6)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
 
@@ -400,18 +405,25 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
     await page.getByTestId('out-of-service-submit').scrollIntoViewIfNeeded();
     const trigger = (await page.getByTestId('out-of-service-submit').boundingBox())!;
 
-    // Where the Conferma is born: arm once, read its box, disarm. The overlap
-    // with the trigger is asserted, not assumed — it is what makes the second
-    // gesture below discriminant for the `detail` check.
+    // Where the Conferma is born: arm once, read the boxes, disarm. The layout
+    // is asserted, not assumed: the question alone on its row, the pair
+    // together under it (story 19.12b).
     await page.getByTestId('out-of-service-submit').click();
+    const question = (await page.getByTestId('out-of-service-question').boundingBox())!;
     const confirm = (await page.getByTestId('out-of-service-confirm').boundingBox())!;
+    const cancel = (await page.getByTestId('out-of-service-cancel').boundingBox())!;
+    expect(confirm.y, 'the pair sits under the question').toBeGreaterThanOrEqual(question.y + question.height);
+    expect(Math.round(cancel.y), 'Conferma and Annulla share their row').toBe(Math.round(confirm.y));
+    expect(cancel.x, 'Annulla follows Conferma').toBeGreaterThan(confirm.x + confirm.width);
     await page.getByTestId('out-of-service-cancel').click();
-    const inside = (point: { x: number; y: number }, box: { x: number; y: number; width: number; height: number }) =>
-      point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
-    const leftEdge = { x: trigger.x + 4, y: trigger.y + trigger.height / 2 };
-    const overlap = { x: confirm.x + confirm.width / 2, y: confirm.y + confirm.height / 2 };
-    expect(inside(leftEdge, confirm), 'the Conferma is not under the trigger left edge').toBe(false);
-    expect(inside(overlap, trigger), 'the Conferma point right of the label is ALSO a trigger point').toBe(true);
+
+    const points = [
+      { x: trigger.x + 4, y: trigger.y + trigger.height / 2 },
+      { x: trigger.x + trigger.width / 2, y: trigger.y + trigger.height / 2 },
+    ];
+    const stripTop = Math.max(trigger.y, confirm.y);
+    const stripBottom = Math.min(trigger.y + trigger.height, confirm.y + confirm.height);
+    if (stripBottom - stripTop > 2) points.push({ x: confirm.x + confirm.width / 2, y: (stripTop + stripBottom) / 2 });
 
     // The grounding POST is fired synchronously by the click that confirms, so
     // counting requests is the deterministic witness (the DB read could race a
@@ -421,21 +433,27 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
       if (request.method() === 'POST' && request.url().endsWith(`/api/v1/aircraft/${aircraft.id}/out-of-service`)) groundingPosts.push(request.url());
     });
 
-    for (const point of [leftEdge, overlap]) {
+    for (const point of points) {
       await page.mouse.dblclick(point.x, point.y);
       // Settled either way: armed (the fix) or already reporting (the defect).
       await expect(page.getByTestId('out-of-service-confirm').or(page.getByTestId('aog-impact-banner'))).toBeVisible();
       expect(groundingPosts, `a double click at ${point.x},${point.y} must not reach the grounding endpoint`).toEqual([]);
-      await expect(page.getByText('Mettere fuori servizio? Nessuna prenotazione coinvolta', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('out-of-service-question')).toHaveText('Mettere fuori servizio il velivolo? Nessuna prenotazione coinvolta');
       await page.getByTestId('out-of-service-cancel').click();
     }
+
+    // Wherever the Conferma is born, the second half of a double click reaches
+    // it as a click with `detail === 2`: it must not confirm either.
+    await page.getByTestId('out-of-service-submit').click();
+    await page.getByTestId('out-of-service-confirm').dispatchEvent('click', { detail: 2 });
+    await expect(page.getByTestId('out-of-service-question')).toBeVisible();
+    expect(groundingPosts, 'a click with detail 2 on the Conferma must not reach the grounding endpoint').toEqual([]);
     const afterDoubleClicks = await page.request.get(`/api/v1/aircraft/${aircraft.id}`);
     expect(((await afterDoubleClicks.json()) as { status: string }).status).toBe('OPERATIONAL');
 
     // Negative control: the check must not eat a legitimate confirmation.
     // Keyboard activation carries `detail === 0` (a plain click, `1`, is what
     // every other test in this file confirms with).
-    await page.getByTestId('out-of-service-submit').click();
     await page.getByTestId('out-of-service-confirm').focus();
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('aog-impact-banner')).toBeVisible();
@@ -448,9 +466,11 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
    * decides that two taps in quick succession at one point are a double tap,
    * delivering the second synthesized click to the freshly rendered Conferma
    * with `detail === 2` — which is what a real user's double tap produces. At
-   * 375 the pair wraps to a second row whose Conferma covers the lower-left of
-   * the trigger, so a double tap there is the one the `detail` check closes. A
-   * single tap after a pause (`detail === 1`) still confirms.
+   * 375 the question takes two lines on the trigger's row and the pair sits
+   * under it, its Conferma covering the lower-left strip of the 44px trigger
+   * (7.56px, measured for story 19.12b), so a double tap there is the one the
+   * `detail` check closes. A single tap after a pause (`detail === 1`) still
+   * confirms.
    */
   test('a double TAP on the trigger at 375 never confirms, a single tap on Conferma does (decisione PO 6)', async ({ page, browser }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -596,7 +616,7 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
 async function setPassword(pilotPage: Page, adminPage: Page, email: string, personId: string): Promise<void> {
   const userResponse = await adminPage.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId } });
   expect(userResponse.status(), await userResponse.text()).toBe(201);
-  const invite = await waitForMailpitMessage(email, 'invitato');
+  const invite = await waitForMailpitMessage(email, 'invito');
   const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(invite.Text);
   if (!match) throw new Error(`Invite email had no /set-password link:\n${invite.Text}`);
   const url = new URL(match[1]!);

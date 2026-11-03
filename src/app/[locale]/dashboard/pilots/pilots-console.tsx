@@ -340,7 +340,9 @@ export function PilotsConsole({
     return [...roleBadges(pilot.profiles).map((role) => role.label), pilot.email].filter((part): part is string => Boolean(part)).join(' · ');
   }
 
-  const cols = 'minmax(150px,1.4fr) minmax(160px,1.4fr) 100px 110px minmax(160px,1.2fr) 120px minmax(200px,1.3fr)';
+  // «Ultimo volo» is 128px (was 110px, story 19.12b): the currency badge under the date reads «Currency scaduta» /
+  // «Currency · 12 gg» (PO Q-19.12-b), measured 126.38px wide, and the cell clips what overflows.
+  const cols = 'minmax(150px,1.4fr) minmax(160px,1.4fr) 100px 128px minmax(160px,1.2fr) 120px minmax(200px,1.3fr)';
 
   return (
     <>

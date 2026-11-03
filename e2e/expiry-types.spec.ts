@@ -71,7 +71,7 @@ test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Sto
     // "Visite mediche" card, NOT "Ratings". Story 19.8 (R-19-j): a visit has
     // no scope — no "Ambito" column, no "Tutti" on its row.
     const medicalClass2Row = page.getByTestId('medical-row').filter({ hasText: 'Visita medica classe 2' });
-    await expect(medicalClass2Row).toContainText('Attivo');
+    await expect(medicalClass2Row).toContainText('Attiva');
     await expect(medicalClass2Row).not.toContainText('Tutti');
     await expect(medicalCard.locator('.student-row.header')).not.toContainText('Ambito');
     await expect(page.getByTestId('rating-row').filter({ hasText: 'Visita medica' })).toHaveCount(0);
@@ -155,7 +155,7 @@ test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Sto
     expect(created).toEqual({ create: [{ name, kind: 'MEDICAL', validityMonths: null }] });
 
     const row = page.getByTestId('medical-row').filter({ hasText: name });
-    await expect(row).toContainText('Attivo');
+    await expect(row).toContainText('Attiva');
     await expect(row).not.toContainText('Tutti');
     await expect(row).not.toContainText('Blocca prenotazioni');
     const types = (await (await page.request.get('/api/v1/expiry-types?includeInactive=true&kind=MEDICAL')).json()) as { name: string; scope: string; blocksBooking: boolean }[];
@@ -176,7 +176,7 @@ test.describe('Expiry-type catalogue, now on Impostazioni (Story 6.1 AC 1/2; Sto
 
     await renamedRow.getByTestId('medical-toggle-button').click();
     await saveOnlyExpiryTypes(page);
-    await expect(page.getByTestId('medical-row').filter({ hasText: renamed })).toContainText('Disattivato');
+    await expect(page.getByTestId('medical-row').filter({ hasText: renamed })).toContainText('Disattivata');
   });
 
   test('a validity of 0 shows the "senza scadenza" badge instead of a month count', async ({ page }) => {

@@ -29,6 +29,8 @@ describe('describeRequirementFailure', () => {
       key: 'expiryMissing',
       values: { typeName: 'SEP' },
     });
+    // Story 19.12b (AC 14, D-9): the type's gender is unknown, so the sentence agrees with «scadenza», never with it.
+    expect(renderIt({ type: 'EXPIRY', role: 'person', personName: 'Mario Rossi', typeName: 'Visita medica', expiresAt: '2026-09-30' })).toBe('Visita medica: scadenza del [2026-09-30] superata');
   });
 
   it('MEMBERSHIP: expired with its date, never paid without', () => {

@@ -92,7 +92,7 @@ async function createPilotWithLogin(page: Page, password: string): Promise<{ per
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
   expect(userResponse.status()).toBe(201);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);
@@ -214,7 +214,7 @@ test.describe('Flight delete and edit in place (Story 19.6, P2/P3 — R-19-c)', 
     await expect(page).toHaveURL(/aircraftId=/);
     const flightRow = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
     await expect(flightRow).toHaveCount(1);
-    await expect(flightRow.getByTestId('flight-cancel-action')).toHaveText('Annulla');
+    await expect(flightRow.getByTestId('flight-cancel-action')).toHaveText('Elimina');
     await flightRow.getByTestId('flight-cancel-action').click();
 
     const cancelPanel = page.getByTestId('flight-cancel-panel');

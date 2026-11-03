@@ -79,7 +79,7 @@ async function waitForMailpitCount(to: string, expected: number, timeoutMs = 15_
 
 /** Fills and submits the adjustment panel (assumes it is already open). */
 async function submitAdjustment(page: Page, amount: string, reason: string): Promise<void> {
-  await page.getByLabel('Importo (EUR, con segno)').fill(amount);
+  await page.getByLabel('Importo (€, con segno)').fill(amount);
   await page.getByLabel('Motivo').fill(reason);
   await page.getByRole('button', { name: 'Conferma rettifica' }).click();
   await expect(page.getByTestId('adjustment-feedback')).toHaveText('Rettifica registrata.');

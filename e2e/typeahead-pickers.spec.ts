@@ -170,7 +170,7 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
 
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:45');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     // Story 19.9 (E-R2): a fresh person fails the fee and the balance — the picker, not the warning, is the subject.
     await submitPastRequirements(page);
 
@@ -340,7 +340,7 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
     const email = `pilot-combobox-${suffix}@airmanager.local`;
     const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
     expect(userResponse.status()).toBe(201);
-    const url = extractSetPasswordUrl((await waitForMailpitMessage(email, 'invitato')).Text);
+    const url = extractSetPasswordUrl((await waitForMailpitMessage(email, 'invito')).Text);
     await page.goto(url.pathname + url.search);
     await page.getByLabel('Nuova password').fill(password);
     await page.getByLabel('Conferma password').fill(password);

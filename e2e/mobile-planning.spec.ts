@@ -141,7 +141,7 @@ async function createPilotWithLogin(page: Page, tag: string): Promise<{ personId
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: pilot.id } });
   expect(userResponse.status(), await userResponse.text()).toBe(201);
 
-  const invite = await waitForMailpitMessage(email, 'invitato');
+  const invite = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(invite.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(OWN_PILOT_PASSWORD);
@@ -305,7 +305,7 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     await expect(ownRows).toHaveCount(3);
     const phases = await ownRows.evaluateAll((nodes) => nodes.map((node) => node.querySelector('.badge')?.textContent?.trim() ?? ''));
     // WHOLE order, not a prefix (lesson 15.3 F8).
-    expect(phases).toEqual(['completato', 'in corso', 'in programma']);
+    expect(phases).toEqual(['conclusa', 'in corso', 'in programma']);
 
     // The AOG row is in the HEAD of the agenda (ratifica R-15.4-h): its index
     // among ALL rows is smaller than any movement's.
@@ -663,7 +663,7 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     // The export mirrors the SAME filter as the list (`page.tsx`'s own rule).
     // `ExportMenu` renders its links only once opened.
     await page.getByRole('button', { name: 'Esporta' }).click();
-    await expect(page.getByRole('link', { name: 'Esporta XLS' })).toHaveAttribute('href', /status=PENDING/);
+    await expect(page.getByTestId('export-menu-xls')).toHaveAttribute('href', /status=PENDING/);
 
     // A hand-edited value never errors: it falls back to "every status".
     await page.goto('/it/dashboard/bookings?status=NOPE');

@@ -67,7 +67,7 @@ function extractSetPasswordUrl(emailText: string): URL {
 }
 
 async function setPasswordFromInvite(page: Page, email: string, password: string): Promise<void> {
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);
@@ -141,7 +141,7 @@ async function registerFlight(page: Page, aircraftId: string, personId: string, 
 
 /** Scoped to the sidebar landmark (CLAUDE.md convention — never a page-level `getByRole('link', ...)`, the name-match is substring). */
 function myAccountNavLink(page: Page) {
-  return page.getByRole('navigation', { name: 'Aree operative' }).getByRole('link', { name: 'Le mie transazioni' });
+  return page.getByRole('navigation', { name: 'Aree operative' }).getByRole('link', { name: 'Estratto conto' });
 }
 
 test.describe('Sidebar visibility (AC 1)', () => {
@@ -177,7 +177,7 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
     await loginExpectingDashboard(page, pilot.email, password);
     // Story 19.11 (D-15): the fixtures sit in 2020-2021, outside the default 12 months.
     await page.goto(allTimeStatement('/it/dashboard/my-account'));
-    await expect(page.getByRole('heading', { level: 1, name: 'Le mie transazioni' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Estratto conto' })).toBeVisible();
 
     await expect(page.getByTestId('account-balance')).toHaveText(/140,00\s€/);
     await expect(page.getByTestId('account-movement-row')).toHaveCount(2);

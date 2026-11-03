@@ -190,7 +190,7 @@ async function inviteLink(email: string): Promise<string> {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     const search = (await (await fetch(`http://localhost:8025/api/v1/search?query=${encodeURIComponent(`to:${email}`)}`)).json()) as { messages: MailpitSummary[] };
-    const invite = search.messages.find((message) => message.Subject.includes('invitato'));
+    const invite = search.messages.find((message) => message.Subject.includes('invito'));
     if (invite) {
       const text = ((await (await fetch(`http://localhost:8025/api/v1/message/${invite.ID}`)).json()) as { Text: string }).Text;
       const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(text);
@@ -705,7 +705,7 @@ test.describe('Story 19.10 — the one warning on every booking surface (AC 25-2
     await expect(page.getByTestId('toast').filter({ hasText: 'Prenotazione approvata.' })).toBeVisible();
     await expect(page.getByTestId('booking-requirements-modal')).toHaveCount(0);
     row = await findBookingRow(page, aircraft.registration);
-    await expect(row).toContainText('Approvato');
+    await expect(row).toContainText('Approvata');
   });
 
   test('review F3: the desktop approval modal and the reject modal are dialogs — named by their title, aria-modal, the focus inside and kept there by Tab and Shift+Tab, Escape closes them and the focus goes back to the button that opened them', async ({ page }) => {

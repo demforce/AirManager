@@ -186,6 +186,76 @@ describe('t.raw never reads a message with plural/select (story 19.12a, AD-3)', 
   });
 });
 
+// Story 19.12b, AD-3: the glossary's forbidden variants (`docs/i18n/glossario-it.md`,
+// column «Varianti vietate in UI») on the TEXT of every Italian value — the
+// literal parts of its ICU tree, plural/select branches included, with every
+// argument read as `1` — so an argument NAME such as `{slot, plural, …}` is
+// not text, while «top {n}» still reads «top 1».
+function textOf(elements: MessageFormatElement[]): string {
+  return elements
+    .map((element) => {
+      switch (element.type) {
+        case TYPE.literal:
+          return element.value;
+        case TYPE.plural:
+        case TYPE.select:
+          return Object.values(element.options)
+            .map((option) => textOf(option.value))
+            .join(' | ');
+        case TYPE.tag:
+          return textOf(element.children);
+        default:
+          return '1';
+      }
+    })
+    .join('');
+}
+
+const BANNED: Array<{ pattern: RegExp; use: string; allowed?: (value: string) => boolean }> = [
+  { pattern: /[Aa]eromobil/, use: 'velivolo (row Aircraft)' },
+  { pattern: /\b[Aa]ere[oi]\b/, use: 'velivolo (row Aircraft)' },
+  { pattern: /payout/, use: 'compenso istruttore, compenso orario (row Compenso)' },
+  { pattern: /\bAOG\b/, use: 'fuori servizio (row Indisponibilità)' },
+  { pattern: /\b[Ff]ermo\b/, use: 'fuori servizio (row Indisponibilità)' },
+  { pattern: /impatt/, use: 'interessa, prenotazioni coinvolte (row Effetto sulle prenotazioni)' },
+  { pattern: /\bCFI\b/, use: 'istruttore (row Istruttore a bordo)' },
+  { pattern: /\.\.\./, use: '… (row Tipografia)' },
+  { pattern: /\(EUR/, use: '€ (row Importi)' },
+  { pattern: /\bsidebar\b/, use: "barra laterale (row Parti dell'interfaccia)" },
+  { pattern: /\bdashboard\b/, use: 'Panoramica (row Home)' },
+  { pattern: /\breset\b/, use: 'reimposta, reimpostazione (row Password)' },
+  { pattern: /\balert\b/, use: 'avviso di scadenza (row Avvisi email)' },
+  { pattern: /\bslot\b/, use: 'durata minima prenotazione (row Impostazioni di pianificazione)' },
+  { pattern: /turnaround/, use: 'tempo minimo tra prenotazioni (row Impostazioni di pianificazione)' },
+  { pattern: /[Tt]imeline/, use: 'calendario dei velivoli (row Pianificazione)' },
+  { pattern: /top \d/, use: 'primi N (row Classifiche)' },
+  { pattern: /Sei stato/, use: 'Hai ricevuto un invito (row Invito)' },
+  { pattern: /Non current/, use: 'Currency scaduta (row Currency)' },
+  { pattern: /Le mie transazioni/, use: 'Estratto conto (row Conto personale)' },
+  { pattern: /Il mio conto/, use: 'Estratto conto (row Conto personale)' },
+  { pattern: /^Admin$/, use: 'Amministratore (row Ruolo ADMIN)' },
+  // R5: «Ratings» stays as the exact name of the section/category.
+  { pattern: /Ratings/, use: 'rating, m., invariable (row Rating)', allowed: (value) => value === 'Ratings' },
+];
+
+/** Italian keys allowed to keep a banned variant, each with its reason. None today. */
+const BANNED_EXCEPTIONS: Record<string, string> = {};
+
+describe('the Italian catalogue follows the glossary (story 19.12b, AD-3)', () => {
+  it('no Italian value uses a forbidden variant', () => {
+    const offending: string[] = [];
+    for (const [key, ast] of asts.it) {
+      if (!ast || key in BANNED_EXCEPTIONS) continue;
+      const value = catalogues.it.get(key) as string;
+      const text = textOf(ast);
+      for (const { pattern, use, allowed } of BANNED) {
+        if (pattern.test(text) && !allowed?.(value)) offending.push(`${key}: ${JSON.stringify(value)} matches ${pattern} — use ${use}`);
+      }
+    }
+    expect(offending, 'Italian values with a variant the glossary forbids').toEqual([]);
+  });
+});
+
 // AC 5: every key story 19.12a turned into an Italian plural, rendered with 0,
 // 1 and 2 (the `=0` branch included where there is one) through the same
 // formatter the app uses, against copy written out by hand.
@@ -252,9 +322,9 @@ describe('the plurals converted by story 19.12a render in Italian (AC 5)', () =>
       key: 'AircraftPage.editor.availability.confirmQuestion',
       values: (n) => ({ count: n }),
       expected: [
-        'Mettere fuori servizio? Nessuna prenotazione coinvolta',
-        'Mettere fuori servizio? 1 prenotazione coinvolta',
-        'Mettere fuori servizio? 2 prenotazioni coinvolte',
+        'Mettere fuori servizio il velivolo? Nessuna prenotazione coinvolta',
+        'Mettere fuori servizio il velivolo? 1 prenotazione coinvolta',
+        'Mettere fuori servizio il velivolo? 2 prenotazioni coinvolte',
       ],
     },
     {

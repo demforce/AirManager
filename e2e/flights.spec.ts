@@ -123,7 +123,7 @@ async function createPilotWithLogin(page: Page, password: string): Promise<{ per
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
   expect(userResponse.status()).toBe(201);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);
@@ -245,7 +245,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:20');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:20');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await submitPastRequirements(page);
 
     // 80' @ 150,00 €/h -> 200,00 € (the PRD-testable 80'x150 case) — ratifica 1: the breakdown/nuovo saldo stays INSIDE the slide-over on success.
@@ -305,7 +305,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:00');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await submitPastRequirements(page);
 
     // 60' @ 120,00 €/h -> 120,00 €; 60' @ 40,00 €/h -> 40,00 €; total 160,00 €.
@@ -315,7 +315,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByTestId('flight-result-close').click();
 
     const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
-    await expect(row).toContainText(`CFI ${instructor.lastName} ${instructor.firstName}`);
+    await expect(row).toContainText(`Istruttore: ${instructor.lastName} ${instructor.firstName}`);
     await expect(row).toContainText('Scuola');
     await expect(row).toContainText('1:00');
     await expect(row).toContainText(/160,00\s€/);
@@ -335,7 +335,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
 
     await expect(page.getByTestId('flight-form-error')).toContainText('Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.');
   });
@@ -411,7 +411,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora decollo').fill('23:30');
     await page.getByLabel('Ora atterraggio').fill('00:10');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('0:40');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await submitPastRequirements(page);
 
     const resultPanel = page.getByTestId('flight-result-panel');
@@ -588,7 +588,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
     await page.getByLabel('Ora decollo').fill('09:00');
     await page.getByLabel('Ora atterraggio').fill('10:00');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await submitPastRequirements(page);
 
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
@@ -736,12 +736,12 @@ test.describe('Requirements warning & admin deroga from the form (Story 14.4 rew
     await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
 
     const warning = page.getByTestId('requirements-warning');
     await expect(warning).toBeVisible();
     await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="EXPIRY"]', { hasText: blockingType.name })).toHaveText(
-      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — ${blockingType.name}: scaduto il 01/06/2019`,
+      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — ${blockingType.name}: scadenza del 01/06/2019 superata`,
     );
     // R-19-h: no motivo anywhere, and the list is not repeated in the banner.
     await expect(page.getByTestId('flight-form').locator('textarea')).toHaveCount(0);
@@ -817,14 +817,14 @@ test.describe('Requirements warning & admin deroga from the form (Story 14.4 rew
     await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
 
     // The type is `scope: 'ALL'` and created after the pilot's documents, so
     // the pilot lists it too, as MISSING: the instructor's item is the expired one.
     const warning = page.getByTestId('requirements-warning');
     await expect(
       warning.locator('[data-testid="requirements-warning-item"][data-type="EXPIRY"]', { hasText: blockingType.name }).filter({ hasText: '(istruttore)' }),
-    ).toHaveText(`${instructor.firstName} ${instructor.lastName} (istruttore) — ${blockingType.name}: scaduto il 01/06/2019`);
+    ).toHaveText(`${instructor.firstName} ${instructor.lastName} (istruttore) — ${blockingType.name}: scadenza del 01/06/2019 superata`);
     await warning.getByTestId('requirements-proceed').click();
 
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
@@ -847,7 +847,7 @@ test.describe('Requirements warning & admin deroga from the form (Story 14.4 rew
     await page.getByLabel('Data volo').fill(PAST_DATE);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
 
     const warning = page.getByTestId('requirements-warning');
     await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="BALANCE"]')).toHaveText(
@@ -1107,7 +1107,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     // Every registration goes through `submitInRegola` (review F5, TD 16.2-g).
     await ensureFlightRequirements(page, { personId: pilot.personId, scope: 'PILOTS', topUpCents: 100_000 });
     const inRegola = [{ personId: pilot.personId, scope: 'PILOTS' as const }];
-    const submit = page.getByRole('button', { name: 'Registra volo' });
+    const submit = page.getByTestId('flight-form-submit');
     const currencyAircraft = await createAircraftWithRate(page, 12000);
     await seedAircraftRate(currencyAircraft.id, { studentPriceCents: 12000, pilotPriceCents: 12000, validFrom: '2019-12-01' });
     await registerFlightOn(page, { aircraftId: currencyAircraft.id, personId: pilot.personId, flightType: 'TOURISM', date: '2019-12-18', noCharge: true });
@@ -1212,7 +1212,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await fillCommonFields(firstPilot);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     await page.getByTestId('flight-result-close').click();
@@ -1222,7 +1222,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await fillCommonFields(secondPilot);
     await page.getByLabel('Ora decollo').fill('10:30');
     await page.getByLabel('Ora atterraggio').fill('11:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await proceedAndExpectOverlap();
     expect(await countFlights(page, aircraft.id)).toBe(1);
 
@@ -1234,7 +1234,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await page.getByLabel('Ora decollo').fill('20:00');
     await page.getByLabel('Ora atterraggio').fill('20:30');
     await page.getByLabel('Aeroporto di partenza').fill(spareDeparture);
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     await page.getByTestId('flight-result-close').click();
@@ -1311,7 +1311,7 @@ test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', (
     await expect(page.getByLabel('Decolli', { exact: true })).toHaveAttribute('min', '1');
     await expect(page.getByLabel('Atterraggi', { exact: true })).toHaveAttribute('min', '1');
     await page.getByLabel('Decolli', { exact: true }).fill('0');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
 
     await expect(page.getByTestId('flight-form-error')).toContainText('Decolli e atterraggi devono essere almeno 1.');
   });
@@ -1486,7 +1486,7 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
 
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     await submitPastRequirements(page);
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
 
@@ -1556,7 +1556,7 @@ test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch 
     await page.getByLabel('Ora atterraggio').fill('10:30');
     const posted = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/v1/flights' && request.method() === 'POST');
     const answered = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/flights' && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
     expect((await posted).postDataJSON()).toMatchObject({ personId: pilot.id, flightType: 'TOURISM', isSolo: false });
     // Story 19.9: the fresh pilot meets the requirements warning — a 422 of
     // the shared contract, never the 422 SOLO_REQUIRES_SCHOOL a hidden switch

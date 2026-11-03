@@ -957,57 +957,60 @@ function AvailabilitySection({
               {t('impactPreview', { count: 0 })} · {windowText}
             </p>
           ) : null}
-          {/* AC 3, the DOUBLE STEP. Same idiom as `ArchiveSection` two sections
-              below, now taken WHOLE (review MAJOR-2): the armed state replaces
+          {/* AC 3, the DOUBLE STEP (review MAJOR-2): the armed state replaces
               the trigger with a QUESTION followed by the confirm/cancel pair.
               The question is not decoration — it is what makes the second step a
               step. Without it the `Conferma` button was born at the trigger's
               own origin (both measured at x 781, y 444.25) and its box covered
               the point that had just been clicked, so a plain double click armed
               AND confirmed: the grounding was written and the emails fanned out
-              with nobody ever reading a confirmation. With the question in front,
-              `out-of-service-confirm` starts past the end of the question text,
-              exactly as `archive-confirm` does. The trigger is full-width, so the
-              pair still lies inside its box (right of its centred label at 1280,
-              on a second row under its lower-left corner at <=640): that part of
-              the gesture is closed by the `event.detail` check on the Conferma
-              below (decisione PO 6). It also gives the "the preview never
-              answered" case a question of its own, where before it left two bare
-              buttons with nothing above them to confirm. */}
-          {/* `.fld` is a COLUMN flex box (`airops.css:1143`) — the plain, unstyled
+              with nobody ever reading a confirmation. Story 19.12b (decisione PO
+              on review 19.12a F2) gives the whole question its own row and the
+              pair a row of its own under it, so the three keep one arrangement
+              at 1280 and 375 whatever the count: before, a long question pushed
+              Annulla, or the whole pair, onto a second line. The pair starts at
+              the trigger's left edge and can still cover a strip of its lower
+              part (13.6px at 1280, 7.56px at 375 with the question on one or
+              two lines): that part of the gesture is closed by the `event.detail`
+              check on the Conferma below (decisione PO 6). The question also
+              covers the "the preview never answered" case, which would otherwise
+              leave two bare buttons with nothing above them to confirm. */}
+          {/* `.fld` is a COLUMN flex box (`airops.css:1147`) — the plain, unstyled
               wrapper is what gives the lone submit the full-width box story
-              AOG-1a measured, and it is left exactly that way. Only the armed
-              state turns the row horizontal, for its two controls. */}
-          <div className="fld wide" style={confirming ? { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 } : undefined}>
+              AOG-1a measured, and it is left exactly that way. Armed, the same
+              column stacks the question over the row of the two controls. */}
+          <div className="fld wide">
             {confirming ? (
               <>
-                <span className="fld-label">
+                <span className="fld-label" data-testid="out-of-service-question">
                   {impact ? t('confirmQuestion', { count: impactTotal }) : labels.availability.confirmQuestionUnknown}
                 </span>
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={busy}
-                  onClick={(event) => {
-                    // Decisione PO 6: the SECOND half of a double click (or
-                    // double tap) that armed this step lands here with
-                    // `detail === 2` — the browser counts clicks by time and
-                    // position, not by element — and must not confirm. A single
-                    // click is `1`, keyboard activation `0`: both still confirm.
-                    // Accepted side effects: a triple click is ignored too, and
-                    // a deliberate click that falls within the double-click
-                    // interval (and a couple of px) of the arming click needs a
-                    // second click.
-                    if (event.detail > 1) return;
-                    void submitOutOfService();
-                  }}
-                  data-testid="out-of-service-confirm"
-                >
-                  {labels.availability.confirm}
-                </button>
-                <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)} data-testid="out-of-service-cancel">
-                  {labels.cancel}
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={busy}
+                    onClick={(event) => {
+                      // Decisione PO 6: the SECOND half of a double click (or
+                      // double tap) that armed this step lands here with
+                      // `detail === 2` — the browser counts clicks by time and
+                      // position, not by element — and must not confirm. A single
+                      // click is `1`, keyboard activation `0`: both still confirm.
+                      // Accepted side effects: a triple click is ignored too, and
+                      // a deliberate click that falls within the double-click
+                      // interval (and a couple of px) of the arming click needs a
+                      // second click.
+                      if (event.detail > 1) return;
+                      void submitOutOfService();
+                    }}
+                    data-testid="out-of-service-confirm"
+                  >
+                    {labels.availability.confirm}
+                  </button>
+                  <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)} data-testid="out-of-service-cancel">
+                    {labels.cancel}
+                  </button>
+                </div>
               </>
             ) : (
               <button type="button" className="btn" disabled={busy} onClick={() => void submitOutOfService()} data-testid="out-of-service-submit">

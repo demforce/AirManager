@@ -392,7 +392,7 @@ describe('exportExpiriesXlsx (T2 — date-only column mapping)', () => {
     expect(row.getCell(2).value).toBe('Visita medica');
     expect(row.getCell(3).value).toBe('Piloti');
     expect(row.getCell(4).value).toBe('15/01/2027');
-    expect(row.getCell(5).value).toBe('In regola');
+    expect(row.getCell(5).value).toBe('Valida');
   });
 });
 
@@ -523,14 +523,14 @@ describe('exportTransactionsXlsx (story 12.9, AC 2 — unified ledger; story Bil
     expect(accountRow.getCell(4).value).toBe('Addebito volo'); // AccountStatementPage.movementType.flightCharge, no free-text description to append
     expect(accountRow.getCell(6).value).toBe(185); // Entrate
     expect(accountRow.getCell(7).value).toBeNull(); // Uscite
-    expect(accountRow.getCell(8).value).toBe('Registrato');
+    expect(accountRow.getCell(8).value).toBe('Registrata');
 
     const cashRow = sheet.getRow(3);
     expect(cashRow.getCell(3).value).toBe('Costo'); // BillingPage.table.bookTypes.COST
     expect(cashRow.getCell(4).value).toBe('Carburante — Rifornimento'); // verbatim category name + free-text description
     expect(cashRow.getCell(6).value).toBeNull(); // Entrate
     expect(cashRow.getCell(7).value).toBe(50); // Uscite
-    expect(cashRow.getCell(8).value).toBe('Stornato');
+    expect(cashRow.getCell(8).value).toBe('Stornata');
   });
 
   it('rejects with 422 EXPORT_TOO_LARGE when the filtered total exceeds the cap', async () => {
@@ -655,8 +655,8 @@ describe('exportAccountStatementPdf (story 10.2, AC 2/3/4; story 19.11, AC 24)',
       ['01/07/2026', 'Saldo iniziale', '', '', '100,00 €', ''],
     ]);
     expect(props.totals).toEqual([
-      { label: 'Saldo iniziale al 01/07/2026', value: '100,00 €' },
-      { label: 'Saldo finale al 31/07/2026', value: '250,00 €' },
+      { label: "Saldo all'inizio del 01/07/2026", value: '100,00 €' },
+      { label: 'Saldo alla fine del 31/07/2026', value: '250,00 €' },
     ]);
     expect(getAccountOverviewMock).not.toHaveBeenCalled();
   });
@@ -671,7 +671,7 @@ describe('exportAccountStatementPdf (story 10.2, AC 2/3/4; story 19.11, AC 24)',
     expect(props.subtitle).toBe('Rossi Mario');
     expect(props.rows).toHaveLength(1);
     expect(props.totals).toEqual([
-      { label: 'Opening balance on 01/07/2026', value: '€100.00' },
+      { label: 'Balance at the start of 01/07/2026', value: '€100.00' },
       { label: 'Final balance', value: '€100.00' },
     ]);
   });
@@ -750,7 +750,7 @@ describe('exportCashReportPdf (story 10.2, AC 2/3)', () => {
     expect(getCashReportMock).toHaveBeenCalledWith(ACTOR, { from: '2026-07-01', to: '2026-07-31', locale: 'it' });
 
     const props = lastPdfProps();
-    expect(props.title).toBe('Report finanziario');
+    expect(props.title).toBe('Report di cassa');
     expect(props.subtitle).toBe('01/07/2026 – 31/07/2026');
     expect(props.columns.map((c) => c.header)).toEqual(['Categoria', 'Entrate', 'Uscite', 'Netto']);
     expect(props.columns.map((c) => c.value(props.rows[0]))).toEqual(['Carburante', '0,00 €', '-400,00 €', '-400,00 €']);
@@ -920,7 +920,7 @@ describe('exportExpiriesPdf (story 10.2, AC 2/3)', () => {
 
     expect(buffer.toString('latin1').startsWith('%PDF-')).toBe(true);
     const props = lastPdfProps();
-    expect(props.title).toBe('Tutte le scadenze');
+    expect(props.title).toBe('Scadenze');
     expect(props.subtitle).toBeNull();
     expect(props.totals).toBeUndefined();
 
@@ -975,11 +975,11 @@ describe('exportBookingsPdf (story 13.7, AC 2)', () => {
     expect(props.totals).toBeUndefined();
 
     const row = props.rows[0];
-    expect(props.columns.find((c) => c.header === 'Aereo')!.value(row)).toBe('I-ABCD');
-    expect(props.columns.find((c) => c.header === 'Pilota')!.value(row)).toBe('Mario Rossi');
+    expect(props.columns.find((c) => c.header === 'Velivolo')!.value(row)).toBe('I-ABCD');
+    expect(props.columns.find((c) => c.header === 'Persona')!.value(row)).toBe('Mario Rossi');
     expect(props.columns.find((c) => c.header === 'Istruttore')!.value(row)).toBe(''); // null instructorName -> empty string, never null
     expect(props.columns.find((c) => c.header === 'Inizio')!.value(row)).toBe('01/07/2026, 11:00'); // 09:00Z -> CEST +2
-    expect(props.columns.find((c) => c.header === 'Stato')!.value(row)).toBe('Approvato');
+    expect(props.columns.find((c) => c.header === 'Stato')!.value(row)).toBe('Approvata');
   });
 
   it('a masked personName (story 14.5, ratifica R3: listBookings already nulled it for a pilot/student actor viewing someone else\'s booking) renders "Occupato", never a blank cell', async () => {
@@ -1012,7 +1012,7 @@ describe('exportBookingsPdf (story 13.7, AC 2)', () => {
     await exportBookingsPdf(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
 
     const row = lastPdfProps().rows[0];
-    expect(lastPdfProps().columns.find((c) => c.header === 'Pilota')!.value(row)).toBe('Occupato');
+    expect(lastPdfProps().columns.find((c) => c.header === 'Persona')!.value(row)).toBe('Occupato');
   });
 
   it('open-ended subtitle (PO decision, review F7): from-only — the real UI case, since the booking list has no `to` filter — reads "Dal <date>"/"From <date>"', async () => {
