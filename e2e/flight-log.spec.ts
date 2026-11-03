@@ -252,7 +252,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // NEVER otherPerson's 40' flight on the SAME aircraft (SECURITY-CRITICAL:
     // own-access totals must never leak another person's data, same guard as
     // the rows themselves).
-    await expect(page.locator('.page-title-block .sub')).toHaveText('1 voce · solo i tuoi voli');
+    await expect(page.locator('.page-title-block .sub')).toHaveText('1 volo · solo i tuoi voli');
     const kpiValues = page.locator('.kpi-row .kpi .kpi-value');
     await expect(kpiValues.nth(0)).toHaveText('1');
     await expect(kpiValues.nth(1)).toHaveText('0:30');
@@ -389,7 +389,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page.getByTestId('flight-pagination-status')).toHaveText('1 / 2');
 
     // Header count ("N voci registrate") — the FULL 21, not page 1's 20.
-    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voci registrate');
+    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voli registrati');
 
     // KPI row (entries/ore/decolli-atterraggi/ricavo), in DOM order — the
     // FULL filtered-set totals (`getFlightTotals`), never a per-page sum.
@@ -416,7 +416,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // Page 2 (1 row) shows the exact SAME full totals as page 1 — proves the
     // totals are page-independent, not derived from whichever rows happen to
     // be on screen.
-    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voci registrate');
+    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voli registrati');
     await expect(kpiValues.nth(0)).toHaveText('21');
     await expect(kpiValues.nth(3)).toHaveText(/^210,00\s€$/);
     await expect(totalsRow).toContainText(/210,00\s€/);

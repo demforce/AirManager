@@ -11,6 +11,7 @@
  * list reconciliation (AD-1): the server re-fetches with the SAME filters,
  * same pattern as the legacy list.
  */
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
@@ -60,8 +61,6 @@ export type BookingRowDto = {
 export type BookingsTableLabels = {
   cardTitle: string;
   pendingSummary: string;
-  /** Review 15.4 F6: the card sub while `?status` narrows the list — the "in attesa" count is NOT filtered (it is a separate PENDING query), so with `?status=DENIED` the two halves contradicted each other ("2 in attesa · 0 totali", measured at 375px AND at 1280px). Under a filter only the filtered total is shown. */
-  filteredSummary: string;
   newButton: string;
   /** Story 14.5 (ratifica R3): shown instead of `booking.personName` when it's `null` (masked). */
   occupied: string;
@@ -202,6 +201,8 @@ export function BookingsTable({
   editBookingLabels,
   labels,
 }: BookingsTableProps) {
+  // Story 19.12a: the filtered total inflects (ICU plural), so it is formatted here.
+  const t = useTranslations('BookingsPage.list');
   const router = useRouter();
   const toast = useToast();
   const [showNew, setShowNew] = useState(false);
@@ -634,7 +635,9 @@ export function BookingsTable({
           {/* `total` is the FILTERED total, `pendingCount` never is (review 15.4
               F6): while a filter is active only the total is shown, on both
               faces of the card — desktop and phone read the same node. */}
-          {(status === null ? labels.pendingSummary.replace('{pending}', String(pendingCount)) : labels.filteredSummary).replace('{total}', String(total))}
+          {status === null
+            ? labels.pendingSummary.replace('{pending}', String(pendingCount)).replace('{total}', String(total))
+            : t('filteredSummary', { total })}
         </span>
         <div className="spacer" />
         <ExportMenu label={labels.exportLabel} xlsLabel={labels.exportXls} xlsHref={exportHref} pdfLabel={labels.exportPdf} pdfHref={exportPdfHref} />

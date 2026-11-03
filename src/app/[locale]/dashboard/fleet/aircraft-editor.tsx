@@ -14,6 +14,7 @@
  * and Archivio stay ACTIONS with effects of their own, not data.
  */
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
@@ -57,9 +58,7 @@ export type AircraftEditorLabels = {
     reason: string;
     confirm: string;
     confirmReturnToService: string;
-    /** Review MAJOR-2 — the question in FRONT of the armed pair (full `ArchiveSection` idiom): it moves `out-of-service-confirm` off the point that armed it, so a double click on the trigger no longer arms AND confirms. Three forms because the count is part of the question and Italian inflects the noun; the `Unknown` one covers the preview that never answered. */
-    confirmQuestionOne: string;
-    confirmQuestionMany: string;
+    /** Review MAJOR-2 — the question in FRONT of the armed pair (full `ArchiveSection` idiom): it moves `out-of-service-confirm` off the point that armed it, so a double click on the trigger no longer arms AND confirms. This is the form for the preview that never answered; the counted one is the ICU `confirmQuestion`, read in `AvailabilitySection` (story 19.12a). */
     confirmQuestionUnknown: string;
     /** Story AOG-1a, AC 5 — the date field's own label. Says "compreso"/"inclusive" IN the label, because R-AOG-a made the day itself part of the fermo. */
     until: string;
@@ -69,17 +68,6 @@ export type AircraftEditorLabels = {
     untilValue: string;
     /** What "Stato attuale" says instead when the aircraft is grounded with NO date (invariant [b]: a legitimate state, never an empty string or a bare dash). */
     untilUnknown: string;
-    /** Story AOG-1b, AC 2 — the preview headline, BEFORE the act. Two forms because Italian and English both inflect the noun; `{count}` is client-interpolated (same `t.raw` convention as `rates.showAll`). */
-    impactPreviewOne: string;
-    impactPreviewMany: string;
-    /** Review MINOR-1 — the whole preview when the count is ZERO: nothing to split, nothing to warn about, so it collapses to this one line instead of spending the full box (measured: it was pushing the primary submit under the fold at 1280x900). */
-    impactPreviewNone: string;
-    /** AC 5 — the persistent banner's headline, AFTER the act, on the number the grounding transaction itself computed. */
-    impactBannerOne: string;
-    impactBannerMany: string;
-    /** AC 6 — the line that comes back at every reopening of an already-grounded aircraft. */
-    impactRowOne: string;
-    impactRowMany: string;
     /** AC 2 — the split, `{pending}`/`{approved}`. NOT decorative: it is the criterion of the email (R-AOG-i), so each half says what it means. */
     impactSplit: string;
     /** AC 2/AC 8 — the counting window in words, `{date}`, in the INCLUSIVE form of R-AOG-a. */
@@ -680,6 +668,9 @@ function AvailabilitySection({
   toast: { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
   onMutated: (updated: EditableAircraft) => void;
 }) {
+  // Story 19.12a (D-13): the impacted-booking count is only known here, so
+  // the sentences that inflect on it are ICU plurals formatted in the browser.
+  const t = useTranslations('AircraftPage.editor.availability');
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
   // Story AOG-1a, AC 5 — `YYYY-MM-DD` straight out of `DateInput`'s native
@@ -827,10 +818,6 @@ function AvailabilitySection({
       }`
     : '—';
 
-  function countText(one: string, many: string, count: number): string {
-    return count === 1 ? one : many.replace('{count}', String(count));
-  }
-
   /**
    * Story AOG-1b, AC 2/AC 8 — the window, stated in words, on EVERY surface
    * that shows a number, and (review MAJOR-1) chosen on the bound the count was
@@ -879,7 +866,7 @@ function AvailabilitySection({
                  2600 ms toast beside it, it does not go away. */
               <p className="alert-box bad" role="status" style={{ marginBottom: 12, lineHeight: 1.55 }} data-testid="aog-impact-banner">
                 <span style={{ display: 'block', fontWeight: 600 }}>
-                  {countText(labels.availability.impactBannerOne, labels.availability.impactBannerMany, impactTotal)}
+                  {t('impactBanner', { count: impactTotal })}
                 </span>
                 <span style={{ display: 'block' }}>{splitText}</span>
                 <span style={{ display: 'block' }}>{windowText}</span>
@@ -893,7 +880,7 @@ function AvailabilitySection({
                  gone with the session, this line is not. Informative only: AD-9
                  keeps every control that would 409 off this face. */
               <p className="fld-hint" style={{ marginBottom: 12 }} data-testid="aog-impact-row">
-                {countText(labels.availability.impactRowOne, labels.availability.impactRowMany, impactTotal)} · {windowText}
+                {t('impactRow', { count: impactTotal })} · {windowText}
               </p>
             )
           ) : null}
@@ -918,7 +905,7 @@ function AvailabilitySection({
                scrollable body at 1280x900. Zero takes the one-line form below. */
             <p className="alert-box info" role="status" style={{ gridColumn: '1 / -1', lineHeight: 1.55 }} data-testid="aog-impact-preview">
               <span style={{ display: 'block', fontWeight: 600 }}>
-                {countText(labels.availability.impactPreviewOne, labels.availability.impactPreviewMany, impactTotal)}
+                {t('impactPreview', { count: impactTotal })}
               </span>
               <span style={{ display: 'block' }}>{splitText}</span>
               <span style={{ display: 'block' }}>
@@ -967,7 +954,7 @@ function AvailabilitySection({
                `role="status"` stays, so narrowing the window to zero is
                announced like any other change of the number. */
             <p className="fld-hint" role="status" style={{ alignSelf: 'end', margin: 0 }} data-testid="aog-impact-preview">
-              {labels.availability.impactPreviewNone} · {windowText}
+              {t('impactPreview', { count: 0 })} · {windowText}
             </p>
           ) : null}
           {/* AC 3, the DOUBLE STEP. Same idiom as `ArchiveSection` two sections
@@ -995,9 +982,7 @@ function AvailabilitySection({
             {confirming ? (
               <>
                 <span className="fld-label">
-                  {impact
-                    ? countText(labels.availability.confirmQuestionOne, labels.availability.confirmQuestionMany, impactTotal)
-                    : labels.availability.confirmQuestionUnknown}
+                  {impact ? t('confirmQuestion', { count: impactTotal }) : labels.availability.confirmQuestionUnknown}
                 </span>
                 <button
                   type="button"

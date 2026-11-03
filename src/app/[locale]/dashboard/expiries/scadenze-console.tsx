@@ -17,6 +17,7 @@
  * control keeps its desktop testid and its desktop behaviour; only the
  * PLACEMENT changes, in CSS.
  */
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RequirementsWarning } from '@/components/dashboard/requirements-warning';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
@@ -85,7 +86,6 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
 
 export type ScadenzeConsoleLabels = {
   cardTitle: string;
-  shown: string;
   segmented: { win60: string; win30: string; win7: string; expired: string; all: string };
   filters: {
     /** Story 19.7b: the Categoria filter — its label (the select's accessible name, the panel field's label) and its options. */
@@ -240,6 +240,9 @@ export function ScadenzeConsole({
   locale,
   labels,
 }: ScadenzeConsoleProps) {
+  // Story 19.12a: the "N mostrate" count inflects (ICU plural) and changes
+  // with the client-only filters, so it is formatted here.
+  const t = useTranslations('ExpiriesPage.registry');
   const router = useRouter();
   const toast = useToast();
   const [filters, setFilters] = useState(initialFilters);
@@ -448,7 +451,7 @@ export function ScadenzeConsole({
             the panel navigates once, and one element cannot do both (15.6 C5). */}
         <div className="card-head scadenze-head">
           <div className="card-title">{labels.cardTitle}</div>
-          <span className="card-sub">{labels.shown.replace('{count}', String(totalShown))}</span>
+          <span className="card-sub">{t('shown', { count: totalShown })}</span>
           <div className="spacer" />
           {/* `scadenze-window-desktop` is a class of THIS page, never a rule on
               `.segmented` (6 consumers: pianificazione, panoramica, statistiche…). */}

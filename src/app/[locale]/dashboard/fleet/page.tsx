@@ -194,20 +194,12 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               // Review MAJOR-2: the question that now stands in FRONT of the
               // confirm/cancel pair, so the Conferma no longer appears under the
               // click point of the trigger that armed it.
-              confirmQuestionOne: t('editor.availability.confirmQuestionOne'),
-              confirmQuestionMany: t.raw('editor.availability.confirmQuestionMany') as string,
               confirmQuestionUnknown: t('editor.availability.confirmQuestionUnknown'),
               // Story AOG-1b — `t.raw` for every template carrying a
               // client-interpolated placeholder (same convention as
               // `rates.currentHint`): the count and the date are only known in
-              // the browser.
-              impactPreviewNone: t('editor.availability.impactPreviewNone'),
-              impactPreviewOne: t('editor.availability.impactPreviewOne'),
-              impactPreviewMany: t.raw('editor.availability.impactPreviewMany') as string,
-              impactBannerOne: t('editor.availability.impactBannerOne'),
-              impactBannerMany: t.raw('editor.availability.impactBannerMany') as string,
-              impactRowOne: t('editor.availability.impactRowOne'),
-              impactRowMany: t.raw('editor.availability.impactRowMany') as string,
+              // the browser. The sentences that inflect on the count are ICU
+              // plurals the editor formats itself (story 19.12a).
               impactSplit: t.raw('editor.availability.impactSplit') as string,
               impactWindowUntil: t.raw('editor.availability.impactWindowUntil') as string,
               impactWindowUndelimited: t('editor.availability.impactWindowUndelimited'),

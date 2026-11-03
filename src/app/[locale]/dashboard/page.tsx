@@ -613,8 +613,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           labels={{
             title: t('overview.mobile.alerts.title'),
             empty: t('overview.mobile.alerts.empty'),
-            seeAll: t.raw('overview.mobile.alerts.seeAll') as string,
-            seeAllAtLeast: t.raw('overview.mobile.alerts.seeAllAtLeast') as string,
           }}
         />
 
@@ -723,7 +721,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
             today: t('scadenzeWidget.today'),
             agoTemplate: t.raw('scadenzeWidget.ago') as string,
             inDaysTemplate: t.raw('scadenzeWidget.inDays') as string,
-            seeAll: t.raw('scadenzeWidget.seeAll') as string,
             currency: t('scadenzeWidget.currency'),
           }}
         />
@@ -737,7 +734,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           addHref="/dashboard/fleet"
           labels={{
             cardTitle: t('fleetCard.cardTitle'),
-            summary: t.raw('fleetCard.summary') as string,
             addAircraft: t('fleetCard.addAircraft'),
             empty: t('fleetCard.empty'),
             badge: {

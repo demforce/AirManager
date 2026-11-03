@@ -39,6 +39,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@formatjs/icu-messageformat-parser": "3.5.12",
     "@playwright/test": "1.61.1",
     "@types/node": "^20",
     "@types/nodemailer": "8.0.1",

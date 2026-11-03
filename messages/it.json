@@ -111,7 +111,7 @@
     },
     "overview": {
       "title": "Panoramica operativa",
-      "aogCount": "{count} AOG",
+      "aogCount": "{count} fuori servizio",
       "dispatchButton": "Pianifica volo",
       "kpis": {
         "flightsToday": "Voli oggi",
@@ -134,8 +134,8 @@
         "alerts": {
           "title": "Avvisi",
           "empty": "Nessun avviso: scadenze e saldi sono in regola.",
-          "seeAll": "+{count} altri · Vedi tutte",
-          "seeAllAtLeast": "+{count} e oltre · Vedi tutte",
+          "seeAll": "+{count, plural, one {# altro avviso} other {# altri avvisi}} · Vedi tutti",
+          "seeAllAtLeast": "+{count} e oltre · Vedi tutti",
           "balanceSub": "Saldo {amount}"
         },
         "shortcuts": {
@@ -168,7 +168,7 @@
     },
     "instructorLanding": {
       "greeting": "Buongiorno, {name}",
-      "sub": "{flightsToday} voli oggi · {owed} dovuti nel mese",
+      "sub": "{flightsToday, plural, one {# volo} other {# voli}} oggi · {owed} dovuti nel mese",
       "kpis": {
         "hoursMonth": "Ore mese",
         "payoutRate": "Tariffa payout",
@@ -197,12 +197,12 @@
       "today": "oggi",
       "ago": "{n}g fa",
       "inDays": "tra {n}g",
-      "seeAll": "+{count} altre · Vedi tutte",
+      "seeAll": "+{count, plural, one {# altra} other {# altre}} · Vedi tutte",
       "currency": "Currency"
     },
     "fleetCard": {
       "cardTitle": "Aeromobili",
-      "summary": "{total} totali · {available} disponibili · {aog} AOG",
+      "summary": "{total, plural, one {# velivolo} other {# velivoli}} · {available, plural, one {# disponibile} other {# disponibili}} · {aog} fuori servizio",
       "addAircraft": "Aggiungi aeromobile",
       "empty": "Nessun aeromobile registrato.",
       "badge": {
@@ -229,61 +229,23 @@
     }
   },
   "PeoplePage": {
-    "kicker": "Anagrafiche",
     "title": "Persone",
-    "backToDashboard": "Torna alla dashboard",
-    "newPerson": "Nuova persona",
-    "searchPlaceholder": "Cerca per nome, cognome o email…",
-    "includeArchivedLabel": "Includi archiviate",
     "table": {
       "name": "Nome",
       "email": "Email",
       "phone": "Telefono",
       "status": "Stato",
-      "profiles": "Profili",
-      "actions": "Azioni",
-      "noValue": "—",
-      "empty": "Nessuna persona trovata."
+      "profiles": "Profili"
     },
     "status": {
       "active": "Attiva",
       "archived": "Archiviata"
     },
     "actions": {
-      "edit": "Modifica",
-      "archive": "Archivia",
-      "unarchive": "Ripristina",
-      "confirmArchive": "Archiviare questa persona?",
-      "confirmUnarchive": "Ripristinare questa persona?",
-      "confirmYes": "Conferma",
-      "confirmCancel": "Annulla",
-      "profiles": "Profili"
-    },
-    "form": {
-      "createTitle": "Nuova persona",
-      "editTitle": "Modifica persona",
-      "firstName": "Nome",
-      "lastName": "Cognome",
-      "email": "Email",
-      "phone": "Telefono",
-      "address": "Indirizzo",
-      "submitCreate": "Crea persona",
-      "submitEdit": "Salva modifiche",
-      "cancel": "Annulla",
-      "requiredField": "Campo obbligatorio.",
-      "genericError": "Si è verificato un errore. Riprova.",
-      "conflictError": "Esiste già una persona con questa email."
-    },
-    "feedback": {
-      "created": "Persona creata.",
-      "updated": "Persona aggiornata.",
-      "archived": "Persona archiviata.",
-      "unarchived": "Persona ripristinata."
+      "edit": "Modifica"
     },
     "profilesPanel": {
       "heading": "Profili",
-      "close": "Chiudi",
-      "loadError": "Impossibile caricare i profili. Riprova.",
       "badges": {
         "pilot": "P",
         "student": "A",
@@ -315,7 +277,7 @@
   },
   "PilotsPage": {
     "title": "Piloti",
-    "sub": "{total} in archivio · {suspended} sospesi",
+    "sub": "{total, plural, one {# pilota} other {# piloti}} · {suspended, plural, one {# sospeso} other {# sospesi}}",
     "cardTitle": "Anagrafica piloti",
     "searchPlaceholder": "Cerca per nome o email…",
     "includeArchivedLabel": "Solo archiviati",
@@ -486,7 +448,7 @@
   },
   "InstructorsPage": {
     "title": "Istruttori",
-    "sub": "{active} attivi · {owed} da liquidare",
+    "sub": "{active, plural, one {# attivo} other {# attivi}} · {owed} da liquidare",
     "kpi": {
       "active": "Istruttori attivi",
       "hours": "Ore totali volate",
@@ -494,7 +456,6 @@
       "avgRate": "Tariffa media payout"
     },
     "cardTitle": "Elenco istruttori",
-    "searchPlaceholder": "Cerca per nome o Ratings…",
     "empty": "Nessun istruttore trovato.",
     "newInstructor": "Aggiungi istruttore",
     "paymentCycleButton": "Ciclo pagamenti",
@@ -632,7 +593,6 @@
     }
   },
   "PersonDetailPage": {
-    "kicker": "Scheda persona",
     "backToList": "Torna all'elenco",
     "backToDashboard": "Torna alla dashboard",
     "personalData": {
@@ -655,19 +615,8 @@
       "viewAll": "Vedi tutti"
     },
     "accountPanel": {
-      "heading": "Saldo conto",
       "balanceLabel": "Saldo attuale",
       "noAccount": "Nessun conto attivo",
-      "loadError": "Impossibile caricare il conto.",
-      "recentTitle": "Ultimi movimenti",
-      "recentEmpty": "Nessun movimento registrato.",
-      "viewStatement": "Estratto conto completo",
-      "movementType": {
-        "topUp": "Ricarica",
-        "adjustment": "Rettifica",
-        "packagePurchase": "Acquisto pacchetto",
-        "flightCharge": "Addebito volo"
-      },
       "topUp": {
         "action": "Registra ricarica",
         "title": "Registra ricarica",
@@ -690,14 +639,7 @@
   },
   "ExpiriesPanel": {
     "heading": "Scadenze",
-    "loadError": "Impossibile caricare le scadenze.",
     "empty": "Nessuna scadenza registrata.",
-    "addAction": "Registra scadenza",
-    "feedback": {
-      "registered": "Scadenza registrata.",
-      "updated": "Scadenza aggiornata.",
-      "deleted": "Scadenza eliminata."
-    },
     "table": {
       "type": "Tipo",
       "expiresAt": "Scadenza",
@@ -708,36 +650,11 @@
         "ok": "In regola",
         "expiring": "In scadenza",
         "expired": "Scaduta"
-      },
-      "pendingBadge": "Proposta in attesa",
-      "actions": "Azioni"
-    },
-    "form": {
-      "title": "Registra scadenza",
-      "type": "Tipo di scadenza",
-      "noCompatibleTypes": "Nessun tipo di scadenza attivo compatibile con i profili di questa persona.",
-      "expiresAt": "Data scadenza",
-      "notes": "Note",
-      "submit": "Registra",
-      "cancel": "Annulla",
-      "save": "Salva",
-      "edit": "Modifica",
-      "requiredField": "Campo obbligatorio.",
-      "scopeMismatchError": "Questo tipo di scadenza non è compatibile con i profili attivi della persona.",
-      "conflictError": "Impossibile registrare la scadenza: la persona è archiviata, il tipo è disattivato, oppure una scadenza di questo tipo è già registrata per questa persona.",
-      "genericError": "Impossibile salvare la scadenza. Riprova."
-    },
-    "actions": {
-      "delete": "Elimina",
-      "confirmDelete": "Eliminare questa scadenza?",
-      "confirmYes": "Conferma",
-      "confirmCancel": "Annulla"
+      }
     }
   },
   "AccountStatementPage": {
     "kicker": "Estratto conto",
-    "backToPerson": "Torna alla scheda",
-    "noAccount": "Nessun conto attivo",
     "table": {
       "date": "Data",
       "type": "Tipo",
@@ -830,99 +747,34 @@
   "FinancePage": {
     "cashRegister": {
       "heading": "Registro cassa",
-      "newMovement": "Nuovo movimento",
-      "automaticBadge": "Automatico",
-      "filters": {
-        "from": "Dal",
-        "to": "Al",
-        "category": "Categoria",
-        "sign": "Segno",
-        "allCategories": "Tutte le categorie",
-        "allSigns": "Tutti",
-        "signIn": "Entrate",
-        "signOut": "Uscite"
-      },
       "table": {
         "date": "Data",
         "category": "Categoria",
         "description": "Descrizione",
         "amount": "Importo",
-        "recordedBy": "Registrato da",
-        "actions": "Azioni",
-        "noValue": "—",
-        "empty": "Nessun movimento di cassa registrato."
-      },
-      "reversalBadge": {
-        "ofDate": "Storno del movimento del {date}",
-        "linked": "Storno di un movimento precedente"
-      },
-      "form": {
-        "title": "Nuovo movimento di cassa",
-        "direction": "Tipo",
-        "directionIn": "Entrata",
-        "directionOut": "Uscita",
-        "category": "Categoria",
-        "amount": "Importo (EUR)",
-        "amountHint": "Importo positivo (es. 50,00) — il tipo decide il segno.",
-        "effectiveDate": "Data",
-        "description": "Descrizione",
-        "submit": "Registra movimento",
-        "cancel": "Annulla",
-        "invalidAmount": "Inserisci un importo valido maggiore di zero.",
-        "requiredField": "Campo obbligatorio.",
-        "conflictError": "La categoria selezionata è stata disattivata: scegline un'altra.",
-        "genericError": "Impossibile registrare il movimento. Riprova.",
-        "success": "Movimento registrato."
-      },
-      "reverse": {
-        "action": "Storna",
-        "reason": "Motivo dello storno",
-        "confirm": "Conferma storno",
-        "cancel": "Annulla",
-        "requiredReason": "Il motivo è obbligatorio.",
-        "conflictError": "Questo movimento non è stornabile (già stornato o automatico).",
-        "genericError": "Impossibile registrare lo storno. Riprova.",
-        "success": "Storno registrato."
+        "recordedBy": "Registrato da"
       }
     }
   },
   "CashReportPage": {
-    "kicker": "Finanze",
     "title": "Report finanziario",
-    "description": "Entrate, uscite e saldo del periodo selezionato, con i totali per categoria.",
-    "backToFinance": "Torna alle finanze",
-    "openInRegister": "Apri nel registro",
-    "filters": {
-      "heading": "Periodo",
-      "month": "Mese corrente",
-      "quarter": "Trimestre corrente",
-      "year": "Anno corrente",
-      "custom": "Intervallo libero",
-      "from": "Dal",
-      "to": "Al"
-    },
     "summary": {
       "totalIn": "Entrate",
       "totalOut": "Uscite",
-      "net": "Saldo del periodo",
-      "movementCount": "Movimenti nel periodo"
+      "net": "Saldo del periodo"
     },
     "categories": {
-      "heading": "Totali per categoria",
       "name": "Categoria",
       "in": "Entrate",
       "out": "Uscite",
-      "net": "Netto",
-      "empty": "Nessun movimento nel periodo selezionato."
+      "net": "Netto"
     }
   },
   "AircraftPage": {
     "title": "Velivoli",
-    "sub": "{total} totali · {available} disponibili · {aog} AOG",
+    "sub": "{total, plural, one {# velivolo} other {# velivoli}} · {available, plural, one {# disponibile} other {# disponibili}} · {aog} fuori servizio",
     "newAircraft": "Aggiungi aeromobile",
     "cardTitle": "Flotta",
-    "exportLabel": "Esporta",
-    "exportXls": "Esporta XLS",
     "searchPlaceholder": "Cerca per marche o modello…",
     "includeArchivedLabel": "Mostra archiviati",
     "empty": "Nessun aeromobile trovato.",
@@ -971,7 +823,6 @@
       "cancel": "Annulla",
       "submitCreate": "Aggiungi aeromobile",
       "submitEdit": "Salva modifiche",
-      "delete": "Elimina",
       "identity": {
         "sectionTitle": "Anagrafica",
         "registration": "Marche",
@@ -990,20 +841,15 @@
         "untilUnknown": "rientro da definire",
         "confirm": "Conferma",
         "confirmReturnToService": "Rimettere in servizio questo velivolo?",
-        "confirmQuestionOne": "Confermi il fermo? 1 prenotazione impattata",
-        "confirmQuestionMany": "Confermi il fermo? {count} prenotazioni impattate",
-        "confirmQuestionUnknown": "Confermi il fermo? Conteggio non disponibile",
-        "impactPreviewNone": "Nessuna prenotazione impattata",
-        "impactPreviewOne": "Stai per impattare 1 prenotazione.",
-        "impactPreviewMany": "Stai per impattare {count} prenotazioni.",
-        "impactBannerOne": "Fermo registrato: 1 prenotazione impattata.",
-        "impactBannerMany": "Fermo registrato: {count} prenotazioni impattate.",
-        "impactRowOne": "1 prenotazione nel fermo",
-        "impactRowMany": "{count} prenotazioni nel fermo",
+        "confirmQuestion": "Mettere fuori servizio? {count, plural, =0 {Nessuna prenotazione coinvolta} one {# prenotazione coinvolta} other {# prenotazioni coinvolte}}",
+        "confirmQuestionUnknown": "Mettere fuori servizio? Conteggio non disponibile",
+        "impactPreview": "{count, plural, =0 {Nessuna prenotazione coinvolta} one {Interessa # prenotazione.} other {Interessa # prenotazioni.}}",
+        "impactBanner": "Fuori servizio registrato: {count, plural, one {# prenotazione coinvolta} other {# prenotazioni coinvolte}}.",
+        "impactRow": "{count, plural, one {# prenotazione nel periodo} other {# prenotazioni nel periodo}}",
         "impactSplit": "In attesa (congelate): {pending} · Approvate (da gestire): {approved}",
         "impactWindowUntil": "conteggio fino al {date} compreso",
         "impactWindowUndelimited": "rientro da definire: conteggio non delimitato",
-        "impactWindowOverdue": "fermo oltre il {date} previsto: conteggio non delimitato",
+        "impactWindowOverdue": "fuori servizio oltre il {date} previsto: conteggio non delimitato",
         "impactEstimate": "stima",
         "impactBookingsLink": "Vedi le prenotazioni"
       },
@@ -1052,71 +898,14 @@
     }
   },
   "FlightsPage": {
-    "kicker": "Voli",
     "title": "Voli",
-    "description": "Registra un volo e vedi l'addebito su velivolo e, se presente, istruttore generato automaticamente.",
-    "titleOwn": "I miei voli",
-    "descriptionOwn": "Il tuo registro voli personale, storico completo incluso.",
-    "backToDashboard": "Torna alla dashboard",
-    "searchPlaceholder": "Cerca...",
-    "noResults": "Nessun risultato.",
     "form": {
-      "title": "Registra volo",
-      "aircraft": "Velivolo",
-      "noAircraftAvailable": "Nessun velivolo attivo disponibile.",
-      "person": "Pilota o allievo",
-      "noPersonAvailable": "Nessuna persona con profilo pilota o allievo attivo.",
-      "instructor": "Istruttore",
-      "noInstructor": "— Nessuno —",
-      "flightDate": "Data volo",
-      "flightType": "Tipo di volo",
       "flightTypes": {
         "private": "Turismo",
         "school": "Scuola"
-      },
-      "soloMode": "Doppio comando o solista?",
-      "soloModes": {
-        "dual": "Doppio comando",
-        "solo": "Solista"
-      },
-      "departure": "Aeroporto di partenza",
-      "arrival": "Aeroporto di arrivo",
-      "takeoffTime": "Ora decollo",
-      "landingTime": "Ora atterraggio",
-      "computedDuration": "Durata",
-      "takeoffs": "Decolli",
-      "landings": "Atterraggi",
-      "submit": "Registra volo",
-      "requiredField": "Campo obbligatorio.",
-      "errors": {
-        "FLIGHT_TIMES_INVALID": "L'orario di atterraggio deve essere successivo al decollo e la durata non può superare 24 ore.",
-        "NO_AIRCRAFT_RATE": "Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.",
-        "NO_INSTRUCTOR_RATE": "Nessuna tariffa oraria è in vigore per questo istruttore alla data del volo.",
-        "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "Un volo scuola richiede un istruttore.",
-        "SOLO_REQUIRES_SCHOOL": "Doppio comando/solista è valido solo per i voli scuola.",
-        "AIRCRAFT_ARCHIVED": "Il velivolo selezionato è archiviato.",
-        "PERSON_ARCHIVED": "La persona selezionata è archiviata.",
-        "PERSON_NOT_PILOT_OR_STUDENT": "La persona deve avere un profilo pilota o allievo attivo.",
-        "INSTRUCTOR_NOT_FOUND": "L'istruttore selezionato non ha un profilo istruttore attivo.",
-        "INSTRUCTOR_SAME_AS_PILOT": "L'istruttore non può coincidere con il pilota o l'allievo.",
-        "FLIGHT_DATE_IN_FUTURE": "La data del volo non può essere nel futuro.",
-        "generic": "Impossibile registrare il volo. Riprova."
       }
     },
-    "result": {
-      "title": "Addebito generato",
-      "minutes": "Durata",
-      "aircraftRate": "Tariffa velivolo",
-      "aircraftAmount": "Costo velivolo",
-      "instructorRate": "Tariffa istruttore",
-      "instructorAmount": "Costo istruttore",
-      "chargedMinutes": "Minuti addebitati",
-      "total": "Totale addebitato",
-      "newBalance": "Nuovo saldo"
-    },
     "list": {
-      "heading": "Registro voli",
-      "empty": "Nessun volo registrato.",
       "table": {
         "date": "Data",
         "route": "Tratta",
@@ -1124,7 +913,6 @@
         "aircraft": "Velivolo",
         "person": "Persona",
         "instructor": "Istruttore",
-        "noInstructor": "—",
         "type": "Tipo",
         "soloSuffix": "solista",
         "departure": "Partenza",
@@ -1136,24 +924,8 @@
         "takeoffs": "Decolli",
         "landings": "Atterraggi",
         "movements": "Decolli/Atterraggi",
-        "pic": "PIC",
-        "noValue": "—",
-        "actions": "Azioni"
+        "pic": "PIC"
       }
-    },
-    "filters": {
-      "dateFrom": "Dal",
-      "dateTo": "Al",
-      "aircraft": "Velivolo",
-      "allAircraft": "Tutti i velivoli",
-      "person": "Persona",
-      "allPeople": "Tutte le persone",
-      "flightType": "Tipo",
-      "allTypes": "Tutti i tipi",
-      "archivedSuffix": " (Archiviato)",
-      "reset": "Azzera filtri",
-      "instructorActive": "Filtro istruttore attivo",
-      "instructorClear": "Rimuovi filtro istruttore"
     },
     "pdf": {
       "totalDuration": "Durata totale",
@@ -1162,8 +934,8 @@
   },
   "LogbookPage": {
     "title": "Registro voli",
-    "sub": "{count, plural, one {# voce registrata} other {# voci registrate}}",
-    "subOwn": "{count, plural, one {# voce} other {# voci}} · solo i tuoi voli",
+    "sub": "{count, plural, one {# volo registrato} other {# voli registrati}}",
+    "subOwn": "{count, plural, one {# volo} other {# voli}} · solo i tuoi voli",
     "newEntry": "Nuova voce",
     "cardTitle": "Diario di volo",
     "exportMenu": {
@@ -1335,7 +1107,7 @@
     },
     "registry": {
       "cardTitle": "Registro scadenze",
-      "shown": "{count} mostrati",
+      "shown": "{count, plural, one {# mostrata} other {# mostrate}}",
       "segmented": {
         "win60": "≤60g",
         "win30": "≤30g",
@@ -1393,7 +1165,7 @@
       },
       "reminders": {
         "button": "Invia promemoria",
-        "sent": "Promemoria inviati: {holders} ai titolari, {digests} agli amministratori.",
+        "sent": "Promemoria ai titolari: {holders} · riepiloghi agli amministratori: {digests}.",
         "error": "Invio non riuscito. Riprova."
       },
       "membershipFee": {
@@ -1485,9 +1257,9 @@
       "filtersInstructor": "Istruttore",
       "aog": "AOG",
       "available": "Disponibile",
-      "weekBookingsCount": "{count} prenotazioni",
+      "weekBookingsCount": "{count, plural, one {# prenotazione} other {# prenotazioni}}",
       "mobile": {
-        "agendaCount": "{count} movimenti",
+        "agendaCount": "{count, plural, one {# prenotazione} other {# prenotazioni}}",
         "now": "ORA · {time}",
         "aogTitle": "{registration} fuori servizio",
         "openDetail": "Apri dettaglio",
@@ -1539,7 +1311,7 @@
       },
       "schedulingWindow": {
         "hours": "campo aperto {open}–{close}",
-        "advance": "prenotabile fino a {days} giorni in anticipo"
+        "advance": "prenotabile fino a {days, plural, one {# giorno} other {# giorni}} prima"
       },
       "success": "Prenotazione creata.",
       "successWithWarnings": "Prenotazione creata. Attenzione: i seguenti documenti risultano scaduti (non bloccanti):",
@@ -1552,8 +1324,8 @@
     },
     "list": {
       "cardTitle": "Prenotazioni",
-      "pendingSummary": "{pending} in attesa · {total} totali",
-      "filteredSummary": "{total} totali",
+      "pendingSummary": "{pending} in attesa su {total}",
+      "filteredSummary": "{total, plural, one {# prenotazione} other {# prenotazioni}}",
       "newButton": "Nuova prenotazione",
       "exportLabel": "Esporta",
       "exportXls": "Esporta XLS",
@@ -1654,8 +1426,8 @@
       "expiryMissing": "{typeName}: mancante",
       "membershipExpired": "Quota associativa scaduta il {date}",
       "membershipMissing": "Quota associativa mai pagata",
-      "currency": "Currency scaduta: {flightsInWindow, plural, one {# volo} other {# voli}} negli ultimi {windowDays} giorni (minimo {minFlights}); ultimo volo il {date}, {days, plural, one {# giorno} other {# giorni}} fa",
-      "currencyNever": "Currency scaduta: nessun volo registrato (minimo {minFlights, plural, one {# volo} other {# voli}} negli ultimi {windowDays} giorni)",
+      "currency": "Currency scaduta: {flightsInWindow, plural, one {# volo} other {# voli}} {windowDays, plural, one {nell'ultimo giorno} other {negli ultimi # giorni}} (minimo {minFlights}); ultimo volo il {date}, {days, plural, one {# giorno} other {# giorni}} fa",
+      "currencyNever": "Currency scaduta: nessun volo registrato (minimo {minFlights, plural, one {# volo} other {# voli}} {windowDays, plural, one {nell'ultimo giorno} other {negli ultimi # giorni}})",
       "balance": "Saldo insufficiente: saldo {balance}, costo {cost}",
       "outOfService": "Velivolo {registration} fuori servizio: {reason}",
       "outOfServiceUntil": "Velivolo {registration} fuori servizio fino al {date} compreso: {reason}"
@@ -1750,7 +1522,7 @@
       "maxAdvanceDays": "Anticipo massimo prenotazione",
       "minutesSuffix": "min",
       "daysSuffix": "giorni",
-      "hint": "Gli aeromobili possono essere prenotati tra le {open} e le {close} locali, in incrementi di {slot} minuti, fino a {days} giorni in anticipo. Durata minima slot e margine di turnaround sono indicativi (non impediscono il salvataggio di una prenotazione).",
+      "hint": "I velivoli si possono prenotare tra le {open} e le {close} (ora locale), a passi di {slot, plural, one {# minuto} other {# minuti}}, fino a {days, plural, one {# giorno} other {# giorni}} prima. Durata minima e tempo tra prenotazioni sono indicativi: non impediscono di salvare una prenotazione.",
       "invalidRange": "L'orario di chiusura deve essere dopo quello di apertura."
     },
     "smtp": {
@@ -1917,7 +1689,7 @@
         "openDetail": "Apri dettaglio",
         "close": "Chiudi",
         "empty": "Nessuna categoria in questo catalogo.",
-        "movementsCount": "{count} movimenti"
+        "movementsCount": "{count, plural, one {# movimento} other {# movimenti}}"
       }
     }
   },
@@ -2141,7 +1913,6 @@
     },
     "mobile": {
       "bookTypeAll": "Tutti",
-      "unattributedChip": "Non attribuiti",
       "filters": "Filtri",
       "filtersCount": "Filtri ({count})",
       "filtersTitle": "Filtri del registro",
@@ -2182,11 +1953,11 @@
     "charts": {
       "revenue": {
         "title": "Ricavi",
-        "sub": "ultimi {count} mesi · €"
+        "sub": "{count, plural, one {ultimo mese} other {ultimi # mesi}} · €"
       },
       "hours": {
         "title": "Ore volate",
-        "sub": "ultimi {count} mesi · h"
+        "sub": "{count, plural, one {ultimo mese} other {ultimi # mesi}} · h"
       },
       "fleet": {
         "title": "Utilizzo flotta",

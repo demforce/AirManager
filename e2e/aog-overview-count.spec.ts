@@ -45,16 +45,16 @@ async function loginExpectingDashboard(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/it\/dashboard$/);
 }
 
-/** The trailing "N AOG" of a `.page-head .sub` summary, as a number. */
+/** The trailing "N fuori servizio" of a `.page-head .sub` summary, as a number. */
 function aogCountIn(sub: string): number {
-  const match = /(\d+)\s+AOG/.exec(sub);
-  if (!match) throw new Error(`No "N AOG" segment in page-head sub: ${JSON.stringify(sub)}`);
+  const match = /(\d+)\s+fuori servizio/.exec(sub);
+  if (!match) throw new Error(`No "N fuori servizio" segment in page-head sub: ${JSON.stringify(sub)}`);
   return Number(match[1]);
 }
 
-/** The "N disponibili" of a `N totali · N disponibili · N AOG` summary (the Flotta page head AND the Panoramica's Flotta widget share the template). */
+/** The "N disponibili" of a `N velivoli · N disponibili · N fuori servizio` summary (the Flotta page head AND the Panoramica's Flotta widget share the template). ICU plural since story 19.12a: "1 disponibile" when the count is 1. */
 function availableCountIn(summary: string): number {
-  const match = /(\d+)\s+disponibili/.exec(summary);
+  const match = /(\d+)\s+disponibil[ei]\b/.exec(summary);
   if (!match) throw new Error(`No "N disponibili" segment in summary: ${JSON.stringify(summary)}`);
   return Number(match[1]);
 }

@@ -168,7 +168,7 @@
     },
     "instructorLanding": {
       "greeting": "Good morning, {name}",
-      "sub": "{flightsToday} flights today · {owed} owed this month",
+      "sub": "{flightsToday, plural, one {# flight} other {# flights}} today · {owed} owed this month",
       "kpis": {
         "hoursMonth": "Hours this month",
         "payoutRate": "Payout rate",
@@ -229,61 +229,23 @@
     }
   },
   "PeoplePage": {
-    "kicker": "Records",
     "title": "People",
-    "backToDashboard": "Back to dashboard",
-    "newPerson": "New person",
-    "searchPlaceholder": "Search by first name, last name or email…",
-    "includeArchivedLabel": "Include archived",
     "table": {
       "name": "Name",
       "email": "Email",
       "phone": "Phone",
       "status": "Status",
-      "profiles": "Profiles",
-      "actions": "Actions",
-      "noValue": "—",
-      "empty": "No people found."
+      "profiles": "Profiles"
     },
     "status": {
       "active": "Active",
       "archived": "Archived"
     },
     "actions": {
-      "edit": "Edit",
-      "archive": "Archive",
-      "unarchive": "Restore",
-      "confirmArchive": "Archive this person?",
-      "confirmUnarchive": "Restore this person?",
-      "confirmYes": "Confirm",
-      "confirmCancel": "Cancel",
-      "profiles": "Profiles"
-    },
-    "form": {
-      "createTitle": "New person",
-      "editTitle": "Edit person",
-      "firstName": "First name",
-      "lastName": "Last name",
-      "email": "Email",
-      "phone": "Phone",
-      "address": "Address",
-      "submitCreate": "Create person",
-      "submitEdit": "Save changes",
-      "cancel": "Cancel",
-      "requiredField": "This field is required.",
-      "genericError": "Something went wrong. Please try again.",
-      "conflictError": "A person with this email already exists."
-    },
-    "feedback": {
-      "created": "Person created.",
-      "updated": "Person updated.",
-      "archived": "Person archived.",
-      "unarchived": "Person restored."
+      "edit": "Edit"
     },
     "profilesPanel": {
       "heading": "Profiles",
-      "close": "Close",
-      "loadError": "Could not load profiles. Please try again.",
       "badges": {
         "pilot": "P",
         "student": "S",
@@ -494,7 +456,6 @@
       "avgRate": "Average payout rate"
     },
     "cardTitle": "Instructor roster",
-    "searchPlaceholder": "Search by name or ratings…",
     "empty": "No instructors found.",
     "newInstructor": "Add instructor",
     "paymentCycleButton": "Payment cycle",
@@ -632,7 +593,6 @@
     }
   },
   "PersonDetailPage": {
-    "kicker": "Person record",
     "backToList": "Back to list",
     "backToDashboard": "Back to dashboard",
     "personalData": {
@@ -655,19 +615,8 @@
       "viewAll": "View all"
     },
     "accountPanel": {
-      "heading": "Account balance",
       "balanceLabel": "Current balance",
       "noAccount": "No active account",
-      "loadError": "Could not load the account.",
-      "recentTitle": "Recent movements",
-      "recentEmpty": "No movements recorded.",
-      "viewStatement": "Full account statement",
-      "movementType": {
-        "topUp": "Top-up",
-        "adjustment": "Adjustment",
-        "packagePurchase": "Package purchase",
-        "flightCharge": "Flight charge"
-      },
       "topUp": {
         "action": "Record top-up",
         "title": "Record top-up",
@@ -690,14 +639,7 @@
   },
   "ExpiriesPanel": {
     "heading": "Expiries",
-    "loadError": "Could not load the expiries.",
     "empty": "No expiry registered.",
-    "addAction": "Register expiry",
-    "feedback": {
-      "registered": "Expiry registered.",
-      "updated": "Expiry updated.",
-      "deleted": "Expiry deleted."
-    },
     "table": {
       "type": "Type",
       "expiresAt": "Expires",
@@ -708,36 +650,11 @@
         "ok": "OK",
         "expiring": "Expiring soon",
         "expired": "Expired"
-      },
-      "pendingBadge": "Pending proposal",
-      "actions": "Actions"
-    },
-    "form": {
-      "title": "Register expiry",
-      "type": "Expiry type",
-      "noCompatibleTypes": "No active expiry type is compatible with this person's profiles.",
-      "expiresAt": "Expires on",
-      "notes": "Notes",
-      "submit": "Register",
-      "cancel": "Cancel",
-      "save": "Save",
-      "edit": "Edit",
-      "requiredField": "This field is required.",
-      "scopeMismatchError": "This expiry type is not compatible with the person's active profiles.",
-      "conflictError": "Could not register the expiry: the person is archived, the type is deactivated, or an expiry of this type is already registered for this person.",
-      "genericError": "Could not save the expiry. Please try again."
-    },
-    "actions": {
-      "delete": "Delete",
-      "confirmDelete": "Delete this expiry?",
-      "confirmYes": "Confirm",
-      "confirmCancel": "Cancel"
+      }
     }
   },
   "AccountStatementPage": {
     "kicker": "Account statement",
-    "backToPerson": "Back to record",
-    "noAccount": "No active account",
     "table": {
       "date": "Date",
       "type": "Type",
@@ -830,90 +747,27 @@
   "FinancePage": {
     "cashRegister": {
       "heading": "Cash register",
-      "newMovement": "New movement",
-      "automaticBadge": "Automatic",
-      "filters": {
-        "from": "From",
-        "to": "To",
-        "category": "Category",
-        "sign": "Sign",
-        "allCategories": "All categories",
-        "allSigns": "All",
-        "signIn": "Inflows",
-        "signOut": "Outflows"
-      },
       "table": {
         "date": "Date",
         "category": "Category",
         "description": "Description",
         "amount": "Amount",
-        "recordedBy": "Recorded by",
-        "actions": "Actions",
-        "noValue": "—",
-        "empty": "No cash movement recorded."
-      },
-      "reversalBadge": {
-        "ofDate": "Reversal of the movement of {date}",
-        "linked": "Reversal of a previous movement"
-      },
-      "form": {
-        "title": "New cash movement",
-        "direction": "Type",
-        "directionIn": "Inflow",
-        "directionOut": "Outflow",
-        "category": "Category",
-        "amount": "Amount (EUR)",
-        "amountHint": "Positive amount (e.g. 50.00) — the type decides the sign.",
-        "effectiveDate": "Date",
-        "description": "Description",
-        "submit": "Record movement",
-        "cancel": "Cancel",
-        "invalidAmount": "Enter a valid amount greater than zero.",
-        "requiredField": "This field is required.",
-        "conflictError": "The selected category has been deactivated: pick another one.",
-        "genericError": "Could not record the movement. Try again.",
-        "success": "Movement recorded."
-      },
-      "reverse": {
-        "action": "Reverse",
-        "reason": "Reversal reason",
-        "confirm": "Confirm reversal",
-        "cancel": "Cancel",
-        "requiredReason": "The reason is required.",
-        "conflictError": "This movement cannot be reversed (already reversed or automatic).",
-        "genericError": "Could not record the reversal. Try again.",
-        "success": "Reversal recorded."
+        "recordedBy": "Recorded by"
       }
     }
   },
   "CashReportPage": {
-    "kicker": "Finance",
     "title": "Financial report",
-    "description": "Inflows, outflows and balance for the selected period, with totals by category.",
-    "backToFinance": "Back to finance",
-    "openInRegister": "Open in the register",
-    "filters": {
-      "heading": "Period",
-      "month": "Current month",
-      "quarter": "Current quarter",
-      "year": "Current year",
-      "custom": "Custom range",
-      "from": "From",
-      "to": "To"
-    },
     "summary": {
       "totalIn": "Inflows",
       "totalOut": "Outflows",
-      "net": "Period balance",
-      "movementCount": "Movements in period"
+      "net": "Period balance"
     },
     "categories": {
-      "heading": "Totals by category",
       "name": "Category",
       "in": "Inflows",
       "out": "Outflows",
-      "net": "Net",
-      "empty": "No movement in the selected period."
+      "net": "Net"
     }
   },
   "AircraftPage": {
@@ -921,8 +775,6 @@
     "sub": "{total} total · {available} available · {aog} AOG",
     "newAircraft": "Add aircraft",
     "cardTitle": "Fleet",
-    "exportLabel": "Export",
-    "exportXls": "Export XLS",
     "searchPlaceholder": "Search by registration or model…",
     "includeArchivedLabel": "Show archived",
     "empty": "No aircraft found.",
@@ -971,7 +823,6 @@
       "cancel": "Cancel",
       "submitCreate": "Add aircraft",
       "submitEdit": "Save changes",
-      "delete": "Delete",
       "identity": {
         "sectionTitle": "Identity",
         "registration": "Registration",
@@ -990,16 +841,11 @@
         "untilUnknown": "return date not yet known",
         "confirm": "Confirm",
         "confirmReturnToService": "Return this aircraft to service?",
-        "confirmQuestionOne": "Confirm the grounding? 1 booking impacted",
-        "confirmQuestionMany": "Confirm the grounding? {count} bookings impacted",
+        "confirmQuestion": "Confirm the grounding? {count, plural, =0 {No bookings impacted} one {# booking impacted} other {# bookings impacted}}",
         "confirmQuestionUnknown": "Confirm the grounding? Count unavailable",
-        "impactPreviewNone": "No bookings impacted",
-        "impactPreviewOne": "You are about to impact 1 booking.",
-        "impactPreviewMany": "You are about to impact {count} bookings.",
-        "impactBannerOne": "Grounding recorded: 1 booking impacted.",
-        "impactBannerMany": "Grounding recorded: {count} bookings impacted.",
-        "impactRowOne": "1 booking inside the grounding",
-        "impactRowMany": "{count} bookings inside the grounding",
+        "impactPreview": "{count, plural, =0 {No bookings impacted} one {You are about to impact # booking.} other {You are about to impact # bookings.}}",
+        "impactBanner": "Grounding recorded: {count, plural, one {# booking impacted} other {# bookings impacted}}.",
+        "impactRow": "{count, plural, one {# booking inside the grounding} other {# bookings inside the grounding}}",
         "impactSplit": "Pending (frozen): {pending} · Approved (to handle): {approved}",
         "impactWindowUntil": "counted until {date} inclusive",
         "impactWindowUndelimited": "return date not yet known: count not delimited",
@@ -1052,71 +898,14 @@
     }
   },
   "FlightsPage": {
-    "kicker": "Flights",
     "title": "Flights",
-    "description": "Log a flight and see the aircraft charge, plus the instructor charge when there is one, generated automatically.",
-    "titleOwn": "My flights",
-    "descriptionOwn": "Your personal flight log, including cancelled flights.",
-    "backToDashboard": "Back to dashboard",
-    "searchPlaceholder": "Search...",
-    "noResults": "No matches.",
     "form": {
-      "title": "Log a flight",
-      "aircraft": "Aircraft",
-      "noAircraftAvailable": "No active aircraft available.",
-      "person": "Pilot or student",
-      "noPersonAvailable": "No person with an active pilot or student profile.",
-      "instructor": "Instructor",
-      "noInstructor": "— None —",
-      "flightDate": "Flight date",
-      "flightType": "Flight type",
       "flightTypes": {
         "private": "Tourism",
         "school": "School"
-      },
-      "soloMode": "Dual or solo?",
-      "soloModes": {
-        "dual": "Dual",
-        "solo": "Solo"
-      },
-      "departure": "Departure airport",
-      "arrival": "Arrival airport",
-      "takeoffTime": "Takeoff time",
-      "landingTime": "Landing time",
-      "computedDuration": "Duration",
-      "takeoffs": "Takeoffs",
-      "landings": "Landings",
-      "submit": "Log flight",
-      "requiredField": "Required field.",
-      "errors": {
-        "FLIGHT_TIMES_INVALID": "The landing time must be after takeoff and the duration cannot exceed 24 hours.",
-        "NO_AIRCRAFT_RATE": "No hourly rate is in effect for this aircraft on the flight date.",
-        "NO_INSTRUCTOR_RATE": "No hourly rate is in effect for this instructor on the flight date.",
-        "SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR": "A school flight requires an instructor.",
-        "SOLO_REQUIRES_SCHOOL": "Dual/solo is only valid for school flights.",
-        "AIRCRAFT_ARCHIVED": "The selected aircraft is archived.",
-        "PERSON_ARCHIVED": "The selected person is archived.",
-        "PERSON_NOT_PILOT_OR_STUDENT": "The person must have an active pilot or student profile.",
-        "INSTRUCTOR_NOT_FOUND": "The selected instructor has no active instructor profile.",
-        "INSTRUCTOR_SAME_AS_PILOT": "The instructor cannot be the same person as the pilot or student.",
-        "FLIGHT_DATE_IN_FUTURE": "The flight date cannot be in the future.",
-        "generic": "Could not log the flight. Please try again."
       }
     },
-    "result": {
-      "title": "Charge generated",
-      "minutes": "Duration",
-      "aircraftRate": "Aircraft rate",
-      "aircraftAmount": "Aircraft cost",
-      "instructorRate": "Instructor rate",
-      "instructorAmount": "Instructor cost",
-      "chargedMinutes": "Charged minutes",
-      "total": "Total charged",
-      "newBalance": "New balance"
-    },
     "list": {
-      "heading": "Flight log",
-      "empty": "No flights logged yet.",
       "table": {
         "date": "Date",
         "route": "Route",
@@ -1124,7 +913,6 @@
         "aircraft": "Aircraft",
         "person": "Person",
         "instructor": "Instructor",
-        "noInstructor": "—",
         "type": "Type",
         "soloSuffix": "solo",
         "departure": "Departure",
@@ -1136,24 +924,8 @@
         "takeoffs": "Takeoffs",
         "landings": "Landings",
         "movements": "Takeoffs/Landings",
-        "pic": "PIC",
-        "noValue": "—",
-        "actions": "Actions"
+        "pic": "PIC"
       }
-    },
-    "filters": {
-      "dateFrom": "From",
-      "dateTo": "To",
-      "aircraft": "Aircraft",
-      "allAircraft": "All aircraft",
-      "person": "Person",
-      "allPeople": "All people",
-      "flightType": "Type",
-      "allTypes": "All types",
-      "archivedSuffix": " (Archived)",
-      "reset": "Clear filters",
-      "instructorActive": "Instructor filter active",
-      "instructorClear": "Remove instructor filter"
     },
     "pdf": {
       "totalDuration": "Total duration",
@@ -1485,9 +1257,9 @@
       "filtersInstructor": "Instructor",
       "aog": "AOG",
       "available": "Available",
-      "weekBookingsCount": "{count} bookings",
+      "weekBookingsCount": "{count, plural, one {# booking} other {# bookings}}",
       "mobile": {
-        "agendaCount": "{count} movements",
+        "agendaCount": "{count, plural, one {# booking} other {# bookings}}",
         "now": "NOW · {time}",
         "aogTitle": "{registration} out of service",
         "openDetail": "Open detail",
@@ -1539,7 +1311,7 @@
       },
       "schedulingWindow": {
         "hours": "airfield open {open}–{close}",
-        "advance": "bookable up to {days} days ahead"
+        "advance": "bookable up to {days, plural, one {# day} other {# days}} ahead"
       },
       "success": "Booking created.",
       "successWithWarnings": "Booking created. Warning: the following documents are expired (non-blocking):",
@@ -1654,8 +1426,8 @@
       "expiryMissing": "{typeName}: missing",
       "membershipExpired": "Membership fee expired on {date}",
       "membershipMissing": "Membership fee never paid",
-      "currency": "Currency lapsed: {flightsInWindow, plural, one {# flight} other {# flights}} in the last {windowDays} days (minimum {minFlights}); last flight on {date}, {days, plural, one {# day} other {# days}} ago",
-      "currencyNever": "Currency lapsed: no flight logged (minimum {minFlights, plural, one {# flight} other {# flights}} in the last {windowDays} days)",
+      "currency": "Currency lapsed: {flightsInWindow, plural, one {# flight} other {# flights}} {windowDays, plural, one {in the last day} other {in the last # days}} (minimum {minFlights}); last flight on {date}, {days, plural, one {# day} other {# days}} ago",
+      "currencyNever": "Currency lapsed: no flight logged (minimum {minFlights, plural, one {# flight} other {# flights}} {windowDays, plural, one {in the last day} other {in the last # days}})",
       "balance": "Insufficient balance: balance {balance}, cost {cost}",
       "outOfService": "Aircraft {registration} out of service: {reason}",
       "outOfServiceUntil": "Aircraft {registration} out of service until {date} inclusive: {reason}"
@@ -1750,7 +1522,7 @@
       "maxAdvanceDays": "Maximum booking advance",
       "minutesSuffix": "min",
       "daysSuffix": "days",
-      "hint": "Aircraft can be booked between {open} and {close} local time, in {slot}-minute increments, up to {days} days in advance. Minimum slot duration and turnaround margin are advisory (they never block saving a booking).",
+      "hint": "Aircraft can be booked between {open} and {close} local time, in {slot}-minute increments, up to {days, plural, one {# day} other {# days}} in advance. Minimum slot duration and turnaround margin are advisory (they never block saving a booking).",
       "invalidRange": "The closing time must be after the opening time."
     },
     "smtp": {
@@ -1917,7 +1689,7 @@
         "openDetail": "Open detail",
         "close": "Close",
         "empty": "No category in this catalogue.",
-        "movementsCount": "{count} movements"
+        "movementsCount": "{count, plural, one {# movement} other {# movements}}"
       }
     }
   },
@@ -2141,7 +1913,6 @@
     },
     "mobile": {
       "bookTypeAll": "All",
-      "unattributedChip": "Unattributed",
       "filters": "Filters",
       "filtersCount": "Filters ({count})",
       "filtersTitle": "Ledger filters",
@@ -2182,11 +1953,11 @@
     "charts": {
       "revenue": {
         "title": "Revenue",
-        "sub": "last {count} months · €"
+        "sub": "{count, plural, one {last month} other {last # months}} · €"
       },
       "hours": {
         "title": "Hours flown",
-        "sub": "last {count} months · h"
+        "sub": "{count, plural, one {last month} other {last # months}} · h"
       },
       "fleet": {
         "title": "Fleet utilization",

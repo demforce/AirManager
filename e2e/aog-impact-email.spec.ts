@@ -218,7 +218,7 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
 
     await page.getByTestId('out-of-service-until').fill(until);
     // With the window closed at +10, the +40 booking drops out: 3 approved.
-    await expect(preview).toContainText('Stai per impattare 4 prenotazioni.');
+    await expect(preview).toContainText('Interessa 4 prenotazioni.');
     await expect(preview).toContainText('In attesa (congelate): 1 · Approvate (da gestire): 3');
     await expect(preview).toContainText(`conteggio fino al ${formatDateOnly(until, 'it')} compreso`);
 
@@ -238,7 +238,7 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
     await page.getByTestId('out-of-service-confirm').click();
     const banner = page.getByTestId('aog-impact-banner');
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText('Fermo registrato: 4 prenotazioni impattate.');
+    await expect(banner).toContainText('Fuori servizio registrato: 4 prenotazioni coinvolte.');
     await expect(banner).toContainText('In attesa (congelate): 1 · Approvate (da gestire): 3');
     await expect(banner).toContainText(`conteggio fino al ${formatDateOnly(until, 'it')} compreso`);
     await expect(page.getByTestId('aog-impact-bookings-link')).toHaveAttribute('href', '/it/dashboard/bookings?status=PENDING,APPROVED');
@@ -249,14 +249,14 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
     await page.waitForTimeout(6_000);
     await expect(page.getByTestId('toast')).toHaveCount(0);
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText('Fermo registrato: 4 prenotazioni impattate.');
+    await expect(banner).toContainText('Fuori servizio registrato: 4 prenotazioni coinvolte.');
 
     // --- AC 6: the line comes back at every reopening ----------------------
     await page.locator('[role="dialog"] .so-head .iconbtn').click();
     await openFleetEditor(page, aircraft.registration);
     const row = page.getByTestId('aog-impact-row');
     await expect(row).toBeVisible();
-    await expect(row).toContainText('4 prenotazioni nel fermo');
+    await expect(row).toContainText('4 prenotazioni nel periodo');
     await expect(row).toContainText(`conteggio fino al ${formatDateOnly(until, 'it')} compreso`);
     // The banner belonged to the act; the armed state of the two-step must not
     // have survived the remount either (the class of BLOCKER 14.4 F1).
@@ -303,28 +303,28 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
 
     await openFleetEditor(page, aircraft.registration);
     const preview = page.getByTestId('aog-impact-preview');
-    await expect(preview).toContainText('Stai per impattare 2 prenotazioni.');
+    await expect(preview).toContainText('Interessa 2 prenotazioni.');
     await expect(preview).toContainText('rientro da definire: conteggio non delimitato');
 
     // The discriminance of the window itself: with a date at +10 the far
     // booking is out, and the number MOVES.
     await page.getByTestId('out-of-service-until').fill(dateOnlyFromToday(10));
-    await expect(preview).toContainText('Stai per impattare 1 prenotazione.');
+    await expect(preview).toContainText('Interessa 1 prenotazione.');
     // ...and clearing it puts the count back where it was.
     await page.getByTestId('out-of-service-until').fill('');
-    await expect(preview).toContainText('Stai per impattare 2 prenotazioni.');
+    await expect(preview).toContainText('Interessa 2 prenotazioni.');
 
     await page.getByTestId('out-of-service-reason').fill('Attesa pezzo');
     await page.getByTestId('out-of-service-submit').click();
     await page.getByTestId('out-of-service-confirm').click();
 
     const banner = page.getByTestId('aog-impact-banner');
-    await expect(banner).toContainText('Fermo registrato: 2 prenotazioni impattate.');
+    await expect(banner).toContainText('Fuori servizio registrato: 2 prenotazioni coinvolte.');
     await expect(banner).toContainText('rientro da definire: conteggio non delimitato');
 
     await page.locator('[role="dialog"] .so-head .iconbtn').click();
     await openFleetEditor(page, aircraft.registration);
-    await expect(page.getByTestId('aog-impact-row')).toContainText('2 prenotazioni nel fermo');
+    await expect(page.getByTestId('aog-impact-row')).toContainText('2 prenotazioni nel periodo');
     await expect(page.getByTestId('aog-impact-row')).toContainText('rientro da definire: conteggio non delimitato');
 
     // The email says the same thing, in the same words.
@@ -365,7 +365,7 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
 
     // Zero is still a result, and still says which window it was counted over
     // (AC 8) — just without the box.
-    await expect(preview).toHaveText('Nessuna prenotazione impattata · rientro da definire: conteggio non delimitato');
+    await expect(preview).toHaveText('Nessuna prenotazione coinvolta · rientro da definire: conteggio non delimitato');
   });
 
   /**
@@ -426,7 +426,7 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
       // Settled either way: armed (the fix) or already reporting (the defect).
       await expect(page.getByTestId('out-of-service-confirm').or(page.getByTestId('aog-impact-banner'))).toBeVisible();
       expect(groundingPosts, `a double click at ${point.x},${point.y} must not reach the grounding endpoint`).toEqual([]);
-      await expect(page.getByText('Confermi il fermo? 0 prenotazioni impattate', { exact: true })).toBeVisible();
+      await expect(page.getByText('Mettere fuori servizio? Nessuna prenotazione coinvolta', { exact: true })).toBeVisible();
       await page.getByTestId('out-of-service-cancel').click();
     }
     const afterDoubleClicks = await page.request.get(`/api/v1/aircraft/${aircraft.id}`);
@@ -524,8 +524,8 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
 
     await openFleetEditor(page, aircraft.registration);
     const row = page.getByTestId('aog-impact-row');
-    await expect(row).toContainText('1 prenotazione nel fermo');
-    await expect(row).toContainText(`fermo oltre il ${formatDateOnly(yesterday, 'it')} previsto: conteggio non delimitato`);
+    await expect(row).toContainText('1 prenotazione nel periodo');
+    await expect(row).toContainText(`fuori servizio oltre il ${formatDateOnly(yesterday, 'it')} previsto: conteggio non delimitato`);
     // The sentence the pre-fix UI printed here, over the very same number.
     await expect(row).not.toContainText('compreso');
 

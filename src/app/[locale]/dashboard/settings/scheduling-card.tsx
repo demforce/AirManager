@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { Field, Input, InputGroup } from '@/components/ui/field';
 import type { SettingsDraft } from '@/lib/settings-draft';
 
@@ -15,7 +16,6 @@ export type SchedulingCardLabels = {
   maxAdvanceDays: string;
   minutesSuffix: string;
   daysSuffix: string;
-  hint: string;
 };
 
 export type SchedulingCardProps = {
@@ -36,6 +36,9 @@ export type SchedulingCardProps = {
  * implicitly.
  */
 export function SchedulingCard({ value, onChange, errors, labels }: SchedulingCardProps) {
+  // Story 19.12a: the hint restates the LIVE draft and inflects on two of its
+  // numbers (ICU plurals), so it is formatted here. An empty field reads 0.
+  const t = useTranslations('SettingsPage.scheduling');
   return (
     <div className="card settings-card" data-testid="scheduling-settings-card">
       <div className="card-head">
@@ -91,7 +94,7 @@ export function SchedulingCard({ value, onChange, errors, labels }: SchedulingCa
         </div>
 
         <p className="hint" style={{ marginTop: 12 }}>
-          {labels.hint.replace('{open}', value.openTime).replace('{close}', value.closeTime).replace('{slot}', value.minSlotMinutes).replace('{days}', value.maxAdvanceDays)}
+          {t('hint', { open: value.openTime, close: value.closeTime, slot: Number(value.minSlotMinutes), days: Number(value.maxAdvanceDays) })}
         </p>
       </div>
     </div>

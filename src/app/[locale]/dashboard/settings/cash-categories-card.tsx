@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
@@ -18,8 +19,8 @@ export type CashCategoriesCardLabels = {
   actions: { rename: string; deactivate: string; reactivate: string; delete: string; restore: string };
   rowState: Record<Exclude<RowState, 'saved'>, string>;
   form: { createTitle: string; renameTitle: string; name: string; close: string };
-  /** Phone face (story 15.8b, R-15.8b-d). `movementsCount` carries a `{count}` placeholder interpolated client-side ⇒ pass it with `t.raw`. */
-  mobile: { openDetail: string; empty: string; movementsCount: string };
+  /** Phone face (story 15.8b, R-15.8b-d). */
+  mobile: { openDetail: string; empty: string };
 };
 
 type CashCategoriesCardProps = {
@@ -45,6 +46,8 @@ const STATE_TONE: Record<Exclude<RowState, 'saved'>, BadgeTone> = { new: 'info',
  * `SYSTEM_CATEGORY`); deactivating it stays allowed, as before.
  */
 export function CashCategoriesCard({ items, savedItems, onChange, newRowKey, itemErrors, labels }: CashCategoriesCardProps) {
+  // Story 19.12a: the phone row's movement count inflects (ICU plural).
+  const t = useTranslations('SettingsPage.cashCategories.mobile');
   const [panelKey, setPanelKey] = useState<string | null>(null);
   const [sheetKey, setSheetKey] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -102,7 +105,7 @@ export function CashCategoriesCard({ items, savedItems, onChange, newRowKey, ite
 
   const statusLabel = (item: CashCategoryDraftItem): string => (item.isActive ? labels.status.active : labels.status.inactive);
   const displayName = (item: CashCategoryDraftItem): string => item.name.trim() || '—';
-  const movementsLabel = (item: CashCategoryDraftItem): string => labels.mobile.movementsCount.replace('{count}', String(item.movementCount));
+  const movementsLabel = (item: CashCategoryDraftItem): string => t('movementsCount', { count: item.movementCount });
 
   function stateBadge(state: RowState) {
     return state === 'saved' ? null : <Badge tone={STATE_TONE[state]}>{labels.rowState[state]}</Badge>;

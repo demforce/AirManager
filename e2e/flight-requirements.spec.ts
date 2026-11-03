@@ -428,7 +428,7 @@ test.describe('The warning in the flight form (story 19.9, AC 13-15)', () => {
     await expect(items.and(page.locator('[data-type="EXPIRY"]')).filter({ hasText: 'Visita medica classe 2' })).toHaveText(`${who}Visita medica classe 2: scaduto il ${formatDay(expired)}`);
     await expect(items.and(page.locator('[data-type="MEMBERSHIP"]'))).toHaveText(`${who}Quota associativa mai pagata`);
     await expect(items.and(page.locator('[data-type="CURRENCY"]'))).toHaveText(
-      `${who}Currency scaduta: nessun volo registrato (minimo ${minFlights} ${minFlights === 1 ? 'volo' : 'voli'} negli ultimi ${windowDays} giorni)`,
+      `${who}Currency scaduta: nessun volo registrato (minimo ${minFlights} ${minFlights === 1 ? 'volo' : 'voli'} ${windowDays === 1 ? "nell'ultimo giorno" : `negli ultimi ${windowDays} giorni`})`,
     );
     await expect(items.and(page.locator('[data-type="BALANCE"]'))).toHaveText(`${who}Saldo insufficiente: saldo 0,00 €, costo 60,00 €`);
     await expect(warning.getByTestId('requirements-proceed')).toHaveText('Procedi comunque');

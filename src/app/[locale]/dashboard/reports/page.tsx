@@ -96,8 +96,7 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
     },
     // `t.raw` (not `t`): both carry ICU placeholders (`{shown}`/`{total}`,
     // `{count}`) interpolated CLIENT-SIDE from the list's own length, so `t()`
-    // would try to resolve them here and throw `FORMATTING_ERROR` — the same
-    // reason `settings/page.tsx:231` reads `scheduling.hint` raw.
+    // would try to resolve them here and throw `FORMATTING_ERROR`.
     cap: { note: t.raw('mobile.capNote') as string, showAll: t.raw('mobile.showAll') as string },
   };
 

@@ -23,6 +23,7 @@
  * projection already computes are reused verbatim as `left`/`width` here,
  * since both are just "how far through the 06:00-22:00 window" percentages.
  */
+import { useTranslations } from 'next-intl';
 import { Fragment, useCallback, useRef, useState, type MouseEvent } from 'react';
 import { getPathname, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
@@ -114,12 +115,8 @@ export type ScheduleLabels = {
   clampedEndHint: string;
   /** Story 14.5 (ratifica R3): shown instead of `block.personName` when it's `null` (masked, non-own booking, actor lacks `bookings.read.names`). */
   occupied: string;
-  /** Raw (`t.raw`) `"{count} …"` template — client-interpolated (see `weekBookingsLabel` below), same pattern as `new-booking-form.tsx`'s `outOfServiceSuffix`: the per-day count changes with the client-only aircraft/instructor filter, so it cannot be pre-formatted server-side. */
-  weekBookingsCountTemplate: string;
   /** Story 15.4 — labels of the phone surfaces only (agenda, chips, week list, detail sheet). */
   mobile: {
-    /** `t.raw` `"{count} movimenti"`: the count is what the CLIENT filter leaves on screen, so it cannot be pre-formatted. */
-    agendaCountTemplate: string;
     /** `t.raw` `"ORA · {time}"` (template line 139). */
     nowTemplate: string;
     /** `t.raw` `"{registration} fuori servizio"`. */
@@ -266,6 +263,10 @@ export function Schedule({
   windowEndHour,
   labels,
 }: ScheduleProps) {
+  // Story 19.12a: the per-day and agenda booking counts change with the
+  // client-only aircraft/instructor filter and inflect (ICU plural), so they
+  // are formatted here rather than pre-formatted server-side.
+  const t = useTranslations('BookingsPage.schedule');
   const router = useRouter();
   const HOURS = Array.from({ length: windowEndHour - windowStartHour + 1 }, (_, i) => windowStartHour + i);
   const hourLeftPercent = (hour: number) => ((hour - windowStartHour) / (windowEndHour - windowStartHour)) * 100;
@@ -388,7 +389,7 @@ export function Schedule({
             the CLIENT filter actually left on screen (AC 1). */}
         {view === 'day' ? (
           <span className="card-sub mobile-agenda-count" data-testid="mobile-agenda-count">
-            {labels.mobile.agendaCountTemplate.replace('{count}', String(agendaMovementCount))}
+            {t('mobile.agendaCount', { count: agendaMovementCount })}
           </span>
         ) : null}
         <div className="spacer" />
@@ -707,7 +708,7 @@ export function Schedule({
                 </div>
                 <div className="wd-meta">
                   <span className="num" data-testid="schedule-week-day-count">
-                    {labels.weekBookingsCountTemplate.replace('{count}', String(count))}
+                    {t('weekBookingsCount', { count })}
                   </span>
                 </div>
                 <div className="wd-bars">
@@ -840,7 +841,7 @@ export function Schedule({
                       <span className="mobile-row-name">{formatDayShort(dateOnly, locale)}</span>
                     </span>
                     <span className="mobile-row-sub" data-testid="mobile-week-day-count">
-                      {labels.weekBookingsCountTemplate.replace('{count}', String(count))}
+                      {t('weekBookingsCount', { count })}
                     </span>
                   </span>
                   <span className="mobile-row-chev" aria-hidden="true">

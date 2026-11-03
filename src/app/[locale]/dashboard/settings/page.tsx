@@ -122,8 +122,8 @@ export default async function SettingsPage({ params }: PageProps) {
           saved: t('saved'),
           saveBar: {
             clean: t('saveBar.clean'),
-            // `t.raw`: `{sections}` is filled client-side from the live draft
-            // (same reason as `scheduling.hint` below).
+            // `t.raw`: `{sections}` is filled client-side from the live draft —
+            // `t()` would try to interpolate it here and throw `FORMATTING_ERROR`.
             dirty: t.raw('saveBar.dirty') as string,
             saving: t('saveBar.saving'),
           },
@@ -193,12 +193,6 @@ export default async function SettingsPage({ params }: PageProps) {
             maxAdvanceDays: t('scheduling.maxAdvanceDays'),
             minutesSuffix: t('scheduling.minutesSuffix'),
             daysSuffix: t('scheduling.daysSuffix'),
-            // `t.raw` (not `t`): the message carries `{open}`/`{close}`/`{slot}`/`{days}`
-            // ICU placeholders interpolated CLIENT-SIDE from live form state
-            // (`scheduling-card.tsx`'s own `.replace(...)` calls) — `t()` would
-            // try to interpolate them immediately server-side and throw
-            // `FORMATTING_ERROR` since no values are provided here.
-            hint: t.raw('scheduling.hint') as string,
           },
           smtp: {
             title: t('smtp.title'),
@@ -258,9 +252,6 @@ export default async function SettingsPage({ params }: PageProps) {
             mobile: {
               openDetail: t('cashCategories.mobile.openDetail'),
               empty: t('cashCategories.mobile.empty'),
-              // `t.raw`: `{count}` is interpolated client-side from the row's own
-              // `movementCount` (same reason as `scheduling.hint` above).
-              movementsCount: t.raw('cashCategories.mobile.movementsCount') as string,
             },
             errors: { nameTaken: t('cashCategories.form.conflictError'), inUse: t('cashCategories.feedback.deleteInUseError') },
           },

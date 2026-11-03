@@ -37,7 +37,7 @@ export function buildSchedulingWindowSummary(
     parts.push((t.raw('form.schedulingWindow.hours') as string).replace('{open}', settings.openTime).replace('{close}', settings.closeTime));
   }
   if (settings.maxAdvanceDays !== null) {
-    parts.push((t.raw('form.schedulingWindow.advance') as string).replace('{days}', String(settings.maxAdvanceDays)));
+    parts.push(t('form.schedulingWindow.advance', { days: settings.maxAdvanceDays }));
   }
   return parts.join(', ');
 }
@@ -73,10 +73,8 @@ export function buildScheduleLabels(t: Translator): ScheduleLabels {
     noAircraft: t('calendar.noAircraft'),
     clampedStartHint: t('calendar.clampedStartHint'),
     clampedEndHint: t('calendar.clampedEndHint'),
-    weekBookingsCountTemplate: t.raw('schedule.weekBookingsCount') as string,
     occupied: t('occupied'),
     mobile: {
-      agendaCountTemplate: t.raw('schedule.mobile.agendaCount') as string,
       nowTemplate: t.raw('schedule.mobile.now') as string,
       aogTitleTemplate: t.raw('schedule.mobile.aogTitle') as string,
       openDetail: t('schedule.mobile.openDetail'),
@@ -173,7 +171,6 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
   return {
     cardTitle: t('list.cardTitle'),
     pendingSummary: t.raw('list.pendingSummary') as string,
-    filteredSummary: t.raw('list.filteredSummary') as string,
     newButton: t('list.newButton'),
     occupied: t('occupied'),
     exportLabel: t('list.exportLabel'),

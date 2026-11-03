@@ -14,6 +14,7 @@
  * Admin face only: the template gives no Avvisi card to pilota/istruttore, and
  * their own scadenze are already the `kpi-medical`/`kpi-ratings` KPIs.
  */
+import { useTranslations } from 'next-intl';
 import { Icon } from '@/components/ui/icons';
 import { Link } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
@@ -34,13 +35,6 @@ export type MobileAlertsCardProps = {
   labels: {
     title: string;
     empty: string;
-    /** `{count}` placeholder, filled here — shown only when the cap truncated. */
-    seeAll: string;
-    /**
-     * Same, for when `hiddenCount` is only a floor ("+{count} e oltre"):
-     * review 15.3 F7, PO ratification 2026-07-30.
-     */
-    seeAllAtLeast: string;
   };
   /** How many voices the cap hid, and where the overflow row leads (`buildOverviewAlerts`). */
   hiddenCount: number;
@@ -55,6 +49,10 @@ const KIND_ICON: Record<OverviewAlertKind, (typeof Icon)['clock']> = {
 };
 
 export function MobileAlertsCard({ items, locale, labels, hiddenCount, hiddenCountIsFloor, moreHref }: MobileAlertsCardProps) {
+  // Story 19.12a: the overflow row inflects on `hiddenCount` (ICU plural);
+  // "+{count} e oltre" is the floor form (review 15.3 F7, PO ratification
+  // 2026-07-30). Shown only when the cap truncated.
+  const t = useTranslations('DashboardPage.overview.mobile.alerts');
   return (
     <div className="card" data-testid="mobile-overview-alerts">
       <div className="mobile-card-head">
@@ -85,7 +83,7 @@ export function MobileAlertsCard({ items, locale, labels, hiddenCount, hiddenCou
       {hiddenCount > 0 && moreHref ? (
         <div className="mobile-card-foot">
           <Link href={moreHref} locale={locale} className="btn" data-testid="mobile-overview-alerts-see-all">
-            {(hiddenCountIsFloor ? labels.seeAllAtLeast : labels.seeAll).replace('{count}', String(hiddenCount))}
+            {t(hiddenCountIsFloor ? 'seeAllAtLeast' : 'seeAll', { count: hiddenCount })}
           </Link>
         </div>
       ) : null}

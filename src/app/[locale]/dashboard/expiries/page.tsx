@@ -160,11 +160,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           locale={displayLocale}
           labels={{
             cardTitle: t('registry.cardTitle'),
-            // `t.raw` (not `t`): `{count}` is interpolated CLIENT-SIDE
-            // (`scadenze-console.tsx`'s own `.replace(...)`, the shown count
-            // changes with client-only filters) — `t()` would try to
-            // interpolate immediately server-side and throw `FORMATTING_ERROR`.
-            shown: t.raw('registry.shown') as string,
             segmented: {
               win60: t('registry.segmented.win60'),
               win30: t('registry.segmented.win30'),

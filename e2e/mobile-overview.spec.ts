@@ -261,11 +261,12 @@ test.describe('story 15.3 — the CSS switch, measured on BOTH sides', () => {
         'kpi-bookings-pending',
         'kpi-revenue',
       ]);
-      // ...and the sub-line is `[ICAO ·] N AOG`: two parts at most, the AOG
-      // count last (asserted by structure, not by looking for a word).
+      // ...and the sub-line is `[ICAO ·] N fuori servizio`: two parts at most,
+      // the out-of-service count last (asserted by structure, not by looking
+      // for a word).
       const subParts = ((await page.locator('.page-title-block .sub').textContent()) ?? '').trim().split(' · ');
       expect(subParts.length).toBeLessThanOrEqual(2);
-      expect(subParts[subParts.length - 1]).toMatch(/^\d+ AOG$/);
+      expect(subParts[subParts.length - 1]).toMatch(/^\d+ fuori servizio$/);
     }
   });
 });

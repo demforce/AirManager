@@ -10,6 +10,7 @@
  * divergence, story 12.5's own e2e stays green). `FleetCardItem`/`badgeFor`
  * are the single source of truth for both callers.
  */
+import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icons';
@@ -90,7 +91,6 @@ export function FleetCardGrid({ items, badgeLabels, onCardClick }: FleetCardGrid
 
 export type FleetCardLabels = {
   cardTitle: string;
-  summary: string;
   addAircraft: string;
   empty: string;
   badge: FleetCardBadgeLabels;
@@ -116,11 +116,14 @@ export type FleetCardProps = {
  * `/dashboard/fleet` console rather than opening an editor inline.
  */
 export function FleetCard({ items, totalCount, availableCount, aogCount, locale, canManageAircraft, addHref, labels }: FleetCardProps) {
+  // Story 19.12a: the summary inflects on the counts (ICU plural), so it is
+  // formatted here rather than threaded through `labels` as a raw template.
+  const t = useTranslations('DashboardPage.fleetCard');
   return (
     <div className="card" data-testid="fleet-card-widget">
       <div className="card-head">
         <div className="card-title">{labels.cardTitle}</div>
-        <span className="card-sub">{labels.summary.replace('{total}', String(totalCount)).replace('{available}', String(availableCount)).replace('{aog}', String(aogCount))}</span>
+        <span className="card-sub">{t('summary', { total: totalCount, available: availableCount, aog: aogCount })}</span>
         <div className="spacer" />
         {canManageAircraft ? (
           <Link href={addHref} locale={locale as AppLocale} className="btn primary" data-testid="fleet-card-widget-add">
