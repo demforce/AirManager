@@ -3,7 +3,9 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
+import { resolveStatementPeriod } from '@/lib/statement-period';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
@@ -19,7 +21,7 @@ import { EditPersonButton } from './edit-person-button';
 
 type PageProps = {
   params: Promise<{ locale: string; id: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; from?: string | string[]; to?: string | string[] }>;
 };
 
 /**
@@ -71,7 +73,7 @@ function expiryStatusTone(status: ExpiryListItem['status']): BadgeTone {
  */
 export default async function PersonDetailPage({ params, searchParams }: PageProps) {
   const { locale, id } = await params;
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, from: fromParam, to: toParam } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -99,17 +101,20 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
   let statement;
   let expiries;
   let accountPage = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
+  // Story 19.11 (AD-2): the statement always reads an EXPLICIT period — the
+  // URL's, or the last 12 months — and so do the export links below.
+  const period = resolveStatementPeriod({ from: fromParam, to: toParam });
   try {
     person = await getPerson(actor, id);
     overview = await getAccountOverview(actor, id);
     expiries = await listPersonExpiries(actor, id);
-    statement = await listAccountMovements(actor, id, { page: accountPage, pageSize: ACCOUNT_PAGE_SIZE });
-    // Clamp an out-of-range ?page to the last real page (same guard the
-    // retired `/account` page had, review 3.2 F1).
+    statement = await listAccountMovements(actor, id, { page: accountPage, pageSize: ACCOUNT_PAGE_SIZE, from: period.from, to: period.to });
+    // Clamp an out-of-range ?page to the last real page OF THE PERIOD (same
+    // guard the retired `/account` page had, review 3.2 F1).
     const lastPage = Math.max(1, Math.ceil(statement.total / ACCOUNT_PAGE_SIZE));
     if (accountPage > lastPage) {
       accountPage = lastPage;
-      statement = await listAccountMovements(actor, id, { page: accountPage, pageSize: ACCOUNT_PAGE_SIZE });
+      statement = await listAccountMovements(actor, id, { page: accountPage, pageSize: ACCOUNT_PAGE_SIZE, from: period.from, to: period.to });
     }
   } catch (error) {
     if (error instanceof NotFoundError) {
@@ -198,12 +203,14 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
     balanceLabel: t('accountPanel.balanceLabel'),
     noAccount: t('accountPanel.noAccount'),
     empty: tAccount('table.empty'),
+    emptyPeriod: tAccount('table.emptyPeriod'),
     pagination: { prev: tPilots('pagination.prev'), next: tPilots('pagination.next') },
     table: {
       date: tAccount('table.date'),
       type: tAccount('table.type'),
       description: tAccount('table.description'),
       amount: tAccount('table.amount'),
+      balance: tAccount('table.balance'),
       recordedBy: tAccount('table.recordedBy'),
       actions: tAccount('table.actions'),
       noValue: tAccount('table.noValue'),
@@ -214,11 +221,28 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
       packagePurchase: tAccount('movementType.packagePurchase'),
       flightCharge: tAccount('movementType.flightCharge'),
     },
-    // `t.raw`: this carries a literal `{date}` placeholder the CLIENT fills in
-    // (the original movement's date lives in the row data) — `t()` would
-    // fail on the missing ICU value server-side.
-    adjustmentBadge: { ofDate: tAccount.raw('adjustmentBadge.ofDate') as string, linked: tAccount('adjustmentBadge.linked') },
-    mobile: { empty: tAccount('mobile.empty'), openDetail: tAccount('mobile.openDetail'), close: tAccount('mobile.close') },
+    // `t.raw`: these carry a literal `{date}` placeholder the CLIENT fills in
+    // (the original movement's date lives in the row data, the period's
+    // bounds in the props) — `t()` would fail on the missing ICU value server-side.
+    adjustmentBadge: { ofDate: tAccount.raw('adjustmentBadge.ofDate') as string },
+    openingRow: tAccount('openingRow'),
+    period: {
+      label: tAccount('period.label'),
+      from: tAccount('period.from'),
+      to: tAccount('period.to'),
+      apply: tAccount('period.apply'),
+      reset: tAccount('period.reset'),
+      required: tAccount('period.required'),
+      invalidRange: tAccount('period.invalidRange'),
+      openingAt: tAccount.raw('period.openingAt') as string,
+      closingAt: tAccount.raw('period.closingAt') as string,
+    },
+    mobile: {
+      empty: tAccount('mobile.empty'),
+      emptyPeriod: tAccount('mobile.emptyPeriod'),
+      openDetail: tAccount('mobile.openDetail'),
+      close: tAccount('mobile.close'),
+    },
     topUp: {
       action: t('accountPanel.topUp.action'),
       title: t('accountPanel.topUp.title'),
@@ -256,8 +280,13 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
     },
   };
 
-  const exportHref = buildExportHref(`/api/v1/people/${id}/account/movements`, {}, locale);
-  const exportPdfHref = buildPdfExportHref(`/api/v1/people/${id}/account/pdf`, {}, locale);
+  // Story 19.11 (AD-7/AD-8): the exports cover the period on screen — the
+  // default one too, since the API without a period is the whole history —
+  // and an export the server would refuse over its cap is announced in the
+  // menu instead of linked.
+  const exportPeriod = { from: period.from, to: period.to };
+  const exportHref = buildExportHref(`/api/v1/people/${id}/account/movements`, exportPeriod, locale);
+  const exportPdfHref = buildPdfExportHref(`/api/v1/people/${id}/account/pdf`, exportPeriod, locale);
 
   return (
     <main className="page">
@@ -391,12 +420,15 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
         hasAccount={overview.account !== null}
         balanceCents={overview.balanceCents}
         rows={statement.items}
+        period={{ ...period, openingBalanceCents: statement.openingBalanceCents, closingBalanceCents: statement.closingBalanceCents }}
         page={accountPage}
         totalPages={Math.max(1, Math.ceil(statement.total / ACCOUNT_PAGE_SIZE))}
         showActor={showActor}
         canManageFinance={canManageFinance}
         exportHref={exportHref}
         exportPdfHref={exportPdfHref}
+        exportXlsUnavailable={statement.total > EXPORT_MAX_ROWS ? tExport('xlsTooLarge', { max: EXPORT_MAX_ROWS }) : undefined}
+        exportPdfUnavailable={statement.total > PDF_EXPORT_MAX_ROWS ? tExport('pdfTooLarge', { max: PDF_EXPORT_MAX_ROWS }) : undefined}
         exportLabels={{ label: tExport('button'), xls: tExport('button'), pdf: tExport('buttonPdf') }}
         labels={accountLabels}
       />

@@ -626,15 +626,15 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/people/{id}/account/movements',
-  summary: "List a person's full account statement (paginated, most recent first)",
+  summary: "List a person's account statement for a period (paginated, by value date, with the running balance)",
   description:
-    'The full, paginated ledger (story 3.2) behind `GET /api/v1/people/{id}/account`\'s 5-entry preview. A person without an `Account` yet gets an empty page (`total: 0`), NOT a 404 — only an unknown person is. `actorEmail` (who registered the movement) is included ONLY when the caller has `people.read` (AC 2\'s operational detail for an admin) — absent for a titolare reading their own statement. Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}/account`).',
+    'The paginated ledger (story 3.2) behind `GET /api/v1/people/{id}/account`\'s 5-entry preview, scoped to a period since story 19.11. `from`/`to` are optional and inclusive on the value date (`effectiveDate`); absent means the COMPLETE history (opening balance 0). An inverted pair is a 422 `VALIDATION_ERROR` on `to`. Items are ordered by value date, most recent first (ties: most recently inserted first); each carries `balanceAfterCents`, the balance right after that movement, and — on a linked adjustment — `reversalOfEffectiveDate`, the value date of the movement it corrects. The response adds the period echo (`from`/`to`, `null` when absent), `openingBalanceCents` (every movement dated before `from`) and `closingBalanceCents` (opening + the period\'s movements); `total` counts the period\'s movements, and a page past the end still returns them. A person without an `Account` yet gets an empty statement (`total: 0`, both balances 0), NOT a 404 — only an unknown person is. `actorEmail` (who registered the movement) is included ONLY when the caller has `people.read` (AC 2\'s operational detail for an admin) — absent for a titolare reading their own statement. `?format=xlsx` exports the SAME period (above 10000 rows: 422 `EXPORT_TOO_LARGE`). Readable with `people.read` (any person) or "own" access: `self.read` plus a matching `personId` (same rule as `GET /api/v1/people/{id}/account`).',
   tags: ['Accounts'],
   security,
   request: { params: personIdParams, query: listAccountMovementsQuerySchema },
   responses: {
     200: {
-      description: "A page of the person's account statement, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).",
+      description: "A page of the person's account statement for the period, or (`?format=xlsx`) every row of the period as an Excel workbook (story 10.1), with a closing \"Saldo iniziale\" line when `from` is given.",
       content: { ...jsonContent(accountStatementResponseSchema), ...xlsxContent() },
     },
     ...errorResponses(401, 403, 404, 422),
@@ -644,9 +644,9 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/people/{id}/account/pdf',
-  summary: "PDF export of a person's account statement, optionally scoped to a period (story 10.2, AC 2; story 12.9, AC 5)",
+  summary: "PDF export of a person's account statement, optionally scoped to a period (story 10.2, AC 2; story 12.9, AC 5; story 19.11)",
   description:
-    'Dedicated PDF route (spine :105), NOT `?format=pdf` on the movements endpoint above. `from`/`to` are ADDITIVE optional bounds (story 12.9): absent means the COMPLETE history (unchanged default), present narrows the rows to that period — the balance totals line always shows the account\'s CURRENT balance either way. Same own/`people.read` access rule as `GET /api/v1/people/{id}/account/movements`. Above `2000` rows: 422 `EXPORT_TOO_LARGE` (use the xlsx export instead).',
+    'Dedicated PDF route (spine :105), NOT `?format=pdf` on the movements endpoint above. `from`/`to` are optional bounds (story 12.9), with the same rules as the movements endpoint (an inverted pair is a 422): absent means the COMPLETE history. The rows are the screen\'s (value date, most recent first) with a Saldo column, plus a closing "Saldo iniziale" line when `from` is given; the totals are the PERIOD\'s opening balance (when `from` is given) and closing balance (story 19.11). Same own/`people.read` access rule as `GET /api/v1/people/{id}/account/movements`. Above `2000` rows: 422 `EXPORT_TOO_LARGE` (use the xlsx export instead).',
   tags: ['Accounts'],
   security,
   request: { params: personIdParams, query: accountStatementPdfQuerySchema },

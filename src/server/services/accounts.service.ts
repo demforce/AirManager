@@ -1,4 +1,4 @@
-import type { AccountMovementType, Prisma, PaymentMethod } from '@/generated/prisma/client';
+import { Prisma, type AccountMovementType, type PaymentMethod } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { AppLocale } from '@/i18n/routing';
 import type { RecordAdjustmentInput, RecordTopUpInput } from '@/lib/schemas/accounts';
@@ -297,64 +297,163 @@ export type AccountStatementItem = {
   reversalOfId: string | null;
   /** Story 3.3: true when this movement already has a linked adjustment — hides the row's "Rettifica questo movimento" action. */
   hasReversal: boolean;
+  /** Story 19.11 (AD-3): the account's balance right AFTER this movement — the period's opening balance plus the running sum of the period up to this row, in the statement's key order. */
+  balanceAfterCents: number;
+  /** Story 19.11 (D-9): the value date of the movement this one corrects, wherever that original sits (another page, before the period); `null` exactly when `reversalOfId` is. */
+  reversalOfEffectiveDate: string | null;
 };
 
-export type AccountStatementResult = PaginatedResult<AccountStatementItem>;
+/**
+ * A page of the statement plus the period it covers (story 19.11, AD-1):
+ * `from`/`to` echo the bounds applied (`null` = unbounded on that side),
+ * `openingBalanceCents` is the sum of every movement dated BEFORE `from` (0
+ * without `from`), `closingBalanceCents` the opening plus the period's own
+ * sum. `total` counts the period's movements.
+ */
+export type AccountStatementResult = PaginatedResult<AccountStatementItem> & {
+  from: string | null;
+  to: string | null;
+  openingBalanceCents: number;
+  closingBalanceCents: number;
+};
 
-const ACCOUNT_STATEMENT_SELECT = {
-  id: true,
-  type: true,
-  amountCents: true,
-  description: true,
-  effectiveDate: true,
-  createdAt: true,
-  actorUser: { select: { email: true } },
-  reversalOfId: true,
-  reversal: { select: { id: true } },
-} as const;
+type StatementPeriod = { from?: string; to?: string };
 
-type SelectedStatementMovement = {
-  id: string;
-  type: AccountMovementType;
-  amountCents: number;
+/**
+ * One row of {@link statementSql}: the period summary (on EVERY row, from the
+ * one-row `summary` CTE) plus one statement row — or, on an empty page, the
+ * summary alone with every movement column `null` (the `LEFT JOIN`).
+ * `bigint` columns come back as `BigInt` and are converted in the mapper: a
+ * `BigInt` cannot reach `JSON.stringify`.
+ */
+type StatementSqlRow = {
+  openingCents: bigint;
+  total: bigint;
+  periodCents: bigint;
+  id: string | null;
+  type: AccountMovementType | null;
+  amountCents: number | null;
   description: string | null;
-  effectiveDate: Date;
-  createdAt: Date;
-  actorUser: { email: string };
+  effectiveDateText: string | null;
+  createdAt: Date | null;
   reversalOfId: string | null;
-  reversal: { id: string } | null;
+  cumulativeCents: bigint | null;
+  reversalOfEffectiveDate: string | null;
+  hasReversal: boolean;
+  actorEmail: string | null;
 };
 
-function toStatementItem(movement: SelectedStatementMovement, includeActor: boolean): AccountStatementItem {
+type StatementSqlMovementRow = StatementSqlRow & { id: string; type: AccountMovementType; amountCents: number; effectiveDateText: string; createdAt: Date; cumulativeCents: bigint };
+
+function isMovementRow(row: StatementSqlRow): row is StatementSqlMovementRow {
+  return row.id !== null;
+}
+
+function toStatementItem(row: StatementSqlMovementRow, openingBalanceCents: number, includeActor: boolean): AccountStatementItem {
   return {
-    id: movement.id,
-    type: movement.type,
-    amountCents: movement.amountCents,
-    effectiveDate: toDateOnlyString(movement.effectiveDate),
-    description: movement.description,
-    createdAt: movement.createdAt,
-    reversalOfId: movement.reversalOfId,
-    hasReversal: movement.reversal !== null,
-    ...(includeActor ? { actorEmail: movement.actorUser.email } : {}),
+    id: row.id,
+    type: row.type,
+    amountCents: row.amountCents,
+    effectiveDate: row.effectiveDateText,
+    description: row.description,
+    createdAt: row.createdAt,
+    reversalOfId: row.reversalOfId,
+    hasReversal: row.hasReversal,
+    balanceAfterCents: openingBalanceCents + Number(row.cumulativeCents),
+    reversalOfEffectiveDate: row.reversalOfEffectiveDate,
+    ...(includeActor && row.actorEmail !== null ? { actorEmail: row.actorEmail } : {}),
   };
 }
 
+function emptyStatement(query: PaginationQuery & StatementPeriod): AccountStatementResult {
+  return { ...paginate([], 0, query), from: query.from ?? null, to: query.to ?? null, openingBalanceCents: 0, closingBalanceCents: 0 };
+}
+
 /**
- * Lists a person's full account statement, paginated and most-recent-first
- * (story 3.2, AC 1/2). Read access: the same own-access rule as
- * `getAccountOverview` (`assertReadAccess`) — checked BEFORE any query. A
- * person that exists but never activated an account gets an empty page
- * (`total: 0`), NOT a 404 — only an unknown person is (same 404-vs-null
- * split as `getAccountOverview`, review 3.1 F4). `from`/`to` (epic 12, story
- * 12.9, AC 5) are OPTIONAL, inclusive on `effectiveDate` — additive over the
- * pre-existing `PaginationQuery`-only signature; absent (every pre-12.9
- * caller: the JSON list, the xlsx export, the drill-down page) means the
- * full, unfiltered statement, unchanged.
+ * The ONE SQL statement of the estratto conto (story 19.11, AD-3, A13). Every
+ * number it returns comes from the same snapshot of the ledger, so the first
+ * row's running balance IS the closing balance even under a concurrent write
+ * (D-4) — two queries could disagree, and the interactive transaction that
+ * used to pair `findMany` + `count` is what story 17.5 removes.
+ *
+ * - `period`: the movements in [from, to] with the running sum in the
+ *   statement's key `(effectiveDate, createdAt, id)` (D-3 — the libro
+ *   contabile's own key; `createdAt` keeps insertion order by definition, a
+ *   cuid only by how Prisma generates it today). `ROWS` is explicit: the key
+ *   is unique, but the default `RANGE` reads as if ties were summed together.
+ * - `summary`: opening balance (every movement before `from`), count and sum
+ *   of the period — ONE row, so it survives a page past the end (the
+ *   `LEFT JOIN page`).
+ * - `page`: the period most recent first (Q-19.11-a = A), `LIMIT`/`OFFSET`.
+ *   The details join only the page's rows: who recorded it, the original's
+ *   value date (the badge, D-9), whether a correction already points at it.
+ *
+ * The bounds are bound as TEXT and cast `::date` (D-14): a JS `Date` binds as
+ * `timestamptz` and the session timezone would move the boundary day (review
+ * 3.5 F1, `cash.service.ts#getCashReport`) — the one deroga to `date-only.ts`'s
+ * "never raw SQL", forced by the window function Prisma does not have. An
+ * absent bound is an absent fragment, never `(x IS NULL OR …)`: an "optional"
+ * predicate forces a generic plan that cannot range-scan the index. Dates
+ * leave as `to_char` text, and the outer `ORDER BY` names the `p.` COLUMNS,
+ * never the text aliases.
+ */
+function statementSql(accountId: string, period: StatementPeriod, page: { skip: number; take: number }): Prisma.Sql {
+  const fromBound = period.from ? Prisma.sql`AND m."effectiveDate" >= ${period.from}::date` : Prisma.empty;
+  const toBound = period.to ? Prisma.sql`AND m."effectiveDate" <= ${period.to}::date` : Prisma.empty;
+  const opening = period.from
+    ? Prisma.sql`(SELECT COALESCE(SUM(o."amountCents"), 0) FROM "AccountMovement" o WHERE o."accountId" = ${accountId} AND o."effectiveDate" < ${period.from}::date)`
+    : Prisma.sql`0`;
+  return Prisma.sql`
+    WITH "period" AS (
+      SELECT m."id", m."type", m."amountCents", m."description", m."effectiveDate", m."createdAt", m."actorUserId", m."reversalOfId",
+             SUM(m."amountCents") OVER (ORDER BY m."effectiveDate", m."createdAt", m."id" ROWS UNBOUNDED PRECEDING) AS "cumulativeCents"
+      FROM "AccountMovement" m
+      WHERE m."accountId" = ${accountId} ${fromBound} ${toBound}
+    ), "summary" AS (
+      SELECT ${opening}::bigint AS "openingCents",
+             (SELECT COUNT(*) FROM "period")::bigint AS "total",
+             (SELECT COALESCE(SUM(pr."amountCents"), 0) FROM "period" pr)::bigint AS "periodCents"
+    ), "page" AS (
+      SELECT * FROM "period" ORDER BY "effectiveDate" DESC, "createdAt" DESC, "id" DESC LIMIT ${page.take} OFFSET ${page.skip}
+    )
+    SELECT s."openingCents", s."total", s."periodCents",
+           p."id", p."type"::text AS "type", p."amountCents", p."description", to_char(p."effectiveDate", 'YYYY-MM-DD') AS "effectiveDateText",
+           p."createdAt", p."reversalOfId", p."cumulativeCents"::bigint AS "cumulativeCents",
+           to_char(orig."effectiveDate", 'YYYY-MM-DD') AS "reversalOfEffectiveDate",
+           (rev."id" IS NOT NULL) AS "hasReversal", u."email" AS "actorEmail"
+    FROM "summary" s
+    LEFT JOIN "page" p ON TRUE
+    LEFT JOIN "AccountMovement" orig ON orig."id" = p."reversalOfId"
+    LEFT JOIN "AccountMovement" rev ON rev."reversalOfId" = p."id"
+    LEFT JOIN "User" u ON u."id" = p."actorUserId"
+    ORDER BY p."effectiveDate" DESC, p."createdAt" DESC, p."id" DESC`;
+}
+
+/**
+ * Lists a person's account statement for a period (story 3.2; story 19.11):
+ * one page of it, ordered by VALUE date most recent first, each row with the
+ * balance right after it, plus the period's opening and closing balances.
+ * Read access: the same own-access rule as `getAccountOverview`
+ * (`assertReadAccess`) — checked BEFORE any query. A person that exists but
+ * never activated an account gets the empty statement (`total: 0`, both
+ * balances 0), NOT a 404 — only an unknown person is (same 404-vs-null split
+ * as `getAccountOverview`, review 3.1 F4).
+ *
+ * `from`/`to` are OPTIONAL and inclusive on `effectiveDate`; absent means the
+ * complete history (D-1: the 12-month default lives in the two pages, which
+ * always pass an explicit period — an API client that sends none must not
+ * silently lose its oldest movements). The balances are computed at read
+ * time from `SUM(amountCents)` (AD-3: no stored balance), so a flight charge
+ * rewritten or deleted with its flight (story 19.6) moves every later
+ * balance by itself. The only reader of the JSON list, the xlsx and the PDF
+ * exports and both statement pages: ONE definition of the running balance.
+ * No transaction: the page, the count and the balances are one statement
+ * ({@link statementSql}).
  */
 export async function listAccountMovements(
   actor: Actor,
   personId: string,
-  query: PaginationQuery & { from?: string; to?: string },
+  query: PaginationQuery & StatementPeriod,
 ): Promise<AccountStatementResult> {
   assertReadAccess(actor, personId);
 
@@ -365,41 +464,26 @@ export async function listAccountMovements(
 
   const account = await prisma.account.findUnique({ where: { personId }, select: { id: true } });
   if (!account) {
-    return paginate([], 0, query);
+    return emptyStatement(query);
   }
 
   const includeActor = hasPermission(actor, 'people.read');
-  const where = {
-    accountId: account.id,
-    ...(query.from || query.to
-      ? {
-          effectiveDate: {
-            ...(query.from ? { gte: new Date(query.from) } : {}),
-            ...(query.to ? { lte: new Date(query.to) } : {}),
-          },
-        }
-      : {}),
-  };
-  // Interactive transaction (story TD-1, AC 3) — see `buildOverview`'s
-  // doc-comment above for the batch-vs-interactive `pg` DeprecationWarning rationale.
-  const [items, total] = await prisma.$transaction(async (tx) => {
-    const items = await tx.accountMovement.findMany({
-      select: ACCOUNT_STATEMENT_SELECT,
-      where,
-      // `id` tie-break: same-millisecond rows (batch imports/seeds) must not
-      // make the page order non-deterministic (same pattern as `buildOverview`, review 3.1 F3).
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      ...paginationOffset(query),
-    });
-    const total = await tx.accountMovement.count({ where });
-    return [items, total] as const;
-  });
+  const rows = await prisma.$queryRaw<StatementSqlRow[]>(statementSql(account.id, query, paginationOffset(query)));
+  // The `summary` CTE is one row and the page joins it LEFT: there is always a first row.
+  const summary = rows[0]!;
+  const openingBalanceCents = Number(summary.openingCents);
 
-  return paginate(
-    items.map((item) => toStatementItem(item, includeActor)),
-    total,
-    query,
-  );
+  return {
+    ...paginate(
+      rows.filter(isMovementRow).map((row) => toStatementItem(row, openingBalanceCents, includeActor)),
+      Number(summary.total),
+      query,
+    ),
+    from: query.from ?? null,
+    to: query.to ?? null,
+    openingBalanceCents,
+    closingBalanceCents: openingBalanceCents + Number(summary.periodCents),
+  };
 }
 
 // --- Story 14.6: self-service ("Le mie transazioni") ------------------------
@@ -431,14 +515,13 @@ export async function getOwnAccountOverview(actor: Actor): Promise<AccountOvervi
  * PILOT/STUDENT actor never holds, so the rows this returns never carry
  * `actorEmail` — the pilota-centric perspective the page wants (AC 3), not
  * the staff "registrato da" column, with no separate flag to keep in sync.
+ * Same period contract as `listAccountMovements` (story 19.11); an actor with
+ * no linked person gets the empty statement, never a query.
  */
-export async function listOwnAccountMovements(
-  actor: Actor,
-  query: PaginationQuery & { from?: string; to?: string },
-): Promise<AccountStatementResult> {
+export async function listOwnAccountMovements(actor: Actor, query: PaginationQuery & StatementPeriod): Promise<AccountStatementResult> {
   authorize(actor, 'self.read');
   if (actor.personId === null) {
-    return paginate([], 0, query);
+    return emptyStatement(query);
   }
   return listAccountMovements(actor, actor.personId, query);
 }

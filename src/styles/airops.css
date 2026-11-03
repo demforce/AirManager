@@ -3751,3 +3751,90 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
   [data-testid="out-of-service-confirm"],
   [data-testid="out-of-service-cancel"]{ min-height: 44px; }
 }
+
+/* ---------- estratto conto a periodo (story 19.11, AD-5/AD-6/AD-8) ----------
+   The period form, the period summary, the "Saldo iniziale" line and the
+   Export menu's "not available" note. Same rules of engagement as the epic-15
+   blocks: no new token, no colour literal, every class owned by these
+   surfaces (`.account-period*`, `.account-opening-row`, `.mobile-row-opening`,
+   `.export-menu-unavailable`) — never `.student-row`, `.mobile-row` or
+   `.date-input` alone. ONE form for both widths (D-6): above 640px it is a
+   row, the summary on the same line when the card is wide enough; under it,
+   a column with every control at 44px. */
+.account-period{
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 18px;
+}
+.account-period-form{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+/* The visible "Dal"/"Al" sits beside its field here and above it on the phone. */
+.account-period-field{ display: flex; align-items: center; gap: 8px; }
+.account-period-field .date-input{ width: 160px; }
+.account-period-dash{ color: var(--ink-3); font-size: 12px; }
+.account-period-actions{ display: flex; gap: 8px; }
+.account-period-error{ flex: 1 0 100%; margin: 0; }
+.account-period-summary{ display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0; }
+.account-period-figure{ display: flex; flex-direction: column; gap: 4px; }
+.account-period-figure > dd{ margin: 0; font-size: 15px; font-weight: 600; }
+/* The statement grid's template comes from `--account-cols`
+   (`account-section.tsx`), so the band below can replace it. */
+.account-desktop-body > .student-row{ grid-template-columns: var(--account-cols); column-gap: 10px; }
+/* A statement line, not a movement: no row hover promising an action. */
+.account-opening-row:hover{ background: transparent; }
+.account-opening-row > :nth-child(2){ color: var(--ink-2); }
+
+/* The note replacing an export the server would refuse (AD-8). The popover
+   sizes on its content, so the note carries a width of its own — without it
+   the 180px panel would wrap the sentence into seven lines. */
+.export-menu-unavailable{
+  display: flex; align-items: baseline; gap: 10px;
+  width: 260px;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px; line-height: 1.45;
+  color: var(--ink-2);
+}
+
+/* The admin face in the 641-900px band (rail of 13.10): seven tracks cannot
+   fit 606px — measured, the description was 0px wide and "Registrato da" and
+   "Azioni" sat past the card's edge (already so before the Saldo column, by
+   160px). Each row becomes two lines on the SAME nodes: date, type, amount,
+   balance and the action on the first; description and "registrato da" under
+   them. Children by position: 1 date, 2 type, 3 description, 4 amount,
+   5 balance, 6 registrato da, 7 actions — the header and the opening line
+   have the same seven. */
+@media (min-width: 641px) and (max-width: 900px){
+  .account-grid-admin > .student-row{
+    grid-template-columns: 88px minmax(0, 1fr) 100px 100px 164px;
+    grid-template-areas: "date type amount balance actions" "desc desc actor actor actions";
+    row-gap: 4px;
+  }
+  .account-grid-admin > .student-row > :nth-child(1){ grid-area: date; }
+  .account-grid-admin > .student-row > :nth-child(2){ grid-area: type; }
+  .account-grid-admin > .student-row > :nth-child(3){ grid-area: desc; }
+  .account-grid-admin > .student-row > :nth-child(4){ grid-area: amount; }
+  .account-grid-admin > .student-row > :nth-child(5){ grid-area: balance; }
+  .account-grid-admin > .student-row > :nth-child(6){ grid-area: actor; }
+  .account-grid-admin > .student-row > :nth-child(7){ grid-area: actions; }
+}
+
+@media (max-width: 640px){
+  .account-period{ flex-direction: column; align-items: stretch; gap: 14px; }
+  .account-period-form{ flex-direction: column; align-items: stretch; gap: 10px; }
+  .account-period-field{ flex-direction: column; align-items: stretch; gap: 6px; }
+  .account-period-field .date-input{ width: 100%; }
+  .account-period-dash{ display: none; }
+  .account-period-actions > .btn{ flex: 1 1 0; justify-content: center; min-height: 44px; }
+  /* The two balances as key/value lines, the `.info-row` grammar of the card. */
+  .account-period-summary{ flex-direction: column; gap: 0; }
+  .account-period-figure{ flex-direction: row; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .account-period-figure > dd{ white-space: nowrap; }
+
+  /* The "Saldo iniziale" card: the payout card's non-interactive grammar
+     (`.mobile-row-payout`, 15.9) — no pointer, no pressed state. */
+  .mobile-row-opening{ grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; cursor: default; }
+  .mobile-row-opening:active{ background: transparent; }
+  .mobile-row-opening > .mobile-row-side .mobile-row-amount{ white-space: nowrap; }
+
+  .export-menu-unavailable{ width: auto; min-height: 44px; padding: 10px 12px; }
+}

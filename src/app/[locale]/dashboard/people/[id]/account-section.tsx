@@ -7,10 +7,12 @@
  * `account/page.tsx` + `AccountStatementTable` (full paginated statement +
  * "Registra rettifica", story 3.2/3.3) into ONE embedded card, so both their
  * `DataTable`/`ExportButton`/Tailwind consumers disappear. Movements are
- * server-fetched by the parent page (`listAccountMovements`, `?page=`
- * pagination on the SAME `/people/{id}` URL — no more standalone `/account`
- * route) and passed down as `rows`; this component only owns the
- * interactive bits (top-up/rettifica panels, `router.refresh()` on success —
+ * server-fetched by the parent page (`listAccountMovements`) for ONE period
+ * (story 19.11: `?from=&to=`, the last 12 months by default) and one page of
+ * it (`?page=`, on the SAME URL as the page itself), and passed down as
+ * `rows` with each row's running balance, plus the period's opening and
+ * closing balances; this component only owns the interactive bits (the
+ * period form, top-up/rettifica panels, `router.refresh()` on success —
  * same eventually-consistent-via-refresh pattern the legacy
  * `AccountStatementTable#handleSuccess` already used, not an optimistic
  * local merge). RBAC is unchanged: the parent page's `getAccountOverview`/
@@ -18,7 +20,7 @@
  * did (AD-5) — this component only decides what to SHOW.
  */
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback, useState } from 'react';
+import { useCallback, useId, useState, type CSSProperties, type FormEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
@@ -29,7 +31,7 @@ import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { parseApiError } from '@/lib/api-field-errors';
-import { accountMovementSheetSub, accountMovementSubLine, linkedBadgeText } from '@/lib/mobile-self';
+import { accountMovementSheetSub, accountMovementSubLine } from '@/lib/mobile-self';
 import { formatCents, formatSignedCents, parseCents } from '@/lib/money';
 import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
 import { formatDateOnly } from '@/lib/time';
@@ -46,13 +48,28 @@ export type AccountMovementRow = {
   reversalOfId: string | null;
   /** Story 3.3: true when a linked adjustment already exists — hides the row's "Rettifica questo movimento" action. */
   hasReversal: boolean;
+  /** Story 19.11: the balance right after this movement (the "Saldo" column). */
+  balanceAfterCents: number;
+  /** Story 19.11 (D-9): the original's value date, wherever it sits — `null` exactly when `reversalOfId` is. */
+  reversalOfEffectiveDate: string | null;
+};
+
+/** Story 19.11: the period the rows belong to — `explicit` false is the default 12 months — and its two balances. */
+export type AccountStatementPeriod = {
+  from: string;
+  to: string;
+  explicit: boolean;
+  openingBalanceCents: number;
+  closingBalanceCents: number;
 };
 
 export type AccountSectionLabels = {
   heading: string;
   balanceLabel: string;
   noAccount: string;
+  /** The person WITHOUT an account; `emptyPeriod` is an account with no movement in the period (D-13). */
   empty: string;
+  emptyPeriod: string;
   pagination: { prev: string; next: string };
   /**
    * `recordedBy`/`actions` are the headers of the two CONDITIONAL columns
@@ -61,9 +78,24 @@ export type AccountSectionLabels = {
    * neither column, so it must not have to ship dead strings across the
    * Server→Client boundary.
    */
-  table: { date: string; type: string; description: string; amount: string; recordedBy?: string; actions?: string; noValue: string };
+  table: { date: string; type: string; description: string; amount: string; balance: string; recordedBy?: string; actions?: string; noValue: string };
   movementType: { topUp: string; adjustment: string; packagePurchase: string; flightCharge: string };
-  adjustmentBadge: { ofDate: string; linked: string };
+  /** `ofDate` carries a literal `{date}` the client fills with the original's value date (`t.raw`). */
+  adjustmentBadge: { ofDate: string };
+  /** Story 19.11: the "Saldo iniziale" line closing the last page. */
+  openingRow: string;
+  /** Story 19.11: the period form and summary. `openingAt`/`closingAt` carry a literal `{date}` (`t.raw`). */
+  period: {
+    label: string;
+    from: string;
+    to: string;
+    apply: string;
+    reset: string;
+    required: string;
+    invalidRange: string;
+    openingAt: string;
+    closingAt: string;
+  };
   /**
    * Strings the PHONE face needs and the desktop one has no place for (story
    * 15.9). `empty` is deliberately NOT `table.empty`: the two trees are both
@@ -71,7 +103,7 @@ export type AccountSectionLabels = {
    * `accounts-topups.spec.ts`'s own family of guards — a repeated string
    * would give two matches at 1280px (AC 10).
    */
-  mobile: { empty: string; openDetail: string; close: string };
+  mobile: { empty: string; emptyPeriod: string; openDetail: string; close: string };
   /**
    * Present only when `canManageFinance` is true — the two toggle buttons
    * that open these forms are themselves gated on the SAME prop (story
@@ -121,6 +153,8 @@ type AccountSectionProps = {
   hasAccount: boolean;
   balanceCents: number;
   rows: AccountMovementRow[];
+  /** Story 19.11 — read only when `hasAccount` (a person without an account has no statement to bound). */
+  period: AccountStatementPeriod;
   page: number;
   totalPages: number;
   showActor: boolean;
@@ -128,9 +162,13 @@ type AccountSectionProps = {
   /** Absent (staff scheda persona, e.g. an actor with no account at all) omits the menu entirely — `ExportMenu` already treats a missing href that way. */
   exportHref?: string;
   exportPdfHref?: string;
+  /** Story 19.11 (AD-8): set by the page when the period is over an export's cap — the menu shows this message instead of the link. */
+  exportXlsUnavailable?: string;
+  exportPdfUnavailable?: string;
   exportLabels: { label: string; xls: string; pdf: string };
   /**
-   * Overrides the statement pagination `Link`'s target pathname (default:
+   * Overrides the target pathname of the statement pagination `Link`s and of
+   * the period form (story 19.11) (default:
    * the staff-facing scheda persona this component was built for,
    * `/dashboard/people/{personId}`). A plain string, not a function — a
    * Client Component prop crossing the Server→Client boundary must be
@@ -184,12 +222,15 @@ export function AccountSection({
   hasAccount,
   balanceCents,
   rows,
+  period,
   page,
   totalPages,
   showActor,
   canManageFinance,
   exportHref,
   exportPdfHref,
+  exportXlsUnavailable,
+  exportPdfUnavailable,
   exportLabels,
   statementBasePath,
   headingRepeatsPageHead = false,
@@ -227,14 +268,10 @@ export function AccountSection({
     setAdjustPanel((current) => (current?.inSheet ? null : current));
   }
 
-  /** The date of the movement this one corrects, but ONLY when that original is on the SAME statement page (`rowById`) — the pagination-dependent behaviour, unchanged. */
-  function originalDateLabel(row: AccountMovementRow): string | null {
-    const original = row.reversalOfId ? rowById.get(row.reversalOfId) : undefined;
-    return original ? formatDateOnly(original.effectiveDate, moneyLocale) : null;
-  }
-
-  function adjustmentBadgeText(row: AccountMovementRow): string {
-    return linkedBadgeText(labels.adjustmentBadge, originalDateLabel(row));
+  /** The rettifica badge, or `null` on an ordinary row. The original's date comes WITH the row (story 19.11, D-9), so it reads the same whether the original is on this page, another one, or before the period. */
+  function adjustmentBadgeText(row: AccountMovementRow): string | null {
+    if (row.type !== 'ADJUSTMENT' || row.reversalOfEffectiveDate === null) return null;
+    return labels.adjustmentBadge.ofDate.replace('{date}', formatDateOnly(row.reversalOfEffectiveDate, moneyLocale));
   }
 
   /** Story 3.3 + review 19.6 F1 (story 16.6b Q4): the row action exists only on a MANUAL movement not yet corrected — the same rule as `transactions.service.ts#toAccountRow`'s `actionable`, the same gate on both faces. A flight charge is corrected by editing or deleting its flight, a package purchase on the cash register. */
@@ -247,19 +284,31 @@ export function AccountSection({
     return amountCents >= 0 ? 'stat-tone-ok' : 'stat-tone-bad';
   }
 
+  /** A BALANCE is red only when negative, neutral otherwise — the rule of the `account-balance` KPI, not the green/red of a signed amount. */
+  function balanceToneClass(balanceCents: number): string {
+    return balanceCents < 0 ? ' stat-tone-bad' : '';
+  }
+
   /** The sheet's key/value lines: every column the desktop row shows, in the same order, with the description at FULL length (the 0px-wide cell of the phone table). */
   function sheetDetailRows(row: AccountMovementRow): BottomSheetRow[] {
     return [
       { k: labels.table.date, v: formatDateOnly(row.effectiveDate, moneyLocale) },
       { k: labels.table.description, v: row.description ?? labels.table.noValue },
       { k: labels.table.amount, v: <span className={`mono ${amountToneClass(row.amountCents)}`}>{formatSignedCents(row.amountCents, moneyLocale)}</span> },
+      { k: labels.table.balance, v: <span className={`mono${balanceToneClass(row.balanceAfterCents)}`}>{formatCents(row.balanceAfterCents, moneyLocale)}</span> },
       ...(showActor && labels.table.recordedBy ? [{ k: labels.table.recordedBy, v: row.actorEmail ?? labels.table.noValue }] : []),
     ];
   }
 
+  const basePath = statementBasePath ?? `/dashboard/people/${personId}`;
+
+  /** `page` FIRST, the period after it and only when the URL carried one (story 19.11, AD-6): the default period keeps today's `?page=N` exactly. */
   function pageHref(targetPage: number) {
-    return { pathname: statementBasePath ?? `/dashboard/people/${personId}`, query: { page: targetPage } };
+    return { pathname: basePath, query: period.explicit ? { page: targetPage, from: period.from, to: period.to } : { page: targetPage } };
   }
+
+  /** Story 19.11 (AD-6, Q-19.11-a = A): the "Saldo iniziale" line closes the LAST page, where the oldest movement of the period is — never on a period without movements. */
+  const showOpeningRow = hasAccount && rows.length > 0 && page >= totalPages;
 
   function handleTopUpSuccess(): void {
     setTopUpOpen(false);
@@ -290,7 +339,13 @@ export function AccountSection({
   // is optional since 14.6, so `canManageFinance` alone could produce a header
   // column whose row cells never render.
   const showActions = canManageFinance && labels.adjustments !== undefined;
-  const cols = ['104px', '150px', '1fr', '120px', ...(showActor ? ['170px'] : []), ...(showActions ? ['170px'] : [])].join(' ');
+  // Story 19.11: the "Saldo" column joins the grid, so the fixed tracks were
+  // re-measured (date, type, the two amounts, email, the row button) to leave
+  // the description its width on the admin face at 1280px. The template is a
+  // custom property on the container, not an inline `grid-template-columns`
+  // per row: `airops.css` must be able to re-lay the admin face out in the
+  // 641-900px band, and a media query cannot override an inline declaration.
+  const cols = ['88px', '128px', 'minmax(0, 1fr)', '100px', '100px', ...(showActor ? ['150px'] : []), ...(showActions ? ['164px'] : [])].join(' ');
 
   return (
     <div className="card" data-testid="account-section">
@@ -312,7 +367,15 @@ export function AccountSection({
             {feedback}
           </p>
         ) : null}
-        <ExportMenu label={exportLabels.label} xlsLabel={exportLabels.xls} xlsHref={exportHref} pdfLabel={exportLabels.pdf} pdfHref={exportPdfHref} />
+        <ExportMenu
+          label={exportLabels.label}
+          xlsLabel={exportLabels.xls}
+          xlsHref={exportHref}
+          xlsUnavailable={exportXlsUnavailable}
+          pdfLabel={exportLabels.pdf}
+          pdfHref={exportPdfHref}
+          pdfUnavailable={exportPdfUnavailable}
+        />
         {canManageFinance && labels.topUp ? (
           <button type="button" className="btn" onClick={() => setTopUpOpen((current) => !current)} data-testid="account-topup-toggle">
             {labels.topUp.action}
@@ -363,30 +426,69 @@ export function AccountSection({
           </div>
         ) : null}
 
+        {/* Story 19.11 (AD-5): the period, ONE form for both widths (D-6 — it
+            reflows in CSS), and its two balances on every page. Only with an
+            account: a person without one has no statement to bound. */}
+        {hasAccount ? (
+          <div className="account-period">
+            <PeriodForm
+              // AD-5: this component never remounts, so the form's own state is
+              // keyed on the period APPLIED — after "Ultimi 12 mesi" the fields
+              // show the default again instead of the dates typed before.
+              key={`${period.from}:${period.to}`}
+              basePath={basePath}
+              from={period.from}
+              to={period.to}
+              explicit={period.explicit}
+              labels={labels.period}
+            />
+            <dl className="account-period-summary" data-testid="account-period-summary">
+              <div className="account-period-figure">
+                <dt className="kpi-label">{labels.period.openingAt.replace('{date}', formatDateOnly(period.from, moneyLocale))}</dt>
+                <dd className={`mono num${balanceToneClass(period.openingBalanceCents)}`} data-testid="account-period-opening">
+                  {formatCents(period.openingBalanceCents, moneyLocale)}
+                </dd>
+              </div>
+              <div className="account-period-figure">
+                <dt className="kpi-label">{labels.period.closingAt.replace('{date}', formatDateOnly(period.to, moneyLocale))}</dt>
+                <dd className={`mono num${balanceToneClass(period.closingBalanceCents)}`} data-testid="account-period-closing">
+                  {formatCents(period.closingBalanceCents, moneyLocale)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        ) : null}
+
         {rows.length === 0 ? (
           <p className="fld-label account-desktop-body" data-testid="account-statement-empty" style={{ textTransform: 'none' }}>
-            {labels.empty}
+            {hasAccount ? labels.emptyPeriod : labels.empty}
           </p>
         ) : (
-          <div className="students account-desktop-body">
-            <div className="student-row header" data-testid="account-statement-header-row" style={{ gridTemplateColumns: cols }}>
+          <div
+            className={`students account-desktop-body${showActor && showActions ? ' account-grid-admin' : ''}`}
+            style={{ '--account-cols': cols } as CSSProperties}
+          >
+            <div className="student-row header" data-testid="account-statement-header-row">
               <div>{labels.table.date}</div>
               <div>{labels.table.type}</div>
               <div>{labels.table.description}</div>
               <div style={{ textAlign: 'right' }}>{labels.table.amount}</div>
+              <div style={{ textAlign: 'right' }}>{labels.table.balance}</div>
               {showActor && labels.table.recordedBy ? <div>{labels.table.recordedBy}</div> : null}
               {showActions ? <div>{labels.table.actions}</div> : null}
             </div>
-            {rows.map((row) => (
-              <div key={row.id} className="student-row" data-testid="account-movement-row" style={{ gridTemplateColumns: cols }}>
+            {rows.map((row) => {
+              const badge = adjustmentBadgeText(row);
+              return (
+              <div key={row.id} className="student-row" data-testid="account-movement-row">
                 <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
                   {formatDateOnly(row.effectiveDate, moneyLocale)}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
                   <span>{movementTypeLabel(row.type, labels.movementType)}</span>
-                  {row.type === 'ADJUSTMENT' && row.reversalOfId ? (
+                  {badge ? (
                     <span className="badge warn" data-testid="adjustment-badge">
-                      {adjustmentBadgeText(row)}
+                      {badge}
                     </span>
                   ) : null}
                 </div>
@@ -395,6 +497,9 @@ export function AccountSection({
                 </div>
                 <div className={`mono num ${amountToneClass(row.amountCents)}`} style={{ fontWeight: 600, textAlign: 'right' }}>
                   {formatSignedCents(row.amountCents, moneyLocale)}
+                </div>
+                <div className={`mono num${balanceToneClass(row.balanceAfterCents)}`} style={{ textAlign: 'right' }} data-testid="account-movement-balance">
+                  {formatCents(row.balanceAfterCents, moneyLocale)}
                 </div>
                 {showActor ? (
                   <div className="mono" style={{ fontSize: 11, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -416,7 +521,26 @@ export function AccountSection({
                   </div>
                 ) : null}
               </div>
-            ))}
+              );
+            })}
+            {/* Not an `account-movement-row`: no count of movements sees it. */}
+            {showOpeningRow ? (
+              <div className="student-row account-opening-row" data-testid="account-opening-row">
+                <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
+                  {formatDateOnly(period.from, moneyLocale)}
+                </div>
+                <div>{labels.openingRow}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>{labels.table.noValue}</div>
+                <div className="mono num" style={{ textAlign: 'right', color: 'var(--ink-2)' }}>
+                  {labels.table.noValue}
+                </div>
+                <div className={`mono num${balanceToneClass(period.openingBalanceCents)}`} style={{ textAlign: 'right' }} data-testid="account-opening-balance">
+                  {formatCents(period.openingBalanceCents, moneyLocale)}
+                </div>
+                {showActor ? <div /> : null}
+                {showActions ? <div /> : null}
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -433,22 +557,25 @@ export function AccountSection({
         <div className="account-mobile" data-testid="mobile-account-list">
           {rows.length === 0 ? (
             <p className="mobile-card-empty" data-testid="mobile-account-empty">
-              {labels.mobile.empty}
+              {hasAccount ? labels.mobile.emptyPeriod : labels.mobile.empty}
             </p>
           ) : (
             rows.map((row) => {
               const typeLabel = movementTypeLabel(row.type, labels.movementType);
               const amountText = formatSignedCents(row.amountCents, moneyLocale);
               const dateLabel = formatDateOnly(row.effectiveDate, moneyLocale);
+              const balanceText = `${labels.table.balance} ${formatCents(row.balanceAfterCents, moneyLocale)}`;
+              const badge = adjustmentBadgeText(row);
               return (
                 <button
                   key={row.id}
                   type="button"
                   className="mobile-row mobile-row-movement"
                   // A speaking name (AC 1): type, date and amount — the three
-                  // things the row IS. The card carries no nested control
-                  // (R-15.2-b), so there is nothing for a reader to get stuck on.
-                  aria-label={`${labels.mobile.openDetail}: ${typeLabel} · ${dateLabel} · ${amountText}`}
+                  // things the row IS — and the balance after it (story 19.11).
+                  // The card carries no nested control (R-15.2-b), so there is
+                  // nothing for a reader to get stuck on.
+                  aria-label={`${labels.mobile.openDetail}: ${typeLabel} · ${dateLabel} · ${amountText} · ${balanceText}`}
                   onClick={() => openSheet(row.id)}
                   data-testid="account-movement-row-mobile"
                 >
@@ -462,17 +589,19 @@ export function AccountSection({
                   </span>
                   <span className="mobile-row-side">
                     <span className={`mobile-row-amount ${amountToneClass(row.amountCents)}`}>{amountText}</span>
+                    <span className="mobile-row-note" data-testid="account-movement-balance-mobile">
+                      {balanceText}
+                    </span>
                   </span>
                   {/* Only when the movement is NOT ordinary (idiom 15.6/15.8a),
                       and on its own line: a badge beside the type on a 281px
-                      card eats the type. Same TEXT as the desktop badge,
-                      including the `linked` fallback; a DIFFERENT testid,
-                      because `adjustment-badge` is read page-level with
-                      `toHaveText` by `account-adjustments.spec.ts`. */}
-                  {row.type === 'ADJUSTMENT' && row.reversalOfId ? (
+                      card eats the type. Same TEXT as the desktop badge; a
+                      DIFFERENT testid, because `adjustment-badge` is read
+                      page-level with `toHaveText` by `account-adjustments.spec.ts`. */}
+                  {badge ? (
                     <span className="mobile-row-flag">
                       <span className="badge warn" data-testid="adjustment-badge-mobile">
-                        {adjustmentBadgeText(row)}
+                        {badge}
                       </span>
                     </span>
                   ) : null}
@@ -480,6 +609,22 @@ export function AccountSection({
               );
             })
           )}
+          {/* The "Saldo iniziale" card: a statement line, not a movement —
+              nothing to open, so a plain block outside the tab order (the
+              payout card's modifier idiom, 15.9), never a `<button>`. */}
+          {showOpeningRow ? (
+            <div className="mobile-row mobile-row-opening" data-testid="account-opening-row-mobile">
+              <span className="mobile-row-main">
+                <span className="mobile-row-title">
+                  <span className="mobile-row-name">{labels.openingRow}</span>
+                </span>
+                <span className="mobile-row-sub">{formatDateOnly(period.from, moneyLocale)}</span>
+              </span>
+              <span className="mobile-row-side">
+                <span className={`mobile-row-amount${balanceToneClass(period.openingBalanceCents)}`}>{formatCents(period.openingBalanceCents, moneyLocale)}</span>
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {/* AD-4: the SAME two links and the same `?page=` contract; the inline
@@ -529,11 +674,7 @@ export function AccountSection({
             actorEmail: showActor ? sheetRow.actorEmail : null,
           })}
           title={movementTypeLabel(sheetRow.type, labels.movementType)}
-          badge={
-            sheetRow.reversalOfId && sheetRow.type === 'ADJUSTMENT' ? (
-              <span className="badge warn">{adjustmentBadgeText(sheetRow)}</span>
-            ) : undefined
-          }
+          badge={adjustmentBadgeText(sheetRow) ? <span className="badge warn">{adjustmentBadgeText(sheetRow)}</span> : undefined}
           rows={sheetDetailRows(sheetRow)}
           closeLabel={labels.mobile.close}
           actions={
@@ -568,6 +709,106 @@ export function AccountSection({
         />
       ) : null}
     </div>
+  );
+}
+
+// --- The period of the statement (story 19.11, AD-5) ------------------------
+
+type PeriodFieldError = { message: string; from: boolean; to: boolean };
+
+/**
+ * "Dal" / "Al" + "Applica": the period is applied on SUBMIT, not on every
+ * change like the registro voli's filters (D-5) — with two dates, applying
+ * each keystroke would navigate through inverted periods half-way through an
+ * edit. Validated here (both dates, `from <= to`) before any navigation; the
+ * API refuses an inverted pair anyway (422), the page falls back to the
+ * default on any URL it cannot read. A valid period starts again from page 1
+ * (no `page` in the URL); `scroll: false` because on the scheda persona this
+ * card sits half-way down the page. No `min`/`max` on the two fields: any
+ * past period is a legitimate question (19.3 AC 24).
+ */
+function PeriodForm({
+  basePath,
+  from,
+  to,
+  explicit,
+  labels,
+}: {
+  basePath: string;
+  from: string;
+  to: string;
+  explicit: boolean;
+  labels: AccountSectionLabels['period'];
+}) {
+  const router = useRouter();
+  const [draft, setDraft] = useState({ from, to });
+  const [error, setError] = useState<PeriodFieldError | null>(null);
+  const fromId = useId();
+  const toId = useId();
+  const errorId = useId();
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    // A partly typed native date reads as '' — "enter both dates" covers it too.
+    if (draft.from === '' || draft.to === '') {
+      setError({ message: labels.required, from: draft.from === '', to: draft.to === '' });
+      return;
+    }
+    if (draft.from > draft.to) {
+      setError({ message: labels.invalidRange, from: false, to: true });
+      return;
+    }
+    setError(null);
+    router.push(`${basePath}?${new URLSearchParams({ from: draft.from, to: draft.to }).toString()}`, { scroll: false });
+  }
+
+  return (
+    <form className="account-period-form" aria-label={labels.label} noValidate onSubmit={handleSubmit} data-testid="account-period-form">
+      <div className="account-period-field">
+        <label className="fld-label" htmlFor={fromId}>
+          {labels.from}
+        </label>
+        <DateInput
+          id={fromId}
+          value={draft.from}
+          onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))}
+          aria-invalid={error?.from === true}
+          aria-describedby={error ? errorId : undefined}
+          data-testid="account-period-from"
+        />
+      </div>
+      <span className="account-period-dash" aria-hidden="true">
+        –
+      </span>
+      <div className="account-period-field">
+        <label className="fld-label" htmlFor={toId}>
+          {labels.to}
+        </label>
+        <DateInput
+          id={toId}
+          value={draft.to}
+          onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))}
+          aria-invalid={error?.to === true}
+          aria-describedby={error ? errorId : undefined}
+          data-testid="account-period-to"
+        />
+      </div>
+      <div className="account-period-actions">
+        <button type="submit" className="btn" data-testid="account-period-apply">
+          {labels.apply}
+        </button>
+        {explicit ? (
+          <button type="button" className="btn" onClick={() => router.push(basePath, { scroll: false })} data-testid="account-period-reset">
+            {labels.reset}
+          </button>
+        ) : null}
+      </div>
+      {error ? (
+        <p role="alert" id={errorId} className="fld-error account-period-error" data-testid="account-period-error">
+          {error.message}
+        </p>
+      ) : null}
+    </form>
   );
 }
 

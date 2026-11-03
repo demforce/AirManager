@@ -1,7 +1,9 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
+import { resolveStatementPeriod } from '@/lib/statement-period';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getOwnAccountOverview, listOwnAccountMovements } from '@/server/services/accounts.service';
@@ -9,7 +11,7 @@ import { AccountSection, type AccountSectionLabels } from '../people/[id]/accoun
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; from?: string | string[]; to?: string | string[] }>;
 };
 
 /** Same statement page size as the staff-facing scheda persona (`people/[id]/page.tsx`'s own, unexported `ACCOUNT_PAGE_SIZE`) — kept as its own local constant rather than a cross-page import: one page size, coincidentally shared, not a contract between the two pages. */
@@ -26,6 +28,9 @@ const ACCOUNT_PAGE_SIZE = 20;
  * actions — a pilot can never top up their own account,
  * `accounts.service.ts#recordTopUp`'s own doc-comment), and its pagination
  * links point at THIS route via `AccountSection`'s `statementBasePath` override.
+ * Same period as the scheda persona (story 19.11): `?from=&to=` or the last
+ * 12 months, read by `resolveStatementPeriod`, passed to the statement AND to
+ * the two export links.
  *
  * Privacy/IDOR (AC 2/5): `getOwnAccountOverview`/`listOwnAccountMovements`
  * read `actor.personId` ONLY — this route's URL and query carry no personId
@@ -44,7 +49,7 @@ const ACCOUNT_PAGE_SIZE = 20;
  */
 export default async function MyAccountPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, from: fromParam, to: toParam } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -68,20 +73,22 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
   const tExport = await getTranslations('Export');
 
   let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
+  const period = resolveStatementPeriod({ from: fromParam, to: toParam });
   const overview = await getOwnAccountOverview(actor);
-  let statement = await listOwnAccountMovements(actor, { page, pageSize: ACCOUNT_PAGE_SIZE });
-  // Clamp an out-of-range ?page to the last real page (same guard the scheda persona uses).
+  let statement = await listOwnAccountMovements(actor, { page, pageSize: ACCOUNT_PAGE_SIZE, from: period.from, to: period.to });
+  // Clamp an out-of-range ?page to the last real page of the period (same guard the scheda persona uses).
   const lastPage = Math.max(1, Math.ceil(statement.total / ACCOUNT_PAGE_SIZE));
   if (page > lastPage) {
     page = lastPage;
-    statement = await listOwnAccountMovements(actor, { page, pageSize: ACCOUNT_PAGE_SIZE });
+    statement = await listOwnAccountMovements(actor, { page, pageSize: ACCOUNT_PAGE_SIZE, from: period.from, to: period.to });
   }
 
   // Both endpoints re-check `self.read` + own-personId themselves (`assertReadAccess`,
   // reused via `listAccountMovements`/`exportAccountMovementsXlsx`/`exportAccountStatementPdf`)
   // — `actor.personId` here is server-resolved from the session, never client input.
-  const exportHref = actor.personId ? buildExportHref(`/api/v1/people/${actor.personId}/account/movements`, {}, locale) : undefined;
-  const exportPdfHref = actor.personId ? buildPdfExportHref(`/api/v1/people/${actor.personId}/account/pdf`, {}, locale) : undefined;
+  const exportPeriod = { from: period.from, to: period.to };
+  const exportHref = actor.personId ? buildExportHref(`/api/v1/people/${actor.personId}/account/movements`, exportPeriod, locale) : undefined;
+  const exportPdfHref = actor.personId ? buildPdfExportHref(`/api/v1/people/${actor.personId}/account/pdf`, exportPeriod, locale) : undefined;
 
   const labels: AccountSectionLabels = {
     // Reuses the scheda persona's own card heading ("Estratto conto") rather
@@ -92,12 +99,14 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
     balanceLabel: t('balanceLabel'),
     noAccount: t('noAccount'),
     empty: tAccount('table.empty'),
+    emptyPeriod: tAccount('table.emptyPeriod'),
     pagination: { prev: tPilots('pagination.prev'), next: tPilots('pagination.next') },
     table: {
       date: tAccount('table.date'),
       type: tAccount('table.type'),
       description: tAccount('table.description'),
       amount: tAccount('table.amount'),
+      balance: tAccount('table.balance'),
       // `recordedBy`/`actions` omitted (review 14.6 F6): `showActor` and
       // `canManageFinance` are both false here, so those columns never render.
       noValue: tAccount('table.noValue'),
@@ -109,9 +118,26 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
       flightCharge: tAccount('movementType.flightCharge'),
     },
     // `t.raw`: `{date}` is a literal placeholder the CLIENT fills in (same
-    // rationale as the scheda persona's identical usage of this key).
-    adjustmentBadge: { ofDate: tAccount.raw('adjustmentBadge.ofDate') as string, linked: tAccount('adjustmentBadge.linked') },
-    mobile: { empty: tAccount('mobile.empty'), openDetail: tAccount('mobile.openDetail'), close: tAccount('mobile.close') },
+    // rationale as the scheda persona's identical usage of these keys).
+    adjustmentBadge: { ofDate: tAccount.raw('adjustmentBadge.ofDate') as string },
+    openingRow: tAccount('openingRow'),
+    period: {
+      label: tAccount('period.label'),
+      from: tAccount('period.from'),
+      to: tAccount('period.to'),
+      apply: tAccount('period.apply'),
+      reset: tAccount('period.reset'),
+      required: tAccount('period.required'),
+      invalidRange: tAccount('period.invalidRange'),
+      openingAt: tAccount.raw('period.openingAt') as string,
+      closingAt: tAccount.raw('period.closingAt') as string,
+    },
+    mobile: {
+      empty: tAccount('mobile.empty'),
+      emptyPeriod: tAccount('mobile.emptyPeriod'),
+      openDetail: tAccount('mobile.openDetail'),
+      close: tAccount('mobile.close'),
+    },
     // `topUp`/`adjustments` deliberately omitted: `canManageFinance={false}`
     // below means their toggle buttons never render, so `AccountSection`
     // never needs these labels here (story 14.6 — a pilot cannot top up or
@@ -134,12 +160,15 @@ export default async function MyAccountPage({ params, searchParams }: PageProps)
         hasAccount={overview.account !== null}
         balanceCents={overview.balanceCents}
         rows={statement.items}
+        period={{ ...period, openingBalanceCents: statement.openingBalanceCents, closingBalanceCents: statement.closingBalanceCents }}
         page={page}
         totalPages={Math.max(1, Math.ceil(statement.total / ACCOUNT_PAGE_SIZE))}
         showActor={false}
         canManageFinance={false}
         exportHref={exportHref}
         exportPdfHref={exportPdfHref}
+        exportXlsUnavailable={statement.total > EXPORT_MAX_ROWS ? tExport('xlsTooLarge', { max: EXPORT_MAX_ROWS }) : undefined}
+        exportPdfUnavailable={statement.total > PDF_EXPORT_MAX_ROWS ? tExport('pdfTooLarge', { max: PDF_EXPORT_MAX_ROWS }) : undefined}
         exportLabels={{ label: tExport('button'), xls: tExport('button'), pdf: tExport('buttonPdf') }}
         statementBasePath="/dashboard/my-account"
         headingRepeatsPageHead={true}

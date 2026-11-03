@@ -54,3 +54,30 @@ export async function seedInstructorRate(personId: string, rate: { priceCentsPer
     throw new Error(`seedInstructorRate: person ${personId} has no instructor profile.`);
   }
 }
+
+/**
+ * `ADJUSTMENT` movements on ANY value date, written straight into the
+ * person's account (story 19.11): the API dates a rettifica today, and the
+ * estratto conto specs need movements of either sign on chosen past dates —
+ * up to the 2 001 of the PDF cap. The columns `accounts.service.ts#recordAdjustment`
+ * writes (no cash twin, no link). `createdAt` advances 1 ms per row in ARRAY
+ * order, so the insertion order — the statement's tie-break within a day — is
+ * the array's. Returns the ids in array order; throws if the person has no account.
+ */
+export async function seedAccountAdjustments(personId: string, rows: Array<{ amountCents: number; effectiveDate: string; description?: string }>): Promise<string[]> {
+  const result = await pool.query<{ id: string; createdAt: Date }>(
+    `INSERT INTO "AccountMovement" ("id", "accountId", "type", "amountCents", "description", "effectiveDate", "actorUserId", "createdAt")
+     SELECT 'e2e_' || gen_random_uuid(), a."id", 'ADJUSTMENT', r.amount, r.description, r.effective::date, ${ADMIN_USER},
+            (clock_timestamp() AT TIME ZONE 'UTC') + r.ord * INTERVAL '1 millisecond'
+     FROM "Account" a, unnest($2::int[], $3::text[], $4::text[]) WITH ORDINALITY AS r(amount, effective, description, ord)
+     WHERE a."personId" = $1
+     ORDER BY r.ord
+     RETURNING "id", "createdAt"`,
+    [personId, rows.map((row) => row.amountCents), rows.map((row) => row.effectiveDate), rows.map((row) => row.description ?? null)],
+  );
+  if (result.rowCount !== rows.length) {
+    throw new Error(`seedAccountAdjustments: person ${personId} has no account.`);
+  }
+  // RETURNING carries no order guarantee: sort back on the insertion order the rows were given.
+  return [...result.rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).map((row) => row.id);
+}

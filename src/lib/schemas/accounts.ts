@@ -110,28 +110,46 @@ export const accountOverviewWithAlertSchema = accountOverviewSchema.extend({
 export type AccountOverviewWithAlertDto = z.infer<typeof accountOverviewWithAlertSchema>;
 
 /**
+ * The statement period (story 19.11, AD-1), shared by the two statement
+ * queries below: OPTIONAL `from`/`to`, inclusive on `effectiveDate`; absent
+ * means the complete history (D-1 — the 12-month default belongs to the two
+ * pages, which always send an explicit period). Joined to each `ZodObject`
+ * BEFORE the refine (the "extend before refine" of `common.ts`). An inverted
+ * pair is a 422 with the same message and `path` as `cashReportQuerySchema`;
+ * plain `YYYY-MM-DD` string comparison is safe because `z.iso.date()`
+ * guarantees the fixed-width format.
+ */
+const statementPeriodShape = {
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+};
+
+function statementPeriodInOrder(value: { from?: string; to?: string }): boolean {
+  return !value.from || !value.to || value.from <= value.to;
+}
+
+const STATEMENT_PERIOD_ORDER = { message: 'from must not be after to', path: ['to'] };
+
+/**
  * `GET /api/v1/people/{id}/account/movements` query (story 3.2) — the shared
  * pagination shape (story 1.5), same reuse as `listAircraftQuerySchema`,
- * plus the `?format=xlsx` export params (story 10.1, AC 1).
+ * plus the `?format=xlsx` export params (story 10.1, AC 1) and the statement
+ * period (story 19.11): the JSON page and the xlsx file cover the same rows.
  */
-export const listAccountMovementsQuerySchema = paginationQuerySchema.extend({ ...exportQuerySchema.shape });
+export const listAccountMovementsQuerySchema = paginationQuerySchema
+  .extend({ ...exportQuerySchema.shape, ...statementPeriodShape })
+  .refine(statementPeriodInOrder, STATEMENT_PERIOD_ORDER);
 
 export type ListAccountMovementsQuery = z.infer<typeof listAccountMovementsQuerySchema>;
 
 /**
- * `GET /api/v1/people/{id}/account/pdf` query (epic 12, story 12.9, AC 5) —
- * `from`/`to` are ADDITIVE optional bounds over the pre-existing
- * `pdfQuerySchema` (`locale` only): absent = the full statement (unchanged
- * default, so `pdf-exports.spec.ts` and the drill-down page's own PDF button
- * stay byte-identical), present = the billing "Estratti conto" period. No
- * mandatory-pair `.refine` (unlike `cashReportPdfQuerySchema`'s always-bound
- * report): same independently-optional convention as
- * `listCashMovementsQuerySchema`'s own `from`/`to`.
+ * `GET /api/v1/people/{id}/account/pdf` query (story 10.2; `from`/`to` since
+ * story 12.9, AC 5) — `pdfQuerySchema` (`locale` only) plus the SAME
+ * statement period as the list above (story 19.11: an inverted pair is now a
+ * 422 here too): absent = the full statement, present = that period, with
+ * its opening and closing balances as the PDF's totals.
  */
-export const accountStatementPdfQuerySchema = pdfQuerySchema.extend({
-  from: z.iso.date().optional(),
-  to: z.iso.date().optional(),
-});
+export const accountStatementPdfQuerySchema = pdfQuerySchema.extend(statementPeriodShape).refine(statementPeriodInOrder, STATEMENT_PERIOD_ORDER);
 
 export type AccountStatementPdfQuery = z.infer<typeof accountStatementPdfQuerySchema>;
 
@@ -164,12 +182,32 @@ export const accountStatementItemSchema = z.object({
    * second adjustment on the same original is a 409, not silently allowed).
    */
   hasReversal: z.boolean(),
+  /**
+   * Story 19.11 (AD-3): the account's balance right AFTER this movement — the
+   * period's opening balance plus the running sum of the period up to this
+   * row, in the statement's order (value date, then insertion).
+   */
+  balanceAfterCents: z.number().int(),
+  /** Story 19.11: the value date of the movement this one corrects, wherever it sits (another page, before the period); `null` exactly when `reversalOfId` is. */
+  reversalOfEffectiveDate: z.iso.date().nullable(),
 });
 
 export type AccountStatementItemDto = z.infer<typeof accountStatementItemSchema>;
 
-/** `GET /api/v1/people/{id}/account/movements` response — AD-8 paginated shape. */
-export const accountStatementResponseSchema = paginatedResponseSchema(accountStatementItemSchema);
+/**
+ * `GET /api/v1/people/{id}/account/movements` response — the AD-8 paginated
+ * shape (`total` = movements of the period) plus the period itself (story
+ * 19.11): `from`/`to` echo the bounds applied (`null` when absent),
+ * `openingBalanceCents` is the sum of every movement dated before `from` (0
+ * without `from`), `closingBalanceCents` the opening plus the period's sum.
+ * Items are ordered by value date, most recent first.
+ */
+export const accountStatementResponseSchema = paginatedResponseSchema(accountStatementItemSchema).extend({
+  from: z.iso.date().nullable(),
+  to: z.iso.date().nullable(),
+  openingBalanceCents: z.number().int(),
+  closingBalanceCents: z.number().int(),
+});
 
 export type AccountStatementResponseDto = z.infer<typeof accountStatementResponseSchema>;
 

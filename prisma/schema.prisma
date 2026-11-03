@@ -623,7 +623,11 @@ model AccountMovement {
   flightId     String?       @unique
   flight       Flight?       @relation(fields: [flightId], references: [id], onDelete: Restrict)
 
-  @@index([accountId])
+  /// The estratto conto's key (story 19.11, D-3): one account's movements by
+  /// value date, insertion order as tie-break — the order the running balance
+  /// is summed in and the page is read in. The `accountId` prefix also serves
+  /// every per-account lookup the old `@@index([accountId])` did.
+  @@index([accountId, effectiveDate, createdAt, id])
 }
 
 /// Cash-ledger categories (story 3.1; full list assumed seeded per Dev Notes,

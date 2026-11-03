@@ -27,6 +27,12 @@
  * `.popover`/`.popover-scrim` classes it carries keep the desktop popover
  * exactly as it was (measured invariant on all nine consumers at
  * 641/800/1280). `airops.css`'s own `.export-menu-*` block does the rest.
+ *
+ * Story 19.11 (AD-8): `pdfUnavailable`/`xlsUnavailable` replace an entry's
+ * link with a plain, non-interactive message — for a caller that already
+ * knows the file would be refused (the estratto conto knows its period's
+ * total and the two caps): a 422 opened in a new tab is raw JSON. Omitted,
+ * the render is the one every other consumer had before.
  */
 import { useCallback, useState } from 'react';
 import { Icon } from './icons';
@@ -36,11 +42,15 @@ export type ExportMenuProps = {
   label: string;
   pdfLabel: string;
   pdfHref?: string;
+  /** When set, shown INSTEAD of the PDF link (the export is known to be over its cap). */
+  pdfUnavailable?: string;
   xlsLabel: string;
   xlsHref?: string;
+  /** Same as {@link ExportMenuProps.pdfUnavailable}, for the Excel entry. */
+  xlsUnavailable?: string;
 };
 
-export function ExportMenu({ label, pdfLabel, pdfHref, xlsLabel, xlsHref }: ExportMenuProps) {
+export function ExportMenu({ label, pdfLabel, pdfHref, pdfUnavailable, xlsLabel, xlsHref, xlsUnavailable }: ExportMenuProps) {
   const [open, setOpen] = useState(false);
   /** Referentially stable by contract — `MobileSheet` gates its focus effect on it. */
   const close = useCallback(() => setOpen(false), []);
@@ -60,7 +70,12 @@ export function ExportMenu({ label, pdfLabel, pdfHref, xlsLabel, xlsHref }: Expo
         panelClassName="popover export-menu-panel"
       >
         <div className="pop-row" style={{ gap: 4 }}>
-          {pdfHref && (
+          {pdfUnavailable ? (
+            <p className="export-menu-unavailable" data-testid="export-menu-pdf-unavailable">
+              <span className="mono stat-tone-bad" style={{ fontSize: 11, fontWeight: 600 }}>PDF</span>
+              <span>{pdfUnavailable}</span>
+            </p>
+          ) : pdfHref && (
             <a
               className="btn"
               style={{ width: '100%', justifyContent: 'flex-start', gap: 10 }}
@@ -78,7 +93,12 @@ export function ExportMenu({ label, pdfLabel, pdfHref, xlsLabel, xlsHref }: Expo
               {pdfLabel}
             </a>
           )}
-          {xlsHref && (
+          {xlsUnavailable ? (
+            <p className="export-menu-unavailable" data-testid="export-menu-xls-unavailable">
+              <span className="mono stat-tone-ok" style={{ fontSize: 11, fontWeight: 600 }}>XLS</span>
+              <span>{xlsUnavailable}</span>
+            </p>
+          ) : xlsHref && (
             <a
               className="btn"
               style={{ width: '100%', justifyContent: 'flex-start', gap: 10 }}

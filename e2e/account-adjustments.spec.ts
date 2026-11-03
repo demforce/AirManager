@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { allTimeStatement } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -148,7 +149,8 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     const personId = await createPilotPerson(page, person);
     await recordTopUp(page, personId, 10000); // +100,00 € — the movement to correct.
 
-    await page.goto(`/it/dashboard/people/${personId}/account`);
+    // Story 19.11 (D-15): the top-up is dated 2026-07-01 — read over the wide period.
+    await page.goto(allTimeStatement(`/it/dashboard/people/${personId}/account`));
     const topUpRow = page.getByTestId('account-movement-row').filter({ hasText: 'Ricarica' });
     await topUpRow.getByRole('button', { name: 'Rettifica questo movimento' }).click();
     // The panel names the linked original movement.

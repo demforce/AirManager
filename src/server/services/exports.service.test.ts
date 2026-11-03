@@ -50,6 +50,7 @@ const {
   exportPeopleXlsx,
   exportAircraftXlsx,
   exportFlightsXlsx,
+  exportAccountMovementsXlsx,
   exportCashMovementsXlsx,
   exportExpiriesXlsx,
   exportInstructorCompensationXlsx,
@@ -555,37 +556,54 @@ describe('assertWithinPdfExportCap (story 10.2, AC 4)', () => {
   });
 });
 
-describe('exportAccountStatementPdf (story 10.2, AC 2/3/4)', () => {
-  it('reuses listAccountMovements with page:1/pageSize:PDF_EXPORT_MAX_ROWS, and rejects EXPORT_TOO_LARGE before reading person/overview/branding', async () => {
-    listAccountMovementsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+/** Story 19.11: a `listAccountMovements` result — the page plus the period it covers and its two balances. */
+function statementFixture(overrides: Record<string, unknown> = {}) {
+  return { items: [], total: 0, page: 1, pageSize: PDF_EXPORT_MAX_ROWS, from: null, to: null, openingBalanceCents: 0, closingBalanceCents: 0, ...overrides } as never;
+}
+
+/** Two movements of the SAME day, most recent first (the service's order), with their running balances over an opening of 100,00 €. */
+const PERIOD_ITEMS = [
+  {
+    id: 'mv_2',
+    type: 'FLIGHT_CHARGE',
+    amountCents: -5000,
+    effectiveDate: '2026-07-10',
+    description: null,
+    createdAt: new Date('2026-07-10T11:00:00Z'),
+    actorEmail: 'staff@airmanager.local',
+    reversalOfId: null,
+    hasReversal: false,
+    balanceAfterCents: 25000,
+    reversalOfEffectiveDate: null,
+  },
+  {
+    id: 'mv_1',
+    type: 'TOP_UP',
+    amountCents: 20000,
+    effectiveDate: '2026-07-10',
+    description: 'Ricarica POS',
+    createdAt: new Date('2026-07-10T09:00:00Z'),
+    actorEmail: 'staff@airmanager.local',
+    reversalOfId: null,
+    hasReversal: false,
+    balanceAfterCents: 30000,
+    reversalOfEffectiveDate: null,
+  },
+];
+
+describe('exportAccountStatementPdf (story 10.2, AC 2/3/4; story 19.11, AC 24)', () => {
+  it('reuses listAccountMovements with page:1/pageSize:PDF_EXPORT_MAX_ROWS, and rejects EXPORT_TOO_LARGE before reading person/branding', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: PDF_EXPORT_MAX_ROWS + 1 }));
 
     await expect(exportAccountStatementPdf(ACTOR, 'person_1', {})).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
 
     expect(listAccountMovementsMock).toHaveBeenCalledWith(ACTOR, 'person_1', { page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
     expect(getPersonMock).not.toHaveBeenCalled();
-    expect(getAccountOverviewMock).not.toHaveBeenCalled();
+    expect(getAirfieldBrandingMock).not.toHaveBeenCalled();
   });
 
-  it('maps movements to columns (signed amount, type/date localized), includes the balance total, and titles the report with the person name', async () => {
-    listAccountMovementsMock.mockResolvedValue({
-      total: 1,
-      page: 1,
-      pageSize: PDF_EXPORT_MAX_ROWS,
-      items: [
-        {
-          id: 'mv_1',
-          type: 'TOP_UP',
-          amountCents: 15000,
-          effectiveDate: '2026-07-01',
-          description: 'Ricarica POS',
-          createdAt: new Date('2026-07-01T09:00:00Z'),
-          actorEmail: 'staff@airmanager.local',
-          reversalOfId: null,
-          hasReversal: false,
-        },
-      ],
-    } as never);
-    getAccountOverviewMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: 42000, recentMovements: [] } as never);
+  it('without a period: the whole history, a Saldo column, NO opening line, and the closing balance as "Saldo finale" — never a second read of the current balance', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: 1, items: [{ ...PERIOD_ITEMS[1], balanceAfterCents: 42000 }], closingBalanceCents: 42000 }));
     getPersonMock.mockResolvedValue({ id: 'person_1', firstName: 'Mario', lastName: 'Rossi' } as never);
 
     const { buffer, filename } = await exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'it' });
@@ -597,61 +615,28 @@ describe('exportAccountStatementPdf (story 10.2, AC 2/3/4)', () => {
     expect(props.title).toBe('Estratto conto');
     expect(props.subtitle).toBe('Rossi Mario');
     expect(props.branding).toEqual(BRANDING);
-
-    const row = props.rows[0];
-    expect(props.columns.map((c) => c.header)).toEqual(['Data', 'Tipo', 'Descrizione', 'Importo', 'Registrato da']);
-    expect(props.columns.map((c) => c.value(row))).toEqual(['01/07/2026', 'Ricarica', 'Ricarica POS', '+150,00 €', 'staff@airmanager.local']);
+    expect(props.columns.map((c) => c.header)).toEqual(['Data', 'Tipo', 'Descrizione', 'Importo', 'Saldo', 'Registrato da']);
+    expect(props.rows).toHaveLength(1);
+    expect(props.columns.map((c) => c.value(props.rows[0]))).toEqual(['10/07/2026', 'Ricarica', 'Ricarica POS', '+200,00 €', '420,00 €', 'staff@airmanager.local']);
     expect(props.totals).toEqual([{ label: 'Saldo finale', value: '420,00 €' }]);
+    expect(getAccountOverviewMock).not.toHaveBeenCalled();
   });
 
-  it('drops the "recordato da" column for an actor without people.read (own access)', async () => {
-    listAccountMovementsMock.mockResolvedValue({
-      total: 1,
-      page: 1,
-      pageSize: PDF_EXPORT_MAX_ROWS,
-      items: [
-        {
-          id: 'mv_1',
-          type: 'FLIGHT_CHARGE',
-          amountCents: -5000,
-          effectiveDate: '2026-07-01',
-          description: null,
-          createdAt: new Date('2026-07-01T09:00:00Z'),
-          reversalOfId: null,
-          hasReversal: false,
-        },
-      ],
-    } as never);
-    getAccountOverviewMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: -5000, recentMovements: [] } as never);
+  it('drops the "registrato da" column for an actor without people.read (own access)', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: 1, items: [{ ...PERIOD_ITEMS[0], actorEmail: undefined }], closingBalanceCents: -5000 }));
     getPersonMock.mockResolvedValue({ id: 'person_1', firstName: 'Mario', lastName: 'Rossi' } as never);
 
     const pilotActor: Actor = { userId: 'u2', personId: 'person_1', roles: ['PILOT'] };
     await exportAccountStatementPdf(pilotActor, 'person_1', { locale: 'it' });
 
     const props = lastPdfProps();
-    expect(props.columns.map((c) => c.header)).toEqual(['Data', 'Tipo', 'Descrizione', 'Importo']);
+    expect(props.columns.map((c) => c.header)).toEqual(['Data', 'Tipo', 'Descrizione', 'Importo', 'Saldo']);
   });
 
-  it('forwards from/to to listAccountMovements (rows filtered at the source), adds the period subtitle and re-labels the balance as CURRENT (story 12.9 AC 5; review 12.9 F2)', async () => {
-    listAccountMovementsMock.mockResolvedValue({
-      total: 1,
-      page: 1,
-      pageSize: PDF_EXPORT_MAX_ROWS,
-      items: [
-        {
-          id: 'mv_1',
-          type: 'TOP_UP',
-          amountCents: 15000,
-          effectiveDate: '2026-07-10',
-          description: 'Ricarica POS',
-          createdAt: new Date('2026-07-10T09:00:00Z'),
-          actorEmail: 'staff@airmanager.local',
-          reversalOfId: null,
-          hasReversal: false,
-        },
-      ],
-    } as never);
-    getAccountOverviewMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: 42000, recentMovements: [] } as never);
+  it('with a period: rows in the screen order, the "Saldo iniziale" line LAST, the period subtitle, and the opening/closing balances of the period as totals', async () => {
+    listAccountMovementsMock.mockResolvedValue(
+      statementFixture({ total: 2, items: PERIOD_ITEMS, from: '2026-07-01', to: '2026-07-31', openingBalanceCents: 10000, closingBalanceCents: 25000 }),
+    );
     getPersonMock.mockResolvedValue({ id: 'person_1', firstName: 'Mario', lastName: 'Rossi' } as never);
 
     await exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'it', from: '2026-07-01', to: '2026-07-31' });
@@ -663,18 +648,87 @@ describe('exportAccountStatementPdf (story 10.2, AC 2/3/4)', () => {
       to: '2026-07-31',
     });
     const props = lastPdfProps();
-    expect(props.subtitle).toMatch(/^Rossi Mario · /);
-    expect(props.totals).toEqual([{ label: 'Saldo attuale del conto', value: '420,00 €' }]);
+    expect(props.subtitle).toBe('Rossi Mario · 01/07/2026 – 31/07/2026');
+    expect(props.rows.map((row) => props.columns.map((c) => c.value(row)))).toEqual([
+      ['10/07/2026', 'Addebito volo', '', '-50,00 €', '250,00 €', 'staff@airmanager.local'],
+      ['10/07/2026', 'Ricarica', 'Ricarica POS', '+200,00 €', '300,00 €', 'staff@airmanager.local'],
+      ['01/07/2026', 'Saldo iniziale', '', '', '100,00 €', ''],
+    ]);
+    expect(props.totals).toEqual([
+      { label: 'Saldo iniziale al 01/07/2026', value: '100,00 €' },
+      { label: 'Saldo finale al 31/07/2026', value: '250,00 €' },
+    ]);
+    expect(getAccountOverviewMock).not.toHaveBeenCalled();
+  });
+
+  it('a lone `from`: the opening total and line, and the closing one as plain "Saldo finale" (no date to name)', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: 0, from: '2026-07-01', openingBalanceCents: 10000, closingBalanceCents: 10000 }));
+    getPersonMock.mockResolvedValue({ id: 'person_1', firstName: 'Mario', lastName: 'Rossi' } as never);
+
+    await exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'en', from: '2026-07-01' });
+
+    const props = lastPdfProps();
+    expect(props.subtitle).toBe('Rossi Mario');
+    expect(props.rows).toHaveLength(1);
+    expect(props.totals).toEqual([
+      { label: 'Opening balance on 01/07/2026', value: '€100.00' },
+      { label: 'Final balance', value: '€100.00' },
+    ]);
   });
 
   it('rejects EXPORT_TOO_LARGE on the PERIOD-FILTERED total — the cap reads the total AFTER from/to are applied', async () => {
-    listAccountMovementsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: PDF_EXPORT_MAX_ROWS + 1, from: '2026-07-01', to: '2026-07-31' }));
 
     await expect(exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'it', from: '2026-07-01', to: '2026-07-31' })).rejects.toMatchObject({
       code: 'EXPORT_TOO_LARGE',
     });
 
     expect(listAccountMovementsMock).toHaveBeenCalledWith(ACTOR, 'person_1', expect.objectContaining({ from: '2026-07-01', to: '2026-07-31' }));
+  });
+});
+
+describe('exportAccountMovementsXlsx (story 10.1; story 19.11, AC 23)', () => {
+  it('reuses listAccountMovements on the SAME period with page:1/pageSize:EXPORT_MAX_ROWS and rejects EXPORT_TOO_LARGE', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: EXPORT_MAX_ROWS + 1, pageSize: EXPORT_MAX_ROWS }));
+    const query = { page: 3, pageSize: 20, format: 'xlsx' as const, locale: 'it' as const, from: '2026-07-01', to: '2026-07-31' };
+
+    await expect(exportAccountMovementsXlsx(ACTOR, 'person_1', query)).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
+
+    expect(listAccountMovementsMock).toHaveBeenCalledWith(ACTOR, 'person_1', { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });
+  });
+
+  it('writes Data/Tipo/Descrizione/Importo/Saldo/Registrato da, both money columns NUMERIC, the rows in the screen order and the "Saldo iniziale" line last with an empty amount', async () => {
+    listAccountMovementsMock.mockResolvedValue(
+      statementFixture({ total: 2, pageSize: EXPORT_MAX_ROWS, items: PERIOD_ITEMS, from: '2026-07-01', to: '2026-07-31', openingBalanceCents: 10000, closingBalanceCents: 25000 }),
+    );
+
+    const { buffer } = await exportAccountMovementsXlsx(ACTOR, 'person_1', { page: 1, pageSize: 20, format: 'xlsx', locale: 'it', from: '2026-07-01', to: '2026-07-31' });
+
+    const sheet = await readSheet(buffer);
+    expect(sheet.getRow(1).values).toEqual([undefined, 'Data', 'Tipo', 'Descrizione', 'Importo', 'Saldo', 'Registrato da']);
+    expect(sheet.rowCount).toBe(4);
+    expect(sheet.getRow(2).getCell(2).value).toBe('Addebito volo');
+    expect(sheet.getRow(2).getCell(4).value).toBe(-50);
+    expect(sheet.getRow(2).getCell(5).value).toBe(250);
+    expect(sheet.getRow(2).getCell(5).numFmt).toBe('#,##0.00 "€"');
+    expect(sheet.getRow(3).getCell(5).value).toBe(300);
+    const opening = sheet.getRow(4);
+    expect(opening.getCell(1).value).toBe('01/07/2026');
+    expect(opening.getCell(2).value).toBe('Saldo iniziale');
+    expect(opening.getCell(4).value).toBeNull();
+    expect(opening.getCell(5).value).toBe(100);
+    expect(opening.getCell(5).numFmt).toBe('#,##0.00 "€"');
+  });
+
+  it('without a period: no opening line; an actor without people.read gets no "Registrato da" column', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: 1, pageSize: EXPORT_MAX_ROWS, items: [{ ...PERIOD_ITEMS[1], actorEmail: undefined }] }));
+    const pilotActor: Actor = { userId: 'u2', personId: 'person_1', roles: ['PILOT'] };
+
+    const { buffer } = await exportAccountMovementsXlsx(pilotActor, 'person_1', { page: 1, pageSize: 20, format: 'xlsx', locale: 'it' });
+
+    const sheet = await readSheet(buffer);
+    expect(sheet.getRow(1).values).toEqual([undefined, 'Data', 'Tipo', 'Descrizione', 'Importo', 'Saldo']);
+    expect(sheet.rowCount).toBe(2);
   });
 });
 

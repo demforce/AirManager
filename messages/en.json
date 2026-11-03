@@ -743,10 +743,12 @@
       "type": "Type",
       "description": "Description",
       "amount": "Amount",
+      "balance": "Balance",
       "recordedBy": "Recorded by",
       "actions": "Actions",
       "noValue": "—",
-      "empty": "No movements recorded."
+      "empty": "No movements recorded.",
+      "emptyPeriod": "No movements in the selected period."
     },
     "movementType": {
       "topUp": "Top-up",
@@ -754,9 +756,20 @@
       "packagePurchase": "Package purchase",
       "flightCharge": "Flight charge"
     },
+    "openingRow": "Opening balance",
+    "period": {
+      "label": "Period",
+      "from": "From",
+      "to": "To",
+      "apply": "Apply",
+      "reset": "Last 12 months",
+      "required": "Enter both dates.",
+      "invalidRange": "The start date cannot be after the end date.",
+      "openingAt": "Opening balance on {date}",
+      "closingAt": "Closing balance on {date}"
+    },
     "adjustmentBadge": {
-      "ofDate": "Adjusts the movement of {date}",
-      "linked": "Adjusts a previous movement"
+      "ofDate": "Adjusts the movement of {date}"
     },
     "adjustments": {
       "action": "Record adjustment",
@@ -776,11 +789,11 @@
       "success": "Adjustment recorded."
     },
     "pdf": {
-      "balance": "Final balance",
-      "currentBalance": "Current account balance"
+      "balance": "Final balance"
     },
     "mobile": {
       "empty": "This account has no movements.",
+      "emptyPeriod": "No movements in this period.",
       "openDetail": "Open movement detail",
       "close": "Close"
     }
@@ -1658,7 +1671,9 @@
   },
   "Export": {
     "button": "Export Excel",
-    "buttonPdf": "Export PDF"
+    "buttonPdf": "Export PDF",
+    "pdfTooLarge": "PDF not available: the period has more than {max, number} movements. Narrow the period or use the Excel export.",
+    "xlsTooLarge": "Excel not available: the period has more than {max, number} movements. Narrow the period."
   },
   "PdfExport": {
     "generatedAt": "Generated on {date}",

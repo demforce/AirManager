@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { allTimeStatement, ensureValidSeedExpiries } from './helpers';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 /**
@@ -175,7 +175,8 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
     // Expected balance: 200,00 - 60,00 = 140,00 €.
 
     await loginExpectingDashboard(page, pilot.email, password);
-    await page.goto('/it/dashboard/my-account');
+    // Story 19.11 (D-15): the fixtures sit in 2020-2021, outside the default 12 months.
+    await page.goto(allTimeStatement('/it/dashboard/my-account'));
     await expect(page.getByRole('heading', { level: 1, name: 'Le mie transazioni' })).toBeVisible();
 
     await expect(page.getByTestId('account-balance')).toHaveText(/140,00\s€/);
@@ -205,7 +206,7 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
     }
 
     await loginExpectingDashboard(page, pilot.email, password);
-    await page.goto('/it/dashboard/my-account');
+    await page.goto(allTimeStatement('/it/dashboard/my-account'));
     await expect(page.getByTestId('account-movement-row')).toHaveCount(20);
 
     // The pagination link must target THIS page, never the staff-shaped scheda persona.
@@ -216,7 +217,7 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
     await expect(page.getByTestId('account-movement-row')).toHaveCount(1);
 
     // Out-of-range page clamps instead of erroring.
-    await page.goto('/it/dashboard/my-account?page=999');
+    await page.goto(allTimeStatement('/it/dashboard/my-account', 999));
     await expect(page.getByTestId('account-movement-row')).toHaveCount(1);
   });
 
@@ -256,7 +257,7 @@ test.describe('Own movements only (AC 2/3/5/6)', () => {
     // Expected balance: 150,00 - 70,00 = 80,00 €.
 
     await loginExpectingDashboard(page, student.email, password);
-    await page.goto('/it/dashboard/my-account');
+    await page.goto(allTimeStatement('/it/dashboard/my-account'));
     await expect(page.getByTestId('account-balance')).toHaveText(/80,00\s€/);
     await expect(page.getByTestId('account-movement-row')).toHaveCount(2);
     await expect(page.getByTestId('account-statement-header-row')).not.toContainText('Registrato da');

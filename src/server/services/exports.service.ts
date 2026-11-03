@@ -2,6 +2,7 @@ import { createTranslator } from 'next-intl';
 import type { AppLocale } from '@/i18n/routing';
 import { buildWorkbook, type ExportColumn } from '@/server/adapters/excel/workbook';
 import { renderReportPdf, type PdfColumn, type PdfTotal } from '@/server/adapters/pdf/document';
+import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { flightPicPerson } from '@/lib/flight-pic';
 import { formatCents, formatSignedCents } from '@/lib/money';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
@@ -16,7 +17,7 @@ import type { ListPeopleQuery } from '@/lib/schemas/people';
 import { ledgerClubAmountCents, type ListTransactionsQuery } from '@/lib/schemas/transactions';
 import { dateOnlyInZone, todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
-import { getAccountOverview, listAccountMovements } from './accounts.service';
+import { listAccountMovements, type AccountStatementResult } from './accounts.service';
 import { listAircraft, sumFlightMinutesByAircraft } from './aircraft.service';
 import { getAirfieldBranding } from './app-settings.service';
 import { listBookings } from './bookings.service';
@@ -57,11 +58,9 @@ import { listTransactions } from './transactions.service';
  * from a SEPARATE read the exported endpoint's own DTO doesn't carry.
  */
 
-/** Above this many filtered rows, every export rejects with 422 `EXPORT_TOO_LARGE` (AC 4) rather than silently truncating. */
-export const EXPORT_MAX_ROWS = 10_000;
-
-/** Story 10.2 (AC 4): a PDF is not a data tool — its cap is far tighter than the xlsx one; above it, use the Excel export instead. */
-export const PDF_EXPORT_MAX_ROWS = 2_000;
+// The two caps live in `@/lib/export-caps` since story 19.11 (the statement
+// pages read them without this module's PDF/xlsx graph); re-exported here unchanged.
+export { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS };
 
 type Messages = typeof import('../../../messages/it.json');
 
@@ -307,6 +306,41 @@ const ACCOUNT_MOVEMENT_TYPE_KEYS = {
   FLIGHT_CHARGE: 'flightCharge',
 } as const;
 
+type AccountStatementTranslator = ReturnType<typeof createTranslator<Messages, 'AccountStatementPage'>>;
+
+/** One line of an exported statement — a movement, or the closing "Saldo iniziale" line (`amountCents: null`). */
+type StatementExportRow = {
+  date: string;
+  typeLabel: string;
+  description: string | null;
+  amountCents: number | null;
+  balanceCents: number;
+  actorEmail: string | null;
+};
+
+/**
+ * The rows of BOTH statement exports (story 19.11, AD-7): the movements in
+ * the screen's order (value date, most recent first — Q-19.11-a = A), each
+ * with its running balance, and — when the period has a `from` — the
+ * "Saldo iniziale" line LAST, where the screen shows it on its last page.
+ * One builder for the xlsx and the PDF, so the two files cannot disagree.
+ */
+function buildStatementExportRows(statement: AccountStatementResult, t: AccountStatementTranslator, locale: AppLocale): StatementExportRow[] {
+  const rows: StatementExportRow[] = statement.items.map((item) => ({
+    date: formatDateOnly(item.effectiveDate, locale),
+    typeLabel: t(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[item.type]}`),
+    description: item.description,
+    amountCents: item.amountCents,
+    balanceCents: item.balanceAfterCents,
+    actorEmail: item.actorEmail ?? null,
+  }));
+  if (statement.from === null) return rows;
+  return [
+    ...rows,
+    { date: formatDateOnly(statement.from, locale), typeLabel: t('openingRow'), description: null, amountCents: null, balanceCents: statement.openingBalanceCents, actorEmail: null },
+  ];
+}
+
 export async function exportAccountMovementsXlsx(actor: Actor, personId: string, query: ListAccountMovementsQuery): Promise<XlsxExport> {
   const result = await listAccountMovements(actor, personId, { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });
   assertWithinExportCap(result.total);
@@ -320,15 +354,16 @@ export async function exportAccountMovementsXlsx(actor: Actor, personId: string,
   // COLUMN for them.
   const includeActor = hasPermission(actor, 'people.read');
 
-  const columns: ExportColumn<(typeof result.items)[number]>[] = [
-    { header: t('table.date'), value: (row) => formatDateOnly(row.effectiveDate, locale) },
-    { header: t('table.type'), value: (row) => t(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[row.type]}`) },
+  const columns: ExportColumn<StatementExportRow>[] = [
+    { header: t('table.date'), value: (row) => row.date },
+    { header: t('table.type'), value: (row) => row.typeLabel },
     { header: t('table.description'), value: (row) => row.description },
-    { header: t('table.amount'), value: (row) => row.amountCents / 100, numFmt: MONEY_NUM_FMT },
-    ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail ?? null } satisfies ExportColumn<(typeof result.items)[number]>] : []),
+    { header: t('table.amount'), value: (row) => (row.amountCents === null ? null : row.amountCents / 100), numFmt: MONEY_NUM_FMT },
+    { header: t('table.balance'), value: (row) => row.balanceCents / 100, numFmt: MONEY_NUM_FMT },
+    ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail } satisfies ExportColumn<StatementExportRow>] : []),
   ];
 
-  return toXlsxExport('account-movements', t('kicker'), columns, result.items);
+  return toXlsxExport('account-movements', t('kicker'), columns, buildStatementExportRows(result, t, locale));
 }
 
 // --- Cash register (`GET /api/v1/cash-movements`) ---------------------------
@@ -491,55 +526,54 @@ function periodSubtitle(from: string, to: string, locale: AppLocale): string {
 }
 
 // --- Account statement (`GET /api/v1/people/{id}/account/pdf`) -------------
-// Epic 12, story 12.9, AC 5: `from`/`to` are now ADDITIVE optional bounds
-// (`accountStatementPdfQuerySchema`) — absent means the SAME "estratto
-// COMPLETO" as before (Dev Notes' original rationale, still true by
-// default); present narrows the rows to the billing "Estratti conto"
-// period. The balance line is ALWAYS the account's CURRENT balance (Dev
-// Notes: "semantica infra esistente" — `getAccountOverview` never took a
-// period), just RE-LABELED when a period is applied so it never reads as a
-// period-end balance it is not.
+// `from`/`to` (story 12.9, AC 5) are optional bounds: absent means the
+// complete history. Since story 19.11 the totals are the PERIOD's opening and
+// closing balances (D-11) — the same two figures the screen's summary shows —
+// read from the same `listAccountMovements` call as the rows, so the account's
+// current balance is no longer a separate read (with the 12-month default
+// period it would be a third number equal to the closing one).
 
 export async function exportAccountStatementPdf(actor: Actor, personId: string, query: AccountStatementPdfQuery): Promise<PdfExport> {
   const movements = await listAccountMovements(actor, personId, { page: 1, pageSize: PDF_EXPORT_MAX_ROWS, from: query.from, to: query.to });
   assertWithinPdfExportCap(movements.total);
 
   // Same own-access rule as `listAccountMovements` (`accounts.service.ts#assertReadAccess`)
-  // — already enforced above; these two reads never widen access, only add
-  // the person's name (title) and final balance (totals) to the PDF.
-  const [overview, person, branding] = await Promise.all([getAccountOverview(actor, personId), getPerson(actor, personId), getAirfieldBranding()]);
+  // — already enforced above; this read never widens access, it only adds the
+  // person's name to the PDF's subtitle.
+  const [person, branding] = await Promise.all([getPerson(actor, personId), getAirfieldBranding()]);
 
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'AccountStatementPage' });
   // Same conditional column as the xlsx export / `account-section.tsx`'s `showActor`.
   const includeActor = hasPermission(actor, 'people.read');
-  const hasPeriod = Boolean(query.from || query.to);
 
-  const columns: PdfColumn<(typeof movements.items)[number]>[] = [
-    { header: t('table.date'), value: (row) => formatDateOnly(row.effectiveDate, locale) },
-    { header: t('table.type'), value: (row) => t(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[row.type]}`) },
+  const columns: PdfColumn<StatementExportRow>[] = [
+    { header: t('table.date'), value: (row) => row.date },
+    { header: t('table.type'), value: (row) => row.typeLabel },
     { header: t('table.description'), value: (row) => row.description ?? '' },
-    { header: t('table.amount'), value: (row) => formatSignedCents(row.amountCents, locale) },
-    ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail ?? '' } satisfies PdfColumn<(typeof movements.items)[number]>] : []),
+    { header: t('table.amount'), value: (row) => (row.amountCents === null ? '' : formatSignedCents(row.amountCents, locale)) },
+    { header: t('table.balance'), value: (row) => formatCents(row.balanceCents, locale) },
+    ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail ?? '' } satisfies PdfColumn<StatementExportRow>] : []),
   ];
 
-  // Both bounds present (the billing "Estratti conto" dialog always sends
-  // both) -> a period subtitle; a hand-crafted single-sided query falls back
-  // to the plain name (Dev Notes: no invented open-ended range text).
+  // Both bounds present (the two statement pages and the billing "Estratti
+  // conto" dialog always send both) -> a period subtitle; a hand-crafted
+  // single-sided query falls back to the plain name (Dev Notes: no invented
+  // open-ended range text).
   const period = query.from && query.to ? periodSubtitle(query.from, query.to, locale) : null;
   const subtitle = period ? `${person.lastName} ${person.firstName} · ${period}` : `${person.lastName} ${person.firstName}`;
+  // No `from`: the opening balance is 0 by definition, so no line for it. No
+  // `to`: the closing balance has no date to name, and is the plain "Saldo finale".
+  const totals: PdfTotal[] = [
+    ...(movements.from ? [{ label: t('period.openingAt', { date: formatDateOnly(movements.from, locale) }), value: formatCents(movements.openingBalanceCents, locale) }] : []),
+    {
+      label: movements.to ? t('period.closingAt', { date: formatDateOnly(movements.to, locale) }) : t('pdf.balance'),
+      value: formatCents(movements.closingBalanceCents, locale),
+    },
+  ];
 
-  return toPdfExport(
-    'account-statement',
-    locale,
-    branding,
-    t('kicker'),
-    subtitle,
-    columns,
-    movements.items,
-    [{ label: hasPeriod ? t('pdf.currentBalance') : t('pdf.balance'), value: formatCents(overview.balanceCents, locale) }],
-  );
+  return toPdfExport('account-statement', locale, branding, t('kicker'), subtitle, columns, buildStatementExportRows(movements, t, locale), totals);
 }
 
 // --- Period financial report (`GET /api/v1/cash-report/pdf`) ---------------

@@ -156,7 +156,13 @@ const DESTINATIONS = {
 
 type TopUpPlan = { email: string; daysAgo: number; amountCents: number; method: PaymentMethod };
 
+// The two `daysAgo: 3` top-ups (Chiara, Davide): story 19.10 checks the balance
+// of a pilot's OWN booking request, and their two requests below are born PENDING
+// only if it covers them.
 const TOP_UPS: TopUpPlan[] = [
+  // Story 19.11 (D-16): one top-up OLDER than the statement's default 12 months,
+  // so the demo shows a "Saldo iniziale" other than 0,00 € on Marco's statement.
+  { email: 'marco.desantis@gmail.com', daysAgo: 400, amountCents: 25000, method: 'BANK_TRANSFER' },
   { email: 'marco.desantis@gmail.com', daysAgo: 68, amountCents: 30000, method: 'BANK_TRANSFER' },
   { email: 'marco.desantis@gmail.com', daysAgo: 35, amountCents: 30000, method: 'BANK_TRANSFER' },
   { email: 'marco.desantis@gmail.com', daysAgo: 10, amountCents: 40000, method: 'POS' },
@@ -167,8 +173,10 @@ const TOP_UPS: TopUpPlan[] = [
   { email: 'stefano.colombo61@libero.it', daysAgo: 74, amountCents: 20000, method: 'CASH' },
   { email: 'stefano.colombo61@libero.it', daysAgo: 30, amountCents: 20000, method: 'CASH' },
   { email: 'davide.marchetti@gmail.com', daysAgo: 40, amountCents: 50000, method: 'BANK_TRANSFER' },
+  { email: 'davide.marchetti@gmail.com', daysAgo: 3, amountCents: 50000, method: 'BANK_TRANSFER' },
   { email: 'chiara.esposito88@gmail.com', daysAgo: 55, amountCents: 30000, method: 'POS' },
   { email: 'chiara.esposito88@gmail.com', daysAgo: 12, amountCents: 30000, method: 'BANK_TRANSFER' },
+  { email: 'chiara.esposito88@gmail.com', daysAgo: 3, amountCents: 20000, method: 'POS' },
   { email: 'matteo.fontana01@gmail.com', daysAgo: 32, amountCents: 30000, method: 'BANK_TRANSFER' },
 ];
 
@@ -470,12 +478,17 @@ async function main(): Promise<void> {
     return { userId: userIdByEmail.get(email)!, personId: personIdByEmail.get(email)!, roles: ['PILOT'] };
   }
 
+  // `force` on the admin's bookings (story 19.10's deroga, the same idiom as
+  // the demo flights above, 19.9 D-15): demo data, not operations — without
+  // it a demo pilot whose flights ate the balance fails BALANCE by construction.
+  // A pilot's own request has no deroga and goes through the checks.
   async function book(actor: Actor, email: string, reg: string, days: number, fromH: number, fromM: number, toH: number, toM: number): Promise<string> {
     const result = await createBooking(actor, {
       aircraftId: aircraftIdByReg.get(reg)!,
       personId: personIdByEmail.get(email)!,
       startsAt: daysFromNow(days, fromH, fromM).toISOString(),
       endsAt: daysFromNow(days, toH, toM).toISOString(),
+      ...(actor === admin ? { force: true } : {}),
     });
     return result.booking.id;
   }

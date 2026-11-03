@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountMovementSheetSub, accountMovementSubLine, linkedBadgeText, payoutCardSubLine } from './mobile-self';
+import { accountMovementSheetSub, accountMovementSubLine, payoutCardSubLine } from './mobile-self';
 
 describe('accountMovementSubLine', () => {
   it('joins date, description and actor on the admin face', () => {
@@ -30,18 +30,6 @@ describe('accountMovementSheetSub', () => {
   it('never produces a double separator, which would land in the dialog accessible name', () => {
     expect(accountMovementSheetSub({ dateLabel: '02/02/2026', actorEmail: null })).not.toMatch(/·\s*·/);
     expect(accountMovementSheetSub({ dateLabel: '02/02/2026', actorEmail: '' })).not.toMatch(/·\s*·/);
-  });
-});
-
-describe('linkedBadgeText', () => {
-  const labels = { ofDate: 'Rettifica del movimento del {date}', linked: 'Rettifica di un movimento precedente' };
-
-  it('names the original date when the original is on the same statement page', () => {
-    expect(linkedBadgeText(labels, '02/02/2026')).toBe('Rettifica del movimento del 02/02/2026');
-  });
-
-  it('falls back to the generic text when the original is NOT on this page', () => {
-    expect(linkedBadgeText(labels, null)).toBe('Rettifica di un movimento precedente');
   });
 });
 

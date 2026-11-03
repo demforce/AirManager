@@ -38,18 +38,6 @@ export function accountMovementSheetSub(parts: { dateLabel: string; actorEmail?:
 }
 
 /**
- * The text of the rettifica's linked badge, extracted UNCHANGED from
- * `account-section.tsx`'s own `adjustmentBadgeText`:
- * the date of the original movement when that original is on the SAME page of
- * the statement (`rowById`), the `linked` fallback otherwise. The
- * page-dependence is the behaviour, not a bug — the statement pages at 20 and
- * the original can legitimately be on another page.
- */
-export function linkedBadgeText(labels: { ofDate: string; linked: string }, originalDateLabel: string | null): string {
-  return originalDateLabel === null ? labels.linked : labels.ofDate.replace('{date}', originalDateLabel);
-}
-
-/**
  * The payout card's mono sub-line ("I miei compensi"): when the payout was
  * registered and how it was paid. Both segments always exist on an
  * `OwnPayoutHistoryItem` — `joinSegments` is used anyway so the rule stays the

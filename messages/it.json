@@ -743,10 +743,12 @@
       "type": "Tipo",
       "description": "Descrizione",
       "amount": "Importo",
+      "balance": "Saldo",
       "recordedBy": "Registrato da",
       "actions": "Azioni",
       "noValue": "—",
-      "empty": "Nessun movimento registrato."
+      "empty": "Nessun movimento registrato.",
+      "emptyPeriod": "Nessun movimento nel periodo selezionato."
     },
     "movementType": {
       "topUp": "Ricarica",
@@ -754,9 +756,20 @@
       "packagePurchase": "Acquisto pacchetto",
       "flightCharge": "Addebito volo"
     },
+    "openingRow": "Saldo iniziale",
+    "period": {
+      "label": "Periodo",
+      "from": "Dal",
+      "to": "Al",
+      "apply": "Applica",
+      "reset": "Ultimi 12 mesi",
+      "required": "Inserisci entrambe le date.",
+      "invalidRange": "La data iniziale non può essere successiva a quella finale.",
+      "openingAt": "Saldo iniziale al {date}",
+      "closingAt": "Saldo finale al {date}"
+    },
     "adjustmentBadge": {
-      "ofDate": "Rettifica del movimento del {date}",
-      "linked": "Rettifica di un movimento precedente"
+      "ofDate": "Rettifica del movimento del {date}"
     },
     "adjustments": {
       "action": "Registra rettifica",
@@ -776,11 +789,11 @@
       "success": "Rettifica registrata."
     },
     "pdf": {
-      "balance": "Saldo finale",
-      "currentBalance": "Saldo attuale del conto"
+      "balance": "Saldo finale"
     },
     "mobile": {
       "empty": "Nessun movimento in questo conto.",
+      "emptyPeriod": "Nessun movimento in questo periodo.",
       "openDetail": "Apri dettaglio movimento",
       "close": "Chiudi"
     }
@@ -1658,7 +1671,9 @@
   },
   "Export": {
     "button": "Esporta Excel",
-    "buttonPdf": "Esporta PDF"
+    "buttonPdf": "Esporta PDF",
+    "pdfTooLarge": "PDF non disponibile: il periodo ha più di {max, number} movimenti. Restringi il periodo o usa l'export Excel.",
+    "xlsTooLarge": "Excel non disponibile: il periodo ha più di {max, number} movimenti. Restringi il periodo."
   },
   "PdfExport": {
     "generatedAt": "Generato il {date}",

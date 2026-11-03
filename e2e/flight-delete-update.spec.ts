@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries, submitPastRequirements } from './helpers';
+import { allTimeStatement, ensureValidSeedExpiries, submitPastRequirements } from './helpers';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -232,11 +232,12 @@ test.describe('Flight delete and edit in place (Story 19.6, P2/P3 — R-19-c)', 
     await expect(page.getByTestId('flight-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
     expect(await listAircraftFlights(page, aircraft.id)).toEqual([]);
 
-    // Gone from the statement, balance back to its pre-flight value.
+    // Gone from the statement, balance back to its pre-flight value (the
+    // flight is dated 2020: the statement is read over the wide period, story 19.11 D-15).
     const account = await readAccount(page, pilot.personId);
     expect(account.balanceCents).toBe(0);
     expect(account.flightCharges).toEqual([]);
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     await expect(page.getByTestId('account-balance')).toContainText(/0,00\s€/);
     await expect(page.getByTestId('account-movement-row').filter({ hasText: 'Addebito volo' })).toHaveCount(0);
 
@@ -292,7 +293,7 @@ test.describe('Flight delete and edit in place (Story 19.6, P2/P3 — R-19-c)', 
     const account = await readAccount(page, pilot.personId);
     expect(account.flightCharges).toEqual([expect.objectContaining({ id: chargeBefore[0]!.id, amountCents: -7500 })]);
     expect(account.balanceCents).toBe(-7500);
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     await expect(page.getByTestId('account-balance')).toContainText(/-75,00\s€/);
     await expect(page.getByTestId('account-movement-row').filter({ hasText: 'Addebito volo' })).toHaveCount(1);
   });
@@ -410,7 +411,7 @@ test.describe('Flight delete and edit in place (Story 19.6, P2/P3 — R-19-c)', 
     expect((await readAccount(page, pilot.personId)).balanceCents).toBe(-7000);
 
     // The statement offers the rettifica on the top-up only — desktop row...
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     await expect(page.getByTestId(`account-adjustment-row-${topUpId}`)).toHaveCount(1);
     await expect(page.getByTestId(`account-adjustment-row-${charge!.id}`)).toHaveCount(0);
     // ...and phone sheet (one predicate, two faces).
@@ -418,7 +419,7 @@ test.describe('Flight delete and edit in place (Story 19.6, P2/P3 — R-19-c)', 
     await page.getByTestId('account-movement-row-mobile').filter({ hasText: 'Ricarica di controllo' }).click();
     await expect(page.getByTestId('mobile-account-sheet')).toBeVisible();
     await expect(page.getByTestId('mobile-account-adjust-action')).toHaveCount(1);
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     await page.getByTestId('account-movement-row-mobile').filter({ hasText: 'Addebito volo' }).click();
     await expect(page.getByTestId('mobile-account-sheet')).toBeVisible();
     await expect(page.getByTestId('mobile-account-adjust-action')).toHaveCount(0);

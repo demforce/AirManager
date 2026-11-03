@@ -4,6 +4,21 @@ import type { APIResponse, Locator, Page } from '@playwright/test';
 /** A comfortably far-future date — never itself the boundary under test. */
 export const FAR_FUTURE_DATE = '2099-12-31';
 
+/**
+ * The estratto conto's widest period (story 19.11, D-15). The two statement
+ * pages show the last 12 months by default, so a spec whose movements carry
+ * FIXED dates (a 2020 flight, a 2026-07-01 top-up) opens the statement over
+ * this period instead of moving its fixtures into recent months — where they
+ * would pollute the month's aggregates other specs assert (lesson Billing-2 F4).
+ */
+export const ALL_TIME_STATEMENT = { from: '2000-01-01', to: FAR_FUTURE_DATE } as const;
+
+/** A statement page's URL over {@link ALL_TIME_STATEMENT} — `page` first, as the page's own pagination links write it. */
+export function allTimeStatement(path: string, page?: number): string {
+  const query = new URLSearchParams({ ...(page === undefined ? {} : { page: String(page) }), ...ALL_TIME_STATEMENT });
+  return `${path}?${query.toString()}`;
+}
+
 /** Registers a scadenza for a person via the staff API (story 14.4; `expiries` API of story 6.2). */
 export async function registerExpiry(page: Page, personId: string, expiryTypeId: string, expiresAt: string): Promise<void> {
   const response = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId, expiresAt } });

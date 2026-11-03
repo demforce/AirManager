@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Prisma } from '@/generated/prisma/client';
 import { parseDateOnlyUtc } from '@/lib/date-only';
 import { recordAdjustmentSchema, recordTopUpSchema } from '@/lib/schemas/accounts';
 import type { Actor } from '@/server/auth/rbac';
@@ -16,7 +17,6 @@ vi.mock('@/server/db/prisma', () => ({
       findMany: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
-      count: vi.fn(),
       groupBy: vi.fn(),
     },
     person: {
@@ -69,7 +69,6 @@ const accountMovementAggregateMock = vi.mocked(prisma.accountMovement.aggregate)
 const accountMovementFindManyMock = vi.mocked(prisma.accountMovement.findMany);
 const accountMovementFindUniqueMock = vi.mocked(prisma.accountMovement.findUnique);
 const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
-const accountMovementCountMock = vi.mocked(prisma.accountMovement.count);
 const accountMovementGroupByMock = vi.mocked(prisma.accountMovement.groupBy);
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const userFindUniqueMock = vi.mocked(prisma.user.findUnique);
@@ -97,7 +96,6 @@ const accountMovementFindMany = accountMovementFindManyMock as unknown as {
   mockRejectedValue: (v: unknown) => void;
 };
 const accountMovementFindUnique = accountMovementFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const accountMovementCount = accountMovementCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const accountMovementCreate = accountMovementCreateMock as unknown as {
   mockResolvedValue: (v: Fixture) => void;
   mockRejectedValue: (v: unknown) => void;
@@ -111,13 +109,13 @@ const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) 
 
 /**
  * Every call site in this service now uses the interactive-callback overload
- * (`$transaction(async (tx) => ...)`, story TD-1 AC 3 hardened `buildOverview`/
- * `listAccountMovements` off the batch/array form — same as `recordTopUp`/
- * `recordAdjustment` already did, and same as `listAircraft` in
- * aircraft.service.ts). This stand-in still accepts a legacy array argument
- * too (`Promise.all` over it) for robustness, but a function is the only
- * form this service's production code sends: it is invoked with the mocked
- * `prisma` itself as `tx`.
+ * (`$transaction(async (tx) => ...)`, story TD-1 AC 3 hardened `buildOverview`
+ * off the batch/array form — same as `recordTopUp`/`recordAdjustment` already
+ * did, and same as `listAircraft` in aircraft.service.ts; `listAccountMovements`
+ * has no transaction at all since story 19.11, one `$queryRaw`). This stand-in
+ * still accepts a legacy array argument too (`Promise.all` over it) for
+ * robustness, but a function is the only form this service's production code
+ * sends: it is invoked with the mocked `prisma` itself as `tx`.
  */
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
 
@@ -149,7 +147,6 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     accountMovementFindManyMock.mockReset();
     accountMovementFindUniqueMock.mockReset();
     accountMovementCreateMock.mockReset();
-    accountMovementCountMock.mockReset();
     accountMovementGroupByMock.mockReset();
     personFindUniqueMock.mockReset();
     userFindUniqueMock.mockReset();
@@ -276,25 +273,60 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     });
   });
 
-  describe('listAccountMovements — own-access (story 3.2, AC 1/2)', () => {
+  describe('listAccountMovements (story 3.2, AC 1/2; story 19.11 — one SQL statement, running balance, period)', () => {
     const query = { page: 1, pageSize: 20 };
 
-    it('staff (people.read) can read any statement, WITH actorEmail (AC 2)', async () => {
+    /** One row of the statement SQL: the period summary (repeated on every row) plus one movement. */
+    function sqlRow(overrides: Record<string, unknown> = {}) {
+      return {
+        openingCents: BigInt(0),
+        total: BigInt(1),
+        periodCents: BigInt(10000),
+        id: 'movement_1',
+        type: 'TOP_UP',
+        amountCents: 10000,
+        description: 'Contanti',
+        effectiveDateText: '2026-03-01',
+        createdAt: new Date('2026-03-01T10:00:00.000Z'),
+        reversalOfId: null,
+        cumulativeCents: BigInt(10000),
+        reversalOfEffectiveDate: null,
+        hasReversal: false,
+        actorEmail: 'staff@airmanager.local',
+        ...overrides,
+      };
+    }
+
+    /** The summary-only row of a page without movements (the `LEFT JOIN page`): every movement column `null`. */
+    function summaryOnlyRow(summary: { openingCents: bigint; total: bigint; periodCents: bigint }) {
+      return {
+        ...summary,
+        id: null,
+        type: null,
+        amountCents: null,
+        description: null,
+        effectiveDateText: null,
+        createdAt: null,
+        reversalOfId: null,
+        cumulativeCents: null,
+        reversalOfEffectiveDate: null,
+        hasReversal: false,
+        actorEmail: null,
+      };
+    }
+
+    /** The Postgres text (`$n` placeholders) and bound values of the n-th `$queryRaw` call — the service passes ONE composed `Prisma.sql` object. */
+    function rawCall(index = 0): { sql: string; values: unknown[] } {
+      const [statement] = queryRawMock.mock.calls[index] as unknown as [Prisma.Sql];
+      return { sql: statement.text, values: statement.values };
+    }
+
+    beforeEach(() => {
       accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([
-        {
-          id: 'movement_1',
-          type: 'TOP_UP',
-          amountCents: 10000,
-          description: 'Contanti',
-          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
-          createdAt: new Date('2026-03-01T10:00:00.000Z'),
-          actorUser: { email: 'staff@airmanager.local' },
-          reversalOfId: null,
-          reversal: null,
-        },
-      ]);
-      accountMovementCount.mockResolvedValue(1);
+    });
+
+    it('staff (people.read) reads any statement WITH actorEmail; bigint sums become numbers and the period echo is null without bounds (AC 2)', async () => {
+      queryRaw.mockResolvedValue([sqlRow()]);
 
       const result = await listAccountMovements(adminActor(), 'person_1', query);
 
@@ -310,64 +342,52 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
             actorEmail: 'staff@airmanager.local',
             reversalOfId: null,
             hasReversal: false,
+            balanceAfterCents: 10000,
+            reversalOfEffectiveDate: null,
           },
         ],
         total: 1,
         page: 1,
         pageSize: 20,
+        from: null,
+        to: null,
+        openingBalanceCents: 0,
+        closingBalanceCents: 10000,
       });
+      expect(typeof result.total).toBe('number');
     });
 
-    it('maps a linked ADJUSTMENT row (reversalOfId set) and flags the reversed original (hasReversal, story 3.3 AC 1)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([
-        {
-          id: 'movement_adj',
-          type: 'ADJUSTMENT',
-          amountCents: -5000,
-          description: 'Errore di registrazione',
-          effectiveDate: new Date('2026-03-02T00:00:00.000Z'),
-          createdAt: new Date('2026-03-02T10:00:00.000Z'),
-          actorUser: { email: 'staff@airmanager.local' },
-          reversalOfId: 'movement_1',
-          reversal: null,
-        },
-        {
-          id: 'movement_1',
-          type: 'TOP_UP',
-          amountCents: 5000,
-          description: null,
-          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
-          createdAt: new Date('2026-03-01T10:00:00.000Z'),
-          actorUser: { email: 'staff@airmanager.local' },
-          reversalOfId: null,
-          reversal: { id: 'movement_adj' },
-        },
+    it('balanceAfterCents = opening balance + the running sum of the PERIOD; closing = opening + the period sum', async () => {
+      queryRaw.mockResolvedValue([
+        sqlRow({ id: 'movement_2', amountCents: -2500, openingCents: BigInt(7000), total: BigInt(2), periodCents: BigInt(7500), cumulativeCents: BigInt(7500) }),
+        sqlRow({ id: 'movement_1', amountCents: 10000, openingCents: BigInt(7000), total: BigInt(2), periodCents: BigInt(7500), cumulativeCents: BigInt(10000) }),
       ]);
-      accountMovementCount.mockResolvedValue(2);
+
+      const result = await listAccountMovements(adminActor(), 'person_1', { page: 1, pageSize: 20, from: '2026-03-01', to: '2026-03-31' });
+
+      expect(result.items.map((item) => [item.id, item.balanceAfterCents])).toEqual([
+        ['movement_2', 14500],
+        ['movement_1', 17000],
+      ]);
+      expect(result).toMatchObject({ from: '2026-03-01', to: '2026-03-31', openingBalanceCents: 7000, closingBalanceCents: 14500, total: 2 });
+      // The first row of page 1 IS the closing balance — the invariant AC 4 proves end to end.
+      expect(result.items[0]!.balanceAfterCents).toBe(result.closingBalanceCents);
+    });
+
+    it("maps a linked ADJUSTMENT (reversalOfId + the original's value date) and flags the corrected original (hasReversal, story 3.3 AC 1; D-9)", async () => {
+      queryRaw.mockResolvedValue([
+        sqlRow({ id: 'movement_adj', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'movement_1', reversalOfEffectiveDate: '2025-12-31', total: BigInt(2) }),
+        sqlRow({ id: 'movement_1', hasReversal: true, total: BigInt(2) }),
+      ]);
 
       const result = await listAccountMovements(adminActor(), 'person_1', query);
 
-      expect(result.items[0]).toMatchObject({ id: 'movement_adj', reversalOfId: 'movement_1', hasReversal: false });
-      expect(result.items[1]).toMatchObject({ id: 'movement_1', reversalOfId: null, hasReversal: true });
+      expect(result.items[0]).toMatchObject({ id: 'movement_adj', reversalOfId: 'movement_1', reversalOfEffectiveDate: '2025-12-31', hasReversal: false });
+      expect(result.items[1]).toMatchObject({ id: 'movement_1', reversalOfId: null, reversalOfEffectiveDate: null, hasReversal: true });
     });
 
-    it('a titolare can read their own statement, WITHOUT actorEmail (AC 1)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([
-        {
-          id: 'movement_1',
-          type: 'TOP_UP',
-          amountCents: 10000,
-          description: 'Contanti',
-          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
-          createdAt: new Date('2026-03-01T10:00:00.000Z'),
-          actorUser: { email: 'staff@airmanager.local' },
-          reversalOfId: null,
-          reversal: null,
-        },
-      ]);
-      accountMovementCount.mockResolvedValue(1);
+    it('a titolare reads their own statement, WITHOUT actorEmail (AC 1; AD-5: the service drops it)', async () => {
+      queryRaw.mockResolvedValue([sqlRow()]);
 
       const result = await listAccountMovements(pilotActor('person_pilot'), 'person_pilot', query);
 
@@ -378,11 +398,13 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       await expect(listAccountMovements(pilotActor('person_pilot'), 'person_other', query)).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
       expect(accountFindUniqueMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
     it('rejects a pilot with no linked person (personId: null)', async () => {
       await expect(listAccountMovements(pilotActor(null), 'person_1', query)).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundError for an unknown person', async () => {
@@ -390,58 +412,56 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
 
       await expect(listAccountMovements(adminActor(), 'missing', query)).rejects.toThrow(NotFoundError);
       expect(accountFindUniqueMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
-    it('returns an empty page (total 0), NOT a 404, for a person with no account yet', async () => {
+    it('returns the empty statement (total 0, both balances 0, the period echoed), NOT a 404, for a person with no account yet — without the SQL', async () => {
       accountFindUnique.mockResolvedValue(null);
 
-      const result = await listAccountMovements(adminActor(), 'person_1', query);
+      const result = await listAccountMovements(adminActor(), 'person_1', { page: 1, pageSize: 20, from: '2026-01-01', to: '2026-12-31' });
 
-      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
-      expect(accountMovementFindManyMock).not.toHaveBeenCalled();
+      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20, from: '2026-01-01', to: '2026-12-31', openingBalanceCents: 0, closingBalanceCents: 0 });
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
-    it('paginates with the id tie-break, most-recent-first (review 3.1 F3 pattern)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([]);
-      accountMovementCount.mockResolvedValue(0);
+    it('is ONE $queryRaw after the person/account lookups and NEVER a $transaction; the bounds are bound as YYYY-MM-DD text cast ::date, plus take/skip (D-4, D-14)', async () => {
+      queryRaw.mockResolvedValue([sqlRow()]);
 
-      await listAccountMovements(adminActor(), 'person_1', { page: 2, pageSize: 10 });
+      await listAccountMovements(adminActor(), 'person_1', { page: 3, pageSize: 10, from: '2026-07-01', to: '2026-07-31' });
 
-      expect(accountMovementFindManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { accountId: 'account_1' },
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          skip: 10,
-          take: 10,
-        }),
-      );
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(personFindUniqueMock.mock.invocationCallOrder[0]).toBeLessThan(queryRawMock.mock.invocationCallOrder[0]!);
+      expect(accountFindUniqueMock.mock.invocationCallOrder[0]).toBeLessThan(queryRawMock.mock.invocationCallOrder[0]!);
+      const { sql, values } = rawCall();
+      expect(values).toEqual(['account_1', '2026-07-01', '2026-07-31', 'account_1', '2026-07-01', 10, 20]);
+      expect(sql).toContain('m."effectiveDate" >= $2::date');
+      expect(sql).toContain('m."effectiveDate" <= $3::date');
+      expect(sql).toContain('o."effectiveDate" < $5::date');
+      // The running sum in the statement key, ascending; the page in the same key, descending (Q-19.11-a = A).
+      expect(sql).toContain('SUM(m."amountCents") OVER (ORDER BY m."effectiveDate", m."createdAt", m."id" ROWS UNBOUNDED PRECEDING)');
+      expect(sql).toContain('ORDER BY "effectiveDate" DESC, "createdAt" DESC, "id" DESC LIMIT $6 OFFSET $7');
+      expect(sql).toContain('ORDER BY p."effectiveDate" DESC, p."createdAt" DESC, p."id" DESC');
     });
 
-    it('applies from/to inclusive on effectiveDate — items AND total (story 12.9 AC 5, the statement-PDF period; review 12.9 F2)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([]);
-      accountMovementCount.mockResolvedValue(0);
+    it('without from/to: no date predicate at all (never an "optional" `IS NULL OR`), and an opening balance of 0 without a sub-select', async () => {
+      queryRaw.mockResolvedValue([sqlRow()]);
 
-      await listAccountMovements(adminActor(), 'person_1', { page: 1, pageSize: 20, from: '2026-07-01', to: '2026-07-31' });
+      await listAccountMovements(adminActor(), 'person_1', query);
 
-      const periodWhere = {
-        accountId: 'account_1',
-        effectiveDate: { gte: new Date('2026-07-01'), lte: new Date('2026-07-31') },
-      };
-      expect(accountMovementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: periodWhere }));
-      // The cap (`assertWithinPdfExportCap`) reads `total`: the count MUST see the same period filter.
-      expect(accountMovementCountMock).toHaveBeenCalledWith({ where: periodWhere });
+      const { sql, values } = rawCall();
+      expect(values).toEqual(['account_1', 20, 0]);
+      expect(sql).not.toContain('::date');
+      expect(sql).not.toContain('IS NULL OR');
+      expect(sql).toContain('0::bigint AS "openingCents"');
     });
 
-    it('absent from/to leaves the where untouched (pre-12.9 callers: full statement, unchanged)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([]);
-      accountMovementCount.mockResolvedValue(0);
+    it('a page past the end still returns the period summary — the summary-only row carries total and balances, no item (AC 6)', async () => {
+      queryRaw.mockResolvedValue([summaryOnlyRow({ openingCents: BigInt(5000), total: BigInt(3), periodCents: BigInt(-1200) })]);
 
-      await listAccountMovements(adminActor(), 'person_1', { page: 1, pageSize: 20 });
+      const result = await listAccountMovements(adminActor(), 'person_1', { page: 999, pageSize: 20, from: '2026-01-01', to: '2026-01-31' });
 
-      expect(accountMovementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'account_1' } }));
+      expect(result).toEqual({ items: [], total: 3, page: 999, pageSize: 20, from: '2026-01-01', to: '2026-01-31', openingBalanceCents: 5000, closingBalanceCents: 3800 });
     });
   });
 
@@ -470,22 +490,26 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       expect(getOwnAccountOverview).toHaveLength(1);
     });
 
-    it('listOwnAccountMovements paginates the actor\'s OWN statement, without actorEmail', async () => {
+    it("listOwnAccountMovements reads the actor's OWN statement, without actorEmail", async () => {
       accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([
+      queryRaw.mockResolvedValue([
         {
+          openingCents: BigInt(0),
+          total: BigInt(1),
+          periodCents: BigInt(10000),
           id: 'movement_1',
           type: 'TOP_UP',
           amountCents: 10000,
           description: 'Contanti',
-          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
+          effectiveDateText: '2026-03-01',
           createdAt: new Date('2026-03-01T10:00:00.000Z'),
-          actorUser: { email: 'staff@airmanager.local' },
           reversalOfId: null,
-          reversal: null,
+          cumulativeCents: BigInt(10000),
+          reversalOfEffectiveDate: null,
+          hasReversal: false,
+          actorEmail: 'staff@airmanager.local',
         },
       ]);
-      accountMovementCount.mockResolvedValue(1);
 
       const result = await listOwnAccountMovements(pilotActor('person_pilot'), { page: 1, pageSize: 20 });
 
@@ -494,12 +518,12 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       expect(personFindUniqueMock).toHaveBeenCalledWith({ where: { id: 'person_pilot' }, select: { id: true } });
     });
 
-    it('listOwnAccountMovements returns an empty page for an actor with no linked person, WITHOUT a query (AC 5 — isolation)', async () => {
-      const result = await listOwnAccountMovements(pilotActor(null), { page: 1, pageSize: 20 });
+    it('listOwnAccountMovements returns the empty statement for an actor with no linked person, WITHOUT a query (AC 5 — isolation)', async () => {
+      const result = await listOwnAccountMovements(pilotActor(null), { page: 1, pageSize: 20, from: '2026-01-01', to: '2026-12-31' });
 
-      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
+      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20, from: '2026-01-01', to: '2026-12-31', openingBalanceCents: 0, closingBalanceCents: 0 });
       expect(personFindUniqueMock).not.toHaveBeenCalled();
-      expect(accountMovementFindManyMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
     it('rejects an actor with neither self.read (stale/unknown role) — fails closed like every other self-service reader', async () => {

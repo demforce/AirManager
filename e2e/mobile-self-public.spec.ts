@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { allTimeStatement, ensureValidSeedExpiries } from './helpers';
 
 /**
  * Story 15.9 — the two self-service surfaces (the shared estratto conto of
@@ -205,7 +205,10 @@ async function cardOverflows(page: Page, cardSelector: string): Promise<string[]
   );
 }
 
-/** Controls covered by something else after a real scroll to the bottom (the tab bar is the usual culprit). `aria-disabled` links are excluded WITH the reason: the app gives them `pointer-events:none`, so `elementFromPoint` returns their parent by design. */
+/**
+ * Controls covered by something else after a real scroll to the bottom (the tab bar is the usual culprit). `aria-disabled` links are excluded WITH the reason: the app gives them `pointer-events:none`, so `elementFromPoint` returns their parent by design.
+ * Excluded too, with the reason (story 19.11): a control scrolled UNDER the sticky top bar. The period form made these pages tall enough that, scrolled to the very bottom, a field can sit behind the top bar — the ordinary overlap of a sticky header, undone by scrolling back; the bottom tab bar, which the user cannot scroll away, is what this guard is for.
+ */
 async function coveredControlsAtBottom(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     window.scrollTo(0, document.documentElement.scrollHeight);
@@ -215,6 +218,7 @@ async function coveredControlsAtBottom(page: Page): Promise<string[]> {
         const rect = el.getBoundingClientRect();
         if (rect.top < 0 || rect.bottom > window.innerHeight) return false;
         const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        if (hit?.closest('.mobile-topbar')) return false;
         return !(hit === el || el.contains(hit) || (hit !== null && hit.contains(el)));
       })
       .map((el) => el.getAttribute('data-testid') ?? String(el.className));
@@ -235,7 +239,7 @@ test.describe('Le mie transazioni — the shared estratto conto on a phone (AC 1
 
     await loginExpectingDashboard(page, pilot.email, password);
     await page.setViewportSize(PHONE);
-    await page.goto('/it/dashboard/my-account');
+    await page.goto(allTimeStatement('/it/dashboard/my-account'));
     await expect(page.getByTestId('mobile-account-list')).toBeVisible();
 
     // Both sides of the switch, never one (a one-sided guard passes on "I hid everything").
@@ -284,7 +288,7 @@ test.describe('Le mie transazioni — the shared estratto conto on a phone (AC 1
 
     await loginExpectingDashboard(page, pilot.email, password);
     await page.setViewportSize(PHONE);
-    await page.goto('/it/dashboard/my-account');
+    await page.goto(allTimeStatement('/it/dashboard/my-account'));
 
     const withDescription = movementCards(page).filter({ hasText: 'Descrizione integrale' });
     await withDescription.click();
@@ -364,7 +368,7 @@ test.describe('Le mie transazioni — the shared estratto conto on a phone (AC 1
 
     // Admin face first: same component, different `statementBasePath`.
     await page.setViewportSize(PHONE);
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     await expect(page.getByTestId('account-statement-pagination-status')).toHaveText('1 / 2');
     await expect(page.getByTestId('account-statement-page-next')).toHaveAttribute('href', new RegExp(`/it/dashboard/people/${pilot.personId}\\?page=2`));
     for (const testId of ['account-statement-page-prev', 'account-statement-page-next']) {
@@ -379,7 +383,7 @@ test.describe('Le mie transazioni — the shared estratto conto on a phone (AC 1
     // Self face: the pagination points at its OWN route.
     await loginExpectingDashboard(page, pilot.email, password);
     await page.setViewportSize(PHONE);
-    await page.goto('/it/dashboard/my-account');
+    await page.goto(allTimeStatement('/it/dashboard/my-account'));
     await expect(page.getByTestId('account-statement-page-next')).toHaveAttribute('href', /\/it\/dashboard\/my-account\?page=2/);
     await page.getByTestId('account-statement-page-next').click();
     await expect(page.getByTestId('account-statement-pagination-status')).toHaveText('2 / 2');
@@ -404,11 +408,15 @@ test.describe('Le mie transazioni — the shared estratto conto on a phone (AC 1
     await expect(page.getByTestId('export-menu-sheet')).toHaveCount(1);
     await expect(page.getByTestId('export-menu-xls')).toHaveCount(1);
     await expect(page.getByTestId('export-menu-pdf')).toHaveCount(1);
+    // Story 19.11 (AC 22): the period on screen travels with both links — the default one too.
     await expect(page.getByTestId('export-menu-xls')).toHaveAttribute(
       'href',
-      new RegExp(`/api/v1/people/${pilot.personId}/account/movements\\?format=xlsx&locale=it`),
+      new RegExp(`/api/v1/people/${pilot.personId}/account/movements\\?from=\\d{4}-\\d{2}-\\d{2}&to=\\d{4}-\\d{2}-\\d{2}&format=xlsx&locale=it$`),
     );
-    await expect(page.getByTestId('export-menu-pdf')).toHaveAttribute('href', new RegExp(`/api/v1/people/${pilot.personId}/account/pdf\\?locale=it`));
+    await expect(page.getByTestId('export-menu-pdf')).toHaveAttribute(
+      'href',
+      new RegExp(`/api/v1/people/${pilot.personId}/account/pdf\\?from=\\d{4}-\\d{2}-\\d{2}&to=\\d{4}-\\d{2}-\\d{2}&locale=it$`),
+    );
     for (const testId of ['export-menu-xls', 'export-menu-pdf']) {
       const box = await page.getByTestId(testId).boundingBox();
       expect(box!.height, testId).toBeGreaterThanOrEqual(TARGET_FLOOR);
@@ -438,7 +446,7 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     ).toBe(200);
 
     await page.setViewportSize(PHONE);
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     expect(await treeDisplays(page, '.account-desktop-body', '.account-mobile')).toEqual({ desktop: 'none', mobile: 'block' });
     // Pre-fix: `.students` 281/802 — 521px of the row hidden, the last cell at x=849.
     expect(await hiddenScrollers(page, '.page')).toEqual([]);
@@ -502,20 +510,18 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     await expect(page.getByTestId('mobile-account-adjust-action')).toHaveCount(0);
   });
 
-  test('the rettifica badge is RENDERED on the phone card, with the desktop text and with the `linked` fallback (AC 1/3 c)', async ({ page }) => {
+  test('the rettifica badge names the original\'s date on the card, the desktop row and the sheet — also when the original is on ANOTHER page (AC 1/3 c; story 19.11, AC 20)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const personId = await createPilotPerson(page, 'Badge');
 
-    // 21 movements ON PURPOSE: the statement pages at 20 and the badge text
-    // DEPENDS on whether the original is on the rendered page (comportamento
-    // 3, `rowById`). The oldest top-up is the only one that falls off page 1,
-    // so its rettifica shows the `linked` fallback while the other one shows
-    // the original's date. Every top-up is 1 cent, so this fixture ends at
-    // -1 cent: a NEGATIVE balance, which is worth nothing to
-    // `deposits.totalCents` (TD (h)). Story 19.6: the flight charge and its
-    // storno that used to fill two of the 21 rows are two more top-ups — the
-    // flight storno and its badge no longer exist.
-    const offPage = await recordTopUp(page, personId, 1, `Originale fuori pagina ${uniqueSuffix()}`);
+    // 21 movements ON PURPOSE: the statement pages at 20, and the oldest
+    // top-up (a day earlier than the rest) is the only one that falls off
+    // page 1. Until story 19.11 its rettifica showed a generic fallback,
+    // because the badge looked the original up among the rendered rows; the
+    // original's date now comes with the row (D-9). Every top-up is 1 cent,
+    // so this fixture ends at -1 cent: a NEGATIVE balance, which is worth
+    // nothing to `deposits.totalCents` (TD (h)).
+    const offPage = await recordTopUp(page, personId, 1, `Originale fuori pagina ${uniqueSuffix()}`, '2026-01-14');
     for (let index = 0; index < 17; index += 1) {
       await recordTopUp(page, personId, 1, null);
     }
@@ -524,29 +530,35 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     await recordLinkedAdjustment(page, personId, onPage, -10);
 
     await page.setViewportSize(PHONE);
-    await page.goto(`/it/dashboard/people/${personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${personId}`));
     await expect(page.getByTestId('account-statement-pagination-status')).toHaveText('1 / 2');
     expect(await treeDisplays(page, '.account-desktop-body', '.account-mobile')).toEqual({ desktop: 'none', mobile: 'block' });
+    // The off-page original really is off this page.
+    await expect(movementCards(page).filter({ hasText: 'Originale fuori pagina' })).toHaveCount(0);
 
     // The badges must sit INSIDE a card, with the desktop text.
     const adjustmentBadges = page.locator('[data-testid="account-movement-row-mobile"] [data-testid="adjustment-badge-mobile"]');
     await expect(adjustmentBadges).toHaveCount(2);
-    // One of the two originals is on page 1 and one is not: the date branch
-    // AND the `linked` fallback, rendered, in the same list.
     // `allTextContents`, not `allInnerTexts`: the desktop twins below are
     // `display:none` at this width and `innerText` is rendering-dependent.
-    expect((await adjustmentBadges.allTextContents()).sort()).toEqual(['Rettifica del movimento del 15/01/2026', 'Rettifica di un movimento precedente']);
-    expect((await page.getByTestId('adjustment-badge').allTextContents()).sort()).toEqual([
-      'Rettifica del movimento del 15/01/2026',
-      'Rettifica di un movimento precedente',
-    ]);
+    const expected = ['Rettifica del movimento del 14/01/2026', 'Rettifica del movimento del 15/01/2026'];
+    expect((await adjustmentBadges.allTextContents()).sort()).toEqual(expected);
+    expect((await page.getByTestId('adjustment-badge').allTextContents()).sort()).toEqual(expected);
+
+    // The sheet of the rettifica whose original is on page 2 carries the same date.
+    const offPageAdjustment = movementCards(page).filter({ hasText: 'Rettifica del movimento del 14/01/2026' });
+    await offPageAdjustment.click();
+    await expect(page.getByTestId('mobile-account-sheet')).toContainText('Rettifica del movimento del 14/01/2026');
+    // At the TOP of the scrim: this admin sheet (actor, balance, the rettifica action) reaches past the middle of the screen.
+    await page.getByTestId('mobile-account-sheet-scrim').click({ position: { x: 20, y: 20 } });
+    await expect(page.getByTestId('mobile-account-sheet')).toHaveCount(0);
 
     // The badge is the longest string a 281px card carries: it must not push
     // anything out of the card, and nothing may be clipped without an ellipsis.
     expect(await cardOverflows(page, '[data-testid="account-movement-row-mobile"]')).toEqual([]);
     expect(await hiddenScrollers(page, '.page')).toEqual([]);
 
-    // The 320px phone, where the fallback string is at its most cramped.
+    // The 320px phone, where the badge is at its most cramped.
     await page.setViewportSize({ width: 320, height: 568 });
     await expect(adjustmentBadges.first()).toBeVisible();
     expect(await cardOverflows(page, '[data-testid="account-movement-row-mobile"]')).toEqual([]);
@@ -561,18 +573,18 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     }
 
     await page.setViewportSize(PHONE);
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     await movementCards(page).first().click();
     await expect(page.getByTestId('mobile-account-sheet')).toBeVisible();
     // `AccountSection` never remounts (neither consumer passes a `key`) — the
     // sheet has to go anyway, or it would describe a row that left the page.
-    await page.goto(`/it/dashboard/people/${pilot.personId}?page=2`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`, 2));
     await expect(page.getByTestId('account-statement-pagination-status')).toHaveText('2 / 2');
     await expect(page.getByTestId('mobile-account-sheet')).toHaveCount(0);
 
     // Remount contract of the form: react-hook-form reads defaultValues only
     // at mount, so a second target must arrive empty.
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     await movementCards(page).nth(0).click();
     await page.getByTestId('mobile-account-adjust-action').click();
     await page.locator('[data-testid="mobile-account-sheet"] .input').first().fill('42');
@@ -591,7 +603,7 @@ test.describe('The scheda persona face — six columns, two writes, no stacked o
     const movementId = await recordTopUp(page, pilot.personId, 15000, `Movimento conteso ${uniqueSuffix()}`);
 
     await page.setViewportSize(PHONE);
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     const target = movementCards(page).filter({ hasText: 'Movimento conteso' });
     await expect(target).toHaveCount(1);
     await target.click();

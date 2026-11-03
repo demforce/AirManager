@@ -406,6 +406,28 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     });
   });
 
+  describe('account statement period (story 19.11, AC 31)', () => {
+    type Operation = { parameters?: Array<{ name: string; in: string }>; responses: Record<string, { content?: Record<string, { schema?: unknown }> }> };
+    const paths = doc.paths as Record<string, Record<string, Operation>>;
+
+    it('documents from/to as query parameters on BOTH the movements list and the PDF', () => {
+      for (const path of ['/api/v1/people/{id}/account/movements', '/api/v1/people/{id}/account/pdf'] as const) {
+        const names = (paths[path]?.['get']?.parameters ?? []).filter((parameter) => parameter.in === 'query').map((parameter) => parameter.name);
+        expect(names).toEqual(expect.arrayContaining(['from', 'to']));
+      }
+    });
+
+    it('documents the two balances and the period echo on the statement response, and the running balance on its items', () => {
+      const schemas = (doc.components?.schemas ?? {}) as Record<string, { properties?: Record<string, { items?: unknown }>; required?: string[] }>;
+      const statement = schemas['AccountStatement'];
+      expect(Object.keys(statement?.properties ?? {})).toEqual(expect.arrayContaining(['from', 'to', 'openingBalanceCents', 'closingBalanceCents', 'items', 'total']));
+      expect(statement?.required).toEqual(expect.arrayContaining(['openingBalanceCents', 'closingBalanceCents']));
+      const item = JSON.stringify(statement?.properties?.['items']);
+      expect(item).toContain('balanceAfterCents');
+      expect(item).toContain('reversalOfEffectiveDate');
+    });
+  });
+
   describe('Unified ledger — bookType/unattributed query params (story Billing-2, AC 2/3)', () => {
     it('GET /api/v1/transactions documents the new bookType and unattributed query parameters, alongside the pre-existing movementType/categoryId', () => {
       const get = (doc.paths as Record<string, Record<string, { parameters?: Array<{ name?: string; in?: string }> }>>)['/api/v1/transactions']?.['get'];

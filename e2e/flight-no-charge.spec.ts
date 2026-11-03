@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
-import { ensureValidSeedExpiries, selectFromCombobox, submitPastRequirements } from './helpers';
+import { allTimeStatement, ensureValidSeedExpiries, selectFromCombobox, submitPastRequirements } from './helpers';
 
 /**
  * Story 19.6 (P1 — R-19-d; Q-19.6-a = B): the admin's «Senza addebito»
@@ -230,8 +230,9 @@ test.describe('Flight «senza addebito» (Story 19.6, P1 — R-19-d)', () => {
     await expect(page.getByTestId('flight-result-panel').getByTestId('flight-result-total')).toHaveText(/^0,00\s€$/);
     await page.getByTestId('flight-result-close').click();
 
-    // The statement line: 0,00 €, the wording at the HEAD of the description.
-    await page.goto(`/it/dashboard/people/${pilot.personId}`);
+    // The statement line: 0,00 €, the wording at the HEAD of the description
+    // (story 19.11, D-15: the flight is dated 2020 — read over the wide period).
+    await page.goto(allTimeStatement(`/it/dashboard/people/${pilot.personId}`));
     const noChargeLine = page.getByTestId('account-movement-row').filter({ hasText: 'Volo senza addebito' });
     await expect(noChargeLine).toHaveCount(1);
     await expect(noChargeLine.locator('div').nth(2)).toHaveText(/^Volo senza addebito /);
