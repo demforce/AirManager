@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-03 17:55 — Epic 19: 19.1-19.12a DONE, prossima e ultima **19.12b**; 80+ commit su `dev` NON pushati; PR #22 `dev` → `main` ancora APERTA)
+# HANDOFF — AirManager (aggiornato: 2026-11-03 22:25 — **EPIC 19 DONE** (19.1-19.12b); 85+ commit su `dev` NON pushati; PR #22 `dev` → `main` ancora APERTA)
 
 Handoff precedente (storia di Epic 13-18, ciclo AOG, ricette ambiente estese): `docs/handoffs/HANDOFF-2026-11-03-1252.md`.
 
@@ -26,9 +26,9 @@ Handoff precedente (storia di Epic 13-18, ciclo AOG, ricette ambiente estese): `
 | 19.10 avviso con deroga admin — prenotazioni | done | 597 + 1 flaky |
 | 19.11 estratto conto a periodo con saldo progressivo | done | 604/604 (arbitro del reviewer) |
 | 19.12a glossario, parità it/en, plurali ICU, chiavi morte | done | 604/604 |
-| **19.12b** passata dei testi in contesto (+ pagine 404, «Compenso istruttore», riga di conferma fuori servizio) | **ready-for-dev** | — |
+| 19.12b passata dei testi in contesto (+ pagine 404, «Compenso istruttore», riga di conferma fuori servizio) | done | 605 + 1 flaky (ECONNRESET) |
 
-Ogni story ha story file + Dev Agent Record + Review Record + report di review committati in `_bmad-output/implementation-artifacts/19-*`. La suite e2e conta **604** test all'ultimo arbitro (19.12a: nessun test e2e aggiunto). Unit: **2210**.
+Ogni story ha story file + Dev Agent Record + Review Record + report di review committati in `_bmad-output/implementation-artifacts/19-*`. La suite e2e conta **606** test all'ultimo arbitro (19.12b: +2 di `error-pages.spec.ts`). Unit: **2211**.
 
 ## Key Decisions (oltre a quelle nella CR e nell'Addendum)
 

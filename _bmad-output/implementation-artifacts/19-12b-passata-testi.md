@@ -4,7 +4,7 @@ baseline_commit: dc69faf
 
 # Story 19.12b: Passata completa dei testi italiani in contesto
 
-Status: **review** — 2026-11-03 (dev `dev-19-12b`; prima ready-for-dev). **Modello dev: Opus 5 xhigh (UI)**: la story rilegge l'app reale su tutte le superfici (desktop e mobile, quattro ruoli), cambia le copy, il cablaggio delle etichette di `ExportMenu` in cinque pagine, aggiunge le pagine d'errore localizzate e tocca una trentina di spec e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-12b-passata-testi`.
+Status: **done** — 2026-11-03 (review adversarial **SHIPPABLE con fix**: 2 medium, 5 low, 3 info; arbitro del reviewer **606/606, exit 0**; fix `285590e` di M1/M2/L1/L2/L4/L5 e delle tre decisioni PO; L3 → TD-19.12b-a nella 18.5; arbitro finale della sessione principale su DB fresco **605 + 1 flaky (ECONNRESET, TD-19.10-g), exit 0**). Storico — **review** — 2026-11-03 (dev `dev-19-12b`; prima ready-for-dev). **Modello dev: Opus 5 xhigh (UI)**: la story rilegge l'app reale su tutte le superfici (desktop e mobile, quattro ruoli), cambia le copy, il cablaggio delle etichette di `ExportMenu` in cinque pagine, aggiunge le pagine d'errore localizzate e tocca una trentina di spec e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-12b-passata-testi`.
 
 > **Origine**: seconda metà della story 19.12 «Revisione completa dell'italiano» (CR 2026-11-01 §4.2, punto PO 13), divisa dalla sessione principale il 2026-11-03. La prima metà, **19.12a** (`19-12a-glossario-parita-plurali.md`), consegna il glossario `docs/i18n/glossario-it.md`, il test di parità `src/i18n/messages.test.ts`, i plurali ICU e il catalogo senza chiavi morte. Questa story **applica** il glossario a tutto il resto.
 >
@@ -839,6 +839,7 @@ PASS  build (57s)
 ### Change Log
 
 - 2026-11-03 — `feat(19.12b)` `66fd139`: passata dei testi (§L e 34 modifiche nuove), guardia del glossario, export a pattern unico, «No, mantienila», «Istruttore: …», card «Movimenti», compenso istruttore, pagine d'errore localizzate, riga di conferma del fuori servizio ridisegnata, quattro aggiustamenti di layout misurati, e2e e unit allineati. `docs(19.12b)`: questo Dev Agent Record, Status review.
+- 2026-11-03 — `fix(19.12b)` `285590e`: review M1/M2/L1/L2/L4/L5 e decisioni PO (saluto «Ciao», chiave del digest, «scarica l'Excel»). `docs(19.12b)` di chiusura: Review Record, decisioni PO, report di review, riperimetrazione della 18.5, Status done.
 
 ---
 
@@ -854,3 +855,33 @@ La 18.5 «Righe, tab e lessico» (`docs/superpowers/plans/2026-09-10-epics-16-18
 > **Aggiunta della sessione principale (2026-11-03, review 19.12a F2, DECISIONE PO)**: la domanda di conferma della messa fuori servizio (`AircraftPage.editor.availability.confirmQuestion` e `confirmQuestionUnknown`) torna alla **frase intera** prevista in §3.2 della 19.12a. Le due forme sono «Mettere fuori servizio il velivolo? {count, plural, =0 {Nessuna prenotazione coinvolta} one {# prenotazione coinvolta} other {# prenotazioni coinvolte}}» e «Mettere fuori servizio il velivolo? Conteggio delle prenotazioni non disponibile». Questa decisione annulla la forma corta «Mettere fuori servizio? …» introdotta dalla 19.12a (D-a), che resta solo fino a qui. L'inglese segue AD-2 di questa story.
 > **La riga di conferma va ridisegnata** (`aircraft-editor.tsx` ~:981, riga flex con `flexWrap: 'wrap'`). Oggi, con 49-54 caratteri, Annulla va a capo da solo; con 66 caratteri va a capo la coppia Conferma/Annulla, e il centro di Conferma esce dal trigger. Le misure sono nel report `19-12a-review-report.md` F2. Dopo il ridisegno domanda, Conferma e Annulla devono avere una disposizione stabile, a 1280 e a 375, per ogni conteggio e anche nel caso «non disponibile».
 > **Vincolo da non perdere**: decisione PO 6 / review MAJOR-2, cioè un doppio clic sul trigger arma il secondo passo e non conferma mai (guardia `event.detail` nell'editor). `aog-impact-email.spec.ts:392` oggi la prova con una precondizione geometrica: il centro di Conferma sta dentro il trigger. Se il ridisegno separa Conferma dal trigger, il test va riscritto in modo che resti discriminante, per esempio con un doppio clic nel punto dove nasce Conferma in qualunque layout, oppure con un click sintetico con `detail: 2` su Conferma. Il test va mostrato rosso su un mutante senza la guardia. La tecnica la scelgono writer e dev. Va aggiornato anche il letterale `:429`.
+
+> **DECISIONI PO (2026-11-03, domande aperte del dev 19.12b)**. Le tre modifiche si applicano nel fix di review della 19.12b.
+> 1. **Sezione Piloti**: **A, resta così**. «Piloti» è il nome della sezione; «Anagrafica piloti», «Aggiungi pilota», «Nuovo pilota» e «Pilota creato.» restano invariati. Un eventuale ritocco della card spetta alla 18.5.
+> 2. **Saluto della Panoramica**: **A, «Ciao, {name}» per tutti i ruoli**, istruttore compreso (oggi «Buongiorno»). Si applica in it e in en.
+> 3. **Riepilogo avvisi di scadenza**: **B, chiave dedicata** per la riga del digest: «{tipo}: scadenza superata da N giorni», neutro per la regola D-9 del glossario. Va fatto nel fix della 19.12b, non in una story a parte: le chiavi più il template email.
+> 4. **`Export.pdfTooLarge`**: **B**, «… o scarica l'Excel» al posto di «… o usa l'export Excel».
+
+---
+
+## Review Record — 19.12b
+
+- **Review adversarial** (Opus, 2026-11-03): **SHIPPABLE con fix**, con 2 medium, 5 low e 3 info. Report: `19-12b-review-report.md`, diff `6525be2..170229b`. Il §7 contiene le note per le decisioni PO.
+- **Arbitro del reviewer** (DB fresco resettato alle 19:59, `CI=1`): **606 passed, 0 flaky, E2E_EXIT=0** in 25,5 min, cioè 604 + 2 di `error-pages.spec.ts`. Nel log 0 `MISSING_MESSAGE`/`IntlError`. Gates verdi (2211 unit).
+- **Verificato dal reviewer**:
+  - proprietà MAJOR-2 su 36 doppi clic e doppi tocchi a 7 larghezze: 0 POST;
+  - riga di conferma stabile per 0/1/N e «non disponibile» a 10 larghezze;
+  - mutanti 4/4 rossi su copia isolata, con la metà `detail: 2` discriminante anche da sola;
+  - 404 e 500 localizzati, `lang` corretto, nessun leak; `people/{id}/account` resta un 307; le API reali rispondono 405;
+  - export coerenti, deviazioni EN giustificate, parità intatta.
+- **M1 — MEDIUM, corretto** (`285590e`): la guardia AD-3 ora è case-insensitive, riconosce le forme flesse e lo spazio U+00A0. Su copia isolata blocca 16/16 mutanti realistici, contro i 2/16 di prima, con 0 falsi positivi. `CLAUDE.md` e il glossario dicono ora cosa controlla davvero: solo la tabella `BANNED`; le altre varianti si controllano rileggendo.
+- **M2 — MEDIUM, corretto** (`285590e`): nell'agenda mobile della Pianificazione il titolo di un velivolo fuori servizio è la sola marca, e il badge «Fuori servizio» è l'unica occorrenza anche nello sheet. Il nome accessibile della riga conserva lo stato. Misurato a 320-414 px. La ripetizione nel calendario desktop (I3) non è toccata.
+- **L1 — corretto**: la metà e2e di AC 20 (riga «Compenso istruttore …» in Contabilità) è dentro `instructor-compensation.spec.ts`.
+- **L2 — corretto**: il popover Esporta di `mobile-billing` deve avere la larghezza del contenuto entro 1 px, max(180, voce più larga). Con 320 e 640 px il test va rosso.
+- **L3 — TD-19.12b-a → 18.5**: nel Registro voli lo scroll orizzontale del documento a 641-1100 px c'era già (lo scroller `.logbook` non contiene la griglia), e la colonna persona 150→200 lo aumenta di 50 px.
+- **L4 — corretto**: nella sotto-riga mobile delle Scadenze i giorni vanno in testa («3 gg fa · Inglese ICAO · 31/10/2026»).
+- **L5 — corretto**: lo sheet prenotazione della Panoramica dice «Persona» in it; en «Pilot», come la tabella.
+- **Info**: I1, nel §E del record l'sha256 del mutante (a) si riferiva a un catalogo precedente; il reviewer ha rifatto il mutante sulla HEAD (rosso). I2, in EN «Account statement» va su due righe nella tab bar a 390-414 px: nota nella 18.5. I3, ripetizione desktop di «Fuori servizio» lasciata com'è.
+- **Decisioni PO** (in coda al file), applicate in `285590e`: saluto «Ciao, {name}» per tutti (è stato tolto il `toHaveCount(0)` di `home-dashboard.spec.ts:224`, che con «Ciao» sarebbe diventato falso); chiave dedicata del digest «{tipo}: scadenza superata da N giorni», mentre l'avviso al titolare resta «è scaduta da»; `Export.pdfTooLarge` «… o scarica l'Excel»; sezione Piloti invariata.
+- **Arbitro finale della sessione principale** (DB fresco resettato alle 21:58, `CI=1` su `285590e`): **605 passed + 1 flaky, 0 failed, E2E_EXIT=0** in 20,7 min. Il flaky è `mobile-overview.spec.ts:599`, verde al retry: `apiRequestContext.post: read ECONNRESET` sulla POST di fixture `/api/v1/aircraft`, classe infrastrutturale TD-19.10-g, non legata alla story. Nel log 0 `MISSING_MESSAGE`/`IntlError`/`FORMATTING_ERROR`. Delta e2e 604 → 606; unit 2210 → 2211.
+- **18.5 riperimetrata** in `sprint-status.yaml` e nel piano `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md`, come chiedeva la nota qui sopra.
