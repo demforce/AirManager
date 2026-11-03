@@ -40,7 +40,11 @@ Il file sotto è misurato su `9272129` (2026-09-10). Da allora sono atterrati 16
 **Ratifiche PO**: v. §R-PO in coda a questa sezione (aggiunta dopo l'AskUserQuestion).
 
 
-Status: **ready-for-dev** — 2026-09-10. **Modello dev: Opus 5 xhigh** (la story tocca UI: il `fetch` della quota associativa in `scadenze-console.tsx` — chiave di idempotenza, `try/catch`, bottone che oggi resta bloccato per sempre —, un ramo d'errore nuovo con la sua frase in due locale, e il predicato dell'azione di riga dell'estratto conto su **due facce**). Review: **Opus 5 xhigh adversarial**.
+### §R-PO — Ratifica PO del 2026-11-03 (AskUserQuestion, prima del dispatch)
+
+- **Q-16.6b-a + Q-16.6b-b — una catena di correzioni partita da una ricarica resta acconto, a ogni livello e segno, e compare nel filtro «Acconti»** (raccomandazione A su entrambe, poste al PO in una sola domanda): la **radice** decide il libro (`reversalRootType === 'TOP_UP'` → DEPOSIT a qualunque profondità; è la ratifica Billing-1 F3 applicata in modo transitivo). Il filtro `bookType=DEPOSIT` (`transactions.service.ts:221`, oggi `{ type: 'TOP_UP' }`) diventa `OR [{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootType: 'TOP_UP' }]` — stessa definizione del badge e dell'aggregato; oggi quelle righe spariscono da tutti i filtri (vincolato da `billing.spec.ts:190`, da aggiornare). Riscrivere il doc di `transactions.service.ts:171-177` («fuori scope»). Sui dati misurati oggi nessuna riga cambia libro (profondità massima 1).
+
+Status: **ready-for-dev** — 2026-09-10, riallineata e ratificata il 2026-11-03 (§R, §R-PO). **Modello dev: Opus 5 xhigh** (la story tocca UI: il `fetch` della quota associativa in `scadenze-console.tsx` — chiave di idempotenza, `try/catch`, bottone che oggi resta bloccato per sempre —, un ramo d'errore nuovo con la sua frase in due locale, e il predicato dell'azione di riga dell'estratto conto su **due facce**). Review: **Opus 5 xhigh adversarial**.
 
 > ⚠️ **Questa story è la METÀ «guardie di scrittura» della 16.6 del piano.** L'altra metà è `16-6a-data-valuta-e-totali.md` (data valuta, parità PDF/schermo, etichette dei libri). Il piano descriveva **una** story; la divido perché tocca **sei superfici indipendenti** (soglia di progetto: >4 superfici non correlate o >20 AC) e perché le due metà non condividono **nessun** file di produzione. **Nessuna dipendenza fra le due**: qualunque ordine, anche in parallelo.
 >
