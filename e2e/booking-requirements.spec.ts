@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
-import type { APIResponse, Browser, Page } from '@playwright/test';
+import type { APIResponse, Browser, Locator, Page } from '@playwright/test';
 import { seedAircraftRate } from './db-fixtures';
 import {
   addDaysIso,
+  BOOKING_BALANCE_FLOOR_CENTS,
   ensureBookingRequirements,
   ensureValidSeedExpiries,
   ownFailures,
@@ -26,8 +27,14 @@ import {
  * it and deactivated in a `finally` (`withBlockingRating`), so the window in
  * which it is a missing document of everybody else is one request wide — and
  * the failures every assertion reads go through `ownFailures` (the e2e
- * catalogue is shared, TD 16.2-g).
+ * catalogue is shared, TD 16.2-g). One request wide is still a window for
+ * every OTHER spec's people (review 19.10 F6): the tests that open one are
+ * tagged `GLOBAL_CATALOGUE` and run in their own project of the serialized
+ * chain (`playwright.config.ts`), after the main one.
  */
+
+/** The tag of the tests that make a blocking type active for everybody (`withBlockingRating`) — selected by `playwright.config.ts`. */
+const GLOBAL_CATALOGUE = '@global-catalogue';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -212,7 +219,7 @@ async function ownPage(browser: Browser, adminPage: Page, person: Person, role: 
 }
 
 test.describe('Story 19.10 — the four checks on a booking (AC 6-11-bis)', () => {
-  test('EXPIRY: a blocking rating expiring BETWEEN today and the flight day fails (documents at D), a deactivated type never does, a missing visit is "mancante", the instructor\'s only visit expired is his (AC 6a-d, AC 7)', async ({ page }) => {
+  test('EXPIRY: a blocking rating expiring BETWEEN today and the flight day fails (documents at D), a deactivated type never does, a missing visit is "mancante", the instructor\'s only visit expired is his (AC 6a-d, AC 7)', { tag: GLOBAL_CATALOGUE }, async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const pilot = await createPerson(page, ['pilot']);
@@ -324,7 +331,7 @@ test.describe('Story 19.10 — the four checks on a booking (AC 6-11-bis)', () =
     }
   });
 
-  test('all four at once: ONE 422 listing EXPIRY, MEMBERSHIP, CURRENCY and BALANCE, in the shared order (AC 11)', async ({ page }) => {
+  test('all four at once: ONE 422 listing EXPIRY, MEMBERSHIP, CURRENCY and BALANCE, in the shared order (AC 11)', { tag: GLOBAL_CATALOGUE }, async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page, { pilotPriceCents: 12000 });
     const pilot = await createPerson(page, ['pilot']);
@@ -374,8 +381,8 @@ test.describe('Story 19.10 — who derogates, and where the deroga sits (AC 3, 4
 
   test('approval of a PENDING whose balance dropped after it was booked: 422, then force -> APPROVED with the stamp; "riapri" keeps the stamp (AC 4, AC 12b)', async ({ page, browser }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    // 1 000,00 €/h: one hour is 100 000, the fresh pilot holds 400 000 after `ensureBookingRequirements`.
-    const aircraft = await createAircraft(page, { pilotPriceCents: 100_000, since: TODAY });
+    // One hour costs exactly what a fresh pilot holds after `ensureBookingRequirements` (equal is covered).
+    const aircraft = await createAircraft(page, { pilotPriceCents: BOOKING_BALANCE_FLOOR_CENTS, since: TODAY });
     const pilot = await createPerson(page, ['pilot']);
     await ensureBookingRequirements(page, { personId: pilot.id, scope: 'PILOTS', solo: true });
     const pilotPage = await ownPage(browser, page, pilot, 'PILOT');
@@ -383,11 +390,13 @@ test.describe('Story 19.10 — who derogates, and where the deroga sits (AC 3, 4
     expect(await bookingItem(page, aircraft.id, bookingId)).toEqual(expect.objectContaining({ status: 'PENDING', forcedAt: null }));
     await pilotPage.context().close();
 
-    const adjustment = await page.request.post(`/api/v1/people/${pilot.id}/account/adjustments`, { data: { amountCents: -350_000, reason: 'Rettifica di prova 19.10' } });
+    const adjustment = await page.request.post(`/api/v1/people/${pilot.id}/account/adjustments`, { data: { amountCents: -30_000, reason: 'Rettifica di prova 19.10' } });
     expect(adjustment.status(), await adjustment.text()).toBe(200);
 
     const refused = await failuresOf(await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'APPROVED' } }));
-    expect(refused.filter((failure) => failure.type === 'BALANCE')).toEqual([{ type: 'BALANCE', role: 'person', personName: pilot.name, balanceCents: 50_000, costCents: 100_000 }]);
+    expect(refused.filter((failure) => failure.type === 'BALANCE')).toEqual([
+      { type: 'BALANCE', role: 'person', personName: pilot.name, balanceCents: BOOKING_BALANCE_FLOOR_CENTS - 30_000, costCents: BOOKING_BALANCE_FLOOR_CENTS },
+    ]);
     const approved = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'APPROVED', force: true } });
     expect(approved.status(), await approved.text()).toBe(200);
     const stamp = (await bookingItem(page, aircraft.id, bookingId)).forcedAt;
@@ -697,6 +706,48 @@ test.describe('Story 19.10 — the one warning on every booking surface (AC 25-2
     await expect(page.getByTestId('booking-requirements-modal')).toHaveCount(0);
     row = await findBookingRow(page, aircraft.registration);
     await expect(row).toContainText('Approvato');
+  });
+
+  test('review F3: the desktop approval modal and the reject modal are dialogs — named by their title, aria-modal, the focus inside and kept there by Tab and Shift+Tab, Escape closes them and the focus goes back to the button that opened them', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const pilot = await createPerson(page, ['pilot']);
+    const bookingId = await pendingBooking(page, { aircraftId: aircraft.id, personId: pilot.id, ...uiSlot() });
+    const row = await findBookingRow(page, aircraft.registration);
+
+    const expectFocusTrapped = async (dialog: Locator): Promise<void> => {
+      await expect(dialog).toHaveAttribute('aria-modal', 'true');
+      const focusInside = () => dialog.evaluate((node) => node.contains(document.activeElement));
+      expect(await focusInside()).toBe(true);
+      // Shift+Tab FIRST: from the node focused on open (the warning itself, a `tabIndex=-1` block) it used to leave.
+      for (const key of ['Shift+Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab']) {
+        await page.keyboard.press(key);
+        expect(await focusInside(), `focus after ${key}`).toBe(true);
+      }
+    };
+
+    await row.getByTestId('booking-approve-action').click();
+    const approval = page.getByRole('dialog', { name: "L'approvazione non rispetta alcuni requisiti" });
+    await expect(approval).toHaveAttribute('data-testid', 'booking-requirements-modal');
+    await expectFocusTrapped(approval);
+    await page.keyboard.press('Escape');
+    await expect(approval).toHaveCount(0);
+    await expect(row.getByTestId('booking-approve-action')).toBeFocused();
+    expect((await bookingItem(page, aircraft.id, bookingId)).status).toBe('PENDING');
+
+    await row.getByTestId('booking-reject-action').click();
+    const reject = page.getByRole('dialog', { name: 'Rifiuta prenotazione' });
+    await expect(reject.getByTestId('booking-deny-reason')).toBeFocused();
+    await expectFocusTrapped(reject);
+    await page.keyboard.press('Escape');
+    await expect(reject).toHaveCount(0);
+    await expect(row.getByTestId('booking-reject-action')).toBeFocused();
+    // «Annulla» hands the focus back the same way.
+    await row.getByTestId('booking-reject-action').click();
+    await reject.getByRole('button', { name: 'Annulla', exact: true }).click();
+    await expect(reject).toHaveCount(0);
+    await expect(row.getByTestId('booking-reject-action')).toBeFocused();
+    expect((await bookingItem(page, aircraft.id, bookingId)).status).toBe('PENDING');
   });
 
   test('phone approval, from the bookings list sheet AND from the Panoramica sheet: a step with the list, the focus on its first button, «Procedi comunque» approves and closes the sheet (AC 28)', async ({ page }) => {

@@ -52,6 +52,9 @@ export default defineConfig({
         '**/mobile-settings.spec.ts',
         '**/aog-overview-count.spec.ts',
       ],
+      // The `@global-catalogue` tests of booking-requirements.spec.ts: the
+      // 'booking-requirements-catalogue' project below.
+      grepInvert: /@global-catalogue/,
       use: sharedUse,
     },
     {
@@ -165,6 +168,21 @@ export default defineConfig({
       use: sharedUse,
     },
     {
+      // Review 19.10 F6 — the two tests of booking-requirements.spec.ts tagged
+      // `@global-catalogue`. Each makes a blocking RATING of scope `ALL`
+      // active for one request (`withBlockingRating`), and during that request
+      // it is a MISSING document of every person in the database: a sibling
+      // spec's booking or flight in that window gets a 422 it does not own
+      // (the TD 16.2-g class). Selected by tag, not by file — the rest of that
+      // spec stays in the main project. Running them alone locally:
+      // `npx playwright test booking-requirements.spec.ts --project=booking-requirements-catalogue --no-deps`.
+      name: 'booking-requirements-catalogue',
+      testMatch: '**/booking-requirements.spec.ts',
+      grep: /@global-catalogue/,
+      dependencies: ['mobile-settings'],
+      use: sharedUse,
+    },
+    {
       // Story AOG-1a, AC 13 — the Panoramica's fleet-wide AOG count. TWO
       // independent reasons this cannot live in the main `fullyParallel`
       // project: it asserts an EQUALITY between two GLOBAL aggregates read from
@@ -176,7 +194,7 @@ export default defineConfig({
       // Running it alone locally: `npx playwright test aog-overview-count.spec.ts --no-deps`.
       name: 'aog-overview-count',
       testMatch: '**/aog-overview-count.spec.ts',
-      dependencies: ['mobile-settings'],
+      dependencies: ['booking-requirements-catalogue'],
       use: sharedUse,
     },
   ],

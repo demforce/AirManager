@@ -3,6 +3,7 @@ import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, TransitionBookingInput, UpdateBookingInput } from '@/lib/schemas/bookings';
+import type { SchedulingSettingsDto } from '@/lib/schemas/settings';
 import { APP_TIMEZONE } from '@/lib/time';
 import { dateOnlyInZone, todayDateOnlyInZone, zonedWallTime } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
@@ -146,7 +147,11 @@ import { evaluateRequirements, throwRequirementsNotMet, type RequirementFailure 
  * cannot derogate (the past, the window, the aircraft, the overlaps — TD
  * 16.3-g): the warning only appears when the request would otherwise pass,
  * and «Procedi comunque» fails only to a race. Every move re-judges them on
- * the MERGED booking (D-3, the rule of the scheduling window).
+ * the MERGED booking (D-3, the rule of the scheduling window). They are
+ * EVALUATED before the transaction on all three paths, the approval included
+ * (review 19.10 F2): every read inside a booking transaction goes through its
+ * `tx`, so a request never asks the pool for a second connection while it
+ * holds one.
  */
 
 export type BookingListItem = {
@@ -384,8 +389,16 @@ function assertInstructorIsNotThePerson(instructor: BookingInstructor | null, pe
  * it, so whoever writes a booking of that instructor locks its holder's
  * `Person` row here — a second table to keep in the census, and nothing more.
  * The rows exist by construction (FKs on `Booking`), so there is no 404 to
- * raise: the result is never read, the effect IS the lock — same idiom as the
- * `Account` lock of `accounts.service.ts#recordAdjustment`.
+ * raise: the lock's result is never read, the effect IS the lock — same idiom
+ * as the `Account` lock of `accounts.service.ts#recordAdjustment`.
+ *
+ * Returns the booking person's OWN instructor profile id (the "instructor
+ * elsewhere" half of its R-19-o predicate, {@link findBookingConflict}), read
+ * HERE, after the lock (review 19.10 F4): a writer that makes that person the
+ * instructor of another booking locks the same `Person` row, so once the lock
+ * is held every such booking either committed — and so did the profile it
+ * names, which this read (a fresh statement) sees — or waits for this
+ * transaction. Read before the lock, a profile created in between was missed.
  *
  * `FOR NO KEY UPDATE`, not `FOR UPDATE` (decision of the main session,
  * 2026-09-27): it conflicts with itself, so two booking writers on the same
@@ -394,9 +407,11 @@ function assertInstructorIsNotThePerson(instructor: BookingInstructor | null, pe
  * same person (a flight, an expiry, an account movement) is never blocked by
  * a booking transaction.
  */
-async function lockBookingPeople(tx: Prisma.TransactionClient, personId: string, instructorPersonId: string | null): Promise<void> {
+async function lockBookingPeople(tx: Prisma.TransactionClient, personId: string, instructorPersonId: string | null): Promise<string | null> {
   const personIds = instructorPersonId !== null && instructorPersonId !== personId ? [personId, instructorPersonId] : [personId];
   await tx.$queryRaw`SELECT "id" FROM "Person" WHERE "id" IN (${Prisma.join(personIds)}) ORDER BY "id" FOR NO KEY UPDATE`;
+  const ownInstructorProfile = await tx.instructorProfile.findUnique({ where: { personId }, select: { id: true } });
+  return ownInstructorProfile?.id ?? null;
 }
 
 /** The occupied subject behind an overlap 409 (story 16.3, AD-1). */
@@ -442,7 +457,7 @@ async function findBookingConflict(
   args: {
     aircraftId: string;
     personId: string;
-    /** The booking person's own instructor profile, when it holds one (the "instructor elsewhere" half of R-19-o). */
+    /** The booking person's own instructor profile, when it holds one (the "instructor elsewhere" half of R-19-o) — as `lockBookingPeople` read it, under the lock. */
     personInstructorProfileId: string | null;
     instructor: { profileId: string; personId: string } | null;
     startsAt: Date;
@@ -600,17 +615,25 @@ async function estimateBookingCostCents(
  * Rome day of `startsAt`, the currency and the fee on TODAY in Rome — also on
  * the approval of a booking already in the past (R-16-b, D-7).
  *
- * Read-only and outside any lock: the caller DECIDES on the result later
- * ({@link decideRequirements}). Not judged again under a lock either (unlike
- * a flight's balance, review 19.9 F2): a booking writes no movement, so two
- * bookings racing on the same balance spend nothing — each is judged on its
- * own cost, as D-2 wants; only a concurrent top-up or charge can move the
- * balance, the check-then-act of every other requirement (TD 16.3-d).
+ * Read-only, through `prisma`, and NEVER inside a transaction (review 19.10
+ * F2: the approval used to run it inside its own, so every approval held a
+ * connection while asking the pool for another — ten at once, the pool's
+ * size, waited on each other until the 5 s transaction timeout, and every
+ * request of the app answered 500 meanwhile). The caller DECIDES on the
+ * result later ({@link decideRequirements}). Not judged again under a lock
+ * either (unlike a flight's balance, review 19.9 F2): a booking writes no
+ * movement, so two bookings racing on the same balance spend nothing — each
+ * is judged on its own cost, as D-2 wants; only a concurrent top-up or charge
+ * can move the balance, the check-then-act of every other requirement (TD
+ * 16.3-d).
  */
-async function evaluateBookingRequirements(
-  client: Prisma.TransactionClient,
-  booking: { person: TargetPerson; instructor: BookingInstructor | null; aircraftId: string; startsAt: Date; endsAt: Date },
-): Promise<RequirementFailure[]> {
+async function evaluateBookingRequirements(booking: {
+  person: TargetPerson;
+  instructor: BookingInstructor | null;
+  aircraftId: string;
+  startsAt: Date;
+  endsAt: Date;
+}): Promise<RequirementFailure[]> {
   const { person, instructor } = booking;
   const hasActivePilot = isActivePilot(person);
   const hasActiveStudent = isActiveStudent(person);
@@ -618,7 +641,7 @@ async function evaluateBookingRequirements(
   const costCents =
     person.account === null
       ? null
-      : await estimateBookingCostCents(client, {
+      : await estimateBookingCostCents(prisma, {
           aircraftId: booking.aircraftId,
           instructorProfileId: instructor?.profileId ?? null,
           startsAt: booking.startsAt,
@@ -682,10 +705,12 @@ function minutesOfDay(hhmm: string): number {
  * Europe/Rome calendar day — a booking crossing midnight is always outside
  * the window (a `closeTime` at or before midnight makes that geometrically
  * inevitable).
+ *
+ * The settings are read by the caller (`getSchedulingSettings`) and passed
+ * in: the approval reads them BEFORE its transaction and checks them inside
+ * it (review 19.10 F2 — no `prisma` read while a transaction is held).
  */
-async function assertWithinSchedulingWindow(startsAt: Date, endsAt: Date): Promise<void> {
-  const settings = await getSchedulingSettings();
-
+function assertWithinSchedulingWindow(settings: SchedulingSettingsDto, startsAt: Date, endsAt: Date): void {
   if (settings.openTime && settings.closeTime) {
     const startDay = dateOnlyInZone(startsAt, APP_TIMEZONE);
     const endDay = dateOnlyInZone(endsAt, APP_TIMEZONE);
@@ -836,11 +861,11 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
   // Story 12.11, AC 4 (ratifica utente 3): outside the transaction — the
   // scheduling window participates in neither the overlap invariant nor the
   // aircraft lock.
-  await assertWithinSchedulingWindow(startsAt, endsAt);
+  assertWithinSchedulingWindow(await getSchedulingSettings(), startsAt, endsAt);
 
   // Story 19.10 (AD-3): evaluated here, outside the transaction (no lock held
   // during their queries), DECIDED inside it, last.
-  const failures = await evaluateBookingRequirements(prisma, { person, instructor, aircraftId: input.aircraftId, startsAt, endsAt });
+  const failures = await evaluateBookingRequirements({ person, instructor, aircraftId: input.aircraftId, startsAt, endsAt });
   const warnings = await findExpiryWarnings(input.personId, dateOnlyInZone(startsAt, APP_TIMEZONE));
 
   const created = await prisma.$transaction(async (tx) => {
@@ -865,11 +890,11 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
     // (story 16.3; R-19-o since story 19.10): semi-open `[startsAt, endsAt)` —
     // two bookings that merely touch at the boundary do NOT overlap — and only
     // an APPROVED booking occupies a slot (story 12.2), see `findBookingConflict`.
-    await lockBookingPeople(tx, input.personId, instructor?.personId ?? null);
+    const personInstructorProfileId = await lockBookingPeople(tx, input.personId, instructor?.personId ?? null);
     const conflict = await findBookingConflict(tx, {
       aircraftId: input.aircraftId,
       personId: input.personId,
-      personInstructorProfileId: person.instructorProfile?.id ?? null,
+      personInstructorProfileId,
       instructor,
       startsAt,
       endsAt,
@@ -1063,6 +1088,19 @@ const MOVABLE_BOOKING_SELECT = {
   instructorProfile: { select: { personId: true, person: { select: { firstName: true, lastName: true } } } },
 } as const;
 
+type MovableBooking = Prisma.BookingGetPayload<{ select: typeof MOVABLE_BOOKING_SELECT }>;
+
+/** The instructor of a booking read with {@link MOVABLE_BOOKING_SELECT}, as the requirements of a move — and of an approval (review 19.10 F2) — are evaluated on it. */
+function movableBookingInstructor(booking: MovableBooking): BookingInstructor | null {
+  return booking.instructorProfileId === null || booking.instructorProfile === null
+    ? null
+    : {
+        profileId: booking.instructorProfileId,
+        personId: booking.instructorProfile.personId,
+        name: `${booking.instructorProfile.person.firstName} ${booking.instructorProfile.person.lastName}`,
+      };
+}
+
 /**
  * Own-access + temporal gate shared by `updateBooking`/`cancelBooking`
  * (Contesto): "own" = the booking's `personId` matches the actor's own
@@ -1209,19 +1247,12 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
   // in the sequence as `createBooking`'s (outside the transaction), so the
   // two paths report the same code first on the same input, and on the
   // MERGED interval like every other rule above.
-  await assertWithinSchedulingWindow(nextStartsAt, nextEndsAt);
+  assertWithinSchedulingWindow(await getSchedulingSettings(), nextStartsAt, nextEndsAt);
 
   // Story 19.10 (D-3): on the MERGED booking, evaluated before the locks and
   // decided after them, like `createBooking`.
-  const instructor: BookingInstructor | null =
-    existing.instructorProfileId === null || existing.instructorProfile === null
-      ? null
-      : {
-          profileId: existing.instructorProfileId,
-          personId: existing.instructorProfile.personId,
-          name: `${existing.instructorProfile.person.firstName} ${existing.instructorProfile.person.lastName}`,
-        };
-  const failures = await evaluateBookingRequirements(prisma, {
+  const instructor = movableBookingInstructor(existing);
+  const failures = await evaluateBookingRequirements({
     person: existing.person,
     instructor,
     aircraftId: nextAircraftId,
@@ -1265,11 +1296,11 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     // same three subjects — story 16.3): excludes THIS booking (it is moving,
     // not colliding with itself). The person and instructor are the booking's
     // own — immutable on a PATCH.
-    await lockBookingPeople(tx, existing.personId, instructor?.personId ?? null);
+    const personInstructorProfileId = await lockBookingPeople(tx, existing.personId, instructor?.personId ?? null);
     const conflict = await findBookingConflict(tx, {
       aircraftId: nextAircraftId,
       personId: existing.personId,
-      personInstructorProfileId: existing.person.instructorProfile?.id ?? null,
+      personInstructorProfileId,
       instructor,
       startsAt: nextStartsAt,
       endsAt: nextEndsAt,
@@ -1412,6 +1443,33 @@ function transitionUpdateData(to: TransitionTarget, actorUserId: string, reason:
 
 type LockedBookingRow = { id: string; status: BookingStatus; personId: string; instructorProfileId: string | null; aircraftId: string; startsAt: Date; endsAt: Date };
 
+/** What an approval reads before its transaction (review 19.10 F2); `null` = no such booking (the transaction answers the 404, in its own order). */
+async function readApprovalChecks(
+  bookingId: string,
+): Promise<{ booking: MovableBooking; failures: RequirementFailure[]; scheduling: SchedulingSettingsDto } | null> {
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId }, select: MOVABLE_BOOKING_SELECT });
+  if (!booking) return null;
+  const failures = await evaluateBookingRequirements({
+    person: booking.person,
+    instructor: movableBookingInstructor(booking),
+    aircraftId: booking.aircraftId,
+    startsAt: booking.startsAt,
+    endsAt: booking.endsAt,
+  });
+  return { booking, failures, scheduling: await getSchedulingSettings() };
+}
+
+/** Whether the row locked by an approval is still the slot its requirements were read on. */
+function isSameSlot(read: MovableBooking, locked: LockedBookingRow): boolean {
+  return (
+    read.personId === locked.personId &&
+    read.instructorProfileId === locked.instructorProfileId &&
+    read.aircraftId === locked.aircraftId &&
+    read.startsAt.getTime() === locked.startsAt.getTime() &&
+    read.endsAt.getTime() === locked.endsAt.getTime()
+  );
+}
+
 /**
  * Moves a booking through the approval workflow (AC 3) — `bookings.manage.any`
  * only, for EVERY transition (including "riapri": staff-only, never an
@@ -1425,10 +1483,8 @@ type LockedBookingRow = { id: string; status: BookingStatus; personId: string; i
  * the booking's person (409 archived, 422 `PERSON_NOT_BOOKABLE` without an
  * active flying profile) and instructor (409 deactivated, 422
  * `INSTRUCTOR_SAME_AS_PILOT`), story 16.3 / ops F4 and story 19.10 (D-8); the
- * requirements evaluated (`evaluateBookingRequirements`, story 19.10 — inside
- * the transaction, as the expiry block they replace was: the evaluation
- * reads through `prisma`, no lock held); the scheduling-window check (story
- * 12.11, AC 4, `assertWithinSchedulingWindow`); the `Aircraft` row locked
+ * scheduling-window check (story 12.11, AC 4, `assertWithinSchedulingWindow`);
+ * the `Aircraft` row locked
  * `FOR UPDATE` and validated (archived/out-of-service); the `Person` locks;
  * the overlap pre-check on the aircraft, the person and the instructor
  * against every OTHER `APPROVED` booking (`findBookingConflict`); and the
@@ -1439,6 +1495,15 @@ type LockedBookingRow = { id: string; status: BookingStatus; personId: string; i
  * has ALREADY STARTED, or is entirely in the past, can still be approved (no
  * `BOOKING_IN_PAST` here), because staff regularize bookings after the fact;
  * its currency and fee are judged on today, like every booking's (D-7).
+ *
+ * The requirements and the window's settings are READ before the transaction
+ * ({@link readApprovalChecks}, review 19.10 F2), like `createBooking` and
+ * `updateBooking` read theirs: inside it every read goes through `tx`, so an
+ * approval never holds a connection while asking the pool for another. They
+ * were judged on the booking as read then; under the row lock that slot —
+ * person, instructor, aircraft, interval — must still be the booking's, or
+ * the approval answers 409 (a move landed in between: resend it), never a
+ * decision on a stale read.
  *
  * `APPROVED -> FLOWN|NO_SHOW` is the mirror image of that exception, and has
  * the opposite answer (ratifica R-16-b, ops F9): a booking whose slot has not
@@ -1476,6 +1541,9 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
     throw new ValidationError('A reason is required to deny a booking.', undefined, 'BOOKING_DENY_REASON_REQUIRED');
   }
 
+  // Review 19.10 F2: read before the transaction (this function's doc-comment).
+  const approvalChecks = to === 'APPROVED' ? await readApprovalChecks(bookingId) : null;
+
   const updated = await prisma.$transaction(async (tx) => {
     const lockedRows = await tx.$queryRaw<LockedBookingRow[]>`
       SELECT "id", "status", "personId", "instructorProfileId", "aircraftId", "startsAt", "endsAt" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
@@ -1495,6 +1563,10 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
 
     let forceStamp: { forcedAt: Date; forcedByUserId: string } | null = null;
     if (to === 'APPROVED') {
+      if (approvalChecks === null || !isSameSlot(approvalChecks.booking, existing)) {
+        throw new ConflictError('This booking has changed; please retry.');
+      }
+
       // Re-run createBooking's own checks (this function's doc-comment), in
       // createBooking's own order: WHO is booked first (story 16.3, ops F4).
       const person = await tx.person.findUniqueOrThrow({ where: { id: existing.personId }, select: BOOKABLE_PERSON_SELECT });
@@ -1503,19 +1575,11 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
       const instructor = existing.instructorProfileId ? await assertActiveInstructorProfile(tx, existing.instructorProfileId) : null;
       assertInstructorIsNotThePerson(instructor, existing.personId);
 
-      const failures = await evaluateBookingRequirements(tx, {
-        person,
-        instructor,
-        aircraftId: existing.aircraftId,
-        startsAt: existing.startsAt,
-        endsAt: existing.endsAt,
-      });
-
       // Story 12.11, AC 4: same scheduling-window check `createBooking` runs
       // at creation — "would this booking still be creatable today", minus
       // the one ratified exception (R-16-b, this function's doc-comment): no
       // `BOOKING_IN_PAST` here.
-      await assertWithinSchedulingWindow(existing.startsAt, existing.endsAt);
+      assertWithinSchedulingWindow(approvalChecks.scheduling, existing.startsAt, existing.endsAt);
 
       const lockedAircraft = await tx.$queryRaw<Array<{ id: string; status: string; statusReason: string | null; outOfServiceUntil: Date | null; archivedAt: Date | null }>>`
         SELECT "id", "status", "statusReason", "outOfServiceUntil", "archivedAt" FROM "Aircraft" WHERE "id" = ${existing.aircraftId} FOR UPDATE`;
@@ -1534,11 +1598,11 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
         );
       }
 
-      await lockBookingPeople(tx, existing.personId, instructor?.personId ?? null);
+      const personInstructorProfileId = await lockBookingPeople(tx, existing.personId, instructor?.personId ?? null);
       const conflict = await findBookingConflict(tx, {
         aircraftId: existing.aircraftId,
         personId: existing.personId,
-        personInstructorProfileId: person.instructorProfile?.id ?? null,
+        personInstructorProfileId,
         instructor,
         startsAt: existing.startsAt,
         endsAt: existing.endsAt,
@@ -1548,7 +1612,7 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
         throw bookingConflictError(conflict);
       }
 
-      forceStamp = decideRequirements(actor, failures, input.force);
+      forceStamp = decideRequirements(actor, approvalChecks.failures, input.force);
     }
 
     const guard = await tx.booking.updateMany({

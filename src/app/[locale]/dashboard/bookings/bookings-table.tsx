@@ -11,13 +11,14 @@
  * list reconciliation (AD-1): the server re-fetches with the SAME filters,
  * same pattern as the legacy list.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { RequirementsWarning } from '@/components/dashboard/requirements-warning';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
+import { MiniModal } from '@/components/ui/mini-modal';
 import { useToast } from '@/components/ui/toast';
 import { BOOKING_STATUS_VALUES } from '@/lib/booking-status-filter';
 import type { RequirementFailure } from '@/lib/schemas/requirements';
@@ -208,6 +209,9 @@ export function BookingsTable({
   const [denyForId, setDenyForId] = useState<string | null>(null);
   const [denyReason, setDenyReason] = useState('');
   const [denyError, setDenyError] = useState<string | null>(null);
+  // Review 19.10 F3: the reject card is a dialog named by its title, and its «Rifiuta» (set by the click) gets the focus back.
+  const denyTitleId = useId();
+  const denyReturnFocusRef = useRef<HTMLElement | null>(null);
   const [confirmingCancelId, setConfirmingCancelId] = useState<string | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   // --- phone sheet (story 15.4) ------------------------------------------
@@ -235,6 +239,7 @@ export function BookingsTable({
   const [requirements, setRequirements] = useState<{ id: string; failures: RequirementFailure[]; surface: 'desktop' | 'sheet' } | null>(null);
   const [proceedError, setProceedError] = useState(false);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const requirementsTitleId = useId();
 
   /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
   const closeSheet = useCallback((): void => {
@@ -313,13 +318,12 @@ export function BookingsTable({
     }
   }
 
-  /** Closes the warning — «Annulla» of the modal hands the focus back to its «Approva»; on the sheet it goes back to the first step. */
+  /** Closes the warning — «Annulla» or Escape on the modal (which hands the focus back to its «Approva», `MiniModal`); on the sheet it goes back to the first step. */
   function dismissRequirements(): void {
     const surface = requirements?.surface;
     setRequirements(null);
     setProceedError(false);
     if (surface === 'sheet') setSheetStep('none');
-    else returnFocusRef.current?.focus();
   }
 
   /**
@@ -370,6 +374,13 @@ export function BookingsTable({
       toast.show(labels.actions.noShowSuccess, 'ok');
       router.refresh();
     }
+  }
+
+  /** «Annulla» or Escape on the reject card. */
+  function closeDeny(): void {
+    setDenyForId(null);
+    setDenyReason('');
+    setDenyError(null);
   }
 
   async function submitDeny(): Promise<void> {
@@ -727,7 +738,8 @@ export function BookingsTable({
                           type="button"
                           className="btn mini bad"
                           disabled={busy}
-                          onClick={() => {
+                          onClick={(event) => {
+                            denyReturnFocusRef.current = event.currentTarget;
                             setDenyForId(booking.id);
                             setDenyReason('');
                             setDenyError(null);
@@ -867,64 +879,54 @@ export function BookingsTable({
       ) : null}
 
       {denyForId ? (
-        <div className="mini-modal">
-          <div className="mini-modal-card">
-            <div className="so-title" style={{ fontSize: 16 }}>
-              {labels.denyModal.title}
-            </div>
-            <div className="so-sub">{labels.denyModal.subtitle}</div>
-            <textarea
-              className="input"
-              rows={3}
-              value={denyReason}
-              onChange={(event) => setDenyReason(event.target.value)}
-              placeholder={labels.denyModal.reasonPlaceholder}
-              aria-invalid={Boolean(denyError)}
-              data-testid="booking-deny-reason"
-            />
-            {denyError ? (
-              <p role="alert" data-testid="booking-deny-error" className="fld-error">
-                {denyError}
-              </p>
-            ) : null}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  setDenyForId(null);
-                  setDenyReason('');
-                  setDenyError(null);
-                }}
-              >
-                {labels.denyModal.cancel}
-              </button>
-              <button type="button" className="btn primary" disabled={pendingActionId === denyForId} onClick={() => void submitDeny()} data-testid="booking-deny-submit">
-                {labels.denyModal.submit}
-              </button>
-            </div>
+        <MiniModal labelledBy={denyTitleId} onClose={closeDeny} returnFocusRef={denyReturnFocusRef}>
+          <div id={denyTitleId} className="so-title" style={{ fontSize: 16 }}>
+            {labels.denyModal.title}
           </div>
-        </div>
+          <div className="so-sub">{labels.denyModal.subtitle}</div>
+          <textarea
+            className="input"
+            rows={3}
+            value={denyReason}
+            onChange={(event) => setDenyReason(event.target.value)}
+            placeholder={labels.denyModal.reasonPlaceholder}
+            aria-invalid={Boolean(denyError)}
+            data-testid="booking-deny-reason"
+          />
+          {denyError ? (
+            <p role="alert" data-testid="booking-deny-error" className="fld-error">
+              {denyError}
+            </p>
+          ) : null}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="btn" onClick={closeDeny}>
+              {labels.denyModal.cancel}
+            </button>
+            <button type="button" className="btn primary" disabled={pendingActionId === denyForId} onClick={() => void submitDeny()} data-testid="booking-deny-submit">
+              {labels.denyModal.submit}
+            </button>
+          </div>
+        </MiniModal>
       ) : null}
 
       {/* Story 19.10 (AD-6): the approval's requirements warning on the desktop
-          — the deny modal's own markup, the shared warning inside, its
-          «Procedi comunque» for whoever holds `requirements.force`. */}
+          — the deny modal's own card (a dialog named by the warning's title,
+          review 19.10 F3), the shared warning inside, its «Procedi comunque»
+          for whoever holds `requirements.force`. */}
       {requirements?.surface === 'desktop' ? (
-        <div className="mini-modal">
-          <div className="mini-modal-card" data-testid="booking-requirements-modal">
-            <RequirementsWarning
-              failures={requirements.failures}
-              canProceed={canForce}
-              onProceed={() => void proceedRequirements()}
-              onCancel={dismissRequirements}
-              submitting={pendingActionId === requirements.id}
-              error={proceedError}
-              moneyLocale={locale}
-              title={labels.requirementsApproveTitle}
-            />
-          </div>
-        </div>
+        <MiniModal labelledBy={requirementsTitleId} onClose={dismissRequirements} returnFocusRef={returnFocusRef} data-testid="booking-requirements-modal">
+          <RequirementsWarning
+            titleId={requirementsTitleId}
+            failures={requirements.failures}
+            canProceed={canForce}
+            onProceed={() => void proceedRequirements()}
+            onCancel={dismissRequirements}
+            submitting={pendingActionId === requirements.id}
+            error={proceedError}
+            moneyLocale={locale}
+            title={labels.requirementsApproveTitle}
+          />
+        </MiniModal>
       ) : null}
 
       {/* Mounted only for an actor who could ever open one (`canCreate` — the

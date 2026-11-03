@@ -1477,9 +1477,17 @@ const BASE_LOCKED_BOOKING: LockedBookingFixture = {
   endsAt: new Date(FUTURE_ENDS_AT),
 };
 
-/** Queues the booking-row lock read (`transitionBooking`'s FIRST `$queryRaw` call) — a `mockResolvedValueOnce`, so it is consumed by that first call only. A SECOND `$queryRaw` call (the Aircraft lock, APPROVE only) falls through to `beforeEach`'s base `queryRaw.mockResolvedValue(LOCKED_OPERATIONAL_AIRCRAFT)`. */
-function mockBookingLock(overrides: Partial<LockedBookingFixture> = {}): void {
-  queryRaw.mockResolvedValueOnce([{ ...BASE_LOCKED_BOOKING, ...overrides }]);
+/**
+ * Queues the booking-row lock read (`transitionBooking`'s FIRST `$queryRaw` call) — a `mockResolvedValueOnce`, so it is consumed by that first call only. A SECOND `$queryRaw` call (the Aircraft lock, APPROVE only) falls through to `beforeEach`'s base `queryRaw.mockResolvedValue(LOCKED_OPERATIONAL_AIRCRAFT)`.
+ *
+ * Review 19.10 F2: an approval reads the booking BEFORE its transaction (`booking.findUnique`, `MOVABLE_BOOKING_SELECT`) and
+ * evaluates its requirements on it — the SAME slot as the lock row here, so the under-lock comparison passes, with `person`
+ * as the evaluation's person (the in-transaction re-check reads `personFindUniqueOrThrow`, as before).
+ */
+function mockBookingLock(overrides: Partial<LockedBookingFixture> = {}, person: Fixture = ACTIVE_PILOT_PERSON): void {
+  const locked = { ...BASE_LOCKED_BOOKING, ...overrides };
+  queryRaw.mockResolvedValueOnce([locked]);
+  bookingFindUnique.mockResolvedValue({ ...locked, notes: null, person, instructorProfile: locked.instructorProfileId === null ? null : INSTRUCTOR_HOLDER });
 }
 
 /** Story 16.3 (ops F9, AD-5): `FLOWN`/`NO_SHOW` need a slot that has STARTED — BASE_LOCKED_BOOKING starts in 2099, so every closing test spreads this in. */
@@ -1798,8 +1806,23 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
     return queryRawMock.mock.calls.map((call) => (call[0] as unknown as TemplateStringsArray).join('?'));
   }
 
+  /**
+   * `instructorProfile.findUnique` answers two questions here: the indicated
+   * instructor, by `id` (`assertActiveInstructorProfile`), and the booking
+   * person's OWN profile, by `personId`, read under the `Person` lock (review
+   * 19.10 F4, `lockBookingPeople`) — `ownProfileId` (none by default).
+   */
+  const instructorProfileFindUniqueImpl = instructorProfileFindUniqueMock as unknown as {
+    mockImplementation: (fn: (args: { where: Record<string, unknown> }) => Promise<Fixture>) => void;
+  };
+  function mockInstructorProfiles(ownProfileId: string | null = null): void {
+    instructorProfileFindUniqueImpl.mockImplementation(async (args) =>
+      'personId' in args.where ? (ownProfileId === null ? null : { id: ownProfileId }) : instructorProfileRow(),
+    );
+  }
+
   beforeEach(() => {
-    instructorProfileFindUnique.mockResolvedValue(instructorProfileRow());
+    mockInstructorProfiles();
   });
 
   it('A0 create (control, green before AND after): the SAME aircraft already APPROVED over the interval answers the aircraft 409 byte-identical — CONFLICT, same message, NO details', async () => {
@@ -1893,6 +1916,7 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
       const withProfile = (person: Fixture) => ({ ...person, instructorProfile: { id: 'ip_of_person', deactivatedAt: null } });
       personFindUnique.mockImplementation(async () => withProfile(ACTIVE_STUDENT_PERSON));
       personFindUniqueOrThrow.mockResolvedValue(withProfile(ACTIVE_PILOT_PERSON));
+      mockInstructorProfiles('ip_of_person');
       if (path === 'create') {
         await createBooking(adminActor(), baseInput({ personId: 'person_student', instructorProfileId: 'instr_profile_1' }));
       } else if (path === 'move') {
@@ -1905,6 +1929,27 @@ describe('Story 16.3 — person/instructor overlap on the three write paths (ops
 
       const personWhere = (bookingFindFirstMock.mock.calls[1]![0] as { where: { OR: unknown[] } }).where.OR;
       expect(personWhere).toEqual([{ personId: PATH_PERSON[path] }, { instructorProfileId: 'ip_of_person' }]);
+    },
+  );
+
+  it.each(['create', 'move', 'approve'] as const)(
+    "%s: review 19.10 F4 — the person's OWN instructor profile is read AFTER the Person lock and BEFORE the person predicate, and that read decides it: a profile the person was read without (created in between) still makes it busy",
+    async (path) => {
+      // Every person `runPath` books was read WITHOUT an instructor profile; the read under the lock finds one.
+      mockInstructorProfiles('ip_created_meanwhile');
+
+      await runPath(path);
+
+      const ownProfileRead = instructorProfileFindUniqueMock.mock.calls.findIndex(([args]) => 'personId' in (args as { where: object }).where);
+      expect(ownProfileRead).not.toBe(-1);
+      expect(instructorProfileFindUniqueMock.mock.calls[ownProfileRead]![0]).toEqual({ where: { personId: PATH_PERSON[path] }, select: { id: true } });
+      const readAt = instructorProfileFindUniqueMock.mock.invocationCallOrder[ownProfileRead]!;
+      const personLock = rawSqls().findIndex((sql) => sql.includes('FROM "Person"'));
+      expect(queryRawMock.mock.invocationCallOrder[personLock]!).toBeLessThan(readAt);
+      // The person predicate is the SECOND `findFirst` (AIRCRAFT -> PERSON -> INSTRUCTOR).
+      expect(readAt).toBeLessThan(bookingFindFirstMock.mock.invocationCallOrder[1]!);
+      const personWhere = (bookingFindFirstMock.mock.calls[1]![0] as { where: { OR: unknown[] } }).where.OR;
+      expect(personWhere).toEqual([{ personId: PATH_PERSON[path] }, { instructorProfileId: 'ip_created_meanwhile' }]);
     },
   );
 
@@ -2035,7 +2080,8 @@ describe('Story 16.3 — the approval re-checks WHO is approved, with createBook
 
     expect(error).toBeInstanceOf(ConflictError);
     expect((error as InstanceType<typeof ConflictError>).message).toBe('Cannot book an aircraft for an archived person.');
-    expect(evaluateRequirementsMock).not.toHaveBeenCalled();
+    // Evaluated before the transaction (review 19.10 F2), decided last: the 409 wins, nothing is written.
+    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
   });
 
   it('B4 approve (pin, green before AND after — ratifica R-16-b): approving a booking that ALREADY STARTED stays permitted — no temporal guard on APPROVED', async () => {
@@ -2234,11 +2280,32 @@ describe('Story 19.10 — the requirements of a booking on its three write paths
       expectNothingWritten();
     });
 
-    it.each(['create', 'move'] as const)('%s: evaluated BEFORE the transaction opens (no lock held during its queries), decided after the overlap predicates', async (path) => {
-      await errorOf(runPath(path));
+    it.each(['create', 'move', 'approve'] as const)(
+      '%s: evaluated BEFORE the transaction opens (no lock held during its queries, and — review 19.10 F2 — no `prisma` read while the transaction holds its connection: the cost estimate and the window settings too), decided after the overlap predicates',
+      async (path) => {
+        await errorOf(runPath(path));
 
-      expect(evaluateRequirementsMock.mock.invocationCallOrder[0]!).toBeLessThan(transactionMock.mock.invocationCallOrder[0]!);
-      expect(bookingFindFirstMock).toHaveBeenCalledTimes(2);
+        const opened = transactionMock.mock.invocationCallOrder[0]!;
+        expect(evaluateRequirementsMock.mock.invocationCallOrder[0]!).toBeLessThan(opened);
+        expect(aircraftRateFindFirstMock.mock.invocationCallOrder[0]!).toBeLessThan(opened);
+        expect(vi.mocked(getSchedulingSettings).mock.invocationCallOrder[0]!).toBeLessThan(opened);
+        expect(bookingFindFirstMock).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it.each([
+      ['moved to another interval', { startsAt: new Date('2099-06-01T12:00:00.000Z'), endsAt: new Date('2099-06-01T13:00:00.000Z') }],
+      ['moved to another aircraft', { aircraftId: 'aircraft_2' }],
+    ] as const)('approve: a booking %s between the read its requirements were judged on and the row lock answers 409, nothing decided on the stale read, nothing written (review 19.10 F2)', async (_, change) => {
+      // The lock row is the booking as it is NOW; the read before the transaction saw it as it was.
+      mockBookingLock({ status: 'PENDING', ...change });
+      bookingFindUnique.mockResolvedValue({ ...BASE_LOCKED_BOOKING, status: 'PENDING', notes: null, person: ACTIVE_PILOT_PERSON, instructorProfile: null });
+
+      const error = await transitionBooking(adminActor(), 'booking_1', { to: 'APPROVED', force: true }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as InstanceType<typeof ConflictError>).message).toBe('This booking has changed; please retry.');
+      expectNothingWritten();
     });
   });
 

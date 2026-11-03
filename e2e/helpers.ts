@@ -280,8 +280,20 @@ export async function submitPastRequirements(page: Page): Promise<void> {
   await warning.getByTestId('requirements-proceed').click();
 }
 
-/** Story 19.10 (AD-9): the balance under which `ensureBookingRequirements` tops an account up — above every booking estimate the suite builds. */
-const BOOKING_BALANCE_FLOOR_CENTS = 200_000;
+/**
+ * Story 19.10 (AD-9): the balance `ensureBookingRequirements` tops an account
+ * up to, when it sits under it — and ONLY up to it (review 19.10 F1). The
+ * top-ups of the whole suite land in the club's GLOBAL monthly «Ricariche»
+ * total, which a 320 px billing test reads: at 4 000,00 € per fresh person
+ * (the first version topped up to twice a 2 000,00 € floor) one run pushed it
+ * past 100 000 € and broke that layout. Measured: the costliest booking the
+ * suite judges without `force` after this helper is 120,00 € (an hour at
+ * 120 €/h); the rest of the floor is headroom for the seed pilot, whose
+ * balance sibling specs charge flights to meanwhile (one flight of the suite:
+ * a few hundred euros at most). The two tests that need a known balance
+ * assert it (`toBe(BOOKING_BALANCE_FLOOR_CENTS)`) rather than assume it.
+ */
+export const BOOKING_BALANCE_FLOOR_CENTS = 50_000;
 
 /**
  * A person "in regola" for a BOOKING's requirements (story 19.10, AD-9 rule
@@ -294,9 +306,9 @@ const BOOKING_BALANCE_FLOOR_CENTS = 200_000;
  * - the membership fee, REGISTERED through `POST /api/v1/expiries` on the
  *   `MEMBERSHIP` type with a far-future date (a 409 = already there): no
  *   charge, no movement in the statement;
- * - the balance, topped up when an account exists and sits under
- *   `BOOKING_BALANCE_FLOOR_CENTS` (a negative balance fails even a booking
- *   that costs 0; a person without an account is never judged);
+ * - the balance, topped up TO `BOOKING_BALANCE_FLOOR_CENTS` when an account
+ *   exists and sits under it (a negative balance fails even a booking that
+ *   costs 0; a person without an account is never judged);
  * - with `solo: true` (a booking without an instructor — every
  *   self-booking), the currency: when the pilot has no flight in the last 90
  *   days (X = 1, Y = 90, the defaults), one flight TODAY, no charge, forced,
@@ -320,7 +332,7 @@ export async function ensureBookingRequirements(
   const overview = (await (await page.request.get(`/api/v1/people/${person.personId}/account`)).json()) as { account: unknown; balanceCents: number };
   if (overview.account !== null && overview.balanceCents < BOOKING_BALANCE_FLOOR_CENTS) {
     const topUp = await page.request.post(`/api/v1/people/${person.personId}/account/top-ups`, {
-      data: { amountCents: 2 * BOOKING_BALANCE_FLOOR_CENTS - overview.balanceCents, paymentMethod: 'CASH', effectiveDate: todayRome() },
+      data: { amountCents: BOOKING_BALANCE_FLOOR_CENTS - overview.balanceCents, paymentMethod: 'CASH', effectiveDate: todayRome() },
     });
     expect(topUp.status(), await topUp.text()).toBe(200);
   }

@@ -38,11 +38,14 @@ export type RequirementsWarningProps = {
   moneyLocale: 'it' | 'en';
   /** Defaults to `Requirements.title`. */
   title?: string;
+  /** The title's id, for a caller whose dialog is named by it (review 19.10 F3); generated otherwise. */
+  titleId?: string;
 };
 
-export function RequirementsWarning({ failures, canProceed, onProceed, onCancel, submitting, error, moneyLocale, title }: RequirementsWarningProps) {
+export function RequirementsWarning({ failures, canProceed, onProceed, onCancel, submitting, error, moneyLocale, title, titleId: callerTitleId }: RequirementsWarningProps) {
   const t = useTranslations('Requirements');
-  const titleId = useId();
+  const ownTitleId = useId();
+  const titleId = callerTitleId ?? ownTitleId;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const proceedRef = useRef<HTMLButtonElement | null>(null);
 

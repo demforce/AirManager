@@ -168,10 +168,9 @@ function parseStoredInt(value: string | undefined): number | null {
  * Reads the scheduling-window settings (AC 1/4). No permission gate: needed
  * by ANY actor creating a booking (including a plain pilot self-booking),
  * not just an admin — same reasoning as {@link getAirfieldIcao}. Read through
- * the top-level `prisma` client even when called from INSIDE
- * `bookings.service.ts#transitionBooking`'s own `$transaction` — the exact
- * same "sibling read via plain `prisma`, not `tx`" precedent that function's
- * own requirements evaluation (`requirements.service.ts`) already establishes.
+ * the top-level `prisma` client, so never from INSIDE a transaction (review
+ * 19.10 F2: a second connection asked for while one is held) —
+ * `bookings.service.ts#transitionBooking` reads it before its own.
  */
 export async function getSchedulingSettings(): Promise<SchedulingSettingsDto> {
   const rows = await prisma.appSetting.findMany({ where: { key: { in: [...SCHED_KEYS] } }, select: { key: true, value: true } });

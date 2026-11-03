@@ -148,20 +148,22 @@ export function useFocusTrap(open: boolean, panelRef: RefObject<HTMLElement | nu
         panel.focus({ preventScroll: true });
         return;
       }
-      const first = stops[0]!;
-      const last = stops[stops.length - 1]!;
+      // It wraps when no stop lies beyond the focus in that direction: from
+      // `first` / `last`, and from a focused node that is not a stop itself —
+      // the panel (tabIndex -1, focused on open) or a `tabIndex=-1` block a
+      // child focused (the requirements warning, the first thing of a
+      // `MiniModal`, review 19.10 F3: Shift+Tab from it used to leave).
+      const follows = (from: Node, to: Node) => (from.compareDocumentPosition(to) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
       if (event.shiftKey) {
-        // The panel itself is the first stop (tabIndex -1, focused on open):
-        // going back from it wraps to the end, like going back from `first`.
-        if (active === first || active === panel) {
+        if (!stops.some((stop) => follows(stop, active))) {
           event.preventDefault();
-          last.focus();
+          stops[stops.length - 1]!.focus();
         }
         return;
       }
-      if (active === last) {
+      if (!stops.some((stop) => follows(active, stop))) {
         event.preventDefault();
-        first.focus();
+        stops[0]!.focus();
       }
     };
 

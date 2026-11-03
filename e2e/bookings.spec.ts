@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
-import { ensureBookingRequirements, ownFailures, personIdByEmail, selectFromCombobox, todayRome, type E2eRequirementFailure } from './helpers';
+import { BOOKING_BALANCE_FLOOR_CENTS, ensureBookingRequirements, ownFailures, personIdByEmail, selectFromCombobox, todayRome, type E2eRequirementFailure } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -1235,6 +1235,9 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
   });
 
   test('an overlap on a move shows 409 in the Sposta form', async ({ page }) => {
+    // Review 19.10 F5: three logins, an invite, the helper's currency flight, two form bookings and a move — ~19 s
+    // alone at 2 workers, past the 30 s budget under load (measured: 32-34 s with five parallel runs).
+    test.slow();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     // Story 16.3: a run-unique pilot, never the seed one — this test leaves an
@@ -1245,22 +1248,34 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
 
-    await gotoBookingsAndWaitForHydration(page);
-    await page.getByTestId('new-booking-button').click();
-    const form = page.getByTestId('new-booking-form');
-    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T02:00`);
-    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T03:00`);
-    await form.getByRole('button', { name: 'Prenota' }).click();
-    await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    // Review 19.10 F5: each booking from a freshly loaded page, the POST itself
+    // awaited. The form's success banner stays up after the FIRST booking, so
+    // it proved nothing about the second; and picking the aircraft again on
+    // the same page raced the `router.refresh()` of the first success, which
+    // closed the combobox popup under the click (both measured under load).
+    const bookViaForm = async (from: string, to: string): Promise<void> => {
+      await gotoBookingsAndWaitForHydration(page);
+      await page.getByTestId('new-booking-button').click();
+      const form = page.getByTestId('new-booking-form');
+      await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+      await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T${from}`);
+      await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T${to}`);
+      const created = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/bookings' && response.request().method() === 'POST');
+      await form.getByRole('button', { name: 'Prenota' }).click();
+      expect((await created).status()).toBe(201);
+      await expect(page.getByTestId('booking-form-success')).toBeVisible();
+    };
+    await bookViaForm('02:00', '03:00');
+    await bookViaForm('05:00', '06:00');
 
-    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T05:00`);
-    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T06:00`);
-    await form.getByRole('button', { name: 'Prenota' }).click();
-    await expect(page.getByTestId('booking-form-success')).toBeVisible();
-
-    expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
+    // Counted on the run-unique aircraft through the API, not by walking the
+    // list's pages (rows shift between pages while sibling specs insert).
+    const bookingsOfAircraft = async (): Promise<Array<{ id: string; startsAt: string; status: string }>> => {
+      const response = await page.request.get(`/api/v1/bookings?aircraftId=${aircraft.id}&status=PENDING,APPROVED`);
+      expect(response.status()).toBe(200);
+      return ((await response.json()) as { items: Array<{ id: string; startsAt: string; status: string }> }).items;
+    };
+    expect(await bookingsOfAircraft()).toHaveLength(2);
 
     // Story 12.2, AC 4: only an APPROVED booking occupies a slot — approve
     // the FIRST (soonest startsAt, 02:00-03:00) booking so the move below
@@ -1268,9 +1283,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // Fetched via the API (sorted by startsAt) rather than hand-computed, to
     // avoid the datetime-local/UTC offset entirely (this form's inputs are
     // LOCAL time, `af4e5f5`) — only the id is needed from the row created above.
-    const listResponse = await page.request.get(`/api/v1/bookings?aircraftId=${aircraft.id}&status=PENDING,APPROVED`);
-    const { items } = (await listResponse.json()) as { items: Array<{ id: string; startsAt: string }> };
-    const firstBookingId = items.slice().sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0]!.id;
+    const firstBookingId = (await bookingsOfAircraft()).sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0]!.id;
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -1279,9 +1292,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
-    await gotoBookingsAndWaitForHydration(page);
-
-    expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
+    expect((await bookingsOfAircraft()).map((booking) => booking.status).sort()).toEqual(['APPROVED', 'PENDING']);
 
     // The second (later, 05:00-06:00) booking is the one still "In attesa"
     // (PENDING) after the approval above — disambiguated by its status
@@ -1654,12 +1665,13 @@ test.describe('Booking requirements on the forms (Story 7.4, rewritten by story 
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    // 3 000,00 €/h: one hour costs 300 000, under the 400 000 a fresh pilot holds after `ensureBookingRequirements`.
-    const aircraft = await createRatedAircraft(page, 300_000);
+    // 400,00 €/h: one hour costs 40 000, under the 50 000 (the helper's floor, asserted — the amounts below are written for
+    // it) a fresh pilot holds after `ensureBookingRequirements`.
+    const aircraft = await createRatedAircraft(page, 40_000);
     const pilotPassword = `PilotaSaldo${uniqueSuffix()}!`;
     const pilot = await createPilotWithLogin(page, pilotPassword, { inRegola: true });
     const balance = ((await (await page.request.get(`/api/v1/people/${pilot.personId}/account`)).json()) as { balanceCents: number }).balanceCents;
-    expect(balance).toBe(400_000);
+    expect(balance).toBe(BOOKING_BALANCE_FLOOR_CENTS);
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, pilotPassword);
@@ -1669,19 +1681,19 @@ test.describe('Booking requirements on the forms (Story 7.4, rewritten by story 
     expect(created.status(), await created.text()).toBe(201);
     const { booking } = (await created.json()) as { booking: { id: string } };
 
-    // Twice the duration: 600 000 against 400 000.
+    // Twice the duration: 80 000 against 50 000.
     const lengthened = await page.request.patch(`/api/v1/bookings/${booking.id}`, { data: { endsAt: `${FUTURE_DAY}T11:00:00.000Z` } });
     expect(lengthened.status()).toBe(422);
     const lengthenedError = ((await lengthened.json()) as { error: { code: string; details: { failures: E2eRequirementFailure[] } } }).error;
     expect(lengthenedError.code).toBe('REQUIREMENTS_NOT_MET');
     expect(lengthenedError.details.failures.filter((failure) => failure.type === 'BALANCE')).toEqual([
-      { type: 'BALANCE', role: 'person', personName: `${pilot.firstName} ${pilot.lastName}`, balanceCents: 400_000, costCents: 600_000 },
+      { type: 'BALANCE', role: 'person', personName: `${pilot.firstName} ${pilot.lastName}`, balanceCents: 50_000, costCents: 80_000 },
     ]);
 
     // The balance drops under the cost of the booking as it is.
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const adjustment = await page.request.post(`/api/v1/people/${pilot.personId}/account/adjustments`, { data: { amountCents: -200_000, reason: 'Rettifica di prova' } });
+    const adjustment = await page.request.post(`/api/v1/people/${pilot.personId}/account/adjustments`, { data: { amountCents: -20_000, reason: 'Rettifica di prova' } });
     expect(adjustment.status(), await adjustment.text()).toBe(200);
 
     await page.context().clearCookies();
@@ -1702,7 +1714,7 @@ test.describe('Booking requirements on the forms (Story 7.4, rewritten by story 
     await expect(warning).toBeVisible();
     await expect(warning).toContainText('Prenotazione non consentita: solo un amministratore può procedere comunque');
     await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="BALANCE"]')).toHaveText(
-      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — Saldo insufficiente: saldo 2.000,00 €, costo 3.000,00 €`,
+      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — Saldo insufficiente: saldo 300,00 €, costo 400,00 €`,
     );
     await expect(moveForm.getByTestId('requirements-proceed')).toHaveCount(0);
   });
