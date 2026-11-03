@@ -4,7 +4,7 @@ baseline_commit: eef77ef
 
 # Story 19.10: Avviso con deroga admin — prenotazioni
 
-Status: **ready-for-dev** — 2026-11-01. **Nessuna domanda PO aperta**: Q-19.10-a = **B** (PO, contro la raccomandazione) e Q-19.9-a = **sì** (sessione principale), decise il 2026-11-01 e applicate agli AC (le righe che ne dipendono restano marcate **[Q-a]** / **[Q-19.9-a]** per tracciabilità). **Modello dev: Opus 5 xhigh (UI)**: la story scrive UI in quattro superfici di prenotazione (form «Nuova prenotazione», form «Modifica», approvazione desktop dalla lista, approvazione nei due sheet mobile: lista Prenotazioni e Panoramica) e nel pannello «Quota associativa» delle Scadenze (deroga dell'addebito quota, §1 AD-10 — **assegnata a questa story dalla sessione principale il 2026-11-01**), oltre a service, una migrazione, Zod/OpenAPI, i18n ed e2e. Review: **Opus 5 xhigh adversarial**. Un solo dev subagent. Chiave sprint-status: `19-10-avviso-deroga-prenotazioni`.
+Status: **review** — 2026-11-03 (dev). Era: **ready-for-dev** — 2026-11-01. **Nessuna domanda PO aperta**: Q-19.10-a = **B** (PO, contro la raccomandazione) e Q-19.9-a = **sì** (sessione principale), decise il 2026-11-01 e applicate agli AC (le righe che ne dipendono restano marcate **[Q-a]** / **[Q-19.9-a]** per tracciabilità). **Modello dev: Opus 5 xhigh (UI)**: la story scrive UI in quattro superfici di prenotazione (form «Nuova prenotazione», form «Modifica», approvazione desktop dalla lista, approvazione nei due sheet mobile: lista Prenotazioni e Panoramica) e nel pannello «Quota associativa» delle Scadenze (deroga dell'addebito quota, §1 AD-10 — **assegnata a questa story dalla sessione principale il 2026-11-01**), oltre a service, una migrazione, Zod/OpenAPI, i18n ed e2e. Review: **Opus 5 xhigh adversarial**. Un solo dev subagent. Chiave sprint-status: `19-10-avviso-deroga-prenotazioni`.
 
 > ⚠️ **Dipendenze e baseline**: ogni `file:riga` è misurato su **`eef77ef`** (HEAD, albero di lavoro pulito su `src/`, `prisma/`, `e2e/`). Il dev parte **DOPO il commit di 19.1…19.9**. Le story precedenti toccano file di questa e fanno slittare le righe:
 > - **19.9** (scritta in parallelo, `19-9-avviso-deroga-voli.md`) crea il **servizio unico dei check** (`requirements.service.ts`), il codice `REQUIREMENTS_NOT_MET`, lo schema di `details.failures[]` (`src/lib/schemas/requirements.ts`), il permesso `requirements.force` (rinomina di `flights.forceExpiry`) e il componente UI dell'avviso unico (`requirements-warning.tsx`) — contratto concordato in §1 AD-1: questa story li **consuma**, non li riscrive (§1 AD-1). Toglie `forceReason` e il badge «Forzato» dai **voli** e riscrive o sostituisce `findBlockingExpiredDocuments` (`bookings.service.ts:465-481`), oggi condivisa coi voli.
@@ -424,18 +424,18 @@ Persone run-unique; tariffe con `seedAircraftRate`/`seedInstructorRate` (date ne
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento**: `git log`; file e codice committati della 19.9 (tabella di AD-1 compilata) e della 19.3/19.5/19.7a; censimenti di §3 e di AD-9 su HEAD, righe corrette in questo file; censimento dei lock (AD-5).
-- [ ] **T1 — Migrazione e schema** (AC 5).
-- [ ] **T2 — Stima del costo e categoria** (AC 9).
-- [ ] **T3 — Orchestrazione dei check sui tre percorsi, ultimo cancello, `force`, timbro** (AC 1-4, 6-8, 10-15, 21).
-- [ ] **T4 — R-19-o: lock e predicati** (AC 17-20, 22).
-- [ ] **T5 — Zod, OpenAPI, doc-comment** (AC 5, 31, 32).
-- [ ] **T6 — UI: form nuovo e modifica** (AC 23-26).
-- [ ] **T7 — UI: approvazione desktop e mobile, `postBookingTransition`** (AC 27-29).
-- [ ] **T8 — i18n** (AC 33).
-- [ ] **T9 — e2e**: helper `ensureBookingRequirements`, spec adattati secondo il censimento, spec nuovo, sonda di concorrenza (AC 35).
-- [ ] **T10 — Deroga dell'addebito quota**: service, schema, OpenAPI, modale, CSS, i18n, unit ed e2e (AC 36-39).
-- [ ] **T11 — Gate, discriminanze, verifica UI** (AC 30, 34, §4.3; la verifica UI comprende il pannello quota a 1280 e 375 px, chiaro e scuro).
+- [x] **T0 — Riallineamento**: `git log`; file e codice committati della 19.9 (tabella di AD-1 compilata) e della 19.3/19.5/19.7a; censimenti di §3 e di AD-9 su HEAD, righe corrette in questo file; censimento dei lock (AD-5).
+- [x] **T1 — Migrazione e schema** (AC 5).
+- [x] **T2 — Stima del costo e categoria** (AC 9).
+- [x] **T3 — Orchestrazione dei check sui tre percorsi, ultimo cancello, `force`, timbro** (AC 1-4, 6-8, 10-15, 21).
+- [x] **T4 — R-19-o: lock e predicati** (AC 17-20, 22).
+- [x] **T5 — Zod, OpenAPI, doc-comment** (AC 5, 31, 32).
+- [x] **T6 — UI: form nuovo e modifica** (AC 23-26).
+- [x] **T7 — UI: approvazione desktop e mobile, `postBookingTransition`** (AC 27-29).
+- [x] **T8 — i18n** (AC 33).
+- [x] **T9 — e2e**: helper `ensureBookingRequirements`, spec adattati secondo il censimento, spec nuovo, sonda di concorrenza (AC 35).
+- [x] **T10 — Deroga dell'addebito quota**: service, schema, OpenAPI, modale, CSS, i18n, unit ed e2e (AC 36-39).
+- [x] **T11 — Gate, discriminanze, verifica UI** (AC 30, 34, §4.3; la verifica UI comprende il pannello quota a 1280 e 375 px, chiaro e scuro).
 
 ---
 
@@ -443,26 +443,174 @@ Persone run-unique; tariffe con `seedAircraftRate`/`seedInstructorRate` (date ne
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), dev subagent `dev-19-10` — un solo dev per la story. Skill: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` (lettura «dashboard AirOps esistente, nessun nuovo linguaggio visivo»: token AirOps, nessun colore nuovo, nessun em-dash nella copy nuova), `ui-ux-pro-max` (ricerche «modal dialog focus management return focus after close», «bottom sheet touch target 44px mobile confirm step»: chiusura esplicita, target ≥ 44 px, 8 px fra i bottoni — già nel componente della 19.9). Niente Playwright MCP: `playwright-core` su `chromium-1228`, `localhost`.
+
 ### §A — Riallineamento sul HEAD (T0): contratto 19.9 compilato, righe corrette, censimento lock
+
+- **HEAD** `933de13` (19.1…19.9 committate e chiuse; arbitro 19.9 = 580). Albero `src/`, `prisma/`, `e2e/` pulito al via.
+- **Contratto della 19.9 (AD-1) — nessuna differenza di nome, nessun motivo di fermarsi**: `requirements.service.ts#evaluateRequirements(input: RequirementsInput): Promise<RequirementFailure[]>` con `expiryDateOnly`, `membershipDateOnly`, `person: { id, name, hasActivePilot, hasActiveStudent, hasActiveInstructor }`, `instructor: { personId, name } | null`, `documents`, `currency: { dateOnly, excludeFlightId } | null`, `balance: { costCents, creditCents } | null` (le tre date distinte e `hasActiveInstructor` ci sono); `balanceFailure(personName, balanceCents, costCents)`; `throwRequirementsNotMet(failures): never`; `schemas/requirements.ts#requirementFailureSchema`/`requirementsNotMetDetailsSchema`; `registry.ts#requirementsErrorResponses(...)`; `requirements-warning.tsx#RequirementsWarning({ failures, canProceed, onProceed, onCancel, submitting, error, moneyLocale, title? })` con modalità bloccata e testid `requirements-warning`/`-item` (`data-type`)/`-proceed`/`-cancel`/`-proceed-error`; permesso `requirements.force` (solo ADMIN). 19.3: nessun helper puro della categoria esportato (regola inline in `flights.service.ts:634-635`). 19.7a: `getMembershipStatus`, `getCurrencyStatus`, `getMedicalRequirementFailure` consumati via il servizio, non direttamente.
+- **Righe effettive su `933de13`** (al posto di quelle su `eef77ef` del §3): `bookings.service.ts` — modulo `:17-137`, `BOOKABLE_PERSON_SELECT` `:284-290`, `assertActiveInstructorProfile` `:313-325`, `lockBookingPeople` `:350-355`, `findBookingConflict` `:385-420`, `findBlockingExpiredDocuments` `:478-499`, `createBooking` `:604-786`, `EDITABLE_BOOKING_SELECT` `:918-927`, `updateBooking` `:1048-1176`, `transitionBooking` `:1326-1424`; `membership.service.ts#chargeMembershipFee` `:87-…` (ramo morto `settings.manage` `:122`, codice `:127`); `registry.ts` POST/PATCH/transition bookings `:1456`, `:1493`, `:1527`, membership-fee `:1832`; `new-booking-form.tsx` (dopo la 19.5) sezione «Forza prenotazione» `:630-680`, ramo `EXPIRED_DOCUMENTS` `:396-407`; `bookings-table.tsx` `handleApprove` `:274-280`, modale di rifiuto `:791-829`; `mobile-pending-bookings.tsx` `handleApprove` `:116-139`; `scadenze-console.tsx#MembershipFeeModal` `:885-…`, casella `:978-983`; `airops.css` `.membership-fee-override-label` `:2877`, `:3007-3008`, commento `:3453`.
+- **Censimento lock** (`grep -rn "FOR UPDATE\|FOR NO KEY UPDATE" src/server`): `Person` è bloccato fuori dalle prenotazioni solo da `people.service.ts:652` (`upsertProfile`) e `:931` (`updatePerson`), **una** riga, primo statement, seguita solo da righe della stessa persona (mai `Aircraft`, `Booking` o un'altra persona); `Aircraft` da `flights.service.ts` (`:1013`, `:1158`, `:1253`), `rates.service.ts:95` e dalle prenotazioni; `Account` da voli, conti e quota; `ExpiryType`/`CashCategory` dalle impostazioni. Nessun'altra transazione blocca due righe `Person`: con l'ordine `Booking → Aircraft → Person (1 o 2 righe, una istruzione ORDER BY id)` nessun ciclo è possibile. Il lock `InstructorProfile` della 16.3 è tolto (AD-5).
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Prova |
+|---|---|
+| 1 | unit «AC 1» ×3 percorsi (`safeParse` di `requirementsNotMetDetailsSchema`, nulla scritto); e2e: 422 `REQUIREMENTS_NOT_MET` su create/move/approve (`booking-requirements.spec.ts`, admin e own-path) |
+| 2 | unit «AC 2» (passato create e move own, finestra ×3 percorsi, fuori servizio e archiviato ×3, sovrapposizione ×3, ciascuno con e senza `force`; valutazione prima della transazione, decisione dopo i 3 predicati); e2e `booking-window.spec.ts` (persona fresca, fuori finestra → `BOOKING_OUTSIDE_WINDOW` con e senza `force`); mutante (a) rosso a unità e in e2e (§D) |
+| 3 | unit «AC 3» (own-self e cross-person: `person.findUnique` del target e `evaluateRequirements` mai chiamati; move: 403 prima di `booking.findUnique`; gate = `requirements.force` provato con un ruolo che ha solo `bookings.manage.any`, sui tre percorsi); e2e: pilota con `force` → 403 su POST (`bookings.spec.ts`) e su PATCH della propria (`booking-requirements.spec.ts`) |
+| 4 | unit «AC 4» (timbro sui tre percorsi solo con failure+force; nessun timbro senza failure; modifica senza deroga e «riapri» non toccano `forcedAt`; niente `forceReason`); e2e: `forcedAt` non nullo dopo la deroga in creazione (`bookings.spec.ts` AC 23, API) e in approvazione (AC 12b) |
+| 5 | unit schema (PATCH `{ force: true }` → invalido; transition DENIED/PENDING + force → invalido; POST con `forceReason` accettato e scartato); migrazione §C; `grep forceReason src prisma/schema.prisma e2e` → solo asserzioni d'assenza e `src/generated` rigenerato |
+| 6 | e2e «EXPIRY»: (a)+AC 7 rating che scade fra oggi e D, (b) visita scaduta dell'istruttore etichettata `instructor`, (c) visita mancante, (d) tipo disattivato nessun failure; (e) bordo `expiresAt = D` valido e D+1 scaduto (`bookings.spec.ts`, visita) |
+| 7 | unit «AC 7» con `vi.useFakeTimers` a 22:59Z ora legale (oggi Roma = giorno dopo UTC): `expiryDateOnly` = giorno di Roma di `startsAt`/merge/bloccata, `membershipDateOnly` = `currency.dateOnly` = oggi di Roma sui tre percorsi, anche su un'approvazione passata |
+| 8 | unit «AC 8» (solista ↔ niente istruttore, sui tre; solo-istruttore non soggetto); e2e «CURRENCY» (a) 91 → failure con valori, (b) con istruttore no, (c) 90 no, (d) solo-istruttore no, (e) 85 e prenotazione lontana no |
+| 9 | unit «AC 9» (22 500; 15 000 e +6 000; 12 963 su 50 min a 155,55; `validFrom ≤ D` tipizzato; tariffa assente = 0; legacy pilota+allievo e solo-istruttore al prezzo pilota; senza conto `balance: null` e nessuna lettura delle tariffe); e2e «BALANCE» 28 499 → `{balanceCents: 28499, costCents: 28500}`, +1 cent → nessun BALANCE |
+| 10, 11-bis | e2e «MEMBERSHIP» (mai pagata `null`; istruttore scaduta con data; scadenza oggi+5 passa; scaduta ieri fallisce a domani e a D) |
+| 11 | e2e «all four»: tipi deduplicati in ordine `EXPIRY, MEMBERSHIP, CURRENCY, BALANCE` |
+| 12 | (a) e2e `bookings.spec.ts` «every move re-judges…» (allungamento → BALANCE `400000/600000`; spostamento di un'ora nello stesso giorno con saldo sotto il costo → avviso bloccato nel form del pilota); unit «AC 12» (aircraft/intervallo/costo del merge, nota da sola rivalutata); (b) e2e approvazione dopo rettifica → 422 BALANCE, `force` → 200 con timbro |
+| 13 | unit «AC 13» (`where` RATING non bloccanti attivi; bordo = D valido; failure mai in `warnings`); e2e avviso ambra `booking-form-warning` col tipo non bloccante (`bookings.spec.ts`) |
+| 14, 15, 16 | e2e «admin…» (create/move/approve 422 → `force` → 201/200) e «own path…» (pilota, istruttore per sé, istruttore per l'allievo con le voci di entrambi, `force` → 403, PATCH own `force` → 403, self con `instructorProfileId` → 422 `VALIDATION_ERROR`) |
+| 17, 18 | e2e «PERSON_BUSY across roles» e «INSTRUCTOR_BUSY across roles» (create, move, approval, `details` = la prenotazione dell'altro ruolo, bordo libero, PENDING che non blocca); mutante (c) rosso (§D) |
+| 19 | unit 16.3 aggiornati: una `$queryRaw` `FROM "Person" WHERE "id" IN (?) ORDER BY "id" FOR NO KEY UPDATE` con i due id, nessun `InstructorProfile`, ordine `['Aircraft','Person']`/`['Booking','Aircraft','Person']`; predicati con `where` esatti (velivolo invariato byte per byte); caso legacy istruttore = persona → un id |
+| 20 | e2e «concurrency probe» 10/10 `[200, 409]` (3 serie verdi) + sonda API §D: fix 10/10, mutante 3/10 `[200,200]`; SQL «essere umano» 0 sul fix |
+| 21 | unit (create staff e approvazione, con e senza `force`); e2e (con e senza `force`) |
+| 22 | §E |
+| 23-28 | e2e `bookings.spec.ts` (AC 23, 24, 26 pilota) e `booking-requirements.spec.ts` (AC 25 tre corse, AC 26 admin con «Annulla» → focus su «Salva», AC 27 modale con «Annulla» → focus su «Approva», AC 28 due passi mobile con focus sul primo bottone e ≥ 43,5 px) |
+| 29 | unit `booking-transition.test.ts` (+3) |
+| 30 | §I |
+| 31 | unit `registry.test.ts` «story 19.10 (AC 31)»; OpenAPI servito verificato sulla build (§J) |
+| 32 | `grep -rn "TD 16.3-a\|EXPIRED_DOCUMENTS\|forceReason" bookings.service.ts schemas/bookings.ts schema.prisma` → 0 |
+| 33 | i18n 1622 → 1616 per locale, parità (test di parità nei gates) |
+| 34 | gates verdi; `env -u DATABASE_URL -u AUTH_SECRET -u JOBS_SECRET` sui 4 file toccati → 412 passed |
+| 35 | delta atteso dichiarato (§G); arbitro completo della sessione principale |
+| 36 | unit «insufficient-balance guard and its deroga» (6 test: 422 con la voce BALANCE validata dallo schema e nulla scritto; lock → lettura → decisione; uguale = coperto; 403 prima di `person.findUnique` e `$transaction` con un ruolo che ha solo `finance.manage`; admin a saldo 0 → `balanceAlert`; `force` con saldo sufficiente = identico); `grep "MEMBERSHIP_FEE_INSUFFICIENT_BALANCE\|override"` sui due file → 0 |
+| 37 | e2e `membership-fee.spec.ts` (a) senza chiave anche con `force` → 422 `IDEMPOTENCY_KEY_REQUIRED`; (b)(c) stessa chiave: 422 → `force` 200 → replay `Idempotency-Replayed: true`, un solo `ADJUSTMENT`; (d) test di replay esistente verde |
+| 38, 39 | e2e desktop (avviso nel pannello, nessun addebito, «Annulla» con valori intatti e focus sul submit; «Procedi comunque» → −50,00 €, rinnovo a 12 mesi) e mobile 375 (avviso nel pannello a tutto schermo, `requirements-proceed` ≥ 43,5 px e nel viewport, addebito) |
+
 ### §C — Migrazione: gemello, `\d "Booking"`, `migrate diff`
 
-### §D — Discriminanze e sonde §4.3 (a)-(e), sonda di concorrenza AC 20 (verbatim)
+Gemello `airmanager_d1910` (`createdb` nel container, `migrate deploy` delle 56 migrazioni da zero, `db seed`): «All migrations have been successfully applied»; `\d "Booking"` → `forcedAt`, `forcedByUserId` e la FK `Booking_forcedByUserId_fkey`, **nessun `forceReason`**; `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script --exit-code` → `-- This is an empty migration.`, exit 0; `migrate status` → «Database schema is up to date!». Nessun seed scrive la colonna; `seed-load.ts` passa il typecheck (non eseguito). `airmanager_load` mai migrato.
+
+### §D — Discriminanze e sonde §4.3, sonda di concorrenza AC 20 (verbatim)
+
+**Unit** (`scratchpad/s1910/mutants.py`, un mutante alla volta, test del file, ripristino; `sha256` prima = dopo: `bookings.service.ts 8ad9dcfb8ff2…`, `membership.service.ts d347ad015fff…`, `requirements.service.ts 0ed080c2eef2…`, «sha256 restored: True»):
+
+| Mutante | Esito |
+|---|---|
+| (a) decisione prima del passato/finestra (create) | 5 failed / 330 (AC 2: passato, finestra, fuori servizio, sovrapposizione, ordine) |
+| (b) lock della sola persona | 3 failed (AC 19 ×3) |
+| (c) predicato persona senza il ramo del profilo istruttore | 3 failed (R-19-o ×3) |
+| (d) 403 della modifica dopo la lettura | 2 failed (AC 3) |
+| (e) stima sempre al prezzo pilota | 1 failed (AC 9 allievo) |
+| (f1) 403 della quota dentro la transazione | 1 failed / 24 (AC 36 403-prima) |
+| (f2) `<=` al posto di `<` in `balanceFailure` | 1 failed (AC 36 uguale = coperto) |
+| (g) timbro anche senza failure | 3 failed (AC 4 ×3) |
+
+**e2e su build mutanti** (gemello, `next start`, poi sorgente ripristinato: `sha256sum -c` → `bookings.service.ts: OK`, build finale rifatta):
+- **Mutante 1** (lock della sola persona della prenotazione), sonda API `s1910/probe-conc.cjs` (P persona di una PENDING su A e istruttore di una PENDING sovrapposta su B, approvazioni in `Promise.all`, `force`, 10 giri):
+  - **fix**: `[[200,409]×10]`, codici `['OK','INSTRUCTOR_BUSY']×10`, `twoHundredPairs: 0`;
+  - **mutante**: `[[200,200],[200,409],[200,409],[200,409],[200,200],[200,409],[200,200],[200,409],[200,409],[200,409]]`, `twoHundredPairs: 3`.
+  - SQL «essere umano» (unione `personId` / `InstructorProfile.personId`, coppie APPROVED sovrapposte) su persone `Conc-%` e `Requisiti`: **una sola riga**, la P del mutante con 3 coppie; P della sonda sul fix e ogni persona degli e2e (AC 17/18/20 di tre serie) = 0.
+- **Mutante 2** ((a) decisione prima della finestra + (c) ramo del profilo tolto), `--retries=0`: `booking-window.spec.ts:113` → «Expected: "BOOKING_OUTSIDE_WINDOW" / Received: "REQUIREMENTS_NOT_MET"»; `booking-requirements.spec.ts` AC 17 → «Expected: 409 / Received: 201» (il primo giro di AC 17 era inquinato dalla finestra 14-18 che `booking-window` scrive in parallelo nella stessa invocazione; rieseguito da solo).
 
 ### §E — Misura di AD-5 (EXPLAIN su `airmanager_load`, sola lettura)
 
+`SELECT current_database()` → `airmanager_load` (40 000 prenotazioni); solo `EXPLAIN (ANALYZE, BUFFERS)`, nessuna scrittura. P = `41a75a10-…` (8 APPROVED da istruttore, 13 da persona), profilo `eed808af-…`, intervallo di una sua prenotazione. SQL catturato dal client Prisma sul gemello (log `query`).
+
+| Predicato | Piano | Tempo (2 esecuzioni) |
+|---|---|---|
+| PERSON nella forma di AD-5 (`OR [{personId: P}, {instructorProfile: {personId: P}}]` → `LEFT JOIN "InstructorProfile"` + `OR` fra tabelle) | **Seq Scan on "Booking"** (39 986 righe scartate) + Hash Left Join | 29,8 ms / 22,0 ms |
+| PERSON nella forma adottata (`OR [{personId: P}, {instructorProfileId: <profilo di P>}]`) | BitmapOr di `Booking_personId_idx` e `Booking_instructorProfileId_idx` | 0,51 ms / 0,94 ms |
+| INSTRUCTOR (`OR [{instructorProfileId: IP}, {personId: Q}]`) | BitmapOr degli stessi due indici | 0,19 ms / 0,31 ms |
+
+Esito: nessun indice nuovo; la forma di AD-5 del predicato persona è sostituita dalla forma equivalente indicizzata (D-a, §H) — `InstructorProfile.personId` è unico, quindi «prenotazioni il cui istruttore è P» = «prenotazioni col profilo di P». Da riportare alla sessione principale come decisione presa entro il perimetro «niente indici»: la misura mostrava una scansione sequenziale sotto lock, non un indice mancante.
+
 ### §F — Censimento e2e di AD-9 col destino di ogni riga
+
+`grep -rnE "api/v1/bookings|new-booking-form|move-booking-form|booking-approve-action|mobile-overview-approve|force-booking|EXPIRED_DOCUMENTS|forcedAt" e2e` su HEAD: 17 file (bookings 105 righe, mobile-planning 18, booking-window 11, aircraft-out-of-service-until 11, mobile-overview 9, flight-requirements 8, api-v1 8, pdf-exports 7, datetime-picker 7, typeahead-pickers 5, mobile-overview-overflow 5, aog-impact-email 4, flights 3, mobile-logbook 2, home-dashboard 1, expiry-rules-currency 1, aircraft-management 1). Più due file fuori dal grep trovati nel censimento delle chiamate quota con `override` (`expiry-rules-currency.spec.ts:134`, `expiries-registry.spec.ts:312`).
+
+| Spec | Destino |
+|---|---|
+| `bookings.spec.ts` | describe «expiry block (7.4)» **riscritto** (6 test: pilota bloccato senza bottone, avviso ambra non bloccante, admin «Procedi comunque» senza motivo con `forcedAt`, `force` del pilota 403, bordo visita = D, D-3 «ogni modifica», AC 12a e 26 pilota); test 16.3 MAJOR-1 **riscritto** (il 409 al primo invio, nessun avviso); fixture admin API → `force: true` (allievo, timeline ×2, 375 px, clamp, mezzanotte, concorrenza POST, 403 altrui, concorrenza PATCH, doppio annullo, crosstalk ×21, privacy ×2, approvazione «other», `postBooking` 16.3, PATCH al passato 16.3); own-path → `inRegola` (pilota da UI, sposta, sovrapposizione su sposta, `setupPendingBookingAsStaff`, privacy, approvazioni parallele, istruttore per allievo e per sé, allievo); pilota del seed → `ensureBookingRequirements` (già iniziata, own-path vede); picker staff → `ensureBookingRequirements` |
+| `api-v1.spec.ts` | i due test own-path del pilota del seed → `ensureBookingRequirements` |
+| `booking-window.spec.ts` | creazioni dentro la finestra → `force`; fuori finestra → anche con `force` (AC 2 e2e) |
+| `mobile-overview.spec.ts` | `createBooking`/`moveBooking` → `force`; test «approve from the sheet» → pilota in regola; approvazione fuori banda → `force` |
+| `mobile-overview-overflow.spec.ts` | create e i due PATCH → `force` |
+| `mobile-planning.spec.ts` | `createBooking`/`moveBooking` → `force`; test del foglio decisionale → pilota in regola |
+| `pdf-exports.spec.ts` | le due creazioni admin → `force` |
+| `aog-impact-email.spec.ts` | i titolari (che prenotano anche da sé) → `ensureBookingRequirements` al posto di `ensureValidSeedExpiries` |
+| `aircraft-out-of-service-until.spec.ts` | primo test: pilota del seed → `ensureBookingRequirements` (i 422 del fermo sono decisi prima, invariati) |
+| `aircraft-management.spec.ts`, `home-dashboard.spec.ts`, `typeahead-pickers.spec.ts`, `datetime-picker.spec.ts` | `force` (admin) / persona in regola (own-path, UI staff) |
+| `expiry-rules-currency.spec.ts` | test prenotazione con le visite → `ensureBookingRequirements` + `sendInRegola`; helper quota `override` → `force` |
+| `expiries-registry.spec.ts` | quota `override` → `force` |
+| `membership-fee.spec.ts`, `mobile-membership-fee.spec.ts` | riscritti (AC 37-39) |
+| `flights.spec.ts`, `flight-requirements.spec.ts`, `mobile-logbook.spec.ts` | righe sul `forcedAt` dei **voli**: invariati |
+| **nuovo** `booking-requirements.spec.ts` | 16 test (AC 6-11-bis, 3, 4, 12b, 14-16, 21, 17, 18, 20, 25-28) |
+
+Helper nuovi in `e2e/helpers.ts`: `ensureBookingRequirements(page, { personId, scope, solo? })` (idempotente: idoneità, quota **registrata** con `POST /expiries` sul tipo `MEMBERSHIP` — 409 = presente, nessun movimento —, ricarica sotto 200 000, e con `solo` un volo **oggi** senza addebito su un velivolo run-unique con tariffa da oggi, archiviato subito) e `personIdByEmail`. In `bookings.spec.ts` le tre `create*WithLogin` hanno l'opzione `{ inRegola }`.
 
 ### §G — Delta test (unit ed e2e, prima/dopo)
 
+- **Unit**: 2093 → **2147** (+54): `bookings.service.test.ts` 283 → 330 (blocchi 7.4/TD-5 superati tolti, blocco «Story 19.10» nuovo, 16.3 aggiornati), `membership.service.test.ts` 21 → 24, `booking-transition.test.ts` 4 → 7, `registry.test.ts` 50 → 51.
+- **e2e**: `npx playwright test --list` 580 → **597** (+17): `booking-requirements.spec.ts` +16, `membership-fee.spec.ts` +1 (i due UI riscritti + il caso API della chiave). **Delta arbitro atteso 580 → 597.** Nessuno spec nuovo nella catena serializzata.
+
 ### §H — Deviazioni motivate
+
+- **D-a (AD-5, predicato persona)**: `OR [{ personId: P }, { instructorProfileId: <profilo di P> }]` al posto di `{ instructorProfile: { personId: P } }`: stesso insieme (`personId` unico sul profilo, deattivato incluso), ma la forma di AD-5 è una scansione sequenziale sotto lock (§E: 22-30 ms contro 0,5-0,9 ms). `BOOKABLE_PERSON_SELECT` legge `instructorProfile.id`; `findBookingConflict` riceve `personInstructorProfileId` e `instructor: { profileId, personId } | null`. Nessun indice nuovo. Gli unit sui `where` esatti seguono la forma adottata, con un test per il ramo del profilo.
+- **D-b (D-5, categoria)**: `STUDENT` solo per chi è **solo** allievo (`isActiveStudent && !isActivePilot`), `PILOT` altrimenti: coincide con la regola del volo su **ogni** persona, anche sui dati legacy con entrambi i profili (che la 19.3 tratta da pilota), mentre «STUDENT se allievo attivo» li avrebbe stimati al prezzo allievo.
+- **D-c (D-8, messaggio)**: chiave nuova `BookingsPage.form.errors.INSTRUCTOR_SAME_AS_PILOT` (IT/EN) usata dal form e dalle etichette dell'approvazione: senza, il 422 nuovo cadeva su «Riprova» (lezione R-15.4-g). Non elencata nel §3.8.
+- **D-d (guardia del corpo stantio)**: nei due form e nel modale quota ogni modifica dei campi chiude l'avviso (lo schema D-12 della 19.9): «Procedi comunque» non deroga mai un corpo diverso da quello elencato.
+- **D-e (saldo sotto lock)**: non replicato sulle prenotazioni — non scrivono movimenti, quindi due prenotazioni concorrenti non spendono nulla e ciascuna è giudicata sul proprio costo (D-2); resta il check-then-act di ogni requisito (TD 16.3-d). La quota conserva la decisione sotto il lock `Account` (D-11). Motivazione nel doc-comment di `evaluateBookingRequirements`.
+- **D-f**: `MOVABLE_BOOKING_SELECT` (solo `updateBooking`) invece di allargare `EDITABLE_BOOKING_SELECT`: `cancelBooking` invariato.
+- **D-g (errori del rinvio in approvazione)**: desktop e sheet chiudono l'avviso e mostrano l'esito con il toast dell'approvazione (convenzione della superficie), un errore di rete resta nell'avviso (`error`); nei form la regola è quella di AD-6 (banner + focus, `flushSync`).
+- **D-h (date degli e2e nuovi)**: le prenotazioni API del nuovo spec sono su `2032-06-15` (dopo le pile `2031-03-*` di `bookings.spec.ts`, entro `maxAdvanceDays` 3650), quelle UI su oggi+2 (dopo il «domani» che `home-dashboard`/`mobile-overview` leggono in pagina 1). Misurato: con oggi+10 le ~55 righe del nuovo spec finivano davanti alle pile e le passeggiate di pagina di `bookings.spec.ts` superavano i 30 s su un gemello eseguito due volte; con «domani» un test di `home-dashboard` perdeva la sua riga dalla card a 8. Gli ancoraggi a oggi (AC 7, 8e, 11-bis) restano provati, con anni di distanza invece di dieci giorni.
+- **D-i (helper)**: quota registrata e non addebitata; volo di currency oggi con tariffa via API (non `seedAircraftRate`): `helpers.ts` non importa `pg`.
+- **D-j (AC 2 e2e)**: il caso «fuori finestra con e senza `force`» vive in `booking-window.spec.ts` (catena serializzata), perché lo spec nuovo non scrive AppSettings (AD-9 regola 3) e su un DB fresco non esiste finestra.
+- **D-k**: il modale quota usa il titolo predefinito `Requirements.title` («Requisiti non soddisfatti»), nessuna chiave nuova.
+
+**TD**: TD-19.9-a, metà prenotazioni → **chiuso** (il blocco passa dal servizio della 19.9 con `isActive`; i `warnings` filtrano anche loro `isActive`). TD 16.3-a e TD 16.3-g → chiusi da questa story. Nuovi, da registrare (pre-esistenti, osservati nelle serie): **TD-19.10-a** — quattro test di `mobile-planning.spec.ts` (`:277`, `:325`, `:367`, `:763`) costruiscono fixture a ora±20 min e falliscono fra le 23:40 e le 00:20 di Roma (il giorno cambia sotto la fixture); **TD-19.10-b** — `typeahead-pickers.spec.ts:64` (volo, non toccato) fallisce fra le 00:00 e l'01:00 di Roma (data di Roma ≠ data UTC; verde prima di mezzanotte e alle 01:01, §J punto 7); **TD-19.10-c** — su un DB riusato, i 105 riempitivi `AAAtypeahead-*` per esecuzione e le pile di `FUTURE_DAY` rendono il picker staff a 100 e le passeggiate di pagina sempre più fragili (classe nota del picker a 100); **TD-19.10-d** — D-7 dichiarata: l'approvazione di una prenotazione il cui volo è già registrato conta il costo due volte (l'admin vede l'avviso e procede).
 
 ### §I — Verifica UI (screenshot)
 
+Script `scratchpad/s1910/ui.cjs` (`playwright-core`, Chromium 1228, build di produzione sul gemello), 1280×900 e 375×812, `data-theme` chiaro e scuro, 22 screenshot in `scratchpad/s1910/shots/`: (1) form nuovo admin, (2) form modifica admin, (3) modale di approvazione (1280) / passo dello sheet della lista (375), (4) passo dello sheet della Panoramica (375), (5) pannello quota, (6) form nuovo del pilota in modalità bloccata. Misure (`ui-results.json`): `scrollWidth − clientWidth` = **0** ovunque; bottoni dell'avviso 34,8 px a 1280 e **44 px** a 375; focus all'apertura sull'avviso (`DIV:requirements-warning`) nei form e nel pannello, su `BUTTON:requirements-proceed` nei due passi degli sheet; modalità bloccata senza bottoni. Pannello `--warn-soft`/`--warn` dentro ogni superficie, leggibile in scuro; nessun colore, token o primitiva nuovi (solo regole tolte da `airops.css`).
+
 ### §J — Gate ed esiti verbatim
+
+- `npm run gates` (finale, sul codice committato): `PASS lint (34s)`, `PASS typecheck (8s)`, `PASS test (22s) — Tests 2147 passed (2147)`, `PASS build (71s)`.
+- `env -u DATABASE_URL -u AUTH_SECRET -u JOBS_SECRET npx vitest run` su `bookings.service.test.ts`, `membership.service.test.ts`, `booking-transition.test.ts`, `registry.test.ts` → 4 file, **412 passed**.
+- OpenAPI servito (`GET /api/v1/openapi.json` sulla build): le quattro operazioni hanno `REQUIREMENTS_NOT_MET` e `requirements.force` nella descrizione, il 422 col `$ref` a `RequirementsNotMetDetails`, `force` nel body, nessun `forceReason`/`override`; `MEMBERSHIP_FEE_INSUFFICIENT_BALANCE` 0, `EXPIRED_DOCUMENTS` 0, `forceReason` 0.
+- e2e mirati (`scripts/e2e.sh`, build una volta + `E2E_REUSE_SERVER=1`, gemello `airmanager_d1910`, `DATABASE_URL` del gemello esportato anche per il processo di test):
+  1. gemello fresco, 15 spec: **155 passed, 1 flaky** (`mobile-overview:598`, `read ECONNRESET` sul POST della fixture, verde al retry), 5 failed: `home-dashboard:229` (affollamento della card da parte del nuovo spec → D-h, corretto) e 4 di `mobile-planning` (mezzanotte, TD-19.10-a). Il nuovo spec 16/16.
+  2. stesso gemello (seconda esecuzione, dopo mezzanotte): 95 passed, 11 failed — tutti passeggiate di pagina/picker a 100 del DB riusato e mezzanotte (D-h, TD-19.10-c); il nuovo spec 16/16. Il gemello è stato ricreato da zero.
+  3. **gemello ricreato da zero**, 16 spec (i 15 più `expiry-dashboard`, `mobile-expiries-movements`): **169 passed, 1 flaky** (`bookings:1237`, verde al retry), 1 failed `typeahead-pickers:64` (volo, finestra 00-01 di Roma, TD-19.10-b).
+  4. catena `--project=booking-window --project=mobile-overview-overflow --project=mobile-membership-fee --no-deps --workers=1`: **7 passed**.
+  5. pilota del seed dopo gli spec delle scadenze (`--workers=1`): `expiry-dashboard` + `mobile-expiries-movements` **20 passed**, poi i test del pilota del seed di `bookings`/`aircraft-out-of-service-until` 4 passed e `api-v1` 2 failed per `BOOKING_OUTSIDE_WINDOW` (la catena del punto 4, eseguita prima, aveva lasciato `maxAdvanceDays` 3650 e api-v1 prenota nel 2099: ordine della mia serie, nell'arbitro la catena gira dopo); tolte le chiavi `sched.*` dal gemello: `api-v1` **8 passed**.
+  6. build finale, dopo le 00:20: `mobile-planning` + `booking-requirements` + `home-dashboard`: **31 passed**, 1 failed `home-dashboard:229` (gemello ormai sporco: le fixture «domani» delle serie precedenti sono diventate «oggi»; verde al punto 3 sul gemello fresco).
+  7. build dei gates finali, alle 01:01: `typeahead-pickers.spec.ts` **9 passed** (il `:64` del punto 3 era la finestra 00-01 di Roma, TD-19.10-b).
+- Arbitro completo su DB fresco: della sessione principale (atteso **597**).
 
 ### Completion Notes List
 
+- 2026-11-03, dev: implementati i 39 AC — servizio unico della 19.9 sui tre percorsi con stima del costo senza attore, due date di riferimento (Q-19.10-a = B), deroga decisa per ultima dopo ogni controllo non derogabile (TD 16.3-g), `requirements.force` unico gate, own-path bloccato con l'elenco, R-19-o nei lock (`Person` 1-2 righe in una istruzione) e nei predicati, D-8, via `forceReason` (migrazione), deroga della quota sul contratto condiviso con decisione sotto il lock `Account`, avviso unico in cinque superfici (form nuovo e modifica, modale desktop, due passi mobile) e nel pannello quota, i18n, OpenAPI, e2e. Gates verdi, mutanti unit (8) ed e2e (2 build) rossi e sorgenti ripristinati con sha256 identici, serie mirate in §J. Commit dell'implementazione: `a0aba91`.
+- Stato della macchina: gemello `airmanager_d1910` **eliminato** (`pg_database` = `airmanager`, `airmanager_audit`, `airmanager_load` e i template); `airmanager`, `airmanager_audit`, `airmanager_load` e la cartella `audit-2026-11-02/` mai toccati (su `airmanager_load` solo `EXPLAIN`); server di prova su :3000 fermati per PID, `:3000` libero; `scripts/e2e.sh status` = `E2E_EXIT=0` (punto 7 di §J); `.next` = build dei gates finali, sul codice di `a0aba91`. `sprint-status.yaml` non toccato (istruzione della sessione principale). Nessun push.
+
 ### File List
+
+- `prisma/migrations/20261103100000_booking_drop_force_reason/migration.sql` (nuovo)
+- `prisma/schema.prisma`
+- `src/server/services/bookings.service.ts`, `src/server/services/bookings.service.test.ts`
+- `src/server/services/membership.service.ts`, `src/server/services/membership.service.test.ts`
+- `src/server/services/aircraft-status.ts`, `src/server/services/app-settings.service.ts`, `src/server/services/expiries.service.ts`, `src/lib/medical-requirement.ts` (solo commenti)
+- `src/lib/schemas/bookings.ts`, `src/lib/schemas/membership.ts`, `src/lib/schemas/registry.ts`, `src/lib/schemas/registry.test.ts`
+- `src/app/[locale]/dashboard/bookings/new-booking-form.tsx`, `edit-booking-form.tsx`, `bookings-table.tsx`, `booking-transition.ts`, `booking-transition.test.ts`, `booking-labels.ts`, `page.tsx`, `schedule.tsx` (solo commento)
+- `src/app/[locale]/dashboard/mobile-pending-bookings.tsx`, `src/app/[locale]/dashboard/page.tsx`
+- `src/app/[locale]/dashboard/expiries/scadenze-console.tsx`, `src/app/[locale]/dashboard/expiries/page.tsx`
+- `src/styles/airops.css`
+- `messages/it.json`, `messages/en.json`
+- `e2e/booking-requirements.spec.ts` (nuovo), `e2e/helpers.ts`
+- `e2e/bookings.spec.ts`, `e2e/api-v1.spec.ts`, `e2e/booking-window.spec.ts`, `e2e/mobile-overview.spec.ts`, `e2e/mobile-overview-overflow.spec.ts`, `e2e/mobile-planning.spec.ts`, `e2e/pdf-exports.spec.ts`, `e2e/aog-impact-email.spec.ts`, `e2e/aircraft-out-of-service-until.spec.ts`, `e2e/aircraft-management.spec.ts`, `e2e/home-dashboard.spec.ts`, `e2e/typeahead-pickers.spec.ts`, `e2e/datetime-picker.spec.ts`, `e2e/expiry-rules-currency.spec.ts`, `e2e/expiries-registry.spec.ts`, `e2e/membership-fee.spec.ts`, `e2e/mobile-membership-fee.spec.ts`
+- `_bmad-output/implementation-artifacts/19-10-avviso-deroga-prenotazioni.md` (questo record)
+
+### Change Log
+
+- 2026-11-03 — Implementazione della story 19.10 (avviso unico con deroga admin su creazione, modifica e approvazione delle prenotazioni; R-19-o; deroga della quota allineata; via `forceReason`); Status → review.
