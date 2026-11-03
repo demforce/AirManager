@@ -557,8 +557,8 @@ export async function exportAccountStatementPdf(actor: Actor, personId: string, 
     ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail ?? '' } satisfies PdfColumn<StatementExportRow>] : []),
   ];
 
-  // Both bounds present (the two statement pages and the billing "Estratti
-  // conto" dialog always send both) -> a period subtitle; a hand-crafted
+  // Both bounds present (the two statement pages always send both) -> a
+  // period subtitle; a hand-crafted
   // single-sided query falls back to the plain name (Dev Notes: no invented
   // open-ended range text).
   const period = query.from && query.to ? periodSubtitle(query.from, query.to, locale) : null;
