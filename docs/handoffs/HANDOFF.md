@@ -1,72 +1,83 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-03 22:25 — **EPIC 19 DONE** (19.1-19.12b); 85+ commit su `dev` NON pushati; PR #22 `dev` → `main` ancora APERTA)
+# HANDOFF — AirManager (aggiornato: 2026-11-03 22:30 — **EPIC 19 CHIUSO**: 19.1-19.12b done; sessione FERMA a fine epic, come prevede `CLAUDE.md`; ~88 commit su `dev` NON pushati; PR #22 `dev` → `main` ancora APERTA)
 
-Handoff precedente (storia di Epic 13-18, ciclo AOG, ricette ambiente estese): `docs/handoffs/HANDOFF-2026-11-03-1252.md`.
+Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2230.md` (ciclo 19.12a/19.12b di oggi) e `HANDOFF-2026-11-03-1252.md` (Epic 13-18, ciclo AOG, 19.1-19.11, ricette d'ambiente estese).
 
 ## Goal
 
 - **Progetto**: AirManager, gestionale di aviosuperficie (v. `CLAUDE.md`).
-- **Fase corrente**: **Epic 19 — Semplificazione e regole operative**, nato dalla change request del PO del 2026-11-01 (15 richieste). Fonte vincolante: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md` (ratifiche R-19-a..p, assunzioni A1-A20, **Addendum in fondo** con tutte le ratifiche emerse dai file story). PRD (change record in coda a `prd.md`), `epics.md` (FR + Epic 19) e `ARCHITECTURE-SPINE.md` (AD-3 eccezione FLIGHT_CHARGE, AD-4 tariffe allievo/pilota) sono già aggiornati.
-- **Dopo l'Epic 19**: riprendere le story dell'Epic 16 riperimetrate (16.5, 16.6a, 16.6b, 16.7, 16.8, 16.9), poi Epic 17, poi Epic 18. Le riperimetrazioni sono annotate riga per riga in `_bmad-output/implementation-artifacts/sprint-status.yaml`.
+- **Appena chiuso**: **Epic 19 — Semplificazione e regole operative**, change request del PO del 2026-11-01. Fonte: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md`, con ratifiche R-19-*, assunzioni A1-A20 e l'Addendum in coda. Ogni story ha in `_bmad-output/implementation-artifacts/19-*` lo story file, il Dev Agent Record, il Review Record e il report di review.
+- **Prossima fase**: push e PR verso `main` (serve il mandato del PO), poi le story residue dell'Epic 16, poi Epic 17 ed Epic 18.
 
-## Current Progress (fonte di verità: `sprint-status.yaml`)
+## Current Progress (fonte di verità: `_bmad-output/implementation-artifacts/sprint-status.yaml`)
 
-| Story | Stato | Arbitro finale e2e (DB fresco, `CI=1`) |
-|---|---|---|
-| 16.3 (chiusa all'inizio di questa sessione) | done | 542 + 1 flaky |
-| 19.1 via dominio PPR / voli in transito | done | 492/492 |
-| 19.2 via codice fiscale, campi velivolo, contaore, note volo | done | 488 + 1 flaky |
-| 19.3 tariffe allievo/pilota, editor velivolo a Salva unico | done | 504/504 |
-| 19.4 editor pilota/istruttore a Salva unico | done | 525/525 |
-| 19.5 tipi Turismo/Scuola, dropdown uniformi, Toggle solista | done | 534/534 |
-| 19.6 volo senza addebito, cancellazione definitiva, modifica in place | done | 543/543 |
-| 19.7a scadenze: licenza, mediche, quota MEMBERSHIP, currency | done | 548 + 1 flaky |
-| 19.7b registro Scadenze unificato | done | 555/555 |
-| 19.8 Impostazioni a Salva unico | done | 567/567 |
-| 19.9 avviso con deroga admin — voli | done | 579 + 1 flaky |
-| 19.10 avviso con deroga admin — prenotazioni | done | 597 + 1 flaky |
-| 19.11 estratto conto a periodo con saldo progressivo | done | 604/604 (arbitro del reviewer) |
-| 19.12a glossario, parità it/en, plurali ICU, chiavi morte | done | 604/604 |
-| 19.12b passata dei testi in contesto (+ pagine 404, «Compenso istruttore», riga di conferma fuori servizio) | done | 605 + 1 flaky (ECONNRESET) |
+- `epic-19: done`. La 19.12a e la 19.12b sono state chiuse in questa sessione:
+  - **19.12a** (`abb0dd3` feat, `096da9b` fix, `6525be2` chiusura): glossario `docs/i18n/glossario-it.md`, test `src/i18n/messages.test.ts` (parità chiavi e argomenti col parser ICU 3.5.12, guardia `t.raw`, trappola dell'apostrofo), 30 chiavi portate al plurale ICU, 194 chiavi morte rimosse (1 629 → 1 430 per file). Arbitro finale 604/604.
+  - **19.12b** (`66fd139` feat, `285590e` fix, `c298e41` chiusura): passata completa dei testi, guardia `BANNED` sulle varianti vietate, export a pattern unico, pagine 404/500 localizzate, riga di conferma fuori servizio ridisegnata (frase intera, decisione PO), 18.5 riperimetrata. Arbitro finale **605 + 1 flaky (ECONNRESET), exit 0**.
+- **Conteggi**: e2e **606**, unit **2211**.
+- **`epic-19-retrospective: optional`**: non è stata fatta.
 
-Ogni story ha story file + Dev Agent Record + Review Record + report di review committati in `_bmad-output/implementation-artifacts/19-*`. La suite e2e conta **606** test all'ultimo arbitro (19.12b: +2 di `error-pages.spec.ts`). Unit: **2211**.
+## Key Decisions di oggi (il dettaglio è nei Review Record e nelle code dei file story)
 
-## Key Decisions (oltre a quelle nella CR e nell'Addendum)
-
-- **Ribaltamenti del PO in corso d'opera** (registrati nei file story e nell'Addendum): righe «Mancante» del registro Scadenze **eliminate ovunque** (Q-19.7-b/c ribaltate in review 19.7b; i check bloccanti di voli/prenotazioni restano); currency = **X voli negli ultimi Y giorni** configurabili (non «N giorni dall'ultimo volo»); tariffe obbligatorie anche per il volo senza addebito (Q-19.6-a = B); sulle prenotazioni currency e quota valutate a OGGI (Q-19.10-a = B); in modifica volo il saldo si ricontrolla sempre (Q-19.9-b); niente prezzi sulle card (Q-19.3-a); allievo esclusivo con pilota E istruttore (Q-19.3-c).
-- **Decisioni tecniche della sessione principale** su finding di review (motivate nei Review Record): saldo deciso sotto lock `Account` (19.9 F2), Q4 della 16.6b anticipata nella 19.6 (rettifica su `FLIGHT_CHARGE` → 422), il solista non conta per l'istruttore né ne richiede i documenti (19.7a F2, 19.9), approvazioni senza seconda connessione dentro la transazione (19.10 F2).
-- **19.12b, decisioni PO del 2026-11-03**: menu «**Velivoli**» ed «**Estratto conto**» (contro la raccomandazione); currency «Valida/In scadenza/Scaduta»; «Amministratore»; pagine 404 localizzate minimali; «Compenso istruttore». In coda al file 19.12b ci sono due aggiunte: review 19.11 F6 (etichetta «Saldo iniziale al {from}») e **review 19.12a F2, decisione PO**: la conferma della messa fuori servizio torna alla frase intera «Mettere fuori servizio il velivolo? …» con la riga Conferma/Annulla ridisegnata, mantenendo la guardia del doppio clic (MAJOR-2 / decisione PO 6; `aog-impact-email.spec.ts:392` va riscritto e mostrato rosso su un mutante).
-- **19.12a, eredità per la 19.12b**: glossario vincolante in `docs/i18n/glossario-it.md`; `src/i18n/messages.test.ts` (parità chiavi/argomenti col parser ICU, guardia `t.raw`, trappola dell'apostrofo) è il posto della guardia sulle varianti vietate (AD-3 della 19.12b); `AircraftPage.sub` e `DashboardPage.fleetCard.summary` hanno U+00A0 in «{aog} fuori servizio» (F3); `PilotsPage.sub` dice «persone»; catalogo a 1 430 chiavi per file.
+- **19.12a F2 → PO**: frase intera «Mettere fuori servizio il velivolo? …» con la riga di conferma ridisegnata. Fatto nella 19.12b, mantenendo la guardia del doppio clic (MAJOR-2 / decisione PO 6).
+- **19.12b, domande del dev → PO**:
+  - sezione Piloti invariata («Piloti», «Aggiungi pilota»);
+  - saluto «Ciao, {name}» per tutti i ruoli;
+  - nel digest scadenze una chiave dedicata, «scadenza superata da N giorni», mentre l'avviso al titolare resta «è scaduta da»;
+  - `Export.pdfTooLarge` «… o scarica l'Excel».
+- **Decisioni tecniche della sessione principale**:
+  - `PilotsPage.sub` conta persone, quindi dice «persone»/«sospese»;
+  - U+00A0 in «{aog} fuori servizio» nelle chiavi `AircraftPage.sub` e `DashboardPage.fleetCard.summary`;
+  - nella 19.12b, L3 (scroll del Registro voli a 641-1100 px) diventa **TD-19.12b-a dentro la 18.5**.
 
 ## What Worked
 
-- **Ciclo per story**: story file (writer Opus in sola lettura, anche 2-3 in parallelo) → UN dev subagent Opus (`dev-story`, `model: opus` esplicito) → reset DB dalla sessione principale → review `adversarial-reviewer` Opus che lancia per prima l'arbitro full-suite → fix-subagent Opus coi finding e le decisioni già prese → arbitro finale della sessione principale → `docs(N)` di chiusura con sprint-status + HANDOFF. Dev e reviewer serializzati (usano :3000 e il DB).
-- **Domande al PO batchate** con AskUserQuestion appena i writer le sollevano; le decisioni tecniche le prende la sessione principale e le scrive nel prompt del fix.
-- **Commit sempre con pathspec** (ora regola in `CLAUDE.md`).
-- **Arbitro via `scripts/e2e.sh start` + attesa in background** con un loop `until grep E2E_EXIT…` (una sola notifica).
+- Il ciclo per story di `CLAUDE.md` / dell'handoff precedente: reset DB dalla sessione principale → UN dev Opus → reset → review Opus, che lancia per primo l'arbitro → fix Opus con le decisioni già prese → arbitro finale → `docs(N)` di chiusura.
+- Domande al PO **batchate** e lanciate mentre la review girava già, per non tenerla ferma; le decisioni vanno in coda al file della story PRIMA del fix.
+- Note «trappole» del reviewer girate al fix con SendMessage: per esempio il `toHaveCount(0)` sul saluto, che con «Ciao» sarebbe diventato falso.
+- Mutanti e discriminanze **su una copia isolata**: cp di `src` + `messages` + config, `node_modules` in symlink. Reviewer e fix l'hanno fatto senza incidenti; ora è una regola in `CLAUDE.md`.
 
 ## What Didn't Work / trappole
 
-- **I subagent NON possono resettare il DB** (il classifier lo nega): la sessione principale resetta prima di OGNI dispatch di dev/review/fix, e dopo i reviewer (che lasciano il DB sporco). Ricetta: `docker compose exec -T postgres psql -U airmanager -d postgres -Atc 'DROP DATABASE airmanager WITH (FORCE)' && docker compose exec -T postgres createdb -U airmanager airmanager && set -a && . ./.env && set +a && npx prisma migrate deploy && npx prisma db seed`. MAI `docker compose down -v`.
-- **Fascia oraria**: alcuni e2e pre-esistenti falliscono fra le **23:40 e le 01:00 di Roma** (TD-19.10-a/b): non lanciare arbitri lì.
-- **ECONNRESET** su richieste API negli e2e: classe infrastrutturale ricorrente (arbitri 19.9 e 19.10) → TD-19.10-g, correzione candidata `next start --keepAliveTimeout 75000`.
-- **`getMetar` senza timeout** (TD-19.7b-e, alta priorità): una stazione inesistente blocca la Panoramica ~16 s; i test che salvano un ICAO usano solo stazioni note.
-- **Un subagent interrotto a metà delle discriminanze lascia il mutante nel working tree** (19.12a, 14:25: lo stop di tutti i subagent ha lasciato «dell'{name}» in `it.json`): chiedere sempre mutanti su una COPIA isolata (cp di src/messages/config + node_modules in symlink), come hanno fatto reviewer e fix della 19.12a; un dev ripreso con SendMessage NON sa di essere stato interrotto.
-- I reviewer `adversarial-reviewer` a volte muoiono per limite di sessione: il loro arbitro (staccato con `setsid`) sopravvive; si riprendono con SendMessage.
-- **Seconda sessione Claude parallela** (CHIUSA il 2026-11-03 verso le 14:25) dal 2026-11-02 17:20 (audit con DB `airmanager_audit` e cartella untracked `_bmad-output/planning-artifacts/audit-2026-11-02/`): il PO ha deciso che proseguisse questa e che l'altra non buildasse né usasse :3000. Nella nuova sessione verificare con `ps -o pid,lstart -C claude` se è ancora viva; non toccare quel DB né quella cartella (l'audit può essere una fonte per il backlog: chiedere al PO).
-- **Demo per il PO**: il dev server su 0.0.0.0:3000 non era raggiungibile dall'host per firewalld (`sudo firewall-cmd --add-port=3000/tcp` lato utente). Per mostrargli l'app: DB demo (`npm run seed:demo` dopo `db seed`, ora di nuovo verde) e `npm run dev -- -H 0.0.0.0`, credenziali `admin@airmanager.local` + `SEED_ADMIN_PASSWORD` del `.env`; usare `localhost` o `192.168.56.115`, mai `127.0.0.1`.
+- **Interruzione dei subagent a metà dei mutanti** (14:25): lo stop di tutti i subagent ha lasciato un mutante («dell'{name}») in `it.json`. Un dev ripreso con SendMessage **non sa** di essere stato interrotto: va avvisato e deve verificare gli sha256.
+- **Messaggi tardivi dei teammate**: arrivano anche ore dopo e ripetono report già gestiti. Prima di agire, confronta il timestamp con lo stato del repo.
+- **DB `airmanager` sporco fra le serie**: la catena serializzata lascia settings permissivi (`maxAdvanceDays` 3650 → `api-v1` rosso). Dopo due suite intere sullo stesso DB il picker persone, che carica solo i primi 100 nomi, e la pagina 1 delle prenotazioni fanno fallire spec sani. Ogni arbitro va su DB fresco.
+- **ECONNRESET** (TD-19.10-g): si è rivisto nell'arbitro finale su una POST di fixture, con un flaky verde al retry. La correzione candidata resta `next start --keepAliveTimeout 75000`.
+- Restano valide le trappole dell'handoff precedente:
+  - i subagent NON possono resettare il DB;
+  - fascia 23:40-01:00 di Roma da evitare per gli arbitri;
+  - `getMetar` senza timeout (TD-19.7b-e);
+  - i reviewer possono morire per limite di sessione;
+  - demo per il PO via `npm run seed:demo` + `npm run dev -- -H 0.0.0.0`, su `localhost` o `192.168.56.115`.
+- Ricetta di reset: `docker compose exec -T postgres psql -U airmanager -d postgres -Atc 'DROP DATABASE airmanager WITH (FORCE)' && docker compose exec -T postgres createdb -U airmanager airmanager && set -a && . ./.env && set +a && npx prisma migrate deploy && npx prisma db seed`.
+
+## Stato dell'ambiente lasciato
+
+- La sessione Claude parallela dell'audit è **chiusa**. La sua cartella `_bmad-output/planning-artifacts/audit-2026-11-02/` è untracked e potrebbe servire come fonte per il backlog: chiedere al PO se tenerla o committarla.
+- **DB gemelli rimasti**: `airmanager_audit`, `airmanager_load` (19.11), `airmanager_1912b` (dati demo), `airmanager_1912b_e2e`, `_e2e2`, `_e2e3`. Si cancellano solo con l'ok del PO.
+- **File untracked/modificati non nostri**, da non committare: `.agents/`, `.claude/skills/*` (compresa la cancellazione di `.claude/skills/design-taste-frontend/SKILL.md`), `.claude/workflows/`, `.github/hooks/`, `.github/skills/`, `skills-lock.json`, `q.txt`.
 
 ## Next Steps (in ordine)
 
-1. **Controlli di apertura** (se si riparte da una sessione nuova): `git log --oneline -5`, `git status`, `ps -o pid,lstart -C claude`, `ss -ltnp | grep :3000`, `scripts/e2e.sh status`. Il mandato di reset del DB e2e dato dal PO il 2026-11-03 vale per la sessione che l'ha ricevuto: in una sessione nuova va richiesto.
-2. ~~19.12a~~ done (`abb0dd3` feat, `096da9b` fix, arbitro finale 604/604).
-3. **19.12b** (`_bmad-output/implementation-artifacts/19-12b-passata-testi.md`, 25 AC): stesso ciclo. Trappole nel §5 del file (17 spec cercano l'email d'invito per `'invitato'`, regex di `aog-overview-count.spec.ts`, `list.actions.dismiss` usato come «Annulla», `Export.button` a doppio uso, apostrofo prima di graffa in ICU).
-4. **Fine Epic 19** (regola di CLAUDE.md): retrospettiva opzionale; debiti tecnici da smistare (in particolare TD-19.7b-e METAR, TD-19.10-g ECONNRESET, TD-19.10-f tre mini-modal non accessibili, TD-19.11-a/b/c layout estratto conto 641-1150 px e focus, TD-19.9-a metà tipi disattivati nel registro); `/handoff`; **push di `dev`** (oggi ~80 commit locali non pushati: serve il mandato esplicito del PO, o `! git push` dell'utente); aggiornare la PR #22 o aprire la PR `dev` → `main` come deciderà il PO; poi fermarsi.
-5. Dopo: 16.5, 16.6a, 16.6b, 16.7, 16.8 (**da riperimetrare**: cita il contaore eliminato), 16.9 → Epic 17 → Epic 18 (la **18.5** va riperimetrata: il lessico passa alla 19.12b).
+1. **Controlli di apertura**: `git log --oneline -5`, `git status`, `ps -o pid,lstart -C claude`, `ss -ltnp | grep :3000`, `scripts/e2e.sh status`. Chiedere al PO il mandato di sessione per il reset del DB e2e, perché il classifier lo richiede.
+2. **Push di `dev` e PR verso `main`**: serve il mandato esplicito del PO in-turn, oppure `! git push` dall'utente. La PR #22 `dev` → `main` è già aperta e si aggiorna col push; chiedere al PO se tenerla o aprirne una nuova con il riassunto dell'Epic 19.
+3. **Retrospettiva Epic 19** (opzionale, `bmad-retrospective`) e **smistamento dei TD** dell'epic. In particolare:
+   - TD-19.7b-e METAR senza timeout (alta priorità);
+   - TD-19.10-g ECONNRESET;
+   - TD-19.10-f tre mini-modal non accessibili;
+   - TD-19.11-a/b/c layout dell'estratto conto e focus;
+   - TD-19.9-a tipi disattivati nel registro;
+   - TD-19.10-a/b fascia oraria.
+
+   Sono censiti nei Review Record dei file `19-*`.
+4. **Epic 16 residuo**: 16.5, 16.6a, 16.6b, 16.7, **16.8 da riperimetrare** (cita il contaore eliminato dalla 19.2), 16.9. Le riperimetrazioni sono annotate riga per riga in `sprint-status.yaml`.
+5. **Epic 17**, poi **Epic 18**. La 18.5 è già riperimetrata (sprint-status e `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md`); in più contiene TD-19.12b-a e la tab bar EN.
 
 ## Suggested skills
 
-- `karpathy-guidelines` — in ogni prompt di dev, fix e review (regola di progetto).
-- `bmad-dev-story` / agent `dev-story` (con `model: opus` per ogni story con UI) e agent `adversarial-reviewer` (Opus, consegna su disco).
-- `bmad-create-story` se serve riscrivere o riperimetrare una story (16.8, 18.5).
-- `design-taste-frontend` + `ui-ux-pro-max` nei prompt delle story con UI (la 19.12b tocca pagine d'errore e copy).
-- `bmad-retrospective` a fine Epic 19 (opzionale), poi `handoff`.
+- `karpathy-guidelines`: in ogni prompt di dev, fix e review (regola di progetto).
+- `bmad-dev-story` / agent `dev-story` con `model: opus` per ogni story con UI; agent `adversarial-reviewer` (Opus, consegna il report su disco).
+- `bmad-create-story` per riperimetrare la 16.8 e per le story di Epic 16-18 ancora senza file.
+- `bmad-retrospective` per la retrospettiva opzionale dell'Epic 19.
+- `design-taste-frontend` + `ui-ux-pro-max` nei prompt delle story con UI.
+- `commit-commands:commit-push-pr` o `gh` per push e PR, solo con il mandato del PO.
+- `handoff` a fine epic.
