@@ -419,13 +419,13 @@ Ogni mutante è applicato da solo, eseguito con `env -u DATABASE_URL -u AUTH_SEC
 
 Ripristino: `sha256sum -c` → `messages/it.json: OK`, `messages/en.json: OK`, `src/components/dashboard/fleet-card.tsx: OK`. I mutanti girano sul catalogo **prima** di D-a (14:17): D-a cambia solo il testo atteso di un caso di AC 5, non la logica dei controlli.
 
-⚠️ **Incidente alle 14:25:05** (segnalato al team lead): un processo che non era mio ha riscritto `messages/en.json`, `src/components/dashboard/fleet-card.tsx` e `messages/it.json`. I primi due sono tornati identici byte per byte; `it.json` aveva il mio contenuto **più il mutante (d)** in `Requirements.who`, come uno script di discriminanza fermato prima del ripristino. Il confronto chiave per chiave con la mia copia ha dato quell'unica differenza; l'ho riportata a «{name} ({role})» (valore di HEAD) prima di ogni gate e di ogni commit. Hash finali, controllati prima e dopo l'ultimo `npm run gates`:
+⚠️ **Incidente alle 14:25:05** (segnalato al team lead): `messages/en.json`, `src/components/dashboard/fleet-card.tsx` e `messages/it.json` sono stati riscritti fuori dal flusso visibile in questo contesto. Il team lead lo attribuisce all'**interruzione** di questo dev: verso le 14:25 l'utente ha fermato tutti i subagent in background, e un ciclo mutante/ripristino è stato ucciso a metà; nessun altro agente scriveva nella directory. I primi due file sono tornati identici byte per byte; `it.json` è rimasto col mio contenuto **più il mutante (d)** in `Requirements.who`. Il confronto chiave per chiave con la mia copia ha dato quell'unica differenza; l'ho riportata a «{name} ({role})» (valore di HEAD) prima di ogni gate e di ogni commit. Hash finali, controllati prima e dopo l'ultimo `npm run gates`:
 ```
 b0f9b548f4b23510addfe49a3e4fcde421d5d699b3b8869add0e36749519fa5b  messages/it.json
 b47610f208d617f22d7883b46a0d6e2f24b2318b9b246f55fd62c853ce30b99d  messages/en.json
 01b357d01020be7b1cd7fe8c4be8ae4c5de545e51658dfa15cb091e15ede59b4  src/components/dashboard/fleet-card.tsx
 ```
-La build servita alle serie e2e (BUILD_ID delle 14:24:44) è anteriore all'incidente: il suo chunk `messages_it_json` contiene `{name} ({role})`.
+Tutte le build servite alle serie e2e sono anteriori all'incidente: serie 1 sulla build delle 14:05 (avvio 14:07), aog di nuovo e serie 2 su quella delle 14:18 (avvio 14:18), serie 3 e `api-v1` di nuovo su quella delle 14:24:44 (avvio 14:26 e 14:34), il cui chunk `messages_it_json` contiene `{name} ({role})`; `flight-requirements` e `booking-requirements`, che rendono `Requirements.who`, girano nella serie 1. Nessun residuo degli altri mutanti in HEAD: nessuna chiave `mutantOnlyIt`, `aogCount` en = «{count} AOG», `registry.shown` en = «{count} shown» e it col ramo `other`, `fleet-card.tsx:126` = `t('summary', …)`, l'unica riga `.raw(` aggiunta dal commit `feat` è il testo del messaggio della guardia nel test.
 
 ### §F — Diff di `package.json`/`package-lock.json` e di `en.json` (motivo riga per riga)
 
