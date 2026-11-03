@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-03 22:30 — **EPIC 19 CHIUSO**: 19.1-19.12b done; sessione FERMA a fine epic, come prevede `CLAUDE.md`; ~88 commit su `dev` NON pushati; PR #22 `dev` → `main` ancora APERTA)
+# HANDOFF — AirManager (aggiornato: 2026-11-03 22:30 — **EPIC 19 CHIUSO**: 19.1-19.12b done; sessione FERMA a fine epic, come prevede `CLAUDE.md`; `dev` PUSHATO su origin col mandato del PO; PR #22 `dev` → `main` APERTA, con titolo e descrizione aggiornati agli Epic 14-19)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2230.md` (ciclo 19.12a/19.12b di oggi) e `HANDOFF-2026-11-03-1252.md` (Epic 13-18, ciclo AOG, 19.1-19.11, ricette d'ambiente estese).
 
@@ -6,7 +6,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2230.md` (ciclo 19.12a/19.
 
 - **Progetto**: AirManager, gestionale di aviosuperficie (v. `CLAUDE.md`).
 - **Appena chiuso**: **Epic 19 — Semplificazione e regole operative**, change request del PO del 2026-11-01. Fonte: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md`, con ratifiche R-19-*, assunzioni A1-A20 e l'Addendum in coda. Ogni story ha in `_bmad-output/implementation-artifacts/19-*` lo story file, il Dev Agent Record, il Review Record e il report di review.
-- **Prossima fase**: push e PR verso `main` (serve il mandato del PO), poi le story residue dell'Epic 16, poi Epic 17 ed Epic 18.
+- **Prossima fase**: il merge della PR #22 lo decide il PO; poi le story residue dell'Epic 16, poi Epic 17 ed Epic 18.
 
 ## Current Progress (fonte di verità: `_bmad-output/implementation-artifacts/sprint-status.yaml`)
 
@@ -53,13 +53,13 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2230.md` (ciclo 19.12a/19.
 ## Stato dell'ambiente lasciato
 
 - La sessione Claude parallela dell'audit è **chiusa**. La sua cartella `_bmad-output/planning-artifacts/audit-2026-11-02/` è untracked e potrebbe servire come fonte per il backlog: chiedere al PO se tenerla o committarla.
-- **DB gemelli rimasti**: `airmanager_audit`, `airmanager_load` (19.11), `airmanager_1912b` (dati demo), `airmanager_1912b_e2e`, `_e2e2`, `_e2e3`. Si cancellano solo con l'ok del PO.
+- **DB**: c'è solo `airmanager`. I sei gemelli (`airmanager_audit`, `airmanager_load`, `airmanager_1912b*`) sono stati cancellati col mandato del PO.
 - **File untracked/modificati non nostri**, da non committare: `.agents/`, `.claude/skills/*` (compresa la cancellazione di `.claude/skills/design-taste-frontend/SKILL.md`), `.claude/workflows/`, `.github/hooks/`, `.github/skills/`, `skills-lock.json`, `q.txt`.
 
 ## Next Steps (in ordine)
 
 1. **Controlli di apertura**: `git log --oneline -5`, `git status`, `ps -o pid,lstart -C claude`, `ss -ltnp | grep :3000`, `scripts/e2e.sh status`. Chiedere al PO il mandato di sessione per il reset del DB e2e, perché il classifier lo richiede.
-2. **Push di `dev` e PR verso `main`**: serve il mandato esplicito del PO in-turn, oppure `! git push` dall'utente. La PR #22 `dev` → `main` è già aperta e si aggiorna col push; chiedere al PO se tenerla o aprirne una nuova con il riassunto dell'Epic 19.
+2. **PR #22 `dev` → `main`** (https://github.com/demforce/AirManager/pull/22): push e aggiornamento della descrizione sono fatti il 2026-11-03. Il merge spetta al PO: non farlo senza mandato.
 3. **Retrospettiva Epic 19** (opzionale, `bmad-retrospective`) e **smistamento dei TD** dell'epic. In particolare:
    - TD-19.7b-e METAR senza timeout (alta priorità);
    - TD-19.10-g ECONNRESET;
