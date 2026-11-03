@@ -261,9 +261,9 @@ export type PilotsPageResult = {
   total: number;
   page: number;
   pageSize: number;
-  /** Fleet-wide (unfiltered by `q`/pagination — same convention as `fleet/page.tsx`'s own header counts), non-archived total: the page-head "N in archivio". */
+  /** Fleet-wide (unfiltered by `q`/pagination — same convention as `fleet/page.tsx`'s own header counts), non-archived total: the page-head "N persone". */
   totalCount: number;
-  /** Fleet-wide, non-archived count of persons whose linked user has `isActive: false`: the page-head "N sospesi". */
+  /** Fleet-wide, non-archived count of persons whose linked user has `isActive: false`: the page-head "N sospese". */
   suspendedCount: number;
 };
 

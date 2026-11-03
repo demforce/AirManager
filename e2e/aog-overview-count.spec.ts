@@ -47,7 +47,7 @@ async function loginExpectingDashboard(page: Page): Promise<void> {
 
 /** The trailing "N fuori servizio" of a `.page-head .sub` summary, as a number. */
 function aogCountIn(sub: string): number {
-  const match = /(\d+)\s+fuori servizio/.exec(sub);
+  const match = /(\d+)\s+fuori\sservizio/.exec(sub);
   if (!match) throw new Error(`No "N fuori servizio" segment in page-head sub: ${JSON.stringify(sub)}`);
   return Number(match[1]);
 }

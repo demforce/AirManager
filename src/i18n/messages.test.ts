@@ -109,6 +109,19 @@ describe('messages/it.json and messages/en.json (story 19.12a, AD-2)', () => {
     expect(mismatches, 'keys whose arguments differ between it and en (an apostrophe before `{` in Italian swallows the argument)').toEqual([]);
   });
 
+  // The check above compares argument NAMES, so an argument swallowed by `'{`
+  // that also appears elsewhere in the sentence goes unseen. `''` is an escaped
+  // apostrophe, so only an odd run of apostrophes right before `{` opens a quotation.
+  it("no value has an apostrophe right before `{` (`''{` is fine), in both languages", () => {
+    const quoting: string[] = [];
+    for (const lang of LANGS) {
+      for (const [key, value] of catalogues[lang]) {
+        if (typeof value === 'string' && /(?<!')(?:'')*'\{/.test(value)) quoting.push(`${lang} ${key}: ${JSON.stringify(value)}`);
+      }
+    }
+    expect(quoting, "values where `'{` quotes the argument that follows (rephrase, or write `''{`)").toEqual([]);
+  });
+
   it('every plural/select has an `other` branch, and every Italian plural a `one` or `=1` one', () => {
     const missing: string[] = [];
     for (const lang of LANGS) {
@@ -161,7 +174,7 @@ describe('t.raw never reads a message with plural/select (story 19.12a, AD-3)', 
     const offending: string[] = [];
     for (const file of sources) {
       const source = readFileSync(path.join(srcRoot, file), 'utf8');
-      for (const match of source.matchAll(/\.raw\(\s*['"]([\w.]+)['"]/g)) {
+      for (const match of source.matchAll(/\.raw\(\s*['"`]([\w.]+)['"`]/g)) {
         const read = match[1]!;
         const line = source.slice(0, match.index).split('\n').length;
         for (const key of branchingKeys) {
@@ -184,7 +197,7 @@ describe('the plurals converted by story 19.12a render in Italian (AC 5)', () =>
     {
       key: 'PilotsPage.sub',
       values: (n) => ({ total: n, suspended: n }),
-      expected: ['0 piloti · 0 sospesi', '1 pilota · 1 sospeso', '2 piloti · 2 sospesi'],
+      expected: ['0 persone · 0 sospese', '1 persona · 1 sospesa', '2 persone · 2 sospese'],
     },
     {
       key: 'InstructorsPage.sub',
@@ -194,12 +207,12 @@ describe('the plurals converted by story 19.12a render in Italian (AC 5)', () =>
     {
       key: 'AircraftPage.sub',
       values: (n) => ({ total: n, available: n, aog: n }),
-      expected: ['0 velivoli · 0 disponibili · 0 fuori servizio', '1 velivolo · 1 disponibile · 1 fuori servizio', '2 velivoli · 2 disponibili · 2 fuori servizio'],
+      expected: ['0 velivoli · 0 disponibili · 0\u00a0fuori\u00a0servizio', '1 velivolo · 1 disponibile · 1\u00a0fuori\u00a0servizio', '2 velivoli · 2 disponibili · 2\u00a0fuori\u00a0servizio'],
     },
     {
       key: 'DashboardPage.fleetCard.summary',
       values: (n) => ({ total: n, available: n, aog: n }),
-      expected: ['0 velivoli · 0 disponibili · 0 fuori servizio', '1 velivolo · 1 disponibile · 1 fuori servizio', '2 velivoli · 2 disponibili · 2 fuori servizio'],
+      expected: ['0 velivoli · 0 disponibili · 0\u00a0fuori\u00a0servizio', '1 velivolo · 1 disponibile · 1\u00a0fuori\u00a0servizio', '2 velivoli · 2 disponibili · 2\u00a0fuori\u00a0servizio'],
     },
     {
       key: 'DashboardPage.instructorLanding.sub',

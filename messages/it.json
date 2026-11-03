@@ -202,7 +202,7 @@
     },
     "fleetCard": {
       "cardTitle": "Aeromobili",
-      "summary": "{total, plural, one {# velivolo} other {# velivoli}} · {available, plural, one {# disponibile} other {# disponibili}} · {aog} fuori servizio",
+      "summary": "{total, plural, one {# velivolo} other {# velivoli}} · {available, plural, one {# disponibile} other {# disponibili}} · {aog} fuori servizio",
       "addAircraft": "Aggiungi aeromobile",
       "empty": "Nessun aeromobile registrato.",
       "badge": {
@@ -277,7 +277,7 @@
   },
   "PilotsPage": {
     "title": "Piloti",
-    "sub": "{total, plural, one {# pilota} other {# piloti}} · {suspended, plural, one {# sospeso} other {# sospesi}}",
+    "sub": "{total, plural, one {# persona} other {# persone}} · {suspended, plural, one {# sospesa} other {# sospese}}",
     "cardTitle": "Anagrafica piloti",
     "searchPlaceholder": "Cerca per nome o email…",
     "includeArchivedLabel": "Solo archiviati",
@@ -772,7 +772,7 @@
   },
   "AircraftPage": {
     "title": "Velivoli",
-    "sub": "{total, plural, one {# velivolo} other {# velivoli}} · {available, plural, one {# disponibile} other {# disponibili}} · {aog} fuori servizio",
+    "sub": "{total, plural, one {# velivolo} other {# velivoli}} · {available, plural, one {# disponibile} other {# disponibili}} · {aog} fuori servizio",
     "newAircraft": "Aggiungi aeromobile",
     "cardTitle": "Flotta",
     "searchPlaceholder": "Cerca per marche o modello…",
