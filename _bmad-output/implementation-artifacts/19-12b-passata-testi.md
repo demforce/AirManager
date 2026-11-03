@@ -456,3 +456,8 @@ Unit che asseriscono copy: `mail/templates.test.ts:19`, `:173`; `exports.service
 ## Nota per la sessione principale — riperimetrare la 18.5
 
 La 18.5 «Righe, tab e lessico» (`docs/superpowers/plans/2026-09-10-epics-16-18-audit.md:333-336`, `sprint-status.yaml` `18-5-righe-tab-lessico`) cita le voci dell'audit mobile M4, M6, M11 e M13. **Il lessico di M6, M11 e M13a-c passa alla 19.12b**: l'etichetta della quinta tab («Estratto conto» al posto di «Le mie transazioni»), il sottotitolo di Pianificazione, «Pianifica volo» → «Registra volo», il nome unico «Velivoli» fra menu e H1, «Ricarica» al posto di «Registra». Alla 18.5 restano layout e comportamento: righe che mostrano il dato che distingue (M4), la tab bar che sta su una riga a prescindere dall'etichetta (M6, dimensione del font: audit MOB-2), la seconda tab del pilota che non sia la console admin (M11), l'azione primaria nello sheet prenotazione (M13d). Aggiornare la descrizione della 18.5 in `sprint-status.yaml` e nel piano quando la 19.12b si chiude.
+
+---
+
+> **Aggiunta della sessione principale (2026-11-03, review 19.11 F6)**: includere nella passata l'etichetta dell'estratto conto «Saldo iniziale al {from}» (esclude i movimenti di quel giorno) vs «Saldo finale al {to}» (li include): renderle non ambigue (es. «Saldo all'inizio del {from}» / «Saldo a fine {to}»), IT ed EN.
+
