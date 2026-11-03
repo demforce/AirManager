@@ -1,15 +1,20 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
+import { todayDateOnlyUtc } from '@/lib/date-only';
 import { buildExportHref } from '@/lib/export-href';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { redirect } from '@/i18n/navigation';
+import { listCurrencyByPerson } from '@/server/services/currency.service';
+import { listBlockingExpiriesByPerson } from '@/server/services/expiries.service';
 import { listPilotsPageData } from '@/server/services/people.service';
 import { buildPilotEditorLabels, buildPilotEditorToastLabels } from './pilot-editor-labels';
 import { PilotsConsole, type PilotRow } from './pilots-console';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; q?: string; includeArchived?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; archivedOnly?: string }>;
 };
 
 const PAGE_SIZE = 20;
@@ -28,7 +33,7 @@ const PAGE_SIZE = 20;
  */
 export default async function PilotsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { page: pageParam, q, includeArchived: includeArchivedParam } = await searchParams;
+  const { page: pageParam, q, archivedOnly: archivedOnlyParam } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -42,9 +47,19 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
   }
 
   const page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
-  const includeArchived = includeArchivedParam === 'true';
+  const archivedOnly = archivedOnlyParam === 'true';
 
-  const result = await listPilotsPageData(actor, { page, pageSize: PAGE_SIZE, q, includeArchived });
+  const result = await listPilotsPageData(actor, { page, pageSize: PAGE_SIZE, q, includeArchived: false, archivedOnly });
+  // Story 15.5 (R-15.5-c): the phone row's flag. One batched query over the ids
+  // of THIS page, same rationale as `listPilotsPageData`'s own five readers.
+  // Story 19.7a (D-14): the currency of the pilots/students of the page, beside
+  // it — on the Rome calendar (A16), while the documents stay on the UTC one
+  // (story 16.1, the Scadenze domain).
+  const pageIds = result.items.map((item) => item.id);
+  const [blockingDocumentsById, currencyById] = await Promise.all([
+    listBlockingExpiriesByPerson(actor, pageIds, todayDateOnlyUtc()),
+    listCurrencyByPerson(actor, pageIds, todayDateOnlyInZone(APP_TIMEZONE)),
+  ]);
 
   const t = await getTranslations('PilotsPage');
   const tExport = await getTranslations('Export');
@@ -57,7 +72,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
   const tUsers = await getTranslations('UsersPage');
   const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
 
-  const exportHref = buildExportHref('/api/v1/people', { q, includeArchived: includeArchived ? 'true' : undefined }, locale);
+  const exportHref = buildExportHref('/api/v1/people', { q, archivedOnly: archivedOnly ? 'true' : undefined }, locale);
 
   const items: PilotRow[] = result.items.map((item) => ({
     id: item.id,
@@ -66,7 +81,6 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
     email: item.email,
     phone: item.phone,
     address: item.address,
-    fiscalCode: item.fiscalCode,
     archivedAt: item.archivedAt ? item.archivedAt.toISOString() : null,
     profiles: item.profiles,
     balanceCents: item.balanceCents,
@@ -84,17 +98,19 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
       </div>
 
       <PilotsConsole
-        key={JSON.stringify({ page, q: q ?? '', includeArchived })}
+        key={JSON.stringify({ page, q: q ?? '', archivedOnly })}
         items={items}
         page={page}
         totalPages={totalPages}
         initialQuery={q ?? ''}
-        initialIncludeArchived={includeArchived}
+        initialArchivedOnly={archivedOnly}
         canManagePeople={hasPermission(actor, 'people.manage')}
         canManageFinance={hasPermission(actor, 'finance.manage')}
         canManageUsers={hasPermission(actor, 'users.manage')}
         exportHref={exportHref}
         locale={locale as 'it' | 'en'}
+        blockingDocumentsById={Object.fromEntries(blockingDocumentsById)}
+        currencyById={Object.fromEntries(currencyById)}
         labels={{
           cardTitle: t('cardTitle'),
           searchPlaceholder: t('searchPlaceholder'),
@@ -102,7 +118,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
           empty: t('empty'),
           newPilot: t('newPilot'),
           exportLabel: tExport('button'),
-          exportXls: tExport('button'),
+          exportXls: t('exportMenu.xlsLabel'),
           pagination: { prev: t('pagination.prev'), next: t('pagination.next') },
           table: {
             name: t('table.name'),
@@ -117,6 +133,38 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
           role: { pilot: tProfiles('profilesPanel.pilot.title'), student: tProfiles('profilesPanel.student.title'), instructor: tProfiles('profilesPanel.instructor.title') },
           status: { active: t('status.active'), suspended: t('status.suspended'), none: t('status.none') },
           actions: { edit: t('actions.edit'), topUp: t('actions.topUp'), suspend: t('actions.suspend'), reactivate: t('actions.reactivate') },
+          mobile: {
+            openDetail: t('mobile.openDetail'),
+            close: t('mobile.close'),
+            openProfile: t('mobile.openProfile'),
+            // `t.raw`: the `{doc}`/`{days}` placeholders are filled CLIENT-side
+            // (the document name only exists there), and `t()` would try to
+            // resolve them as ICU variables here and throw FORMATTING_ERROR.
+            flagExpired: t.raw('mobile.flagExpired') as string,
+            flagExpiring: t.raw('mobile.flagExpiring') as string,
+            confirmSuspend: t('mobile.confirmSuspend'),
+            confirmReactivate: t('mobile.confirmReactivate'),
+            dismiss: t('mobile.dismiss'),
+            sheet: {
+              email: t('table.email'),
+              phone: t('mobile.sheet.phone'),
+              balance: t('table.balance'),
+              lastFlight: t('table.lastFlight'),
+              profiles: t('table.role'),
+              access: t('table.status'),
+              documents: t('mobile.sheet.documents'),
+            },
+          },
+          // `t.raw` for the three with a `{days}`/`{date}` placeholder, filled
+          // CLIENT-side — same reason as `mobile.flagExpired` above.
+          currency: {
+            label: t('currency.label'),
+            notCurrent: t('currency.notCurrent'),
+            expiring: t.raw('currency.expiring') as string,
+            until: t.raw('currency.until') as string,
+            expiredOn: t.raw('currency.expiredOn') as string,
+            never: t('currency.never'),
+          },
           topUp: {
             title: t('topUp.title'),
             amount: t('topUp.amount'),

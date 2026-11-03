@@ -22,10 +22,6 @@ vi.mock('@/server/db/prisma', () => ({
 
 const { prisma } = await import('@/server/db/prisma');
 const {
-  getPprOperatingInstructions,
-  setPprOperatingInstructions,
-  getPprLandingFeeDefaultCents,
-  setPprLandingFeeDefaultCents,
   getAirfieldBranding,
   setAirfieldBranding,
   getAirfieldIcao,
@@ -44,7 +40,11 @@ const {
   getTreasuryOpeningInternal,
   getTreasurySettings,
   setTreasurySettings,
+  getCurrencySettings,
+  setCurrencySettings,
+  writeCurrencySettingsCore,
 } = await import('./app-settings.service');
+const { currencySettingsSchema } = await import('@/lib/schemas/settings');
 
 const findManyMock = vi.mocked(prisma.appSetting.findMany);
 const findUniqueMock = vi.mocked(prisma.appSetting.findUnique);
@@ -55,184 +55,24 @@ type Fixture = Record<string, unknown>;
 const findMany = findManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const findUnique = findUniqueMock as unknown as { mockResolvedValue: (v: Fixture | null) => void };
 const upsert = upsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void };
+
+/**
+ * Story 19.8 (AD-3): the multi-key setters moved from the batch
+ * `$transaction([...])` to `$transaction((tx) => write*Core(tx, …))` — the
+ * callback runs on `prisma` itself here, so its upserts land on `upsertMock`.
+ */
+function runTransactionsOnPrisma(): void {
+  (transactionMock as unknown as { mockImplementation: (fn: (callback: (client: unknown) => unknown) => unknown) => void }).mockImplementation((callback) => callback(prisma));
+}
 
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
-}
-
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
 }
 
 function pilotActor(): Actor {
   return { userId: 'pilot_1', personId: 'person_1', roles: ['PILOT'] };
 }
 
-/**
- * First real plumbing around `AppSetting` (story 8.2, AC 1) — minimal
- * targeted coverage: get/set gating asymmetry, the `''` default (never
- * `null`), and that both locales are always written together.
- */
-describe('app-settings.service (story 8.2, AC 1)', () => {
-  describe('getPprOperatingInstructions', () => {
-    it('is gated ppr.manage — a pilot is forbidden, no query runs', async () => {
-      await expect(getPprOperatingInstructions(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
-      expect(findManyMock).not.toHaveBeenCalled();
-    });
-
-    it('staff (ppr.manage, not settings.manage) CAN read', async () => {
-      findMany.mockResolvedValue([]);
-      await expect(getPprOperatingInstructions(staffActor())).resolves.toEqual({ it: '', en: '' });
-    });
-
-    it('defaults BOTH locales to the empty string when no AppSetting rows exist yet (never null)', async () => {
-      findMany.mockResolvedValue([]);
-
-      const result = await getPprOperatingInstructions(adminActor());
-
-      expect(result).toEqual({ it: '', en: '' });
-    });
-
-    it('reads each locale from its own AppSetting key', async () => {
-      findMany.mockResolvedValue([
-        { key: 'ppr.operatingInstructions.it', value: 'Presentarsi in torre.' },
-        { key: 'ppr.operatingInstructions.en', value: 'Report to the tower.' },
-      ]);
-
-      const result = await getPprOperatingInstructions(adminActor());
-
-      expect(result).toEqual({ it: 'Presentarsi in torre.', en: 'Report to the tower.' });
-      expect(findManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { key: { in: ['ppr.operatingInstructions.it', 'ppr.operatingInstructions.en'] } } }),
-      );
-    });
-
-    it('a value present only for one locale leaves the other at the empty-string default', async () => {
-      findMany.mockResolvedValue([{ key: 'ppr.operatingInstructions.it', value: 'Solo italiano.' }]);
-
-      const result = await getPprOperatingInstructions(adminActor());
-
-      expect(result).toEqual({ it: 'Solo italiano.', en: '' });
-    });
-  });
-
-  describe('setPprOperatingInstructions', () => {
-    it('is gated settings.manage — staff (ppr.manage only) is forbidden, no write runs', async () => {
-      await expect(setPprOperatingInstructions(staffActor(), { it: 'x', en: 'y' })).rejects.toBeInstanceOf(ForbiddenError);
-      expect(transactionMock).not.toHaveBeenCalled();
-    });
-
-    it('admin (settings.manage) can write both locales together in one transaction', async () => {
-      upsert.mockResolvedValue({});
-      transaction.mockResolvedValue([{}, {}]);
-
-      const result = await setPprOperatingInstructions(adminActor(), { it: 'Italiano nuovo.', en: 'New English.' });
-
-      expect(result).toEqual({ it: 'Italiano nuovo.', en: 'New English.' });
-      expect(transactionMock).toHaveBeenCalledTimes(1);
-      // Both upserts submitted together (AC 1: "entrambi i campi ... insieme").
-      const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
-      expect(batch).toHaveLength(2);
-    });
-  });
-});
-
-/**
- * Default PPR landing fee (story 8.3, AC 1) — minimal targeted coverage:
- * get/set gating asymmetry (same shape as the operating-instructions pair
- * above), the `0` default (absent key), and the corrupted-value ->
- * `0` + `console.warn` fallback (Contesto: "valore memorizzato non
- * parsabile -> 0 + warn").
- */
-describe('app-settings.service — default PPR landing fee (story 8.3, AC 1)', () => {
-  // No global `clearMocks`/`restoreMocks` configured for this project (vitest.config.ts)
-  // and the describe block above this one leaves `upsertMock` with recorded
-  // calls — reset the mocks THIS block depends on before each test so
-  // `not.toHaveBeenCalled()` assertions are accurate.
-  beforeEach(() => {
-    findUniqueMock.mockReset();
-    upsertMock.mockReset();
-  });
-
-  describe('getPprLandingFeeDefaultCents', () => {
-    it('is gated ppr.manage — a pilot is forbidden, no query runs', async () => {
-      await expect(getPprLandingFeeDefaultCents(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
-      expect(findUniqueMock).not.toHaveBeenCalled();
-    });
-
-    it('staff (ppr.manage, not settings.manage) CAN read', async () => {
-      findUnique.mockResolvedValue(null);
-      await expect(getPprLandingFeeDefaultCents(staffActor())).resolves.toBe(0);
-    });
-
-    it('defaults to 0 when no AppSetting row exists yet', async () => {
-      findUnique.mockResolvedValue(null);
-
-      await expect(getPprLandingFeeDefaultCents(adminActor())).resolves.toBe(0);
-      expect(findUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'ppr.landingFeeCents' } }));
-    });
-
-    it('reads back a stored non-negative integer string', async () => {
-      findUnique.mockResolvedValue({ value: '1500' });
-
-      await expect(getPprLandingFeeDefaultCents(adminActor())).resolves.toBe(1500);
-    });
-
-    it('a stored value of "0" reads back as 0 (not confused with absent)', async () => {
-      findUnique.mockResolvedValue({ value: '0' });
-
-      await expect(getPprLandingFeeDefaultCents(adminActor())).resolves.toBe(0);
-    });
-
-    it.each(['abc', '-100', '12.5', ' 100', '100 ', '99999999999'])(
-      'a corrupted stored value %j falls back to 0 and logs a warning (never thrown)',
-      async (corrupted) => {
-        findUnique.mockResolvedValue({ value: corrupted });
-        const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-
-        await expect(getPprLandingFeeDefaultCents(adminActor())).resolves.toBe(0);
-        expect(consoleWarnSpy).toHaveBeenCalled();
-        consoleWarnSpy.mockRestore();
-      },
-    );
-  });
-
-  describe('setPprLandingFeeDefaultCents', () => {
-    it('is gated settings.manage — staff (ppr.manage only) is forbidden, no write runs', async () => {
-      await expect(setPprLandingFeeDefaultCents(staffActor(), 1000)).rejects.toBeInstanceOf(ForbiddenError);
-      expect(upsertMock).not.toHaveBeenCalled();
-    });
-
-    it('admin (settings.manage) writes the value as a plain decimal string and returns it', async () => {
-      upsert.mockResolvedValue({});
-
-      const result = await setPprLandingFeeDefaultCents(adminActor(), 2500);
-
-      expect(result).toBe(2500);
-      expect(upsertMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { key: 'ppr.landingFeeCents' },
-          update: { value: '2500' },
-          create: { key: 'ppr.landingFeeCents', value: '2500' },
-        }),
-      );
-    });
-
-    it('0 is a valid, distinct value — written and read back exactly', async () => {
-      upsert.mockResolvedValue({});
-
-      await expect(setPprLandingFeeDefaultCents(adminActor(), 0)).resolves.toBe(0);
-      expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ update: { value: '0' } }));
-    });
-  });
-});
-
-/**
- * Airfield PDF branding (story 10.2, AC 1; name-only since story 13.8,
- * AC 4) — minimal targeted coverage: NO read gate (unlike every other
- * getter above), the fresh-install default, and write gating.
- */
 describe('app-settings.service — airfield branding (story 10.2, AC 1; story 13.8, AC 4)', () => {
   beforeEach(() => {
     findUniqueMock.mockReset();
@@ -240,7 +80,7 @@ describe('app-settings.service — airfield branding (story 10.2, AC 1; story 13
   });
 
   describe('getAirfieldBranding', () => {
-    it('has NO permission gate — a pilot (no settings.manage, no ppr.manage) reads it', async () => {
+    it('has NO permission gate — a pilot (no settings.manage) reads it', async () => {
       findUnique.mockResolvedValue(null);
       await expect(getAirfieldBranding()).resolves.toEqual({ name: 'AirManager' });
     });
@@ -262,8 +102,8 @@ describe('app-settings.service — airfield branding (story 10.2, AC 1; story 13
   });
 
   describe('setAirfieldBranding', () => {
-    it('is gated settings.manage — staff is forbidden, no write runs', async () => {
-      await expect(setAirfieldBranding(staffActor(), { name: 'X' })).rejects.toBeInstanceOf(ForbiddenError);
+    it('is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
+      await expect(setAirfieldBranding(pilotActor(), { name: 'X' })).rejects.toBeInstanceOf(ForbiddenError);
       expect(upsertMock).not.toHaveBeenCalled();
     });
 
@@ -315,8 +155,8 @@ describe('app-settings.service — setAirfieldIcao / airfield contact email (sto
     upsertMock.mockReset();
   });
 
-  it('setAirfieldIcao is gated settings.manage — staff is forbidden, no write runs', async () => {
-    await expect(setAirfieldIcao(staffActor(), 'LIML')).rejects.toBeInstanceOf(ForbiddenError);
+  it('setAirfieldIcao is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
+    await expect(setAirfieldIcao(pilotActor(), 'LIML')).rejects.toBeInstanceOf(ForbiddenError);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
@@ -334,7 +174,7 @@ describe('app-settings.service — setAirfieldIcao / airfield contact email (sto
   });
 
   it('setAirfieldContactEmail is gated settings.manage', async () => {
-    await expect(setAirfieldContactEmail(staffActor(), 'ops@example.com')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setAirfieldContactEmail(pilotActor(), 'ops@example.com')).rejects.toBeInstanceOf(ForbiddenError);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
@@ -385,16 +225,16 @@ describe('app-settings.service — scheduling window (story 12.11, AC 1/4)', () 
     });
   });
 
-  it('setSchedulingSettings is gated settings.manage — staff is forbidden, no write runs', async () => {
+  it('setSchedulingSettings is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
     await expect(
-      setSchedulingSettings(staffActor(), { openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 }),
+      setSchedulingSettings(pilotActor(), { openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 }),
     ).rejects.toBeInstanceOf(ForbiddenError);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
   it('setSchedulingSettings (admin) writes all 5 keys together in one transaction', async () => {
     upsert.mockResolvedValue({});
-    transaction.mockResolvedValue([{}, {}, {}, {}, {}]);
+    runTransactionsOnPrisma();
 
     const result = await setSchedulingSettings(adminActor(), {
       openTime: '07:00',
@@ -406,8 +246,13 @@ describe('app-settings.service — scheduling window (story 12.11, AC 1/4)', () 
 
     expect(result).toEqual({ openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 });
     expect(transactionMock).toHaveBeenCalledTimes(1);
-    const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
-    expect(batch).toHaveLength(5);
+    expect(upsertMock.mock.calls.map((call) => (call[0] as { where: { key: string } }).where.key)).toEqual([
+      'sched.openTime',
+      'sched.closeTime',
+      'sched.minSlotMinutes',
+      'sched.turnaroundMinutes',
+      'sched.maxAdvanceDays',
+    ]);
   });
 });
 
@@ -426,7 +271,7 @@ describe('app-settings.service — SMTP settings (story 12.11, AC 1/2)', () => {
   const SMTP_INPUT = { host: 'smtp.example.com', port: 587, security: 'STARTTLS' as const, user: 'ops@example.com', from: 'Club Ops <ops@example.com>' };
 
   it('getSmtpSettings is gated settings.manage', async () => {
-    await expect(getSmtpSettings(staffActor())).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(getSmtpSettings(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
     expect(findManyMock).not.toHaveBeenCalled();
   });
 
@@ -448,30 +293,30 @@ describe('app-settings.service — SMTP settings (story 12.11, AC 1/2)', () => {
   });
 
   it('setSmtpSettings is gated settings.manage', async () => {
-    await expect(setSmtpSettings(staffActor(), SMTP_INPUT)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setSmtpSettings(pilotActor(), SMTP_INPUT)).rejects.toBeInstanceOf(ForbiddenError);
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
   it('setSmtpSettings WITHOUT pass writes only the 5 non-password keys (leaves the stored password untouched)', async () => {
     upsert.mockResolvedValue({});
-    transaction.mockResolvedValue([{}, {}, {}, {}, {}]);
+    runTransactionsOnPrisma();
     findMany.mockResolvedValue([]);
 
     await setSmtpSettings(adminActor(), SMTP_INPUT);
 
-    const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
-    expect(batch).toHaveLength(5);
+    expect(transactionMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledTimes(5);
+    expect(upsertMock.mock.calls.map((call) => (call[0] as { where: { key: string } }).where.key)).not.toContain('smtp.pass');
   });
 
   it('setSmtpSettings WITH a non-empty pass also writes the password key (6 writes)', async () => {
     upsert.mockResolvedValue({});
-    transaction.mockResolvedValue([{}, {}, {}, {}, {}, {}]);
+    runTransactionsOnPrisma();
     findMany.mockResolvedValue([]);
 
     await setSmtpSettings(adminActor(), { ...SMTP_INPUT, pass: 'new-secret' });
 
-    const batch = transactionMock.mock.calls[0]?.[0] as unknown as unknown[];
-    expect(batch).toHaveLength(6);
+    expect(upsertMock).toHaveBeenCalledTimes(6);
   });
 
   it('getSmtpSettingsForMailer (internal, no Actor) DOES return the raw password', async () => {
@@ -485,7 +330,7 @@ describe('app-settings.service — SMTP settings (story 12.11, AC 1/2)', () => {
 
   it('setSmtpSettings ENCRYPTS the password before writing (CWE-312 fix) — the stored value is not the plaintext, and decrypts back to it', async () => {
     upsert.mockResolvedValue({});
-    transaction.mockResolvedValue([{}, {}, {}, {}, {}, {}]);
+    runTransactionsOnPrisma();
     findMany.mockResolvedValue([]);
 
     await setSmtpSettings(adminActor(), { ...SMTP_INPUT, pass: 'a-real-password' });
@@ -539,7 +384,7 @@ describe('app-settings.service — METAR station (story 12.11, AC 1/5)', () => {
   });
 
   it('setMetarStation is gated settings.manage', async () => {
-    await expect(setMetarStation(staffActor(), 'LIRF')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setMetarStation(pilotActor(), 'LIRF')).rejects.toBeInstanceOf(ForbiddenError);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
@@ -551,7 +396,7 @@ describe('app-settings.service — METAR station (story 12.11, AC 1/5)', () => {
   });
 });
 
-/** Membership fee default (story 12.11, AC 1, ratifica utente 1) — same read/write asymmetry as the PPR landing fee (`finance.manage` reads, `settings.manage` writes). */
+/** Membership fee default (story 12.11, AC 1, ratifica utente 1) — read/write asymmetry: `finance.manage` reads, `settings.manage` writes. */
 describe('app-settings.service — membership fee default (story 12.11, AC 1)', () => {
   beforeEach(() => {
     findUniqueMock.mockReset();
@@ -561,11 +406,6 @@ describe('app-settings.service — membership fee default (story 12.11, AC 1)', 
   it('getMembershipFeeCents is gated finance.manage — a pilot (no finance.manage) is forbidden', async () => {
     await expect(getMembershipFeeCents(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
     expect(findUniqueMock).not.toHaveBeenCalled();
-  });
-
-  it('staff (finance.manage, not settings.manage) CAN read', async () => {
-    findUnique.mockResolvedValue(null);
-    await expect(getMembershipFeeCents(staffActor())).resolves.toBe(0);
   });
 
   it('defaults to 0 when no AppSetting row exists yet', async () => {
@@ -579,8 +419,20 @@ describe('app-settings.service — membership fee default (story 12.11, AC 1)', 
     await expect(getMembershipFeeCents(adminActor())).resolves.toBe(5000);
   });
 
-  it('setMembershipFeeCents is gated settings.manage — staff (finance.manage only) is forbidden', async () => {
-    await expect(setMembershipFeeCents(staffActor(), 5000)).rejects.toBeInstanceOf(ForbiddenError);
+  it.each(['abc', '-100', '12.5', ' 100', '100 ', '99999999999'])(
+    'a corrupted stored value %j falls back to 0 and logs a warning (never thrown)',
+    async (corrupted) => {
+      findUnique.mockResolvedValue({ value: corrupted });
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await expect(getMembershipFeeCents(adminActor())).resolves.toBe(0);
+      expect(consoleWarnSpy).toHaveBeenCalled();
+      consoleWarnSpy.mockRestore();
+    },
+  );
+
+  it('setMembershipFeeCents is gated settings.manage — a non-admin actor is forbidden', async () => {
+    await expect(setMembershipFeeCents(pilotActor(), 5000)).rejects.toBeInstanceOf(ForbiddenError);
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
@@ -588,6 +440,105 @@ describe('app-settings.service — membership fee default (story 12.11, AC 1)', 
     upsert.mockResolvedValue({});
     await expect(setMembershipFeeCents(adminActor(), 5000)).resolves.toBe(5000);
     expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ update: { value: '5000' } }));
+  });
+});
+
+// Story 19.7a (AC 12, R-19-i, D-10) — the contract story 19.8 consumes.
+describe('app-settings.service — currency settings (story 19.7a)', () => {
+  beforeEach(() => {
+    findManyMock.mockReset();
+    upsertMock.mockReset();
+    transactionMock.mockReset();
+  });
+
+  it('absent keys -> the defaults { minFlights: 1, windowDays: 90 }, with no gate (any caller)', async () => {
+    findMany.mockResolvedValue([]);
+
+    await expect(getCurrencySettings()).resolves.toEqual({ minFlights: 1, windowDays: 90 });
+    expect(findManyMock).toHaveBeenCalledWith({ where: { key: { in: ['currency.minFlights', 'currency.windowDays'] } }, select: { key: true, value: true } });
+  });
+
+  it('reads back stored values', async () => {
+    findMany.mockResolvedValue([
+      { key: 'currency.minFlights', value: '3' },
+      { key: 'currency.windowDays', value: '60' },
+    ]);
+
+    await expect(getCurrencySettings()).resolves.toEqual({ minFlights: 3, windowDays: 60 });
+  });
+
+  it.each([
+    ['currency.minFlights', '0', { minFlights: 1, windowDays: 45 }],
+    ['currency.minFlights', '100', { minFlights: 1, windowDays: 45 }],
+    ['currency.minFlights', '2.5', { minFlights: 1, windowDays: 45 }],
+    ['currency.minFlights', 'abc', { minFlights: 1, windowDays: 45 }],
+    ['currency.minFlights', '-3', { minFlights: 1, windowDays: 45 }],
+  ])('a stored %s of %j falls back to THAT field\'s default only, with a console.warn', async (key, value, expected) => {
+    findMany.mockResolvedValue([
+      { key, value },
+      { key: 'currency.windowDays', value: '45' },
+    ]);
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(getCurrencySettings()).resolves.toEqual(expected);
+    expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+    consoleWarnSpy.mockRestore();
+  });
+
+  it.each(['0', '3651', '30.0', ' 30'])('a stored windowDays of %j falls back to 90, minFlights kept', async (value) => {
+    findMany.mockResolvedValue([
+      { key: 'currency.minFlights', value: '2' },
+      { key: 'currency.windowDays', value },
+    ]);
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(getCurrencySettings()).resolves.toEqual({ minFlights: 2, windowDays: 90 });
+    expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('setCurrencySettings without settings.manage -> ForbiddenError before any query', async () => {
+    await expect(setCurrencySettings(pilotActor(), { minFlights: 2, windowDays: 60 })).rejects.toBeInstanceOf(ForbiddenError);
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  it('setCurrencySettings (admin) runs the core inside its own transaction and returns the values', async () => {
+    const tx = { appSetting: { upsert: vi.fn(async () => ({})) } };
+    (transactionMock as unknown as { mockImplementation: (fn: (callback: (client: unknown) => unknown) => unknown) => void }).mockImplementation((callback) => callback(tx));
+
+    await expect(setCurrencySettings(adminActor(), { minFlights: 2, windowDays: 60 })).resolves.toEqual({ minFlights: 2, windowDays: 60 });
+    expect(tx.appSetting.upsert).toHaveBeenCalledTimes(2);
+    expect(upsertMock).not.toHaveBeenCalled();
+  });
+
+  it('writeCurrencySettingsCore writes ONLY on the tx it receives, and never authorizes', async () => {
+    const tx = { appSetting: { upsert: vi.fn(async () => ({})) } };
+
+    await writeCurrencySettingsCore(tx as never, { minFlights: 4, windowDays: 120 });
+
+    expect(tx.appSetting.upsert).toHaveBeenCalledWith({ where: { key: 'currency.minFlights' }, update: { value: '4' }, create: { key: 'currency.minFlights', value: '4' } });
+    expect(tx.appSetting.upsert).toHaveBeenCalledWith({ where: { key: 'currency.windowDays' }, update: { value: '120' }, create: { key: 'currency.windowDays', value: '120' } });
+    expect(upsertMock).not.toHaveBeenCalled();
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it('currencySettingsSchema rejects 0, negatives, decimals, X > 99, Y > 3650 — and accepts the bounds', () => {
+    for (const body of [
+      { minFlights: 0, windowDays: 90 },
+      { minFlights: -1, windowDays: 90 },
+      { minFlights: 1.5, windowDays: 90 },
+      { minFlights: 100, windowDays: 90 },
+      { minFlights: 1, windowDays: 0 },
+      { minFlights: 1, windowDays: -30 },
+      { minFlights: 1, windowDays: 90.5 },
+      { minFlights: 1, windowDays: 3651 },
+      { minFlights: 1 },
+    ]) {
+      expect(currencySettingsSchema.safeParse(body).success).toBe(false);
+    }
+    expect(currencySettingsSchema.safeParse({ minFlights: 1, windowDays: 1 }).success).toBe(true);
+    expect(currencySettingsSchema.safeParse({ minFlights: 99, windowDays: 3650 }).success).toBe(true);
   });
 });
 
@@ -644,8 +595,8 @@ describe('treasury opening balances (story Billing-1, AC 3)', () => {
   });
 
   describe('getTreasurySettings / setTreasurySettings (actor-facing pair, both settings.manage)', () => {
-    it('getTreasurySettings is gated settings.manage — staff (finance.manage only) is forbidden', async () => {
-      await expect(getTreasurySettings(staffActor())).rejects.toBeInstanceOf(ForbiddenError);
+    it('getTreasurySettings is gated settings.manage — a non-admin actor is forbidden', async () => {
+      await expect(getTreasurySettings(pilotActor())).rejects.toBeInstanceOf(ForbiddenError);
       expect(findManyMock).not.toHaveBeenCalled();
     });
 
@@ -654,15 +605,15 @@ describe('treasury opening balances (story Billing-1, AC 3)', () => {
       await expect(getTreasurySettings(adminActor())).resolves.toEqual({ openingCashCents: 1000, openingBankCents: 0, openingDate: null });
     });
 
-    it('setTreasurySettings is gated settings.manage — staff is forbidden, no write runs', async () => {
+    it('setTreasurySettings is gated settings.manage — a non-admin actor is forbidden, no write runs', async () => {
       await expect(
-        setTreasurySettings(staffActor(), { openingCashCents: 1000, openingBankCents: 2000, openingDate: '2026-01-01' }),
+        setTreasurySettings(pilotActor(), { openingCashCents: 1000, openingBankCents: 2000, openingDate: '2026-01-01' }),
       ).rejects.toBeInstanceOf(ForbiddenError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('setTreasurySettings (admin) writes all 3 keys together in one transaction and echoes them back', async () => {
-      transaction.mockResolvedValue([{}, {}, {}]);
+      runTransactionsOnPrisma();
       const result = await setTreasurySettings(adminActor(), { openingCashCents: 150000, openingBankCents: -2500, openingDate: '2026-01-01' });
 
       expect(result).toEqual({ openingCashCents: 150000, openingBankCents: -2500, openingDate: '2026-01-01' });

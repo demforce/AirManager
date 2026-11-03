@@ -93,19 +93,3 @@ export function tierOf(daysUntil: number): ExpiryTier {
   if (daysUntil <= 60) return 3;
   return 4;
 }
-
-/**
- * Scadenza category, derived from its `ExpiryType.name` (Contesto: `catTone`/
- * `categoryOf`, `ScadenzeView.jsx`'s own heuristic) — extracted alongside
- * {@link tierOf} for the same single-implementation reason. A free-text
- * type name is bucketed by substring match: "medic..." -> Medico,
- * "licenz..." -> Licenza, everything else -> Abilitazione.
- */
-export type ExpiryCategory = 'Medico' | 'Licenza' | 'Abilitazione';
-
-export function categoryOf(typeName: string): ExpiryCategory {
-  const lower = typeName.toLowerCase();
-  if (lower.includes('medic')) return 'Medico';
-  if (lower.includes('licenz')) return 'Licenza';
-  return 'Abilitazione';
-}

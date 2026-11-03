@@ -14,6 +14,19 @@ export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     DATABASE_URL: z.url({ error: 'DATABASE_URL must be a valid connection string' }),
+    // `pg`'s own implicit default (`pg-pool` v3.14.0: `this.options.max ||
+    // this.options.poolSize || 10`) — declaring it here just makes the
+    // number visible and tunable (story 17.1, AD-5). Unset ⇒ 10, byte-
+    // identical to today's behaviour. A production build of this app opens
+    // this pool TWICE per Node process — route handlers and page rendering
+    // each instantiate `src/server/db/prisma.ts` in their own Next layer
+    // (measured: 6 client backends at DATABASE_POOL_MAX=3, one process, one
+    // API+page burst) — so keep DATABASE_POOL_MAX × 2 × instances <=
+    // max_connections (100 by default, `SHOW max_connections`) minus
+    // whatever Postgres reserves for itself (`superuser_reserved_connections`,
+    // 3 by default). No upper bound enforced here — that ceiling depends on
+    // the deployment, not on this schema.
+    DATABASE_POOL_MAX: z.coerce.number().int().positive().default(10),
     // Auth.js v5 — signs/encrypts the JWT session cookie. Generate with `npx auth secret`.
     AUTH_SECRET: z.string().min(32, { error: 'AUTH_SECRET must be at least 32 characters' }),
     // Password for the demo admin user created by `prisma/seed.ts` /

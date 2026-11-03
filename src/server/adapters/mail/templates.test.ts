@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildAircraftGroundedEmail,
   buildExpiryAlertEmail,
   buildExpiryDigestEmail,
   buildInviteEmail,
@@ -15,7 +16,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
         expiresInDays: 7,
       });
 
-      expect(email.subject).toBe('Sei stato invitato ad AirManager');
+      expect(email.subject).toBe('Hai ricevuto un invito ad AirManager');
       expect(email.text).toContain('http://localhost:3000/it/set-password?token=abc123');
       expect(email.text).toContain('7 giorni');
     });
@@ -86,7 +87,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
 
       expect(email.subject).toContain('Visita medica classe 2');
       expect(email.text).toContain('Mario Rossi');
-      expect(email.text).toContain('scade oggi');
+      expect(email.text).toContain('La tua scadenza «Visita medica classe 2» scade oggi'); // story 19.12b: «» quotes
       expect(email.text).not.toMatch(/\b60\b|\b30\b|\b7\b/);
     });
 
@@ -161,19 +162,29 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
           },
           {
             personName: 'Chiara Bianchi',
-            typeName: 'Licenza PPL',
+            typeName: 'Rating SEP',
             expiresAt: new Date(Date.UTC(2026, 6, 5)),
             daysLeft: -3,
             holderStatus: 'NO_EMAIL',
           },
+          {
+            personName: 'Luca Verdi',
+            typeName: 'Inglese ICAO',
+            expiresAt: new Date(Date.UTC(2026, 6, 7)),
+            daysLeft: -1,
+            holderStatus: 'EMAILED',
+          },
         ],
       });
 
-      expect(email.subject).toBe('Riepilogo alert scadenze');
+      expect(email.subject).toBe('Riepilogo avvisi di scadenza');
       expect(email.text).toContain('Mario Rossi');
       expect(email.text).toContain('scade oggi');
       expect(email.text).toContain('Chiara Bianchi');
-      expect(email.text).toContain('è scaduta da 3 giorni');
+      // Story 19.12b, decisione PO 3: the digest's own neutral phrase — the holder alert keeps «è scaduta da» (above).
+      expect(email.text).toContain('Rating SEP: scadenza superata da 3 giorni');
+      expect(email.text).toContain('Inglese ICAO: scadenza superata da 1 giorno');
+      expect(email.text).not.toContain('è scaduta');
       expect(email.text).toContain('senza email');
       // Only ONE flag, on Chiara's line — Mario's line must not carry it.
       expect(email.text.split('\n').find((line) => line.includes('Mario Rossi'))).not.toContain('senza email');
@@ -184,7 +195,7 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
         items: [
           {
             personName: 'Chiara Bianchi',
-            typeName: 'Licenza PPL',
+            typeName: 'Rating SEP',
             expiresAt: new Date(Date.UTC(2026, 6, 5)),
             daysLeft: -3,
             holderStatus: 'NO_EMAIL',
@@ -242,5 +253,109 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
       expect(email.text).toContain('email delivery failed');
       expect(email.text).not.toContain('no email on file');
     });
+  });
+});
+
+describe('buildAircraftGroundedEmail (story AOG-1b, ratifica R-AOG-i)', () => {
+  const BOOKING_START = new Date('2031-05-02T09:00:00.000Z');
+
+  it('names the aircraft, the reason, the INCLUSIVE window and the holder booking, in Italian', async () => {
+    const email = await buildAircraftGroundedEmail('it', {
+      firstName: 'Anna',
+      aircraftRegistration: 'I-ABCD',
+      startsAt: BOOKING_START,
+      reason: 'Revisione 100h',
+      outOfServiceUntil: '2031-05-12',
+      effectiveUntil: '2031-05-12',
+    });
+
+    expect(email.subject).toBe('Velivolo fuori servizio: I-ABCD');
+    expect(email.text).toContain('Ciao Anna');
+    expect(email.text).toContain('I-ABCD');
+    expect(email.text).toContain('Revisione 100h');
+    // R-AOG-a: the day itself is part of the fermo, and the mail says so.
+    expect(email.text).toContain('fino al 12/05/2031 compreso');
+    // The booking the recipient actually holds, in Europe/Rome wall clock.
+    expect(email.text).toContain('02/05/2031');
+    // Decisione PO 2026-07-31 (option 2 of 3): the AOG counts and warns, it
+    // never cancels — and the pilot must not be left guessing.
+    expect(email.text).toContain('NON è stata annullata');
+  });
+
+  it('NAMES the undelimited case instead of leaving an empty spot (invariant [b])', async () => {
+    const email = await buildAircraftGroundedEmail('it', {
+      firstName: 'Bruno',
+      aircraftRegistration: 'I-ABCD',
+      startsAt: BOOKING_START,
+      reason: 'Attesa pezzo',
+      outOfServiceUntil: null,
+      effectiveUntil: null,
+    });
+
+    expect(email.text).toContain('rientro da definire');
+    expect(email.text).not.toContain('fino al');
+    // Never an empty value, never a bare dash where a value is announced.
+    expect(email.text).toContain('Fuori servizio: rientro da definire');
+    expect(email.text).not.toMatch(/Fuori servizio:\s*$/m);
+    expect(email.text).not.toContain('Fuori servizio: —');
+  });
+
+  it('renders the English counterpart with the same structure', async () => {
+    const dated = await buildAircraftGroundedEmail('en', {
+      firstName: 'John',
+      aircraftRegistration: 'I-ABCD',
+      startsAt: BOOKING_START,
+      reason: '100h inspection',
+      outOfServiceUntil: '2031-05-12',
+      effectiveUntil: '2031-05-12',
+    });
+    const undated = await buildAircraftGroundedEmail('en', {
+      firstName: 'John',
+      aircraftRegistration: 'I-ABCD',
+      startsAt: BOOKING_START,
+      reason: 'Waiting for a part',
+      outOfServiceUntil: null,
+      effectiveUntil: null,
+    });
+
+    expect(dated.subject).toBe('Aircraft out of service: I-ABCD');
+    expect(dated.text).toContain('until 12/05/2031 inclusive');
+    expect(dated.text).toContain('has NOT been cancelled');
+    expect(undated.text).toContain('return date not yet known');
+  });
+
+  /**
+   * Review MAJOR-1, the sentence that was lying. A fermo whose expected return
+   * day has already passed is STILL a fermo (invariant [a]), so
+   * `computeAogImpact` counts it undelimited and `effectiveUntil` comes back
+   * `null` while `outOfServiceUntil` still holds that date. Before the fix the
+   * template read the raw date and wrote "fino al {ieri} compreso" over a
+   * booking weeks later: an email that contradicted itself.
+   */
+  it('a fermo past its expected day names that day as EXPECTED, never as the end of the window (review MAJOR-1)', async () => {
+    const overdue = await buildAircraftGroundedEmail('it', {
+      firstName: 'Lontano',
+      aircraftRegistration: 'I-ABCD',
+      startsAt: BOOKING_START,
+      reason: 'Fermo scaduto',
+      outOfServiceUntil: '2026-08-06',
+      effectiveUntil: null,
+    });
+
+    expect(overdue.text).toContain('oltre il 06/08/2026 previsto, rientro da definire');
+    // The claim the pre-fix body made, and the reason this test exists.
+    expect(overdue.text).not.toContain('fino al 06/08/2026 compreso');
+
+    const overdueEn = await buildAircraftGroundedEmail('en', {
+      firstName: 'John',
+      aircraftRegistration: 'I-ABCD',
+      startsAt: BOOKING_START,
+      reason: 'Overrun grounding',
+      outOfServiceUntil: '2026-08-06',
+      effectiveUntil: null,
+    });
+
+    expect(overdueEn.text).toContain('past the expected 06/08/2026, return date not yet known');
+    expect(overdueEn.text).not.toContain('inclusive');
   });
 });

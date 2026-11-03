@@ -14,7 +14,6 @@ import type { Page } from '@playwright/test';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -119,7 +118,7 @@ async function createPilotWithAccess(page: Page, email: string): Promise<{ lastN
   await accessSection.getByLabel('Email').fill(email);
   await accessSection.getByLabel('Pilota', { exact: true }).check();
   await page.getByTestId('pilot-access-create').click();
-  await expect(page.getByTestId('toast').filter({ hasText: 'Utente creato' })).toBeVisible();
+  await expect(page.getByTestId('toast').filter({ hasText: 'Accesso creato' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Chiudi' }).first().click();
   return { lastName };
@@ -130,7 +129,7 @@ async function inviteAndSetPassword(page: Page, password: string): Promise<{ ema
   const email = uniqueEmail('invitee');
   const { lastName } = await createPilotWithAccess(page, email);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   await submitSetPassword(page, extractSetPasswordUrl(inviteEmail.Text), password);
 
   return { email, lastName };
@@ -194,13 +193,13 @@ test.describe('User management (Story 1.4)', () => {
     // Unknown email: same neutral confirmation, no distinguishing behavior.
     await page.goto('/it/forgot-password');
     await page.getByLabel('Email').fill('this-account-does-not-exist@airmanager.local');
-    await page.getByRole('button', { name: 'Invia link di reset' }).click();
+    await page.getByRole('button', { name: 'Invia link di reimpostazione' }).click();
     await expect(page.getByTestId('forgot-password-confirmation')).toBeVisible();
 
     // Real email: same confirmation, but a reset email actually arrives.
     await page.goto('/it/forgot-password');
     await page.getByLabel('Email').fill(email);
-    await page.getByRole('button', { name: 'Invia link di reset' }).click();
+    await page.getByRole('button', { name: 'Invia link di reimpostazione' }).click();
     await expect(page.getByTestId('forgot-password-confirmation')).toBeVisible();
 
     const resetEmail = await waitForMailpitMessage(email, 'Reimposta');
@@ -230,9 +229,7 @@ test.describe('User management (Story 1.4)', () => {
 
 /**
  * Suspend/reactivate from the Piloti row (story 12.6, AC 3) — `users.manage`
- * is ADMIN-only (RBAC INVARIANT, D13): staff (`people.manage`/`finance.manage`
- * but no `users.manage`) must see Modifica/Registra but NEVER
- * Sospendi/Riattiva, even on a row with a linked user.
+ * is ADMIN-only (RBAC INVARIANT, D13).
  */
 test.describe('Suspend/reactivate from the Piloti row (Story 12.6)', () => {
   test('admin suspends and reactivates the linked user from the row', async ({ page }) => {
@@ -252,21 +249,5 @@ test.describe('Suspend/reactivate from the Piloti row (Story 12.6)', () => {
     await row.getByTestId(/^pilot-suspend-confirm-/).click();
     await expect(page.getByTestId('toast').filter({ hasText: 'riattivato' })).toBeVisible();
     await expect(row.getByText('Attivo', { exact: true })).toBeVisible();
-  });
-
-  test('staff sees Modifica/Registra but no Sospendi/Riattiva on a row with a linked user', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const { lastName } = await createPilotWithAccess(page, uniqueEmail('pilotaccess'));
-    await page.context().clearCookies();
-
-    await loginExpectingDashboard(page, STAFF_EMAIL);
-    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
-    const row = rowFor(page, lastName);
-    await expect(row).toBeVisible();
-
-    await expect(row.getByRole('button', { name: 'Modifica' })).toBeVisible();
-    await expect(row.getByRole('button', { name: 'Registra' })).toBeVisible();
-    await expect(row.getByRole('button', { name: 'Sospendi' })).toHaveCount(0);
-    await expect(row.getByRole('button', { name: 'Riattiva' })).toHaveCount(0);
   });
 });

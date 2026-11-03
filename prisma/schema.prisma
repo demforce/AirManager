@@ -23,7 +23,6 @@ model AppSetting {
 /// enum only exists so `User.roles` can be populated at login time.
 enum Role {
   ADMIN
-  STAFF
   INSTRUCTOR
   PILOT
   STUDENT
@@ -33,7 +32,7 @@ enum Role {
 /// one unique anagrafica, no duplicates). Story 1.2 introduced the minimal
 /// shape (name + optional email) to attach a display name to an
 /// authenticated user; story 2.1 extends it with the full CRUD fields
-/// (`phone`/`address`/`fiscalCode`) plus archiving.
+/// (`phone`/`address`) plus archiving.
 model Person {
   id         String    @id @default(cuid())
   firstName  String
@@ -41,9 +40,6 @@ model Person {
   email      String?   @unique
   phone      String?
   address    String?
-  /// Italian "codice fiscale" — optional (not every person has one on file
-  /// yet) but unique when present, same nullable-unique pattern as `email`.
-  fiscalCode String?   @unique
   /// Soft-archive timestamp (story 2.1, AC 2): a timestamp rather than a
   /// boolean also records *when* — and there is deliberately no physical
   /// delete API for a `Person` (historical flights/movements must keep
@@ -202,7 +198,7 @@ model InstructorPayout {
 /// pair twice (a duplicate attempt is a 409 at the service layer). Hard
 /// -deleted on removal (Contesto: "hard delete, nessuno storico richiesto dal
 /// PRD") — `assignedByUserId`/`createdAt` are the only audit trail (who/when
-/// assigned it), same tracking pattern as `HourMeterAdjustment.actorUserId`;
+/// assigned it), same tracking pattern as `AircraftRate.actorUserId`;
 /// there is deliberately no "unassigned by/at" pair since the row is simply
 /// gone. FK RESTRICT (Prisma default, no `onDelete` set) — a profile can
 /// never be physically deleted anyway (AD-11's soft-deactivation-only rule),
@@ -227,10 +223,9 @@ model StudentInstructorAssignment {
 /// distinct from `createdAt`: an instructor may log a note days after the
 /// lesson. `flightId` is an OPTIONAL, NON-unique link to a `SCHOOL` flight of
 /// this student (`school.service.ts` validates flightType/personId at write
-/// time) — several notes may reference the same flight, and the flight's own
-/// status is NOT re-validated on read (Contesto: "la nota è cronaca, non
-/// contabilità" — a note stays valid even if the linked flight is later
-/// stornato). `exercises` is mandatory; `assessment`/`nextSteps` are free-text
+/// time) — several notes may reference the same flight (Contesto: "la nota è
+/// cronaca, non contabilità" — a note stays valid even if the linked flight
+/// is later deleted: its `flightId` goes `NULL`, `ON DELETE SET NULL`). `exercises` is mandatory; `assessment`/`nextSteps` are free-text
 /// and optional. Immutable after 7 days from `createdAt` (`school.service.ts`,
 /// AC 3) — enforced in the service, not at the DB level; there is
 /// deliberately no delete endpoint (Contesto: immutability, no history
@@ -268,13 +263,10 @@ enum AircraftStatus {
 /// Aircraft fleet registry (story 2.4, AC 1/2; FR-7). `registration` (marche,
 /// e.g. "I-ABCD") is the unique human-facing identifier — normalized
 /// (`trim().toUpperCase()`) at the Zod boundary so the DB-level uniqueness is
-/// case-insensitive in practice. `hourMeterMinutes` is an integer number of
-/// minutes (AD-2 — the cardinal constraint of this story): the airframe's
-/// total-time contaore is never stored as a float/decimal-hours value: only
-/// this module's `src/lib/time.ts` helpers convert it to/from an `H:MM`
-/// display string. Story 2.5 (AC 2) makes it change ONLY via a tracked
-/// `HourMeterAdjustment` — never through this table's generic update path —
-/// so the audit trail can't be bypassed. `status`/`statusReason` (story 2.5,
+/// case-insensitive in practice. The airframe's hours are not stored here
+/// (story 19.2, R-19-b): wherever shown, they are the sum of its flights'
+/// `minutes` (`aircraft.service.ts#sumFlightMinutesByAircraft`).
+/// `status`/`statusReason` (story 2.5,
 /// AC 1) are the operational flag: `statusReason` is populated only while
 /// `OUT_OF_SERVICE` and cleared on return to service. Rates (`AircraftRate`,
 /// epic 4) are deliberately out of scope here — this model is anagrafica
@@ -283,70 +275,76 @@ enum AircraftStatus {
 /// physical-delete API, since future flights/rates reference the aircraft by
 /// id.
 model Aircraft {
-  id               String         @id @default(cuid())
-  registration     String         @unique
-  type             String
-  model            String
-  hourMeterMinutes Int
-  notes            String?
-  status           AircraftStatus @default(OPERATIONAL)
+  id                String         @id @default(cuid())
+  registration      String         @unique
+  type              String
+  model             String
+  status            AircraftStatus @default(OPERATIONAL)
   /// Mandatory while `status == OUT_OF_SERVICE`; reset to `null` on return to
   /// service (enforced in `aircraft.service.ts`, not at the DB level).
-  statusReason     String?
-  /// Number of seats (story 12.5, AC 1) — anagrafica only, optional (not
-  /// every legacy row has it on record).
-  seats            Int?
-  /// Free-text fuel type (story 12.5, AC 1) — the fleet editor offers a
-  /// closed set of common options (AVGAS 100LL / Jet A-1 / Mogas) but the
-  /// column itself stays plain text, no DB-level enum, so an unusual fuel
-  /// isn't blocked.
-  fuelType         String?
-  /// Whether the aircraft is based at the field vs. a visiting/guest
-  /// airframe (story 12.5, AC 1). Defaults to `true` (matches every
-  /// pre-existing row, all of which are field-based).
-  based            Boolean        @default(true)
-  archivedAt       DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  statusReason      String?
+  /// Expected end of the grounding (story AOG-1a, requirement P3), calendar-only.
+  /// THE SINGLE SOURCE OF THIS FIELD'S SEMANTICS — service, i18n and the
+  /// `AIRCRAFT_OUT_OF_SERVICE` 422 messages all cite this comment, none of them
+  /// re-interprets it:
+  /// (i) SEMANTICS (ratifica R-AOG-a, PO 2026-08-07): the LAST day the aircraft
+  ///     is GROUNDED, INCLUSIVE — the grounding window is `[now, end of the
+  ///     `outOfServiceUntil` day]`, so a booking/flight ON that day is still
+  ///     inside the fermo. UI label: "Fermo fino al {data} compreso".
+  /// (ii) INFORMATIVE (invariant [a]): it NEVER returns the aircraft to service
+  ///     by itself — no job, no cron, no `where` that filters out an "expired"
+  ///     grounding. Only an explicit `returnToService` does, and every guard
+  ///     (bookings, flights) keeps reading `status` alone.
+  /// (iii) SAME LIFE-CYCLE AS `statusReason`: written together with it by
+  ///     `setOutOfService`, reset to `null` by `returnToService` — enforced in
+  ///     `aircraft.service.ts`, not at the DB level.
+  /// (iv) OPTIONAL (invariant [b]): `null` means "return date not yet known" and
+  ///     is a legitimate state, not a missing value to be filled in.
+  outOfServiceUntil DateTime?      @db.Date
+  archivedAt        DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
-  hourMeterAdjustments HourMeterAdjustment[]
   /// Historicized hourly rates (epic 4, story 4.1, AD-4) — see `AircraftRate` doc.
-  rates                AircraftRate[]
+  rates        AircraftRate[]
   /// Package types this aircraft is eligible for (epic 4, story 4.3) — see `PackageTypeAircraft` doc.
-  packageTypes         PackageTypeAircraft[]
+  packageTypes PackageTypeAircraft[]
   /// Flights logged on this airframe (epic 5, story 5.1) — see `Flight` doc.
-  flights              Flight[]
+  flights      Flight[]
   /// Bookings held on this airframe (epic 7, story 7.1) — see `Booking` doc.
-  bookings             Booking[]
+  bookings     Booking[]
 }
 
-/// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). Append-only
-/// (AD-3's spirit): there is deliberately NO update/delete API — a wrong
-/// price is corrected by inserting ANOTHER rate with a later `validFrom`,
-/// the history is never rewritten. The rate in effect for a given date D is
+/// Historicized hourly rate (story 4.1, epic 4; AD-4/AD-2). TWO billed
+/// prices (story 19.3, R-19-e): `studentPriceCents` and `pilotPriceCents`,
+/// both integer euro cents (AD-2) and always > 0 — enforced at the
+/// Zod/service boundary, not a DB constraint. A flight takes the column of
+/// the PROFILE of whoever flies it (`flights.service.ts#resolveFlightInput`)
+/// and freezes it, together with the category it applied
+/// (`Flight.aircraftPriceCategory`). The rate in effect for a given date D is
 /// the row with the MAXIMUM `validFrom <= D` (AD-4) — see
-/// `rates.service.ts#getEffectiveRate`, the hook epic 5's flight snapshot
-/// will call (not implemented here). `priceCentsPerHour` is an integer
-/// number of euro cents (AD-2) and always > 0 — enforced at the Zod/service
-/// boundary, not a DB constraint, same choice as `Aircraft.hourMeterMinutes`.
+/// `rates.service.ts#getEffectiveRate`, read by the flight snapshot.
 /// `validFrom` is calendar-only (`@db.Date`, same convention as
 /// `AccountMovement.effectiveDate`) — a rate takes effect on a whole day,
-/// never at a specific time. `@@unique([aircraftId, validFrom])` backs AC 2:
-/// two rates for the same aircraft on the same day is a 409, not a silent
-/// overwrite.
+/// never at a specific time. Writes (story 19.3, R-19-f): `validFrom` must be
+/// today or later (Europe/Rome calendar, A16 — `RATE_VALID_FROM_IN_PAST`),
+/// and a row whose `validFrom` is today or later is REWRITTEN in place by a
+/// second write on the same day (`@@unique([aircraftId, validFrom])` backs
+/// the upsert, `rates.service.ts#upsertAircraftRateCore`) — a row before
+/// today never changes; today's row can still be rewritten, and a flight
+/// already registered today keeps the price it froze (AD-4: both prices were
+/// legitimate at that instant). The history stays in the DB (and on `GET .../rates` for API
+/// clients); the UI shows only the current rate and the next scheduled one.
 model AircraftRate {
   id                 String   @id @default(cuid())
   aircraftId         String
   aircraft           Aircraft @relation(fields: [aircraftId], references: [id])
-  priceCentsPerHour  Int
-  /// Optional "dry" (fuel-excluded) hourly rate (story 12.5, AC 1) —
-  /// DISPLAY-ONLY: pricing/flight-cost computation (`rates.service.ts#getEffectiveRate`/
-  /// `#getEffectiveRates`, `flights.service.ts`) reads exclusively
-  /// `priceCentsPerHour` ("wet") and never this column.
-  dryHourlyRateCents Int?
+  studentPriceCents  Int
+  pilotPriceCents    Int
   validFrom          DateTime @db.Date
   /// The acting `User.id` (`Actor.userId`, always present) — who recorded
-  /// this rate, same rationale as `HourMeterAdjustment.actorUserId`.
+  /// this rate. Not `personId`: a staff member recording it may have no
+  /// linked `Person`.
   actorUserId        String
   actorUser          User     @relation(fields: [actorUserId], references: [id])
   createdAt          DateTime @default(now())
@@ -356,21 +354,19 @@ model AircraftRate {
 }
 
 /// Historicized hourly rate for an instructor (story 4.2, epic 4; AD-4/AD-2)
-/// — the deliberate twin of `AircraftRate`, same shape and same rules, just
-/// keyed on `instructorProfileId` instead of `aircraftId`. Append-only (AD-3's
-/// spirit): there is deliberately NO update/delete API — a wrong price is
-/// corrected by inserting ANOTHER rate with a later `validFrom`, the history
-/// is never rewritten. The rate in effect for a given date D is the row with
-/// the MAXIMUM `validFrom <= D` (AD-4) — see
-/// `instructor-rates.service.ts#getEffectiveInstructorRate`, the hook epic 5's
-/// flight snapshot will call (not implemented here). `priceCentsPerHour` is an
-/// integer number of euro cents (AD-2) and always > 0 — enforced at the
-/// Zod/service boundary, not a DB constraint, same choice as `AircraftRate`.
-/// `validFrom` is calendar-only (`@db.Date`, same convention as
-/// `AccountMovement.effectiveDate`/`AircraftRate.validFrom`) — a rate takes
-/// effect on a whole day, never at a specific time.
-/// `@@unique([instructorProfileId, validFrom])` backs AC 2: two rates for the
-/// same instructor on the same day is a 409, not a silent overwrite.
+/// — the twin of `AircraftRate`, same rules, keyed on `instructorProfileId`
+/// instead of `aircraftId`, with ONE price. The rate in effect for a given
+/// date D is the row with the MAXIMUM `validFrom <= D` (AD-4) — see
+/// `instructor-rates.service.ts#getEffectiveInstructorRate`, read by the
+/// flight snapshot. `priceCentsPerHour` is an integer number of euro cents
+/// (AD-2) and always > 0 — enforced at the Zod/service boundary, not a DB
+/// constraint, same choice as `AircraftRate`. `validFrom` is calendar-only
+/// (`@db.Date`, same convention as `AircraftRate.validFrom`). Writes (story
+/// 19.3, R-19-f): `validFrom` today or later (Europe/Rome, A16), and a row
+/// whose `validFrom` is today or later is rewritten in place
+/// (`@@unique([instructorProfileId, validFrom])` backs the upsert,
+/// `instructor-rates.service.ts#upsertInstructorRateCore`). The history stays
+/// in the DB, not in the UI.
 model InstructorRate {
   id                  String            @id @default(cuid())
   instructorProfileId String
@@ -385,29 +381,6 @@ model InstructorRate {
 
   @@unique([instructorProfileId, validFrom])
   @@index([instructorProfileId])
-}
-
-/// Append-only audit trail for hour-meter (contaore) corrections (story 2.5,
-/// AC 2; AD-3's spirit — no ledger storno here, a wrong entry is corrected by
-/// another entry, never edited/deleted). Created exclusively inside
-/// `adjustHourMeter`'s single Prisma transaction, alongside the
-/// `Aircraft.hourMeterMinutes` update it audits — there is deliberately no
-/// update/delete API. `previousMinutes`/`newMinutes` are both stored (rather
-/// than just the delta) so the history reads without recomputation.
-model HourMeterAdjustment {
-  id              String   @id @default(cuid())
-  aircraftId      String
-  aircraft        Aircraft @relation(fields: [aircraftId], references: [id])
-  /// The acting `User.id` (`Actor.userId`, always present) — not `personId`:
-  /// a staff member performing the rectification may have no linked `Person`.
-  actorUserId     String
-  actorUser       User     @relation(fields: [actorUserId], references: [id])
-  previousMinutes Int
-  newMinutes      Int
-  reason          String
-  createdAt       DateTime @default(now())
-
-  @@index([aircraftId])
 }
 
 /// Login credentials. 1-to-0/1 with `Person` (AD-11) — not every `Person` has
@@ -441,9 +414,6 @@ model User {
   person       Person? @relation(fields: [personId], references: [id])
 
   authTokens                          AuthToken[]
-  /// Hour-meter rectifications this user performed (story 2.5, AC 2) —
-  /// `HourMeterAdjustment.actorUserId`.
-  hourMeterAdjustments                HourMeterAdjustment[]
   /// Aircraft rates this user recorded (story 4.1) — `AircraftRate.actorUserId`.
   aircraftRates                       AircraftRate[]
   /// Instructor rates this user recorded (story 4.2) — `InstructorRate.actorUserId`.
@@ -464,16 +434,12 @@ model User {
   bookingsCancelled                   Booking[]                     @relation("BookingCancelledBy")
   /// Bookings this user FORCED past a blocking expired document (epic 7, story 7.4, AC 2) — `Booking.forcedByUserId`.
   bookingsForced                      Booking[]                     @relation("BookingForcedBy")
+  /// Flights on which this user derogated the requirements warning (story 19.9, A10) — `Flight.forcedByUserId`.
+  flightsForced                       Flight[]                      @relation("FlightForcedBy")
   /// Bookings this user APPROVED or DENIED (epic 12, story 12.2, AC 3) — `Booking.decidedByUserId`.
   bookingsDecided                     Booking[]                     @relation("BookingDecidedBy")
   /// Bookings this user marked FLOWN or NO_SHOW (epic 12, story 12.2, AC 3) — `Booking.closedByUserId`.
   bookingsClosed                      Booking[]                     @relation("BookingClosedBy")
-  /// PPR requests this user DECIDED — approve or reject (epic 8, story 8.2, AC 1/2) — `PprRequest.decidedByUserId`.
-  pprRequestsDecided                  PprRequest[]                  @relation("PprRequestDecidedBy")
-  /// PPR requests this user CLOSED — completed or cancelled (epic 8, story 8.3, AC 1/2) — `PprRequest.closedByUserId`.
-  pprRequestsClosed                   PprRequest[]                  @relation("PprRequestClosedBy")
-  /// PPR requests this staff/admin user entered manually (epic 12, story 12.4, AC 1) — `PprRequest.createdByUserId`. Empty for every public-form submission.
-  pprRequestsCreated                  PprRequest[]                  @relation("PprRequestCreatedBy")
   /// Scadenze this user registered/last updated (epic 6, story 6.2) — `Expiry.actorUserId`.
   expiriesRecorded                    Expiry[]
   /// Update proposals this user FILED, as the scadenza's titolare (epic 6, story 6.2) — `ExpiryUpdateProposal.proposedByUserId`.
@@ -526,9 +492,9 @@ model AuthToken {
 model LoginAttempt {
   id         String   @id @default(cuid())
   identifier String
-  /// `null` when no `x-forwarded-for` is resolvable (same trust caveat as
-  /// `PprRequest.submitterIp`) — `login-throttle.ts` then falls back to the
-  /// per-identifier check alone rather than skipping the throttle (H5
+  /// `null` when no `x-forwarded-for` is resolvable (trust assumption in
+  /// `client-ip.ts#extractClientIp`) — `login-throttle.ts` then falls back to
+  /// the per-identifier check alone rather than skipping the throttle (H5
   /// lesson: a missing IP must never be a free pass).
   ip         String?
   succeeded  Boolean
@@ -571,19 +537,15 @@ model PasswordResetAttempt {
 /// FR-14/FR-15) is the first REAL debit: `amountCents` is NEGATIVE (aircraft
 /// cost + optional instructor cost) and the balance is allowed to go
 /// negative — see `Flight`'s doc for the snapshot it links to via
-/// `AccountMovement.flightId`. `FLIGHT_CHARGE_REVERSAL` (epic 5, story 5.3;
-/// AD-3 storno) is the opposite-signed movement a flight cancellation or
-/// correction creates: `amountCents` is POSITIVE, equal to the ORIGINAL
-/// `FLIGHT_CHARGE.amountCents` negated (never recalculated, AD-4) — linked to
-/// it via `reversalOfId` (the same self-FK `AccountMovement` already uses for
-/// `ADJUSTMENT`, story 3.3) and to the same `Flight` via `flightId`. Additive
-/// migration only (Dev Notes) — no existing row's `type` ever changes.
+/// `AccountMovement.flightId`. A flight's charge lives and dies with the
+/// flight (story 19.6, R-19-c — AD-3's only exception): editing the flight
+/// rewrites it in place, deleting the flight deletes it, so no reversal type
+/// exists for it (the storno type story 5.3 added was retired with its rows).
 enum AccountMovementType {
   TOP_UP
   ADJUSTMENT
   PACKAGE_PURCHASE
   FLIGHT_CHARGE
-  FLIGHT_CHARGE_REVERSAL
 }
 
 /// How a top-up was paid (story 3.1, AC 2). Only meaningful for `TOP_UP`
@@ -616,12 +578,15 @@ model Account {
 /// AD-3's cardinal rule — this is the model that constraint is named after).
 /// There is deliberately no update/delete API: a wrong entry is corrected by
 /// a future storno movement referencing it via `reversalOfId` (story 3.3),
-/// never by editing/removing this row. `amountCents` is SIGNED (AD-2) — a
+/// never by editing/removing this row. ONE exception (story 19.6, R-19-c,
+/// AD-3 as amended): a `FLIGHT_CHARGE` (the only type linked to a `Flight`)
+/// is updated in place by `flights.service.ts#updateFlight` and deleted by
+/// `deleteFlight`, together with its flight, in the same transaction. `amountCents` is SIGNED (AD-2) — a
 /// top-up is positive; future movement types (debits) will be negative.
 /// `paymentMethod` is only ever set for `TOP_UP` today. `actorUserId` (not
 /// `personId`) records who *performed* the operation — same rationale as
-/// `HourMeterAdjustment.actorUserId` (story 2.5): the staff member recording
-/// a cash top-up is not the account holder.
+/// `AircraftRate.actorUserId`: the staff member recording a cash top-up is
+/// not the account holder.
 model AccountMovement {
   id            String              @id @default(cuid())
   accountId     String
@@ -651,14 +616,18 @@ model AccountMovement {
   /// as `cashMovement`.
   hourPackage  HourPackage?
   /// The `Flight` this movement charges for (epic 5, story 5.1) — present
-  /// only for `FLIGHT_CHARGE` rows. NOT unique: more than one movement can
-  /// reference the same flight in the future (5.3's storno links to the
-  /// same flight via its own `flightId`).
-  flightId     String?
-  flight       Flight?       @relation(fields: [flightId], references: [id])
+  /// only for `FLIGHT_CHARGE` rows. `@unique` (story 19.6, AD-7): exactly one
+  /// charge per flight, guaranteed by the DB. `onDelete: Restrict`: a flight
+  /// cannot be deleted while its charge exists — `deleteFlight` deletes the
+  /// charge first, so no movement is ever orphaned.
+  flightId     String?       @unique
+  flight       Flight?       @relation(fields: [flightId], references: [id], onDelete: Restrict)
 
-  @@index([accountId])
-  @@index([flightId])
+  /// The estratto conto's key (story 19.11, D-3): one account's movements by
+  /// value date, insertion order as tie-break — the order the running balance
+  /// is summed in and the page is read in. The `accountId` prefix also serves
+  /// every per-account lookup the old `@@index([accountId])` did.
+  @@index([accountId, effectiveDate, createdAt, id])
 }
 
 /// Cash-ledger categories (story 3.1; full list assumed seeded per Dev Notes,
@@ -696,9 +665,8 @@ model CashMovement {
   /// the historical rows recorded before this field existed ("non
   /// attribuito", surfaced as a dedicated bucket, reachable/reclassifiable
   /// via `PATCH /api/v1/cash-movements/{id}`, story Billing-2 AC 3). New
-  /// registrations always set it: `recordCashMovement`'s form and
-  /// `completePprRequest`'s landing-fee movement both make it mandatory
-  /// (review Billing-1 F8/D2), `recordTopUp`'s twin inherits it from the
+  /// registrations always set it: `recordCashMovement`'s form makes it
+  /// mandatory (review Billing-1 F8/D2), `recordTopUp`'s twin inherits it from the
   /// `TOP_UP`'s own `paymentMethod`. Backfilled once, in the migration that
   /// added this column, for every "Ricariche" twin from its linked
   /// `AccountMovement.paymentMethod` — every other historical row stays `null`.
@@ -711,14 +679,6 @@ model CashMovement {
   reversalOfId       String?           @unique
   reversalOf         CashMovement?     @relation("CashMovementReversal", fields: [reversalOfId], references: [id])
   reversal           CashMovement?     @relation("CashMovementReversal")
-  /// The `PprRequest` this movement is the landing-fee twin of (epic 8, story
-  /// 8.3, AC 1) — present only for the automatic "PPR" movement
-  /// `completePprRequest` creates when `landingFeeCents > 0`. NOT unique
-  /// (same precedent as `AccountMovement.flightId`, not the
-  /// `accountMovementId @unique` twin pattern above): more than one movement
-  /// could reference the same PPR request in the future (e.g. a storno).
-  pprRequestId       String?
-  pprRequest         PprRequest?       @relation(fields: [pprRequestId], references: [id])
   /// The `InstructorPayout` this movement is the money twin of (story
   /// Billing-1, AC 4) — present only for the automatic "Compensi istruttori"
   /// movement `recordPayout` creates, negative (an uscita). Same
@@ -727,8 +687,6 @@ model CashMovement {
   instructorPayoutId String?           @unique
   instructorPayout   InstructorPayout? @relation(fields: [instructorPayoutId], references: [id])
   createdAt          DateTime          @default(now())
-
-  @@index([pprRequestId])
 }
 
 /// Package-type catalogue (epic 4, story 4.3; FR-12). MUTABLE listino
@@ -739,10 +697,10 @@ model CashMovement {
 /// `AccountMovement` at the moment of purchase (AD-4, the same principle as
 /// the historicized rates) — changing the catalogue afterwards never
 /// rewrites that history. `includedMinutes` is an integer number of minutes
-/// (AD-2 — same cardinal rule as `Aircraft.hourMeterMinutes`), never a
+/// (AD-2 — same cardinal rule as `Flight.minutes`), never a
 /// decimal-hours float. `priceCents` is an integer number of euro cents
 /// (AD-2), always > 0, enforced at the Zod/service boundary (not a DB
-/// constraint, same choice as `AircraftRate.priceCentsPerHour`). The
+/// constraint, same choice as `AircraftRate`'s two prices). The
 /// "effective hourly price" shown in the UI is derived from these two
 /// fields at render time and is NEVER persisted. `validityMonths` is the
 /// optional validity of a sold package, in whole months; `null` means no
@@ -804,12 +762,9 @@ model PackageTypeAircraft {
 /// `paymentMethod` here instead — a closed transaction, payment received
 /// and package delivered cancel out).
 ///
-/// **Residuo is always COMPUTED, never a persisted counter** (AD-3's
-/// "totali sempre SUM" lesson): there is no `remainingMinutes` column.
-/// Story 5.2 (epic 5) wires the consumption model: the residuo is
-/// `includedMinutes - SUM(PackageConsumption.minutes)` (see
-/// `packages.service.ts#computeRemainingMinutes`, the single computation
-/// point).
+/// **No residuo anymore**: consumption against a package was retired by
+/// story 12.13 and its per-flight detail table dropped by story 19.6 — this
+/// row is a historical record of a sale.
 ///
 /// **Snapshot at sale time** (AD-4, same principle as the historicized
 /// rates): `includedMinutes`/`pricePaidCents` are copied from the
@@ -856,46 +811,39 @@ model HourPackage {
   actorUser         User            @relation(fields: [actorUserId], references: [id])
   createdAt         DateTime        @default(now())
 
-  /// Per-flight consumption rows against THIS package (epic 5, story 5.2,
-  /// AD-6) — see `PackageConsumption` doc. The residuo is `includedMinutes -
-  /// SUM(consumptions.minutes)`, always computed (never a persisted
-  /// counter).
-  consumptions PackageConsumption[]
-
   @@index([personId])
   @@index([packageTypeId])
 }
 
 /// A logged flight's purpose (epic 5, story 5.1; renamed to the real-world
-/// taxonomy in story 9.4). `TOURISM` is a tourism/private flight, `SCHOOL`
-/// is a training flight WITH an instructor (epic 9 sums school hours per
-/// instructor off this), `AERIAL_WORK` covers everything else (aerial
-/// work). `SCHOOL` mandates an instructor (422
-/// `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`); an instructor is also allowed
-/// (never required) on `TOURISM`/`AERIAL_WORK` (e.g. a checkride) and
+/// taxonomy in story 9.4; two values only since story 19.5, which folded the
+/// never-used third type into `TOURISM`). `TOURISM` is a tourism/private
+/// flight, `SCHOOL` is a training flight WITH an instructor (epic 9 sums
+/// school hours per instructor off this). `SCHOOL` mandates an instructor
+/// (422 `SCHOOL_FLIGHT_REQUIRES_INSTRUCTOR`); an instructor is also allowed
+/// (never required) on `TOURISM` (e.g. a checkride, CR 2026-11-01 A5) and
 /// always generates their own charge either way. See `Flight.isSolo` for
 /// the dual/solo distinction within `SCHOOL`.
 enum FlightType {
   TOURISM
   SCHOOL
-  AERIAL_WORK
 }
 
-/// A logged flight's lifecycle state (epic 5, story 5.1). Story 5.1 never
-/// produces `CANCELLED` (that is story 5.3's storno/cancellation) — the
-/// column and enum exist from the start because story 5.4's flight registry
-/// filters by status, and adding it as a later additive enum migration would
-/// be more fragile than having it from day one.
-enum FlightStatus {
-  REGISTERED
-  CANCELLED
+/// Which of the aircraft rate's two prices a flight was charged (story 19.3,
+/// R-19-e): the column of the flying person's PROFILE — an active student
+/// profile with no active pilot profile → `STUDENT`, otherwise `PILOT`
+/// (a pilot on a `SCHOOL` flight still pays the pilot price). Frozen on the
+/// flight next to the price it selected (`Flight.aircraftPriceCategory`).
+enum AircraftPriceCategory {
+  STUDENT
+  PILOT
 }
 
 /// A registered flight (epic 5, story 5.1; FR-9/FR-14/FR-15) — the model
 /// that, in ONE transaction (`flights.service.ts#registerFlight`), both
 /// produces the `FLIGHT_CHARGE` `AccountMovement` (linked via
-/// `AccountMovement.flightId`) and advances `Aircraft.hourMeterMinutes`
-/// (FR-9). `personId` is who flew/pays (AD-11: always the `Person`, never a
+/// `AccountMovement.flightId`) and records the airframe's hours (an
+/// aircraft's total is the sum of its flights' `minutes`, story 19.2 R-19-b). `personId` is who flew/pays (AD-11: always the `Person`, never a
 /// profile) — a pilot OR student profile must be active on this person at
 /// registration time. `instructorProfileId` is the instructor aboard, when
 /// any (the ERD keys it on `InstructorProfile`, while the API accepts a
@@ -908,38 +856,24 @@ enum FlightStatus {
 /// `aircraftAmountCents` (and, when there is an instructor,
 /// `instructorRateCentsPerHour`/`instructorAmountCents`) capture the rate in
 /// effect at `flightDate` at registration time — a later change to the rate
-/// history never rewrites an already-registered flight. There is
+/// history never rewrites an already-registered flight. Since story 19.3 the
+/// aircraft rate has two prices: `aircraftRateCentsPerHour` is the one
+/// APPLIED, `aircraftPriceCategory` says which column it came from (the
+/// person's profile at registration; a correction that keeps the person
+/// keeps the category, Q-19.3-b). There is
 /// deliberately NO persisted total: the total lives on the linked
 /// `AccountMovement.amountCents` (negative); the UI/DTO computes it from the
 /// two per-component amounts (`flights.service.ts#FlightListItem`).
 ///
-/// **`minutes` is always populated** (AD-2), either given directly or
-/// derived as `hourMeterEnd - hourMeterStart`. `hourMeterStart`/`hourMeterEnd`
-/// (both present or both absent) are OBSERVATIONS recorded on this flight —
-/// NOT a `SET` of `Aircraft.hourMeterMinutes`, which instead always
-/// increments by `minutes` (`+=`), the same way flights registered
-/// out-of-order or on top of a prior manual `HourMeterAdjustment` remain
-/// correct. No `HourMeterAdjustment` row is ever created for this advance —
-/// that table stays reserved for motivated manual rectifications; the
-/// flight itself is the audit trail of the advance.
+/// **`minutes` is always populated** (AD-2) — derived from
+/// `takeoffAt`/`landingAt` since story 11.1 (see the logbook fields below).
 ///
-/// Package consumption (story 5.2, see `packageCoveredMinutes` and
-/// `PackageConsumption` below) is wired here; storno/cancellation and
-/// correction (epic 5, story 5.3; FR-16) extend the lifecycle further:
-/// **`REGISTERED` -> `CANCELLED`** is the only transition, driven by
-/// `cancelFlight`/`correctFlight` (`flights.service.ts`) — a flight is NEVER
-/// physically deleted, and there is deliberately no edit-in-place API: every
-/// "modifica" is storno (of this row) + a brand-new `Flight` row. `cancelledAt`/
-/// `cancelReason` are populated together, exactly once, the moment this
-/// happens (`cancelReason` is the mandatory motivo, same convention as
-/// `HourMeterAdjustment.reason`) — the linked `FLIGHT_CHARGE_REVERSAL`
-/// movement (via `AccountMovement.flightId`, story 5.3) is the money-side
-/// half of the same storno. **Correction is a CHAIN, not an edit**:
-/// `correctionOfId` (self-FK, `@unique` — at most one direct correction per
-/// flight) points this (NEW) flight at the ORIGINAL (now `CANCELLED`) one it
-/// replaces; the inverse `correctedBy` relation lets the ORIGINAL flight
-/// answer "what replaced me". A correction of a correction is a fresh row
-/// pointing at the already-corrected flight — the chain is never collapsed.
+/// **Edited in place, deleted with its charge** (story 19.6, R-19-c — the
+/// exception AD-3 makes for the `FLIGHT_CHARGE`): every existing row is a
+/// flight that happened. `flights.service.ts#updateFlight` rewrites this row
+/// AND its charge (`charge`, same movement id) in one transaction;
+/// `deleteFlight` deletes the charge, then this row. There is no lifecycle
+/// state, no cancellation and no correction chain anymore.
 model Flight {
   id                  String             @id @default(cuid())
   aircraftId          String
@@ -950,9 +884,9 @@ model Flight {
   instructorProfile   InstructorProfile? @relation(fields: [instructorProfileId], references: [id])
 
   /// Calendar-only date of the flight (`@db.Date`) — never in the future
-  /// (enforced in the service against the server-clock UTC "today").
-  flightDate     DateTime     @db.Date
-  flightType     FlightType
+  /// (enforced in the service against the Europe/Rome calendar "today", story 16.1).
+  flightDate DateTime   @db.Date
+  flightType FlightType
   /// Dual/solo distinction on `SCHOOL` flights (story 9.4) — only
   /// meaningful when `flightType == SCHOOL` (422 `SOLO_REQUIRES_SCHOOL`
   /// otherwise). A solo flight still carries (and bills) the instructor —
@@ -961,29 +895,14 @@ model Flight {
   /// stories will read it from here. `@default(false)`: pre-9.4 history
   /// becomes all-dual, the correct assumption since solos were not
   /// representable before.
-  isSolo         Boolean      @default(false)
-  status         FlightStatus @default(REGISTERED)
-  /// Set together with `cancelReason`, exactly once, when this flight
-  /// transitions to `CANCELLED` (story 5.3) — `null` while `REGISTERED`.
-  cancelledAt    DateTime?
-  /// The mandatory motivo behind the cancellation/correction (story 5.3,
-  /// AC 1/2) — `null` while `REGISTERED`. The ACTOR who cancelled is tracked
-  /// on the linked `FLIGHT_CHARGE_REVERSAL` movement's `actorUserId`, not
-  /// here (same split as every other ledger entry).
-  cancelReason   String?
-  /// Self-FK (story 5.3): set on a NEW flight that replaces an ANNULLATO one
-  /// via `correctFlight` — points at the ORIGINAL flight. `@unique`: at most
-  /// one direct correction per flight (a correction of a correction is a new
-  /// row pointing at the already-corrected one — the chain is never
-  /// collapsed/rewritten). `null` for a flight that is not itself a
-  /// correction (every `registerFlight`-created row, and any flight that was
-  /// only cancelled, never corrected).
-  correctionOfId String?      @unique
-  correctionOf   Flight?      @relation("FlightCorrection", fields: [correctionOfId], references: [id])
-  /// Inverse of `correctionOf` — the NEW flight that replaced THIS one, when
-  /// any (`null` otherwise). Lets a `CANCELLED` flight answer "what replaced
-  /// me" without a separate query.
-  correctedBy    Flight?      @relation("FlightCorrection")
+  isSolo     Boolean    @default(false)
+  /// "Senza addebito" (story 19.6, R-19-d — admin-only, `flights.manage`):
+  /// the flight is not charged — both amounts and the `FLIGHT_CHARGE` are 0,
+  /// the charge's description starts with "Volo senza addebito" — while the
+  /// instructor's compensation still accrues (it reads `minutes`, never the
+  /// amounts). The rates are still REQUIRED and frozen on the row as
+  /// information (Q-19.6-a = B). The balance check it skips is story 19.9's.
+  noCharge   Boolean    @default(false)
 
   /// Logbook fields (story 11.1, FR-43) — the real departure/arrival
   /// airports and takeoff/landing clock instants a flight actually
@@ -997,58 +916,61 @@ model Flight {
   takeoffAt         DateTime?
   landingAt         DateTime?
 
-  minutes        Int
-  /// Informational only since story 11.1 — `minutes` is ALWAYS derived from
-  /// `takeoffAt`/`landingAt`, never from this pair. Still validated as a
-  /// self-consistent pair when given (422 `HOUR_METER_INVALID` if
-  /// incomplete or `hourMeterEnd <= hourMeterStart`) — its own difference
-  /// may legitimately diverge from `minutes` (engine time vs block time).
-  hourMeterStart Int?
-  hourMeterEnd   Int?
+  minutes  Int
   /// Story 11.1: `takeoffs` mirrors `landings` — both NOT NULL DEFAULT 1
   /// (every flight has at least one of each; historical `landings`
   /// backfilled NULL -> 1, `takeoffs` is a brand-new column so no backfill
   /// is needed).
-  takeoffs       Int     @default(1)
-  landings       Int     @default(1)
-  notes          String?
+  takeoffs Int @default(1)
+  landings Int @default(1)
 
   aircraftRateCentsPerHour   Int
+  /// The column of the aircraft rate `aircraftRateCentsPerHour` was taken
+  /// from (story 19.3, AD-4) — see `AircraftPriceCategory`.
+  aircraftPriceCategory      AircraftPriceCategory
   /// Snapshot (AD-4) of the amount ACTUALLY CHARGED for the aircraft
   /// component (story 5.2): pro-rata on `minutes - packageCoveredMinutes`,
   /// never on the full flight duration once a package covered part of it.
+  /// `0` on a `noCharge` flight (story 19.6).
   aircraftAmountCents        Int
   instructorRateCentsPerHour Int?
   /// Never reduced by package consumption (AD-6: the instructor is NEVER
   /// covered by a package) — always `round(rate * minutes / 60)` on the
-  /// FULL flight duration.
+  /// FULL flight duration, `0` (never `null`: the flight still has an
+  /// instructor) on a `noCharge` flight (story 19.6).
   instructorAmountCents      Int?
-  /// Snapshot total of minutes covered by package consumption (story 5.2,
-  /// AD-4/AD-6) — `default 0` is correct for every flight registered before
-  /// this story existed. The per-package detail lives on
-  /// `packageConsumptions`; this column is the SUM of those rows' `minutes`
-  /// at the moment the flight was registered, never recomputed later.
-  packageCoveredMinutes      Int  @default(0)
+  /// Historical snapshot of the minutes package consumption covered (story
+  /// 5.2) — consumption was retired by story 12.13 and its per-package detail
+  /// table dropped by story 19.6; `0` on every flight registered since.
+  packageCoveredMinutes      Int                   @default(0)
 
   /// Who recorded this flight (`Actor.userId`, always present) — same
   /// rationale as every other ledger's `actorUserId`.
   actorUserId String
   actorUser   User   @relation(fields: [actorUserId], references: [id])
 
+  /// Silent stamp of a deroga (story 19.9, A10): `forcedAt`/`forcedByUserId`
+  /// are set TOGETHER, only when `resolveFlightInput` derogated at least one
+  /// requirement (`REQUIREMENTS_NOT_MET`) with `force: true` and the
+  /// `requirements.force` permission; `null` on every normal flight,
+  /// INCLUDING a `force: true` request that had nothing to derogate — same
+  /// "scavalcato un blocco, non spuntata una checkbox" convention as
+  /// `Booking.forcedAt` (story 7.4). Never shown in the UI (it stays in the
+  /// DTO as API data). An edit overwrites it only when the edit itself
+  /// derogates.
+  forcedAt       DateTime?
+  forcedByUserId String?
+  forcedByUser   User?     @relation("FlightForcedBy", fields: [forcedByUserId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// The `FLIGHT_CHARGE` movement AND, once cancelled/corrected (story 5.3),
-  /// its `FLIGHT_CHARGE_REVERSAL` twin — both linked to THIS flight via
-  /// `AccountMovement.flightId` — plural since day one (story 5.1) for
-  /// exactly this reason.
-  movements           AccountMovement[]
-  /// Per-package consumption detail for this flight (story 5.2) — see
-  /// `PackageConsumption` doc. Empty when no eligible package existed at
-  /// registration time (the pre-5.2 case: `packageCoveredMinutes == 0`).
-  packageConsumptions PackageConsumption[]
+  /// The flight's `FLIGHT_CHARGE` movement (story 19.6, AD-7: one per flight,
+  /// `AccountMovement.flightId @unique`) — always present, `0` on a
+  /// `noCharge` flight.
+  charge        AccountMovement?
   /// Training diary entries that link to THIS flight (epic 9, story 9.2) — see `TrainingNote` doc. Several notes may reference the same flight.
-  trainingNotes       TrainingNote[]
+  trainingNotes TrainingNote[]
 
   @@index([aircraftId])
   @@index([personId])
@@ -1069,16 +991,33 @@ model Flight {
 /// the same aircraft where one ends exactly when the other starts are NOT
 /// overlapping — `startsAt`/`endsAt` are full instants (`DateTime`
 /// timestamptz), the first datetime fields in this codebase (wire format
-/// ISO 8601 UTC, AD-8). The concurrency guard against a double booking on
-/// the same aircraft (AC 2) is a `FOR UPDATE` lock on the `Aircraft` row
-/// inside `prisma.$transaction` (`bookings.service.ts#createBooking`, the
-/// exact pattern of `flights.service.ts#registerFlight`) — deliberately NOT
-/// a Postgres exclusion constraint (`btree_gist`): the lock already makes
-/// the pre-check-overlap + insert airtight, and story 7.3 reuses the same
-/// discipline (multi-aircraft lock) for a booking MOVE.
+/// ISO 8601 UTC, AD-8). The overlap invariant has THREE subjects since
+/// story 16.3 (ops F2): the aircraft, the person and the instructor — none
+/// of them may hold two APPROVED bookings over overlapping intervals (409
+/// `CONFLICT` / `PERSON_BUSY` / `INSTRUCTOR_BUSY`,
+/// `bookings.service.ts#findBookingConflict`). Since story 19.10 (R-19-o) a
+/// person is one human in either ROLE: the person of one booking and the
+/// instructor of another (the holder of its `instructorProfileId`) may not
+/// overlap either. The concurrency guard is a row lock per subject inside
+/// `prisma.$transaction`, in one global order on every write path — the
+/// `Booking` row being written `FOR UPDATE` (a move or a transition; review
+/// 16.3 MAJOR-2) → `Aircraft` `FOR UPDATE` (the exact pattern of
+/// `flights.service.ts#registerFlight`; story 7.3 locks N of them
+/// `ORDER BY id` for a MOVE) → `Person` (the booking's person and the
+/// instructor's own person, one or two rows `ORDER BY id`, `FOR NO KEY
+/// UPDATE` so that no foreign-key check elsewhere ever waits on them —
+/// `bookings.service.ts#lockBookingPeople`) — which makes the
+/// pre-check-overlap + write airtight.
+/// Deliberately NOT a Postgres exclusion constraint (`btree_gist`), a choice
+/// first made with one subject and RE-EVALUATED with three in story 16.3:
+/// it would take three partial constraints on `status = 'APPROVED'` (raw
+/// migration + extension) that the load DB already violates (18 person + 11
+/// instructor pairs measured), its `23P01` would have to be told apart by
+/// constraint NAME to pick the 409 code, and it would not remove the
+/// `Aircraft` lock, which also guards the aircraft's STATE read. If the DB is
+/// ever to become the arbiter, this is where to reopen the question.
 ///
-/// **Soft-cancel, never delete** (story 7.3, same `FlightStatus` pattern as
-/// `Flight`): cancelling flips `status` to `CANCELLED`
+/// **Soft-cancel, never delete** (story 7.3): cancelling flips `status` to `CANCELLED`
 /// (`cancelledAt`/`cancelledByUserId` set together, `updateBooking`/
 /// `cancelBooking` in `bookings.service.ts`) and FREES the slot — every
 /// overlap predicate (create/edit/approve) filters `status: 'APPROVED'`
@@ -1095,7 +1034,7 @@ model Flight {
 /// always stamps it explicitly, this field's own `@default` is schema
 /// coherence only. `bookings.service.ts#transitionBooking` (staff-only,
 /// `bookings.manage.any`) moves it through the rest of the matrix: `PENDING
-/// -> APPROVED` (re-runs the create-time expiry/overlap/aircraft-state
+/// -> APPROVED` (re-runs the create-time requirements/overlap/aircraft-state
 /// checks, stamps `decidedAt`/`decidedByUserId`) or `PENDING -> DENIED`
 /// (`denyReason` mandatory, stamps `decidedAt`/`decidedByUserId`, fires a
 /// best-effort email to the booking-holder); `APPROVED -> FLOWN | NO_SHOW`
@@ -1105,15 +1044,16 @@ model Flight {
 /// bookings may legitimately coexist on the same aircraft/interval, the
 /// conflict surfacing only when one of them is approved.
 ///
-/// **Expiry-based creation block (epic 7, story 7.4; FR-21)**: `createBooking`
-/// blocks a NEW booking (422 `EXPIRED_DOCUMENTS`) when the TARGET person
-/// (`personId`) has a registered `Expiry` past its `expiresAt` on the
-/// FLIGHT DAY (`startsAt`'s date in `APP_TIMEZONE`, not "today") whose
-/// `ExpiryType.blocksBooking` is `true`; a non-blocking expired document is
-/// only a `warnings` entry in the creation response, never persisted here.
-/// Staff (`bookings.manage.any`) may bypass a real block with `force` +
-/// `forceReason`, stamping `forcedAt`/`forcedByUserId`/`forceReason` — see
-/// those fields' own doc-comments and `bookings.service.ts#createBooking`.
+/// **Requirements (story 19.10, CR §4.4; was the story 7.4 expiry block)**:
+/// creating, moving and approving a booking judge the four requirements of
+/// a flight (`requirements.service.ts#evaluateRequirements`: documents and
+/// membership fee of the person and the instructor, currency of a booking
+/// without an instructor, balance against the estimated cost) — any failure
+/// is ONE 422 `REQUIREMENTS_NOT_MET` that only an admin
+/// (`requirements.force`) may derogate with `force: true`, no motivo. A
+/// non-blocking expired rating is only a `warnings` entry in the creation
+/// response, never persisted here. See `forcedAt`'s doc-comment and
+/// `bookings.service.ts`.
 model Booking {
   id                  String             @id @default(cuid())
   aircraftId          String
@@ -1139,19 +1079,18 @@ model Booking {
   updatedByUserId   String?
   updatedByUser     User?         @relation("BookingUpdatedBy", fields: [updatedByUserId], references: [id])
 
-  /// Staff force-bypass tracking (epic 7, story 7.4, AC 2) — set TOGETHER,
-  /// exactly once, ONLY when `createBooking` actually bypassed a blocking
-  /// expired document (`bookings.manage.any` + `force: true` +
-  /// `forceReason`); `null` on every normal booking, INCLUDING a
-  /// `force: true` request that had nothing to bypass (Contesto: the
-  /// tracking says "scavalcato un blocco", not "spuntato una checkbox").
-  /// Never touched by `updateBooking`/`cancelBooking` — the force decision
-  /// is a creation-time fact, not re-evaluated on edit (see `createBooking`'s
-  /// doc-comment for the deferred re-check rationale).
+  /// The admin's deroga (story 7.4; since story 19.10 on every write path,
+  /// R-19-h, A10) — set TOGETHER by the create, move or approval that
+  /// actually derogated at least one failed requirement (`force: true`, held
+  /// by `requirements.force`); `null` on every normal booking, INCLUDING a
+  /// `force: true` request that had nothing to derogate (the stamp says
+  /// "scavalcato un requisito", not "spuntata una checkbox"). Overwritten
+  /// only by a later deroga, NEVER cleared (neither by an edit without a
+  /// deroga nor by "riapri"): it is the one trace of a past deroga. A silent
+  /// stamp: in the API item, never shown by the UI, and no motivo.
   forcedAt       DateTime?
   forcedByUserId String?
   forcedByUser   User?     @relation("BookingForcedBy", fields: [forcedByUserId], references: [id])
-  forceReason    String?
 
   /// Approval-workflow decision tracking (story 12.2, AC 3): set TOGETHER
   /// on `PENDING -> APPROVED` and `PENDING -> DENIED`; ALL reset to `null`
@@ -1178,12 +1117,17 @@ model Booking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  /// Backs both the overlap scan (`aircraftId` + range on `startsAt`) and
-  /// the calendar view (story 7.2). No separate `@@index([status])`:
-  /// every query already filters on `aircraftId`/`startsAt` (this index) or
-  /// scans the whole (small) active set — `status` alone would not narrow
-  /// either access path enough to earn its own index (doc-comment per
-  /// story 7.3's Task 1, deliberately omitted).
+  /// Backs both the AIRCRAFT overlap scan (`aircraftId` + range on
+  /// `startsAt`) and the calendar view (story 7.2). The PERSON and
+  /// INSTRUCTOR overlap scans (story 16.3) are served by the two plain
+  /// indexes below — measured on the 40 000-booking load DB: a bitmap index
+  /// scan on `Booking_personId_idx`, 0.17 ms, at most 25 bookings per person
+  /// and 31 per instructor — so neither needed a composite index. No
+  /// separate `@@index([status])`: every query already filters on
+  /// `aircraftId`/`startsAt`, `personId` or `instructorProfileId`, or scans
+  /// the whole (small) active set — `status` alone would not narrow any
+  /// access path enough to earn its own index (doc-comment per story 7.3's
+  /// Task 1, deliberately omitted).
   @@index([aircraftId, startsAt])
   @@index([personId])
   @@index([instructorProfileId])
@@ -1208,43 +1152,17 @@ enum BookingStatus {
   CANCELLED
 }
 
-/// Per-flight package consumption ledger row (epic 5, story 5.2; AD-6). One
-/// row per (flight, package) pair that the FIFO allocation actually touched
-/// — `@@unique([flightId, hourPackageId])` guarantees a flight consumes a
-/// given package AT MOST ONCE. `minutes` is always a positive integer
-/// (AD-2): a package whose FIFO allocation would `take` 0 minutes never gets
-/// a row here — see `flights.service.ts#registerFlightCore`'s allocation
-/// loop. Append-only FOREVER, including after story 5.3: a cancelled
-/// flight's rows are NEVER updated/deleted — the "reversal" of consumption
-/// is achieved WITHOUT touching this table at all, by changing what every
-/// reader's SUM counts: every consumed-so-far aggregate in the codebase
-/// (`registerFlightCore`'s own allocation query, `packages.service.ts#listPersonPackages`)
-/// filters `flight: { status: { not: 'CANCELLED' } }`, so a cancelled
-/// flight's consumption simply stops counting against its packages' residuo
-/// — the historical row stays exactly as it was. FK RESTRICT on both
-/// `flightId`/`hourPackageId` (Prisma default for a required relation) —
-/// neither row this references can be deleted out from under it (moot
-/// today, nothing deletes a Flight/HourPackage, but the backstop is free).
-model PackageConsumption {
-  id            String      @id @default(cuid())
-  flightId      String
-  flight        Flight      @relation(fields: [flightId], references: [id])
-  hourPackageId String
-  hourPackage   HourPackage @relation(fields: [hourPackageId], references: [id])
-  /// Minutes taken from `hourPackage`'s residuo for this flight — always > 0.
-  minutes       Int
-  createdAt     DateTime    @default(now())
-
-  @@unique([flightId, hourPackageId])
-  @@index([hourPackageId])
-}
-
 /// Expiry-type "ambito" (epic 6, story 6.1; FR-35) — who a given expiry type
 /// is meant for. `ALL` matches any person; every other value matches a
 /// person with the corresponding profile currently active. The
 /// scope↔person compatibility CHECK is deliberately NOT implemented here —
 /// it belongs to `Expiry` registration (story 6.2, its own AC); here scope
 /// is only an attribute shown/managed on the catalogue entry.
+///
+/// Story 19.7a (R-19-j, D-3): a scope is meaningful for a RATING only. A
+/// MEDICAL type is ALWAYS `ALL` (any valid visit of any class covers whoever
+/// is on board) and the MEMBERSHIP type is `ALL` too — an invariant kept by
+/// the migration and by `expiry-types.service.ts`, never a nullable column.
 enum ExpiryScope {
   PILOTS
   STUDENTS
@@ -1252,16 +1170,23 @@ enum ExpiryScope {
   ALL
 }
 
-/// Rating vs medical-visit split (story 13.1, R-13.1-a) — a SEPARATE axis
-/// from `ExpiryScope` (who it's for): `kind` is WHAT it is. Medical visits
-/// were seeded as plain `ExpiryType` rows indistinguishable from a rating
-/// (`schema.prisma` pre-13.1 comment); this enum lets Impostazioni show them
-/// in a dedicated "Visite mediche" card instead of alongside abilitazioni,
-/// with zero change to how a registered `Expiry` behaves (same table, same
-/// `blocksBooking`/derived-status logic either way).
+/// What an expiry type IS (story 13.1, R-13.1-a) — a SEPARATE axis from
+/// `ExpiryScope` (who it's for). Three values since story 19.7a:
+/// - `RATING`: an abilitazione; blocks bookings/flights only when its own
+///   `blocksBooking` says so, per type and per applicable scope.
+/// - `MEDICAL`: a medical visit. No scope and no per-type blocking (R-19-j,
+///   D-3/D-4): whoever is on board needs ONE valid visit of ANY class, as
+///   long as at least one MEDICAL type is active
+///   (`src/lib/medical-requirement.ts`).
+/// - `MEMBERSHIP`: the "Quota associativa" (R-19-k, D-1) — a SYSTEM type,
+///   exactly one row, upserted by name by `membership.service.ts`; no API
+///   creates, edits or deletes it (`expiry-types.service.ts`), and it never
+///   enters a per-type blocking scan.
+/// A registered `Expiry` is the same row whatever the kind.
 enum ExpiryTypeKind {
   RATING
   MEDICAL
+  MEMBERSHIP
 }
 
 /// Expiry-type catalogue (epic 6, story 6.1; FR-35). MUTABLE catalogue
@@ -1275,11 +1200,14 @@ enum ExpiryTypeKind {
 /// `PackageType` → `HourPackage`, story 4.3 → 4.4).
 ///
 /// Deliberately NO `isSystem` flag: the standard types seeded here (visita
-/// medica classe 1/2/LAPL, licenza, rating SEP, inglese ICAO) are plain
-/// rows — the admin can rename them, change their scope, deactivate them
-/// and (while still unused) delete them exactly like a custom type. The
-/// seed is idempotent (`update: {}`), so a re-seed never overwrites an
-/// admin's customization.
+/// medica classe 1/2/LAPL, rating SEP, inglese ICAO) are plain rows — the
+/// admin can rename them, deactivate them and (while still unused) delete
+/// them exactly like a custom type (a medical visit keeps `scope = ALL`,
+/// story 19.7a D-3). The one exception is the `MEMBERSHIP` kind (see
+/// `ExpiryTypeKind`), recognised by its kind, not by a flag. "Licenza" is no
+/// longer an expiry type (story 19.7a, R-19-k): the licence stays the
+/// informative `PilotProfile.licenseType`. The seed is idempotent
+/// (`update: {}`), so a re-seed never overwrites an admin's customization.
 ///
 /// Editing a type already IN USE is legal: a registered `Expiry` (story
 /// 6.2) references this row by id and never snapshots the name, so a
@@ -1290,21 +1218,31 @@ model ExpiryType {
   id             String         @id @default(cuid())
   name           String         @unique
   scope          ExpiryScope
-  /// RATING vs MEDICAL (story 13.1, R-13.1-a). Defaults `RATING` — every
-  /// existing type keeps behaving as an abilitazione unless the migration's
-  /// data-backfill (or an admin, going forward, via the dedicated card)
-  /// marks it MEDICAL.
+  /// RATING / MEDICAL / MEMBERSHIP (story 13.1, R-13.1-a; story 19.7a).
+  /// Defaults `RATING` — every existing type keeps behaving as an
+  /// abilitazione unless the migration's data-backfill (or an admin, going
+  /// forward, via the dedicated card) marks it MEDICAL.
   kind           ExpiryTypeKind @default(RATING)
   isActive       Boolean        @default(true)
+  /// Read for `kind = RATING` ONLY (story 19.7a, AD-3): a MEDICAL type always
+  /// carries `true` (invariant, D-3) but the medical requirement is the
+  /// "one valid visit of any class" rule, never a per-type scan; the
+  /// MEMBERSHIP type carries `false` and never blocks per type.
+  ///
   /// Whether an EXPIRED `Expiry` of this type blocks a NEW booking (epic 7,
-  /// story 7.4; FR-21 `[ASSUMPTION]`: medica/licenza block, ratings only
-  /// warn). Default `false` (a new/custom type never blocks until an admin
-  /// opts it in, `settings.manage`, `types-manager.tsx`'s checkbox) — the
-  /// migration backfills `true` on the 4 standard blocking types by exact
-  /// seed name (`prisma/migrations/20260709120000_add_booking_expiry_block`).
-  /// Consumed ONLY by `bookings.service.ts#createBooking` — see that
-  /// function's doc-comment for the flight-day comparison and force/warning
-  /// semantics.
+  /// story 7.4; FR-21 `[ASSUMPTION]`) AND a NEW flight registration/edit
+  /// (epic 14, story 14.4, AC 1; ratifica R4) — the SAME flag gates both, deliberately not
+  /// renamed/split (story 14.4's own AC 1 left the rename optional; the
+  /// field's semantics — "an expired document of this type blocks the
+  /// operation" — already generalize without one). Default `false` (a
+  /// new/custom type never blocks until an admin opts it in, `settings.manage`,
+  /// `types-manager.tsx`'s checkbox) — the migration backfills `true` on the
+  /// 4 standard blocking types by exact seed name
+  /// (`prisma/migrations/20260709120000_add_booking_expiry_block`). Consumed
+  /// by `requirements.service.ts#evaluateRequirements` — shared by the
+  /// flights (story 19.9) and the bookings (story 19.10) — see its
+  /// doc-comment for the flight-day comparison and the deroga; a
+  /// non-blocking expired rating is only a booking's `warnings` entry.
   blocksBooking  Boolean        @default(false)
   /// Validity window in months, used to PRECOMPILE `Expiry.expiresAt` at
   /// registration time (story 12.11, ratifica utente 2) — `null`/`0` means
@@ -1463,7 +1401,7 @@ model SentAlert {
 /// `decidedByUserId`/`decidedAt` are set TOGETHER, exactly once, by
 /// `decideExpiryProposal` (APPROVE or REJECT) — both `null` while PENDING,
 /// same "set together exactly once" convention as
-/// `Flight.cancelledAt`/`cancelReason`.
+/// `Booking.cancelledAt`/`cancelledByUserId`.
 model ExpiryUpdateProposal {
   id                String               @id @default(cuid())
   expiryId          String
@@ -1502,7 +1440,7 @@ model ExpiryUpdateProposal {
 /// `IDEMPOTENCY_IN_PROGRESS`, never a stale/partial replay. Both fields (plus
 /// `completedAt`) are set TOGETHER, exactly once, immediately after `handle`
 /// succeeds — same "set together exactly once" convention as
-/// `Flight.cancelledAt`/`cancelReason`. A request that FAILS (any `DomainError`
+/// `Booking.cancelledAt`/`cancelledByUserId`. A request that FAILS (any `DomainError`
 /// or unknown error) DELETES its row instead, so the key is immediately
 /// reusable (AC 4) — the user corrects the input and retries with the same
 /// key without ever being stuck.
@@ -1548,181 +1486,4 @@ model IdempotencyRecord {
   completedAt        DateTime?
 
   @@unique([userId, endpoint, key])
-}
-
-/// Lifecycle of a public PPR (prior permission to land) request (epic 8,
-/// story 8.1; FR-22). Declared COMPLETE from this story on (story 8.1 only
-/// ever sets `PENDING`) rather than growing across 8.2/8.3, to avoid a
-/// repeated enum-alter migration each story: `APPROVED`/`REJECTED` arrive
-/// with the staff decision queue (story 8.2), `COMPLETED` when the flight
-/// itself is closed out and `CANCELLED` for a withdrawn/no-show request
-/// (both story 8.3) — these later transitions are out of THIS story's
-/// scope, only the shape is reserved now.
-enum PprStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  COMPLETED
-  CANCELLED
-}
-
-/// A public PPR request submitted through the unauthenticated `/[locale]/ppr`
-/// form (epic 8, story 8.1; FR-22, UJ-3) — the first model in the schema
-/// with NO `actorUserId`/`Actor` at all: the submitter is a stranger, not an
-/// app user (AD-5 deroga, see `ppr.service.ts#createPprRequest`'s
-/// doc-comment). `firstName`/`lastName` mirror `Person`'s two-field name
-/// shape (PRD "nome e cognome") even though this is NOT a `Person` — a PPR
-/// requester is not necessarily ever registered in the anagrafica.
-/// `aircraftRegistration` is the "marche" (tail number) as free text, not an
-/// `Aircraft` FK: an external pilot's aircraft is not necessarily one of
-/// this aviosuperficie's own. `eta`/`etd` are full instants (ISO 8601 UTC on
-/// the wire, AD-8), `etd` optional (a request may omit its departure time).
-/// `personsOnBoard` is a plain integer headcount, no further structure.
-///
-/// `locale` (`'it'|'en'`, same convention as `User.locale` — a plain string,
-/// not a Prisma enum, so it maps 1:1 onto next-intl's `AppLocale`) is the
-/// language the FORM was submitted in (NFR-1: "lingua per richiedente PPR"),
-/// captured now even though story 8.1 only uses it for the receipt email
-/// (`buildPprReceiptEmail`) — story 8.2's ESITO (approve/reject) email reuses
-/// this same field rather than re-asking or guessing.
-///
-/// `submitterIp` (nullable: absent when no `x-forwarded-for` header was
-/// present on the request, see the service's IP-extraction helper) backs
-/// the DB-backed per-IP rate limit (AC 2) via the `(submitterIp, createdAt)`
-/// index below. GDPR/NFR-3 note: this is a narrowly-scoped technical datum
-/// collected SOLELY for anti-abuse rate limiting — it is never displayed,
-/// exported, or used for any other purpose.
-///
-/// The PPR landing fee (epic 8, story 8.3, AC 1) links in from the
-/// `CashMovement` side, per the ERD (`PprRequest ||--o{ CashMovement`) —
-/// see `cashMovements` below.
-model PprRequest {
-  id     String    @id @default(cuid())
-  status PprStatus @default(PENDING)
-
-  firstName String
-  lastName  String
-  /// NULLABLE (epic 12, story 12.4, AC 1) — the public form still REQUIRES
-  /// it (Zod, `createPprRequestSchema`), so this is only ever `null` for a
-  /// STAFF-entered manual request that gave a phone but no email
-  /// (`createManualPprRequestSchema`'s "at least one contact" refine). Every
-  /// email-sending path (receipt/approval/rejection, `ppr.service.ts`) skips
-  /// silently when this is `null`.
-  email     String?
-  phone     String
-
-  aircraftRegistration String
-  aircraftType         String
-
-  origin      String
-  destination String
-  eta         DateTime
-  etd         DateTime?
-
-  personsOnBoard Int
-  notes          String?
-
-  /// Language the form was submitted in ('it'|'en') — see model doc-comment.
-  locale String
-
-  /// Anti-abuse technical datum only (GDPR/NFR-3) — see model doc-comment.
-  submitterIp String?
-
-  /// Assigned ONLY on approval (epic 8, story 8.2, AC 1) — `'PPR-<year>-NNNN'`
-  /// (e.g. `PPR-2026-0042`), atomically issued from `PprCounter` (see that
-  /// model's doc-comment for the FOR-UPDATE-then-upsert race guard). `null`
-  /// while `PENDING`, and stays `null` forever on a `REJECTED` request — the
-  /// counter is never touched by a rejection. `@unique` as a hard DB-level
-  /// backstop against the numbering race, on top of the transactional
-  /// guarantee itself.
-  pprNumber String? @unique
-
-  /// Mandatory staff-entered motivation on a REJECT decision (AC 2) — `null`
-  /// on every other status, including a still-`PENDING` request.
-  rejectionReason String?
-
-  /// When the decision (approve or reject) was made — `null` while
-  /// `PENDING`. Distinct from `updatedAt` (which also changes on the
-  /// story 8.3 close-out) so the ESITO email's timestamp can rely on this
-  /// field specifically.
-  decidedAt DateTime?
-
-  decidedByUserId String?
-  /// The staff/admin `User` who approved or rejected this request (epic 8,
-  /// story 8.2) — `null` while `PENDING`. Nullable FK, same
-  /// implicit-`SetNull`-on-delete pattern as `Booking.forcedByUserId` /
-  /// `ExpiryUpdateProposal.decidedByUserId`: deleting the deciding user must
-  /// never cascade-delete the PPR history.
-  decidedByUser   User?   @relation("PprRequestDecidedBy", fields: [decidedByUserId], references: [id])
-
-  /// When the request was CLOSED — completed or cancelled (epic 8, story
-  /// 8.3, AC 1/2). `null` while `PENDING`/`APPROVED`/`REJECTED`. A distinct
-  /// event from `decidedAt` (the 8.2 approve/reject decision): a request can
-  /// sit `APPROVED` for days before the flight actually happens and the PPR
-  /// is closed out — reusing `decidedAt` here would conflate two different
-  /// staff actions on the wire.
-  closedAt DateTime?
-
-  closedByUserId String?
-  /// The staff/admin `User` who completed or cancelled this request (story
-  /// 8.3) — `null` until closed. Same nullable-FK/`SetNull`-on-delete
-  /// pattern as `decidedByUser` above.
-  closedByUser   User?   @relation("PprRequestClosedBy", fields: [closedByUserId], references: [id])
-
-  /// The landing fee charged at completion, in integer euro cents (AD-2) —
-  /// stamped ONLY by `completePprRequest` (story 8.3, AC 1), 0 included (a
-  /// waived fee is still a recorded decision, not an absence of one).
-  /// `null` for every other status: still open, or closed via `cancelPprRequest`
-  /// (AC 2, no fee applies to a no-show). This is the register's own field —
-  /// the linked `CashMovement` (via `pprRequestId` below) exists only when
-  /// the fee is `> 0`.
-  landingFeeCents Int?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  /// The `CashMovement` this request's landing fee created (story 8.3, AC 1)
-  /// — present only when `landingFeeCents > 0`. NOT unique: same
-  /// "more than one movement could reference the same source in the future"
-  /// shape as `AccountMovement.flightId` (e.g. a future storno of the fee
-  /// would link back here too), even though today at most one exists.
-  cashMovements CashMovement[]
-
-  /// The staff/admin `User` who entered this request MANUALLY (epic 12,
-  /// story 12.4, AC 1) — `null` for every PUBLIC-form submission (the
-  /// console's "da modulo web" badge is exactly `createdByUserId === null`).
-  /// Same nullable-FK/`SetNull`-on-delete pattern as `decidedByUser`/
-  /// `closedByUser` above: deleting the staff user must never cascade-delete
-  /// the PPR history.
-  createdByUserId String?
-  createdByUser   User?   @relation("PprRequestCreatedBy", fields: [createdByUserId], references: [id])
-
-  /// Backs the per-IP hourly rate-limit count (`ppr.service.ts`, AC 2):
-  /// `count` of rows with the same `submitterIp` and `createdAt` within the
-  /// last hour.
-  @@index([submitterIp, createdAt])
-}
-
-/// Per-calendar-year atomic sequence backing `PprRequest.pprNumber` (epic 8,
-/// story 8.2, AC 1) — `year` (`Europe/Rome`, `dateOnlyInZone`, NEVER
-/// `getUTCFullYear`: a request approved right around New Year's Eve must
-/// land in the year Rome's wall clock says, not UTC's) is the primary key,
-/// `lastSeq` the last sequence number issued for that year.
-///
-/// **Race-free by construction** (`ppr.service.ts#approvePprRequest`):
-/// issuing a number is a single
-/// `INSERT ... ON CONFLICT ("year") DO UPDATE SET "lastSeq" = "lastSeq" + 1
-/// RETURNING "lastSeq"` statement — Postgres's own row-level lock on the
-/// upserted/updated row makes two concurrent approvals in the SAME year
-/// serialize on this one row and come out with distinct, consecutive
-/// `lastSeq` values; there is no read-then-write window for two
-/// transactions to race into a duplicate. The row-level lock this upsert
-/// takes is scoped to this ONE `PprCounter` row, never contended by an
-/// approval/rejection of a DIFFERENT `PprRequest` — only the (rare)
-/// concurrent-approval-in-the-same-year case serializes here, and even then
-/// only for the instant of the upsert itself. A REJECT never touches this
-/// table at all (Contesto: "il contatore non si tocca").
-model PprCounter {
-  year    Int @id
-  lastSeq Int
 }

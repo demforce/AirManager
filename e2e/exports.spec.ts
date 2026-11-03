@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import ExcelJS from 'exceljs';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -30,20 +32,17 @@ function uniqueSuffix(): string {
 const PAST_DATE = '2020-01-01';
 
 /** Same helper as `flight-log.spec.ts`'s `createAircraftWithRate`. */
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string; registration: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-EX${suffix}`.toUpperCase().slice(0, 20);
 
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
 
   return { id: aircraft.id, registration };
 }
@@ -61,6 +60,8 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   return { personId: person.id, firstName, lastName };
 }
@@ -69,7 +70,7 @@ type RegisterFlightParams = {
   aircraftId: string;
   personId: string;
   flightDate: string;
-  flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
+  flightType: 'TOURISM' | 'SCHOOL';
   minutes: number;
 };
 
@@ -79,7 +80,7 @@ async function registerFlight(page: Page, params: RegisterFlightParams): Promise
   const takeoffAt = `${flightDate}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
-    data: { ...rest, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', takeoffAt, landingAt },
+    data: { ...rest, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', takeoffAt, landingAt, force: true },
   });
   expect(response.status()).toBe(201);
   const body = (await response.json()) as { flight: { id: string } };
@@ -139,7 +140,6 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
       'Atterraggi',
       'PIC',
       'Addebito',
-      'Stato',
     ]);
     // Header + 2 data rows, matching the JSON total for the SAME filter (AC 1: "TUTTE le pagine").
     expect(sheet.rowCount).toBe(3);
@@ -153,7 +153,8 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     expect(amountCell.numFmt).toBe('#,##0.00 "€"');
     // Date cell: DD/MM/YYYY string (formatDateOnly), never the raw ISO date.
     expect(rows.map((row) => row.getCell(1).value)).toEqual(expect.arrayContaining(['10/03/2020', '11/03/2020']));
-    expect(rows.every((row) => row.getCell(15).value === 'Registrato')).toBe(true);
+    // Story 19.6 (AC 27): no Stato column anymore — the amount is the last cell.
+    expect(rows.every((row) => row.getCell(15).value === null)).toBe(true);
 
     // New logbook columns (story 11.3, AC 2): partenza/arrivo/orari SEPARATE, decolli/atterraggi
     // (default 1, `registerFlight` never sets them), PIC — all deterministic given the
@@ -165,6 +166,14 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     expect(rows.every((row) => row.getCell(12).value === 1)).toBe(true); // atterraggi (default)
     // PIC: TOURISM (non-SCHOOL) -> the flight's own person (story 11.2's derivation, AC 4's shared helper).
     expect(rows.every((row) => row.getCell(13).value === `${pilot.lastName} ${pilot.firstName}`)).toBe(true);
+
+    // Story 19.2 (R-19-b): the aircraft export's "Ore totali" is the sum of these two flights (90' + 30').
+    const aircraftXlsx = await page.request.get(`/api/v1/aircraft?format=xlsx&locale=it&q=${aircraft.registration}`);
+    expect(aircraftXlsx.status()).toBe(200);
+    const aircraftSheet = (await loadWorkbook(await aircraftXlsx.body())).worksheets[0]!;
+    expect(aircraftSheet.getRow(1).getCell(4).value).toBe('Ore totali');
+    expect(aircraftSheet.getRow(2).getCell(1).value).toBe(aircraft.registration);
+    expect(aircraftSheet.getRow(2).getCell(4).value).toBe('2:00');
   });
 
   test('locale=en renders English column headers on the same export (AC 2)', async ({ page }) => {
@@ -176,7 +185,7 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
 
     const workbook = await loadWorkbook(await xlsxResponse.body());
     const sheet = workbook.worksheets[0]!;
-    expect(sheet.getRow(1).values).toEqual([undefined, 'Registration', 'Type', 'Model', 'Hour meter', 'Status', 'Operational status']);
+    expect(sheet.getRow(1).values).toEqual([undefined, 'Registration', 'Type', 'Model', 'Total hours', 'Status', 'Operational status']);
     expect(sheet.getRow(2).getCell(1).value).toBe(aircraft.registration);
   });
 
@@ -191,6 +200,10 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     const aircraft = await createAircraftWithRate(page, 12000);
     const otherPilot = await createPilotPerson(page, 'Other');
     expect(myId).not.toBe(otherPilot.personId);
+    // The SEED pilot flies too (below) — same story 14.4 blast radius as a
+    // fresh person: the seed carries no `Expiry` row at all for its own
+    // applicable blocking types (see `ensureValidSeedExpiries`'s doc-comment).
+    await ensureValidSeedExpiries(page, myId, 'PILOTS');
     await registerFlight(page, { aircraftId: aircraft.id, personId: otherPilot.personId, flightDate: '2020-04-01', flightType: 'TOURISM', minutes: 20 });
     await registerFlight(page, { aircraftId: aircraft.id, personId: myId, flightDate: '2020-04-02', flightType: 'TOURISM', minutes: 25 });
 

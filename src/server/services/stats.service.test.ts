@@ -27,7 +27,6 @@ import { ForbiddenError } from './errors';
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
     flight: { findMany: vi.fn(), groupBy: vi.fn() },
-    pprRequest: { findMany: vi.fn(), count: vi.fn() },
     person: { findMany: vi.fn() },
     instructorProfile: { findMany: vi.fn() },
   },
@@ -52,8 +51,6 @@ const { getSchedulingSettings } = await import('./app-settings.service');
 
 const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const flightGroupByMock = vi.mocked(prisma.flight.groupBy);
-const pprFindManyMock = vi.mocked(prisma.pprRequest.findMany);
-const pprCountMock = vi.mocked(prisma.pprRequest.count);
 const personFindManyMock = vi.mocked(prisma.person.findMany);
 const instructorProfileFindManyMock = vi.mocked(prisma.instructorProfile.findMany);
 const listAircraftMock = vi.mocked(listAircraft);
@@ -61,8 +58,8 @@ const getCompensationSummaryMock = vi.mocked(getCompensationSummary);
 const getLedgerRevenueCentsMock = vi.mocked(getLedgerRevenueCents);
 const getSchedulingSettingsMock = vi.mocked(getSchedulingSettings);
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
+function adminActor(): Actor {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
 function pilotActor(): Actor {
@@ -75,8 +72,6 @@ const EMPTY_AIRCRAFT_RESULT = { items: [], total: 0, page: 1, pageSize: 100 };
 function resetMocksToEmpty(): void {
   flightFindManyMock.mockResolvedValue([]);
   flightGroupByMock.mockResolvedValue([]);
-  pprFindManyMock.mockResolvedValue([]);
-  pprCountMock.mockResolvedValue(0);
   personFindManyMock.mockResolvedValue([]);
   instructorProfileFindManyMock.mockResolvedValue([]);
   listAircraftMock.mockResolvedValue(EMPTY_AIRCRAFT_RESULT as never);
@@ -100,18 +95,18 @@ describe('getStats (story 12.10, AC 1)', () => {
   });
 
   it('422s a FUTURE ref (month after the current Rome month)', async () => {
-    await expect(getStats(staffActor(), { period: 'month', ref: '2026-08' }, NOW)).rejects.toThrow(ValidationError);
+    await expect(getStats(adminActor(), { period: 'month', ref: '2026-08' }, NOW)).rejects.toThrow(ValidationError);
   });
 
   it('accepts ref === the current Rome month (not "future")', async () => {
-    await expect(getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW)).resolves.toBeDefined();
+    await expect(getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW)).resolves.toBeDefined();
   });
 
   it('builds a 6-point rolling series ending at ref for period=month, and a 12-point one for period=year', async () => {
-    const monthResult = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const monthResult = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
     expect(monthResult.series.months).toEqual(['2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07']);
 
-    const yearResult = await getStats(staffActor(), { period: 'year', ref: '2026-07' }, NOW);
+    const yearResult = await getStats(adminActor(), { period: 'year', ref: '2026-07' }, NOW);
     expect(yearResult.series.months).toEqual([
       '2025-08', '2025-09', '2025-10', '2025-11', '2025-12',
       '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07',
@@ -119,51 +114,34 @@ describe('getStats (story 12.10, AC 1)', () => {
   });
 
   it('rolls the series across a year boundary (ref=2026-02, period=month)', async () => {
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-02' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-02' }, NOW);
     expect(result.series.months).toEqual(['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02']);
   });
 
-  it('buckets a PPR transit by its EUROPE/ROME calendar month, not its UTC one (bordi mese Rome)', async () => {
-    // 2026-10-31T23:30Z is already CET (DST ended 2026-10-25) -> Rome wall-clock 2026-11-01T00:30, i.e. NOVEMBER.
-    pprFindManyMock.mockResolvedValue([{ eta: new Date('2026-10-31T23:30:00.000Z') }] as never);
-
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-11' }, new Date('2026-11-15T10:00:00.000Z'));
-    const novIndex = result.series.months.indexOf('2026-11');
-    const octIndex = result.series.months.indexOf('2026-10');
-    expect(result.series.transitMovements[novIndex]).toBe(1);
-    expect(result.series.transitMovements[octIndex]).toBe(0);
-  });
-
-  it('movements/movementMix are coherent in the SAME unit (flights by type + transits, ratifica 1)', async () => {
+  it('movements/movementMix are coherent in the SAME unit (flights by type, ratifica 1) and the response carries exactly these keys', async () => {
     flightGroupByMock.mockImplementation((async (args: { by: string[] }) => {
       if (args.by[0] === 'flightType') {
         return [
           { flightType: 'SCHOOL', _count: { _all: 3 }, _sum: { minutes: 180 } },
           { flightType: 'TOURISM', _count: { _all: 2 }, _sum: { minutes: 90 } },
-          { flightType: 'AERIAL_WORK', _count: { _all: 1 }, _sum: { minutes: 30 } },
         ];
       }
       return [];
     }) as never);
-    pprCountMock.mockResolvedValue(2);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
-    expect(result.kpis.movements).toBe(8); // 3 + 2 + 1 flights + 2 transits
-    expect(result.kpis.flightMinutes).toBe(300);
-    expect(result.kpis.transitShare).toBeCloseTo(0.25);
+    expect(result.kpis.movements).toBe(5); // 3 + 2 flights
+    expect(result.kpis.flightMinutes).toBe(270);
     expect(result.movementMix).toEqual([
       { key: 'SCHOOL', count: 3 },
       { key: 'TOURISM', count: 2 },
-      { key: 'AERIAL_WORK', count: 1 },
-      { key: 'TRANSIT', count: 2 },
     ]);
-  });
-
-  it('transitShare is 0 when there are no movements at all (never NaN/Infinity)', async () => {
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
-    expect(result.kpis.movements).toBe(0);
-    expect(result.kpis.transitShare).toBe(0);
+    // The `/api/v1/stats` contract (a future Flutter client reads it): the
+    // exact key sets, so a field added or left behind fails here.
+    expect(Object.keys(result.kpis).sort()).toEqual(['fleetUtilization', 'flightMinutes', 'movements', 'revenueCents']);
+    expect(Object.keys(result.series).sort()).toEqual(['flightMinutes', 'months', 'revenueCents']);
+    expect(result.movementMix.map((m) => m.key)).toEqual(['SCHOOL', 'TOURISM']);
   });
 
   it('instructors: minutes computed for a HISTORICAL ref, owedCents forced null (never asks the compensation summary)', async () => {
@@ -175,7 +153,7 @@ describe('getStats (story 12.10, AC 1)', () => {
     }) as never);
     instructorProfileFindManyMock.mockResolvedValue([{ id: 'ip_1', personId: 'person_instr', person: { firstName: 'Elena', lastName: 'Nakamura' } }] as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-01' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-01' }, NOW);
 
     expect(getCompensationSummaryMock).not.toHaveBeenCalled();
     expect(result.instructors).toEqual([{ name: 'Elena Nakamura', minutes: 120, owedCents: null }]);
@@ -193,7 +171,7 @@ describe('getStats (story 12.10, AC 1)', () => {
       { personId: 'person_instr', firstName: 'Elena', lastName: 'Nakamura', payoutRateCents: 4000, mtdMinutes: 60, ytdMinutes: 60, totalMinutes: 60, owedMtdCents: 4000, owedYtdCents: 4000, owedTotalCents: 4000 },
     ] as never);
 
-    const monthResult = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const monthResult = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
     expect(getCompensationSummaryMock).toHaveBeenCalledTimes(1);
     expect(monthResult.instructors).toEqual([{ name: 'Elena Nakamura', minutes: 60, owedCents: 4000 }]);
   });
@@ -211,7 +189,7 @@ describe('getStats (story 12.10, AC 1)', () => {
       Array.from({ length: 12 }, (_, i) => ({ id: `p_${i}`, firstName: 'Pilot', lastName: `${i}` })) as never,
     );
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.topPilots).toHaveLength(10);
     expect(result.topPilots[0]).toEqual({ name: 'Pilot 0', minutes: 100, spentCents: 1200 });
@@ -239,9 +217,35 @@ describe('getStats (story 12.10, AC 1)', () => {
       return [];
     }) as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.fleet).toEqual([{ registration: 'I-AERO', minutes: 240, revenueCents: 50000 }]);
+  });
+
+  /**
+   * Review 15.4 F3. `fleet` used to be a single `listAircraft({ page: 1,
+   * pageSize: 100 })` — a silent CAP, not a page: on a 116-aircraft fleet the
+   * 16 highest registrations were missing from the report altogether (measured
+   * end-to-end: an e2e fixture ranked 109th vanished from `fleet`).
+   *
+   * The mock below PAGINATES exactly like the real service, which is what makes
+   * this test discriminating: against the pre-fix single read it returns 100
+   * rows and fails on the very first expectation.
+   */
+  it('fleet covers EVERY active aircraft, past the 100-row page of listAircraft (review 15.4 F3)', async () => {
+    const all = Array.from({ length: 150 }, (_, i) => ({ id: `ac_${i}`, registration: `I-Z${String(i).padStart(3, '0')}`, status: 'OPERATIONAL' }));
+    listAircraftMock.mockImplementation((async (_actor: unknown, query: { page: number; pageSize: number }) => {
+      const start = (query.page - 1) * query.pageSize;
+      return { items: all.slice(start, start + query.pageSize), total: all.length, page: query.page, pageSize: query.pageSize };
+    }) as never);
+
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
+
+    expect(result.fleet).toHaveLength(150);
+    expect(result.fleet[149]).toEqual({ registration: 'I-Z149', minutes: 0, revenueCents: 0 });
+    // Two round-trips for 150 rows, and it STOPS there (a loop that kept asking
+    // would hang the report instead of capping it).
+    expect(listAircraftMock).toHaveBeenCalledTimes(2);
   });
 
   // --- fleetUtilization (story 12.11, AC 6 — closes ratifica utente 2 from 12.10) ---
@@ -249,7 +253,7 @@ describe('getStats (story 12.10, AC 1)', () => {
   it('fleetUtilization is null when sched.openTime/closeTime are not configured (default)', async () => {
     listAircraftMock.mockResolvedValue({ items: [{ id: 'ac_1', registration: 'I-AERO', status: 'OPERATIONAL' }], total: 1, page: 1, pageSize: 100 } as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.kpis.fleetUtilization).toBeNull();
   });
@@ -258,7 +262,7 @@ describe('getStats (story 12.10, AC 1)', () => {
     getSchedulingSettingsMock.mockResolvedValue({ openTime: '08:00', closeTime: '20:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
     listAircraftMock.mockResolvedValue({ items: [{ id: 'ac_1', registration: 'I-OOS', status: 'OUT_OF_SERVICE' }], total: 1, page: 1, pageSize: 100 } as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(result.kpis.fleetUtilization).toBeNull();
   });
@@ -271,7 +275,7 @@ describe('getStats (story 12.10, AC 1)', () => {
       return [];
     }) as never);
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     // July = 31 days; window = 08:00-20:00 = 12h/day; 1 aircraft -> 31 * 12 * 60 = 22320 available minutes.
     expect(result.kpis.fleetUtilization).toBeCloseTo(6696 / 22320);
@@ -280,7 +284,7 @@ describe('getStats (story 12.10, AC 1)', () => {
   it('revenue reuses getLedgerRevenueCents for every series bucket AND the kpi window, with the correct [from,to] per call', async () => {
     getLedgerRevenueCentsMock.mockImplementation(async (_actor, from: string) => (from === '2026-07-01' ? 123456 : 0));
 
-    const result = await getStats(staffActor(), { period: 'month', ref: '2026-07' }, NOW);
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
 
     expect(getLedgerRevenueCentsMock).toHaveBeenCalledTimes(7); // 6 series months + 1 kpi window
     expect(getLedgerRevenueCentsMock).toHaveBeenCalledWith(expect.anything(), '2026-07-01', '2026-07-31');

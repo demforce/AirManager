@@ -1,17 +1,19 @@
+import type { Prisma } from '@/generated/prisma/client';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { CreateInstructorRateInput } from '@/lib/schemas/people';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError } from './errors';
+import { assertRateValidFromNotPast } from './rates.service';
 
 /**
  * Historicized instructor rates (epic 4, story 4.2, AD-4/AD-2) — the
  * deliberate twin of `rates.service.ts` (story 4.1): same historicization
  * rule (AD-4: the rate in effect for a date D is the row with the MAXIMUM
- * `validFrom <= D`), same append-only shape (AD-3's spirit — there is
- * deliberately no update/delete function here: a wrong price is corrected by
- * `createInstructorRate`-ing a NEW rate with a later `validFrom`, the history
- * never changes). The only real difference is the subject: an instructor
+ * `validFrom <= D`), same write rules since story 19.3 (R-19-f): a
+ * `validFrom` today or later only (`rates.service.ts#assertRateValidFromNotPast`),
+ * and a row whose `validFrom` is still today or later is rewritten in place
+ * (`upsertInstructorRateCore`) — a past row never changes. The only real difference is the subject: an instructor
  * (`InstructorProfile`), resolved from the person-scoped route's `personId`,
  * instead of an `aircraftId`.
  */
@@ -58,11 +60,6 @@ function toListItem(rate: SelectedRate): InstructorRateListItem {
   };
 }
 
-/** Prisma unique-constraint violation (same pattern as every other service). */
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2002';
-}
-
 /**
  * Resolves the person-scoped route's `personId` to its `InstructorProfile`
  * id (routes are `/api/v1/people/{id}/instructor-rates`, never keyed on the
@@ -86,24 +83,37 @@ async function resolveInstructorProfile(
 }
 
 /**
- * Pre-check for the check-then-write race the `try`/`catch` around `create`
- * backstops (same pattern as `rates.service.ts#assertRateAvailable`).
+ * The ONLY writer of `InstructorRate` (story 19.3, AD-2) — the twin of
+ * `rates.service.ts#upsertAircraftRateCore`: inserts the rate, or rewrites
+ * the price (and the actor) of the row already on that
+ * `(instructorProfileId, validFrom)`; `createdAt` keeps the first write.
+ * Callers have already checked `assertRateValidFromNotPast` and resolved an
+ * ACTIVE instructor profile. Exported for the person composite of story 19.4,
+ * which calls it inside its own transaction. Flat (no nested read), so the
+ * upsert is a native `INSERT … ON CONFLICT DO UPDATE`.
  */
-async function assertRateAvailable(instructorProfileId: string, validFrom: Date): Promise<void> {
-  const existing = await prisma.instructorRate.findFirst({
-    where: { instructorProfileId, validFrom },
+export async function upsertInstructorRateCore(
+  tx: Prisma.TransactionClient,
+  instructorProfileId: string,
+  input: CreateInstructorRateInput,
+  actorUserId: string,
+): Promise<string> {
+  const validFrom = parseDateOnlyUtc(input.validFrom);
+  const rate = await tx.instructorRate.upsert({
+    where: { instructorProfileId_validFrom: { instructorProfileId, validFrom } },
+    create: { instructorProfileId, priceCentsPerHour: input.priceCentsPerHour, validFrom, actorUserId },
+    update: { priceCentsPerHour: input.priceCentsPerHour, actorUserId },
     select: { id: true },
   });
-  if (existing) {
-    throw new ConflictError('A rate with this validFrom already exists for this instructor.');
-  }
+  return rate.id;
 }
 
 /**
- * Records a new historicized rate (AC 1/2). `settings.manage` (admin) only —
- * pricing configuration, same choice as `createAircraftRate` (deliberately
- * stricter than the wider `people.read` this story grants to the list/
- * effective reads below).
+ * Records a rate (AC 1/2), or rewrites the one already on that `validFrom`
+ * (story 19.3, R-19-f: a 201 with the updated row, never a 409).
+ * `settings.manage` (admin) only — pricing configuration, same choice as
+ * `createAircraftRate` (deliberately stricter than the wider `people.read`
+ * this story grants to the list/effective reads below).
  *
  * Instructor resolution (Dev Notes' decision point): a person who never
  * activated the instructor profile, OR whose profile was deactivated, gets a
@@ -126,37 +136,22 @@ export async function createInstructorRate(
   if (instructorProfile.deactivatedAt !== null) {
     throw new ConflictError('This person has no active instructor profile.');
   }
+  assertRateValidFromNotPast(input.validFrom);
 
-  const validFrom = parseDateOnlyUtc(input.validFrom);
-
-  // Check-then-write pre-check; the try/catch below backstops the
-  // concurrency race (lezione review: "mai fidarsi solo del pre-check").
-  await assertRateAvailable(instructorProfile.id, validFrom);
-
-  let rate;
-  try {
-    rate = await prisma.instructorRate.create({
-      data: {
-        instructorProfileId: instructorProfile.id,
-        priceCentsPerHour: input.priceCentsPerHour,
-        validFrom,
-        actorUserId: actor.userId,
-      },
-      select: RATE_SELECT,
-    });
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new ConflictError('A rate with this validFrom already exists for this instructor.');
-    }
-    throw error;
-  }
+  // Flat write, then the read with the actor's email (see `upsertInstructorRateCore`).
+  const rate = await prisma.$transaction(async (tx) => {
+    const id = await upsertInstructorRateCore(tx, instructorProfile.id, input, actor.userId);
+    return tx.instructorRate.findUniqueOrThrow({ where: { id }, select: RATE_SELECT });
+  });
 
   return toListItem(rate);
 }
 
 /**
  * Lists an instructor's full rate history, most recent `validFrom` first (AC
- * 1). `people.read` (staff+admin) — WIDER than `createInstructorRate`'s
+ * 1) — the instructor editor derives the rate in effect and the next
+ * scheduled one from it (story 19.4, D-10), and API clients keep it (story
+ * 19.3, D-2). `people.read` (ADMIN-only) — WIDER than `createInstructorRate`'s
  * `settings.manage` (Dev Notes: instructor data lives under `people`, so the
  * same permission that reads a person's profile also reads their pricing —
  * a deliberately different split from 4.1's `aircraft.manage`, documented
@@ -192,9 +187,8 @@ export async function listInstructorRates(actor: Actor, personId: string): Promi
  * the `date` column) so `@db.Date` binds as a real Postgres `date` — TZ-safe
  * (review 3.5 F1's lesson). Returns `null` when the instructor has no rate
  * on or before `onDate`, OR when the person has no (active) instructor
- * profile — this is the hook epic 5's flight snapshot will call; it is NOT
- * consumed by a dedicated route in this story, only internally (the
- * "current price" shown in the UI, `onDate = today`).
+ * profile. Read by the flight snapshot (`flights.service.ts#resolveFlightInput`,
+ * `onDate = flightDate`); no route of its own.
  */
 export async function getEffectiveInstructorRate(
   actor: Actor,

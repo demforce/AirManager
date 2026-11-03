@@ -1,7 +1,9 @@
+import type { Prisma } from '@/generated/prisma/client';
+import { CURRENCY_DEFAULTS, CURRENCY_LIMITS, type CurrencySettings } from '@/lib/currency';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
-import type { PprOperatingInstructionsDto } from '@/lib/schemas/ppr';
 import type {
   AirfieldBrandingDto,
+  CurrencySettingsInput,
   SchedulingSettingsDto,
   SchedulingSettingsInput,
   SmtpSecurityDto,
@@ -19,148 +21,51 @@ import { prisma } from '@/server/db/prisma';
  * story 1.1, never given a dedicated service until now — see the model's
  * doc-comment in `schema.prisma`). Deliberately minimal rather than a
  * generic settings CRUD: each caller gets its own narrow get/set pair —
- * PPR's `ppr.operatingInstructions.*`/`ppr.landingFeeCents` (epic 8,
- * stories 8.2/8.3) and (story 10.2, AC 1) the airfield PDF branding's
+ * e.g. (story 10.2, AC 1) the airfield PDF branding's
  * `airfield.name` (name-only since story 13.8, AC 4 — the `airfield.logo`
  * key some installs may still carry from before that story is never read or
  * written here anymore). A future story that needs another setting adds its
  * own pair here rather than widening these into something generic.
+ *
+ * Story 19.8 (AD-3): every setter's write lives in a `write*Core(tx, …)` —
+ * no `authorize` inside — so the Impostazioni composite PATCH
+ * (`settings.service.ts#saveSettings`) runs them all in ONE transaction
+ * after checking `settings.manage` once. Each setter below is `authorize`
+ * plus its core, so the single routes behave exactly as before.
  */
 
-const PPR_OPERATING_INSTRUCTIONS_IT_KEY = 'ppr.operatingInstructions.it';
-const PPR_OPERATING_INSTRUCTIONS_EN_KEY = 'ppr.operatingInstructions.en';
-const PPR_LANDING_FEE_CENTS_KEY = 'ppr.landingFeeCents';
 const AIRFIELD_NAME_KEY = 'airfield.name';
 const AIRFIELD_ICAO_KEY = 'airfield.icao';
 const AIRFIELD_CONTACT_EMAIL_KEY = 'airfield.contactEmail';
 
+/** Upserts each `[key, value]` on `client` — a transaction's `tx`, or `prisma` itself for a setter that writes one key (story 19.8, AD-3). */
+async function upsertSettings(client: Prisma.TransactionClient, entries: Array<[string, string]>): Promise<void> {
+  for (const [key, value] of entries) {
+    await client.appSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+  }
+}
+
 /** Fresh-install default (story 10.2, AC 1) — no admin has configured branding yet. */
 const DEFAULT_AIRFIELD_NAME = 'AirManager';
 
-/** `PprRequest.landingFeeCents`/`recordCashMovement`'s own `amountCents` bound (AD-2, `.max(2_147_483_647)` at the Zod boundary) — kept as a local const rather than importing across the schema layer for one integer. */
-const MAX_LANDING_FEE_CENTS = 2_147_483_647;
+/** `recordCashMovement`'s own `amountCents` bound (AD-2, `.max(2_147_483_647)` at the Zod boundary) — the `Int` ceiling every stored cents setting is capped at, kept as a local const rather than importing across the schema layer for one integer. */
+const MAX_STORED_CENTS = 2_147_483_647;
 
 /**
- * Reads the admin-configured PPR approval-email operating instructions
- * (AC 1). Gated `ppr.manage` (AD-5) — not `settings.manage`: staff sees
- * these in the queue (read-only) even though only an admin can edit them
- * (`setPprOperatingInstructions` below). Absent key(s) read as `''`, never
- * `null` (Contesto) — a fresh install has no instructions configured yet,
- * and `''` is exactly the "omit this section" signal
- * `templates.ts#buildPprApprovalEmail` checks for.
+ * Parses a stored cents setting (`AppSetting.value`) — a bare non-negative
+ * integer string (`String(cents)`, the exact shape the setters below write).
+ * `null` for anything else: absent digits, a leading `-`/decimal point,
+ * leading/trailing whitespace, or a value beyond the `Int` ceiling (AD-2) —
+ * an operational corruption (e.g. a hand-edited row) no setter here ever
+ * produces, so the getter treats it as "no amount configured" rather than
+ * throwing.
  */
-export async function getPprOperatingInstructions(actor: Actor): Promise<PprOperatingInstructionsDto> {
-  authorize(actor, 'ppr.manage');
-
-  const rows = await prisma.appSetting.findMany({
-    where: { key: { in: [PPR_OPERATING_INSTRUCTIONS_IT_KEY, PPR_OPERATING_INSTRUCTIONS_EN_KEY] } },
-    select: { key: true, value: true },
-  });
-
-  const it = rows.find((row) => row.key === PPR_OPERATING_INSTRUCTIONS_IT_KEY)?.value ?? '';
-  const en = rows.find((row) => row.key === PPR_OPERATING_INSTRUCTIONS_EN_KEY)?.value ?? '';
-
-  return { it, en };
-}
-
-/**
- * Sets the PPR approval-email operating instructions (AC 1). Gated
- * `settings.manage` — admin-only, same write-vs-read asymmetry as
- * `expiry-types.service.ts`'s catalogue. Both locales are always written
- * together (the caller's form always submits both fields, Zod-bound at
- * `pprOperatingInstructionsSchema`) — `upsert` per key since a fresh
- * install has neither `AppSetting` row yet.
- */
-export async function setPprOperatingInstructions(
-  actor: Actor,
-  input: PprOperatingInstructionsDto,
-): Promise<PprOperatingInstructionsDto> {
-  authorize(actor, 'settings.manage');
-
-  await prisma.$transaction([
-    prisma.appSetting.upsert({
-      where: { key: PPR_OPERATING_INSTRUCTIONS_IT_KEY },
-      update: { value: input.it },
-      create: { key: PPR_OPERATING_INSTRUCTIONS_IT_KEY, value: input.it },
-    }),
-    prisma.appSetting.upsert({
-      where: { key: PPR_OPERATING_INSTRUCTIONS_EN_KEY },
-      update: { value: input.en },
-      create: { key: PPR_OPERATING_INSTRUCTIONS_EN_KEY, value: input.en },
-    }),
-  ]);
-
-  return input;
-}
-
-/**
- * Parses `AppSetting.value` for `ppr.landingFeeCents` — a bare non-negative
- * integer string (`String(cents)`, the exact shape `setPprLandingFeeDefaultCents`
- * writes below). `null` for anything else: absent digits, a leading `-`/
- * decimal point, leading/trailing whitespace, or a value beyond the `Int`
- * ceiling (AD-2) — an operational corruption (e.g. a hand-edited row) this
- * function itself never produces, so `getPprLandingFeeDefaultCents` treats
- * it as "no default configured" rather than throwing.
- */
-function parseStoredLandingFeeCents(value: string): number | null {
+function parseStoredCents(value: string): number | null {
   if (!/^\d+$/.test(value)) {
     return null;
   }
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed <= MAX_LANDING_FEE_CENTS ? parsed : null;
-}
-
-/**
- * Reads the admin-configured default PPR landing fee, in integer euro cents
- * (AD-2) — story 8.3, AC 1. Gated `ppr.manage`, not `settings.manage`: the
- * completion panel prefills its fee input with this default for every actor
- * who can complete a PPR (staff), even though only an admin can change the
- * default itself (`setPprLandingFeeDefaultCents` below) — same read/write
- * asymmetry as `getPprOperatingInstructions`. Absent key -> `0` (Contesto:
- * a fresh install charges nothing until an admin configures a fee). A
- * stored value that fails {@link parseStoredLandingFeeCents} also reads as
- * `0`, logged via `console.warn` rather than thrown — the completion flow
- * must never be blocked by a broken setting, only silently fall back to "no
- * default fee".
- */
-export async function getPprLandingFeeDefaultCents(actor: Actor): Promise<number> {
-  authorize(actor, 'ppr.manage');
-
-  const row = await prisma.appSetting.findUnique({ where: { key: PPR_LANDING_FEE_CENTS_KEY }, select: { value: true } });
-  if (!row) {
-    return 0;
-  }
-
-  const parsed = parseStoredLandingFeeCents(row.value);
-  if (parsed === null) {
-    console.warn(`getPprLandingFeeDefaultCents: stored value "${row.value}" is not a valid non-negative integer — defaulting to 0.`);
-    return 0;
-  }
-
-  return parsed;
-}
-
-/**
- * Sets the admin-configured default PPR landing fee (AC 1). Gated
- * `settings.manage` — admin-only, same write-vs-read asymmetry as
- * `setPprOperatingInstructions`. `cents` is trusted as an already-bounded
- * (`0..2_147_483_647`, AD-2's `Int` ceiling) integer — enforced at the Zod
- * boundary (`pprLandingFeeDefaultSchema`) before this function ever runs,
- * same "service trusts its Zod-typed input" contract as
- * `setPprOperatingInstructions` above. Stored as a plain decimal string
- * (`AppSetting.value`'s column shape) that {@link parseStoredLandingFeeCents}
- * reads back unchanged.
- */
-export async function setPprLandingFeeDefaultCents(actor: Actor, cents: number): Promise<number> {
-  authorize(actor, 'settings.manage');
-
-  await prisma.appSetting.upsert({
-    where: { key: PPR_LANDING_FEE_CENTS_KEY },
-    update: { value: String(cents) },
-    create: { key: PPR_LANDING_FEE_CENTS_KEY, value: String(cents) },
-  });
-
-  return cents;
+  return Number.isSafeInteger(parsed) && parsed <= MAX_STORED_CENTS ? parsed : null;
 }
 
 /**
@@ -168,7 +73,7 @@ export async function setPprLandingFeeDefaultCents(actor: Actor, cents: number):
  * name shown in every exported PDF's header (name-only since story 13.8,
  * AC 4). Deliberately NO permission gate (unlike every other getter in this
  * module): the header must render for whichever role is exporting a report
- * (pilot, instructor, staff, admin alike), and the branding itself is not
+ * (pilot, instructor, admin alike), and the branding itself is not
  * sensitive data. The route's own `apiRoute` (`auth: 'required'` default)
  * is the only guard — an authenticated session, nothing more. An absent
  * `AppSetting` row reads as the fresh-install default: name `'AirManager'`.
@@ -200,13 +105,13 @@ export async function getAirfieldIcao(): Promise<string> {
 export async function setAirfieldIcao(actor: Actor, icao: string): Promise<string> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: AIRFIELD_ICAO_KEY },
-    update: { value: icao },
-    create: { key: AIRFIELD_ICAO_KEY, value: icao },
-  });
+  await writeAirfieldIcaoCore(prisma, icao);
 
   return icao;
+}
+
+export async function writeAirfieldIcaoCore(tx: Prisma.TransactionClient, icao: string): Promise<void> {
+  await upsertSettings(tx, [[AIRFIELD_ICAO_KEY, icao]]);
 }
 
 /**
@@ -224,13 +129,13 @@ export async function getAirfieldContactEmail(): Promise<string> {
 export async function setAirfieldContactEmail(actor: Actor, email: string): Promise<string> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: AIRFIELD_CONTACT_EMAIL_KEY },
-    update: { value: email },
-    create: { key: AIRFIELD_CONTACT_EMAIL_KEY, value: email },
-  });
+  await writeAirfieldContactEmailCore(prisma, email);
 
   return email;
+}
+
+export async function writeAirfieldContactEmailCore(tx: Prisma.TransactionClient, email: string): Promise<void> {
+  await upsertSettings(tx, [[AIRFIELD_CONTACT_EMAIL_KEY, email]]);
 }
 
 // --- Scheduling window (story 12.11, AC 1/4; ratifica utente 3) ------------
@@ -262,11 +167,10 @@ function parseStoredInt(value: string | undefined): number | null {
 /**
  * Reads the scheduling-window settings (AC 1/4). No permission gate: needed
  * by ANY actor creating a booking (including a plain pilot self-booking),
- * not just staff — same reasoning as {@link getAirfieldIcao}. Read through
- * the top-level `prisma` client even when called from INSIDE
- * `bookings.service.ts#transitionBooking`'s own `$transaction` — the exact
- * same "sibling read via plain `prisma`, not `tx`" precedent that function's
- * own `findBlockingExpiredDocuments` call already establishes.
+ * not just an admin — same reasoning as {@link getAirfieldIcao}. Read through
+ * the top-level `prisma` client, so never from INSIDE a transaction (review
+ * 19.10 F2: a second connection asked for while one is held) —
+ * `bookings.service.ts#transitionBooking` reads it before its own.
  */
 export async function getSchedulingSettings(): Promise<SchedulingSettingsDto> {
   const rows = await prisma.appSetting.findMany({ where: { key: { in: [...SCHED_KEYS] } }, select: { key: true, value: true } });
@@ -285,17 +189,19 @@ export async function getSchedulingSettings(): Promise<SchedulingSettingsDto> {
 export async function setSchedulingSettings(actor: Actor, input: SchedulingSettingsInput): Promise<SchedulingSettingsDto> {
   authorize(actor, 'settings.manage');
 
-  const entries: Array<[string, string]> = [
+  await prisma.$transaction((tx) => writeSchedulingSettingsCore(tx, input));
+
+  return { openTime: input.openTime, closeTime: input.closeTime, minSlotMinutes: input.minSlotMinutes, turnaroundMinutes: input.turnaroundMinutes, maxAdvanceDays: input.maxAdvanceDays };
+}
+
+export async function writeSchedulingSettingsCore(tx: Prisma.TransactionClient, input: SchedulingSettingsInput): Promise<void> {
+  await upsertSettings(tx, [
     [SCHED_OPEN_TIME_KEY, input.openTime],
     [SCHED_CLOSE_TIME_KEY, input.closeTime],
     [SCHED_MIN_SLOT_MINUTES_KEY, String(input.minSlotMinutes)],
     [SCHED_TURNAROUND_MINUTES_KEY, String(input.turnaroundMinutes)],
     [SCHED_MAX_ADVANCE_DAYS_KEY, String(input.maxAdvanceDays)],
-  ];
-
-  await prisma.$transaction(entries.map(([key, value]) => prisma.appSetting.upsert({ where: { key }, update: { value }, create: { key, value } })));
-
-  return { openTime: input.openTime, closeTime: input.closeTime, minSlotMinutes: input.minSlotMinutes, turnaroundMinutes: input.turnaroundMinutes, maxAdvanceDays: input.maxAdvanceDays };
+  ]);
 }
 
 // --- SMTP (story 12.11, AC 1/2) --------------------------------------------
@@ -320,7 +226,7 @@ function isSmtpSecurity(value: string | undefined): value is SmtpSecurityDto {
   return value === 'NONE' || value === 'STARTTLS' || value === 'SSL_TLS';
 }
 
-/** Reads the SMTP settings for the Impostazioni form (AC 1/2). Gated `settings.manage` — admin-only, mirroring the write side (unlike the read-broader asymmetry of the PPR getters: nobody but the admin editing this card needs to see it). `pass` is NEVER included — only whether one is configured. */
+/** Reads the SMTP settings for the Impostazioni form (AC 1/2). Gated `settings.manage` — admin-only, mirroring the write side (nobody but the admin editing this card needs to see it). `pass` is NEVER included — only whether one is configured. */
 export async function getSmtpSettings(actor: Actor): Promise<SmtpSettingsDto> {
   authorize(actor, 'settings.manage');
 
@@ -347,35 +253,25 @@ export async function getSmtpSettings(actor: Actor): Promise<SmtpSettingsDto> {
 export async function setSmtpSettings(actor: Actor, input: SmtpSettingsInput): Promise<SmtpSettingsDto> {
   authorize(actor, 'settings.manage');
 
-  const writes = [
-    prisma.appSetting.upsert({ where: { key: SMTP_HOST_KEY }, update: { value: input.host }, create: { key: SMTP_HOST_KEY, value: input.host } }),
-    prisma.appSetting.upsert({
-      where: { key: SMTP_PORT_KEY },
-      update: { value: String(input.port) },
-      create: { key: SMTP_PORT_KEY, value: String(input.port) },
-    }),
-    prisma.appSetting.upsert({
-      where: { key: SMTP_SECURITY_KEY },
-      update: { value: input.security },
-      create: { key: SMTP_SECURITY_KEY, value: input.security },
-    }),
-    prisma.appSetting.upsert({ where: { key: SMTP_USER_KEY }, update: { value: input.user }, create: { key: SMTP_USER_KEY, value: input.user } }),
-    prisma.appSetting.upsert({ where: { key: SMTP_FROM_KEY }, update: { value: input.from }, create: { key: SMTP_FROM_KEY, value: input.from } }),
-  ];
-  if (input.pass) {
-    const encryptedPass = encryptSecret(input.pass);
-    writes.push(
-      prisma.appSetting.upsert({
-        where: { key: SMTP_PASS_KEY },
-        update: { value: encryptedPass },
-        create: { key: SMTP_PASS_KEY, value: encryptedPass },
-      }),
-    );
-  }
-
-  await prisma.$transaction(writes);
+  await prisma.$transaction((tx) => writeSmtpSettingsCore(tx, input));
 
   return getSmtpSettings(actor);
+}
+
+/** The 5 plain keys, plus `smtp.pass` ENCRYPTED only when `input.pass` is non-empty (absent or `''` = the stored password stays). */
+export async function writeSmtpSettingsCore(tx: Prisma.TransactionClient, input: SmtpSettingsInput): Promise<void> {
+  const entries: Array<[string, string]> = [
+    [SMTP_HOST_KEY, input.host],
+    [SMTP_PORT_KEY, String(input.port)],
+    [SMTP_SECURITY_KEY, input.security],
+    [SMTP_USER_KEY, input.user],
+    [SMTP_FROM_KEY, input.from],
+  ];
+  if (input.pass) {
+    entries.push([SMTP_PASS_KEY, encryptSecret(input.pass)]);
+  }
+
+  await upsertSettings(tx, entries);
 }
 
 /**
@@ -429,13 +325,13 @@ export async function getMetarStation(): Promise<string> {
 export async function setMetarStation(actor: Actor, station: string): Promise<string> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: METAR_STATION_KEY },
-    update: { value: station },
-    create: { key: METAR_STATION_KEY, value: station },
-  });
+  await writeMetarStationCore(prisma, station);
 
   return getMetarStation();
+}
+
+export async function writeMetarStationCore(tx: Prisma.TransactionClient, station: string): Promise<void> {
+  await upsertSettings(tx, [[METAR_STATION_KEY, station]]);
 }
 
 // --- Membership fee (story 12.11, AC 1, ratifica utente 1) -----------------
@@ -445,14 +341,14 @@ const MEMBERSHIP_ANNUAL_FEE_CENTS_KEY = 'membership.annualFeeCents';
 /**
  * Reads the default annual membership-fee amount, in integer euro cents
  * (ratifica utente 1) — precompiles the "Quota associativa" action's amount
- * field (`chargeMembershipFee`'s caller). Gated `finance.manage` (STAFF+
- * ADMIN): the SAME actors who can trigger the charge itself need to see the
+ * field (`chargeMembershipFee`'s caller). Gated `finance.manage` (ADMIN-only):
+ * the SAME actors who can trigger the charge itself need to see the
  * default; `settings.manage` (ADMIN-only) is reserved for CHANGING it
- * (`setMembershipFeeCents` below), same read/write asymmetry as
- * `getPprLandingFeeDefaultCents`. Absent key -> `0` (Contesto: a fresh
- * install charges nothing until an admin configures a fee) — a corrupted
- * stored value also falls back to `0`, logged, never thrown (same rule as
- * `getPprLandingFeeDefaultCents`).
+ * (`setMembershipFeeCents` below). Absent key -> `0` (Contesto: a fresh
+ * install charges nothing until an admin configures a fee); a stored value
+ * that fails {@link parseStoredCents} also reads as `0`, logged via
+ * `console.warn` rather than thrown — the charge flow must never be blocked
+ * by a broken setting.
  */
 export async function getMembershipFeeCents(actor: Actor): Promise<number> {
   authorize(actor, 'finance.manage');
@@ -462,7 +358,7 @@ export async function getMembershipFeeCents(actor: Actor): Promise<number> {
     return 0;
   }
 
-  const parsed = parseStoredLandingFeeCents(row.value);
+  const parsed = parseStoredCents(row.value);
   if (parsed === null) {
     console.warn(`getMembershipFeeCents: stored value "${row.value}" is not a valid non-negative integer — defaulting to 0.`);
     return 0;
@@ -475,13 +371,76 @@ export async function getMembershipFeeCents(actor: Actor): Promise<number> {
 export async function setMembershipFeeCents(actor: Actor, cents: number): Promise<number> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: MEMBERSHIP_ANNUAL_FEE_CENTS_KEY },
-    update: { value: String(cents) },
-    create: { key: MEMBERSHIP_ANNUAL_FEE_CENTS_KEY, value: String(cents) },
-  });
+  await writeMembershipFeeCore(prisma, cents);
 
   return cents;
+}
+
+export async function writeMembershipFeeCore(tx: Prisma.TransactionClient, cents: number): Promise<void> {
+  await upsertSettings(tx, [[MEMBERSHIP_ANNUAL_FEE_CENTS_KEY, String(cents)]]);
+}
+
+// --- Currency (story 19.7a, R-19-i, D-10) ----------------------------------
+// `currency.*` — X (`minFlights`) flights on board in the last Y
+// (`windowDays`) days make a pilot/student current (`currency.service.ts`).
+// Absent keys mean the defaults (X=1, Y=90); story 19.8 owns the Impostazioni
+// section, its route and its composite PATCH (which calls the core below
+// inside its own transaction).
+
+const CURRENCY_MIN_FLIGHTS_KEY = 'currency.minFlights';
+const CURRENCY_WINDOW_DAYS_KEY = 'currency.windowDays';
+
+/** A stored currency value: a bare integer string inside `limits`, else the default — logged, never thrown (a broken setting must not block a flight check). */
+function parseCurrencySetting(key: string, value: string | undefined, limits: { min: number; max: number }, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = /^\d+$/.test(value) ? Number(value) : Number.NaN;
+  if (Number.isSafeInteger(parsed) && parsed >= limits.min && parsed <= limits.max) return parsed;
+  console.warn(`getCurrencySettings: stored ${key} "${value}" is not an integer in [${limits.min}, ${limits.max}] — defaulting to ${fallback}.`);
+  return fallback;
+}
+
+/**
+ * Reads the currency settings. No permission gate: the currency of a pilot
+ * is read by the Pilots page and, from stories 19.9/19.10, by the flight and
+ * booking checks of ANY actor — same reasoning as {@link getSchedulingSettings}.
+ * Each field falls back to its own default independently.
+ */
+export async function getCurrencySettings(): Promise<CurrencySettings> {
+  const rows = await prisma.appSetting.findMany({
+    where: { key: { in: [CURRENCY_MIN_FLIGHTS_KEY, CURRENCY_WINDOW_DAYS_KEY] } },
+    select: { key: true, value: true },
+  });
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+
+  return {
+    minFlights: parseCurrencySetting(CURRENCY_MIN_FLIGHTS_KEY, byKey.get(CURRENCY_MIN_FLIGHTS_KEY), CURRENCY_LIMITS.minFlights, CURRENCY_DEFAULTS.minFlights),
+    windowDays: parseCurrencySetting(CURRENCY_WINDOW_DAYS_KEY, byKey.get(CURRENCY_WINDOW_DAYS_KEY), CURRENCY_LIMITS.windowDays, CURRENCY_DEFAULTS.windowDays),
+  };
+}
+
+/**
+ * Writes both currency settings on the caller's transaction — NO
+ * `authorize` inside (contract with story 19.8: its composite PATCH checks
+ * `settings.manage` once and runs every block's core in ONE transaction).
+ * Callers validate `input` with `currencySettingsSchema` first.
+ */
+export async function writeCurrencySettingsCore(tx: Prisma.TransactionClient, input: CurrencySettingsInput): Promise<void> {
+  const entries: Array<[string, string]> = [
+    [CURRENCY_MIN_FLIGHTS_KEY, String(input.minFlights)],
+    [CURRENCY_WINDOW_DAYS_KEY, String(input.windowDays)],
+  ];
+  for (const [key, value] of entries) {
+    await tx.appSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+  }
+}
+
+/** Sets the currency settings: `settings.manage`, then the core in its own transaction. */
+export async function setCurrencySettings(actor: Actor, input: CurrencySettingsInput): Promise<CurrencySettings> {
+  authorize(actor, 'settings.manage');
+
+  await prisma.$transaction((tx) => writeCurrencySettingsCore(tx, input));
+
+  return { minFlights: input.minFlights, windowDays: input.windowDays };
 }
 
 /**
@@ -492,13 +451,13 @@ export async function setMembershipFeeCents(actor: Actor, cents: number): Promis
 export async function setAirfieldBranding(actor: Actor, input: AirfieldBrandingDto): Promise<AirfieldBrandingDto> {
   authorize(actor, 'settings.manage');
 
-  await prisma.appSetting.upsert({
-    where: { key: AIRFIELD_NAME_KEY },
-    update: { value: input.name },
-    create: { key: AIRFIELD_NAME_KEY, value: input.name },
-  });
+  await writeAirfieldBrandingCore(prisma, input);
 
   return input;
+}
+
+export async function writeAirfieldBrandingCore(tx: Prisma.TransactionClient, input: AirfieldBrandingDto): Promise<void> {
+  await upsertSettings(tx, [[AIRFIELD_NAME_KEY, input.name]]);
 }
 
 // --- Treasury opening balances (story Billing-1, AC 3) ----------------------
@@ -551,7 +510,7 @@ function parseStoredOpeningDate(value: string | undefined): string | null {
 /**
  * Reads the treasury opening balances with NO `Actor` at all (Billing-1, AC
  * 3) — internal use only, for `billing-summary.service.ts#getBillingSummary`
- * (itself gated `finance.manage`, STAFF+ADMIN) to read without ALSO needing
+ * (itself gated `finance.manage`, ADMIN-only) to read without ALSO needing
  * `settings.manage`. Same "unguarded internal reader alongside a
  * permission-gated actor-facing pair" precedent as
  * `getSmtpSettingsForMailer` vs `getSmtpSettings` above. Parsing is robust
@@ -582,23 +541,15 @@ export async function getTreasurySettings(actor: Actor): Promise<TreasurySetting
 export async function setTreasurySettings(actor: Actor, input: TreasurySettingsInput): Promise<TreasurySettingsDto> {
   authorize(actor, 'settings.manage');
 
-  await prisma.$transaction([
-    prisma.appSetting.upsert({
-      where: { key: TREASURY_OPENING_CASH_CENTS_KEY },
-      update: { value: String(input.openingCashCents) },
-      create: { key: TREASURY_OPENING_CASH_CENTS_KEY, value: String(input.openingCashCents) },
-    }),
-    prisma.appSetting.upsert({
-      where: { key: TREASURY_OPENING_BANK_CENTS_KEY },
-      update: { value: String(input.openingBankCents) },
-      create: { key: TREASURY_OPENING_BANK_CENTS_KEY, value: String(input.openingBankCents) },
-    }),
-    prisma.appSetting.upsert({
-      where: { key: TREASURY_OPENING_DATE_KEY },
-      update: { value: input.openingDate },
-      create: { key: TREASURY_OPENING_DATE_KEY, value: input.openingDate },
-    }),
-  ]);
+  await prisma.$transaction((tx) => writeTreasurySettingsCore(tx, input));
 
   return { openingCashCents: input.openingCashCents, openingBankCents: input.openingBankCents, openingDate: input.openingDate };
+}
+
+export async function writeTreasurySettingsCore(tx: Prisma.TransactionClient, input: TreasurySettingsInput): Promise<void> {
+  await upsertSettings(tx, [
+    [TREASURY_OPENING_CASH_CENTS_KEY, String(input.openingCashCents)],
+    [TREASURY_OPENING_BANK_CENTS_KEY, String(input.openingBankCents)],
+    [TREASURY_OPENING_DATE_KEY, input.openingDate],
+  ]);
 }

@@ -13,16 +13,51 @@
  * console and the Overview's compact widget render the SAME grid — this
  * file now CONSUMES `FleetCardGrid`, re-exporting `FleetCardItem` for its
  * existing consumers (`aircraft-editor.tsx`, `fleet/page.tsx`).
+ *
+ * Story 15.5 adds the PHONE face of the same card (`.fleet-mobile`, two
+ * columns, hours bar, detail sheet) as a SIBLING of `FleetCardGrid`, never
+ * inside it (AD-2): that component is also rendered by the Overview's
+ * `FleetCard` widget, and a testid added there would exist twice on
+ * `/dashboard` — which `mobile-overview.spec.ts` asserts against at 375 AND
+ * 1280px. The switch between the two faces is CSS only, on the two classes
+ * this file owns (`.fleet-desktop-body`/`.fleet-mobile`), never on
+ * `.fleet-grid`/`.ac-card` (shared) — precedent `.bookings-mobile` (15.4).
  */
-import { useEffect, useRef, useState } from 'react';
-import { FleetCardGrid, type FleetCardItem } from '@/components/dashboard/fleet-card';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { FleetCardGrid, badgeFor, type FleetCardItem } from '@/components/dashboard/fleet-card';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { hoursBarPercent } from '@/lib/mobile-registries';
+import { formatMinutes } from '@/lib/time';
 import { AircraftEditor, type AircraftEditorLabels } from './aircraft-editor';
 
 export type { FleetCardItem } from '@/components/dashboard/fleet-card';
+
+/** The two prices of an aircraft rate (story 19.3, R-19-e), integer euro cents. */
+export type RatePrices = { studentPriceCents: number; pilotPriceCents: number };
+
+/** A rate that takes effect after today (story 19.3, Q-19.3-d) — `validFrom` is `YYYY-MM-DD`. */
+export type ScheduledRate = RatePrices & { validFrom: string };
+
+/**
+ * The fleet page's own row: the shared card item PLUS what only the editor
+ * reads — `outOfServiceUntil` (story AOG-1a, Disponibilità) and the two rates
+ * of story 19.3 (the price placeholders and the "variazione programmata"
+ * line; no card shows a price since Q-19.3-a). Deliberately widened HERE and
+ * not on `FleetCardItem` itself: the Panoramica's `FleetCardGrid` shares that
+ * type and needs none of it. `FleetCardGrid`/`badgeFor` accept the narrower
+ * type and are handed these rows unchanged.
+ */
+export type FleetConsoleItem = FleetCardItem & {
+  outOfServiceUntil: string | null;
+  /** The rate in effect today (Europe/Rome), or `null`. */
+  currentRate: RatePrices | null;
+  /** The NEXT rate with `validFrom` after today, or `null`. */
+  scheduledRate: ScheduledRate | null;
+};
 
 export type FleetConsoleLabels = {
   cardTitle: string;
@@ -30,11 +65,18 @@ export type FleetConsoleLabels = {
   includeArchivedLabel: string;
   empty: string;
   newAircraft: string;
-  rateLabel: string;
   exportLabel: string;
   exportXls: string;
   pagination: { prev: string; next: string };
   badge: { aog: string; reserved: string; available: string; archived: string };
+  /** Story 15.5 — the phone face only (card caption + detail sheet). */
+  mobile: {
+    monthHours: string;
+    openDetail: string;
+    close: string;
+    edit: string;
+    sheet: { status: string; aogReason: string; totalHours: string; monthHours: string };
+  };
   editor: AircraftEditorLabels;
   toast: {
     created: string;
@@ -43,20 +85,21 @@ export type FleetConsoleLabels = {
     unarchived: string;
     setOutOfService: string;
     returnedToService: string;
-    hourMeterAdjusted: string;
-    rateAdded: string;
   };
 };
 
 type FleetConsoleProps = {
-  items: FleetCardItem[];
+  items: FleetConsoleItem[];
   page: number;
   totalPages: number;
   initialQuery: string;
   initialIncludeArchived: boolean;
-  canManageSettings: boolean;
   exportHref: string;
   locale: 'it' | 'en';
+  /** Story 15.5 (R-15.5-b): flown minutes of the CURRENT MONTH, per aircraft of THIS page — `sumFlightMinutesByAircraft`. Missing key = did not fly. */
+  monthMinutesById: Record<string, number>;
+  /** Story 19.2 (R-19-b): ALL-TIME flown minutes per aircraft of THIS page (the aircraft's hours), same source and same missing-key rule as `monthMinutesById`. */
+  totalMinutesById: Record<string, number>;
   labels: FleetConsoleLabels;
 };
 
@@ -77,7 +120,7 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
   };
 }
 
-type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetCardItem };
+type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetConsoleItem };
 
 export function FleetConsole({
   items,
@@ -85,15 +128,24 @@ export function FleetConsole({
   totalPages,
   initialQuery,
   initialIncludeArchived,
-  canManageSettings,
   exportHref,
   locale,
+  monthMinutesById,
+  totalMinutesById,
   labels,
 }: FleetConsoleProps) {
   const router = useRouter();
   const [queryInput, setQueryInput] = useState(initialQuery);
   const [includeArchived, setIncludeArchived] = useState(initialIncludeArchived);
   const [target, setTarget] = useState<EditorTarget | null>(null);
+  const [sheetId, setSheetId] = useState<string | null>(null);
+
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => setSheetId(null), []);
+
+  const sheetAircraft = items.find((item) => item.id === sheetId) ?? null;
+  /** The page's busiest aircraft — the bar's 100% (see `hoursBarPercent`'s doc-comment). */
+  const maxMonthMinutes = items.reduce((max, item) => Math.max(max, monthMinutesById[item.id] ?? 0), 0);
 
   function navigate(next: { q: string; includeArchived: boolean }): void {
     const params = new URLSearchParams();
@@ -127,7 +179,15 @@ export function FleetConsole({
   return (
     <>
       <div className="card">
-        <div className="card-head">
+        {/* ONE head at every width (AD-3): the four controls keep their testids
+            and their state, and ratifica R-15.5-g's phone layout (search
+            full-width, "Archiviati" as a chip, CTA full-width) is CSS on the
+            `.registry-head` class this card owns — a second, mobile-only copy of
+            any of them would be a second source of truth for the same query
+            string and a duplicate testid at 1280px. The search box's width moved
+            from an inline style to `.registry-search` for exactly that reason:
+            an inline `width: 240` cannot be widened by a media query. */}
+        <div className="card-head registry-head">
           <div className="card-title">{labels.cardTitle}</div>
           <div className="spacer" />
           <button
@@ -140,7 +200,7 @@ export function FleetConsole({
             {includeArchived ? <Icon.check /> : null}
             {labels.includeArchivedLabel}
           </button>
-          <div className="search" style={{ width: 240 }}>
+          <div className="search registry-search">
             <Icon.search />
             <input
               className="bare-input"
@@ -157,22 +217,68 @@ export function FleetConsole({
           </button>
         </div>
 
-        {items.length === 0 ? (
-          <p className="card-body" data-testid="fleet-empty">
-            {labels.empty}
-          </p>
-        ) : (
-          <FleetCardGrid
-            items={items}
-            locale={locale}
-            rateLabel={labels.rateLabel}
-            badgeLabels={labels.badge}
-            onCardClick={(ac) => setTarget({ mode: 'edit', aircraft: ac })}
-          />
-        )}
+        <div className="fleet-desktop-body">
+          {items.length === 0 ? (
+            <p className="card-body" data-testid="fleet-empty">
+              {labels.empty}
+            </p>
+          ) : (
+            <FleetCardGrid
+              items={items}
+              badgeLabels={labels.badge}
+              /* The grid hands back the NARROW shared `FleetCardItem` (story
+                 AOG-1a leaves `fleet-card.tsx` untouched, R-AOG-e) — the row
+                 with the fermo date is looked up here, in this page's own
+                 `items`. */
+              onCardClick={(ac) => {
+                const aircraft = items.find((item) => item.id === ac.id);
+                if (aircraft) setTarget({ mode: 'edit', aircraft });
+              }}
+            />
+          )}
+        </div>
+
+        {/* --- the phone face of the same list (template 191-201) -------------
+            Two equal columns of ONE `<button>` each (R-15.5-i): the card is the
+            trigger of the detail sheet, so there is no nested interactive
+            element and the touch target IS the card. The AOG tint stays the
+            app's own `.ac-card.aog` recipe, not the template's `color-mix`. */}
+        <div className="fleet-mobile" data-testid="mobile-fleet-grid">
+          {items.length === 0 ? (
+            <p className="mobile-card-empty" data-testid="mobile-fleet-empty">
+              {labels.empty}
+            </p>
+          ) : (
+            items.map((aircraft) => {
+              const minutes = monthMinutesById[aircraft.id] ?? 0;
+              const aog = aircraft.status === 'OUT_OF_SERVICE';
+              return (
+                <button
+                  key={aircraft.id}
+                  type="button"
+                  className={`mobile-ac-card ${aog ? 'aog' : ''}`}
+                  aria-label={`${labels.mobile.openDetail}: ${aircraft.registration} · ${aircraft.model}`}
+                  onClick={() => setSheetId(aircraft.id)}
+                  data-testid={`mobile-fleet-card-${aircraft.id}`}
+                >
+                  <span className="mobile-ac-tail">{aircraft.registration}</span>
+                  <span className="mobile-ac-status">{badgeFor(aircraft, labels.badge)}</span>
+                  <span className="mobile-ac-model">{aircraft.model}</span>
+                  <span className="meter-bar">
+                    <span className={`fill ${aog ? 'bad' : ''}`} style={{ width: `${hoursBarPercent(minutes, maxMonthMinutes)}%` }} />
+                  </span>
+                  <span className="mobile-ac-meter">
+                    <span>{labels.mobile.monthHours}</span>
+                    <span className="v">{formatMinutes(minutes)}</span>
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
 
         {totalPages > 1 ? (
-          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+          <div className="card-body registry-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
             <Link
               href={pageHref(page - 1)}
               locale={locale as AppLocale}
@@ -206,11 +312,57 @@ export function FleetConsole({
         target={target}
         onClose={() => setTarget(null)}
         onMutated={() => router.refresh()}
-        canManageSettings={canManageSettings}
+        totalMinutes={target?.mode === 'edit' ? (totalMinutesById[target.aircraft.id] ?? 0) : null}
         locale={locale}
         labels={labels.editor}
         toastLabels={labels.toast}
       />
+
+      {/* Rendered conditionally (AD-7): `mobile-fleet-sheet` is ONE node.
+          "Modifica" CLOSES the sheet before opening the full-screen editor
+          rather than stacking a z-50 panel on a z-40 sheet (R-15.4-d). */}
+      {sheetAircraft ? (
+        <BottomSheet
+          open
+          onClose={closeSheet}
+          testId="mobile-fleet-sheet"
+          // The `sub` ends up inside the dialog's accessible name (`${sub} — ${title}`,
+          // `bottom-sheet.tsx`), so it must never be empty: the type is NOT NULL.
+          sub={sheetAircraft.type}
+          title={`${sheetAircraft.registration} · ${sheetAircraft.model}`}
+          badge={badgeFor(sheetAircraft, labels.badge)}
+          rows={fleetSheetRows(sheetAircraft, totalMinutesById[sheetAircraft.id] ?? 0, monthMinutesById[sheetAircraft.id] ?? 0, labels)}
+          closeLabel={labels.mobile.close}
+          actions={
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                const aircraft = sheetAircraft;
+                closeSheet();
+                setTarget({ mode: 'edit', aircraft });
+              }}
+              data-testid="aircraft-edit-mobile"
+            >
+              {labels.mobile.edit}
+            </button>
+          }
+        />
+      ) : null}
     </>
   );
+}
+
+/** Detail rows of the fleet sheet — the template's own `openTail` builder (script 598-599), with the app's fields. */
+function fleetSheetRows(aircraft: FleetConsoleItem, totalMinutes: number, monthMinutes: number, labels: FleetConsoleLabels): BottomSheetRow[] {
+  const statusLabel = aircraft.archivedAt !== null ? labels.badge.archived : aircraft.status === 'OUT_OF_SERVICE' ? labels.badge.aog : aircraft.reserved ? labels.badge.reserved : labels.badge.available;
+  const rows: BottomSheetRow[] = [{ k: labels.mobile.sheet.status, v: statusLabel }];
+  if (aircraft.status === 'OUT_OF_SERVICE' && aircraft.statusReason) {
+    rows.push({ k: labels.mobile.sheet.aogReason, v: aircraft.statusReason });
+  }
+  rows.push(
+    { k: labels.mobile.sheet.totalHours, v: formatMinutes(totalMinutes) },
+    { k: labels.mobile.sheet.monthHours, v: formatMinutes(monthMinutes) },
+  );
+  return rows;
 }

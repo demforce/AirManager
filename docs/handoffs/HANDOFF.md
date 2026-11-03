@@ -1,72 +1,83 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-27 — **EPIC 13 COMPLETO (11/11)** + post-epic: TD-6, fix-feedback, TD-7 e **REWORK CONTABILITÀ COMPLETO (Billing-1 + Billing-2 DONE)**. Nulla pushato — catena branch stacked. Prossimo lavoro: decide l'utente)
+# HANDOFF — AirManager (aggiornato: 2026-11-03 22:30 — **EPIC 19 CHIUSO**: 19.1-19.12b done; sessione FERMA a fine epic, come prevede `CLAUDE.md`; `dev` PUSHATO su origin col mandato del PO; PR #22 `dev` → `main` APERTA, con titolo e descrizione aggiornati agli Epic 14-19)
 
-## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
+Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2230.md` (ciclo 19.12a/19.12b di oggi) e `HANDOFF-2026-11-03-1252.md` (Epic 13-18, ciclo AOG, 19.1-19.11, ricette d'ambiente estese).
 
-Tutto su branch propri, stacked in sequenza sopra `epic-13-ui-feedback` (nessuno pushato):
+## Goal
 
-- **TD-6 security** (`td-6-security-auth`, 4 commit) — DONE. F1 revoca sessioni (`User.tokenVersion`), F2 login-lock atomico. Review Opus 5 con attacchi HTTP reali. Nota deploy corretta: l'app non è mai stata deployata, nessun rischio di sfratto sessioni.
-- **fix-post-epic-13-feedback** (1 commit) — DONE. Card prenotazioni dashboard ordinata per data (era pending-first, decisione PO); seed demo con `kind=MEDICAL` (le visite mediche comparivano tra i ratings — `seed-demo.ts` non era stato aggiornato dallo sweep 13.1); storico tariffe istruttore capped a 5 righe + "Mostra tutte" (pattern flotta 13.4). **Lezione**: `t.raw` per i placeholder `{count}` riempiti lato client (`t()` dà `FORMATTING_ERROR` ICU — il log del server lo dice, NON è cache).
-- **TD-7 datetime-picker** (`td-7-datetime-picker`, 6 commit) — **DONE**. `CalendarPopover` esteso con campo ora digitabile; nuovo `DateTimeInput`; tutti i 10 form data/datetime al picker custom. Review Opus 5: **1 blocker** (popover senza flip verticale → collassava/usciva dallo schermo sul form `/ppr`) + 2 major (falso "oggi" selezionato, ora non digitabile su mobile), tutti fixati (`bf39082`). La deviazione del dev (portal su `document.body`) CONFERMATA legittima: `transform` su `.slideover-panel` intrappola i `position:fixed`. `schedule.tsx` deduplicato. **Full suite 265/265**. Follow-up F7: 4 input `type="time"` nativi restano (scheduling-card, flight-editor) — fuori scope, non urgenti.
-- **Rework Contabilità** — spec APPROVATO (`docs/superpowers/specs/2026-07-26-billing-rework-design.md`), 2 story su branch `billing-rework` (stacked su td-7).
-  - **Story Billing-1 (fondamenta) — DONE** (2026-07-27, 5 commit: `bdf15ec` docs, `47db63e` feat, `f37c2bd` record, `13fcc86` fix review, + docs chiusura). `CashMovement.paymentMethod` + backfill in migrazione; saldi apertura tesoreria in AppSetting + `PUT /settings/treasury`; gemello di denaro dei payout istruttori (categoria "Compensi istruttori", `instructorPayoutId @unique`); `getBillingSummary` (result/treasury/deposits/byCategory) con definizione di ricavo UNICA (`getLedgerRevenueCents` delegata anche da `getBillingKpis` e stats). Review Opus 5: 3 major veri (F1 quinto writer `reverseCashMovement` senza metodo; F2 categorie automatiche non protette — guardia estesa anche a "PPR" su ratifica; F3 storni di cassa/rettifiche non nettati — ratifica: OGNI storno annulla nel SUO mese) + F4-F8; D2 ratificata → select metodo obbligatorio nel pannello PPR. Full suite arbitro (sessione principale — il run del fix-subagent è morto col cap 120s): **265/265, exit 0, zero flaky**; unit 1489→1510. Ratifiche PO chiave nello story file (Review Record completo).
-  - **Story Billing-2 (pagina) — DONE** (2026-07-27, 5 commit: `a30593e` docs, `5fed728` feat, `01be948` record, `0b8059e`+`917c3b0` fix review, + docs chiusura). Tre riquadri su `getBillingSummary` (`getBillingKpis` CANCELLATO, tile Istruttori rimosso con motivazione), registro Entrate/Uscite + colonna Tipo filtrabile, secchiello con `PATCH /cash-movements/{id}` (RBAC verificata via HTTP), card tesoreria in Impostazioni, `treasury-settings.spec.ts` in catena serializzata. Review Opus 5: 4 major (secchiello sparito su somma-zero → gated su count; colonne sotto AA in chiaro → `.stat-tone-*`, rimisurato 9-10:1; rettifica di ricarica contata ricavo → libro dell'originale, delta revenue 0; flaky 2-su-2 del test riquadri → **nuovo project serializzato `billing-global` in coda alla catena** insieme al test del secchiello) + 3 minor + 4 nit, TUTTI chiusi. **2 ratifiche PO**: prospettiva club UNIFORME sul registro (SUPERA il mock §5 dello spec — aggiornato con nota; helper unico `ledgerClubAmountCents` console+export) e libro dell'originale sulle rettifiche (applicazione della ratifica Billing-1). Full suite finale **270/270 x2, 0 flaky, exit 0**; unit 1536.
+- **Progetto**: AirManager, gestionale di aviosuperficie (v. `CLAUDE.md`).
+- **Appena chiuso**: **Epic 19 — Semplificazione e regole operative**, change request del PO del 2026-11-01. Fonte: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md`, con ratifiche R-19-*, assunzioni A1-A20 e l'Addendum in coda. Ogni story ha in `_bmad-output/implementation-artifacts/19-*` lo story file, il Dev Agent Record, il Review Record e il report di review.
+- **Prossima fase**: il merge della PR #22 lo decide il PO; poi le story residue dell'Epic 16, poi Epic 17 ed Epic 18.
 
-## Stato: Epic 13 chiuso
+## Current Progress (fonte di verità: `_bmad-output/implementation-artifacts/sprint-status.yaml`)
 
-**Epic 13 — UI feedback batch post-Epic 12** (punch-list utente 2026-07-22, ~36 item → 11 story): TUTTO DONE. Fonti di verità — NON duplicate qui:
-- **Piano** (item→story, ratifiche R1-R6): `docs/superpowers/plans/2026-07-22-epic-13-ui-feedback.md`
-- **Tracking**: `_bmad-output/implementation-artifacts/sprint-status.yaml` (epic-13: done) + story file `13-*.md` (ogni story porta AC, ratifiche, Dev Agent Record e Review Record completi — la storia dettagliata di ogni ciclo dev/review/fix è LÌ).
-- Story chiuse in quest'ultima sessione: **13.7** Pianificazione (popover fixed + PDF prenotazioni), **13.8** Shell & misc (switcher lingua, icona fleet, label chart, rimozione logo, precompile scadenze), **13.9** Dark theme pass (5 cause radice token-level + fix review), **13.10** Mobile pass (rail 64px ratificato; clamp popover, form-grid/page-head responsive, 4 major dalla review sulla classe "clippato dentro card"), **13.11** Ritiro stack legacy (**Tailwind CSS, Geist e TanStack Table RIMOSSI da package.json**; 4 componenti morti + glife orfane rimossi; mini-reset esplicito al posto del preflight; censimento utility chiuso a zero token morti).
-- **Reviewer switchato a Opus 5** (decisione utente 2026-07-25) — primo epic-segmento completo col nuovo modello: 5 review, tutte shippable-with-fixes, qualità dei findings alta (v. lezioni).
-- **Ultima full suite (arbitro)**: `CI=1 npx playwright test` su build prod, DB fresco → **259 passed (7.4m), exit 0, 0 flaky**, catena settings 6/6 + booking-window 3/3.
+- `epic-19: done`. La 19.12a e la 19.12b sono state chiuse in questa sessione:
+  - **19.12a** (`abb0dd3` feat, `096da9b` fix, `6525be2` chiusura): glossario `docs/i18n/glossario-it.md`, test `src/i18n/messages.test.ts` (parità chiavi e argomenti col parser ICU 3.5.12, guardia `t.raw`, trappola dell'apostrofo), 30 chiavi portate al plurale ICU, 194 chiavi morte rimosse (1 629 → 1 430 per file). Arbitro finale 604/604.
+  - **19.12b** (`66fd139` feat, `285590e` fix, `c298e41` chiusura): passata completa dei testi, guardia `BANNED` sulle varianti vietate, export a pattern unico, pagine 404/500 localizzate, riga di conferma fuori servizio ridisegnata (frase intera, decisione PO), 18.5 riperimetrata. Arbitro finale **605 + 1 flaky (ECONNRESET), exit 0**.
+- **Conteggi**: e2e **606**, unit **2211**.
+- **`epic-19-retrospective: optional`**: non è stata fatta.
 
-## Branch e stato git (riorganizzato 2026-07-27 su richiesta utente)
+## Key Decisions di oggi (il dettaglio è nei Review Record e nelle code dei file story)
 
-- **Modello: SOLO `main` + `dev`** (policy in CLAUDE.md). Consolidamento 2026-07-27: tutta la catena stacked (epic-12 → epic-13 → td-6 → fix-feedback → td-7 → billing-rework, 142 commit sopra main, fast-forward pulito) è confluita in `dev` e mergiata in `main` via PR unica; PR #18 (linea Refero+Celeste scartata) e #20 (epic-12, superata dal consolidamento) chiuse; TUTTI i branch per-epic/stale cancellati (locale e remoto, inclusi i 18 `claude/*` storici e l'orfano `fix/e2e-datetime-local-tz`, il cui unico fix era già identico nella catena).
-- Untracked deliberato: churn plugin utente (`.claude/skills/*`, `.github/*`, `.agents/`, `skills-lock.json`, `.claude/workflows/`) — NON committare mai.
+- **19.12a F2 → PO**: frase intera «Mettere fuori servizio il velivolo? …» con la riga di conferma ridisegnata. Fatto nella 19.12b, mantenendo la guardia del doppio clic (MAJOR-2 / decisione PO 6).
+- **19.12b, domande del dev → PO**:
+  - sezione Piloti invariata («Piloti», «Aggiungi pilota»);
+  - saluto «Ciao, {name}» per tutti i ruoli;
+  - nel digest scadenze una chiave dedicata, «scadenza superata da N giorni», mentre l'avviso al titolare resta «è scaduta da»;
+  - `Export.pdfTooLarge` «… o scarica l'Excel».
+- **Decisioni tecniche della sessione principale**:
+  - `PilotsPage.sub` conta persone, quindi dice «persone»/«sospese»;
+  - U+00A0 in «{aog} fuori servizio» nelle chiavi `AircraftPage.sub` e `DashboardPage.fleetCard.summary`;
+  - nella 19.12b, L3 (scroll del Registro voli a 641-1100 px) diventa **TD-19.12b-a dentro la 18.5**.
 
-## Next steps (in ordine — per la PROSSIMA sessione)
+## What Worked
 
-1. ~~Push della catena~~ **FATTO 2026-07-27**: repo consolidato su `main` + `dev` (v. sezione Branch). Il prossimo lavoro parte da `dev`.
-2. **Prossimo lavoro: decide l'utente.** Il rework Contabilità è COMPLETO (Billing-1 fondamenta + Billing-2 pagina, entrambe done — dettagli nella sezione post-Epic-13). Nessuna story pronta nel backlog oltre gli action item aperti in `sprint-status.yaml`.
-3. **Security findings post-epic: FATTI** (story **TD-6**, branch `td-6-security-auth` stacked su epic-13, 2026-07-26 — story file `_bmad-output/implementation-artifacts/td-6-security-auth.md` con Review Record completo). F1 CWE-613 chiuso con `User.tokenVersion` (claim nel JWT, confronto in `applyActiveRecheck`, bump nella transazione di `setPasswordWithToken` — copre reset E invito); F2 CWE-367 chiuso con `reserveLoginAttempt` (prenotazione pessimista + `pg_advisory_xact_lock` per-identifier). Review Opus 5 con attacchi REALI: exploit F1 riprodotto end-to-end (con controllo decisivo che isola la causa nell'eviction da versione) e burst HTTP di 25-40 richieste concorrenti (cap esattamente 10 vs 30 ammessi dal codice pre-fix). Residui ACCETTATI e documentati: per-IP non serializzato fra identifier diversi (overshoot ~17% una tantum, contatore comunque aggirabile via `x-forwarded-for` — residuo D-D già noto); >10 login CORRETTI simultanei sullo stesso identifier vengono rifiutati (il cap conta i tentativi in volo). Nota tecnica (NON un rischio operativo: l'app non è mai stata deployata, 0 sessioni vive esistenti): al PRIMO deploy futuro qualunque JWT emesso prima del claim `tokenVersion` sarebbe trattato come stale entro 15 min — irrilevante finché non esiste una base utenti in produzione. Full suite finale 258+1 flaky trasporto, exit 0.
-3. **Retrospettiva epic-13** (optional in sprint-status) — materiale pronto: i Review Record + le lezioni sotto.
-4. Prossimo epic: decide l'utente (nessun backlog di story pronte oltre i punti sopra).
+- Il ciclo per story di `CLAUDE.md` / dell'handoff precedente: reset DB dalla sessione principale → UN dev Opus → reset → review Opus, che lancia per primo l'arbitro → fix Opus con le decisioni già prese → arbitro finale → `docs(N)` di chiusura.
+- Domande al PO **batchate** e lanciate mentre la review girava già, per non tenerla ferma; le decisioni vanno in coda al file della story PRIMA del fix.
+- Note «trappole» del reviewer girate al fix con SendMessage: per esempio il `toHaveCount(0)` sul saluto, che con «Ciao» sarebbe diventato falso.
+- Mutanti e discriminanze **su una copia isolata**: cp di `src` + `messages` + config, `node_modules` in symlink. Reviewer e fix l'hanno fatto senza incidenti; ora è una regola in `CLAUDE.md`.
 
-## Ciclo per story su QUESTA macchina (consolidato — INVARIATO, riusarlo tale e quale)
+## What Didn't Work / trappole
 
-1. Story file (sessione principale Fable, xhigh) → commit `docs(N)` (pattern: chiusura story precedente + story nuova in UN commit).
-2. **DB fresco**: `fuser -k 3000/tcp; docker compose down -v && docker compose up -d && sleep 5 && set -a && . ./.env && set +a && npx prisma migrate deploy && npx prisma db seed` (lo script `npm run db:reset` NON funziona qui: assume l'utente OS postgres del container remoto).
-3. **Dev**: Workflow tool, UN agent `agentType:'dev-story'` effort xhigh, prompt col path story + regole ambiente + report strutturato. UI story: design-taste-frontend + ui-ux-pro-max.
-4. DB fresco → **Review**: `agentType:'adversarial-reviewer'` effort xhigh (**Opus 5** — MAI degradare), notesForReview verbatim + priority zero full suite CI=1 build prod. Se il dev non ha completato la sua full suite, la review la RIESEGUE come arbitro (successo 13.9/13.11).
-5. Fix: chirurgici → sessione principale; corposi → fix-subagent coi findings verbatim + decisioni PO sopraggiunte. Review Record nello story file, `fix(N)` + `docs(N)` chiusura (sprint-status + HANDOFF SEMPRE).
-6. Decisioni PO: AskUserQuestion batchate nei momenti naturali (fine review / pre-dispatch) — l'utente risponde anche a sessione non presidiata, il pattern ha retto per tutto l'epic.
+- **Interruzione dei subagent a metà dei mutanti** (14:25): lo stop di tutti i subagent ha lasciato un mutante («dell'{name}») in `it.json`. Un dev ripreso con SendMessage **non sa** di essere stato interrotto: va avvisato e deve verificare gli sha256.
+- **Messaggi tardivi dei teammate**: arrivano anche ore dopo e ripetono report già gestiti. Prima di agire, confronta il timestamp con lo stato del repo.
+- **DB `airmanager` sporco fra le serie**: la catena serializzata lascia settings permissivi (`maxAdvanceDays` 3650 → `api-v1` rosso). Dopo due suite intere sullo stesso DB il picker persone, che carica solo i primi 100 nomi, e la pagina 1 delle prenotazioni fanno fallire spec sani. Ogni arbitro va su DB fresco.
+- **ECONNRESET** (TD-19.10-g): si è rivisto nell'arbitro finale su una POST di fixture, con un flaky verde al retry. La correzione candidata resta `next start --keepAliveTimeout 75000`.
+- Restano valide le trappole dell'handoff precedente:
+  - i subagent NON possono resettare il DB;
+  - fascia 23:40-01:00 di Roma da evitare per gli arbitri;
+  - `getMetar` senza timeout (TD-19.7b-e);
+  - i reviewer possono morire per limite di sessione;
+  - demo per il PO via `npm run seed:demo` + `npm run dev -- -H 0.0.0.0`, su `localhost` o `192.168.56.115`.
+- Ricetta di reset: `docker compose exec -T postgres psql -U airmanager -d postgres -Atc 'DROP DATABASE airmanager WITH (FORCE)' && docker compose exec -T postgres createdb -U airmanager airmanager && set -a && . ./.env && set +a && npx prisma migrate deploy && npx prisma db seed`.
 
-## Ambiente / regole macchina locale (Fedora dell'utente — NON il container di CLAUDE.md)
+## Stato dell'ambiente lasciato
 
-- Postgres+Mailpit via `docker compose` del repo (5432/1025/8025); Mailpit API `http://localhost:8025/api/v1/messages`.
-- **Lockfile SOLO via `npx -y npm@10`**.
-- **JOBS_SECRET**: il `.env` locale ha ancora il placeholder → la validazione env di produzione lo RIFIUTA e il webServer CI=1 non parte. Prima di ogni full suite: `export JOBS_SECRET=<valore-non-placeholder>`. Fix definitivo = valore reale in `.env` (azione utente, mai fatta).
-- **Playwright**: suite e2e nativa (verde e ripetibile). MCP Playwright funziona dalla sessione PRINCIPALE via override Docker in `~/.claude.json`; dai SUBAGENT non è raggiungibile → fallback sanzionato: script `playwright-core` throwaway (Chromium cacheato `~/.cache/ms-playwright/chromium-1228`), MAI committati, MAI `playwright install`.
-- **Flake e2e noto (riqualificato review 13.10)**: classe "login POST bloccato a 5s sotto contesa worker" — massiccia su `next dev` (cold-compile), OCCASIONALE anche su build prod CI=1 (1 flaky/run, retry sempre verde). Mai attribuirla a una story senza prova.
-- e2e SEMPRE foreground con output su FILE (mai `| tail`: bufferizza e al kill non esce nulla). I run in background dei subagent MUOIONO con la loro sessione: se un report dichiara la suite incompleta, la sessione principale la RIESEGUE (2 volte su 3 è servito).
-- **Classifier flake**: "claude-sonnet-5 temporarily unavailable" su Bash/Workflow → transitorio; se persiste (outage API più ampio, successo 1 volta: ~20 min), backoff con Monitor (`sleep N; echo retry`) e riprovare — le operazioni read-only e Write/Edit continuano a funzionare.
-- gates: `npm run gates` (mai i 4 comandi separati). **Co-Authored-By = il modello che ha fatto il lavoro** (dev/fix subagent = `Claude Sonnet 5`; sessione principale = `Claude Fable 5`); push/`gh pr close`/`git stash drop` bloccati → comandi inline `!` dell'utente.
-- Parallel-session collision risk (memoria): controllare `git log` per commit altrui PRIMA di ogni commit epic-level.
+- La sessione Claude parallela dell'audit è **chiusa**. La sua cartella `_bmad-output/planning-artifacts/audit-2026-11-02/` è untracked e potrebbe servire come fonte per il backlog: chiedere al PO se tenerla o committarla.
+- **DB**: c'è solo `airmanager`. I sei gemelli (`airmanager_audit`, `airmanager_load`, `airmanager_1912b*`) sono stati cancellati col mandato del PO.
+- **File untracked/modificati non nostri**, da non committare: `.agents/`, `.claude/skills/*` (compresa la cancellazione di `.claude/skills/design-taste-frontend/SKILL.md`), `.claude/workflows/`, `.github/hooks/`, `.github/skills/`, `skills-lock.json`, `q.txt`.
 
-## Lezioni consolidate (Epic 13 — le più durevoli, dettagli nei Review Record)
+## Next Steps (in ordine)
 
-- **Il "gemello" va MISURATO, non dichiarato** (3 occorrenze: popover calendario 13.7, LineChart 13.8, .ppr-mark 13.9): quando una story fixa UN esemplare di un pattern, dev e reviewer enumerano ESPLICITAMENTE gli altri esemplari e li verificano.
-- **Guard e2e discriminanti** (13.7): per bug visivi/clipping servono assert di GEOMETRIA + hit-test (`elementFromPoint`), mai click Playwright (scrollIntoViewIfNeeded aggira i clip); la discriminanza va PROVATA contro una riproduzione del pre-fix (MutationObserver/addInitScript, repo intatto).
-- **Contrasto = misura computazionale** (13.9): il giudizio visivo fallisce sotto ~3:1; canvas→RGB→WCAG (o oklch→sRGB in python per i token). Le spiegazioni di MECCANISMO si provano, non si narrano.
-- **Mobile = rect vs box visibile della card + hit-test** (13.10): `document.scrollWidth` di pagina NON vede il contenuto clippato da `.card{overflow:hidden}` (4 major in una review). E il DB fresco NASCONDE gli overflow da valori lunghi: fixture realistiche (text-node substitution in-page).
-- **Rimozione di un framework CSS = diff ortogonale contro il bundle baseline** (13.11): 258 test verdi non vedevano 3 major (utility vive in template literal + preflight); il censimento con grep su `className="..."` è cieco — sweep token-vs-CSS su OGNI espressione + diff dei computed style con iniezione del CSS baseline fino a diff vuoto.
-- **Cosa ha funzionato**: decisioni PO batchate via AskUserQuestion nei momenti naturali; la review come arbitro quando il dev non completa la suite; fix chirurgici in sessione principale con verifica aritmetica pre-commit; recon+draft della story successiva durante le review (zero tempi morti).
+1. **Controlli di apertura**: `git log --oneline -5`, `git status`, `ps -o pid,lstart -C claude`, `ss -ltnp | grep :3000`, `scripts/e2e.sh status`. Chiedere al PO il mandato di sessione per il reset del DB e2e, perché il classifier lo richiede.
+2. **PR #22 `dev` → `main`** (https://github.com/demforce/AirManager/pull/22): push e aggiornamento della descrizione sono fatti il 2026-11-03. Il merge spetta al PO: non farlo senza mandato.
+3. **Retrospettiva Epic 19** (opzionale, `bmad-retrospective`) e **smistamento dei TD** dell'epic. In particolare:
+   - TD-19.7b-e METAR senza timeout (alta priorità);
+   - TD-19.10-g ECONNRESET;
+   - TD-19.10-f tre mini-modal non accessibili;
+   - TD-19.11-a/b/c layout dell'estratto conto e focus;
+   - TD-19.9-a tipi disattivati nel registro;
+   - TD-19.10-a/b fascia oraria.
 
-## Suggested skills (prossima sessione)
+   Sono censiti nei Review Record dei file `19-*`.
+4. **Epic 16 residuo**: 16.5, 16.6a, 16.6b, 16.7, **16.8 da riperimetrare** (cita il contaore eliminato dalla 19.2), 16.9. Le riperimetrazioni sono annotate riga per riga in `sprint-status.yaml`.
+5. **Epic 17**, poi **Epic 18**. La 18.5 è già riperimetrata (sprint-status e `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md`); in più contiene TD-19.12b-a e la tab bar EN.
 
-- `karpathy-guidelines` — in OGNI prompt di dev/fix/review (regola di progetto).
-- Story UI: `design-taste-frontend` + `ui-ux-pro-max`; riferimento visivo = AirOps (`src/styles/airops.css` + `docs/design-reference/airops/`).
-- `/claude-security` — se si parte dai 2 findings post-epic (il plugin è installato; il report esistente è nel run dir gitignored).
-- `handoff` — a fine epic o fine sessione.
-- Review adversarial: agent type `adversarial-reviewer` via Workflow tool (Opus 5 xhigh) — non una skill, ma il quality gate portante.
+## Suggested skills
+
+- `karpathy-guidelines`: in ogni prompt di dev, fix e review (regola di progetto).
+- `bmad-dev-story` / agent `dev-story` con `model: opus` per ogni story con UI; agent `adversarial-reviewer` (Opus, consegna il report su disco).
+- `bmad-create-story` per riperimetrare la 16.8 e per le story di Epic 16-18 ancora senza file.
+- `bmad-retrospective` per la retrospettiva opzionale dell'Epic 19.
+- `design-taste-frontend` + `ui-ux-pro-max` nei prompt delle story con UI.
+- `commit-commands:commit-push-pr` o `gh` per push e PR, solo con il mandato del PO.
+- `handoff` a fine epic.

@@ -1,5 +1,15 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import {
+  ensureFlightRequirements,
+  ensureValidSeedExpiries,
+  registerExpiry,
+  registerFlightOn,
+  submitInRegola,
+  submitPastRequirements,
+  todayRome,
+} from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -87,23 +97,6 @@ function extractSetPasswordUrl(emailText: string): URL {
   return new URL(match[1]);
 }
 
-/** Creates a STAFF-only user (via the admin users API) and sets its password — same pattern as `aircraft-rates.spec.ts`. */
-async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
-  const email = uniqueEmail('staff-flights');
-  const response = await page.request.post('/api/v1/users', { data: { email, roles: ['STAFF'] } });
-  expect(response.status()).toBe(201);
-
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
-  const url = extractSetPasswordUrl(inviteEmail.Text);
-  await page.goto(url.pathname + url.search);
-  await page.getByLabel('Nuova password').fill(password);
-  await page.getByLabel('Conferma password').fill(password);
-  await page.getByRole('button', { name: 'Imposta password' }).click();
-  await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-  return email;
-}
-
 /**
  * Creates a fresh pilot person (with an active pilot profile, so an
  * `Account` exists) plus a linked login user — avoids the shared seeded
@@ -123,12 +116,14 @@ async function createPilotWithLogin(page: Page, password: string): Promise<{ per
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Review F5 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment.
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   const email = uniqueEmail('pilot-flights');
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
   expect(userResponse.status()).toBe(201);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);
@@ -153,16 +148,15 @@ async function createInstructorWithRate(page: Page, priceCentsPerHour: number): 
     data: { ratings: 'FI(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Review F5 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment.
+  await ensureValidSeedExpiries(page, person.id, 'INSTRUCTORS');
 
-  const rateResponse = await page.request.post(`/api/v1/people/${person.id}/instructor-rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedInstructorRate(person.id, { priceCentsPerHour, validFrom: PAST_DATE });
 
   return { personId: person.id, firstName, lastName };
 }
 
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number | null): Promise<{ id: string; registration: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number | null): Promise<{ id: string; registration: string }> {
   // Same `.slice(0, 20)` convention as `aircraft-rates.spec.ts`'s `uniqueAircraft`
   // — keeps the full millisecond timestamp (which differs call to call) plus
   // a couple of random chars; slicing tighter would truncate away the only
@@ -171,20 +165,57 @@ async function createAircraftWithRate(page: Page, priceCentsPerHour: number | nu
   const registration = `I-FL${suffix}`.toUpperCase().slice(0, 20);
 
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  if (priceCentsPerHour !== null) {
-    const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-      data: { priceCentsPerHour, validFrom: PAST_DATE },
-    });
-    expect(rateResponse.status()).toBe(201);
+  if (priceCents !== null) {
+    await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
   }
 
   return { id: aircraft.id, registration };
 }
+
+/**
+ * Creates a run-unique expiry TYPE via the admin API (story 14.4; same
+ * "never reuse a seeded type" rationale as `bookings.spec.ts`'s own
+ * `createExpiryTypeForBooking` — the catalogue is shared across parallel
+ * specs). `scope: 'ALL'` (any person is eligible) — `blocksBooking` gates
+ * BOTH bookings AND, since this story, flight registration (module
+ * doc-comment on `ExpiryType.blocksBooking` in `schema.prisma`).
+ */
+async function createExpiryTypeForFlights(page: Page, blocksBooking: boolean): Promise<{ id: string; name: string }> {
+  const name = `Tipo voli ${uniqueSuffix()}`;
+  const response = await page.request.post('/api/v1/expiry-types', { data: { name, scope: 'ALL', blocksBooking } });
+  expect(response.status()).toBe(201);
+  const body = (await response.json()) as { id: string };
+  return { id: body.id, name };
+}
+
+/**
+ * Cleanup for the "Blocking expiry guard-rail" describe block's own
+ * `blocksBooking: true`, `scope: 'ALL'` fixture types (story 14.4
+ * blast-radius fixture fix): an active one is GLOBAL state, exactly like an
+ * `AppSetting` (CLAUDE.md, "e2e, stato globale") — under
+ * `fullyParallel: true` it can otherwise leak into a CONCURRENTLY-running
+ * OTHER spec's fresh-person `ensureValidSeedExpiries` scan (e2e/helpers.ts)
+ * that happened to run just before this type went active, blocking that
+ * spec's later flight registration too (observed cross-file: `my-account`/
+ * `pdf-exports`/`instructor-compensation`/`reports`). Called by that
+ * describe's `afterEach` (TD-19.9-c: a failed test must not leave the type
+ * active either), so it always re-authenticates as ADMIN (`settings.manage`,
+ * story 6.1) regardless of which actor the test ended as.
+ */
+async function deactivateBlockingType(page: Page, typeId: string): Promise<void> {
+  await page.context().clearCookies();
+  await loginExpectingDashboard(page, ADMIN_EMAIL);
+  const response = await page.request.patch(`/api/v1/expiry-types/${typeId}`, { data: { isActive: false } });
+  expect(response.status()).toBe(200);
+}
+
+/** A safely-EXPIRED date for `PAST_DATE` flights (well before it, immune to DST/timezone edge cases). */
+const EXPIRED_BEFORE_PAST_DATE = '2019-06-01';
 
 /** Opens the "Nuova voce" slide-over (story 12.8) — staff-only, replaces the legacy inline "Registra volo" form. */
 async function openNewEntryForm(page: Page): Promise<void> {
@@ -193,31 +224,29 @@ async function openNewEntryForm(page: Page): Promise<void> {
 }
 
 test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Story 11.1, AC 1/2; Story 12.8: AirOps logbook)', () => {
-  test('staff registers a flight with takeoff/landing times: duration auto-derived and shown live, breakdown shown INSIDE the slide-over, balance drops in the estratto conto (FLIGHT_CHARGE, negative), aircraft hour meter advances', async ({
+  test('admin registers a flight with takeoff/landing times: duration auto-derived and shown live, breakdown shown INSIDE the slide-over, balance drops in the estratto conto (FLIGHT_CHARGE, negative), the aircraft total hours are the flight', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
-    // Admin defines the aircraft rate (API) — 150,00 €/h.
+    // The aircraft rate — 150,00 €/h, from a past date (SQL fixture, story 19.3 D-7).
     const aircraft = await createAircraftWithRate(page, 15000);
     const pilot = await createPilotWithLogin(page, 'PilotFlights123!');
 
-    const staffPassword = 'StaffFlights123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-
-    // Still authenticated as admin (visiting the public set-password page never touched the session cookie).
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
     await page.goto('/it/dashboard/logbook');
     await openNewEntryForm(page);
+    // Story 19.2 (AC 18): the three removed fields are gone from the form.
+    for (const label of ['Contaore iniziale', 'Contaore finale', 'Note']) {
+      await expect(page.getByTestId('flight-form').getByLabel(label, { exact: true })).toHaveCount(0);
+    }
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     // 80' (1:20) via takeoff/landing times — story 11.1, AC 2: the duration is derived, never a direct input.
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:20');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:20');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
+    await submitPastRequirements(page);
 
     // 80' @ 150,00 €/h -> 200,00 € (the PRD-testable 80'x150 case) — ratifica 1: the breakdown/nuovo saldo stays INSIDE the slide-over on success.
     const resultPanel = page.getByTestId('flight-result-panel');
@@ -231,7 +260,8 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(row).toContainText('1:20');
     await expect(row).toContainText(/200,00\s€/);
 
-    // Aircraft hour meter advanced by exactly the flight's minutes (100 + 80 = 180 -> 3:00).
+    // The aircraft's total hours are the sum of its registered flights (story
+    // 19.2, R-19-b): this one alone, 1:20.
     // T0 hardening: filter by this test's own registration instead of relying
     // on it landing on the default page 1 (root-caused empirically — under a
     // fully-parallel e2e run, dozens of aircraft get created by OTHER specs;
@@ -241,12 +271,12 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // never appear, which read as a flaky `toContainText` timeout even
     // though the underlying data was correct all along). The fleet page
     // still supports `?q=` server-side search (`aircraft.service.ts`); the
-    // contaore now lives inside the slide-over editor's "Contaore" section
-    // (the card itself only shows the wet rate, story 12.5 AC 2), scoped by
-    // the card's own `data-testid="ac-card-{id}"` (no text-match ambiguity).
+    // hours live inside the slide-over editor's "Ore di volo" section (the
+    // card itself shows no price since story 19.3, Q-19.3-a), scoped by the
+    // card's own `data-testid="ac-card-{id}"` (no text-match ambiguity).
     await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
     await page.getByTestId(`ac-card-${aircraft.id}`).click();
-    await expect(page.getByTestId('hour-meter-current')).toContainText('3:00');
+    await expect(page.getByTestId('aircraft-total-hours')).toHaveText('Ore totali: 1:20');
 
     // Estratto conto: a FLIGHT_CHARGE row, negative, same total.
     await page.goto(`/it/dashboard/people/${pilot.personId}/account`);
@@ -255,7 +285,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await expect(page.getByTestId('account-balance')).toContainText(/-200,00\s€/);
   });
 
-  test('orari decollo/atterraggio derivano la durata (contaore ormai solo informativo); a SCHOOL flight with an instructor charges both and sums the total', async ({
+  test('orari decollo/atterraggio derivano la durata; a SCHOOL flight with an instructor charges both and sums the total', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -270,12 +300,13 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
-    await page.getByTestId('flight-form').getByLabel('Tipo di volo').selectOption({ label: 'Scuola' });
-    // 60' via takeoff/landing times — the (optional, purely informational) contaore pair is left blank.
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Tipo di volo'), 'Scuola', 'Scuola');
+    // 60' via takeoff/landing times.
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('11:00');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('1:00');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
+    await submitPastRequirements(page);
 
     // 60' @ 120,00 €/h -> 120,00 €; 60' @ 40,00 €/h -> 40,00 €; total 160,00 €.
     const resultPanel = page.getByTestId('flight-result-panel');
@@ -284,51 +315,12 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByTestId('flight-result-close').click();
 
     const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
-    await expect(row).toContainText(`CFI ${instructor.lastName} ${instructor.firstName}`);
+    await expect(row).toContainText(`Istruttore: ${instructor.lastName} ${instructor.firstName}`);
     await expect(row).toContainText('Scuola');
     await expect(row).toContainText('1:00');
     await expect(row).toContainText(/160,00\s€/);
     // Dual SCHOOL flight (AC 2): the PIC is the INSTRUCTOR (own dedicated cell, distinct from the "pilota" column above).
     await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${instructor.lastName} ${instructor.firstName}`);
-  });
-
-  test('an invalid hour-meter pair (end <= start) shows the HOUR_METER_INVALID message in the form (story 11.1: two independent optional fields, no radio/mode anymore)', async ({
-    page,
-  }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const aircraft = await createAircraftWithRate(page, 15000);
-    const pilot = await createPilotWithLogin(page, 'PilotFlights789!');
-
-    await page.goto('/it/dashboard/logbook');
-    await openNewEntryForm(page);
-    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
-    await page.getByLabel('Ora decollo').fill('10:00');
-    await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
-    await page.getByLabel('Contaore finale', { exact: true }).fill('200');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
-
-    await expect(page.getByTestId('flight-form-error')).toContainText("Il contaore finale deve essere maggiore dell'iniziale.");
-  });
-
-  test('an incomplete hour-meter pair (only the start filled) shows the HOUR_METER_INVALID message in the form', async ({ page }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const aircraft = await createAircraftWithRate(page, 15000);
-    const pilot = await createPilotWithLogin(page, 'PilotFlightsHM1!');
-
-    await page.goto('/it/dashboard/logbook');
-    await openNewEntryForm(page);
-    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
-    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
-    await page.getByLabel('Ora decollo').fill('10:00');
-    await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByLabel('Contaore iniziale', { exact: true }).fill('200');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
-
-    await expect(page.getByTestId('flight-form-error')).toContainText("Il contaore finale deve essere maggiore dell'iniziale.");
   });
 
   test('an aircraft with no rate in effect shows the NO_AIRCRAFT_RATE message', async ({ page }) => {
@@ -343,7 +335,7 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
     await page.getByLabel('Ora decollo').fill('10:00');
     await page.getByLabel('Ora atterraggio').fill('10:30');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
 
     await expect(page.getByTestId('flight-form-error')).toContainText('Nessuna tariffa oraria è in vigore per questo velivolo alla data del volo.');
   });
@@ -419,7 +411,8 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     await page.getByLabel('Ora decollo').fill('23:30');
     await page.getByLabel('Ora atterraggio').fill('00:10');
     await expect(page.getByTestId('flight-computed-duration')).toHaveText('0:40');
-    await page.getByRole('button', { name: 'Registra volo' }).click();
+    await page.getByTestId('flight-form-submit').click();
+    await submitPastRequirements(page);
 
     const resultPanel = page.getByTestId('flight-result-panel');
     await expect(resultPanel).toContainText('0:40');
@@ -427,6 +420,14 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     // Same case directly via the API, with `landingAt` on the NEXT calendar
     // day (the server never needs the UI's own +1-day rollover — it just
     // compares the two given instants): no 422, minutes derives to 40.
+    // Story 16.2: on a DIFFERENT day (05 -> 06 Jan) than the UI-registered
+    // flight above. `composeFlightTimes` parses '2020-01-01T23:30' in the
+    // BROWSER's local time, so on a `Etc/UTC` host (this container — see the
+    // TZ note further down this spec) the two intervals were IDENTICAL and
+    // the API call would now answer 409 `FLIGHT_OVERLAP`, while on a
+    // `Europe/Rome` host they never touched. Moving the DAY (not the hour)
+    // keeps the case intact — a landing past midnight via the API, 40
+    // minutes — and makes the fixture timezone-independent.
     const response = await page.request.post('/api/v1/flights', {
       data: {
         aircraftId: aircraft.id,
@@ -434,8 +435,9 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
         departureAirfield: 'Base Airfield',
         arrivalAirfield: 'Base Airfield',
         flightType: 'TOURISM',
-        takeoffAt: `${PAST_DATE}T23:30:00.000Z`,
-        landingAt: '2020-01-02T00:10:00.000Z',
+        takeoffAt: '2020-01-05T23:30:00.000Z',
+        landingAt: '2020-01-06T00:10:00.000Z',
+        force: true,
       },
     });
     expect(response.status()).toBe(201);
@@ -491,13 +493,14 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
         landingAt,
         takeoffs: 2,
         landings: 3,
+        force: true,
       },
     });
     expect(response.status()).toBe(201);
 
-    await page.goto('/it/dashboard/logbook');
-    // Native select since the 2026-07-21 filter-UI change.
-    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraft.registration });
+    // The filter goes in the URL: the "Velivolo" select lists only the first
+    // 100 registrations, fewer than a full suite creates (review 19.3 F1).
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
     await expect(page).toHaveURL(/aircraftId=/);
 
     const row = page.getByTestId('flight-row').first();
@@ -521,11 +524,1123 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
         isSolo: true,
         takeoffAt: `${PAST_DATE}T12:00:00.000Z`,
         landingAt: `${PAST_DATE}T12:30:00.000Z`,
+        force: true,
       },
     });
     expect(soloResponse.status()).toBe(201);
     await page.reload();
     const soloRow = page.getByTestId('flight-row').filter({ hasText: 'solista' }).first();
     await expect(soloRow.getByTestId('flight-pic-cell')).toHaveText(`${pilot.lastName} ${pilot.firstName}`);
+  });
+
+  test('a student-only person (active student profile, no active pilot profile) forces Tipo volo to SCHOOL in the form, and the forced submission actually succeeds (story 14.3, AC 1/2 — no vicolo cieco, lezione 14.6 F2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const instructor = await createInstructorWithRate(page, 4000);
+
+    // A fresh student-only person (active student profile, NO pilot profile)
+    // — no login needed, the admin registers the flight on their behalf.
+    const suffix = uniqueSuffix();
+    const firstName = 'Allievo';
+    const lastName = `SoloScuola-${suffix}`;
+    const personResponse = await page.request.post('/api/v1/people', { data: { firstName, lastName } });
+    expect(personResponse.status()).toBe(201);
+    const student = (await personResponse.json()) as { id: string };
+    const studentProfileResponse = await page.request.put(`/api/v1/people/${student.id}/profiles/student`, {
+      data: { courseStartDate: PAST_DATE },
+    });
+    expect(studentProfileResponse.status()).toBe(200);
+    // Review F5 blast-radius fixture fix — this test registers a brand-new
+    // flight (not a correction, so F4's identity-unchanged exemption never
+    // applies) for this student — see `ensureValidSeedExpiries`'s own doc-comment.
+    await ensureValidSeedExpiries(page, student.id, 'STUDENTS');
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), lastName, `${lastName} ${firstName}`);
+
+    // AC 2: forced + locked to SCHOOL, with a clear reason — never a choice
+    // the service (STUDENT_FLIGHT_MUST_BE_SCHOOL) would reject.
+    const flightTypeSelect = page.getByTestId('flight-type-select');
+    // Story 19.5: a combobox — its DOM value is the option's LABEL.
+    await expect(flightTypeSelect).toHaveValue('Scuola');
+    await expect(flightTypeSelect).toBeDisabled();
+    // The disabled input's only programmatic explanation (review F4 14.3):
+    // still linked to it now that the control is a combobox (story 19.5, AC 9),
+    // and read by id — since story 19.6 the «Senza addebito» switch carries a
+    // `.fld-hint` too.
+    await expect(flightTypeSelect).toHaveAttribute('aria-describedby', 'flight-type-select-hint');
+    await expect(page.locator('#flight-type-select-hint')).toContainText('Allievo senza brevetto');
+    // Story 19.5 (AC 14): with the type locked on SCHOOL the solo switch is
+    // there and works — left on dual for the registration below.
+    const soloSwitch = page.getByRole('switch', { name: 'Volo solista', exact: true });
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+
+    // No dead end: the forced value is one the service actually accepts,
+    // given the (unchanged) instructor requirement on every SCHOOL flight.
+    await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
+    await page.getByLabel('Ora decollo').fill('09:00');
+    await page.getByLabel('Ora atterraggio').fill('10:00');
+    await page.getByTestId('flight-form-submit').click();
+    await submitPastRequirements(page);
+
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+  });
+
+  test('review F1/F2 (14.3): "Correggi volo" on a TOURISM flight whose person is student-only TODAY never rewrites the type nor locks the select — a cycles-only correction succeeds unchanged (ratifica R-14.3-a)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const aircraft = await createAircraftWithRate(page, 12000);
+
+    // A pilot with an active pilot profile flies a TOURISM flight...
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsF1F2-1!');
+    const flightResponse = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base',
+        arrivalAirfield: 'Base',
+        flightType: 'TOURISM',
+        ...flightTimes(PAST_DATE, 60),
+        force: true,
+      },
+    });
+    expect(flightResponse.status()).toBe(201);
+    const flight = (await flightResponse.json()) as { flight: { id: string } };
+
+    // ...then, SINCE that flight, loses the pilot profile and gains a
+    // student one — student-only TODAY (review F1's exact repro shape),
+    // while the historical flight stays TOURISM on file.
+    const deactivateResponse = await page.request.post(`/api/v1/people/${pilot.personId}/profiles/pilot/deactivate`);
+    expect(deactivateResponse.status()).toBe(200);
+    const studentProfileResponse = await page.request.put(`/api/v1/people/${pilot.personId}/profiles/student`, {
+      data: { courseStartDate: PAST_DATE },
+    });
+    expect(studentProfileResponse.status()).toBe(200);
+
+    await page.goto('/it/dashboard/logbook');
+    // Persona filter, free-text (story 13.5, AC 7) — the RUN-UNIQUE last
+    // name keeps this a single row regardless of the dirty DB/pagination
+    // (lezione 6.3 F1), unlike a plain page-1 lookup on a PAST_DATE flight.
+    await page.getByTestId('flight-filter-person').fill(pilot.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(pilot.lastName)}`));
+    const row = page.getByTestId('flight-row');
+    await expect(row).toHaveCount(1);
+    await row.getByTestId('flight-correct-action').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+    // Story 19.2 (AC 18): the correction form has none of the removed fields either.
+    for (const label of ['Contaore iniziale', 'Contaore finale', 'Note']) {
+      await expect(page.getByTestId('flight-form').getByLabel(label, { exact: true })).toHaveCount(0);
+    }
+
+    const flightTypeSelect = page.getByTestId('flight-type-select');
+    // F1: the type stays what is ON FILE — never silently re-derived from
+    // the person's CURRENT (student-only) profile. F1/F2: correcting NEVER
+    // disables the select (only a NEW registration does), whether or not
+    // the form already knows this person's profile at this point (it may
+    // not — the prefilled person is not guaranteed to be on the server-
+    // rendered options page, review's own "fuori dalle prime 100" case).
+    await expect(flightTypeSelect).toHaveValue('Turismo');
+    await expect(flightTypeSelect).toBeEnabled();
+
+    // F2's own repro path: typing the person's OWN name into the picker
+    // (without re-selecting) lets `searchPilotStudent` learn their CURRENT
+    // profile flags for certain (deterministic, unlike the page above).
+    const personCombobox = page.getByLabel('Pilota o allievo');
+    await personCombobox.click();
+    await personCombobox.fill(pilot.lastName);
+    await expect(page.getByRole('listbox').getByRole('option', { name: `${pilot.lastName} ${pilot.firstName}`, exact: true })).toBeVisible();
+    // NB: never `Escape` here — since story 19.5 the first one closes only the
+    // popup, but one more (or one with the popup already closed) and
+    // `SlideOver`'s window-level handler closes the WHOLE panel, and the
+    // assertions below would then race the closing animation and read
+    // stale/absent nodes (that is exactly how this test first failed).
+    // Leaving the combobox popup open is fine:
+    // the assertions below read the select's state, not its visibility, and
+    // filling "Atterraggi" further down closes the popup naturally.
+
+    // Now the profile IS known — the select must STILL be enabled and
+    // STILL on TOURISM (never locked into a server-rejected dead end, the
+    // invariant `disabled ⇒ value === 'SCHOOL'` holds trivially here since
+    // correct mode never disables at all), and the correction hint now
+    // explains the situation, naming the on-file type.
+    await expect(flightTypeSelect).toHaveValue('Turismo');
+    await expect(flightTypeSelect).toBeEnabled();
+    // By id: the «Senza addebito» switch carries a `.fld-hint` too (story 19.6).
+    await expect(page.locator('#flight-type-select-hint')).toContainText('Turismo');
+    await expect(flightTypeSelect).toHaveAttribute('aria-describedby', 'flight-type-select-hint');
+
+    // A cycles-only correction goes through untouched: type unchanged, no
+    // instructor needed (still TOURISM), no new SCHOOL charge. `exact: true`:
+    // "Ora atterraggio" contains "atterraggi" (getByLabel is substring).
+    await page.getByLabel('Atterraggi', { exact: true }).fill('2');
+    await page.getByRole('button', { name: 'Salva modifiche' }).click();
+    // Story 19.9: the balance is re-checked on every edit (Q-19.9-b) — 0 € once the charge is credited back.
+    await submitPastRequirements(page);
+
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+
+    // Story 19.6: edited IN PLACE — the same flight, still the only one.
+    const detailResponse = await page.request.get(`/api/v1/flights?personId=${pilot.personId}&pageSize=10`);
+    expect(detailResponse.status()).toBe(200);
+    const detailBody = (await detailResponse.json()) as { items: { id: string; flightType: string; landings: number }[] };
+    expect(detailBody.items).toHaveLength(1);
+    const corrected = detailBody.items.find((item) => item.id === flight.flight.id);
+    expect(corrected?.flightType).toBe('TOURISM');
+    expect(corrected?.landings).toBe(2);
+  });
+});
+
+test.describe('Requirements warning & admin deroga from the form (Story 14.4 rewritten by story 19.9, E-R4; AC 13/17)', () => {
+  // Story 14.4 blast-radius fixture fix: 2 of the 4 tests below each create
+  // their OWN active, scope: 'ALL', blocksBooking: true `ExpiryType` (active
+  // until `deactivateBlockingType` runs in the `afterEach` below) — under
+  // `fullyParallel: true` a SIBLING test in this SAME describe block could
+  // otherwise run concurrently on a different worker and see it as a MISSING
+  // document of its own fresh pilot. Serial mode makes this describe block
+  // race-free against itself.
+  test.describe.configure({ mode: 'serial' });
+
+  // TD-19.9-c: deactivated after EVERY test, passed or failed — a failed test
+  // left its `scope: 'ALL'` type active, a missing document of every person
+  // created after it.
+  const activeBlockingTypeIds: string[] = [];
+  test.afterEach(async ({ page }) => {
+    for (const typeId of activeBlockingTypeIds.splice(0)) await deactivateBlockingType(page, typeId);
+  });
+
+  test('ADMIN: a pilot with a blocking expired document gets ONE warning naming document, date and owner — no motivo field — and «Procedi comunque» registers it (201) with the silent stamp and no badge', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    // Ordering: see `ensureValidSeedExpiries`'s own doc-comment.
+    const pilot = await createPilotWithLogin(page, 'PilotForce123!');
+    const blockingType = await createExpiryTypeForFlights(page, true);
+    activeBlockingTypeIds.push(blockingType.id);
+    await registerExpiry(page, pilot.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await page.getByLabel('Data volo').fill(PAST_DATE);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByTestId('flight-form-submit').click();
+
+    const warning = page.getByTestId('requirements-warning');
+    await expect(warning).toBeVisible();
+    await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="EXPIRY"]', { hasText: blockingType.name })).toHaveText(
+      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — ${blockingType.name}: scadenza del 01/06/2019 superata`,
+    );
+    // R-19-h: no motivo anywhere, and the list is not repeated in the banner.
+    await expect(page.getByTestId('flight-form').locator('textarea')).toHaveCount(0);
+    await expect(page.getByTestId('flight-form-error')).toHaveCount(0);
+
+    await warning.getByTestId('requirements-proceed').click();
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+
+    // The silent stamp (A10) is API data only: forcedAt set, no motivo field at all.
+    const listResponse = await page.request.get(`/api/v1/flights?personId=${pilot.personId}&pageSize=10`);
+    expect(listResponse.status()).toBe(200);
+    const listBody = (await listResponse.json()) as { items: Array<Record<string, unknown> & { forcedAt: string | null }> };
+    expect(listBody.items[0]?.forcedAt).not.toBeNull();
+    expect(listBody.items[0]).not.toHaveProperty('forceReason');
+
+    // ...and never shown: the registry row looks like any other.
+    // Scoped via the run-unique person free-text filter (lezione 6.3 F1).
+    await page.getByTestId('flight-result-close').click();
+    await page.getByTestId('flight-filter-person').fill(pilot.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(pilot.lastName)}`));
+    const row = page.getByTestId('flight-row');
+    await expect(row).toHaveCount(1);
+    await expect(row).not.toContainText('Deroga');
+    await expect(row).not.toContainText('Motivo');
+  });
+
+  // Review 14.9 F4: this proves the `flights.manage` gate rejects a pilot
+  // (403) on a direct POST /api/v1/flights, force included in the payload.
+  // The deeper `requirements.force` gate (an actor WITH `flights.manage` and
+  // WITHOUT it) cannot be built from the seeded roles: it is proved by the
+  // unit tests (`flights.service.test.ts`), which grant the permission.
+  test('a pilot gets 403 from POST /api/v1/flights (flights.manage gate) — force: true included in the payload', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotWithLogin(page, 'PilotForceApi123!');
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, pilot.email, 'PilotForceApi123!');
+
+    const response = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        departureAirfield: 'Base Airfield',
+        arrivalAirfield: 'Base Airfield',
+        flightType: 'TOURISM',
+        force: true,
+        ...flightTimes(PAST_DATE, 30),
+      },
+    });
+    expect(response.status()).toBe(403);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  test('an instructor with a blocking expired document (pilot clear) is listed as the instructor\'s, and «Procedi comunque» registers the flight', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    // Ordering: see `ensureValidSeedExpiries`'s own doc-comment.
+    const pilot = await createPilotWithLogin(page, 'PilotInstrBlock123!');
+    const instructor = await createInstructorWithRate(page, 4000);
+    const blockingType = await createExpiryTypeForFlights(page, true);
+    activeBlockingTypeIds.push(blockingType.id);
+    await registerExpiry(page, instructor.personId, blockingType.id, EXPIRED_BEFORE_PAST_DATE);
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
+    await page.getByLabel('Data volo').fill(PAST_DATE);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByTestId('flight-form-submit').click();
+
+    // The type is `scope: 'ALL'` and created after the pilot's documents, so
+    // the pilot lists it too, as MISSING: the instructor's item is the expired one.
+    const warning = page.getByTestId('requirements-warning');
+    await expect(
+      warning.locator('[data-testid="requirements-warning-item"][data-type="EXPIRY"]', { hasText: blockingType.name }).filter({ hasText: '(istruttore)' }),
+    ).toHaveText(`${instructor.firstName} ${instructor.lastName} (istruttore) — ${blockingType.name}: scadenza del 01/06/2019 superata`);
+    await warning.getByTestId('requirements-proceed').click();
+
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+  });
+
+  test('a flight the balance does not cover is a BALANCE item with both amounts; after «Procedi comunque» the summary still flags the negative balance (AC 17, D-11)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 20000); // 200,00 €/h — a 30' flight from a fresh (0-balance) account crosses into negative.
+    const pilot = await createPilotWithLogin(page, 'PilotBalanceAlert123!');
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    // Review F9 — dated PAST_DATE, not the default "today": an undated flight
+    // here would land inside `billing.spec.ts`'s own delta-assert window on
+    // TODAY's aggregates (`fullyParallel`, CLAUDE.md's "e2e, stato globale").
+    await page.getByLabel('Data volo').fill(PAST_DATE);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByTestId('flight-form-submit').click();
+
+    const warning = page.getByTestId('requirements-warning');
+    await expect(warning.locator('[data-testid="requirements-warning-item"][data-type="BALANCE"]')).toHaveText(
+      `${pilot.firstName} ${pilot.lastName} (pilota/allievo) — Saldo insufficiente: saldo 0,00 €, costo 100,00 €`,
+    );
+    await warning.getByTestId('requirements-proceed').click();
+
+    const resultPanel = page.getByTestId('flight-result-panel');
+    await expect(resultPanel).toBeVisible();
+    await expect(resultPanel.getByTestId('flight-result-new-balance')).toContainText(/-100,00\s€/);
+    await expect(page.getByTestId('flight-balance-alert')).toBeVisible();
+  });
+});
+
+/**
+ * Story 16.2 (ops-audit F3/F14) — the flight registry's SECOND line of
+ * defence. Request idempotency (TD-2) is opt-in on a header; without it the
+ * registry used to accept the very same flight twice and charge it twice.
+ * Every test below creates its OWN aircraft and pilot (run-unique)
+ * and touches no global `AppSettings`, so this block deliberately stays out
+ * of `playwright.config.ts`'s serialized chain.
+ *
+ * ⚠️ KNOWN FLAKE CLASS, not this block's own (TD 16.2-g, source corrected by
+ * the review, MINOR-1): GLOBAL active `scope: 'ALL'`, `blocksBooking: true`
+ * `ExpiryType`s created by specs running in parallel — the 4 of
+ * `bookings.spec.ts` ("Booking expiry block", story 7.4) stay ACTIVE for
+ * good, the ones of the "Requirements warning" describe above are active
+ * for the duration of the test that creates each (`deactivateBlockingType`
+ * runs in that describe's `afterEach`). Under `fullyParallel` a type that goes active AFTER a
+ * fresh person's `ensureValidSeedExpiries` scan adds a MISSING document to
+ * that person's requirements (story 19.9: `REQUIREMENTS_NOT_MET`). The API
+ * fixtures here pass `force` and never meet it; the UI test that needs a
+ * pilot "in regola" (E6) submits through `submitInRegola`, which covers such
+ * a document and submits again (review 19.9 F5).
+ */
+test.describe('Flight registry guards: no duplicate, no overlap (Story 16.2)', () => {
+  /** The registry's own view of one aircraft's flights (admin scope) — how a refused registration is proved to have written nothing. */
+  async function countFlights(page: Page, aircraftId: string): Promise<number> {
+    const response = await page.request.get(`/api/v1/flights?aircraftId=${aircraftId}&pageSize=50`);
+    expect(response.status()).toBe(200);
+    return ((await response.json()) as { items: unknown[] }).items.length;
+  }
+
+
+  /**
+   * A pilot PERSON (active pilot profile -> an `Account` exists), without a
+   * login: every test in this block acts as ADMIN, so the invite/set-password
+   * round-trip of `createPilotWithLogin` buys nothing here. The API fixtures
+   * of this block pass `force` (`flightBody`), so the GLOBAL catalogue other
+   * specs dirty (TD 16.2-g) never refuses them; the UI tests that must NOT
+   * meet the requirements warning make their pilot "in regola" first.
+   *
+   * `expiredSeedType` (review MAJOR-1): registers that SEED type EXPIRED for
+   * this person BEFORE the scan (which then skips it) — a PER-PERSON failure
+   * that mutates no catalogue row.
+   */
+  async function createPilotPerson(page: Page, expiredSeedType?: string): Promise<{ personId: string; firstName: string; lastName: string }> {
+    const suffix = uniqueSuffix();
+    const firstName = 'Volo';
+    const lastName = `Titolare-${suffix}`;
+
+    const personResponse = await page.request.post('/api/v1/people', { data: { firstName, lastName } });
+    expect(personResponse.status()).toBe(201);
+    const person = (await personResponse.json()) as { id: string };
+
+    const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/pilot`, {
+      data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
+    });
+    expect(profileResponse.status()).toBe(200);
+    if (expiredSeedType !== undefined) {
+      const typesResponse = await page.request.get('/api/v1/expiry-types');
+      expect(typesResponse.status()).toBe(200);
+      const seedType = ((await typesResponse.json()) as { id: string; name: string }[]).find((type) => type.name === expiredSeedType);
+      expect(seedType, `seeded expiry type "${expiredSeedType}"`).toBeTruthy();
+      await registerExpiry(page, person.id, seedType!.id, EXPIRED_BEFORE_PAST_DATE);
+    }
+    await ensureValidSeedExpiries(page, person.id, 'PILOTS');
+
+    return { personId: person.id, firstName, lastName };
+  }
+
+  /** `force: true` (story 19.9, E-R1): the overlap guard is this block's subject, never the requirements — and `force` never derogates the 409. */
+  function flightBody(aircraftId: string, personId: string, takeoffAt: string, landingAt: string): Record<string, unknown> {
+    return {
+      aircraftId,
+      personId,
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      flightType: 'TOURISM',
+      takeoffAt,
+      landingAt,
+      force: true,
+    };
+  }
+
+  // E1 — the audit's probes 13a/13b on the real stack.
+  test('E1: the same request twice WITHOUT an Idempotency-Key answers 201 then 409 FLIGHT_OVERLAP naming the first flight — one row', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+    const body = flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`);
+
+    const first = await page.request.post('/api/v1/flights', { data: body });
+    expect(first.status()).toBe(201);
+    const firstFlight = (await first.json()) as { flight: { id: string } };
+
+    const second = await page.request.post('/api/v1/flights', { data: body });
+    expect(second.status()).toBe(409);
+    const error = (await second.json()) as {
+      error: { code: string; details: { flightId: string; takeoffAt: string; landingAt: string } };
+    };
+    expect(error.error.code).toBe('FLIGHT_OVERLAP');
+    expect(error.error.details).toEqual({
+      flightId: firstFlight.flight.id,
+      takeoffAt: `${PAST_DATE}T09:00:00.000Z`,
+      landingAt: `${PAST_DATE}T10:00:00.000Z`,
+    });
+
+    expect(await countFlights(page, aircraft.id)).toBe(1);
+  });
+
+  // E2 — the TD-2 contract, untouched by this story and proved HERE, since
+  // `idempotency.spec.ts` never registers a flight.
+  test('E2: the same request twice WITH the same Idempotency-Key replays the first response (201, Idempotency-Replayed: true) — one row', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+    const body = flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`);
+    const key = `flight-16-2-${uniqueSuffix()}`;
+
+    const first = await page.request.post('/api/v1/flights', { data: body, headers: { 'Idempotency-Key': key } });
+    expect(first.status()).toBe(201);
+    const firstFlight = (await first.json()) as { flight: { id: string } };
+
+    const replay = await page.request.post('/api/v1/flights', { data: body, headers: { 'Idempotency-Key': key } });
+    expect(replay.status()).toBe(201);
+    expect(replay.headers()['idempotency-replayed']).toBe('true');
+    expect(((await replay.json()) as { flight: { id: string } }).flight.id).toBe(firstFlight.flight.id);
+
+    expect(await countFlights(page, aircraft.id)).toBe(1);
+  });
+
+  // E3 — the `FOR UPDATE` lock on the aircraft is what serializes these two.
+  test('E3: two identical POSTs in parallel produce exactly one 201 and one 409 (never two 201)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+    const body = flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`);
+
+    const [left, right] = await Promise.all([
+      page.request.post('/api/v1/flights', { data: body }),
+      page.request.post('/api/v1/flights', { data: body }),
+    ]);
+
+    expect([left.status(), right.status()].sort((a, b) => a - b)).toEqual([201, 409]);
+    expect(await countFlights(page, aircraft.id)).toBe(1);
+  });
+
+  // E4 — the SEMI-OPEN interval, the very semantics `Booking` already uses.
+  test('E4: two flights whose boundaries merely TOUCH are both accepted (semi-open [takeoffAt, landingAt))', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+
+    const middle = await page.request.post('/api/v1/flights', {
+      data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`),
+    });
+    expect(middle.status()).toBe(201);
+
+    // takeoffAt of the new one === landingAt of the existing one.
+    const after = await page.request.post('/api/v1/flights', {
+      data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T10:00:00.000Z`, `${PAST_DATE}T11:00:00.000Z`),
+    });
+    expect(after.status()).toBe(201);
+
+    // landingAt of the new one === takeoffAt of the existing one.
+    const before = await page.request.post('/api/v1/flights', {
+      data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T08:00:00.000Z`, `${PAST_DATE}T09:00:00.000Z`),
+    });
+    expect(before.status()).toBe(201);
+
+    expect(await countFlights(page, aircraft.id)).toBe(3);
+  });
+
+  // E5 — the two faces of the guard on an edit (story 19.6, AC 11: edited in place).
+  test('E5: an edit that keeps its own slot succeeds; one that moves onto an occupied slot is a 409 and leaves the flight and its charge identical', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+
+    const targetResponse = await page.request.post('/api/v1/flights', {
+      data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`),
+    });
+    expect(targetResponse.status()).toBe(201);
+    const target = (await targetResponse.json()) as { flight: { id: string } };
+
+    const otherResponse = await page.request.post('/api/v1/flights', {
+      data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T14:00:00.000Z`, `${PAST_DATE}T15:00:00.000Z`),
+    });
+    expect(otherResponse.status()).toBe(201);
+    const other = (await otherResponse.json()) as { flight: { id: string } };
+
+    // Same aircraft, same instants, changed landings: accepted, because the
+    // flight being edited is excluded from the guard by id — and it is the
+    // SAME flight afterwards.
+    const keepSlot = await page.request.put(`/api/v1/flights/${target.flight.id}`, {
+      data: { ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`), landings: 2 },
+    });
+    expect(keepSlot.status()).toBe(200);
+    expect(((await keepSlot.json()) as { flight: { id: string } }).flight.id).toBe(target.flight.id);
+
+    async function snapshot(): Promise<{ flights: unknown; charges: unknown }> {
+      const flights = ((await (await page.request.get(`/api/v1/flights?aircraftId=${aircraft.id}&pageSize=50`)).json()) as {
+        items: Array<{ id: string; minutes: number; landings: number; takeoffAt: string; breakdown: { totalAmountCents: number } }>;
+      }).items.map(({ id, minutes, landings, takeoffAt, breakdown }) => ({ id, minutes, landings, takeoffAt, total: breakdown.totalAmountCents }));
+      const charges = ((await (await page.request.get(`/api/v1/people/${pilot.personId}/account/movements?pageSize=50`)).json()) as {
+        items: Array<{ id: string; type: string; amountCents: number; description: string | null }>;
+      }).items.filter((item) => item.type === 'FLIGHT_CHARGE');
+      return { flights, charges };
+    }
+    const before = await snapshot();
+
+    // …and moving THAT flight onto the other one's window is refused.
+    const moveOntoOther = await page.request.put(`/api/v1/flights/${target.flight.id}`, {
+      data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T14:30:00.000Z`, `${PAST_DATE}T15:30:00.000Z`),
+    });
+    expect(moveOntoOther.status()).toBe(409);
+    const moveError = (await moveOntoOther.json()) as { error: { code: string; details: { flightId: string } } };
+    expect(moveError.error.code).toBe('FLIGHT_OVERLAP');
+    expect(moveError.error.details.flightId).toBe(other.flight.id);
+
+    // Nothing happened at all: same minutes, same instants, same amounts,
+    // the same statement lines.
+    expect(await snapshot()).toEqual(before);
+  });
+
+  // E6 — the UI. Story 16.2: a 409 met during an EDIT names the conflicting
+  // flight (never the other 409 of the edit, the manual-adjustment one). Both flights
+  // below are registered THROUGH THE FORM, which composes its instants in the
+  // browser's timezone — and so does the message it renders — which is what
+  // makes the assertions independent of the host's TZ.
+  test('E6: the form names the conflicting flight on a 409, in registration AND in an edit', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+    // Story 19.9: the pilot is "in regola" (E-R5) so that no submit below meets
+    // the requirements warning first — every 422 precedes the 409. The currency
+    // comes from a no-charge fixture flight on ANOTHER aircraft, two weeks before.
+    // Every registration goes through `submitInRegola` (review F5, TD 16.2-g).
+    await ensureFlightRequirements(page, { personId: pilot.personId, scope: 'PILOTS', topUpCents: 100_000 });
+    const inRegola = [{ personId: pilot.personId, scope: 'PILOTS' as const }];
+    const submit = page.getByTestId('flight-form-submit');
+    const currencyAircraft = await createAircraftWithRate(page, 12000);
+    await seedAircraftRate(currencyAircraft.id, { studentPriceCents: 12000, pilotPriceCents: 12000, validFrom: '2019-12-01' });
+    await registerFlightOn(page, { aircraftId: currencyAircraft.id, personId: pilot.personId, flightType: 'TOURISM', date: '2019-12-18', noCharge: true });
+    const spareDeparture = `Spare-${uniqueSuffix()}`;
+    const conflictText = 'ha già un volo registrato il 01/01/2020 dalle 10:00 alle 11:00';
+
+    async function fillCommonFields(): Promise<void> {
+      await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+      await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+      await page.getByLabel('Data volo').fill(PAST_DATE);
+    }
+
+    // The flight that will be conflicted with: 10:00 -> 11:00 local.
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await fillCommonFields();
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('11:00');
+    await submitInRegola(page, inRegola, submit);
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+    await page.getByTestId('flight-result-close').click();
+
+    // A second, OVERLAPPING registration: the banner must name that flight's
+    // day and clock window.
+    await openNewEntryForm(page);
+    await fillCommonFields();
+    await page.getByLabel('Ora decollo').fill('10:30');
+    await page.getByLabel('Ora atterraggio').fill('11:30');
+    await submitInRegola(page, inRegola, submit);
+
+    const formError = page.getByTestId('flight-form-error');
+    await expect(formError).toContainText(conflictText);
+
+    // A spare flight in a FREE window, tagged by a run-unique departure so
+    // its row is identifiable without ever disambiguating on an H:MM value
+    // (lezione 11.2).
+    await page.getByLabel('Ora decollo').fill('20:00');
+    await page.getByLabel('Ora atterraggio').fill('20:30');
+    await page.getByLabel('Aeroporto di partenza').fill(spareDeparture);
+    await submitInRegola(page, inRegola, submit);
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+    await page.getByTestId('flight-result-close').click();
+
+    // Editing the spare ONTO the first flight's window: the same 409, never
+    // the manual-adjustment sentence the edit's other 409 carries.
+    await page.goto('/it/dashboard/logbook');
+    await page.getByTestId('flight-filter-person').fill(pilot.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(pilot.lastName)}`));
+    const spareRow = page.getByTestId('flight-row').filter({ hasText: spareDeparture });
+    await expect(spareRow).toHaveCount(1);
+    await spareRow.getByTestId('flight-correct-action').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+
+    await page.getByLabel('Ora decollo').fill('10:30');
+    await page.getByLabel('Ora atterraggio').fill('11:30');
+    await page.getByRole('button', { name: 'Salva modifiche' }).click();
+
+    const correctionError = page.getByTestId('flight-form-error');
+    await expect(correctionError).toContainText(conflictText);
+    await expect(correctionError).not.toContainText('rettificato a mano');
+  });
+
+  // E8 — review MAJOR-1, rewritten by story 19.9 (AC 14): every 422 precedes
+  // the 409 (AD-4), so a request that fails a requirement AND overlaps meets
+  // FLIGHT_OVERLAP only on «Procedi comunque». `force` does not derogate the
+  // guard: the warning must close and the banner must name the conflicting
+  // flight — never the endless «Riprova».
+  test('E8: a 409 FLIGHT_OVERLAP on «Procedi comunque» closes the warning and names the conflicting flight, in registration AND in an edit', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    // Two fresh pilots: both fail the fee and the balance, so EVERY submit below shows the warning.
+    const firstPilot = await createPilotPerson(page);
+    const secondPilot = await createPilotPerson(page);
+    const spareDeparture = `Spare-${uniqueSuffix()}`;
+    const conflictText = 'ha già un volo registrato il 01/01/2020 dalle 10:00 alle 11:00';
+
+    async function fillCommonFields(pilot: { firstName: string; lastName: string }): Promise<void> {
+      await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+      await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+      await page.getByLabel('Data volo').fill(PAST_DATE);
+    }
+
+    async function proceedAndExpectOverlap(): Promise<void> {
+      const warning = page.getByTestId('requirements-warning');
+      await expect(warning).toBeVisible();
+      await warning.getByTestId('requirements-proceed').click();
+
+      const formError = page.getByTestId('flight-form-error');
+      await expect(formError).toContainText(conflictText);
+      await expect(warning).toHaveCount(0);
+      // Review 19.9 F3: the closed warning hands the focus to the banner, never to the body.
+      await expect(formError).toBeFocused();
+    }
+
+    // The flight that will be conflicted with: 10:00 -> 11:00 local,
+    // registered through the form so the message's clock times are
+    // independent of the host's TZ (same reasoning as E6).
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await fillCommonFields(firstPilot);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('11:00');
+    await page.getByTestId('flight-form-submit').click();
+    await submitPastRequirements(page);
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+    await page.getByTestId('flight-result-close').click();
+
+    // Registration: overlapping window -> 422 (requirements), then «Procedi comunque» -> 409.
+    await openNewEntryForm(page);
+    await fillCommonFields(secondPilot);
+    await page.getByLabel('Ora decollo').fill('10:30');
+    await page.getByLabel('Ora atterraggio').fill('11:30');
+    await page.getByTestId('flight-form-submit').click();
+    await proceedAndExpectOverlap();
+    expect(await countFlights(page, aircraft.id)).toBe(1);
+
+    // Edit: a spare flight of the first pilot in a free window, then edited
+    // onto the second pilot AND the first flight's window.
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await fillCommonFields(firstPilot);
+    await page.getByLabel('Ora decollo').fill('20:00');
+    await page.getByLabel('Ora atterraggio').fill('20:30');
+    await page.getByLabel('Aeroporto di partenza').fill(spareDeparture);
+    await page.getByTestId('flight-form-submit').click();
+    await submitPastRequirements(page);
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+    await page.getByTestId('flight-result-close').click();
+
+    await page.getByTestId('flight-filter-person').fill(firstPilot.lastName);
+    await expect(page).toHaveURL(new RegExp(`personQuery=${encodeURIComponent(firstPilot.lastName)}`));
+    const spareRow = page.getByTestId('flight-row').filter({ hasText: spareDeparture });
+    await expect(spareRow).toHaveCount(1);
+    await spareRow.getByTestId('flight-correct-action').click();
+    await expect(page.getByTestId('flight-form')).toBeVisible();
+
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), secondPilot.lastName, `${secondPilot.lastName} ${secondPilot.firstName}`);
+    await page.getByLabel('Ora decollo').fill('10:30');
+    await page.getByLabel('Ora atterraggio').fill('11:30');
+    await page.getByRole('button', { name: 'Salva modifiche' }).click();
+    await proceedAndExpectOverlap();
+    expect(await countFlights(page, aircraft.id)).toBe(2);
+  });
+
+  // Story 19.2 (AC 12/18): the removed keys are dropped on both writes — a
+  // stale client gets a 201/200, never a 422 — and no response carries them.
+  test('register and edit drop hourMeterStart/hourMeterEnd/notes instead of rejecting them, and the responses never carry them', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+    const removed = { hourMeterStart: 100, hourMeterEnd: 160, notes: 'Nota' };
+
+    const registered = await page.request.post('/api/v1/flights', {
+      data: { ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`), ...removed },
+    });
+    expect(registered.status(), await registered.text()).toBe(201);
+    const registeredFlight = ((await registered.json()) as { flight: Record<string, unknown> & { id: string } }).flight;
+
+    const corrected = await page.request.put(`/api/v1/flights/${registeredFlight.id}`, {
+      data: { ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:30:00.000Z`), ...removed },
+    });
+    expect(corrected.status(), await corrected.text()).toBe(200);
+    const correctedFlight = ((await corrected.json()) as { flight: Record<string, unknown> }).flight;
+
+    for (const flight of [registeredFlight, correctedFlight]) {
+      for (const key of Object.keys(removed)) expect(flight).not.toHaveProperty(key);
+    }
+  });
+
+  // F14 on the wire and in the form.
+  test('F14: takeoffs of 0 and a sub-minute duration are 422s, and a 0 typed into the form answers with the dedicated message instead of «Riprova»', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotPerson(page);
+
+    const zeroTakeoffs = await page.request.post('/api/v1/flights', {
+      data: { ...flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T10:00:00.000Z`), takeoffs: 0 },
+    });
+    expect(zeroTakeoffs.status()).toBe(422);
+
+    const subMinute = await page.request.post('/api/v1/flights', {
+      data: flightBody(aircraft.id, pilot.personId, `${PAST_DATE}T09:00:00.000Z`, `${PAST_DATE}T09:00:20.000Z`),
+    });
+    expect(subMinute.status()).toBe(422);
+    expect(((await subMinute.json()) as { error: { code: string } }).error.code).toBe('FLIGHT_TIMES_INVALID');
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    await selectFromCombobox(page.getByTestId('flight-form').getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await page.getByLabel('Data volo').fill(PAST_DATE);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    // `exact: true`: Playwright's accessible-name match is a SUBSTRING match,
+    // and "Atterraggi" is a substring of "Ora atterraggio" — without it the
+    // locator resolves to two inputs and fails in strict mode (lezione 103-F1).
+    await expect(page.getByLabel('Decolli', { exact: true })).toHaveAttribute('min', '1');
+    await expect(page.getByLabel('Atterraggi', { exact: true })).toHaveAttribute('min', '1');
+    await page.getByLabel('Decolli', { exact: true }).fill('0');
+    await page.getByTestId('flight-form-submit').click();
+
+    await expect(page.getByTestId('flight-form-error')).toContainText('Decolli e atterraggi devono essere almeno 1.');
+  });
+});
+
+/**
+ * Story 19.3 (R-19-e, AC 6/10): the aircraft price is the column of the
+ * flying person's PROFILE, frozen on the flight with the category it applied,
+ * and a later rewrite of the rate never touches a registered flight.
+ */
+test.describe('Aircraft price from the profile, frozen on the flight (Story 19.3, AC 6/10)', () => {
+  async function createPersonWithProfile(page: Page, profile: 'pilot' | 'student'): Promise<string> {
+    const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Prezzo', lastName: `${profile}-${uniqueSuffix()}` } });
+    expect(personResponse.status()).toBe(201);
+    const { id } = (await personResponse.json()) as { id: string };
+    const body = profile === 'pilot' ? { licenseNumber: `IT-PPL-${uniqueSuffix()}`, licenseType: 'PPL(A)' } : { courseStartDate: PAST_DATE };
+    expect((await page.request.put(`/api/v1/people/${id}/profiles/${profile}`, { data: body })).status()).toBe(200);
+    await ensureValidSeedExpiries(page, id, profile === 'pilot' ? 'PILOTS' : 'STUDENTS');
+    return id;
+  }
+
+  type Breakdown = { aircraftRateCentsPerHour: number; aircraftAmountCents: number; aircraftPriceCategory: 'STUDENT' | 'PILOT' };
+
+  async function postFlight(page: Page, data: Record<string, unknown>): Promise<Breakdown> {
+    // `force` (story 19.9, E-R1): the price is the subject, never the requirements of the flight.
+    const response = await page.request.post('/api/v1/flights', { data: { departureAirfield: 'Base', arrivalAirfield: 'Base', force: true, ...data } });
+    expect(response.status(), await response.text()).toBe(201);
+    return ((await response.json()) as { flight: { breakdown: Breakdown } }).flight.breakdown;
+  }
+
+  test('student, pilot, and pilot on a SCHOOL flight: student 100,00 / pilot 150,00 per hour, category frozen in the breakdown (AC 10)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, null);
+    await seedAircraftRate(aircraft.id, { studentPriceCents: 10000, pilotPriceCents: 15000, validFrom: PAST_DATE });
+    const instructor = await createInstructorWithRate(page, 4000);
+    const student = await createPersonWithProfile(page, 'student');
+    const pilot = await createPersonWithProfile(page, 'pilot');
+
+    // Three distinct days on the same airframe: the overlap guard never fires.
+    const school = { flightType: 'SCHOOL', instructorPersonId: instructor.personId };
+    expect(await postFlight(page, { aircraftId: aircraft.id, personId: student, ...school, ...flightTimes('2020-02-03', 60) })).toMatchObject({
+      aircraftAmountCents: 10000,
+      aircraftPriceCategory: 'STUDENT',
+    });
+    expect(await postFlight(page, { aircraftId: aircraft.id, personId: pilot, flightType: 'TOURISM', ...flightTimes('2020-02-04', 60) })).toMatchObject({
+      aircraftAmountCents: 15000,
+      aircraftPriceCategory: 'PILOT',
+    });
+    expect(await postFlight(page, { aircraftId: aircraft.id, personId: pilot, ...school, ...flightTimes('2020-02-05', 60) })).toMatchObject({
+      aircraftAmountCents: 15000,
+      aircraftPriceCategory: 'PILOT',
+    });
+  });
+
+  test("rewriting today's rate never reprices a flight already registered today; the next flight takes the new price (AC 6)", async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, null);
+    const pilot = await createPersonWithProfile(page, 'pilot');
+    const today = todayRome();
+    // 09:00Z / 11:00Z are 10:00 / 12:00 (or 11:00 / 13:00) in Rome — today
+    // either way; a flight dated today is accepted at any hour (the guard
+    // compares dates only).
+    const at = (hourUtc: string) => ({ takeoffAt: `${today}T${hourUtc}:00:00.000Z`, landingAt: `${today}T${hourUtc}:30:00.000Z` });
+
+    expect((await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { studentPriceCents: 13000, pilotPriceCents: 14000, validFrom: today } })).status()).toBe(201);
+    const first = await postFlight(page, { aircraftId: aircraft.id, personId: pilot, flightType: 'TOURISM', ...at('09') });
+    expect(first).toMatchObject({ aircraftRateCentsPerHour: 14000, aircraftAmountCents: 7000 });
+
+    const rewrite = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { studentPriceCents: 15000, pilotPriceCents: 16000, validFrom: today } });
+    expect(rewrite.status()).toBe(201);
+    expect(await rewrite.json()).toMatchObject({ studentPriceCents: 15000, pilotPriceCents: 16000, validFrom: today });
+
+    const second = await postFlight(page, { aircraftId: aircraft.id, personId: pilot, flightType: 'TOURISM', ...at('11') });
+    expect(second).toMatchObject({ aircraftRateCentsPerHour: 16000, aircraftAmountCents: 8000 });
+
+    // The first flight, read back from the registry: its frozen breakdown is untouched.
+    const list = await page.request.get(`/api/v1/flights?aircraftId=${aircraft.id}&pageSize=10`);
+    expect(list.status()).toBe(200);
+    const rows = ((await list.json()) as { items: Array<{ takeoffAt: string; breakdown: Breakdown }> }).items;
+    const firstRow = rows.find((row) => row.takeoffAt === `${today}T09:00:00.000Z`);
+    expect(firstRow?.breakdown).toMatchObject({ aircraftRateCentsPerHour: 14000, aircraftAmountCents: 7000, aircraftPriceCategory: 'PILOT' });
+  });
+});
+
+test.describe('Two flight types, uniform dropdowns, the «Volo solista» switch (Story 19.5)', () => {
+  test('a SCHOOL flight registered SOLO from the UI: Tipo di volo is a combobox, the switch appears only on SCHOOL, is reached by Tab, toggled by Space/Enter/click without submitting, and isSolo + PIC follow it (AC 9/10/13/14/15a/16)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsSolo195!');
+    const instructor = await createInstructorWithRate(page, 4000);
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    const form = page.getByTestId('flight-form');
+
+    // AC 10: the four choice fields are the SAME component — no native
+    // select, no radio left in the form, one label + `.input` per field.
+    await expect(form.locator('[role="combobox"]')).toHaveCount(4);
+    await expect(form.locator('select')).toHaveCount(0);
+    await expect(form.locator('input[type="radio"]')).toHaveCount(0);
+    const structure = await form.locator('[role="combobox"]').evaluateAll((inputs) =>
+      inputs.map((input) => input.classList.contains('input') && input.closest('.fld')?.querySelector(':scope > .fld-label') !== null),
+    );
+    expect(structure).toEqual([true, true, true, true]);
+
+    // AC 9: Tipo di volo — default «Turismo», a two-option popup, static
+    // (typing in it calls no search API), driven from the keyboard. Done
+    // BEFORE the three server-searched pickers: their debounced search could
+    // otherwise land inside the listener below.
+    const searchCalls: string[] = [];
+    page.on('request', (request) => {
+      if (/\/api\/v1\/(aircraft|people)/.test(new URL(request.url()).pathname)) searchCalls.push(request.url());
+    });
+    const typeCombobox = form.getByLabel('Tipo di volo');
+    await expect(typeCombobox).toHaveAttribute('role', 'combobox');
+    await expect(typeCombobox).toHaveValue('Turismo');
+    const soloSwitch = form.getByRole('switch', { name: 'Volo solista', exact: true });
+    // AC 14: never on a TOURISM flight.
+    await expect(soloSwitch).toHaveCount(0);
+    await typeCombobox.click();
+    const typeOptions = page.getByRole('listbox').getByRole('option');
+    await expect(typeOptions).toHaveText(['Turismo', 'Scuola']);
+    await typeCombobox.fill('scu');
+    await expect(typeOptions).toHaveText(['Scuola']);
+    await page.keyboard.press('Enter');
+    await expect(typeCombobox).toHaveValue('Scuola');
+    expect(searchCalls).toEqual([]);
+
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    await selectFromCombobox(page.getByLabel('Pilota o allievo'), pilot.lastName, `${pilot.lastName} ${pilot.firstName}`);
+    await selectFromCombobox(page.getByLabel('Istruttore'), instructor.lastName, `${instructor.lastName} ${instructor.firstName}`);
+
+    // AC 13: the switch, off = dual, its own visible state text.
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+    await expect(soloSwitch).toHaveText('Doppio comando');
+    await expect(soloSwitch).toHaveAttribute('data-testid', 'flight-solo-toggle');
+    // AC 15d: a 44px full-cell target at the desktop width too.
+    expect((await soloSwitch.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+    // AC 15a: Tab goes Tipo di volo -> switch -> (story 19.6: «Senza addebito») -> Partenza; Space and Enter toggle it.
+    await typeCombobox.focus();
+    await page.keyboard.press('Tab');
+    await expect(soloSwitch).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await expect(soloSwitch).toHaveText('Solista');
+    await page.keyboard.press('Enter');
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+    // Neither key submitted the form: an empty-times submit would light up
+    // the required-field errors (and no result panel ever appears).
+    await expect(form.locator('.fld-error')).toHaveCount(0);
+    await expect(page.getByTestId('flight-result-panel')).toHaveCount(0);
+    // Story 19.6: the «Senza addebito» switch sits right after it, then Partenza.
+    await page.keyboard.press('Tab');
+    await expect(form.getByTestId('flight-no-charge-toggle')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(form.getByLabel('Aeroporto di partenza')).toBeFocused();
+
+    // AC 14: back to TOURISM removes the switch AND clears isSolo; back to
+    // SCHOOL shows it again, off. The exact-name lookup resolving in both
+    // states is the "same accessible name on and off" check (AC 13).
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await selectFromCombobox(typeCombobox, 'Turismo', 'Turismo');
+    await expect(soloSwitch).toHaveCount(0);
+    await selectFromCombobox(typeCombobox, 'Scuola', 'Scuola');
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    await page.getByTestId('flight-form-submit').click();
+    await submitPastRequirements(page);
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+
+    // AC 16: the value sent is the switch's own state, and the PIC follows it.
+    const listResponse = await page.request.get(`/api/v1/flights?personId=${pilot.personId}&pageSize=10`);
+    expect(listResponse.status()).toBe(200);
+    const items = ((await listResponse.json()) as { items: Array<{ flightType: string; isSolo: boolean }> }).items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ flightType: 'SCHOOL', isSolo: true });
+    await page.getByTestId('flight-result-close').click();
+    const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
+    await expect(row.getByTestId('flight-pic-cell')).toHaveText(`${pilot.lastName} ${pilot.firstName}`);
+  });
+
+  test('review F2: the student lock releasing on a change of person clears isSolo — the switch comes back off, and the TOURISM flight sends isSolo:false (AC 14)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const suffix = uniqueSuffix();
+    const studentLastName = `SoloLock-${suffix}`;
+    const pilotLastName = `SoloUnlock-${suffix}`;
+    const studentResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Allievo', lastName: studentLastName } });
+    expect(studentResponse.status()).toBe(201);
+    const student = (await studentResponse.json()) as { id: string };
+    expect((await page.request.put(`/api/v1/people/${student.id}/profiles/student`, { data: { courseStartDate: PAST_DATE } })).status()).toBe(200);
+    const pilotResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Pilota', lastName: pilotLastName } });
+    expect(pilotResponse.status()).toBe(201);
+    const pilot = (await pilotResponse.json()) as { id: string };
+    expect(
+      (await page.request.put(`/api/v1/people/${pilot.id}/profiles/pilot`, { data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' } })).status(),
+    ).toBe(200);
+    await ensureValidSeedExpiries(page, pilot.id, 'PILOTS');
+
+    await page.goto('/it/dashboard/logbook');
+    await openNewEntryForm(page);
+    const form = page.getByTestId('flight-form');
+    const typeCombobox = form.getByLabel('Tipo di volo');
+    const personCombobox = page.getByLabel('Pilota o allievo');
+    const soloSwitch = form.getByRole('switch', { name: 'Volo solista', exact: true });
+    await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+
+    // The student lock: Scuola, disabled, the switch there — turned ON.
+    await selectFromCombobox(personCombobox, studentLastName, `${studentLastName} Allievo`);
+    await expect(typeCombobox).toHaveValue('Scuola');
+    await expect(typeCombobox).toBeDisabled();
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+
+    // A pilot releases the lock: the type falls back to Turismo without the
+    // combobox's `onChange`, and the switch leaves the DOM...
+    await selectFromCombobox(personCombobox, pilotLastName, `${pilotLastName} Pilota`);
+    await expect(typeCombobox).toHaveValue('Turismo');
+    await expect(soloSwitch).toHaveCount(0);
+    // ...and back on Scuola it is OFF again (the discriminating half).
+    await selectFromCombobox(personCombobox, studentLastName, `${studentLastName} Allievo`);
+    await expect(typeCombobox).toHaveValue('Scuola');
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'false');
+
+    // ON once more, then the pilot: the TOURISM registration sends isSolo:false
+    // and succeeds — never the 422 SOLO_REQUIRES_SCHOOL of a hidden switch.
+    await soloSwitch.click();
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await selectFromCombobox(personCombobox, pilotLastName, `${pilotLastName} Pilota`);
+    await expect(soloSwitch).toHaveCount(0);
+    await page.getByLabel('Ora decollo').fill('10:00');
+    await page.getByLabel('Ora atterraggio').fill('10:30');
+    const posted = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/v1/flights' && request.method() === 'POST');
+    const answered = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/flights' && response.request().method() === 'POST');
+    await page.getByTestId('flight-form-submit').click();
+    expect((await posted).postDataJSON()).toMatchObject({ personId: pilot.id, flightType: 'TOURISM', isSolo: false });
+    // Story 19.9: the fresh pilot meets the requirements warning — a 422 of
+    // the shared contract, never the 422 SOLO_REQUIRES_SCHOOL a hidden switch
+    // would have caused (that hard guard answers first).
+    const firstAnswer = await answered;
+    expect(firstAnswer.status()).toBe(422);
+    expect(((await firstAnswer.json()) as { error: { code: string } }).error.code).toBe('REQUIREMENTS_NOT_MET');
+    await submitPastRequirements(page);
+    await expect(page.getByTestId('flight-result-panel')).toBeVisible();
+  });
+
+  test('correcting a SOLO SCHOOL flight opens the switch ON, Tipo di volo on the recorded value, the form still four comboboxes (AC 9/10/14)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsSolo195b!');
+    const instructor = await createInstructorWithRate(page, 4000);
+    const response = await page.request.post('/api/v1/flights', {
+      data: {
+        aircraftId: aircraft.id,
+        personId: pilot.personId,
+        instructorPersonId: instructor.personId,
+        departureAirfield: 'Base',
+        arrivalAirfield: 'Base',
+        flightType: 'SCHOOL',
+        isSolo: true,
+        ...flightTimes(PAST_DATE, 30),
+        force: true,
+      },
+    });
+    expect(response.status()).toBe(201);
+
+    // Through the URL, never the 100-option velivolo filter (review 19.3 F1).
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraft.id}`);
+    const row = page.getByTestId('flight-row');
+    await expect(row).toHaveCount(1);
+    await row.getByTestId('flight-correct-action').click();
+    const form = page.getByTestId('flight-form');
+    await expect(form).toBeVisible();
+
+    await expect(form.locator('[role="combobox"]')).toHaveCount(4);
+    await expect(form.locator('select')).toHaveCount(0);
+    await expect(form.locator('input[type="radio"]')).toHaveCount(0);
+    await expect(page.getByTestId('flight-type-select')).toHaveValue('Scuola');
+    await expect(page.getByTestId('flight-type-select')).toBeEnabled();
+    const soloSwitch = form.getByRole('switch', { name: 'Volo solista', exact: true });
+    await expect(soloSwitch).toHaveAttribute('aria-checked', 'true');
+    await expect(soloSwitch).toHaveText('Solista');
+  });
+
+  test('the removed AERIAL_WORK type is a 422 on register, edit, list and both exports, absent from the OpenAPI; the registry page ignores it and offers two types (AC 3/4)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraftWithRate(page, 12000);
+    const pilot = await createPilotWithLogin(page, 'PilotFlightsAerial195!');
+    const body = { aircraftId: aircraft.id, personId: pilot.personId, departureAirfield: 'Base', arrivalAirfield: 'Base', force: true, ...flightTimes(PAST_DATE, 30) };
+
+    const register = await page.request.post('/api/v1/flights', { data: { ...body, flightType: 'AERIAL_WORK' } });
+    expect(register.status()).toBe(422);
+    expect(((await register.json()) as { error: { code: string } }).error.code).toBe('VALIDATION_ERROR');
+
+    const valid = await page.request.post('/api/v1/flights', { data: { ...body, flightType: 'TOURISM' } });
+    expect(valid.status()).toBe(201);
+    const flightId = ((await valid.json()) as { flight: { id: string } }).flight.id;
+    const correct = await page.request.put(`/api/v1/flights/${flightId}`, { data: { ...body, flightType: 'AERIAL_WORK' } });
+    expect(correct.status()).toBe(422);
+    expect(((await correct.json()) as { error: { code: string } }).error.code).toBe('VALIDATION_ERROR');
+
+    for (const url of ['/api/v1/flights?flightType=AERIAL_WORK', '/api/v1/flights?flightType=AERIAL_WORK&format=xlsx', '/api/v1/flights/pdf?flightType=AERIAL_WORK']) {
+      const listed = await page.request.get(url);
+      expect(listed.status(), url).toBe(422);
+      expect(((await listed.json()) as { error: { code: string } }).error.code, url).toBe('VALIDATION_ERROR');
+    }
+
+    const openapi = await page.request.get('/api/v1/openapi.json');
+    expect(openapi.status()).toBe(200);
+    expect(await openapi.text()).not.toContain('AERIAL_WORK');
+
+    // A hand-typed URL is dropped by `sanitizeFlightType`: the unfiltered
+    // registry, no error, the type filter on «Tutti i tipi».
+    const pageResponse = await page.goto('/it/dashboard/logbook?flightType=AERIAL_WORK');
+    expect(pageResponse?.status()).toBe(200);
+    const typeFilter = page.getByTestId('flight-filter-type');
+    await expect(typeFilter).toHaveValue('');
+    await expect(typeFilter.locator('option')).toHaveText(['Tutti i tipi', 'Turismo', 'Scuola']);
   });
 });

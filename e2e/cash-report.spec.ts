@@ -74,7 +74,7 @@ test.describe('Financial report over the cash ledger — per-category via billin
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.goto('/it/dashboard/billing');
     await page.getByRole('button', { name: 'Esporta' }).click();
-    const pdfLink = page.getByRole('link', { name: 'Report cassa (PDF)' });
+    const pdfLink = page.getByRole('link', { name: 'Report di cassa (PDF)' });
     const href = await pdfLink.getAttribute('href');
     expect(href).toContain('/api/v1/cash-report/pdf');
 

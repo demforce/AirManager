@@ -8,6 +8,7 @@
  * before this extraction.
  */
 import type { getTranslations } from 'next-intl/server';
+import type { PersonSaveErrorLabels } from '@/lib/person-save';
 import type { PilotEditorLabels, ToastLabels } from './pilot-editor';
 
 type Translator = Awaited<ReturnType<typeof getTranslations>>;
@@ -15,8 +16,8 @@ type Translator = Awaited<ReturnType<typeof getTranslations>>;
 /**
  * `t` = `PilotsPage` (the editor's own copy, generic across any person —
  * not pilot-specific despite the namespace name), `tProfiles` =
- * `PeoplePage` (profile activate/edit copy shared with the legacy
- * `ProfilesPanel`), `tUsers` = `UsersPage` (role names shared with
+ * `PeoplePage` (profile titles, fields and states shared with the scheda
+ * persona), `tUsers` = `UsersPage` (role names shared with
  * `/dashboard/users`).
  */
 export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUsers: Translator): PilotEditorLabels {
@@ -34,7 +35,6 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       email: t('editor.identity.email'),
       phone: t('editor.identity.phone'),
       address: t('editor.identity.address'),
-      fiscalCode: t('editor.identity.fiscalCode'),
     },
     profiles: {
       sectionTitle: t('editor.profiles.sectionTitle'),
@@ -43,18 +43,11 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
         inactive: tProfiles('profilesPanel.status.inactive'),
         notActivated: tProfiles('profilesPanel.status.notActivated'),
       },
-      actions: {
-        activate: tProfiles('profilesPanel.actions.activate'),
-        edit: tProfiles('profilesPanel.actions.edit'),
-        reactivate: tProfiles('profilesPanel.actions.reactivate'),
-        deactivate: tProfiles('profilesPanel.actions.deactivate'),
-        confirmDeactivate: tProfiles('profilesPanel.actions.confirmDeactivate'),
-        confirmYes: tProfiles('profilesPanel.actions.confirmYes'),
-        confirmCancel: tProfiles('profilesPanel.actions.confirmCancel'),
-        cancel: tProfiles('profilesPanel.actions.cancel'),
-        save: tProfiles('profilesPanel.actions.save'),
+      errors: {
+        requiredField: tProfiles('profilesPanel.errors.requiredField'),
+        generic: tProfiles('profilesPanel.errors.generic'),
+        exclusive: tProfiles('profilesPanel.errors.exclusive'),
       },
-      errors: { requiredField: tProfiles('profilesPanel.errors.requiredField'), generic: tProfiles('profilesPanel.errors.generic') },
       pilot: {
         title: tProfiles('profilesPanel.pilot.title'),
         licenseNumber: tProfiles('profilesPanel.pilot.licenseNumber'),
@@ -68,14 +61,8 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       empty: t('editor.ratings.empty'),
       status: { ok: t('editor.ratings.status.ok'), expiring: t('editor.ratings.status.expiring'), expired: t('editor.ratings.status.expired') },
       dateLabel: t('editor.ratings.dateLabel'),
-      addAction: t('editor.ratings.addAction'),
-      cancel: t('editor.ratings.cancel'),
-      save: t('editor.ratings.save'),
-      edit: t('editor.ratings.edit'),
       remove: t('editor.ratings.remove'),
-      confirmRemove: t('editor.ratings.confirmRemove'),
-      confirmYes: t('editor.ratings.confirmYes'),
-      confirmCancel: t('editor.ratings.confirmCancel'),
+      restore: t('editor.ratings.restore'),
       requiredDate: t('editor.ratings.requiredDate'),
       genericError: t('editor.ratings.genericError'),
     },
@@ -84,14 +71,8 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       empty: t('editor.medical.empty'),
       status: { ok: t('editor.ratings.status.ok'), expiring: t('editor.ratings.status.expiring'), expired: t('editor.ratings.status.expired') },
       dateLabel: t('editor.medical.dateLabel'),
-      addAction: t('editor.medical.addAction'),
-      cancel: t('editor.medical.cancel'),
-      save: t('editor.medical.save'),
-      edit: t('editor.medical.edit'),
       remove: t('editor.medical.remove'),
-      confirmRemove: t('editor.medical.confirmRemove'),
-      confirmYes: t('editor.medical.confirmYes'),
-      confirmCancel: t('editor.medical.confirmCancel'),
+      restore: t('editor.medical.restore'),
       requiredDate: t('editor.medical.requiredDate'),
       genericError: t('editor.medical.genericError'),
     },
@@ -102,7 +83,6 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       roles: t('editor.access.roles'),
       roleOptions: {
         ADMIN: tUsers('roles.ADMIN'),
-        STAFF: tUsers('roles.STAFF'),
         INSTRUCTOR: tUsers('roles.INSTRUCTOR'),
         PILOT: tUsers('roles.PILOT'),
         STUDENT: tUsers('roles.STUDENT'),
@@ -134,7 +114,33 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       required: t('editor.errors.required'),
       generic: t('editor.errors.generic'),
       conflictEmail: t('editor.errors.conflictEmail'),
+      profilesExclusive: t('editor.errors.profilesExclusive'),
     },
+    saveErrors: buildPersonSaveErrorLabels(t, tProfiles),
+  };
+}
+
+/**
+ * The messages of a failed person Salva (review 19.4 F2), one per reason —
+ * shared by the pilot editor and the instructor editor (`instructors/page.tsx`),
+ * so the two never word the same refusal differently. `t` = `PilotsPage`,
+ * `tProfiles` = `PeoplePage`.
+ */
+export function buildPersonSaveErrorLabels(t: Translator, tProfiles: Translator): PersonSaveErrorLabels {
+  return {
+    conflictEmail: t('editor.errors.conflictEmail'),
+    profilesExclusive: tProfiles('profilesPanel.errors.exclusive'),
+    personArchived: t('editor.saveErrors.personArchived'),
+    expiryTypeNotFound: t('editor.saveErrors.expiryTypeNotFound'),
+    expiryTypeInactive: t('editor.saveErrors.expiryTypeInactive'),
+    scopeMismatch: t('editor.saveErrors.scopeMismatch'),
+    expiryConflict: t('editor.saveErrors.expiryConflict'),
+    instructorProfileInactive: t('editor.saveErrors.instructorProfileInactive'),
+    invalid: t('editor.saveErrors.invalid'),
+    forbidden: t('editor.saveErrors.forbidden'),
+    notFound: t('editor.saveErrors.notFound'),
+    unauthenticated: t('editor.saveErrors.unauthenticated'),
+    generic: t('editor.errors.generic'),
   };
 }
 

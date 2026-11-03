@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
@@ -49,20 +50,17 @@ function soonestFutureBookingSlot(): { startsAt: string; endsAt: string } {
   };
 }
 
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string; registration: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-PD${suffix}`.toUpperCase().slice(0, 20);
 
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-    data: { priceCentsPerHour, validFrom: '2020-01-01' },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: '2020-01-01' });
 
   return { id: aircraft.id, registration };
 }
@@ -80,6 +78,8 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   return { personId: person.id, firstName, lastName };
 }
@@ -93,13 +93,13 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
  */
 async function registerFlight(
   page: Page,
-  params: { aircraftId: string; personId: string; flightDate: string; flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK'; minutes: number },
+  params: { aircraftId: string; personId: string; flightDate: string; flightType: 'TOURISM' | 'SCHOOL'; minutes: number },
 ): Promise<void> {
   const { flightDate, minutes, ...rest } = params;
   const takeoffAt = `${flightDate}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
-    data: { ...rest, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', takeoffAt, landingAt },
+    data: { ...rest, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', takeoffAt, landingAt, force: true },
   });
   expect(response.status()).toBe(201);
 }
@@ -136,47 +136,13 @@ async function registerExpiry(page: Page, personId: string, expiryTypeId: string
   expect(response.status()).toBe(201);
 }
 
-/** Creates + approves a PPR request via the public POST + authenticated approve (story 13.6 fixture, same pattern as `movements.spec.ts#createApprovedRequest`). */
-async function createApprovedPprRequest(page: Page): Promise<{ registration: string }> {
-  const registration = `I-PD${uniqueSuffix()}`.toUpperCase().slice(0, 20);
-  const createResponse = await page.request.post('/api/v1/ppr-requests', {
-    headers: { 'x-forwarded-for': `e2e-pdf-exports-${uniqueSuffix()}` },
-    data: {
-      firstName: 'PdfExport',
-      lastName: `Ppr-${uniqueSuffix()}`,
-      email: `ppr-pdf-${uniqueSuffix()}@e2e.airmanager.local`,
-      phone: '+39 333 0000000',
-      aircraftRegistration: registration,
-      aircraftType: 'Cessna 172',
-      origin: 'LIRN Napoli',
-      destination: 'LIRU Urbe',
-      eta: new Date(Date.now() + 5 * 3_600_000).toISOString(),
-      personsOnBoard: 1,
-      locale: 'it',
-    },
-  });
-  expect(createResponse.status()).toBe(201);
-
-  const listResponse = await page.request.get(`/api/v1/ppr-requests?status=PENDING&pageSize=100`);
-  expect(listResponse.status()).toBe(200);
-  const listBody = (await listResponse.json()) as { items: { id: string; aircraftRegistration: string }[] };
-  const match = listBody.items.find((item) => item.aircraftRegistration === registration);
-  if (!match) throw new Error(`PENDING PprRequest with registration ${registration} not found`);
-
-  const approveResponse = await page.request.post(`/api/v1/ppr-requests/${match.id}/approve`);
-  expect(approveResponse.status()).toBe(200);
-
-  return { registration };
-}
-
-// The airfield settings row is GLOBAL, shared, mutable state (same reason
-// `ppr-queue.spec.ts` serializes its own operating-instructions scenario) —
-// this whole file runs serially so a settings PUT in one test is never
-// raced by a concurrent PUT from another test in the same file.
+// The airfield settings row is GLOBAL, shared, mutable state — this whole
+// file runs serially so a settings PUT in one test is never raced by a
+// concurrent PUT from another test in the same file.
 test.describe.configure({ mode: 'serial' });
 
 test.describe('PDF exports (Story 10.2, FR-40)', () => {
-  test('admin exports the 6 report PDFs: 200, application/pdf, attachment filename, %PDF- magic bytes (AC 2/3; story 13.6 AC 4; story 13.7 AC 2)', async ({ page }) => {
+  test('admin exports the 5 report PDFs: 200, application/pdf, attachment filename, %PDF- magic bytes (AC 2/3; story 13.7 AC 2)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const aircraft = await createAircraftWithRate(page, 15000);
@@ -196,8 +162,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     });
     expect(topUpResponse.status()).toBe(200);
 
-    await createApprovedPprRequest(page);
-
     // Story 13.7, AC 2 — the bookings PDF's own fixture (`bookingsAircraft`,
     // kept separate from `aircraft` above so its rate/flight setup stays
     // untouched). ADMIN (`bookings.manage.any`) creates it — `bookings.service.ts#createBooking`
@@ -212,6 +176,8 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
         personId: pilot.personId,
         startsAt: `${FUTURE_BOOKING_DAY}T09:00:00.000Z`,
         endsAt: `${FUTURE_BOOKING_DAY}T10:00:00.000Z`,
+        // Story 19.10 (AD-9 rule 1): an admin fixture, not about the requirements.
+        force: true,
       },
     });
     expect(bookingCreateResponse.status()).toBe(201);
@@ -221,7 +187,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
       { url: `/api/v1/cash-report/pdf?from=${cashDate}&to=${cashDate}`, filenamePrefix: 'cash-report' },
       { url: `/api/v1/flights/pdf?aircraftId=${aircraft.id}`, filenamePrefix: 'flights' },
       { url: `/api/v1/expiries/pdf?expiryTypeId=${expiryTypeId}`, filenamePrefix: 'expiries' },
-      { url: `/api/v1/ppr-requests/pdf?status=APPROVED`, filenamePrefix: 'ppr-requests' },
       { url: `/api/v1/bookings/pdf?aircraftId=${bookingsAircraft.id}`, filenamePrefix: 'bookings' },
     ];
 
@@ -246,9 +211,17 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     await page.goto('/it/dashboard/settings');
     await expect(page.getByTestId('airfield-settings-form')).toBeVisible();
 
+    await page.waitForLoadState('networkidle');
     await page.getByTestId('airfield-name-input').fill(airfieldName);
-    await page.getByTestId('airfield-settings-save').click();
-    await expect(page.getByTestId('airfield-settings-feedback')).toBeVisible();
+    // Story 19.8: the page's ONE Salva. This spec runs in the parallel
+    // `chromium` project, so its PATCH must carry the name ALONE (AC 20) —
+    // never the other global settings on screen.
+    const [patchResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith('/api/v1/settings') && r.request().method() === 'PATCH'),
+      page.getByTestId('settings-save').click(),
+    ]);
+    expect(patchResponse.status()).toBe(200);
+    expect(patchResponse.request().postDataJSON()).toEqual({ airfield: { name: airfieldName } });
 
     const getResponse = await page.request.get('/api/v1/settings/airfield');
     expect(getResponse.status()).toBe(200);
@@ -262,20 +235,16 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     expect((await exportResponse.body()).subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 
-  test('/dashboard/settings redirects staff and pilot to /dashboard; PUT /api/v1/settings/airfield answers 403 for both (AC 1)', async ({ page }) => {
-    for (const email of [STAFF_EMAIL, PILOT_EMAIL]) {
-      await loginExpectingDashboard(page, email);
-      await page.goto('/it/dashboard/settings');
-      await expect(page).toHaveURL(/\/it\/dashboard$/);
+  test('/dashboard/settings redirects a pilot to /dashboard; PUT /api/v1/settings/airfield answers 403 (AC 1)', async ({ page }) => {
+    await loginExpectingDashboard(page, PILOT_EMAIL);
+    await page.goto('/it/dashboard/settings');
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
 
-      const putResponse = await page.request.put('/api/v1/settings/airfield', { data: { name: 'Should not save' } });
-      expect(putResponse.status()).toBe(403);
-
-      await page.context().clearCookies();
-    }
+    const putResponse = await page.request.put('/api/v1/settings/airfield', { data: { name: 'Should not save' } });
+    expect(putResponse.status()).toBe(403);
   });
 
-  test('own-access parity: a pilot exports their own account statement (200) but another person\'s (403), and the staff-only cash report/expiries/ppr-requests PDFs (403) (AC 3; story 13.6 AC 4)', async ({
+  test('own-access parity: a pilot exports their own account statement (200) but another person\'s (403), and the staff-only cash report/expiries PDFs (403) (AC 3)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -297,9 +266,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
 
     const expiriesResponse = await page.request.get('/api/v1/expiries/pdf');
     expect(expiriesResponse.status()).toBe(403);
-
-    const pprResponse = await page.request.get('/api/v1/ppr-requests/pdf');
-    expect(pprResponse.status()).toBe(403);
   });
 
   test('GET /api/v1/bookings/pdf is self.read — every authenticated role gets 200, unlike the staff-only report PDFs above (story 13.7, AC 2)', async ({
@@ -317,7 +283,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
       '/api/v1/cash-report/pdf?from=2026-01-01&to=2026-01-31',
       '/api/v1/flights/pdf',
       '/api/v1/expiries/pdf',
-      '/api/v1/ppr-requests/pdf',
       '/api/v1/bookings/pdf',
     ]) {
       const response = await request.get(url);
@@ -326,7 +291,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     }
   });
 
-  test('invalid filters (inverted period) get a 422 AD-8 envelope, never a file (AC 3; story 13.6 AC 4)', async ({ page }) => {
+  test('invalid filters (inverted period) get a 422 AD-8 envelope, never a file (AC 3)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const cashReportResponse = await page.request.get('/api/v1/cash-report/pdf?from=2026-01-10&to=2026-01-01');
@@ -336,10 +301,6 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     const flightsResponse = await page.request.get('/api/v1/flights/pdf?dateFrom=2026-01-10&dateTo=2026-01-01');
     expect(flightsResponse.status()).toBe(422);
     expect((await flightsResponse.json()).error.code).toBe('VALIDATION_ERROR');
-
-    const pprResponse = await page.request.get('/api/v1/ppr-requests/pdf?from=2026-01-10&to=2026-01-01');
-    expect(pprResponse.status()).toBe(422);
-    expect((await pprResponse.json()).error.code).toBe('VALIDATION_ERROR');
   });
 
   test('clicking "Voli (PDF)" in the flight log\'s ExportMenu dropdown triggers a real file download with the applied filter (AC 5; story 13.5 AC 6)', async ({ page }) => {
@@ -369,7 +330,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     const aircraft = await createAircraftWithRate(page, 7000);
     const pilot = await createPilotPerson(page, 'UiBookingsPdfClick');
     const createResponse = await page.request.post('/api/v1/bookings', {
-      data: { aircraftId: aircraft.id, personId: pilot.personId, ...soonestFutureBookingSlot() },
+      data: { aircraftId: aircraft.id, personId: pilot.personId, ...soonestFutureBookingSlot(), force: true },
     });
     expect(createResponse.status()).toBe(201);
 
@@ -378,14 +339,14 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     await expect(list.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toBeVisible();
 
     await list.getByRole('button', { name: 'Esporta' }).click();
-    const [download] = await Promise.all([page.waitForEvent('download'), list.getByRole('link', { name: 'Esporta PDF' }).click()]);
+    const [download] = await Promise.all([page.waitForEvent('download'), list.getByTestId('export-menu-pdf').click()]);
     expect(download.suggestedFilename()).toMatch(/^airmanager-bookings-\d{4}-\d{2}-\d{2}\.pdf$/);
     expect(await download.path()).toBeTruthy();
 
     // Was `pdfLabel=""` (xlsx-only) before this story — the XLS entry must
     // still be there and still work, unchanged.
     await list.getByRole('button', { name: 'Esporta' }).click();
-    const [xlsDownload] = await Promise.all([page.waitForEvent('download'), list.getByRole('link', { name: 'Esporta XLS' }).click()]);
+    const [xlsDownload] = await Promise.all([page.waitForEvent('download'), list.getByTestId('export-menu-xls').click()]);
     expect(xlsDownload.suggestedFilename()).toMatch(/^airmanager-bookings-\d{4}-\d{2}-\d{2}\.xlsx$/);
     expect(await xlsDownload.path()).toBeTruthy();
   });

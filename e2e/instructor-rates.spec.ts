@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { seedInstructorRate } from './db-fixtures';
+import { addDaysIso, todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -8,8 +10,6 @@ const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 if (!SEED_PASSWORD) {
   throw new Error('e2e/instructor-rates.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
-
-const MAILPIT_API = 'http://localhost:8025/api/v1';
 
 /** Same login helper as the other rate e2e specs (aircraft-rates.spec.ts). */
 async function loginExpectingDashboard(page: Page, email: string, password: string = SEED_PASSWORD!): Promise<void> {
@@ -46,11 +46,6 @@ async function createInstructorPerson(page: Page, person: { firstName: string; l
   return created.id;
 }
 
-/** Today, `YYYY-MM-DD`, browser-local time — matches `InstructorRatesPanel`'s `<input type="date">` default. */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** A safely-in-the-past date — always earlier than any run-unique person's creation time. */
 const PAST_DATE = '2020-01-01';
 
@@ -60,70 +55,14 @@ function ddmmyyyy(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
-function uniqueEmail(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
-}
-
-type MailpitMessageSummary = { ID: string; Subject: string };
-type MailpitFullMessage = { Text: string; Subject: string };
-
-/** Same Mailpit-polling helper as user-management.spec.ts/aircraft-rates.spec.ts. */
-async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
-    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
-    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
-
-    if (found) {
-      const messageResponse = await fetch(`${MAILPIT_API}/message/${found.ID}`);
-      return (await messageResponse.json()) as MailpitFullMessage;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-
-  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
-}
-
-function extractSetPasswordUrl(emailText: string): URL {
-  const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(emailText);
-  if (!match) {
-    throw new Error(`Email body did not contain a /set-password link:\n${emailText}`);
-  }
-  return new URL(match[1]);
-}
-
-/**
- * Creates a STAFF-only user (via the admin users API — same helper as
- * `aircraft-rates.spec.ts`) and returns credentials once the password is set
- * — the seed only ships admin + pilot, and the 403 test below needs an
- * actor with `people.read` but deliberately WITHOUT `settings.manage` to
- * prove the permission split (`createInstructorRate` requires the stricter
- * one, same as `createAircraftRate`).
- */
-async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
-  const email = uniqueEmail('staff');
-  const response = await page.request.post('/api/v1/users', { data: { email, roles: ['STAFF'] } });
-  expect(response.status()).toBe(201);
-
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
-  const url = extractSetPasswordUrl(inviteEmail.Text);
-  await page.goto(url.pathname + url.search);
-  await page.getByLabel('Nuova password').fill(password);
-  await page.getByLabel('Conferma password').fill(password);
-  await page.getByRole('button', { name: 'Imposta password' }).click();
-  await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-  return email;
-}
-
 /**
  * Opens the instructor editor slide-over for `personId` from the instructors
- * page (story 12.7) and returns the (always-visible, no toggle) student-rate
- * panel locator inside it — the NEW selectors this story's AC 8 adapts the
- * 4 behavioral tests below onto.
+ * page (story 12.7) and returns the student-rate section inside it. Since
+ * story 19.4 (R-19-f, AD-10) the section is part of the editor's ONE form:
+ * a price field whose placeholder and hint are the rate in effect today,
+ * "In vigore da" (today at the earliest), the next scheduled rate on one
+ * line, no history and no submit of its own — the panel's single Salva
+ * writes it.
  */
 async function openInstructorRatesPanel(page: Page, personId: string) {
   await page.goto('/it/dashboard/instructors');
@@ -133,84 +72,158 @@ async function openInstructorRatesPanel(page: Page, personId: string) {
   return panel;
 }
 
+/**
+ * The editor's single Salva, then the editor opened afresh. Re-opening is not
+ * cosmetic: the Salva refreshes the page, and the instructors page re-mounts
+ * its console (closing the editor) whenever the NUMBER of instructors changed
+ * — which a parallel spec creating an instructor does at any time (measured:
+ * one flaky run, the panel gone under the assertion). The in-place
+ * realignment after a Salva is proved on the pilot editor
+ * (`person-save.spec.ts`, AC 15), whose page keys on its filters instead.
+ */
+async function saveAndReopen(page: Page, personId: string) {
+  await page.getByTestId('instructor-identity-submit').click();
+  await expect(page.getByTestId('toast').filter({ hasText: 'Modifiche salvate.' }).last()).toBeVisible();
+  return openInstructorRatesPanel(page, personId);
+}
+
 test.describe('Historicized instructor rates (Story 4.2, AD-4/AD-2 — twin of 4.1), on the instructors page (story 12.7)', () => {
-  test('admin adds a past and a current rate; history shows both and the current rate is the most recent (AC 1)', async ({
+  test('the rate in effect today is the placeholder and the hint, never a value; a rate from today replaces it, one from today + 30 does not (story 19.4 AC 18)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const person = uniquePerson('Marco');
-    const personId = await createInstructorPerson(page, person);
+    const personId = await createInstructorPerson(page, uniquePerson('Marco'));
+    const today = todayRome();
+    const inThirtyDays = addDaysIso(today, 30);
+    // A rate dated in the past can only be a fixture (R-19-f): the one in effect when the editor opens.
+    await seedInstructorRate(personId, { priceCentsPerHour: 3500, validFrom: PAST_DATE });
 
-    const today = todayDateOnly();
     const panel = await openInstructorRatesPanel(page, personId);
-    await expect(panel.getByTestId('instructor-rates-current')).toContainText('Nessuna tariffa in vigore');
+    const price = panel.getByTestId('instructor-rate-price');
+    const validFrom = panel.getByTestId('instructor-rate-valid-from');
+    await expect(price).toHaveValue('');
+    await expect(price).toHaveAttribute('placeholder', '35,00');
+    await expect(price).toHaveAccessibleDescription(/^Attuale: 35,00\s€\/h — lascia vuoto per non cambiarlo\.$/);
+    // "In vigore da": today (Europe/Rome) by default, and today at the earliest.
+    await expect(validFrom).toHaveValue(today);
+    await expect(validFrom).toHaveAttribute('min', today);
+    // No history, no submit of its own (R-19-f, R-19-m).
+    for (const testId of ['instructor-rate-history-row', 'instructor-rate-history-show-all', 'instructor-rates-form', 'instructor-rates-submit', 'instructor-rates-current']) {
+      await expect(page.getByTestId(testId), testId).toHaveCount(0);
+    }
 
-    // First rate: 40 €/h from a past date.
-    await panel.getByLabel('Prezzo (€/h)').fill('40,00');
-    await panel.getByLabel('In vigore da').fill(PAST_DATE);
-    await panel.getByTestId('instructor-rates-submit').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
-    await expect(panel.getByTestId('instructor-rates-current')).toContainText(/40,00\s€/);
+    // 40 €/h from today: the placeholder follows.
+    await price.fill('40,00');
+    let reopened = await saveAndReopen(page, personId);
+    await expect(reopened.getByTestId('instructor-rate-price')).toHaveValue('');
+    await expect(reopened.getByTestId('instructor-rate-price')).toHaveAttribute('placeholder', '40,00');
+    await expect(reopened.getByTestId('instructor-rate-valid-from')).toHaveValue(today);
 
-    // Second rate: 45 €/h from today.
-    await panel.getByLabel('Prezzo (€/h)').fill('45,00');
-    await panel.getByLabel('In vigore da').fill(today);
-    await panel.getByTestId('instructor-rates-submit').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
+    // 45 €/h from today + 30: scheduled — the placeholder stays, the line shows it.
+    await reopened.getByTestId('instructor-rate-price').fill('45,00');
+    await reopened.getByTestId('instructor-rate-valid-from').fill(inThirtyDays);
+    reopened = await saveAndReopen(page, personId);
+    await expect(reopened.getByTestId('instructor-rate-price')).toHaveAttribute('placeholder', '40,00');
+    await expect(reopened.getByTestId('instructor-rates-next')).toHaveText(new RegExp(`^Dal ${ddmmyyyy(inThirtyDays)}: 45,00\\s€/h$`));
 
-    // Current rate is now 45,00 € (AD-4: max validFrom <= today) and BOTH
-    // history rows are visible (append-only, AC 1).
-    await expect(panel.getByTestId('instructor-rates-current')).toContainText(/45,00\s€/);
-    const historyRows = panel.getByTestId('instructor-rate-history-row');
-    await expect(historyRows).toHaveCount(2);
-    await expect(historyRows.nth(0)).toContainText(ddmmyyyy(today));
-    await expect(historyRows.nth(0)).toContainText(/45,00\s€/);
-    await expect(historyRows.nth(1)).toContainText(ddmmyyyy(PAST_DATE));
-    await expect(historyRows.nth(1)).toContainText(/40,00\s€/);
+    const list = (await (await page.request.get(`/api/v1/people/${personId}/instructor-rates`)).json()) as Array<{ validFrom: string; priceCentsPerHour: number }>;
+    expect(list.map((rate) => [rate.validFrom, rate.priceCentsPerHour])).toEqual([
+      [inThirtyDays, 4500],
+      [today, 4000],
+      [PAST_DATE, 3500],
+    ]);
   });
 
-  test('a second rate with the same validFrom shows a 409 conflict message (AC 2)', async ({ page }) => {
+  test('without a rate in effect: no placeholder, the hint says so; of two scheduled rates only the nearest is shown (story 19.4 AC 18, Q-19.4-b)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const person = uniquePerson('Giulia');
-    const personId = await createInstructorPerson(page, person);
+    const personId = await createInstructorPerson(page, uniquePerson('Elena'));
+    const today = todayRome();
+    for (const [days, priceCentsPerHour] of [
+      [40, 5900],
+      [20, 5200],
+    ] as const) {
+      const response = await page.request.post(`/api/v1/people/${personId}/instructor-rates`, { data: { priceCentsPerHour, validFrom: addDaysIso(today, days) } });
+      expect(response.status()).toBe(201);
+    }
 
     const panel = await openInstructorRatesPanel(page, personId);
+    const price = panel.getByTestId('instructor-rate-price');
+    await expect(price).toHaveAccessibleDescription('Nessuna tariffa in vigore');
+    await expect(price).not.toHaveAttribute('placeholder');
+    await expect(panel.getByTestId('instructor-rates-next')).toHaveCount(1);
+    await expect(panel.getByTestId('instructor-rates-next')).toHaveText(new RegExp(`^Dal ${ddmmyyyy(addDaysIso(today, 20))}: 52,00\\s€/h$`));
+  });
 
-    await panel.getByLabel('Prezzo (€/h)').fill('40,00');
-    await panel.getByLabel('In vigore da').fill(PAST_DATE);
-    await panel.getByTestId('instructor-rates-submit').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa aggiunta' })).toBeVisible();
-    await expect(panel.getByTestId('instructor-rates-current')).toContainText(/40,00\s€/);
-
-    // Re-insert a rate with the SAME validFrom (AC 2 — 409).
-    await panel.getByLabel('Prezzo (€/h)').fill('999,00');
-    await panel.getByLabel('In vigore da').fill(PAST_DATE);
-    await panel.getByTestId('instructor-rates-submit').click();
-
-    await expect(panel.getByTestId('instructor-rates-form-error')).toContainText(
-      'Esiste già una tariffa con questa data di decorrenza',
+  test('a failed read of the rates says so — never «Nessuna tariffa in vigore» over a rate that exists (review 19.4 F3)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const personId = await createInstructorPerson(page, uniquePerson('Lettura'));
+    await seedInstructorRate(personId, { priceCentsPerHour: 3500, validFrom: PAST_DATE });
+    await page.route(`**/api/v1/people/${personId}/instructor-rates`, (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' } }) }),
     );
+
+    const panel = await openInstructorRatesPanel(page, personId);
+    const price = panel.getByTestId('instructor-rate-price');
+    await expect(price).toHaveAccessibleDescription('Impossibile caricare le tariffe: quella in vigore non è nota.');
+    await expect(price).not.toHaveAttribute('placeholder');
+    await expect(price).not.toHaveAttribute('aria-invalid', 'true');
+    await expect(panel.getByText('Nessuna tariffa in vigore')).toHaveCount(0);
   });
 
-  test('a STAFF actor (people.read but not settings.manage) gets a 403 AD-8 envelope from POST instructor-rates', async ({
-    page,
-  }) => {
+  test('a second rate on the same validFrom REWRITES it: one row, the new price in the placeholder (story 19.3 AC 26, story 19.4 AC 18)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const person = uniquePerson('Sara');
+    const personId = await createInstructorPerson(page, uniquePerson('Giulia'));
+
+    let panel = await openInstructorRatesPanel(page, personId);
+    await panel.getByTestId('instructor-rate-price').fill('40,00');
+    panel = await saveAndReopen(page, personId);
+    await expect(panel.getByTestId('instructor-rate-price')).toHaveAttribute('placeholder', '40,00');
+
+    // The SAME validFrom (today, the default) again: rewritten in place (R-19-f), never a 409.
+    await panel.getByTestId('instructor-rate-price').fill('99,00');
+    panel = await saveAndReopen(page, personId);
+    await expect(panel.getByTestId('instructor-rate-price')).toHaveAttribute('placeholder', '99,00');
+    await expect(panel.getByTestId('instructor-rates-error')).toHaveCount(0);
+    const list = (await (await page.request.get(`/api/v1/people/${personId}/instructor-rates`)).json()) as Array<{ priceCentsPerHour: number }>;
+    expect(list.map((rate) => rate.priceCentsPerHour)).toEqual([9900]);
+  });
+
+  test('a TYPED "In vigore da" before today is a field error: no write leaves, the rest of the draft stays (story 19.4 AC 21)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const person = uniquePerson('Ieri');
     const personId = await createInstructorPerson(page, person);
 
-    const staffPassword = 'StaffInstructorRates123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
+    const panel = await openInstructorRatesPanel(page, personId);
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() !== 'GET' && request.url().includes('/api/v1/')) writes.push(`${request.method()} ${request.url()}`);
+    });
+    const firstName = page.getByTestId('instructor-identity-form').getByLabel('Nome', { exact: true });
+    await firstName.fill('IeriNuovo');
+    await panel.getByTestId('instructor-rate-price').fill('48,00');
+    // `fill` writes into the date input even below its `min` (the form is `noValidate`).
+    await panel.getByTestId('instructor-rate-valid-from').fill(addDaysIso(todayRome(), -1));
+    await page.getByTestId('instructor-identity-submit').click();
 
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
+    await expect(panel.getByText('La decorrenza non può essere nel passato.')).toBeVisible();
+    await expect(panel.getByTestId('instructor-rate-valid-from')).toHaveAttribute('aria-invalid', 'true');
+    expect(writes).toEqual([]);
+    await expect(firstName).toHaveValue('IeriNuovo');
+    await expect(panel.getByTestId('instructor-rate-price')).toHaveValue('48,00');
+    expect(((await (await page.request.get(`/api/v1/people/${personId}`)).json()) as { firstName: string }).firstName).toBe(person.firstName);
+  });
+
+  test('a validFrom before today (Europe/Rome) answers 422 RATE_VALID_FROM_IN_PAST and writes nothing (story 19.3, AC 4/26)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const personId = await createInstructorPerson(page, uniquePerson('Paolo'));
 
     const response = await page.request.post(`/api/v1/people/${personId}/instructor-rates`, {
-      data: { priceCentsPerHour: 4500, validFrom: PAST_DATE },
+      data: { priceCentsPerHour: 4500, validFrom: addDaysIso(todayRome(), -1) },
     });
-    expect(response.status()).toBe(403);
-    const body = await response.json();
-    expect(body.error.code).toBe('FORBIDDEN');
+    expect(response.status()).toBe(422);
+    expect((await response.json()).error.code).toBe('RATE_VALID_FROM_IN_PAST');
+    const list = await page.request.get(`/api/v1/people/${personId}/instructor-rates`);
+    expect(await list.json()).toEqual([]);
   });
 
   test('a pilot gets a 403 AD-8 envelope from POST /api/v1/people/{id}/instructor-rates', async ({ page }) => {

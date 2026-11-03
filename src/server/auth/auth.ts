@@ -29,7 +29,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       // H1 (CWE-307): the Credentials provider's `authorize()` receives the
       // original `Request` as its second argument — extract the client IP
-      // from it (same `x-forwarded-for` convention as `ppr.service.ts`) and
+      // from it (`x-forwarded-for`, `client-ip.ts`) and
       // forward it to `authorizeCredentials` so the login throttle can
       // apply its per-IP dimension.
       authorize: (credentials, request) => authorizeCredentials(credentials, extractClientIp(request.headers.get('x-forwarded-for'))),

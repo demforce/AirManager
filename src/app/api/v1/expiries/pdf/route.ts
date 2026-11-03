@@ -8,7 +8,7 @@ import { exportExpiriesPdf } from '@/server/services/exports.service';
  * query schema as `GET /api/v1/expiries` — `page`/`pageSize`/`format` are
  * ignored here (`exportExpiriesPdf` always re-pages internally, same as the
  * xlsx export). Real authorization stays in `expiries.service.ts#listAllExpiries`
- * (AD-5), `expiries.manage` (staff/admin).
+ * (AD-5), `expiries.manage` (ADMIN-only).
  */
 export const GET = apiRoute({
   querySchema: listAllExpiriesQuerySchema,

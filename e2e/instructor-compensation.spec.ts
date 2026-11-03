@@ -1,14 +1,16 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
+const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
   throw new Error('e2e/instructor-compensation.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
 
-const MAILPIT_API = 'http://localhost:8025/api/v1';
 const PAST_DATE = '2020-01-01';
 const XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -25,37 +27,6 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function uniqueEmail(prefix: string): string {
-  return `${prefix}-${uniqueSuffix()}@airmanager.local`;
-}
-
-type MailpitMessageSummary = { ID: string; Subject: string };
-type MailpitFullMessage = { Text: string; Subject: string };
-
-/** Same Mailpit-polling helper as the other e2e specs (school.spec.ts, instructor-rates.spec.ts). */
-async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
-    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
-    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
-    if (found) {
-      const messageResponse = await fetch(`${MAILPIT_API}/message/${found.ID}`);
-      return (await messageResponse.json()) as MailpitFullMessage;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
-}
-
-function extractSetPasswordUrl(emailText: string): URL {
-  const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(emailText);
-  if (!match) {
-    throw new Error(`Email body did not contain a /set-password link:\n${emailText}`);
-  }
-  return new URL(match[1]);
-}
-
 /** Creates a fresh person with an active INSTRUCTOR profile — a BRAND NEW person every call (never the shared seed, `fullyParallel: true`), same helper shape as `school.spec.ts#createInstructorPerson`. */
 async function createInstructorPerson(page: Page, tag: string): Promise<{ personId: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
@@ -68,6 +39,8 @@ async function createInstructorPerson(page: Page, tag: string): Promise<{ person
 
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: { ratings: 'FI(A)' } });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'INSTRUCTORS');
 
   return { personId: person.id, firstName, lastName };
 }
@@ -81,40 +54,51 @@ async function createStudentPerson(page: Page, tag: string): Promise<{ personId:
 
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/student`, { data: { courseStartDate: PAST_DATE } });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'STUDENTS');
 
   return { personId: person.id };
 }
 
 /** Aircraft + rate (`NO_AIRCRAFT_RATE` 422 otherwise), same helper shape as `school.spec.ts#createAircraftWithRate`. */
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-CP${suffix}`.toUpperCase().slice(0, 20);
 
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour, validFrom: PAST_DATE } });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
 
   return { id: aircraft.id };
 }
 
 /** A SCHOOL flight ALSO bills the instructor (`flights.service.ts` 422 `NO_INSTRUCTOR_RATE` otherwise) — the STUDENT-charged rate (D8), unrelated to the payout rate this story adds. Same helper as `school.spec.ts#createInstructorRate`. */
 async function createInstructorRate(page: Page, instructorPersonId: string, priceCentsPerHour: number): Promise<void> {
-  const rateResponse = await page.request.post(`/api/v1/people/${instructorPersonId}/instructor-rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedInstructorRate(instructorPersonId, { priceCentsPerHour, validFrom: PAST_DATE });
 }
 
-/** Registers a SCHOOL flight (same wire shape as `school.spec.ts#registerSchoolFlight`, story 11.1's `takeoffAt`/`landingAt`). */
+/**
+ * Registers a SCHOOL flight (same wire shape as `school.spec.ts#registerSchoolFlight`,
+ * story 11.1's `takeoffAt`/`landingAt`). Story 14.4 blast-radius fixture fix:
+ * re-runs `ensureValidSeedExpiries` for BOTH the student and the instructor
+ * right before submitting — `createStudentPerson`/`createInstructorPerson`
+ * already cover this at person-creation time, but this file's tests do
+ * several MORE awaited setup calls (aircraft, rate, instructor rate) in
+ * between, widening the window for a CONCURRENTLY-running sibling test
+ * (`flights.spec.ts`'s own custom-type tests) to leave a type active just
+ * long enough to be missed by the earlier scan (e2e/helpers.ts's own
+ * doc-comment).
+ */
 async function registerSchoolFlight(
   page: Page,
   params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number },
 ): Promise<void> {
+  await ensureValidSeedExpiries(page, params.personId, 'STUDENTS');
+  await ensureValidSeedExpiries(page, params.instructorPersonId, 'INSTRUCTORS');
   const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
@@ -127,26 +111,10 @@ async function registerSchoolFlight(
       arrivalAirfield: 'Base Airfield',
       takeoffAt,
       landingAt,
+      force: true,
     },
   });
   expect(response.status()).toBe(201);
-}
-
-/** Creates a STAFF-only user (Mailpit invite flow), same helper as `instructor-rates.spec.ts`. */
-async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
-  const email = uniqueEmail('staff-comp');
-  const response = await page.request.post('/api/v1/users', { data: { email, roles: ['STAFF'] } });
-  expect(response.status()).toBe(201);
-
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
-  const url = extractSetPasswordUrl(inviteEmail.Text);
-  await page.goto(url.pathname + url.search);
-  await page.getByLabel('Nuova password').fill(password);
-  await page.getByLabel('Conferma password').fill(password);
-  await page.getByRole('button', { name: 'Imposta password' }).click();
-  await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-  return email;
 }
 
 test.describe('Instructor compensation (story 12.7)', () => {
@@ -167,12 +135,12 @@ test.describe('Instructor compensation (story 12.7)', () => {
     await expect(row.getByTestId(`instructor-edit-${instructor.personId}`)).toBeVisible();
     await expect(row).toContainText('—');
 
-    // Set the payout rate to 30,00 €/h via the editor.
+    // Set the payout rate to 30,00 €/h via the editor's single Salva (story 19.4).
     await row.getByTestId(`instructor-edit-${instructor.personId}`).click();
     const rateForm = page.getByTestId('instructor-payout-rate-form');
-    await rateForm.getByLabel('Tariffa oraria').fill('30,00');
-    await page.getByTestId('instructor-payout-rate-submit').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa payout aggiornata' })).toBeVisible();
+    await rateForm.getByLabel('Compenso orario (€/h)').fill('30,00');
+    await page.getByTestId('instructor-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Modifiche salvate.' })).toBeVisible();
 
     // 60 min / 60 * 3000 c = 3000 c = 30,00 € owed (AC 2's rounding rule).
     const refreshedRow = page.getByTestId(`instructor-row-${instructor.personId}`);
@@ -187,11 +155,22 @@ test.describe('Instructor compensation (story 12.7)', () => {
     await refreshedRow.getByTestId(`instructor-pay-${instructor.personId}`).click();
     const payForm = page.getByTestId('instructor-pay-form');
     await payForm.getByLabel('Importo (€)').fill('20,00');
+    // The form's own default period (ISO, native date inputs) — it is what the movement's description carries.
+    const [periodStart, periodEnd] = await payForm.locator('input[type="date"]').evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value));
     await page.getByTestId('instructor-pay-submit').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Pagamento registrato' })).toBeVisible();
 
     const afterPayRow = page.getByTestId(`instructor-row-${instructor.personId}`);
     await expect(afterPayRow).toContainText(/10,00\s€/);
+
+    // Story 19.12b AC 20: the payout's own Contabilità row names it «Compenso istruttore {inizio} – {fine}».
+    // Today's costs only, so the fresh row is on page 1; its period and amount single it out from the API payouts of other specs.
+    // `periodEnd` is the BROWSER's today, the movement is dated on Europe/Rome's: the window takes the day after too.
+    const dayAfter = new Date(`${periodEnd}T00:00:00Z`);
+    dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+    await page.goto(`/it/dashboard/billing?${new URLSearchParams({ dateFrom: periodEnd!, dateTo: dayAfter.toISOString().slice(0, 10), bookType: 'COST' }).toString()}`);
+    const payoutMovement = page.getByTestId('transaction-row').filter({ hasText: `Compenso istruttore ${periodStart} – ${periodEnd}` }).filter({ hasText: /\b20,00\s€/ });
+    await expect(payoutMovement.first()).toBeVisible();
   });
 
   test('a payout replayed with the SAME Idempotency-Key records only ONE payout (AC 3/5)', async ({ page }) => {
@@ -258,24 +237,12 @@ test.describe('Instructor compensation (story 12.7)', () => {
     await expect(page.getByTestId(`payment-cycle-row-${unratedInstructor.personId}`)).toHaveCount(0);
   });
 
-  test('RBAC: staff sees the summary but NOT "Paga" or the payout-rate field; POST payout / PUT rate answer 403 (AC 3/4/6)', async ({ page }) => {
+  test('RBAC: POST payout / PUT rate answer 403 for a non-admin actor (AC 3/4/6, payouts.manage)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const instructor = await createInstructorPerson(page, 'Rbac');
 
-    const staffPassword = 'StaffComp123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
-    await page.goto('/it/dashboard/instructors');
-    const row = page.getByTestId(`instructor-row-${instructor.personId}`);
-    await expect(row).toBeVisible();
-    await expect(row.getByTestId(`instructor-pay-${instructor.personId}`)).toHaveCount(0);
-    await expect(page.getByTestId('instructors-payment-cycle-button')).toHaveCount(0);
-
-    await row.getByTestId(`instructor-edit-${instructor.personId}`).click();
-    await expect(page.getByTestId('instructor-payout-rate-form')).toHaveCount(0);
+    await loginExpectingDashboard(page, PILOT_EMAIL);
 
     const payoutResponse = await page.request.post('/api/v1/instructor-payouts', {
       headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
@@ -287,20 +254,11 @@ test.describe('Instructor compensation (story 12.7)', () => {
     expect(rateResponse.status()).toBe(403);
   });
 
-  test('the compensation summary export answers xlsx 200 for both staff and admin (AC 3/8, finance.manage)', async ({ page }) => {
+  test('the compensation summary export answers xlsx 200 (AC 3/8, finance.manage)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const adminExport = await page.request.get('/api/v1/instructor-compensation?format=xlsx&locale=it');
     expect(adminExport.status()).toBe(200);
     expect(adminExport.headers()['content-type']).toBe(XLSX_CONTENT_TYPE);
-
-    const staffPassword = 'StaffExportComp123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
-    const staffExport = await page.request.get('/api/v1/instructor-compensation?format=xlsx&locale=it');
-    expect(staffExport.status()).toBe(200);
-    expect(staffExport.headers()['content-type']).toBe(XLSX_CONTENT_TYPE);
   });
 });

@@ -49,15 +49,13 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/expiry-types',
         '/api/v1/expiry-types/{id}',
         '/api/v1/flights',
-        '/api/v1/flights/{id}/cancel',
-        '/api/v1/flights/{id}/correct',
+        '/api/v1/flights/{id}',
         '/api/v1/aircraft',
         '/api/v1/aircraft/{id}',
         '/api/v1/aircraft/{id}/archive',
         '/api/v1/aircraft/{id}/unarchive',
         '/api/v1/aircraft/{id}/out-of-service',
         '/api/v1/aircraft/{id}/return-to-service',
-        '/api/v1/aircraft/{id}/hour-meter-adjustments',
         '/api/v1/aircraft/{id}/rates',
         '/api/v1/users',
         '/api/v1/users/{id}',
@@ -73,14 +71,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/bookings/calendar',
         '/api/v1/bookings/{id}',
         '/api/v1/bookings/{id}/cancel',
-        '/api/v1/ppr-requests',
-        '/api/v1/ppr-requests/pdf',
-        '/api/v1/ppr-requests/{id}/approve',
-        '/api/v1/ppr-requests/{id}/reject',
-        '/api/v1/ppr-requests/{id}/complete',
-        '/api/v1/ppr-requests/{id}/cancel',
-        '/api/v1/settings/ppr-operating-instructions',
-        '/api/v1/settings/ppr-landing-fee',
         '/api/v1/people/{id}/account/pdf',
         '/api/v1/cash-report/pdf',
         '/api/v1/flights/pdf',
@@ -99,8 +89,33 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/people/{id}/membership-fee',
         // Story Billing-1, AC 3.
         '/api/v1/settings/treasury',
+        // Story 19.8 (AD-1, D-8): the composite save and the currency route.
+        '/api/v1/settings',
+        '/api/v1/settings/currency',
       ]),
     );
+  });
+
+  it('documents the composite PATCH /api/v1/settings: request with the 10 blocks (UpdateSettingsRequest), response SettingsSnapshot, errors 401/403/409/422 (story 19.8, AC 7)', () => {
+    type JsonSchema = { properties?: Record<string, unknown> };
+    type Operation = { requestBody?: { content: Record<string, { schema: JsonSchema }> }; responses: Record<string, { content?: Record<string, { schema: JsonSchema }> }> };
+    const patch = (doc.paths as Record<string, Record<string, Operation>>)['/api/v1/settings']?.['patch'];
+    const blocks = ['airfield', 'cashCategories', 'club', 'currency', 'expiryTypes', 'membershipFee', 'metarStation', 'scheduling', 'smtp', 'treasury'];
+
+    expect(Object.keys(patch?.requestBody?.content['application/json']?.schema.properties ?? {}).sort()).toEqual(blocks);
+    expect(Object.keys(patch?.responses['200']?.content?.['application/json']?.schema.properties ?? {}).sort()).toEqual(blocks);
+    expect(Object.keys(patch?.responses ?? {}).sort()).toEqual(['200', '401', '403', '409', '422', '500']);
+
+    // Named components, same convention as every other registered request/response.
+    const schemas = doc.components?.schemas as Record<string, JsonSchema> | undefined;
+    expect(Object.keys(schemas?.['UpdateSettingsRequest']?.properties ?? {}).sort()).toEqual(blocks);
+    expect(Object.keys(schemas?.['SettingsSnapshot']?.properties ?? {}).sort()).toEqual(blocks);
+  });
+
+  it('documents GET/PUT /api/v1/settings/currency — GET without a permission gate (401 only), PUT 401/403/422 (story 19.8, D-8)', () => {
+    const currency = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>)['/api/v1/settings/currency'];
+    expect(Object.keys(currency?.['get']?.responses ?? {}).sort()).toEqual(['200', '401', '500']);
+    expect(Object.keys(currency?.['put']?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
   });
 
   it('documents a cookie-based session security scheme', () => {
@@ -148,6 +163,185 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(createBookingResponse?.properties).toHaveProperty('warnings');
   });
 
+  it('documents the optional composite rate block on CreateAircraftRequest (story 14.8, review F3)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    expect(schemas?.['CreateAircraftRequest']?.properties).toHaveProperty('rate');
+  });
+
+  describe('Student/pilot rates and exclusive profiles (story 19.3)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    const paths = doc.paths as Record<string, Record<string, { description?: string }>>;
+
+    it('documents the two prices on the rate schemas, without the two old price columns (AC 7)', () => {
+      for (const name of ['AircraftRate', 'CreateAircraftRateRequest']) {
+        expect(schemas?.[name]?.properties, name).toHaveProperty('studentPriceCents');
+        expect(schemas?.[name]?.properties, name).toHaveProperty('pilotPriceCents');
+        expect(schemas?.[name]?.properties, name).not.toHaveProperty('priceCentsPerHour');
+        expect(schemas?.[name]?.properties, name).not.toHaveProperty('dryHourlyRateCents');
+      }
+    });
+
+    it('documents the composite rate block on UpdateAircraftRequest (AC 7, A17)', () => {
+      expect(schemas?.['UpdateAircraftRequest']?.properties).toHaveProperty('rate');
+    });
+
+    it('keeps the rate history paths for API clients (AC 7-8, D-2)', () => {
+      expect(paths['/api/v1/aircraft/{id}/rates']).toHaveProperty('get');
+      expect(paths['/api/v1/aircraft/{id}/rates']).toHaveProperty('post');
+      expect(paths['/api/v1/people/{id}/instructor-rates']).toHaveProperty('get');
+      expect(paths['/api/v1/people/{id}/instructor-rates']).toHaveProperty('post');
+    });
+
+    it('documents the applied price category on the flight breakdown (AC 9)', () => {
+      const flightList = schemas?.['FlightList']?.properties?.['items'] as
+        | { items?: { properties?: { breakdown?: { properties?: Record<string, unknown> } } } }
+        | undefined;
+      expect(flightList?.items?.properties?.breakdown?.properties).toHaveProperty('aircraftPriceCategory');
+    });
+
+    it('documents the new 422 codes on the paths that raise them (AC 7, AC 15)', () => {
+      for (const [path, method] of [
+        ['/api/v1/aircraft/{id}/rates', 'post'],
+        ['/api/v1/aircraft', 'post'],
+        ['/api/v1/aircraft/{id}', 'patch'],
+        ['/api/v1/people/{id}/instructor-rates', 'post'],
+      ] as const) {
+        expect(paths[path]?.[method]?.description, `${method} ${path}`).toContain('RATE_VALID_FROM_IN_PAST');
+      }
+      for (const path of ['/api/v1/people', '/api/v1/people/{id}/profiles/pilot', '/api/v1/people/{id}/profiles/student', '/api/v1/people/{id}/profiles/instructor']) {
+        const method = path === '/api/v1/people' ? 'post' : 'put';
+        expect(paths[path]?.[method]?.description, `${method} ${path}`).toContain('STUDENT_PROFILE_EXCLUSIVE');
+      }
+    });
+  });
+
+  describe('Person composite save (story 19.4, AC 12)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    const patch = (doc.paths as Record<string, Record<string, { description?: string; responses: Record<string, { content?: Record<string, { schema?: unknown }> }> }>>)[
+      '/api/v1/people/{id}'
+    ]?.['patch'];
+
+    it('documents the four optional blocks next to the anagrafica on UpdatePersonRequest', () => {
+      for (const field of ['firstName', 'lastName', 'email', 'phone', 'address', 'profiles', 'expiries', 'payoutRateCents', 'instructorRate']) {
+        expect(schemas?.['UpdatePersonRequest']?.properties, field).toHaveProperty(field);
+      }
+    });
+
+    it('answers PersonDetail, with 401/403/404/409/422/500, and names the composite codes', () => {
+      // Inlined like the GET's (the registry only `$ref`s request bodies): the three full profiles are what `PersonDetail` adds to `Person`.
+      const body = patch?.responses?.['200']?.content?.['application/json']?.schema as { properties?: Record<string, unknown> } | undefined;
+      for (const field of ['profiles', 'pilotProfile', 'studentProfile', 'instructorProfile']) {
+        expect(body?.properties, field).toHaveProperty(field);
+      }
+      expect(Object.keys(patch?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
+      for (const code of ['STUDENT_PROFILE_EXCLUSIVE', 'RATE_VALID_FROM_IN_PAST', 'SCOPE_MISMATCH', 'PERSON_ARCHIVED', 'INSTRUCTOR_PROFILE_INACTIVE', 'EXPIRY_CONFLICT']) {
+        expect(patch?.description, code).toContain(code);
+      }
+    });
+  });
+
+  describe('Removed fields (story 19.2)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+
+    it('documents no fiscalCode on the person schemas (AC 2)', () => {
+      for (const name of ['Person', 'PersonDetail', 'CreatePersonRequest', 'UpdatePersonRequest']) {
+        expect(schemas?.[name]?.properties, name).toBeDefined();
+        expect(schemas?.[name]?.properties, name).not.toHaveProperty('fiscalCode');
+      }
+    });
+
+    it('documents no seats/fuelType/based/notes/hourMeterMinutes on the aircraft schemas (AC 6, AC 11)', () => {
+      for (const name of ['Aircraft', 'CreateAircraftRequest', 'UpdateAircraftRequest']) {
+        expect(schemas?.[name]?.properties, name).toBeDefined();
+        for (const field of ['seats', 'fuelType', 'based', 'notes', 'hourMeterMinutes']) {
+          expect(schemas?.[name]?.properties, `${name}.${field}`).not.toHaveProperty(field);
+        }
+      }
+    });
+
+    it('documents no hourMeterStart/hourMeterEnd/notes on the flight schemas (AC 12, AC 18)', () => {
+      // The flight DTO is not registered on its own: it is the `FlightList` item.
+      const flightList = schemas?.['FlightList']?.properties?.['items'] as { items?: { properties?: Record<string, unknown> } } | undefined;
+      const flightSchemas: Record<string, Record<string, unknown> | undefined> = {
+        Flight: flightList?.items?.properties,
+        RegisterFlightRequest: schemas?.['RegisterFlightRequest']?.properties,
+      };
+      for (const [name, properties] of Object.entries(flightSchemas)) {
+        expect(properties, name).toHaveProperty('takeoffs');
+        for (const field of ['hourMeterStart', 'hourMeterEnd', 'notes']) {
+          expect(properties, `${name}.${field}`).not.toHaveProperty(field);
+        }
+      }
+    });
+
+    it('documents no hour-meter adjustment path nor schema (AC 10)', () => {
+      expect(Object.keys(doc.paths ?? {})).not.toContain('/api/v1/aircraft/{id}/hour-meter-adjustments');
+      expect(schemas).not.toHaveProperty('CreateHourMeterAdjustmentRequest');
+      expect(schemas).not.toHaveProperty('HourMeterAdjustmentList');
+    });
+  });
+
+  it('documents the shared requirements warning (story 19.9, AC 21): its components, the code on both flight writes, no motivo left', () => {
+    const schemas = doc.components?.schemas as Record<string, { oneOf?: unknown[]; properties?: Record<string, unknown> }> | undefined;
+    expect(schemas?.['RequirementFailure']?.oneOf).toHaveLength(5);
+    expect(schemas?.['RequirementsNotMetDetails']?.properties).toHaveProperty('failures');
+
+    const flightList = schemas?.['FlightList']?.properties?.['items'] as { items?: { properties?: Record<string, unknown> } } | undefined;
+    expect(schemas?.['RegisterFlightRequest']?.properties).toHaveProperty('force');
+    expect(schemas?.['RegisterFlightRequest']?.properties).not.toHaveProperty('forceReason');
+    expect(flightList?.items?.properties).toHaveProperty('forcedAt');
+    expect(flightList?.items?.properties).not.toHaveProperty('forceReason');
+
+    const paths = doc.paths as Record<string, Record<string, { description?: string }>>;
+    for (const operation of [paths['/api/v1/flights']?.['post'], paths['/api/v1/flights/{id}']?.['put']]) {
+      expect(operation?.description).toContain('REQUIREMENTS_NOT_MET');
+      expect(operation?.description).not.toMatch(/FLIGHT_BLOCKED_BY_EXPIRY|forceReason|flights\.forceExpiry/);
+    }
+  });
+
+  it('review 19.9 F4: the 422 of both flight writes is the AD-8 envelope OR the REQUIREMENTS_NOT_MET one, whose details reference RequirementsNotMetDetails', () => {
+    type Schema = { anyOf?: Schema[]; oneOf?: Schema[]; properties?: Record<string, Schema>; $ref?: string; enum?: unknown[]; const?: unknown };
+    const paths = doc.paths as Record<string, Record<string, { responses: Record<string, { content?: Record<string, { schema: Schema }> }> }>>;
+    for (const operation of [paths['/api/v1/flights']?.['post'], paths['/api/v1/flights/{id}']?.['put']]) {
+      const schema = operation?.responses['422']?.content?.['application/json']?.schema;
+      const variants = schema?.anyOf ?? schema?.oneOf ?? [];
+      expect(variants).toHaveLength(2);
+      const requirements = variants.find((variant) => variant.properties?.['error']?.properties?.['details']?.$ref !== undefined);
+      expect(requirements?.properties?.['error']?.properties?.['details']?.$ref).toBe('#/components/schemas/RequirementsNotMetDetails');
+      expect(JSON.stringify(requirements?.properties?.['error']?.properties?.['code'])).toContain('REQUIREMENTS_NOT_MET');
+    }
+    // Every other operation keeps the plain envelope.
+    const deleteSchema = paths['/api/v1/flights/{id}']?.['delete']?.responses['409']?.content?.['application/json']?.schema;
+    expect(deleteSchema?.anyOf ?? deleteSchema?.oneOf).toBeUndefined();
+  });
+
+  it('story 19.10 (AC 31): the three booking writes and the membership fee answer REQUIREMENTS_NOT_MET with the $ref, take `force`, and carry no retired deroga', () => {
+    type Schema = { anyOf?: Schema[]; oneOf?: Schema[]; properties?: Record<string, Schema>; $ref?: string };
+    type Operation = { description?: string; responses: Record<string, { content?: Record<string, { schema: Schema }> }>; requestBody?: { content?: Record<string, { schema: Schema }> } };
+    const paths = doc.paths as Record<string, Record<string, Operation>>;
+    const schemas = doc.components?.schemas as Record<string, Schema> | undefined;
+    const operations = [
+      paths['/api/v1/bookings']?.['post'],
+      paths['/api/v1/bookings/{id}']?.['patch'],
+      paths['/api/v1/bookings/{id}/transition']?.['post'],
+      paths['/api/v1/people/{id}/membership-fee']?.['post'],
+    ];
+    for (const operation of operations) {
+      expect(operation?.description).toContain('REQUIREMENTS_NOT_MET');
+      expect(operation?.description).toContain('requirements.force');
+      expect(operation?.description).not.toMatch(/EXPIRED_DOCUMENTS|forceReason|override|MEMBERSHIP_FEE_INSUFFICIENT_BALANCE|settings\.manage|TD 16\.3-a/);
+      const variants = operation?.responses['422']?.content?.['application/json']?.schema?.anyOf ?? [];
+      expect(variants.map((variant) => variant.properties?.['error']?.properties?.['details']?.$ref).filter(Boolean)).toEqual([
+        '#/components/schemas/RequirementsNotMetDetails',
+      ]);
+      const body = operation?.requestBody?.content?.['application/json']?.schema;
+      const bodyProperties = body?.$ref ? schemas?.[body.$ref.replace('#/components/schemas/', '')]?.properties : body?.properties;
+      expect(bodyProperties).toHaveProperty('force');
+      expect(bodyProperties).not.toHaveProperty('forceReason');
+      expect(bodyProperties).not.toHaveProperty('override');
+    }
+  });
+
   it('documents blocksBooking on the ExpiryType schema (story 7.4)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
     expect(schemas?.['ExpiryType']?.properties).toHaveProperty('blocksBooking');
@@ -176,71 +370,6 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(Object.keys(cancelBooking?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
   });
 
-  it('documents 201/422/429/500 responses and NO security requirement on the public PPR endpoint (story 8.1, AC 1/2)', () => {
-    const createPprRequest = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; security?: unknown[] }>>)[
-      '/api/v1/ppr-requests'
-    ]?.['post'];
-    expect(Object.keys(createPprRequest?.responses ?? {}).sort()).toEqual(['201', '422', '429', '500']);
-    expect(createPprRequest?.security).toEqual([]);
-  });
-
-  it('documents the CreatePprRequestRequest/PprRequestCreatedResponse schemas including the honeypot field (story 8.1, AC 2)', () => {
-    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
-    expect(schemas?.['CreatePprRequestRequest']?.properties).toHaveProperty('website');
-    expect(schemas?.['CreatePprRequestRequest']?.properties).toHaveProperty('locale');
-    expect(schemas?.['PprRequestCreatedResponse']?.properties).toHaveProperty('status');
-  });
-
-  describe('PPR staff approval queue (story 8.2, AC 1/2)', () => {
-    it('documents 200/401/403/422/500 on the GET list endpoint, WITH a cookieAuth security requirement (unlike the public POST)', () => {
-      const listPprRequests = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; security?: unknown[] }>>)[
-        '/api/v1/ppr-requests'
-      ]?.['get'];
-      expect(Object.keys(listPprRequests?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
-      expect(listPprRequests?.security).toEqual([{ cookieAuth: [] }]);
-    });
-
-    it('documents 200/401/403/404/409/500 on the approve endpoint and references the IdempotencyKey header', () => {
-      const approve = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; parameters?: Array<{ $ref?: string }> }>>)[
-        '/api/v1/ppr-requests/{id}/approve'
-      ]?.['post'];
-      expect(Object.keys(approve?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '500']);
-      const refs = (approve?.parameters ?? []).map((param) => param.$ref);
-      expect(refs).toContain('#/components/parameters/IdempotencyKey');
-    });
-
-    it('documents 200/401/403/404/409/422/500 on the reject endpoint and references the IdempotencyKey header', () => {
-      const reject = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; parameters?: Array<{ $ref?: string }> }>>)[
-        '/api/v1/ppr-requests/{id}/reject'
-      ]?.['post'];
-      expect(Object.keys(reject?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
-      const refs = (reject?.parameters ?? []).map((param) => param.$ref);
-      expect(refs).toContain('#/components/parameters/IdempotencyKey');
-    });
-
-    it('documents the PprRequest schema with pprNumber/rejectionReason, never submitterIp', () => {
-      const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
-      const pprRequest = schemas?.['PprRequest'];
-      expect(pprRequest?.properties).toHaveProperty('pprNumber');
-      expect(pprRequest?.properties).toHaveProperty('rejectionReason');
-      expect(pprRequest?.properties).not.toHaveProperty('submitterIp');
-    });
-
-    it('documents 200/401/403/500 GET and 200/401/403/422/500 PUT on the operating-instructions settings endpoint', () => {
-      const paths = doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>;
-      const get = paths['/api/v1/settings/ppr-operating-instructions']?.['get'];
-      const put = paths['/api/v1/settings/ppr-operating-instructions']?.['put'];
-      expect(Object.keys(get?.responses ?? {}).sort()).toEqual(['200', '401', '403', '500']);
-      expect(Object.keys(put?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
-    });
-
-    it('documents the PprOperatingInstructions schema with it/en', () => {
-      const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
-      expect(schemas?.['PprOperatingInstructions']?.properties).toHaveProperty('it');
-      expect(schemas?.['PprOperatingInstructions']?.properties).toHaveProperty('en');
-    });
-  });
-
   describe('PDF exports (story 10.2, FR-40)', () => {
     const paths = doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; security?: unknown[] }>>;
 
@@ -250,12 +379,11 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       expect(route?.responses?.['200']).toMatchObject({ content: { 'application/pdf': {} } });
     });
 
-    it('documents 200/401/403/422/500 on the cash report, flights, expiries, PPR requests, and bookings PDF routes', () => {
+    it('documents 200/401/403/422/500 on the cash report, flights, expiries, and bookings PDF routes', () => {
       for (const path of [
         '/api/v1/cash-report/pdf',
         '/api/v1/flights/pdf',
         '/api/v1/expiries/pdf',
-        '/api/v1/ppr-requests/pdf',
         '/api/v1/bookings/pdf',
       ] as const) {
         const route = paths[path]?.['get'];
@@ -275,6 +403,28 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
       const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
       expect(schemas?.['AirfieldBranding']?.properties).toHaveProperty('name');
       expect(schemas?.['AirfieldBranding']?.properties).not.toHaveProperty('logoDataUrl');
+    });
+  });
+
+  describe('account statement period (story 19.11, AC 31)', () => {
+    type Operation = { parameters?: Array<{ name: string; in: string }>; responses: Record<string, { content?: Record<string, { schema?: unknown }> }> };
+    const paths = doc.paths as Record<string, Record<string, Operation>>;
+
+    it('documents from/to as query parameters on BOTH the movements list and the PDF', () => {
+      for (const path of ['/api/v1/people/{id}/account/movements', '/api/v1/people/{id}/account/pdf'] as const) {
+        const names = (paths[path]?.['get']?.parameters ?? []).filter((parameter) => parameter.in === 'query').map((parameter) => parameter.name);
+        expect(names).toEqual(expect.arrayContaining(['from', 'to']));
+      }
+    });
+
+    it('documents the two balances and the period echo on the statement response, and the running balance on its items', () => {
+      const schemas = (doc.components?.schemas ?? {}) as Record<string, { properties?: Record<string, { items?: unknown }>; required?: string[] }>;
+      const statement = schemas['AccountStatement'];
+      expect(Object.keys(statement?.properties ?? {})).toEqual(expect.arrayContaining(['from', 'to', 'openingBalanceCents', 'closingBalanceCents', 'items', 'total']));
+      expect(statement?.required).toEqual(expect.arrayContaining(['openingBalanceCents', 'closingBalanceCents']));
+      const item = JSON.stringify(statement?.properties?.['items']);
+      expect(item).toContain('balanceAfterCents');
+      expect(item).toContain('reversalOfEffectiveDate');
     });
   });
 
@@ -334,13 +484,50 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     });
 
     it.each([
-      ['/api/v1/flights/{id}/cancel', 'post'],
-      ['/api/v1/flights/{id}/correct', 'post'],
+      ['/api/v1/flights/{id}', 'put'],
+      ['/api/v1/flights/{id}', 'delete'],
       ['/api/v1/cash-movements/{id}/reverse', 'post'],
-    ] as const)('does NOT reference it on the already-idempotent storno/correction endpoint %s (reversalOfId covers it)', (path, method) => {
+    ] as const)('does NOT reference it on the already-idempotent endpoint %s %s (HTTP semantics or reversalOfId cover it)', (path, method) => {
       const route = (doc.paths as Record<string, Record<string, { parameters?: Array<{ $ref?: string }> }>>)[path]?.[method];
       const refs = (route?.parameters ?? []).map((param) => param.$ref);
       expect(refs).not.toContain('#/components/parameters/IdempotencyKey');
+    });
+  });
+
+  it('no longer documents the removed AERIAL_WORK flight type anywhere (story 19.5, AC 3)', () => {
+    expect(JSON.stringify(doc)).not.toContain('AERIAL_WORK');
+  });
+
+  describe('flight delete and edit in place (story 19.6, AC 18/32)', () => {
+    const paths = doc.paths as Record<string, Record<string, { responses: Record<string, unknown> }>>;
+
+    it('documents PUT (200) and DELETE (204) on /api/v1/flights/{id}, with their error responses', () => {
+      expect(Object.keys(paths['/api/v1/flights/{id}']?.['put']?.responses ?? {}).sort()).toEqual(['200', '401', '403', '404', '409', '422', '500']);
+      expect(Object.keys(paths['/api/v1/flights/{id}']?.['delete']?.responses ?? {}).sort()).toEqual(['204', '401', '403', '404', '409', '500']);
+    });
+
+    it('documents the two codes of review 19.6: 409 FLIGHT_MODIFIED_CONCURRENTLY on PUT, 422 ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE on the rettifica', () => {
+      const described = paths as unknown as Record<string, Record<string, { description?: string }>>;
+      expect(described['/api/v1/flights/{id}']?.['put']?.description).toContain('FLIGHT_MODIFIED_CONCURRENTLY');
+      expect(described['/api/v1/people/{id}/account/adjustments']?.['post']?.description).toContain('ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE');
+    });
+
+    it('no longer documents the storno/correction paths, their schemas, the status filter nor the reversal type', () => {
+      expect(Object.keys(paths)).not.toContain('/api/v1/flights/{id}/cancel');
+      expect(Object.keys(paths)).not.toContain('/api/v1/flights/{id}/correct');
+      const serialized = JSON.stringify(doc);
+      for (const absent of ['CancelFlightRequest', 'CorrectFlightRequest', 'FLIGHT_CHARGE_REVERSAL', 'cancelReason', 'correctionOfId', 'correctedByFlightId']) {
+        expect(serialized, absent).not.toContain(absent);
+      }
+      const listParams = (doc.paths as Record<string, Record<string, { parameters?: Array<{ name?: string }> }>>)['/api/v1/flights']?.['get']?.parameters ?? [];
+      expect(listParams.map((param) => param.name)).not.toContain('status');
+    });
+
+    it('documents noCharge on the request body and on the flight DTO', () => {
+      const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+      expect(schemas?.['RegisterFlightRequest']?.properties).toHaveProperty('noCharge');
+      const flightList = schemas?.['FlightList']?.properties?.['items'] as { items?: { properties?: Record<string, unknown> } } | undefined;
+      expect(flightList?.items?.properties).toHaveProperty('noCharge');
     });
   });
 });

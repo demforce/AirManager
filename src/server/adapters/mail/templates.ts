@@ -1,7 +1,7 @@
 import { createTranslator } from 'next-intl';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
-import { formatDateTime } from '@/lib/time';
+import { formatDateOnly, formatDateTime } from '@/lib/time';
 
 /**
  * Loads a locale's message catalogue directly (not via `next-intl/server`'s
@@ -22,10 +22,8 @@ export type PasswordResetEmailContent = { subject: string; text: string };
 export type NegativeBalanceAlertEmailContent = { subject: string; text: string };
 export type ExpiryAlertEmailContent = { subject: string; text: string };
 export type ExpiryDigestEmailContent = { subject: string; text: string };
-export type PprReceiptEmailContent = { subject: string; text: string };
-export type PprApprovalEmailContent = { subject: string; text: string };
-export type PprRejectionEmailContent = { subject: string; text: string };
 export type BookingDeniedEmailContent = { subject: string; text: string };
+export type AircraftGroundedEmailContent = { subject: string; text: string };
 
 /**
  * One row of the staff digest (story 6.3, tri-state hardened story TD-1 AC
@@ -123,7 +121,11 @@ function formatExpiryDate(date: Date, locale: AppLocale): string {
  * entry, not two copies). Each sub-key is a full verb phrase ("scade
  * oggi"/"expires today", "scade tra N giorni"/"expires in N days", "è
  * scaduta da N giorni"/"expired N days ago") so callers can slot it
- * straight into a sentence without re-conjugating around it.
+ * straight into a sentence without re-conjugating around it. The one
+ * exception is the digest's PAST phrase (story 19.12b, decisione PO 3): «è
+ * scaduta» agrees with the holder's «La tua scadenza», not with the type
+ * name the digest line leads with («Rating SEP: …»), so the digest reads
+ * its own neutral `Emails.expiryDigest.expiredDaysAgo` instead.
  *
  * Builds its OWN narrowly-namespaced translator (`Emails.expiryDays`)
  * rather than accepting one from the caller: `createTranslator`'s return
@@ -188,7 +190,7 @@ export async function buildExpiryDigestEmail(
   const t = createTranslator({ locale, messages, namespace: 'Emails.expiryDigest' });
 
   const lines = params.items.map((item) => {
-    const daysPhrase = expiryDaysPhrase(locale, messages, item.daysLeft);
+    const daysPhrase = item.daysLeft < 0 ? t('expiredDaysAgo', { days: Math.abs(item.daysLeft) }) : expiryDaysPhrase(locale, messages, item.daysLeft);
     const date = formatExpiryDate(item.expiresAt, locale);
     const flag = item.holderStatus === 'NO_EMAIL' ? t('noEmailFlag') : item.holderStatus === 'SEND_FAILED' ? t('sendFailedFlag') : '';
     return t('itemLine', { name: item.personName, typeName: item.typeName, daysPhrase, date, flag });
@@ -201,119 +203,6 @@ export async function buildExpiryDigestEmail(
 }
 
 /**
- * Builds the public PPR request receipt email (epic 8, story 8.1, AC 1) —
- * sent best-effort right after `ppr.service.ts#createPprRequest` commits
- * the row (see that function's doc-comment: a send failure never fails the
- * request). `locale` is `input.locale` — the language the FORM was
- * submitted in (NFR-1), never a `User.locale` lookup (there is no `User`
- * to look up: the submitter is an anonymous external pilot). `eta` is
- * formatted date+time in `APP_TIMEZONE` (`formatDateTime`, `time.ts`) —
- * deliberately NOT `formatExpiryDate` above, which is date-only UTC and
- * would drop the time-of-day a pilot actually needs to plan around.
- */
-export async function buildPprReceiptEmail(
-  locale: AppLocale,
-  params: {
-    firstName: string;
-    aircraftRegistration: string;
-    aircraftType: string;
-    origin: string;
-    destination: string;
-    eta: Date;
-    personsOnBoard: number;
-  },
-): Promise<PprReceiptEmailContent> {
-  const messages = await loadMessages(locale);
-  const t = createTranslator({ locale, messages, namespace: 'Emails.pprReceipt' });
-  const eta = formatDateTime(params.eta, locale);
-
-  return {
-    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
-    text: t('body', {
-      firstName: params.firstName,
-      aircraftRegistration: params.aircraftRegistration,
-      aircraftType: params.aircraftType,
-      origin: params.origin,
-      destination: params.destination,
-      eta,
-      personsOnBoard: params.personsOnBoard,
-    }),
-  };
-}
-
-/**
- * Builds the PPR approval outcome email (epic 8, story 8.2, AC 1) —
- * sent best-effort AFTER `ppr.service.ts#approvePprRequest`'s transaction
- * commits (same "row already exists, a send failure must never undo the
- * decision" rule as `accounts.service.ts#sendNegativeBalanceAlert` and
- * `createPprRequest`'s own receipt email). `locale` is `PprRequest.locale`
- * — the language the FORM was submitted in (NFR-1), reused rather than
- * re-asked (see the model's doc-comment). The `pprNumber` is in the
- * SUBJECT (so it survives an inbox preview) as well as the body.
- * `operatingInstructions` (already resolved to the recipient's OWN locale by
- * the caller, `app-settings.service.ts#getPprOperatingInstructions`) is
- * appended as its own paragraph ONLY when non-empty (AC 1: "l'email ...
- * include le istruzioni ... SOLO se non vuote") — an empty/unset string
- * omits the section entirely rather than emitting a blank line.
- */
-export async function buildPprApprovalEmail(
-  locale: AppLocale,
-  params: {
-    firstName: string;
-    pprNumber: string;
-    aircraftRegistration: string;
-    eta: Date;
-    operatingInstructions?: string;
-  },
-): Promise<PprApprovalEmailContent> {
-  const messages = await loadMessages(locale);
-  const t = createTranslator({ locale, messages, namespace: 'Emails.pprApproval' });
-  const eta = formatDateTime(params.eta, locale);
-
-  const body = t('body', {
-    firstName: params.firstName,
-    pprNumber: params.pprNumber,
-    aircraftRegistration: params.aircraftRegistration,
-    eta,
-  });
-  const instructions =
-    params.operatingInstructions && params.operatingInstructions.trim().length > 0
-      ? t('instructions', { instructions: params.operatingInstructions.trim() })
-      : null;
-
-  return {
-    subject: t('subject', { pprNumber: params.pprNumber, aircraftRegistration: params.aircraftRegistration }),
-    text: instructions ? `${body}\n\n${instructions}` : body,
-  };
-}
-
-/**
- * Builds the PPR rejection outcome email (epic 8, story 8.2, AC 2) — same
- * best-effort-after-commit rule as {@link buildPprApprovalEmail}. `reason`
- * is the staff-entered mandatory motivation
- * (`ppr.service.ts#rejectPprRequest`'s `rejectionReason`), included
- * verbatim in the body (AC 2: "ed email con il motivo").
- */
-export async function buildPprRejectionEmail(
-  locale: AppLocale,
-  params: { firstName: string; aircraftRegistration: string; eta: Date; reason: string },
-): Promise<PprRejectionEmailContent> {
-  const messages = await loadMessages(locale);
-  const t = createTranslator({ locale, messages, namespace: 'Emails.pprRejection' });
-  const eta = formatDateTime(params.eta, locale);
-
-  return {
-    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
-    text: t('body', {
-      firstName: params.firstName,
-      aircraftRegistration: params.aircraftRegistration,
-      eta,
-      reason: params.reason,
-    }),
-  };
-}
-
-/**
  * Builds the booking-denial email (epic 12, story 12.2, AC 5) — sent
  * best-effort AFTER `bookings.service.ts#transitionBooking`'s `PENDING ->
  * DENIED` write commits, same fire-and-forget/no-throw rule as every other
@@ -321,8 +210,8 @@ export async function buildPprRejectionEmail(
  * (AD-7), resolved by the caller the same way as
  * `accounts.service.ts#sendNegativeBalanceAlert` (fallback `it` when there is
  * no linked `User`). `startsAt` is formatted date+time in `APP_TIMEZONE`
- * (`formatDateTime`, same as {@link buildPprRejectionEmail}'s `eta`) and
- * `reason` is the staff-entered mandatory motivation, included verbatim.
+ * (`formatDateTime`, `time.ts`) and `reason` is the staff-entered mandatory
+ * motivation, included verbatim.
  */
 export async function buildBookingDeniedEmail(
   locale: AppLocale,
@@ -339,6 +228,58 @@ export async function buildBookingDeniedEmail(
       aircraftRegistration: params.aircraftRegistration,
       when,
       reason: params.reason,
+    }),
+  };
+}
+
+/**
+ * Builds the aircraft-grounded email (story AOG-1b, ratifica R-AOG-i) — sent
+ * best-effort AFTER `aircraft.service.ts#setOutOfService`'s transaction
+ * commits, same fire-and-forget/no-throw rule as every other outcome email in
+ * this module, and modelled on {@link buildBookingDeniedEmail}.
+ *
+ * It goes to the holders of the impacted APPROVED bookings, and only to them:
+ * a PENDING booking is already frozen by the 422 an approval would hit, so its
+ * holder learns it through the app; an APPROVED one survives the grounding
+ * INTACT and MUTE — which is the pilot who otherwise shows up at the field to
+ * a dismantled aircraft. The body says so explicitly: the booking is NOT
+ * cancelled (decisione PO 2026-07-31, option 2 of 3 — the AOG counts and warns,
+ * it never decides for the admin).
+ *
+ * The fermo window is stated in one of THREE named sentences, chosen on
+ * `effectiveUntil` — the bound `aog-impact.ts#computeAogImpact` actually
+ * counted over — and never re-derived from `outOfServiceUntil` (review
+ * MAJOR-1): a live bound gives `windowUntil`, no date at all gives
+ * `windowUnknown` (invariant [b] is a legitimate state, never an empty spot),
+ * and a date whose day has already passed gives `windowOverdue`, which names
+ * that date as the EXPECTED one instead of pretending the fermo ended there.
+ * The third case is the one that was lying: the recipient of an overrun fermo
+ * was told "fino al {ieri} compreso" while being warned about a booking weeks
+ * later. Dates are rendered with the same `formatDateOnly` the UI uses, in the
+ * RECIPIENT's locale.
+ */
+export async function buildAircraftGroundedEmail(
+  locale: AppLocale,
+  params: { firstName: string; aircraftRegistration: string; startsAt: Date; reason: string; outOfServiceUntil: string | null; effectiveUntil: string | null },
+): Promise<AircraftGroundedEmailContent> {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.aircraftGrounded' });
+  const when = formatDateTime(params.startsAt, locale);
+  const window =
+    params.effectiveUntil !== null
+      ? t('windowUntil', { date: formatDateOnly(params.effectiveUntil, locale) })
+      : params.outOfServiceUntil === null
+        ? t('windowUnknown')
+        : t('windowOverdue', { date: formatDateOnly(params.outOfServiceUntil, locale) });
+
+  return {
+    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
+    text: t('body', {
+      firstName: params.firstName,
+      aircraftRegistration: params.aircraftRegistration,
+      when,
+      reason: params.reason,
+      window,
     }),
   };
 }

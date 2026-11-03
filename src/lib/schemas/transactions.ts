@@ -1,5 +1,5 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
-import { accountMovementTypeSchema, accountOverviewSchema, paymentMethodSchema } from './accounts';
+import { accountMovementTypeSchema, accountOverviewSchema, accountOverviewWithAlertSchema, paymentMethodSchema } from './accounts';
 import { cashMovementItemSchema } from './cash';
 import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
@@ -47,8 +47,7 @@ export type BookTypeDto = z.infer<typeof bookTypeSchema>;
  * and its filter; `kind` survives alongside it (folded into the
  * Descrizione cell) for the granular label (raw `AccountMovementType` or
  * `CashCategory.name`). `reference` is the linked `flightId` (`ACCOUNT`
- * FLIGHT_CHARGE*) or `PprRequest.pprNumber` (`CASH` landing-fee twin),
- * `null` otherwise. `reversal`/`reversed` drive the Stato lineage badge
+ * FLIGHT_CHARGE*), `null` otherwise (every `CASH` row). `reversal`/`reversed` drive the Stato lineage badge
  * (AC 3): `reversal` = this row IS a storno/rettifica of another; `reversed`
  * = another row already corrects/reverses THIS one. `actionable` = staff may
  * act on this row (Rettifica/Storna, AC 3) — always `false` on a derived row
@@ -91,7 +90,7 @@ export type TransactionRowDto = z.infer<typeof transactionRowSchema>;
  * always DB-positive) — returned as-is. `ACCOUNT` rows carry the
  * pilot-account-centric raw direction (a credit to the pilot's balance is
  * positive, `amountCents`'s own doc-comment above) — for a `REVENUE`-booked
- * row (`FLIGHT_CHARGE`/`FLIGHT_CHARGE_REVERSAL`/a revenue `ADJUSTMENT`) that
+ * row (`FLIGHT_CHARGE`/a revenue `ADJUSTMENT`) that
  * is the OPPOSITE of the club's own book (a debit against the pilot IS the
  * club's ricavo — addebito volo -> Entrate; its storno -> Uscite), so it is
  * negated — the SAME negation `transactions.service.ts#computeRevenueCents`
@@ -214,7 +213,10 @@ export type RecordTransactionInput = z.infer<typeof recordTransactionSchema>;
  */
 export const recordTransactionResponseSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('TOP_UP'), account: accountOverviewSchema }),
-  z.object({ kind: z.literal('ADJUSTMENT'), account: accountOverviewSchema }),
+  // Story 14.4 review F7 — `balanceAlert` (ratifica R-14.4-d): this branch is
+  // a real debit ("Addebito conto"), see `accountOverviewWithAlertSchema`'s
+  // own doc-comment.
+  z.object({ kind: z.literal('ADJUSTMENT'), account: accountOverviewWithAlertSchema }),
   z.object({ kind: z.literal('CASH'), cashMovement: cashMovementItemSchema }),
 ]);
 

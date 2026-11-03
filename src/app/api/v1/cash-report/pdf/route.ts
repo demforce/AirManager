@@ -5,7 +5,7 @@ import { exportCashReportPdf } from '@/server/services/exports.service';
 
 /**
  * Dedicated PDF route (story 10.2, AC 2/3 — spine :105). `finance.manage`
- * (staff/admin) — real authorization stays in `cash.service.ts#getCashReport`
+ * (ADMIN-only) — real authorization stays in `cash.service.ts#getCashReport`
  * (AD-5), same gate as `GET /api/v1/cash-report`.
  */
 export const GET = apiRoute({

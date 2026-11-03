@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { RANKED_MOBILE_LIMIT, rankedCap } from '@/lib/mobile-reports';
+import { RankedCapFoot, useRankedExpansion, type RankedCapFootLabels } from './ranked-cap-foot';
 
 /**
  * `RankBars` port (epic 12, story 12.10, AC 2) — 1:1 of
@@ -20,7 +22,16 @@ import { useState } from 'react';
 export type RankBarsMetric = {
   key: string;
   label: string;
-  color: string;
+  /**
+   * Graphic tone class of this metric's bars (`.flow-bar-*`, `airops.css`) —
+   * was an inline `background` until story 15.8b: measured against its own
+   * sunken track in the LIGHT theme, the raw `--ok` fill read 2.47:1 and the
+   * raw `--accent` one 1.85:1, both under the 3:1 floor a graphic object has
+   * to meet. A class (not a colour) is what lets the ONE decision on those
+   * tokens live next to its text twin `.stat-tone-*` instead of being taken a
+   * second time here (review 15.8a LOW-3).
+   */
+  barClass: string;
   format: (value: number) => string;
 };
 
@@ -41,15 +52,35 @@ export type RankBarsProps = {
   emptyLabel: string;
   /** Optional e2e hook on the root `.card` — the page renders two `RankBars` instances sharing the same DOM shape, so a plain class selector can't tell them apart. */
   testId?: string;
+  /** Wording of the phone cap (story 15.8b) — see `RankedCapFoot`. */
+  capLabels: RankedCapFootLabels;
+  /** `data-testid` of the phone cap foot (mobile-only surface ⇒ `mobile-` prefix). */
+  capTestId: string;
+  /** Metric toggle: `.segmented` has SIX consumers app-wide, so the 44px phone floor is hung on this page-owned class instead (lesson 15.3 F1). */
+  metricsClassName?: string;
 };
 
 const NAME_LABEL_STYLE = { fontSize: 12.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
 
-export function RankBars({ title, sub, rows, metrics, labelCol = 110, monoLabel = false, emptyLabel, testId }: RankBarsProps) {
+export function RankBars({ title, sub, rows, metrics, labelCol = 110, monoLabel = false, emptyLabel, testId, capLabels, capTestId, metricsClassName }: RankBarsProps) {
   const [metricIndex, setMetricIndex] = useState(0);
+  /**
+   * Story 15.8b: the phone shows the first `RANKED_MOBILE_LIMIT` rows until
+   * the reader asks for the rest. Expansion deliberately SURVIVES a metric
+   * change (AD-3 asks for the decision to be taken, not inherited): the reader
+   * asked to see the whole ranking, and re-hiding 137 aircraft because the
+   * ranking was re-sorted would undo a request nobody withdrew — this
+   * component keeps `metricIndex` across navigations for the same reason.
+   *
+   * Here the cap can stay POSITIONAL (review MAJOR-1 is about the two lists of
+   * `reports-console.tsx`): these rows are sorted by the selected metric one
+   * line below, so the first `RANKED_MOBILE_LIMIT` of them ARE the top ones.
+   */
+  const { expanded, showAll, rowsRef } = useRankedExpansion();
   const metric = metrics[metricIndex]!;
   const sorted = [...rows].sort((a, b) => (b.values[metric.key] ?? 0) - (a.values[metric.key] ?? 0));
   const max = Math.max(1, ...sorted.map((row) => row.values[metric.key] ?? 0));
+  const cap = rankedCap(sorted.length);
 
   return (
     <div className="card" data-testid={testId}>
@@ -57,7 +88,7 @@ export function RankBars({ title, sub, rows, metrics, labelCol = 110, monoLabel 
         <div className="card-title">{title}</div>
         <span className="card-sub">{sub}</span>
         <div className="spacer" />
-        <div className="segmented">
+        <div className={metricsClassName ? `segmented ${metricsClassName}` : 'segmented'}>
           {metrics.map((m, i) => (
             <button key={m.key} type="button" className={i === metricIndex ? 'on' : ''} onClick={() => setMetricIndex(i)}>
               {m.label}
@@ -70,22 +101,30 @@ export function RankBars({ title, sub, rows, metrics, labelCol = 110, monoLabel 
           <p style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{emptyLabel}</p>
         </div>
       ) : (
-        <div className="util-rows">
-          {sorted.map((row, i) => {
-            const value = row.values[metric.key] ?? 0;
-            return (
-              <div className="util-row" key={i} data-testid={row.testId} style={{ gridTemplateColumns: `${labelCol}px 1fr 96px` }}>
-                <div className={monoLabel ? 'util-tail' : undefined} style={monoLabel ? undefined : NAME_LABEL_STYLE}>
-                  {row.label}
+        <>
+          <div className={`util-rows ranked-rows${expanded ? '' : ' ranked-rows-capped'}`} ref={rowsRef} tabIndex={-1}>
+            {sorted.map((row, i) => {
+              const value = row.values[metric.key] ?? 0;
+              return (
+                <div
+                  className={i >= RANKED_MOBILE_LIMIT ? 'util-row ranked-row-overflow' : 'util-row'}
+                  key={i}
+                  data-testid={row.testId}
+                  style={{ gridTemplateColumns: `${labelCol}px 1fr 96px` }}
+                >
+                  <div className={monoLabel ? 'util-tail' : undefined} style={monoLabel ? undefined : NAME_LABEL_STYLE}>
+                    {row.label}
+                  </div>
+                  <div className="util-bar">
+                    <div className={`seg ${metric.barClass}`} style={{ left: 0, width: `${(value / max) * 100}%` }} />
+                  </div>
+                  <div className="util-value">{metric.format(value)}</div>
                 </div>
-                <div className="util-bar">
-                  <div className="seg" style={{ left: 0, width: `${(value / max) * 100}%`, background: metric.color }} />
-                </div>
-                <div className="util-value">{metric.format(value)}</div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+          {expanded ? null : <RankedCapFoot cap={cap} total={sorted.length} labels={capLabels} onShowAll={showAll} testId={capTestId} />}
+        </>
       )}
     </div>
   );

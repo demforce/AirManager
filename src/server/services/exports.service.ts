@@ -2,6 +2,7 @@ import { createTranslator } from 'next-intl';
 import type { AppLocale } from '@/i18n/routing';
 import { buildWorkbook, type ExportColumn } from '@/server/adapters/excel/workbook';
 import { renderReportPdf, type PdfColumn, type PdfTotal } from '@/server/adapters/pdf/document';
+import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { flightPicPerson } from '@/lib/flight-pic';
 import { formatCents, formatSignedCents } from '@/lib/money';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
@@ -13,12 +14,11 @@ import type { ListAllExpiriesQuery } from '@/lib/schemas/expiries';
 import type { ListFlightsQuery } from '@/lib/schemas/flights';
 import type { InstructorCompensationQuery } from '@/lib/schemas/instructor-compensation';
 import type { ListPeopleQuery } from '@/lib/schemas/people';
-import type { ListPprRequestsQuery } from '@/lib/schemas/ppr';
 import { ledgerClubAmountCents, type ListTransactionsQuery } from '@/lib/schemas/transactions';
 import { dateOnlyInZone, todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
-import { getAccountOverview, listAccountMovements } from './accounts.service';
-import { listAircraft } from './aircraft.service';
+import { listAccountMovements, type AccountStatementResult } from './accounts.service';
+import { listAircraft, sumFlightMinutesByAircraft } from './aircraft.service';
 import { getAirfieldBranding } from './app-settings.service';
 import { listBookings } from './bookings.service';
 import { getCashReport, listCashMovements } from './cash.service';
@@ -27,7 +27,6 @@ import { listAllExpiries } from './expiries.service';
 import { listFlights } from './flights.service';
 import { getCompensationSummary } from './instructor-compensation.service';
 import { getPerson, listPeople } from './people.service';
-import { listPprRequests } from './ppr.service';
 import { listTransactions } from './transactions.service';
 
 /**
@@ -59,11 +58,9 @@ import { listTransactions } from './transactions.service';
  * from a SEPARATE read the exported endpoint's own DTO doesn't carry.
  */
 
-/** Above this many filtered rows, every export rejects with 422 `EXPORT_TOO_LARGE` (AC 4) rather than silently truncating. */
-export const EXPORT_MAX_ROWS = 10_000;
-
-/** Story 10.2 (AC 4): a PDF is not a data tool — its cap is far tighter than the xlsx one; above it, use the Excel export instead. */
-export const PDF_EXPORT_MAX_ROWS = 2_000;
+// The two caps live in `@/lib/export-caps` since story 19.11 (the statement
+// pages read them without this module's PDF/xlsx graph); re-exported here unchanged.
+export { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS };
 
 type Messages = typeof import('../../../messages/it.json');
 
@@ -179,16 +176,20 @@ export async function exportPeopleXlsx(actor: Actor, query: ListPeopleQuery): Pr
 }
 
 // --- Aircraft (`GET /api/v1/aircraft`) --------------------------------------
-// Deviation (Dev Notes' "annotarlo in notesForReview"): the fleet card's
-// "Tariffa" is NOT exported — `dashboard/fleet/page.tsx` (story 12.5, the
-// `dashboard/aircraft` page's replacement) joins it in from a SEPARATE
-// batched `getEffectiveRates` call (`rates.service.ts`), it is not part of
+// Deviation (Dev Notes' "annotarlo in notesForReview"): the aircraft's rate
+// is NOT exported — `dashboard/fleet/page.tsx` (story 12.5, the
+// `dashboard/aircraft` page's replacement) joins it in for the editor (story
+// 19.3: no card shows it) from a SEPARATE batched `getEffectiveRates` call
+// (`rates.service.ts`), it is not part of
 // `AircraftListItem`/`GET /api/v1/aircraft`'s own DTO (verified:
-// `aircraft.service.ts#AircraftListItem` has no such field).
+// `aircraft.service.ts#AircraftListItem` has no such field). "Ore totali"
+// (story 19.2, R-19-b) is joined in the same way: ONE batched aggregate over
+// the exported ids, the same source as the fleet sheet and the editor.
 
 export async function exportAircraftXlsx(actor: Actor, query: ListAircraftQuery): Promise<XlsxExport> {
   const result = await listAircraft(actor, { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });
   assertWithinExportCap(result.total);
+  const totalMinutesById = await sumFlightMinutesByAircraft(actor, result.items.map((row) => row.id), null, null);
 
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
@@ -198,7 +199,7 @@ export async function exportAircraftXlsx(actor: Actor, query: ListAircraftQuery)
     { header: t('table.registration'), value: (row) => row.registration },
     { header: t('table.type'), value: (row) => row.type },
     { header: t('table.model'), value: (row) => row.model },
-    { header: t('table.hourMeter'), value: (row) => formatMinutes(row.hourMeterMinutes) },
+    { header: t('table.totalHours'), value: (row) => formatMinutes(totalMinutesById.get(row.id) ?? 0) },
     { header: t('table.status'), value: (row) => (row.archivedAt ? t('status.archived') : t('status.active')) },
     {
       header: t('table.operationalStatus'),
@@ -211,13 +212,8 @@ export async function exportAircraftXlsx(actor: Actor, query: ListAircraftQuery)
 
 // --- Flights (`GET /api/v1/flights`) ----------------------------------------
 
-function flightTypeLabel(
-  flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK',
-  labels: { private: string; school: string; other: string },
-): string {
-  if (flightType === 'TOURISM') return labels.private;
-  if (flightType === 'SCHOOL') return labels.school;
-  return labels.other;
+function flightTypeLabel(flightType: 'TOURISM' | 'SCHOOL', labels: { private: string; school: string }): string {
+  return flightType === 'SCHOOL' ? labels.school : labels.private;
 }
 
 export async function exportFlightsXlsx(actor: Actor, query: ListFlightsQuery): Promise<XlsxExport> {
@@ -227,7 +223,7 @@ export async function exportFlightsXlsx(actor: Actor, query: ListFlightsQuery): 
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'FlightsPage' });
-  const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school'), other: t('form.flightTypes.other') };
+  const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school') };
 
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
     { header: t('list.table.date'), value: (row) => formatDateOnly(row.flightDate, locale) },
@@ -259,10 +255,6 @@ export async function exportFlightsXlsx(actor: Actor, query: ListFlightsQuery): 
       },
     },
     { header: t('list.table.amount'), value: (row) => row.breakdown.totalAmountCents / 100, numFmt: MONEY_NUM_FMT },
-    {
-      header: t('list.table.status'),
-      value: (row) => (row.status === 'CANCELLED' ? t('filters.statusOptions.cancelled') : t('filters.statusOptions.registered')),
-    },
   ];
 
   return toXlsxExport('flights', t('title'), columns, result.items);
@@ -283,7 +275,12 @@ export async function exportBookingsXlsx(actor: Actor, query: ListBookingsQuery)
 
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
     { header: t('list.table.aircraft'), value: (row) => row.aircraftRegistration },
-    { header: t('list.table.pilot'), value: (row) => row.personName },
+    // `row.personName` is `null` on a masked row (story 14.5, ratifica R3:
+    // `listBookings` already masked it for this `actor` — the export never
+    // re-derives or bypasses that) — same "Occupato" fallback the UI table
+    // shows, so an exported spreadsheet never regresses to a blank cell that
+    // reads as a data-quality bug.
+    { header: t('list.table.pilot'), value: (row) => row.personName ?? t('occupied') },
     // `list.table.instructor` (story 12.3, AC 3): the UI table itself only
     // shows the instructor name as a sub-line under the pilot's, with no
     // dedicated column header — this key exists solely for this export's own
@@ -300,35 +297,6 @@ export async function exportBookingsXlsx(actor: Actor, query: ListBookingsQuery)
   return toXlsxExport('bookings', t('list.cardTitle'), columns, result.items);
 }
 
-// --- PPR requests (`GET /api/v1/ppr-requests`, `GET /api/v1/ppr-requests/pdf`) ---
-// Column set mirrors the MOVEMENTS view (`dashboard/movements`, epic 12
-// story 12.4 — replaces the pre-12.4 `dashboard/ppr/register`, filterable by
-// stato/periodo); the approval console (`dashboard/ppr`, a PENDING-default
-// action list) reuses the SAME two export functions with its own status
-// filter (story 13.6, AC 5) rather than a second, dedicated column set.
-
-const PPR_STATUS_KEYS = { PENDING: 'pending', APPROVED: 'approved', REJECTED: 'rejected', COMPLETED: 'completed', CANCELLED: 'cancelled' } as const;
-
-export async function exportPprRequestsXlsx(actor: Actor, query: ListPprRequestsQuery): Promise<XlsxExport> {
-  const result = await listPprRequests(actor, { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });
-  assertWithinExportCap(result.total);
-
-  const locale = resolveLocale(query);
-  const messages = await loadMessages(locale);
-  const t = createTranslator({ locale, messages, namespace: 'MovementsPage' });
-
-  const columns: ExportColumn<(typeof result.items)[number]>[] = [
-    { header: t('export.pprNumber'), value: (row) => row.pprNumber },
-    { header: t('table.requester'), value: (row) => `${row.firstName} ${row.lastName}` },
-    { header: t('table.aircraft'), value: (row) => row.aircraftRegistration },
-    { header: t('table.eta'), value: (row) => formatDateTime(row.eta, locale) },
-    { header: t('table.status'), value: (row) => t(`filters.statusOptions.${PPR_STATUS_KEYS[row.status]}`) },
-    { header: t('table.fee'), value: (row) => (row.landingFeeCents === null ? null : row.landingFeeCents / 100), numFmt: MONEY_NUM_FMT },
-  ];
-
-  return toXlsxExport('ppr-requests', t('card.title'), columns, result.items);
-}
-
 // --- Account statement (`GET /api/v1/people/{id}/account/movements`) -------
 
 const ACCOUNT_MOVEMENT_TYPE_KEYS = {
@@ -336,8 +304,42 @@ const ACCOUNT_MOVEMENT_TYPE_KEYS = {
   ADJUSTMENT: 'adjustment',
   PACKAGE_PURCHASE: 'packagePurchase',
   FLIGHT_CHARGE: 'flightCharge',
-  FLIGHT_CHARGE_REVERSAL: 'flightChargeReversal',
 } as const;
+
+type AccountStatementTranslator = ReturnType<typeof createTranslator<Messages, 'AccountStatementPage'>>;
+
+/** One line of an exported statement — a movement, or the closing "Saldo iniziale" line (`amountCents: null`). */
+type StatementExportRow = {
+  date: string;
+  typeLabel: string;
+  description: string | null;
+  amountCents: number | null;
+  balanceCents: number;
+  actorEmail: string | null;
+};
+
+/**
+ * The rows of BOTH statement exports (story 19.11, AD-7): the movements in
+ * the screen's order (value date, most recent first — Q-19.11-a = A), each
+ * with its running balance, and — when the period has a `from` — the
+ * "Saldo iniziale" line LAST, where the screen shows it on its last page.
+ * One builder for the xlsx and the PDF, so the two files cannot disagree.
+ */
+function buildStatementExportRows(statement: AccountStatementResult, t: AccountStatementTranslator, locale: AppLocale): StatementExportRow[] {
+  const rows: StatementExportRow[] = statement.items.map((item) => ({
+    date: formatDateOnly(item.effectiveDate, locale),
+    typeLabel: t(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[item.type]}`),
+    description: item.description,
+    amountCents: item.amountCents,
+    balanceCents: item.balanceAfterCents,
+    actorEmail: item.actorEmail ?? null,
+  }));
+  if (statement.from === null) return rows;
+  return [
+    ...rows,
+    { date: formatDateOnly(statement.from, locale), typeLabel: t('openingRow'), description: null, amountCents: null, balanceCents: statement.openingBalanceCents, actorEmail: null },
+  ];
+}
 
 export async function exportAccountMovementsXlsx(actor: Actor, personId: string, query: ListAccountMovementsQuery): Promise<XlsxExport> {
   const result = await listAccountMovements(actor, personId, { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });
@@ -352,15 +354,16 @@ export async function exportAccountMovementsXlsx(actor: Actor, personId: string,
   // COLUMN for them.
   const includeActor = hasPermission(actor, 'people.read');
 
-  const columns: ExportColumn<(typeof result.items)[number]>[] = [
-    { header: t('table.date'), value: (row) => formatDateOnly(row.effectiveDate, locale) },
-    { header: t('table.type'), value: (row) => t(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[row.type]}`) },
+  const columns: ExportColumn<StatementExportRow>[] = [
+    { header: t('table.date'), value: (row) => row.date },
+    { header: t('table.type'), value: (row) => row.typeLabel },
     { header: t('table.description'), value: (row) => row.description },
-    { header: t('table.amount'), value: (row) => row.amountCents / 100, numFmt: MONEY_NUM_FMT },
-    ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail ?? null } satisfies ExportColumn<(typeof result.items)[number]>] : []),
+    { header: t('table.amount'), value: (row) => (row.amountCents === null ? null : row.amountCents / 100), numFmt: MONEY_NUM_FMT },
+    { header: t('table.balance'), value: (row) => row.balanceCents / 100, numFmt: MONEY_NUM_FMT },
+    ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail } satisfies ExportColumn<StatementExportRow>] : []),
   ];
 
-  return toXlsxExport('account-movements', t('kicker'), columns, result.items);
+  return toXlsxExport('account-movements', t('kicker'), columns, buildStatementExportRows(result, t, locale));
 }
 
 // --- Cash register (`GET /api/v1/cash-movements`) ---------------------------
@@ -438,6 +441,22 @@ export async function exportTransactionsXlsx(actor: Actor, query: ListTransactio
 
 // --- Expiries dashboard (`GET /api/v1/expiries`) ----------------------------
 
+type RegistryExportRow = Awaited<ReturnType<typeof listAllExpiries>>['items'][number];
+type ExpiriesTranslator = ReturnType<typeof createTranslator<Messages, 'ExpiriesPage'>>;
+type ExpiryTypesTranslator = ReturnType<typeof createTranslator<Messages, 'ExpiryTypesPage'>>;
+
+/**
+ * The two cells the xlsx and the PDF share for a row of the UNIFIED registry
+ * (story 19.7b, AD-4): the currency row has no type, so it shows its category,
+ * and no type scope, so «—» — the screen's own words.
+ */
+function registryExportCells(t: ExpiriesTranslator, tScope: ExpiryTypesTranslator) {
+  return {
+    type: (row: RegistryExportRow) => row.typeName ?? t(`registry.category.${row.category}`),
+    scope: (row: RegistryExportRow) => (row.typeScope === null ? '—' : tScope(`scope.${row.typeScope}`)),
+  };
+}
+
 export async function exportExpiriesXlsx(actor: Actor, query: ListAllExpiriesQuery): Promise<XlsxExport> {
   const result = await listAllExpiries(actor, { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });
   assertWithinExportCap(result.total);
@@ -447,10 +466,11 @@ export async function exportExpiriesXlsx(actor: Actor, query: ListAllExpiriesQue
   const t = createTranslator({ locale, messages, namespace: 'ExpiriesPage' });
   const tScope = createTranslator({ locale, messages, namespace: 'ExpiryTypesPage' });
 
+  const cells = registryExportCells(t, tScope);
   const columns: ExportColumn<(typeof result.items)[number]>[] = [
     { header: t('dashboard.table.person'), value: (row) => `${row.personLastName} ${row.personFirstName}` },
-    { header: t('dashboard.table.type'), value: (row) => row.typeName },
-    { header: t('dashboard.table.scope'), value: (row) => tScope(`scope.${row.typeScope}`) },
+    { header: t('dashboard.table.type'), value: cells.type },
+    { header: t('dashboard.table.scope'), value: cells.scope },
     { header: t('dashboard.table.expiresAt'), value: (row) => formatDateOnly(row.expiresAt, locale) },
     { header: t('dashboard.table.status'), value: (row) => t(`own.table.status.${row.status}`) },
   ];
@@ -478,7 +498,7 @@ export async function exportInstructorCompensationXlsx(actor: Actor, query: Inst
     { header: t('table.owed'), value: (row) => (row.owedTotalCents === null ? null : row.owedTotalCents / 100), numFmt: MONEY_NUM_FMT },
   ];
 
-  return toXlsxExport('instructor-compensation', t('cardTitle'), columns, items);
+  return toXlsxExport('instructor-compensation', t('title'), columns, items);
 }
 
 // =============================================================================
@@ -506,55 +526,54 @@ function periodSubtitle(from: string, to: string, locale: AppLocale): string {
 }
 
 // --- Account statement (`GET /api/v1/people/{id}/account/pdf`) -------------
-// Epic 12, story 12.9, AC 5: `from`/`to` are now ADDITIVE optional bounds
-// (`accountStatementPdfQuerySchema`) — absent means the SAME "estratto
-// COMPLETO" as before (Dev Notes' original rationale, still true by
-// default); present narrows the rows to the billing "Estratti conto"
-// period. The balance line is ALWAYS the account's CURRENT balance (Dev
-// Notes: "semantica infra esistente" — `getAccountOverview` never took a
-// period), just RE-LABELED when a period is applied so it never reads as a
-// period-end balance it is not.
+// `from`/`to` (story 12.9, AC 5) are optional bounds: absent means the
+// complete history. Since story 19.11 the totals are the PERIOD's opening and
+// closing balances (D-11) — the same two figures the screen's summary shows —
+// read from the same `listAccountMovements` call as the rows, so the account's
+// current balance is no longer a separate read (with the 12-month default
+// period it would be a third number equal to the closing one).
 
 export async function exportAccountStatementPdf(actor: Actor, personId: string, query: AccountStatementPdfQuery): Promise<PdfExport> {
   const movements = await listAccountMovements(actor, personId, { page: 1, pageSize: PDF_EXPORT_MAX_ROWS, from: query.from, to: query.to });
   assertWithinPdfExportCap(movements.total);
 
   // Same own-access rule as `listAccountMovements` (`accounts.service.ts#assertReadAccess`)
-  // — already enforced above; these two reads never widen access, only add
-  // the person's name (title) and final balance (totals) to the PDF.
-  const [overview, person, branding] = await Promise.all([getAccountOverview(actor, personId), getPerson(actor, personId), getAirfieldBranding()]);
+  // — already enforced above; this read never widens access, it only adds the
+  // person's name to the PDF's subtitle.
+  const [person, branding] = await Promise.all([getPerson(actor, personId), getAirfieldBranding()]);
 
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'AccountStatementPage' });
   // Same conditional column as the xlsx export / `account-section.tsx`'s `showActor`.
   const includeActor = hasPermission(actor, 'people.read');
-  const hasPeriod = Boolean(query.from || query.to);
 
-  const columns: PdfColumn<(typeof movements.items)[number]>[] = [
-    { header: t('table.date'), value: (row) => formatDateOnly(row.effectiveDate, locale) },
-    { header: t('table.type'), value: (row) => t(`movementType.${ACCOUNT_MOVEMENT_TYPE_KEYS[row.type]}`) },
+  const columns: PdfColumn<StatementExportRow>[] = [
+    { header: t('table.date'), value: (row) => row.date },
+    { header: t('table.type'), value: (row) => row.typeLabel },
     { header: t('table.description'), value: (row) => row.description ?? '' },
-    { header: t('table.amount'), value: (row) => formatSignedCents(row.amountCents, locale) },
-    ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail ?? '' } satisfies PdfColumn<(typeof movements.items)[number]>] : []),
+    { header: t('table.amount'), value: (row) => (row.amountCents === null ? '' : formatSignedCents(row.amountCents, locale)) },
+    { header: t('table.balance'), value: (row) => formatCents(row.balanceCents, locale) },
+    ...(includeActor ? [{ header: t('table.recordedBy'), value: (row) => row.actorEmail ?? '' } satisfies PdfColumn<StatementExportRow>] : []),
   ];
 
-  // Both bounds present (the billing "Estratti conto" dialog always sends
-  // both) -> a period subtitle; a hand-crafted single-sided query falls back
-  // to the plain name (Dev Notes: no invented open-ended range text).
+  // Both bounds present (the two statement pages always send both) -> a
+  // period subtitle; a hand-crafted
+  // single-sided query falls back to the plain name (Dev Notes: no invented
+  // open-ended range text).
   const period = query.from && query.to ? periodSubtitle(query.from, query.to, locale) : null;
   const subtitle = period ? `${person.lastName} ${person.firstName} · ${period}` : `${person.lastName} ${person.firstName}`;
+  // No `from`: the opening balance is 0 by definition, so no line for it. No
+  // `to`: the closing balance has no date to name, and is the plain "Saldo finale".
+  const totals: PdfTotal[] = [
+    ...(movements.from ? [{ label: t('period.openingAt', { date: formatDateOnly(movements.from, locale) }), value: formatCents(movements.openingBalanceCents, locale) }] : []),
+    {
+      label: movements.to ? t('period.closingAt', { date: formatDateOnly(movements.to, locale) }) : t('pdf.balance'),
+      value: formatCents(movements.closingBalanceCents, locale),
+    },
+  ];
 
-  return toPdfExport(
-    'account-statement',
-    locale,
-    branding,
-    t('kicker'),
-    subtitle,
-    columns,
-    movements.items,
-    [{ label: hasPeriod ? t('pdf.currentBalance') : t('pdf.balance'), value: formatCents(overview.balanceCents, locale) }],
-  );
+  return toPdfExport('account-statement', locale, branding, t('kicker'), subtitle, columns, buildStatementExportRows(movements, t, locale), totals);
 }
 
 // --- Period financial report (`GET /api/v1/cash-report/pdf`) ---------------
@@ -596,7 +615,7 @@ export async function exportFlightsPdf(actor: Actor, query: ListFlightsQuery): P
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'FlightsPage' });
-  const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school'), other: t('form.flightTypes.other') };
+  const flightTypeLabels = { private: t('form.flightTypes.private'), school: t('form.flightTypes.school') };
 
   // Story 11.3 (AC 3): relative `width` weights, NOT equal `flex:1` anymore —
   // found via the real-PDF render check (Dev Notes, T3): with 12 equal
@@ -658,11 +677,6 @@ export async function exportFlightsPdf(actor: Actor, query: ListFlightsQuery): P
       width: 1.1,
     },
     { header: t('list.table.amount'), value: (row) => formatCents(row.breakdown.totalAmountCents, locale), width: 1.1 },
-    {
-      header: t('list.table.status'),
-      value: (row) => (row.status === 'CANCELLED' ? t('filters.statusOptions.cancelled') : t('filters.statusOptions.registered')),
-      width: 0.9,
-    },
   ];
 
   // Totals over EVERY row this export actually carries (AC 2, Dev Notes:
@@ -697,10 +711,11 @@ export async function exportExpiriesPdf(actor: Actor, query: ListAllExpiriesQuer
   const t = createTranslator({ locale, messages, namespace: 'ExpiriesPage' });
   const tScope = createTranslator({ locale, messages, namespace: 'ExpiryTypesPage' });
 
+  const cells = registryExportCells(t, tScope);
   const columns: PdfColumn<(typeof result.items)[number]>[] = [
     { header: t('dashboard.table.person'), value: (row) => `${row.personLastName} ${row.personFirstName}` },
-    { header: t('dashboard.table.type'), value: (row) => row.typeName },
-    { header: t('dashboard.table.scope'), value: (row) => tScope(`scope.${row.typeScope}`) },
+    { header: t('dashboard.table.type'), value: cells.type },
+    { header: t('dashboard.table.scope'), value: cells.scope },
     { header: t('dashboard.table.expiresAt'), value: (row) => formatDateOnly(row.expiresAt, locale) },
     {
       header: t('dashboard.table.status'),
@@ -711,36 +726,6 @@ export async function exportExpiriesPdf(actor: Actor, query: ListAllExpiriesQuer
 
   // No `totals` (Dev Notes: "nessun totale, non pertinente" — a status list has nothing summable).
   return toPdfExport('expiries', locale, branding, t('dashboard.heading'), null, columns, result.items, undefined);
-}
-
-// --- PPR queue/register (`GET /api/v1/ppr-requests/pdf`) -------------------
-// Story 13.6, AC 4/5 — dedicated PDF route (spine :105), same filters
-// (status/from/to) and SAME columns as `exportPprRequestsXlsx` above. Wired
-// from both the movements view (Voli in transito) and the PPR approval
-// console's own new export menu.
-
-export async function exportPprRequestsPdf(actor: Actor, query: ListPprRequestsQuery): Promise<PdfExport> {
-  const result = await listPprRequests(actor, { ...query, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
-  assertWithinPdfExportCap(result.total);
-  const branding = await getAirfieldBranding();
-
-  const locale = resolveLocale(query);
-  const messages = await loadMessages(locale);
-  const t = createTranslator({ locale, messages, namespace: 'MovementsPage' });
-
-  const columns: PdfColumn<(typeof result.items)[number]>[] = [
-    { header: t('export.pprNumber'), value: (row) => row.pprNumber ?? '' },
-    { header: t('table.requester'), value: (row) => `${row.firstName} ${row.lastName}` },
-    { header: t('table.aircraft'), value: (row) => row.aircraftRegistration },
-    { header: t('table.eta'), value: (row) => formatDateTime(row.eta, locale) },
-    { header: t('table.status'), value: (row) => t(`filters.statusOptions.${PPR_STATUS_KEYS[row.status]}`) },
-    { header: t('table.fee'), value: (row) => (row.landingFeeCents === null ? '' : formatCents(row.landingFeeCents, locale)) },
-  ];
-
-  // Both bounds present (same rule as `exportFlightsPdf`) -> a period subtitle.
-  const subtitle = query.from && query.to ? periodSubtitle(query.from, query.to, locale) : null;
-
-  return toPdfExport('ppr-requests', locale, branding, t('card.title'), subtitle, columns, result.items, undefined);
 }
 
 // --- Bookings (`GET /api/v1/bookings/pdf`) ----------------------------------
@@ -760,7 +745,11 @@ export async function exportBookingsPdf(actor: Actor, query: ListBookingsQuery):
 
   const columns: PdfColumn<(typeof result.items)[number]>[] = [
     { header: t('list.table.aircraft'), value: (row) => row.aircraftRegistration },
-    { header: t('list.table.pilot'), value: (row) => row.personName },
+    // Story 14.5, ratifica R3: same "Occupato" fallback as the xlsx export
+    // above — `listBookings` already masked `row.personName` to `null` for
+    // this `actor` on a non-own row (a pilot exporting the PDF must never
+    // find another pilot's name on the printout).
+    { header: t('list.table.pilot'), value: (row) => row.personName ?? t('occupied') },
     { header: t('list.table.instructor'), value: (row) => row.instructorName ?? '' },
     { header: t('list.table.startsAt'), value: (row) => formatDateTime(row.startsAt, locale) },
     { header: t('list.table.endsAt'), value: (row) => formatDateTime(row.endsAt, locale) },

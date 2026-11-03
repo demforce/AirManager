@@ -10,29 +10,22 @@
  * divergence, story 12.5's own e2e stays green). `FleetCardItem`/`badgeFor`
  * are the single source of truth for both callers.
  */
+import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icons';
 import { Link } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { formatCents } from '@/lib/money';
 
 export type FleetCardItem = {
   id: string;
   registration: string;
   type: string;
   model: string;
-  hourMeterMinutes: number;
-  notes: string | null;
   status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
   statusReason: string | null;
-  seats: number | null;
-  fuelType: string | null;
-  based: boolean;
   /** ISO string or `null` — active. */
   archivedAt: string | null;
-  /** The wet hourly rate in effect TODAY (batched `getEffectiveRates`), or `null` if none is on file. */
-  wetRateCents: number | null;
   /** Derived, presentational: an APPROVED booking covers `now`. */
   reserved: boolean;
 };
@@ -64,16 +57,15 @@ export function badgeFor(item: FleetCardItem, labels: FleetCardBadgeLabels): Rea
   );
 }
 
+/** No card shows a price (story 19.3, Q-19.3-a): the rates live in the aircraft editor only. */
 export type FleetCardGridProps = {
   items: FleetCardItem[];
-  locale: 'it' | 'en';
-  rateLabel: string;
   badgeLabels: FleetCardBadgeLabels;
   /** Present for `fleet-console.tsx` (opens the aircraft editor); absent on the Overview widget (read-only glance, AC 3: "niente search/paginazione"). */
   onCardClick?: (item: FleetCardItem) => void;
 };
 
-export function FleetCardGrid({ items, locale, rateLabel, badgeLabels, onCardClick }: FleetCardGridProps) {
+export function FleetCardGrid({ items, badgeLabels, onCardClick }: FleetCardGridProps) {
   return (
     <div className="fleet-grid">
       {items.map((ac) => (
@@ -91,10 +83,6 @@ export function FleetCardGrid({ items, locale, rateLabel, badgeLabels, onCardCli
             <Icon.acsmall />
           </div>
           <div className="ac-model">{ac.model}</div>
-          <div className="meter-row" style={{ marginTop: 2 }}>
-            <span>{rateLabel}</span>
-            <span className="v mono">{ac.wetRateCents === null ? '—' : `${formatCents(ac.wetRateCents, locale)}/h`}</span>
-          </div>
         </div>
       ))}
     </div>
@@ -103,10 +91,8 @@ export function FleetCardGrid({ items, locale, rateLabel, badgeLabels, onCardCli
 
 export type FleetCardLabels = {
   cardTitle: string;
-  summary: string;
   addAircraft: string;
   empty: string;
-  rateLabel: string;
   badge: FleetCardBadgeLabels;
 };
 
@@ -130,11 +116,14 @@ export type FleetCardProps = {
  * `/dashboard/fleet` console rather than opening an editor inline.
  */
 export function FleetCard({ items, totalCount, availableCount, aogCount, locale, canManageAircraft, addHref, labels }: FleetCardProps) {
+  // Story 19.12a: the summary inflects on the counts (ICU plural), so it is
+  // formatted here rather than threaded through `labels` as a raw template.
+  const t = useTranslations('DashboardPage.fleetCard');
   return (
     <div className="card" data-testid="fleet-card-widget">
       <div className="card-head">
         <div className="card-title">{labels.cardTitle}</div>
-        <span className="card-sub">{labels.summary.replace('{total}', String(totalCount)).replace('{available}', String(availableCount)).replace('{aog}', String(aogCount))}</span>
+        <span className="card-sub">{t('summary', { total: totalCount, available: availableCount, aog: aogCount })}</span>
         <div className="spacer" />
         {canManageAircraft ? (
           <Link href={addHref} locale={locale as AppLocale} className="btn primary" data-testid="fleet-card-widget-add">
@@ -147,7 +136,7 @@ export function FleetCard({ items, totalCount, availableCount, aogCount, locale,
           {labels.empty}
         </p>
       ) : (
-        <FleetCardGrid items={items} locale={locale} rateLabel={labels.rateLabel} badgeLabels={labels.badge} />
+        <FleetCardGrid items={items} badgeLabels={labels.badge} />
       )}
     </div>
   );

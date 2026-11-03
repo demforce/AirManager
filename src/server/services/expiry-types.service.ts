@@ -1,7 +1,8 @@
+import type { Prisma } from '@/generated/prisma/client';
 import type { CreateExpiryTypeInput, ListExpiryTypesQuery, UpdateExpiryTypeInput } from '@/lib/schemas/expiry-types';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { ConflictError, NotFoundError } from './errors';
+import { ConflictError, NotFoundError, ValidationError } from './errors';
 
 /** Prisma unique-constraint violation (same pattern as every other service). */
 function isUniqueViolation(error: unknown): boolean {
@@ -37,8 +38,8 @@ export type ExpiryTypeListItem = {
   id: string;
   name: string;
   scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
-  /** RATING vs MEDICAL (story 13.1, AC 1, R-13.1-a). */
-  kind: 'RATING' | 'MEDICAL';
+  /** RATING / MEDICAL (story 13.1, AC 1, R-13.1-a) / MEMBERSHIP (story 19.7a, R-19-k). */
+  kind: 'RATING' | 'MEDICAL' | 'MEMBERSHIP';
   isActive: boolean;
   /** Whether an expired `Expiry` of this type blocks a new booking (epic 7, story 7.4; FR-21). */
   blocksBooking: boolean;
@@ -57,6 +58,56 @@ const EXPIRY_TYPE_SELECT = {
   validityMonths: true,
   createdAt: true,
 } as const;
+
+type ExpiryScopeValue = ExpiryTypeListItem['scope'];
+
+/**
+ * Story 19.8 (AD-5): every 409 of the catalogue keeps the generic `CONFLICT`
+ * code (contract) and says WHICH rule it is in `details.reason` — additive on
+ * the single routes, read per row by the Impostazioni composite save.
+ */
+const NAME_TAKEN_MESSAGE = 'An expiry type with this name already exists.';
+const IN_USE_MESSAGE = 'This expiry type is in use — deactivate it instead.';
+
+/**
+ * The 409 of a name already held by `holder`. The membership-fee type is
+ * listed nowhere on the Impostazioni page (story 19.7a), so a name taken by
+ * IT would read as a duplicate of nothing on screen: it says so with its own
+ * `reason` (review 19.8 F6).
+ */
+function nameTakenError(holder: { kind: ExpiryTypeListItem['kind'] }): ConflictError {
+  return holder.kind === 'MEMBERSHIP'
+    ? new ConflictError('This name is reserved for the membership-fee type.', { reason: 'NAME_RESERVED' })
+    : new ConflictError(NAME_TAKEN_MESSAGE, { reason: 'NAME_TAKEN' });
+}
+
+/**
+ * Story 19.7a (D-3, R-19-j): a MEDICAL type has no scope and always counts
+ * toward the medical requirement — `scope = ALL` and `blocksBooking = true`
+ * are an invariant of the data, kept here on every write. A plain check
+ * inside create/update (story 19.8 extracts these into its transactional
+ * cores, so the composite PATCH rejects with the same code).
+ */
+function assertMedicalFields(kind: ExpiryTypeListItem['kind'], scope: ExpiryScopeValue, blocksBooking: boolean): void {
+  if (kind === 'MEDICAL' && (scope !== 'ALL' || !blocksBooking)) {
+    throw new ValidationError(
+      'A medical visit has no scope and always counts toward the medical requirement: scope must be ALL and blocksBooking true.',
+      undefined,
+      'MEDICAL_TYPE_FIELDS',
+    );
+  }
+}
+
+/**
+ * Story 19.7a (D-1, AD-4): the MEMBERSHIP type is a system type, upserted by
+ * name by `membership.service.ts` — no PATCH (not even `isActive`) and no
+ * DELETE reaches it. Checked right after the 404, before every other rule.
+ */
+function assertNotMembership(kind: ExpiryTypeListItem['kind']): void {
+  if (kind === 'MEMBERSHIP') {
+    throw new ConflictError('The membership-fee type is a system type and cannot be edited or deleted.', undefined, 'MEMBERSHIP_TYPE_LOCKED');
+  }
+}
 
 /**
  * Lists the expiry-type catalogue (AC 1). Read access is `expiries.manage`
@@ -94,25 +145,40 @@ export async function listExpiryTypes(actor: Actor, query: ListExpiryTypesQuery)
  * (same split as `createCashCategory`/`createPackageType`). Name uniqueness:
  * `trim()` + pre-check `findFirst` + `try/catch` `P2002` backstop (the
  * check-then-write race, same pattern as every other catalogue create).
+ *
+ * Story 19.7a (AD-7): `scope`/`blocksBooking` are resolved by `kind` — a
+ * MEDICAL type takes `ALL`/`true` when they are omitted and is a 422
+ * `MEDICAL_TYPE_FIELDS` when they are explicit and different; a RATING takes
+ * `ALL`/`false` when they are omitted. `kind: MEMBERSHIP` never reaches this
+ * function (Zod's `expiryTypeKindInputSchema`).
  */
 export async function createExpiryType(actor: Actor, input: CreateExpiryTypeInput): Promise<ExpiryTypeListItem> {
   authorize(actor, 'settings.manage');
 
+  return createExpiryTypeCore(prisma, input);
+}
+
+/** The rules of {@link createExpiryType} on the caller's client, no `authorize` (story 19.8, AD-3). */
+export async function createExpiryTypeCore(tx: Prisma.TransactionClient, input: CreateExpiryTypeInput): Promise<ExpiryTypeListItem> {
+  const scope = input.scope ?? 'ALL';
+  const blocksBooking = input.blocksBooking ?? input.kind === 'MEDICAL';
+  assertMedicalFields(input.kind, scope, blocksBooking);
+
   const name = input.name.trim();
 
-  const existing = await prisma.expiryType.findFirst({ where: { name }, select: { id: true } });
+  const existing = await tx.expiryType.findFirst({ where: { name }, select: { kind: true } });
   if (existing) {
-    throw new ConflictError('An expiry type with this name already exists.');
+    throw nameTakenError(existing);
   }
 
   try {
-    return await prisma.expiryType.create({
-      data: { name, scope: input.scope, kind: input.kind, blocksBooking: input.blocksBooking, validityMonths: input.validityMonths },
+    return await tx.expiryType.create({
+      data: { name, scope, kind: input.kind, blocksBooking, validityMonths: input.validityMonths },
       select: EXPIRY_TYPE_SELECT,
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new ConflictError('An expiry type with this name already exists.');
+      throw new ConflictError(NAME_TAKEN_MESSAGE, { reason: 'NAME_TAKEN' });
     }
     throw error;
   }
@@ -131,25 +197,43 @@ export async function createExpiryType(actor: Actor, input: CreateExpiryTypeInpu
  * 404/409 shape checks below. `kind` (story 13.1 review F3) is patchable
  * like every other field — a type misclassified by the backfill migration's
  * name match is recoverable here instead of only by delete + re-create.
+ *
+ * Story 19.7a (AD-7), in this order after the 404: the MEMBERSHIP type is a
+ * 409 `MEMBERSHIP_TYPE_LOCKED`; then the RESULTING state (the row merged
+ * with the patch) of a MEDICAL type must keep `ALL`/`true`, else 422
+ * `MEDICAL_TYPE_FIELDS` — which also covers a RATING moved to MEDICAL
+ * without fixing its scope/flag. The row is read under a `FOR UPDATE` lock,
+ * in the transaction that writes it (review 19.7a F3): two PATCHes legal one
+ * at a time — `{ kind: MEDICAL }` and `{ scope: PILOTS }` — used to both pass
+ * against the same stale read and leave a MEDICAL/PILOTS row; now the second
+ * one validates against the first one's committed result.
  */
 export async function updateExpiryType(actor: Actor, id: string, input: UpdateExpiryTypeInput): Promise<ExpiryTypeListItem> {
   authorize(actor, 'settings.manage');
 
-  const existing = await prisma.expiryType.findUnique({ where: { id }, select: { id: true } });
+  return prisma.$transaction((tx) => updateExpiryTypeCore(tx, id, input));
+}
+
+/** The rules of {@link updateExpiryType} on the caller's TRANSACTION (the row lock needs one), no `authorize` (story 19.8, AD-3). */
+export async function updateExpiryTypeCore(tx: Prisma.TransactionClient, id: string, input: UpdateExpiryTypeInput): Promise<ExpiryTypeListItem> {
+  await tx.$queryRaw`SELECT "id" FROM "ExpiryType" WHERE "id" = ${id} FOR UPDATE`;
+  const existing = await tx.expiryType.findUnique({ where: { id }, select: { id: true, kind: true, scope: true, blocksBooking: true } });
   if (!existing) {
     throw new NotFoundError('Expiry type not found.');
   }
+  assertNotMembership(existing.kind);
+  assertMedicalFields(input.kind ?? existing.kind, input.scope ?? existing.scope, input.blocksBooking ?? existing.blocksBooking);
 
   const name = input.name !== undefined ? input.name.trim() : undefined;
   if (name !== undefined) {
-    const duplicate = await prisma.expiryType.findFirst({ where: { name, NOT: { id } }, select: { id: true } });
+    const duplicate = await tx.expiryType.findFirst({ where: { name, NOT: { id } }, select: { kind: true } });
     if (duplicate) {
-      throw new ConflictError('An expiry type with this name already exists.');
+      throw nameTakenError(duplicate);
     }
   }
 
   try {
-    return await prisma.expiryType.update({
+    return await tx.expiryType.update({
       where: { id },
       data: {
         ...(name !== undefined ? { name } : {}),
@@ -163,7 +247,7 @@ export async function updateExpiryType(actor: Actor, id: string, input: UpdateEx
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new ConflictError('An expiry type with this name already exists.');
+      throw new ConflictError(NAME_TAKEN_MESSAGE, { reason: 'NAME_TAKEN' });
     }
     throw error;
   }
@@ -177,30 +261,43 @@ export async function updateExpiryType(actor: Actor, id: string, input: UpdateEx
  * "in use" message) BEFORE the delete — the `P2003` catch remains as the
  * concurrency backstop (a scadenza registered against this very type
  * between the pre-check and the `DELETE` still reads as the same
- * `Conflict`, never a raw 500).
+ * `Conflict`, never a raw 500). The MEMBERSHIP type (story 19.7a) is a 409
+ * `MEMBERSHIP_TYPE_LOCKED` before the "in use" check.
  */
 export async function deleteExpiryType(actor: Actor, id: string): Promise<void> {
   authorize(actor, 'settings.manage');
 
-  const existing = await prisma.expiryType.findUnique({
+  await deleteExpiryTypeCore(prisma, id, { missingOk: false });
+}
+
+/**
+ * The rules of {@link deleteExpiryType} on the caller's client, no
+ * `authorize` (story 19.8, AD-3). `missingOk`: the composite save treats a
+ * type that is already gone as done (a no-op), the single route keeps its 404.
+ */
+export async function deleteExpiryTypeCore(tx: Prisma.TransactionClient, id: string, options: { missingOk: boolean }): Promise<void> {
+  const existing = await tx.expiryType.findUnique({
     where: { id },
-    select: { id: true, _count: { select: { expiries: true } } },
+    select: { id: true, kind: true, _count: { select: { expiries: true } } },
   });
   if (!existing) {
+    if (options.missingOk) return;
     throw new NotFoundError('Expiry type not found.');
   }
+  assertNotMembership(existing.kind);
   if (existing._count.expiries > 0) {
-    throw new ConflictError('This expiry type is in use — deactivate it instead.');
+    throw new ConflictError(IN_USE_MESSAGE, { reason: 'IN_USE' });
   }
 
   try {
-    await prisma.expiryType.delete({ where: { id } });
+    await tx.expiryType.delete({ where: { id } });
   } catch (error) {
     if (isForeignKeyViolation(error)) {
-      throw new ConflictError('This expiry type is in use — deactivate it instead.');
+      throw new ConflictError(IN_USE_MESSAGE, { reason: 'IN_USE' });
     }
     if (isRecordNotFound(error)) {
       // Concurrent double-DELETE race (TD-1, AC 1): the other request won.
+      if (options.missingOk) return;
       throw new NotFoundError('Expiry type not found.');
     }
     throw error;

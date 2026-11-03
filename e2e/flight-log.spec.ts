@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -96,12 +98,14 @@ async function createPilotWithLogin(page: Page, password: string, tag: string): 
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   const email = uniqueEmail('pilot-flightlog');
   const userResponse = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'], personId: person.id } });
   expect(userResponse.status()).toBe(201);
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+  const inviteEmail = await waitForMailpitMessage(email, 'invito');
   const url = extractSetPasswordUrl(inviteEmail.Text);
   await page.goto(url.pathname + url.search);
   await page.getByLabel('Nuova password').fill(password);
@@ -126,25 +130,24 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
 
   return { personId: person.id, firstName, lastName };
 }
 
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string; registration: string }> {
   // Same `.slice(0, 20)` convention as `aircraft-rates.spec.ts`'s `uniqueAircraft`.
   const suffix = uniqueSuffix();
   const registration = `I-FL${suffix}`.toUpperCase().slice(0, 20);
 
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
 
   return { id: aircraft.id, registration };
 }
@@ -153,8 +156,10 @@ type RegisterFlightParams = {
   aircraftId: string;
   personId: string;
   flightDate: string;
-  flightType: 'TOURISM' | 'SCHOOL' | 'AERIAL_WORK';
+  flightType: 'TOURISM' | 'SCHOOL';
   minutes: number;
+  /** Story 16.2 — the takeoff clock time (UTC, `HH:MM`), so two flights of the SAME test can share an aircraft and a day without overlapping (409 `FLIGHT_OVERLAP`). Defaults to `10:00`, the value every pre-existing call site used implicitly. */
+  takeoffTimeUtc?: string;
 };
 
 /**
@@ -166,7 +171,7 @@ type RegisterFlightParams = {
  * equals `params.flightDate`.
  */
 async function registerFlight(page: Page, params: RegisterFlightParams): Promise<{ id: string }> {
-  const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
+  const takeoffAt = `${params.flightDate}T${params.takeoffTimeUtc ?? '10:00'}:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
     data: {
@@ -177,6 +182,7 @@ async function registerFlight(page: Page, params: RegisterFlightParams): Promise
       takeoffAt,
       landingAt,
       flightType: params.flightType,
+      force: true,
     },
   });
   expect(response.status()).toBe(201);
@@ -185,7 +191,7 @@ async function registerFlight(page: Page, params: RegisterFlightParams): Promise
 }
 
 test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC 1/2/3/4; FR-17)', () => {
-  test('a pilot sees ONLY their own flights (own or as instructor), including a cancelled one, in their own-access registry — no form, no actions', async ({
+  test('a pilot sees ONLY their own flights (own or as instructor) in their own-access registry — no form, no actions', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -194,20 +200,21 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     const pilot = await createPilotWithLogin(page, 'PilotOwnView123!', 'Titolare');
     const otherPerson = await createPilotPerson(page, 'AltroTitolare');
 
-    // The pilot's own flight (stays REGISTERED).
+    // The pilot's own flight.
     await registerFlight(page, { aircraftId: aircraft.id, personId: pilot.personId, flightDate: '2020-02-01', flightType: 'TOURISM', minutes: 30 });
-    // A second flight for the pilot, later cancelled — AC 1: "storia completa", cancelled flights stay visible in own-access scope.
-    const toCancel = await registerFlight(page, {
+    // Someone else's flight on the SAME aircraft — must NEVER show up in the
+    // pilot's own registry. Story 16.2: the "same aircraft" IS the point of
+    // this case, so the AIRCRAFT stays and the takeoff moves to 12:00 —
+    // 10:00->10:40 would now overlap the pilot's own 10:00->10:30 flight
+    // above (409 `FLIGHT_OVERLAP`).
+    await registerFlight(page, {
       aircraftId: aircraft.id,
-      personId: pilot.personId,
-      flightDate: '2020-03-01',
-      flightType: 'AERIAL_WORK',
-      minutes: 50,
+      personId: otherPerson.personId,
+      flightDate: '2020-02-01',
+      flightType: 'TOURISM',
+      minutes: 40,
+      takeoffTimeUtc: '12:00',
     });
-    const cancelResponse = await page.request.post(`/api/v1/flights/${toCancel.id}/cancel`, { data: { reason: 'Errore di prova' } });
-    expect(cancelResponse.status()).toBe(200);
-    // Someone else's flight on the SAME aircraft — must NEVER show up in the pilot's own registry.
-    await registerFlight(page, { aircraftId: aircraft.id, personId: otherPerson.personId, flightDate: '2020-02-01', flightType: 'TOURISM', minutes: 40 });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, pilot.email, 'PilotOwnView123!');
@@ -224,23 +231,28 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page.getByTestId('flight-form')).toHaveCount(0);
     await expect(page.getByTestId('flight-cancel-action')).toHaveCount(0);
     await expect(page.getByTestId('flight-correct-action')).toHaveCount(0);
-    // Only staff filters (aircraft/persona) are absent; period/tipo/stato remain.
+    // Only staff filters (aircraft/persona) are absent; period/tipo remain.
     await expect(page.getByTestId('flight-filter-aircraft')).toHaveCount(0);
     await expect(page.getByTestId('flight-filter-person')).toHaveCount(0);
+    // Story 15.6 (review LOW-1): the phone twins of these three names are NOT
+    // asserted here. They only exist while the detail sheet or the "Filtri"
+    // panel is OPEN, so a `toHaveCount(0)` on a page with both closed is green
+    // for an admin too — measured — and would claim a coverage it does not
+    // have. The real masking guard opens them: `mobile-logbook.spec.ts`, "a
+    // pilot gets the same card without any action" (sheet open ⇒ zero actions
+    // where the admin has two; panel open ⇒ no velivolo filter).
 
-    // Exactly the pilot's own 2 flights (this pilot is brand new — nothing else could be theirs), never the other person's.
+    // Exactly the pilot's own flight (this pilot is brand new — nothing else could be theirs), never the other person's.
     const rows = page.getByTestId('flight-row');
-    await expect(rows).toHaveCount(2);
+    await expect(rows).toHaveCount(1);
     await expect(rows.filter({ hasText: otherPerson.lastName })).toHaveCount(0);
-    await expect(rows.filter({ hasText: 'Annullato' })).toHaveCount(1);
 
-    // TRUE totals (review fix 12.8, MAJOR), own-scoped: 2 rows show (AC 1
-    // "storia completa"), but the totals are REGISTERED-only AND scoped to
-    // this pilot ALONE — so only the 30' TOURISM flight counts (75,00 € @
-    // 150,00 €/h), never the cancelled 50' one, and NEVER otherPerson's 40'
-    // flight on the SAME aircraft (SECURITY-CRITICAL: own-access totals must
-    // never leak another person's data, same guard as the rows themselves).
-    await expect(page.locator('.page-title-block .sub')).toHaveText('1 voce · solo i tuoi voli');
+    // TRUE totals (review fix 12.8, MAJOR), own-scoped: scoped to this pilot
+    // ALONE — so only the 30' TOURISM flight counts (75,00 € @ 150,00 €/h),
+    // NEVER otherPerson's 40' flight on the SAME aircraft (SECURITY-CRITICAL:
+    // own-access totals must never leak another person's data, same guard as
+    // the rows themselves).
+    await expect(page.locator('.page-title-block .sub')).toHaveText('1 volo · solo i tuoi voli');
     const kpiValues = page.locator('.kpi-row .kpi .kpi-value');
     await expect(kpiValues.nth(0)).toHaveText('1');
     await expect(kpiValues.nth(1)).toHaveText('0:30');
@@ -250,14 +262,12 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(totalsRow).toContainText('0:30');
     await expect(totalsRow).toContainText(/75,00\s€/);
 
-    // Own-access filters (period/tipo/stato) narrow the results.
-    await page.getByTestId('flight-filter-status').selectOption('CANCELLED');
-    await expect(page.getByTestId('flight-row')).toHaveCount(1);
-    await expect(page.getByTestId('flight-row').first()).toContainText('Annullato');
-
-    await page.getByTestId('flight-filter-reset').click();
-    await expect(page.getByTestId('flight-row')).toHaveCount(2);
-
+    // Own-access filters (period/tipo) narrow the results. Story 19.5: the
+    // pilot's flight is TOURISM (the third type is gone), so the type filter
+    // narrows to none on SCHOOL and keeps it on TOURISM. Story 19.6: no
+    // status filter anymore — a deleted flight no longer exists.
+    await page.getByTestId('flight-filter-type').selectOption('SCHOOL');
+    await expect(page.getByTestId('flight-row')).toHaveCount(0);
     await page.getByTestId('flight-filter-type').selectOption('TOURISM');
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
     await expect(page.getByTestId('flight-row').first()).toContainText('Turismo');
@@ -291,13 +301,13 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
 
     // Four flights spanning two aircraft, two people, two types, two periods.
     await registerFlight(page, { aircraftId: aircraftA.id, personId: personA.personId, flightDate: '2020-05-01', flightType: 'TOURISM', minutes: 30 });
-    await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'AERIAL_WORK', minutes: 45 });
+    await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'TOURISM', minutes: 45 });
 
-    await page.goto('/it/dashboard/logbook');
-
-    // Velivolo filter: only aircraftA's flight. (Native selects since the
-    // 2026-07-21 filter-UI change — the value they hold is the entity ID.)
-    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraftA.registration });
+    // Velivolo filter: only aircraftA's flight. Set through the URL, not the
+    // native select: its options stop at the first 100 registrations
+    // (`OPTIONS_PAGE_SIZE`), fewer than a full suite creates (review 19.3 F1).
+    // The select's change handler is the one the Tipo select below exercises.
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftA.id}`);
     let rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(aircraftA.registration);
@@ -315,10 +325,11 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-person'), personB.lastName);
 
     // Combined persona + periodo + tipo: the RUN-UNIQUE person keyed with
-    // dateFrom/dateTo bracketing only the June flight and tipo AERIAL_WORK -> that
-    // one flight. The person filter is what keeps the assertion run-unique
-    // (lesson 6.3 F1): periodo+tipo alone match the June/AERIAL_WORK flights EVERY
-    // past execution of this very test left in an accumulated DB.
+    // dateFrom/dateTo bracketing only the June flight, then tipo SCHOOL -> no
+    // row (the discriminating half: the June flight is TOURISM) and tipo
+    // TOURISM -> that one flight. The person filter is what keeps the assertion
+    // run-unique (lesson 6.3 F1): periodo+tipo alone match the June/TOURISM
+    // flights EVERY past execution of this very test left in an accumulated DB.
     await page.getByTestId('flight-filter-person').fill(personB.lastName);
     // EVERY filter change navigates and remounts the subtree (same M1 race
     // as the reset) — settle each step on its URL effect before touching the
@@ -329,12 +340,17 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page).toHaveURL(/dateFrom=2020-06-01/);
     await page.getByTestId('flight-filter-date-to').fill('2020-06-30');
     await expect(page).toHaveURL(/dateTo=2020-06-30/);
-    await page.getByTestId('flight-filter-type').selectOption('AERIAL_WORK');
-    await expect(page).toHaveURL(/flightType=AERIAL_WORK/);
+    await page.getByTestId('flight-filter-type').selectOption('SCHOOL');
+    await expect(page).toHaveURL(/flightType=SCHOOL/);
+    await expect(page.getByTestId('flight-row')).toHaveCount(0);
+    await page.getByTestId('flight-filter-type').selectOption('TOURISM');
+    await expect(page).toHaveURL(/flightType=TOURISM/);
     rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(personB.lastName);
-    await expect(rows.first()).toContainText('Lavoro aereo');
+    // The type cell's own badge (the row's first `.badge`), exact — never a
+    // substring match on the whole row.
+    await expect(rows.first().locator('.badge').first()).toHaveText('Turismo');
 
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-date-from'), '2020-06-01');
     // Both flights still reachable after the reset — each located through its
@@ -342,11 +358,11 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // orders by flightDate desc with a 20-row page, so on an accumulated DB
     // recent-dated flights from other runs bury these 2020-dated rows past
     // the cap (review TD-3 M1/D1 lesson: assert on run-unique observables).
-    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraftA.registration });
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftA.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
     await expect(page.getByTestId('flight-row').first()).toContainText(aircraftA.registration);
     await resetFiltersAndSettle(page, page.getByTestId('flight-filter-aircraft'), aircraftA.id);
-    await page.getByTestId('flight-filter-aircraft').selectOption({ label: aircraftB.registration });
+    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftB.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
     await expect(page.getByTestId('flight-row').first()).toContainText(aircraftB.registration);
   });
@@ -373,7 +389,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await expect(page.getByTestId('flight-pagination-status')).toHaveText('1 / 2');
 
     // Header count ("N voci registrate") — the FULL 21, not page 1's 20.
-    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voci registrate');
+    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voli registrati');
 
     // KPI row (entries/ore/decolli-atterraggi/ricavo), in DOM order — the
     // FULL filtered-set totals (`getFlightTotals`), never a per-page sum.
@@ -400,7 +416,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     // Page 2 (1 row) shows the exact SAME full totals as page 1 — proves the
     // totals are page-independent, not derived from whichever rows happen to
     // be on screen.
-    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voci registrate');
+    await expect(page.locator('.page-title-block .sub')).toHaveText('21 voli registrati');
     await expect(kpiValues.nth(0)).toHaveText('21');
     await expect(kpiValues.nth(3)).toHaveText(/^210,00\s€$/);
     await expect(totalsRow).toContainText(/210,00\s€/);

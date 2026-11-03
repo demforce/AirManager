@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 const mockEnv = { SMTP_HOST: 'localhost' };
 vi.mock('@/lib/env', () => ({ env: mockEnv }));
 
-const { smtpSettingsInputSchema } = await import('./settings');
+const { smtpSettingsInputSchema, clubIdentitySchema, updateSettingsSchema } = await import('./settings');
 
 /** Fixed valid siblings — every case below varies only `host`. */
 const BASE_INPUT = { port: 587, security: 'STARTTLS' as const, user: '', from: 'Club Ops <ops@example.com>' };
@@ -83,5 +83,107 @@ describe('smtpSettingsInputSchema — SSRF host validation', () => {
     expect(parseHost('10.0.0.6').success).toBe(false);
 
     mockEnv.SMTP_HOST = 'localhost';
+  });
+});
+
+/**
+ * `contactEmail: ''` is the factory default (`getAirfieldContactEmail`
+ * returns `''` when the key is absent) and the club card always sends every
+ * field — rejecting the empty string made the card unsavable on a fresh
+ * install (changing ONLY the ICAO fields answered 422 on the untouched
+ * email, surfaced as the generic "Non è stato possibile salvare").
+ */
+describe('clubIdentitySchema — contactEmail empty-means-unset', () => {
+  it('accepts an empty contactEmail (fresh-install default, clears the setting)', () => {
+    const parsed = clubIdentitySchema.safeParse({ icao: 'LIRB', contactEmail: '' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.contactEmail).toBe('');
+  });
+
+  it('trims whitespace-only contactEmail down to the empty string and accepts it', () => {
+    const parsed = clubIdentitySchema.safeParse({ icao: 'LIRB', contactEmail: '   ' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.contactEmail).toBe('');
+  });
+
+  it('still accepts and lowercases a real email', () => {
+    const parsed = clubIdentitySchema.safeParse({ icao: 'LIRB', contactEmail: 'Ops@Example.COM' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.contactEmail).toBe('ops@example.com');
+  });
+
+  it('still rejects a non-empty, non-email value', () => {
+    expect(clubIdentitySchema.safeParse({ icao: 'LIRB', contactEmail: 'not-an-email' }).success).toBe(false);
+  });
+});
+
+/** The paths of a failed `updateSettingsSchema` parse, dotted (what `flattenIssuesByPath` keys the 422 by). */
+function failedPaths(body: unknown): string[] {
+  const parsed = updateSettingsSchema.safeParse(body);
+  expect(parsed.success).toBe(false);
+  return parsed.success ? [] : parsed.error.issues.map((issue) => issue.path.map(String).join('.'));
+}
+
+const SCHEDULING = { openTime: '07:00', closeTime: '21:00', minSlotMinutes: 60, turnaroundMinutes: 15, maxAdvanceDays: 30 };
+
+describe('updateSettingsSchema — the Impostazioni composite save (story 19.8, AD-1)', () => {
+  it('an empty body is a root issue — at least one block', () => {
+    expect(failedPaths({})).toEqual(['']);
+  });
+
+  it('unknown keys are stripped, so a body of only unknown keys is still empty', () => {
+    expect(failedPaths({ tax: { cents: 1 } })).toEqual(['']);
+  });
+
+  it('accepts one block alone and leaves every other block undefined', () => {
+    const parsed = updateSettingsSchema.parse({ metarStation: { station: 'lirb' } });
+    expect(parsed).toEqual({ metarStation: { station: 'LIRB' } });
+  });
+
+  it('a refused field is reported at its FULL path inside its block', () => {
+    expect(failedPaths({ smtp: { ...BASE_INPUT, host: '127.0.0.1' } })).toEqual(['smtp.host']);
+    expect(failedPaths({ scheduling: { ...SCHEDULING, closeTime: '07:00' } })).toEqual(['scheduling.closeTime']);
+    expect(failedPaths({ club: { icao: 'LIRB', contactEmail: 'not-an-email' } })).toEqual(['club.contactEmail']);
+    expect(failedPaths({ airfield: { name: '  ' } })).toEqual(['airfield.name']);
+  });
+
+  it('an expiry-type create needs an explicit kind, RATING or MEDICAL — never the single route\'s RATING default, never MEMBERSHIP', () => {
+    expect(failedPaths({ expiryTypes: { create: [{ name: 'Night' }] } })).toEqual(['expiryTypes.create.0.kind']);
+    expect(failedPaths({ expiryTypes: { create: [{ name: 'Quota', kind: 'MEMBERSHIP' }] } })).toEqual(['expiryTypes.create.0.kind']);
+    expect(updateSettingsSchema.parse({ expiryTypes: { create: [{ name: 'Visita', kind: 'MEDICAL' }] } }).expiryTypes?.create?.[0]).toEqual({
+      name: 'Visita',
+      kind: 'MEDICAL',
+      validityMonths: null,
+    });
+  });
+
+  it('an update item carries at least one field besides its id, and never kind', () => {
+    expect(failedPaths({ expiryTypes: { update: [{ id: 'et_1' }] } })).toEqual(['expiryTypes.update.0']);
+    expect(failedPaths({ cashCategories: { update: [{ id: 'cc_1' }] } })).toEqual(['cashCategories.update.0']);
+    // `kind` is not a field of the update item: stripped, so `{ id, kind }` is an id alone.
+    expect(failedPaths({ expiryTypes: { update: [{ id: 'et_1', kind: 'MEDICAL' }] } })).toEqual(['expiryTypes.update.0']);
+  });
+
+  it('two creates with the same (trimmed) name in one list are refused at the second one', () => {
+    expect(failedPaths({ cashCategories: { create: [{ name: 'Hangar' }, { name: ' Hangar ' }] } })).toEqual(['cashCategories.create.1.name']);
+  });
+
+  it('a create may not take the name an update in the same list moves to', () => {
+    expect(failedPaths({ expiryTypes: { update: [{ id: 'et_1', name: 'Night' }], create: [{ name: 'Night', kind: 'RATING' }] } })).toEqual(['expiryTypes.update.0.name']);
+  });
+
+  it('an id appears at most once in update, once in delete, never in both', () => {
+    expect(failedPaths({ cashCategories: { update: [{ id: 'cc_1', isActive: false }, { id: 'cc_1', name: 'X' }] } })).toEqual(['cashCategories.update.1.id']);
+    expect(failedPaths({ cashCategories: { delete: ['cc_1', 'cc_1'] } })).toEqual(['cashCategories.delete.1']);
+    expect(failedPaths({ cashCategories: { update: [{ id: 'cc_1', isActive: false }], delete: ['cc_1'] } })).toEqual(['cashCategories.delete.0']);
+  });
+
+  it('the names of two lists are independent of each other (a category and a type may share a name)', () => {
+    expect(updateSettingsSchema.safeParse({ expiryTypes: { create: [{ name: 'Altro', kind: 'RATING' }] }, cashCategories: { create: [{ name: 'Altro' }] } }).success).toBe(true);
+  });
+
+  it('caps each array (the 64 KB body limit is a backstop, not the only bound)', () => {
+    const tooMany = Array.from({ length: 51 }, (_, index) => ({ name: `C${index}` }));
+    expect(failedPaths({ cashCategories: { create: tooMany } })).toEqual(['cashCategories.create']);
   });
 });

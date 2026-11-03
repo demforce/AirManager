@@ -60,10 +60,13 @@ async function createAircraft(
   const form = page.getByTestId('identity-form');
   // AC 4, story 13.4: the "Proprietario" (owner) field is removed entirely — scoped to the form, never present.
   await expect(form.getByLabel('Proprietario')).toHaveCount(0);
+  // Story 19.2 (AC 7): the anagrafica is registration, type and model only.
+  for (const label of ['Posti', 'Carburante', 'Basato', 'Note', 'Contaore iniziale (minuti)']) {
+    await expect(form.getByLabel(label, { exact: true })).toHaveCount(0);
+  }
   await form.getByLabel('Marche').fill(aircraft.registration);
   await form.getByLabel('Tipo').fill(aircraft.type);
   await form.getByLabel('Modello').fill(aircraft.model);
-  await form.getByLabel('Contaore iniziale (minuti)').fill('750');
   await page.getByTestId('identity-submit').click();
   await expect(page.getByTestId('toast').filter({ hasText: 'Velivolo creato' })).toBeVisible();
 }
@@ -79,9 +82,15 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
     const card = cardFor(page, aircraft.registration);
     await expect(card).toBeVisible();
     await expect(card.getByText('Disponibile')).toBeVisible();
-    // The hour meter itself now lives inside the editor's "Contaore" section (AC 2: the card only shows the wet rate).
+    // The aircraft's hours live inside the editor's "Ore di volo" section (the
+    // card shows no price since story 19.3, Q-19.3-a) — the sum of its registered flights
+    // (story 19.2, R-19-b), so a brand-new aircraft reads 0:00.
     await card.click();
-    await expect(page.getByTestId('hour-meter-current')).toContainText('12:30');
+    await expect(page.getByTestId('aircraft-total-hours')).toHaveText('Ore totali: 0:00');
+    // The edit form carries the same three fields as the create form.
+    for (const label of ['Posti', 'Carburante', 'Basato', 'Note']) {
+      await expect(page.getByTestId('identity-form').getByLabel(label, { exact: true })).toHaveCount(0);
+    }
   });
 
   test('duplicate registration is rejected with a 409/conflict message (AC 1)', async ({ page }) => {
@@ -95,10 +104,41 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
     await form.getByLabel('Marche').fill(aircraft.registration);
     await form.getByLabel('Tipo').fill('Altro tipo');
     await form.getByLabel('Modello').fill('Altro modello');
-    await form.getByLabel('Contaore iniziale (minuti)').fill('0');
     await page.getByTestId('identity-submit').click();
 
     await expect(page.getByTestId('identity-form-error')).toHaveText('Esiste già un velivolo con queste marche.');
+  });
+
+  test('empty required fields on submit mark EACH field individually (aria-invalid + inline message), not just a bottom banner (story 14.2, AC 1/2)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.goto('/it/dashboard/fleet');
+    await page.getByTestId('fleet-new-button').click();
+    const form = page.getByTestId('identity-form');
+
+    // Every required field left blank — submit immediately.
+    await page.getByTestId('identity-submit').click();
+
+    const registrationInput = form.getByLabel('Marche');
+    const typeInput = form.getByLabel('Tipo');
+    const modelInput = form.getByLabel('Modello');
+
+    await expect(registrationInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(typeInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(modelInput).toHaveAttribute('aria-invalid', 'true');
+    // One message PER field, right next to it — not a single generic banner.
+    await expect(form.getByText('Campo obbligatorio.')).toHaveCount(3);
+    // The old single-banner pattern is gone for this case: no `identity-form-error` node at all.
+    await expect(page.getByTestId('identity-form-error')).toHaveCount(0);
+    // react-hook-form's own `shouldFocusError` focuses the FIRST invalid field.
+    await expect(registrationInput).toBeFocused();
+
+    // Fixing it clears THAT field's error while the others stay marked.
+    await registrationInput.fill(uniqueAircraft('FIX').registration);
+    await expect(registrationInput).toHaveAttribute('aria-invalid', 'false');
+    await expect(typeInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(form.getByText('Campo obbligatorio.')).toHaveCount(2);
   });
 
   test('archiving an aircraft removes it from the default list and shows it with the archived filter; restoring brings it back (AC 2)', async ({
@@ -196,6 +236,8 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
         personId: person.id,
         startsAt: new Date(now + 3_000).toISOString(),
         endsAt: new Date(now + 3_600_000).toISOString(),
+        // Story 19.10 (AD-9 rule 1): an admin fixture, not about the requirements.
+        force: true,
       },
     });
     expect(bookingResponse.status()).toBe(201);

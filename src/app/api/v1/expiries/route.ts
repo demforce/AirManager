@@ -5,7 +5,7 @@ import { listAllExpiries, registerExpiry } from '@/server/services/expiries.serv
 import { exportExpiriesXlsx } from '@/server/services/exports.service';
 
 /**
- * Thin routes (AD-1): `expiries.manage` (staff+admin) — real authorization
+ * Thin routes (AD-1): `expiries.manage` (ADMIN-only) — real authorization
  * stays in `expiries.service.ts` (AD-5). GET is the story 6.4 urgency
  * dashboard (AC 1); POST is the story 6.2 registration.
  */

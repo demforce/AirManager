@@ -4,7 +4,7 @@ import { getMembershipFeeCents, setMembershipFeeCents } from '@/server/services/
 
 /**
  * Thin routes (AD-1) — story 12.11, AC 1 (ratifica utente 1). GET is
- * `finance.manage` (STAFF+ADMIN — the Scadenze "Quota associativa" action
+ * `finance.manage` (ADMIN-only — the Scadenze "Quota associativa" action
  * needs the default too); PUT is `settings.manage` (ADMIN-only).
  */
 export const GET = apiRoute({

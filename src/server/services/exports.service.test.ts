@@ -15,10 +15,9 @@ import { formatMinutes } from '@/lib/time';
 // re-verification of `listPeople`/`listFlights`/etc.'s own already-tested
 // query logic.
 vi.mock('./people.service', () => ({ listPeople: vi.fn(), getPerson: vi.fn() }));
-vi.mock('./aircraft.service', () => ({ listAircraft: vi.fn() }));
+vi.mock('./aircraft.service', () => ({ listAircraft: vi.fn(), sumFlightMinutesByAircraft: vi.fn() }));
 vi.mock('./flights.service', () => ({ listFlights: vi.fn() }));
 vi.mock('./bookings.service', () => ({ listBookings: vi.fn() }));
-vi.mock('./ppr.service', () => ({ listPprRequests: vi.fn() }));
 vi.mock('./accounts.service', () => ({ listAccountMovements: vi.fn(), getAccountOverview: vi.fn() }));
 vi.mock('./cash.service', () => ({ listCashMovements: vi.fn(), getCashReport: vi.fn() }));
 vi.mock('./expiries.service', () => ({ listAllExpiries: vi.fn() }));
@@ -33,12 +32,12 @@ vi.mock('@/server/adapters/pdf/document', () => ({ renderReportPdf: vi.fn().mock
 vi.mock('./app-settings.service', () => ({ getAirfieldBranding: vi.fn() }));
 
 const { listPeople, getPerson } = await import('./people.service');
+const { listAircraft, sumFlightMinutesByAircraft } = await import('./aircraft.service');
 const { listFlights } = await import('./flights.service');
 const { listBookings } = await import('./bookings.service');
 const { listCashMovements, getCashReport } = await import('./cash.service');
 const { listAllExpiries } = await import('./expiries.service');
 const { listAccountMovements, getAccountOverview } = await import('./accounts.service');
-const { listPprRequests } = await import('./ppr.service');
 const { getAirfieldBranding } = await import('./app-settings.service');
 const { renderReportPdf } = await import('@/server/adapters/pdf/document');
 const { getCompensationSummary } = await import('./instructor-compensation.service');
@@ -49,7 +48,9 @@ const {
   assertWithinExportCap,
   assertWithinPdfExportCap,
   exportPeopleXlsx,
+  exportAircraftXlsx,
   exportFlightsXlsx,
+  exportAccountMovementsXlsx,
   exportCashMovementsXlsx,
   exportExpiriesXlsx,
   exportInstructorCompensationXlsx,
@@ -58,11 +59,12 @@ const {
   exportCashReportPdf,
   exportFlightsPdf,
   exportExpiriesPdf,
-  exportPprRequestsPdf,
   exportBookingsPdf,
 } = await import('./exports.service');
 
 const listPeopleMock = vi.mocked(listPeople);
+const listAircraftMock = vi.mocked(listAircraft);
+const sumFlightMinutesByAircraftMock = vi.mocked(sumFlightMinutesByAircraft);
 const listFlightsMock = vi.mocked(listFlights);
 const listBookingsMock = vi.mocked(listBookings);
 const listCashMovementsMock = vi.mocked(listCashMovements);
@@ -70,7 +72,6 @@ const listAllExpiriesMock = vi.mocked(listAllExpiries);
 const listAccountMovementsMock = vi.mocked(listAccountMovements);
 const getAccountOverviewMock = vi.mocked(getAccountOverview);
 const getPersonMock = vi.mocked(getPerson);
-const listPprRequestsMock = vi.mocked(listPprRequests);
 const getCashReportMock = vi.mocked(getCashReport);
 const getAirfieldBrandingMock = vi.mocked(getAirfieldBranding);
 const renderReportPdfMock = vi.mocked(renderReportPdf);
@@ -94,6 +95,8 @@ function lastPdfProps() {
 
 beforeEach(() => {
   listPeopleMock.mockReset();
+  listAircraftMock.mockReset();
+  sumFlightMinutesByAircraftMock.mockReset();
   listFlightsMock.mockReset();
   listBookingsMock.mockReset();
   listCashMovementsMock.mockReset();
@@ -101,7 +104,6 @@ beforeEach(() => {
   listAccountMovementsMock.mockReset();
   getAccountOverviewMock.mockReset();
   getPersonMock.mockReset();
-  listPprRequestsMock.mockReset();
   getCashReportMock.mockReset();
   renderReportPdfMock.mockClear();
   getAirfieldBrandingMock.mockReset();
@@ -141,6 +143,40 @@ describe('exportPeopleXlsx (T2 — argument parity with the list service)', () =
   });
 });
 
+describe('exportAircraftXlsx (story 19.2, R-19-b — "Ore totali" = the sum of the registered flights)', () => {
+  it('asks the aggregate ONCE for every exported id with no window, and prints each total as H:MM where the old column was', async () => {
+    const aircraftRow = {
+      type: 'Ultraleggero',
+      model: 'Tecnam P92',
+      status: 'OPERATIONAL' as const,
+      statusReason: null,
+      outOfServiceUntil: null,
+      archivedAt: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    listAircraftMock.mockResolvedValue({
+      total: 2,
+      page: 1,
+      pageSize: EXPORT_MAX_ROWS,
+      items: [
+        { ...aircraftRow, id: 'ac_1', registration: 'I-ABCD' },
+        { ...aircraftRow, id: 'ac_2', registration: 'I-EFGH' },
+      ],
+    });
+    // `ac_2` never flew: absent from the map, read as 0.
+    sumFlightMinutesByAircraftMock.mockResolvedValue(new Map([['ac_1', 120]]));
+
+    const result = await exportAircraftXlsx(ACTOR, { page: 1, pageSize: 20, includeArchived: false, locale: 'en' });
+
+    expect(sumFlightMinutesByAircraftMock).toHaveBeenCalledTimes(1);
+    expect(sumFlightMinutesByAircraftMock).toHaveBeenCalledWith(ACTOR, ['ac_1', 'ac_2'], null, null);
+    const sheet = await readSheet(result.buffer);
+    expect(sheet.getRow(1).getCell(4).value).toBe('Total hours');
+    expect(sheet.getRow(2).getCell(4).value).toBe(formatMinutes(120));
+    expect(sheet.getRow(3).getCell(4).value).toBe(formatMinutes(0));
+  });
+});
+
 describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook column mapping)', () => {
   it('formats duration as H:MM, amount as a numeric euro cell, the type column with the solo suffix, and the separate partenza/arrivo/orari/decolli/PIC columns', async () => {
     listFlightsMock.mockResolvedValue({
@@ -153,17 +189,14 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           flightDate: '2026-07-10',
           flightType: 'SCHOOL',
           isSolo: true,
-          status: 'CANCELLED',
+          noCharge: false,
           departureAirfield: 'Campo Sud',
           arrivalAirfield: 'Campo Nord',
           takeoffAt: new Date('2026-07-10T09:00:00Z'),
           landingAt: new Date('2026-07-10T10:35:00Z'),
           minutes: 95,
           takeoffs: 2,
-          hourMeterStart: null,
-          hourMeterEnd: null,
           landings: 3,
-          notes: null,
           aircraft: { id: 'ac_1', registration: 'I-ABCD' },
           person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
           instructor: null,
@@ -173,10 +206,6 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
             totalAmountCents: 12345,
           },
           createdAt: new Date('2026-07-10T10:00:00Z'),
-          cancelledAt: new Date('2026-07-10T11:00:00Z'),
-          cancelReason: 'test',
-          correctionOfId: null,
-          correctedByFlightId: null,
         },
       ],
     } as never);
@@ -199,7 +228,9 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
     expect(row.getCell(13).value).toBe('Rossi Mario'); // PIC: SCHOOL flown solo -> the flight's own person
     expect(row.getCell(14).value).toBe(123.45); // amount, numeric cents/100
     expect(row.getCell(14).numFmt).toBe('#,##0.00 "€"');
-    expect(row.getCell(15).value).toBe('Annullato'); // status, IT
+    // Story 19.6 (AC 27): no Stato column anymore — the amount is the last one.
+    expect(sheet.getRow(1).cellCount).toBe(14);
+    expect(row.getCell(15).value).toBeNull();
   });
 
   it('exports null cells for the airfield/time columns on a historical (pre-11.1) flight, keeping takeoffs/landings as real numbers', async () => {
@@ -213,17 +244,14 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           flightDate: '2020-01-01',
           flightType: 'TOURISM',
           isSolo: false,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: null,
           arrivalAirfield: null,
           takeoffAt: null,
           landingAt: null,
           minutes: 30,
           takeoffs: 1,
-          hourMeterStart: null,
-          hourMeterEnd: null,
           landings: 1,
-          notes: null,
           aircraft: { id: 'ac_1', registration: 'I-ABCD' },
           person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
           instructor: null,
@@ -233,10 +261,6 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
             totalAmountCents: 5000,
           },
           createdAt: new Date('2020-01-01T10:00:00Z'),
-          cancelledAt: null,
-          cancelReason: null,
-          correctionOfId: null,
-          correctedByFlightId: null,
         },
       ],
     } as never);
@@ -264,17 +288,14 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
           flightDate: '2026-07-03',
           flightType: 'SCHOOL',
           isSolo: false,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: 'Campo Sud',
           arrivalAirfield: 'Campo Nord',
           takeoffAt: new Date('2026-07-03T09:00:00Z'),
           landingAt: new Date('2026-07-03T09:40:00Z'),
           minutes: 40,
           takeoffs: 1,
-          hourMeterStart: null,
-          hourMeterEnd: null,
           landings: 1,
-          notes: null,
           aircraft: { id: 'ac_1', registration: 'I-ABCD' },
           person: { id: 'p_1', firstName: 'Mario', lastName: 'Rossi' },
           instructor: { personId: 'i_1', firstName: 'Anna', lastName: 'Bianchi' },
@@ -284,10 +305,6 @@ describe('exportFlightsXlsx (T2/11.3 — durations + money + separate logbook co
             totalAmountCents: 4000,
           },
           createdAt: new Date('2026-07-03T10:00:00Z'),
-          cancelledAt: null,
-          cancelReason: null,
-          correctionOfId: null,
-          correctedByFlightId: null,
         },
       ],
     } as never);
@@ -375,7 +392,56 @@ describe('exportExpiriesXlsx (T2 — date-only column mapping)', () => {
     expect(row.getCell(2).value).toBe('Visita medica');
     expect(row.getCell(3).value).toBe('Piloti');
     expect(row.getCell(4).value).toBe('15/01/2027');
-    expect(row.getCell(5).value).toBe('In regola');
+    expect(row.getCell(5).value).toBe('Valida');
+  });
+});
+
+/** The DERIVED currency row of the unified registry (story 19.7b) — no type, no type scope, always a date. */
+const CURRENCY_REGISTRY_ROW = {
+  id: 'currency:p_1',
+  source: 'DERIVED',
+  category: 'CURRENCY',
+  personId: 'p_1',
+  personFirstName: 'Mario',
+  personLastName: 'Rossi',
+  expiryTypeId: null,
+  typeName: null,
+  typeScope: null,
+  expiresAt: '2026-11-05',
+  notes: null,
+  status: 'expiring',
+  daysUntil: 3,
+  currency: { lastFlightDate: '2026-08-07', flightsInWindow: 1, minFlights: 1, windowDays: 90 },
+};
+
+describe('exportExpiriesXlsx / exportExpiriesPdf — the currency row of the unified registry (story 19.7b, AD-4)', () => {
+  it('xlsx: the category as the type, «—» as the scope, its date and status', async () => {
+    listAllExpiriesMock.mockResolvedValue({ total: 1, page: 1, pageSize: EXPORT_MAX_ROWS, items: [CURRENCY_REGISTRY_ROW] } as never);
+
+    const { buffer } = await exportExpiriesXlsx(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
+    const sheet = await readSheet(buffer);
+
+    expect([1, 2, 3, 4, 5].map((cell) => sheet.getRow(2).getCell(cell).value)).toEqual(['Rossi Mario', 'Currency', '—', '05/11/2026', 'In scadenza']);
+  });
+
+  it('xlsx in English: the category', async () => {
+    listAllExpiriesMock.mockResolvedValue({ total: 1, page: 1, pageSize: EXPORT_MAX_ROWS, items: [CURRENCY_REGISTRY_ROW] } as never);
+
+    const { buffer } = await exportExpiriesXlsx(ACTOR, { page: 1, pageSize: 20, locale: 'en' });
+    const sheet = await readSheet(buffer);
+
+    expect(sheet.getRow(2).getCell(2).value).toBe('Currency');
+  });
+
+  it('pdf: same cells, the status in its own colour', async () => {
+    listAllExpiriesMock.mockResolvedValue({ total: 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS, items: [CURRENCY_REGISTRY_ROW] } as never);
+
+    await exportExpiriesPdf(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
+    const props = lastPdfProps();
+    const column = (header: string) => props.columns.find((c) => c.header === header)!;
+
+    expect(['Tipo', 'Ambito', 'Scadenza', 'Stato'].map((header) => column(header).value(props.rows[0]!))).toEqual(['Currency', '—', '05/11/2026', 'In scadenza']);
+    expect(column('Stato').color!(props.rows[0]!)).toBe('#956400');
   });
 });
 
@@ -457,14 +523,14 @@ describe('exportTransactionsXlsx (story 12.9, AC 2 — unified ledger; story Bil
     expect(accountRow.getCell(4).value).toBe('Addebito volo'); // AccountStatementPage.movementType.flightCharge, no free-text description to append
     expect(accountRow.getCell(6).value).toBe(185); // Entrate
     expect(accountRow.getCell(7).value).toBeNull(); // Uscite
-    expect(accountRow.getCell(8).value).toBe('Registrato');
+    expect(accountRow.getCell(8).value).toBe('Registrata');
 
     const cashRow = sheet.getRow(3);
     expect(cashRow.getCell(3).value).toBe('Costo'); // BillingPage.table.bookTypes.COST
     expect(cashRow.getCell(4).value).toBe('Carburante — Rifornimento'); // verbatim category name + free-text description
     expect(cashRow.getCell(6).value).toBeNull(); // Entrate
     expect(cashRow.getCell(7).value).toBe(50); // Uscite
-    expect(cashRow.getCell(8).value).toBe('Stornato');
+    expect(cashRow.getCell(8).value).toBe('Stornata');
   });
 
   it('rejects with 422 EXPORT_TOO_LARGE when the filtered total exceeds the cap', async () => {
@@ -490,37 +556,54 @@ describe('assertWithinPdfExportCap (story 10.2, AC 4)', () => {
   });
 });
 
-describe('exportAccountStatementPdf (story 10.2, AC 2/3/4)', () => {
-  it('reuses listAccountMovements with page:1/pageSize:PDF_EXPORT_MAX_ROWS, and rejects EXPORT_TOO_LARGE before reading person/overview/branding', async () => {
-    listAccountMovementsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+/** Story 19.11: a `listAccountMovements` result — the page plus the period it covers and its two balances. */
+function statementFixture(overrides: Record<string, unknown> = {}) {
+  return { items: [], total: 0, page: 1, pageSize: PDF_EXPORT_MAX_ROWS, from: null, to: null, openingBalanceCents: 0, closingBalanceCents: 0, ...overrides } as never;
+}
+
+/** Two movements of the SAME day, most recent first (the service's order), with their running balances over an opening of 100,00 €. */
+const PERIOD_ITEMS = [
+  {
+    id: 'mv_2',
+    type: 'FLIGHT_CHARGE',
+    amountCents: -5000,
+    effectiveDate: '2026-07-10',
+    description: null,
+    createdAt: new Date('2026-07-10T11:00:00Z'),
+    actorEmail: 'staff@airmanager.local',
+    reversalOfId: null,
+    hasReversal: false,
+    balanceAfterCents: 25000,
+    reversalOfEffectiveDate: null,
+  },
+  {
+    id: 'mv_1',
+    type: 'TOP_UP',
+    amountCents: 20000,
+    effectiveDate: '2026-07-10',
+    description: 'Ricarica POS',
+    createdAt: new Date('2026-07-10T09:00:00Z'),
+    actorEmail: 'staff@airmanager.local',
+    reversalOfId: null,
+    hasReversal: false,
+    balanceAfterCents: 30000,
+    reversalOfEffectiveDate: null,
+  },
+];
+
+describe('exportAccountStatementPdf (story 10.2, AC 2/3/4; story 19.11, AC 24)', () => {
+  it('reuses listAccountMovements with page:1/pageSize:PDF_EXPORT_MAX_ROWS, and rejects EXPORT_TOO_LARGE before reading person/branding', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: PDF_EXPORT_MAX_ROWS + 1 }));
 
     await expect(exportAccountStatementPdf(ACTOR, 'person_1', {})).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
 
     expect(listAccountMovementsMock).toHaveBeenCalledWith(ACTOR, 'person_1', { page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
     expect(getPersonMock).not.toHaveBeenCalled();
-    expect(getAccountOverviewMock).not.toHaveBeenCalled();
+    expect(getAirfieldBrandingMock).not.toHaveBeenCalled();
   });
 
-  it('maps movements to columns (signed amount, type/date localized), includes the balance total, and titles the report with the person name', async () => {
-    listAccountMovementsMock.mockResolvedValue({
-      total: 1,
-      page: 1,
-      pageSize: PDF_EXPORT_MAX_ROWS,
-      items: [
-        {
-          id: 'mv_1',
-          type: 'TOP_UP',
-          amountCents: 15000,
-          effectiveDate: '2026-07-01',
-          description: 'Ricarica POS',
-          createdAt: new Date('2026-07-01T09:00:00Z'),
-          actorEmail: 'staff@airmanager.local',
-          reversalOfId: null,
-          hasReversal: false,
-        },
-      ],
-    } as never);
-    getAccountOverviewMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: 42000, recentMovements: [] } as never);
+  it('without a period: the whole history, a Saldo column, NO opening line, and the closing balance as "Saldo finale" — never a second read of the current balance', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: 1, items: [{ ...PERIOD_ITEMS[1], balanceAfterCents: 42000 }], closingBalanceCents: 42000 }));
     getPersonMock.mockResolvedValue({ id: 'person_1', firstName: 'Mario', lastName: 'Rossi' } as never);
 
     const { buffer, filename } = await exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'it' });
@@ -532,61 +615,28 @@ describe('exportAccountStatementPdf (story 10.2, AC 2/3/4)', () => {
     expect(props.title).toBe('Estratto conto');
     expect(props.subtitle).toBe('Rossi Mario');
     expect(props.branding).toEqual(BRANDING);
-
-    const row = props.rows[0];
-    expect(props.columns.map((c) => c.header)).toEqual(['Data', 'Tipo', 'Descrizione', 'Importo', 'Registrato da']);
-    expect(props.columns.map((c) => c.value(row))).toEqual(['01/07/2026', 'Ricarica', 'Ricarica POS', '+150,00 €', 'staff@airmanager.local']);
+    expect(props.columns.map((c) => c.header)).toEqual(['Data', 'Tipo', 'Descrizione', 'Importo', 'Saldo', 'Registrato da']);
+    expect(props.rows).toHaveLength(1);
+    expect(props.columns.map((c) => c.value(props.rows[0]))).toEqual(['10/07/2026', 'Ricarica', 'Ricarica POS', '+200,00 €', '420,00 €', 'staff@airmanager.local']);
     expect(props.totals).toEqual([{ label: 'Saldo finale', value: '420,00 €' }]);
+    expect(getAccountOverviewMock).not.toHaveBeenCalled();
   });
 
-  it('drops the "recordato da" column for an actor without people.read (own access)', async () => {
-    listAccountMovementsMock.mockResolvedValue({
-      total: 1,
-      page: 1,
-      pageSize: PDF_EXPORT_MAX_ROWS,
-      items: [
-        {
-          id: 'mv_1',
-          type: 'FLIGHT_CHARGE',
-          amountCents: -5000,
-          effectiveDate: '2026-07-01',
-          description: null,
-          createdAt: new Date('2026-07-01T09:00:00Z'),
-          reversalOfId: null,
-          hasReversal: false,
-        },
-      ],
-    } as never);
-    getAccountOverviewMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: -5000, recentMovements: [] } as never);
+  it('drops the "registrato da" column for an actor without people.read (own access)', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: 1, items: [{ ...PERIOD_ITEMS[0], actorEmail: undefined }], closingBalanceCents: -5000 }));
     getPersonMock.mockResolvedValue({ id: 'person_1', firstName: 'Mario', lastName: 'Rossi' } as never);
 
     const pilotActor: Actor = { userId: 'u2', personId: 'person_1', roles: ['PILOT'] };
     await exportAccountStatementPdf(pilotActor, 'person_1', { locale: 'it' });
 
     const props = lastPdfProps();
-    expect(props.columns.map((c) => c.header)).toEqual(['Data', 'Tipo', 'Descrizione', 'Importo']);
+    expect(props.columns.map((c) => c.header)).toEqual(['Data', 'Tipo', 'Descrizione', 'Importo', 'Saldo']);
   });
 
-  it('forwards from/to to listAccountMovements (rows filtered at the source), adds the period subtitle and re-labels the balance as CURRENT (story 12.9 AC 5; review 12.9 F2)', async () => {
-    listAccountMovementsMock.mockResolvedValue({
-      total: 1,
-      page: 1,
-      pageSize: PDF_EXPORT_MAX_ROWS,
-      items: [
-        {
-          id: 'mv_1',
-          type: 'TOP_UP',
-          amountCents: 15000,
-          effectiveDate: '2026-07-10',
-          description: 'Ricarica POS',
-          createdAt: new Date('2026-07-10T09:00:00Z'),
-          actorEmail: 'staff@airmanager.local',
-          reversalOfId: null,
-          hasReversal: false,
-        },
-      ],
-    } as never);
-    getAccountOverviewMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: 42000, recentMovements: [] } as never);
+  it('with a period: rows in the screen order, the "Saldo iniziale" line LAST, the period subtitle, and the opening/closing balances of the period as totals', async () => {
+    listAccountMovementsMock.mockResolvedValue(
+      statementFixture({ total: 2, items: PERIOD_ITEMS, from: '2026-07-01', to: '2026-07-31', openingBalanceCents: 10000, closingBalanceCents: 25000 }),
+    );
     getPersonMock.mockResolvedValue({ id: 'person_1', firstName: 'Mario', lastName: 'Rossi' } as never);
 
     await exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'it', from: '2026-07-01', to: '2026-07-31' });
@@ -598,18 +648,87 @@ describe('exportAccountStatementPdf (story 10.2, AC 2/3/4)', () => {
       to: '2026-07-31',
     });
     const props = lastPdfProps();
-    expect(props.subtitle).toMatch(/^Rossi Mario · /);
-    expect(props.totals).toEqual([{ label: 'Saldo attuale del conto', value: '420,00 €' }]);
+    expect(props.subtitle).toBe('Rossi Mario · 01/07/2026 – 31/07/2026');
+    expect(props.rows.map((row) => props.columns.map((c) => c.value(row)))).toEqual([
+      ['10/07/2026', 'Addebito volo', '', '-50,00 €', '250,00 €', 'staff@airmanager.local'],
+      ['10/07/2026', 'Ricarica', 'Ricarica POS', '+200,00 €', '300,00 €', 'staff@airmanager.local'],
+      ['01/07/2026', 'Saldo iniziale', '', '', '100,00 €', ''],
+    ]);
+    expect(props.totals).toEqual([
+      { label: "Saldo all'inizio del 01/07/2026", value: '100,00 €' },
+      { label: 'Saldo alla fine del 31/07/2026', value: '250,00 €' },
+    ]);
+    expect(getAccountOverviewMock).not.toHaveBeenCalled();
+  });
+
+  it('a lone `from`: the opening total and line, and the closing one as plain "Saldo finale" (no date to name)', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: 0, from: '2026-07-01', openingBalanceCents: 10000, closingBalanceCents: 10000 }));
+    getPersonMock.mockResolvedValue({ id: 'person_1', firstName: 'Mario', lastName: 'Rossi' } as never);
+
+    await exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'en', from: '2026-07-01' });
+
+    const props = lastPdfProps();
+    expect(props.subtitle).toBe('Rossi Mario');
+    expect(props.rows).toHaveLength(1);
+    expect(props.totals).toEqual([
+      { label: 'Balance at the start of 01/07/2026', value: '€100.00' },
+      { label: 'Final balance', value: '€100.00' },
+    ]);
   });
 
   it('rejects EXPORT_TOO_LARGE on the PERIOD-FILTERED total — the cap reads the total AFTER from/to are applied', async () => {
-    listAccountMovementsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: PDF_EXPORT_MAX_ROWS + 1, from: '2026-07-01', to: '2026-07-31' }));
 
     await expect(exportAccountStatementPdf(ACTOR, 'person_1', { locale: 'it', from: '2026-07-01', to: '2026-07-31' })).rejects.toMatchObject({
       code: 'EXPORT_TOO_LARGE',
     });
 
     expect(listAccountMovementsMock).toHaveBeenCalledWith(ACTOR, 'person_1', expect.objectContaining({ from: '2026-07-01', to: '2026-07-31' }));
+  });
+});
+
+describe('exportAccountMovementsXlsx (story 10.1; story 19.11, AC 23)', () => {
+  it('reuses listAccountMovements on the SAME period with page:1/pageSize:EXPORT_MAX_ROWS and rejects EXPORT_TOO_LARGE', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: EXPORT_MAX_ROWS + 1, pageSize: EXPORT_MAX_ROWS }));
+    const query = { page: 3, pageSize: 20, format: 'xlsx' as const, locale: 'it' as const, from: '2026-07-01', to: '2026-07-31' };
+
+    await expect(exportAccountMovementsXlsx(ACTOR, 'person_1', query)).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
+
+    expect(listAccountMovementsMock).toHaveBeenCalledWith(ACTOR, 'person_1', { ...query, page: 1, pageSize: EXPORT_MAX_ROWS });
+  });
+
+  it('writes Data/Tipo/Descrizione/Importo/Saldo/Registrato da, both money columns NUMERIC, the rows in the screen order and the "Saldo iniziale" line last with an empty amount', async () => {
+    listAccountMovementsMock.mockResolvedValue(
+      statementFixture({ total: 2, pageSize: EXPORT_MAX_ROWS, items: PERIOD_ITEMS, from: '2026-07-01', to: '2026-07-31', openingBalanceCents: 10000, closingBalanceCents: 25000 }),
+    );
+
+    const { buffer } = await exportAccountMovementsXlsx(ACTOR, 'person_1', { page: 1, pageSize: 20, format: 'xlsx', locale: 'it', from: '2026-07-01', to: '2026-07-31' });
+
+    const sheet = await readSheet(buffer);
+    expect(sheet.getRow(1).values).toEqual([undefined, 'Data', 'Tipo', 'Descrizione', 'Importo', 'Saldo', 'Registrato da']);
+    expect(sheet.rowCount).toBe(4);
+    expect(sheet.getRow(2).getCell(2).value).toBe('Addebito volo');
+    expect(sheet.getRow(2).getCell(4).value).toBe(-50);
+    expect(sheet.getRow(2).getCell(5).value).toBe(250);
+    expect(sheet.getRow(2).getCell(5).numFmt).toBe('#,##0.00 "€"');
+    expect(sheet.getRow(3).getCell(5).value).toBe(300);
+    const opening = sheet.getRow(4);
+    expect(opening.getCell(1).value).toBe('01/07/2026');
+    expect(opening.getCell(2).value).toBe('Saldo iniziale');
+    expect(opening.getCell(4).value).toBeNull();
+    expect(opening.getCell(5).value).toBe(100);
+    expect(opening.getCell(5).numFmt).toBe('#,##0.00 "€"');
+  });
+
+  it('without a period: no opening line; an actor without people.read gets no "Registrato da" column', async () => {
+    listAccountMovementsMock.mockResolvedValue(statementFixture({ total: 1, pageSize: EXPORT_MAX_ROWS, items: [{ ...PERIOD_ITEMS[1], actorEmail: undefined }] }));
+    const pilotActor: Actor = { userId: 'u2', personId: 'person_1', roles: ['PILOT'] };
+
+    const { buffer } = await exportAccountMovementsXlsx(pilotActor, 'person_1', { page: 1, pageSize: 20, format: 'xlsx', locale: 'it' });
+
+    const sheet = await readSheet(buffer);
+    expect(sheet.getRow(1).values).toEqual([undefined, 'Data', 'Tipo', 'Descrizione', 'Importo', 'Saldo']);
+    expect(sheet.rowCount).toBe(2);
   });
 });
 
@@ -631,7 +750,7 @@ describe('exportCashReportPdf (story 10.2, AC 2/3)', () => {
     expect(getCashReportMock).toHaveBeenCalledWith(ACTOR, { from: '2026-07-01', to: '2026-07-31', locale: 'it' });
 
     const props = lastPdfProps();
-    expect(props.title).toBe('Report finanziario');
+    expect(props.title).toBe('Report di cassa');
     expect(props.subtitle).toBe('01/07/2026 – 31/07/2026');
     expect(props.columns.map((c) => c.header)).toEqual(['Categoria', 'Entrate', 'Uscite', 'Netto']);
     expect(props.columns.map((c) => c.value(props.rows[0]))).toEqual(['Carburante', '0,00 €', '-400,00 €', '-400,00 €']);
@@ -659,7 +778,7 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact
           flightDate: '2026-07-01',
           flightType: 'TOURISM',
           isSolo: false,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: 'Campo Sud',
           arrivalAirfield: 'Campo Nord',
           takeoffAt: new Date('2026-07-01T09:00:00Z'),
@@ -678,7 +797,7 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact
           flightDate: '2026-07-02',
           flightType: 'SCHOOL',
           isSolo: true,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: null,
           arrivalAirfield: null,
           takeoffAt: null,
@@ -723,6 +842,9 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact
     const picColumn = props.columns.find((c) => c.header === 'PIC')!;
     expect(picColumn.value(row1)).toBe('Rossi Mario'); // non-SCHOOL -> the flight's own person
     expect(picColumn.value(row2)).toBe('Verdi Luigi'); // SCHOOL flown solo -> the allievo, even with an instructor on record
+    // Story 19.6 (AC 27): no Stato column anymore — the amount is the last one.
+    expect(props.columns.map((c) => c.header).at(-1)).toBe('Addebito');
+    expect(props.columns.map((c) => c.header)).not.toContain('Stato');
     expect(props.totals).toEqual([
       { label: 'Durata totale', value: '1:30' },
       { label: 'Totale addebiti', value: '150,00 €' },
@@ -740,7 +862,7 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact
           flightDate: '2026-07-03',
           flightType: 'SCHOOL',
           isSolo: false,
-          status: 'REGISTERED',
+          noCharge: false,
           departureAirfield: 'Campo Sud',
           arrivalAirfield: 'Campo Nord',
           takeoffAt: new Date('2026-07-03T09:00:00Z'),
@@ -798,7 +920,7 @@ describe('exportExpiriesPdf (story 10.2, AC 2/3)', () => {
 
     expect(buffer.toString('latin1').startsWith('%PDF-')).toBe(true);
     const props = lastPdfProps();
-    expect(props.title).toBe('Tutte le scadenze');
+    expect(props.title).toBe('Scadenze');
     expect(props.subtitle).toBeNull();
     expect(props.totals).toBeUndefined();
 
@@ -806,108 +928,6 @@ describe('exportExpiriesPdf (story 10.2, AC 2/3)', () => {
     const row = props.rows[0];
     expect(statusColumn.value(row)).toBe('Scaduta');
     expect(statusColumn.color!(row)).toBe('#9F2F2D');
-  });
-});
-
-describe('exportPprRequestsPdf (story 13.6, AC 4/5)', () => {
-  it('reuses listPprRequests with page:1/pageSize:PDF_EXPORT_MAX_ROWS, rejects EXPORT_TOO_LARGE, maps the same columns as the xlsx export (incl. a null pprNumber/fee), and has no totals', async () => {
-    listPprRequestsMock.mockResolvedValue({ items: [], total: PDF_EXPORT_MAX_ROWS + 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS });
-    await expect(exportPprRequestsPdf(ACTOR, { page: 1, pageSize: 20, status: 'PENDING' })).rejects.toMatchObject({ code: 'EXPORT_TOO_LARGE' });
-
-    listPprRequestsMock.mockReset();
-    listPprRequestsMock.mockResolvedValue({
-      total: 1,
-      page: 1,
-      pageSize: PDF_EXPORT_MAX_ROWS,
-      items: [
-        {
-          id: 'ppr_1',
-          status: 'PENDING',
-          firstName: 'Mario',
-          lastName: 'Rossi',
-          email: 'mario@example.com',
-          phone: '+39 333 0000000',
-          aircraftRegistration: 'I-ABCD',
-          aircraftType: 'Cessna 172',
-          origin: 'LIRN',
-          destination: 'LIRU',
-          eta: new Date('2026-07-01T09:00:00Z'),
-          etd: null,
-          personsOnBoard: 1,
-          notes: null,
-          pprNumber: null,
-          rejectionReason: null,
-          decidedAt: null,
-          decidedByUserId: null,
-          landingFeeCents: null,
-          closedAt: null,
-          createdAt: new Date('2026-06-30T09:00:00Z'),
-          createdByUserId: null,
-        },
-      ],
-    } as never);
-
-    const { buffer, filename } = await exportPprRequestsPdf(ACTOR, { page: 1, pageSize: 20, status: 'PENDING', locale: 'it' });
-
-    expect(buffer.toString('latin1').startsWith('%PDF-')).toBe(true);
-    expect(filename).toMatch(/^airmanager-ppr-requests-\d{4}-\d{2}-\d{2}\.pdf$/);
-    expect(listPprRequestsMock).toHaveBeenLastCalledWith(ACTOR, expect.objectContaining({ page: 1, pageSize: PDF_EXPORT_MAX_ROWS, status: 'PENDING' }));
-
-    const props = lastPdfProps();
-    expect(props.title).toBe('Registro movimenti');
-    expect(props.subtitle).toBeNull();
-    expect(props.totals).toBeUndefined();
-
-    const row = props.rows[0];
-    expect(props.columns.find((c) => c.header === 'Numero PPR')!.value(row)).toBe(''); // null pprNumber -> empty string, never null
-    expect(props.columns.find((c) => c.header === 'Richiedente · contatto')!.value(row)).toBe('Mario Rossi');
-    expect(props.columns.find((c) => c.header === 'Nominativo')!.value(row)).toBe('I-ABCD');
-    expect(props.columns.find((c) => c.header === 'ETA')!.value(row)).toBe('01/07/2026, 11:00'); // 09:00Z -> CEST +2
-    expect(props.columns.find((c) => c.header === 'Stato')!.value(row)).toBe('In attesa');
-    expect(props.columns.find((c) => c.header === 'Tassa')!.value(row)).toBe(''); // null landingFeeCents -> empty string, never null
-  });
-
-  it('formats a non-null landing fee and applies the period subtitle when both from/to are given', async () => {
-    listPprRequestsMock.mockResolvedValue({
-      total: 1,
-      page: 1,
-      pageSize: PDF_EXPORT_MAX_ROWS,
-      items: [
-        {
-          id: 'ppr_2',
-          status: 'COMPLETED',
-          firstName: 'Luigi',
-          lastName: 'Verdi',
-          email: null,
-          phone: '+39 333 1111111',
-          aircraftRegistration: 'I-EFGH',
-          aircraftType: 'TB-20',
-          origin: 'LIRN',
-          destination: 'LIRU',
-          eta: new Date('2026-07-02T09:00:00Z'),
-          etd: null,
-          personsOnBoard: 2,
-          notes: null,
-          pprNumber: 'PPR-2026-0001',
-          rejectionReason: null,
-          decidedAt: new Date('2026-07-02T08:00:00Z'),
-          decidedByUserId: 'user_1',
-          landingFeeCents: 4321,
-          closedAt: new Date('2026-07-02T09:30:00Z'),
-          createdAt: new Date('2026-07-01T09:00:00Z'),
-          createdByUserId: 'user_1',
-        },
-      ],
-    } as never);
-
-    const { buffer } = await exportPprRequestsPdf(ACTOR, { page: 1, pageSize: 20, status: 'COMPLETED', from: '2026-07-01', to: '2026-07-31', locale: 'it' });
-    expect(buffer.toString('latin1').startsWith('%PDF-')).toBe(true);
-
-    const props = lastPdfProps();
-    expect(props.subtitle).toBe('01/07/2026 – 31/07/2026');
-    const row = props.rows[0];
-    expect(props.columns.find((c) => c.header === 'Numero PPR')!.value(row)).toBe('PPR-2026-0001');
-    expect(props.columns.find((c) => c.header === 'Tassa')!.value(row)).toBe('43,21 €');
   });
 });
 
@@ -955,11 +975,44 @@ describe('exportBookingsPdf (story 13.7, AC 2)', () => {
     expect(props.totals).toBeUndefined();
 
     const row = props.rows[0];
-    expect(props.columns.find((c) => c.header === 'Aereo')!.value(row)).toBe('I-ABCD');
-    expect(props.columns.find((c) => c.header === 'Pilota')!.value(row)).toBe('Mario Rossi');
+    expect(props.columns.find((c) => c.header === 'Velivolo')!.value(row)).toBe('I-ABCD');
+    expect(props.columns.find((c) => c.header === 'Persona')!.value(row)).toBe('Mario Rossi');
     expect(props.columns.find((c) => c.header === 'Istruttore')!.value(row)).toBe(''); // null instructorName -> empty string, never null
     expect(props.columns.find((c) => c.header === 'Inizio')!.value(row)).toBe('01/07/2026, 11:00'); // 09:00Z -> CEST +2
-    expect(props.columns.find((c) => c.header === 'Stato')!.value(row)).toBe('Approvato');
+    expect(props.columns.find((c) => c.header === 'Stato')!.value(row)).toBe('Approvata');
+  });
+
+  it('a masked personName (story 14.5, ratifica R3: listBookings already nulled it for a pilot/student actor viewing someone else\'s booking) renders "Occupato", never a blank cell', async () => {
+    listBookingsMock.mockResolvedValue({
+      total: 1,
+      page: 1,
+      pageSize: PDF_EXPORT_MAX_ROWS,
+      items: [
+        {
+          id: 'booking_1',
+          aircraftId: 'ac_1',
+          aircraftRegistration: 'I-ABCD',
+          personId: 'someone_else',
+          personName: null,
+          instructorProfileId: null,
+          instructorName: null,
+          startsAt: new Date('2026-07-01T09:00:00Z'),
+          endsAt: new Date('2026-07-01T10:00:00Z'),
+          notes: null,
+          status: 'APPROVED',
+          cancelledAt: null,
+          forcedAt: null,
+          denyReason: null,
+          decidedAt: null,
+          createdAt: new Date('2026-06-30T09:00:00Z'),
+        },
+      ],
+    } as never);
+
+    await exportBookingsPdf(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
+
+    const row = lastPdfProps().rows[0];
+    expect(lastPdfProps().columns.find((c) => c.header === 'Persona')!.value(row)).toBe('Occupato');
   });
 
   it('open-ended subtitle (PO decision, review F7): from-only — the real UI case, since the booking list has no `to` filter — reads "Dal <date>"/"From <date>"', async () => {

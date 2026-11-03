@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createPersonSchema } from './people';
+import { createPersonSchema, updatePersonSchema } from './people';
 
 /**
  * `createPersonSchema` (story 13.1, AC 5) — pure-schema-shape checks for the
@@ -72,5 +72,16 @@ describe('createPersonSchema (story 13.1, AC 5 — one-step composite)', () => {
   it('activates an instructor profile with an empty object — no free-text field left (R-13.1-b)', () => {
     const parsed = createPersonSchema.safeParse({ ...base, profiles: { instructor: {} } });
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe('removed anagrafica field (story 19.2, AC 2)', () => {
+  // Zod strips unknown keys: a stale client still sending the field gets a
+  // 201/200, never a 422 — and the key never reaches the service.
+  it('createPersonSchema and updatePersonSchema drop a fiscalCode key instead of rejecting it', () => {
+    const created = createPersonSchema.parse({ firstName: 'Maria', lastName: 'Bianchi', fiscalCode: 'BNCMRA80A01L219K' });
+    const updated = updatePersonSchema.parse({ phone: '+39 333 1234567', fiscalCode: 'BNCMRA80A01L219K' });
+    expect(created).not.toHaveProperty('fiscalCode');
+    expect(updated).toEqual({ phone: '+39 333 1234567' });
   });
 });

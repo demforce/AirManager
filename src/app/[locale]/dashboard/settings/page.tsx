@@ -2,26 +2,9 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import {
-  getAirfieldBranding,
-  getAirfieldContactEmail,
-  getAirfieldIcao,
-  getMembershipFeeCents,
-  getMetarStation,
-  getPprLandingFeeDefaultCents,
-  getPprOperatingInstructions,
-  getSchedulingSettings,
-  getSmtpSettings,
-  getTreasurySettings,
-} from '@/server/services/app-settings.service';
-import { listCashCategories } from '@/server/services/cash.service';
-import { listExpiryTypes } from '@/server/services/expiry-types.service';
-import { CashCategoriesCard } from './cash-categories-card';
-import { ClubCard } from './club-card';
-import { RatingsCard, type RatingsCardLabels } from './ratings-card';
-import { SchedulingCard } from './scheduling-card';
-import { SmtpCard } from './smtp-card';
-import { TreasuryCard } from './treasury-card';
+import { getSettingsSnapshot } from '@/server/services/settings.service';
+import type { RatingsCardLabels } from './ratings-card';
+import { SettingsConsole } from './settings-console';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -30,20 +13,19 @@ type PageProps = {
 type Translator = Awaited<ReturnType<typeof getTranslations>>;
 
 /**
- * Builds the (identical-shape) labels for one `RatingsCard` instance from
- * its i18n namespace (story 13.1, AC 3) — `ns` is `'ratings'` (Abilitazioni)
- * or `'medical'` (Visite mediche), each a full sibling block in
- * `messages/{it,en}.json`'s `SettingsPage`. Shared so the two cards below
- * don't duplicate this ~35-line lookup twice.
+ * The (identical-shape) labels of one expiry-type card from its i18n
+ * namespace (story 13.1, AC 3) — `ns` is `'ratings'` or `'medical'`, each a
+ * sibling block of `SettingsPage`. Only the Ratings get the scope and the
+ * "Blocca prenotazioni e voli" wording (story 19.8, R-19-j: a medical visit
+ * has neither).
  */
-function expiryTypeCardLabels(t: Translator, ns: 'ratings' | 'medical'): RatingsCardLabels {
+function expiryTypeCardLabels(t: Translator, ns: 'ratings' | 'medical'): RatingsCardLabels & { errors: { nameTaken: string; inUse: string } } {
   return {
     title: t(`${ns}.title`),
     sub: t(`${ns}.sub`),
     addAction: t(`${ns}.addAction`),
     table: {
       name: t(`${ns}.table.name`),
-      scope: t(`${ns}.table.scope`),
       validity: t(`${ns}.table.validity`),
       status: t(`${ns}.table.status`),
       actions: t(`${ns}.table.actions`),
@@ -51,76 +33,60 @@ function expiryTypeCardLabels(t: Translator, ns: 'ratings' | 'medical'): Ratings
       monthsSuffix: t(`${ns}.table.monthsSuffix`),
       noExpiry: t(`${ns}.table.noExpiry`),
     },
-    scope: {
-      PILOTS: t(`${ns}.scope.PILOTS`),
-      STUDENTS: t(`${ns}.scope.STUDENTS`),
-      INSTRUCTORS: t(`${ns}.scope.INSTRUCTORS`),
-      ALL: t(`${ns}.scope.ALL`),
-    },
     status: { active: t(`${ns}.status.active`), inactive: t(`${ns}.status.inactive`) },
-    blocksBooking: { yes: t(`${ns}.blocksBooking.yes`) },
     actions: {
       edit: t(`${ns}.actions.edit`),
       deactivate: t(`${ns}.actions.deactivate`),
       reactivate: t(`${ns}.actions.reactivate`),
       delete: t(`${ns}.actions.delete`),
-      confirmDelete: t(`${ns}.actions.confirmDelete`),
-      confirmYes: t(`${ns}.actions.confirmYes`),
-      confirmCancel: t(`${ns}.actions.confirmCancel`),
+      restore: t('actions.restore'),
     },
+    rowState: { new: t('rowState.new'), changed: t('rowState.changed'), removed: t('rowState.removed') },
     form: {
       createTitle: t(`${ns}.form.createTitle`),
       editTitle: t(`${ns}.form.editTitle`),
       name: t(`${ns}.form.name`),
-      scope: t(`${ns}.form.scope`),
       validity: t(`${ns}.form.validity`),
       validityHint: t(`${ns}.form.validityHint`),
-      blocksBooking: t(`${ns}.form.blocksBooking`),
-      blocksBookingHint: t(`${ns}.form.blocksBookingHint`),
-      submitCreate: t(`${ns}.form.submitCreate`),
-      submitSave: t(`${ns}.form.submitSave`),
-      cancel: t(`${ns}.form.cancel`),
-      requiredField: t(`${ns}.form.requiredField`),
-      conflictError: t(`${ns}.form.conflictError`),
-      genericError: t(`${ns}.form.genericError`),
-    },
-    feedback: {
-      created: t(`${ns}.feedback.created`),
-      updated: t(`${ns}.feedback.updated`),
-      deactivated: t(`${ns}.feedback.deactivated`),
-      reactivated: t(`${ns}.feedback.reactivated`),
-      deleted: t(`${ns}.feedback.deleted`),
-      deleteInUseError: t(`${ns}.feedback.deleteInUseError`),
-      genericError: t(`${ns}.feedback.genericError`),
+      close: t(`${ns}.mobile.close`),
     },
     hint: t(`${ns}.hint`),
+    mobile: { openDetail: t(`${ns}.mobile.openDetail`), empty: t(`${ns}.mobile.empty`) },
+    ...(ns === 'ratings'
+      ? {
+          rating: {
+            scopeColumn: t('ratings.table.scope'),
+            scopeField: t('ratings.form.scope'),
+            scope: {
+              PILOTS: t('ratings.scope.PILOTS'),
+              STUDENTS: t('ratings.scope.STUDENTS'),
+              INSTRUCTORS: t('ratings.scope.INSTRUCTORS'),
+              ALL: t('ratings.scope.ALL'),
+            },
+            blocksBadge: t('ratings.blocksBooking.yes'),
+            blocksField: t('ratings.form.blocksBooking'),
+            blocksHint: t('ratings.form.blocksBookingHint'),
+            yes: t('ratings.mobile.yes'),
+            no: t('ratings.mobile.no'),
+          },
+        }
+      : {}),
+    errors: { nameTaken: t(`${ns}.form.conflictError`), inUse: t(`${ns}.feedback.deleteInUseError`) },
   };
 }
 
 /**
- * Impostazioni (epic 12, story 12.11, AC 2) — AirOps-native, complete
- * rewrite of the branding-only legacy page (`SettingsForm`'s name control
- * survives inside the new "Club" card, same `data-testid`s —
- * `pdf-exports.spec.ts` drives it; name-only since story 13.8, AC 4). Port
- * of
- * `docs/design-reference/airops/src/SettingsView.jsx`: Club (identity +
- * ICAO + contact email + METAR station + PPR default fee/instructions +
- * quota associativa default), Pianificazione (booking window), Email
- * (SMTP, settings-first mailer + real test send), Abilitazioni + Visite
- * mediche (story 13.1, AC 3, R-13.1-a — TWO instances of the SAME
- * `RatingsCard` component split by `ExpiryType.kind`, the expiry-type
- * catalogue moved here from the removed `/dashboard/expiries/types`),
- * Categorie di cassa (story 12.13 review, F2 — a minimal management UI for
- * the `cash-categories` API, whose own page, `/dashboard/finance/categories`,
- * was removed in 12.13 AC1 without one), Tesoreria (story Billing-2, AC 4 —
- * the opening cash/bank balances `getBillingSummary`'s treasury figures run
- * from; read here via a direct server-component call to
- * `getTreasurySettings`, no GET route registered — D5, this is the only
- * consumer).
+ * Impostazioni (epic 12, story 12.11; story 19.8 — ONE "Salva" for the whole
+ * page, R-19-m). Port of `docs/design-reference/airops/src/SettingsView.jsx`:
+ * Club, Quota associativa (R-19-k), Currency (R-19-i), Pianificazione, Email
+ * (SMTP), Tesoreria, and the three catalogues Ratings, Visite mediche (no
+ * scope, R-19-j) and Categorie di cassa — every section controlled by
+ * `SettingsConsole`'s draft and saved together, all or nothing, by
+ * `PATCH /api/v1/settings` (A17).
  *
- * `settings.manage` (ADMIN-only) gates the whole page — `hasPermission`
- * here only decides the redirect; every card's own write action re-checks
- * via its own service function (AD-5).
+ * `settings.manage` (ADMIN-only) gates the whole page — `hasPermission` here
+ * only decides the redirect; the snapshot read and the save re-check it in
+ * `settings.service.ts` (AD-5).
  */
 export default async function SettingsPage({ params }: PageProps) {
   const { locale } = await params;
@@ -136,28 +102,7 @@ export default async function SettingsPage({ params }: PageProps) {
     return;
   }
 
-  const [branding, icao, contactEmail, metarStation, landingFeeCents, operatingInstructions, membershipFeeCents, schedulingSettings, smtpSettings, treasurySettings, expiryTypes, cashCategories] =
-    await Promise.all([
-      getAirfieldBranding(),
-      getAirfieldIcao(),
-      getAirfieldContactEmail(),
-      getMetarStation(),
-      getPprLandingFeeDefaultCents(actor),
-      getPprOperatingInstructions(actor),
-      getMembershipFeeCents(actor),
-      getSchedulingSettings(),
-      getSmtpSettings(actor),
-      getTreasurySettings(actor),
-      listExpiryTypes(actor, { includeInactive: true }),
-      listCashCategories(actor, { includeInactive: true }),
-    ]);
-
-  // Story 13.1 (AC 3, R-13.1-a): ONE fetch, split client-side by `kind` — the
-  // "Abilitazioni" card shows only RATING, the new "Visite mediche" card
-  // only MEDICAL (the service also accepts a `kind` query filter, AC 2, for
-  // consumers that want the DB to do the split instead).
-  const ratingTypes = expiryTypes.filter((expiryType) => expiryType.kind === 'RATING');
-  const medicalTypes = expiryTypes.filter((expiryType) => expiryType.kind === 'MEDICAL');
+  const snapshot = await getSettingsSnapshot(actor);
 
   const t = await getTranslations('SettingsPage');
 
@@ -170,175 +115,145 @@ export default async function SettingsPage({ params }: PageProps) {
         </div>
       </div>
 
-      <ClubCard
-        branding={branding}
-        icao={icao}
-        contactEmail={contactEmail}
-        // `getMetarStation` already resolves the ICAO fallback (AC 1) — when
-        // no explicit override is stored, its return value equals `icao`,
-        // so the input starts EMPTY (icao shown only as a placeholder,
-        // never as a value the admin didn't actually set) rather than
-        // looking like a redundant override.
-        metarStation={metarStation === icao ? '' : metarStation}
-        landingFeeCents={landingFeeCents}
-        operatingInstructions={operatingInstructions}
-        membershipFeeCents={membershipFeeCents}
+      <SettingsConsole
+        snapshot={snapshot}
         labels={{
-          title: t('club.title'),
-          sub: t('club.sub'),
-          identityHeading: t('club.identityHeading'),
-          settingsForm: {
+          save: t('save'),
+          saved: t('saved'),
+          saveBar: {
+            clean: t('saveBar.clean'),
+            // `t.raw`: `{sections}` is filled client-side from the live draft —
+            // `t()` would try to interpolate it here and throw `FORMATTING_ERROR`.
+            dirty: t.raw('saveBar.dirty') as string,
+            saving: t('saveBar.saving'),
+          },
+          sections: {
+            club: t('club.title'),
+            membership: t('membership.title'),
+            currency: t('currency.title'),
+            scheduling: t('scheduling.title'),
+            smtp: t('smtp.title'),
+            treasury: t('treasury.title'),
+            ratings: t('ratings.title'),
+            medical: t('medical.title'),
+            cashCategories: t('cashCategories.title'),
+          },
+          errors: {
+            required: t('errors.required'),
+            invalidEmail: t('club.invalidEmail'),
+            invalidRange: t('scheduling.invalidRange'),
+            invalidHost: t('smtp.invalidHost'),
+            invalidAmount: t('errors.invalidAmount'),
+            requiredDate: t('treasury.requiredDate'),
+            invalidValue: t('errors.invalidValue'),
+            // `t.raw`: `{min}`/`{max}` come from the rule that failed, client-side.
+            integerRange: t.raw('errors.integerRange') as string,
+            duplicateName: t('errors.duplicateName'),
+            duplicateNameOtherList: t('errors.duplicateNameOtherList'),
+            nameReserved: t('errors.nameReserved'),
+            invalidItem: t('errors.invalidItem'),
+            stale: t('errors.stale'),
+            systemCategory: t('errors.systemCategory'),
+            checkFields: t('errors.checkFields'),
+            forbidden: t('errors.forbidden'),
+            generic: t('errors.generic'),
+          },
+          club: {
+            title: t('club.title'),
+            sub: t('club.sub'),
             nameLabel: t('club.form.nameLabel'),
-            save: t('club.form.save'),
-            saved: t('club.form.saved'),
-            error: t('club.form.error'),
+            icao: t('club.icao'),
+            contactEmail: t('club.contactEmail'),
+            contactEmailHint: t('club.contactEmailHint'),
+            metarStation: t('club.metarStation'),
+            metarStationHint: t('club.metarStationHint'),
           },
-          icao: t('club.icao'),
-          contactEmail: t('club.contactEmail'),
-          metarStation: t('club.metarStation'),
-          metarStationHint: t('club.metarStationHint'),
-          landingFee: t('club.landingFee'),
-          landingFeeHint: t('club.landingFeeHint'),
-          operatingInstructionsIt: t('club.operatingInstructionsIt'),
-          operatingInstructionsEn: t('club.operatingInstructionsEn'),
-          membershipFee: t('club.membershipFee'),
-          membershipFeeHint: t('club.membershipFeeHint'),
-          save: t('club.save'),
-          saved: t('club.saved'),
-          error: t('club.error'),
-        }}
-      />
-
-      <SchedulingCard
-        initial={schedulingSettings}
-        labels={{
-          title: t('scheduling.title'),
-          sub: t('scheduling.sub'),
-          openTime: t('scheduling.openTime'),
-          closeTime: t('scheduling.closeTime'),
-          minSlotMinutes: t('scheduling.minSlotMinutes'),
-          turnaroundMinutes: t('scheduling.turnaroundMinutes'),
-          maxAdvanceDays: t('scheduling.maxAdvanceDays'),
-          minutesSuffix: t('scheduling.minutesSuffix'),
-          daysSuffix: t('scheduling.daysSuffix'),
-          // `t.raw` (not `t`): the message carries `{open}`/`{close}`/`{slot}`/`{days}`
-          // ICU placeholders interpolated CLIENT-SIDE from live form state
-          // (`scheduling-card.tsx`'s own `.replace(...)` calls) — `t()` would
-          // try to interpolate them immediately server-side and throw
-          // `FORMATTING_ERROR` since no values are provided here.
-          hint: t.raw('scheduling.hint') as string,
-          save: t('scheduling.save'),
-          saved: t('scheduling.saved'),
-          error: t('scheduling.error'),
-        }}
-      />
-
-      <SmtpCard
-        initial={smtpSettings}
-        labels={{
-          title: t('smtp.title'),
-          sub: t('smtp.sub'),
-          testEmail: t('smtp.testEmail'),
-          testEmailSent: t('smtp.testEmailSent'),
-          testEmailFailed: t('smtp.testEmailFailed'),
-          testEmailNoContact: t('smtp.testEmailNoContact'),
-          host: t('smtp.host'),
-          port: t('smtp.port'),
-          security: t('smtp.security'),
-          securityOptions: { NONE: t('smtp.securityOptions.NONE'), STARTTLS: t('smtp.securityOptions.STARTTLS'), SSL_TLS: t('smtp.securityOptions.SSL_TLS') },
-          from: t('smtp.from'),
-          user: t('smtp.user'),
-          pass: t('smtp.pass'),
-          passHint: t('smtp.passHint'),
-          passConfigured: t('smtp.passConfigured'),
-          save: t('smtp.save'),
-          saved: t('smtp.saved'),
-          error: t('smtp.error'),
-        }}
-      />
-
-      <TreasuryCard
-        openingCashCents={treasurySettings.openingCashCents}
-        openingBankCents={treasurySettings.openingBankCents}
-        openingDate={treasurySettings.openingDate}
-        labels={{
-          title: t('treasury.title'),
-          sub: t('treasury.sub'),
-          openingCash: t('treasury.openingCash'),
-          openingBank: t('treasury.openingBank'),
-          openingDate: t('treasury.openingDate'),
-          hint: t('treasury.hint'),
-          save: t('treasury.save'),
-          saved: t('treasury.saved'),
-          error: t('treasury.error'),
-          invalid: t('treasury.invalid'),
-        }}
-      />
-
-      <RatingsCard expiryTypes={ratingTypes} labels={expiryTypeCardLabels(t, 'ratings')} />
-
-      <RatingsCard
-        expiryTypes={medicalTypes}
-        kind="MEDICAL"
-        labels={expiryTypeCardLabels(t, 'medical')}
-        testIds={{
-          card: 'medical-settings-card',
-          addButton: 'medical-add-button',
-          feedback: 'medical-feedback',
-          row: 'medical-row',
-          editButton: 'medical-edit-button',
-          form: 'medical-form',
-          nameInput: 'medical-name-input',
-          scopeSelect: 'medical-scope-select',
-          validityInput: 'medical-validity-input',
-          formSubmit: 'medical-form-submit',
-          formError: 'medical-form-error',
-        }}
-      />
-
-      <CashCategoriesCard
-        categories={cashCategories}
-        labels={{
-          title: t('cashCategories.title'),
-          sub: t('cashCategories.sub'),
-          addAction: t('cashCategories.addAction'),
-          table: {
-            name: t('cashCategories.table.name'),
-            movements: t('cashCategories.table.movements'),
-            status: t('cashCategories.table.status'),
-            actions: t('cashCategories.table.actions'),
-            empty: t('cashCategories.table.empty'),
+          membership: {
+            title: t('membership.title'),
+            sub: t('membership.sub'),
+            fee: t('membership.fee'),
+            feeHint: t('membership.feeHint'),
           },
-          status: { active: t('cashCategories.status.active'), inactive: t('cashCategories.status.inactive') },
-          systemBadge: t('cashCategories.systemBadge'),
-          actions: {
-            rename: t('cashCategories.actions.rename'),
-            deactivate: t('cashCategories.actions.deactivate'),
-            reactivate: t('cashCategories.actions.reactivate'),
-            delete: t('cashCategories.actions.delete'),
-            confirmDelete: t('cashCategories.actions.confirmDelete'),
-            confirmYes: t('cashCategories.actions.confirmYes'),
-            confirmCancel: t('cashCategories.actions.confirmCancel'),
+          currency: {
+            title: t('currency.title'),
+            sub: t('currency.sub'),
+            minFlights: t('currency.minFlights'),
+            windowDays: t('currency.windowDays'),
+            flightsSuffix: t('currency.flightsSuffix'),
+            daysSuffix: t('currency.daysSuffix'),
+            hint: t('currency.hint'),
           },
-          form: {
-            createTitle: t('cashCategories.form.createTitle'),
-            renameTitle: t('cashCategories.form.renameTitle'),
-            name: t('cashCategories.form.name'),
-            submitCreate: t('cashCategories.form.submitCreate'),
-            submitRename: t('cashCategories.form.submitRename'),
-            cancel: t('cashCategories.form.cancel'),
-            requiredField: t('cashCategories.form.requiredField'),
-            conflictError: t('cashCategories.form.conflictError'),
-            genericError: t('cashCategories.form.genericError'),
+          scheduling: {
+            title: t('scheduling.title'),
+            sub: t('scheduling.sub'),
+            openTime: t('scheduling.openTime'),
+            closeTime: t('scheduling.closeTime'),
+            minSlotMinutes: t('scheduling.minSlotMinutes'),
+            turnaroundMinutes: t('scheduling.turnaroundMinutes'),
+            maxAdvanceDays: t('scheduling.maxAdvanceDays'),
+            minutesSuffix: t('scheduling.minutesSuffix'),
+            daysSuffix: t('scheduling.daysSuffix'),
           },
-          feedback: {
-            created: t('cashCategories.feedback.created'),
-            renamed: t('cashCategories.feedback.renamed'),
-            deactivated: t('cashCategories.feedback.deactivated'),
-            reactivated: t('cashCategories.feedback.reactivated'),
-            deleted: t('cashCategories.feedback.deleted'),
-            deleteInUseError: t('cashCategories.feedback.deleteInUseError'),
-            genericError: t('cashCategories.feedback.genericError'),
+          smtp: {
+            title: t('smtp.title'),
+            sub: t('smtp.sub'),
+            testEmail: t('smtp.testEmail'),
+            testEmailSent: t('smtp.testEmailSent'),
+            testEmailFailed: t('smtp.testEmailFailed'),
+            testEmailNoContact: t('smtp.testEmailNoContact'),
+            testEmailNeedsSave: t('smtp.testEmailNeedsSave'),
+            host: t('smtp.host'),
+            port: t('smtp.port'),
+            security: t('smtp.security'),
+            securityOptions: { NONE: t('smtp.securityOptions.NONE'), STARTTLS: t('smtp.securityOptions.STARTTLS'), SSL_TLS: t('smtp.securityOptions.SSL_TLS') },
+            from: t('smtp.from'),
+            user: t('smtp.user'),
+            pass: t('smtp.pass'),
+            passHint: t('smtp.passHint'),
+            passConfigured: t('smtp.passConfigured'),
+          },
+          treasury: {
+            title: t('treasury.title'),
+            sub: t('treasury.sub'),
+            openingCash: t('treasury.openingCash'),
+            openingBank: t('treasury.openingBank'),
+            openingDate: t('treasury.openingDate'),
+            hint: t('treasury.hint'),
+          },
+          ratings: expiryTypeCardLabels(t, 'ratings'),
+          medical: expiryTypeCardLabels(t, 'medical'),
+          cashCategories: {
+            title: t('cashCategories.title'),
+            sub: t('cashCategories.sub'),
+            addAction: t('cashCategories.addAction'),
+            table: {
+              name: t('cashCategories.table.name'),
+              movements: t('cashCategories.table.movements'),
+              status: t('cashCategories.table.status'),
+              actions: t('cashCategories.table.actions'),
+              empty: t('cashCategories.table.empty'),
+            },
+            status: { active: t('cashCategories.status.active'), inactive: t('cashCategories.status.inactive') },
+            systemBadge: t('cashCategories.systemBadge'),
+            actions: {
+              rename: t('cashCategories.actions.rename'),
+              deactivate: t('cashCategories.actions.deactivate'),
+              reactivate: t('cashCategories.actions.reactivate'),
+              delete: t('cashCategories.actions.delete'),
+              restore: t('actions.restore'),
+            },
+            rowState: { new: t('rowState.new'), changed: t('rowState.changed'), removed: t('rowState.removed') },
+            form: {
+              createTitle: t('cashCategories.form.createTitle'),
+              renameTitle: t('cashCategories.form.renameTitle'),
+              name: t('cashCategories.form.name'),
+              close: t('cashCategories.mobile.close'),
+            },
+            mobile: {
+              openDetail: t('cashCategories.mobile.openDetail'),
+              empty: t('cashCategories.mobile.empty'),
+            },
+            errors: { nameTaken: t('cashCategories.form.conflictError'), inUse: t('cashCategories.feedback.deleteInUseError') },
           },
         }}
       />

@@ -2,13 +2,13 @@
 //
 // Deliberately SEPARATE from `prisma/seed.ts` (the e2e fixture base wired to
 // `prisma db seed`): this script populates a realistic aviosuperficie —
-// 1 admin + 10 members (staff, 2 instructors, 6 pilots, 1 student), 3 aircraft
-// with rate history, expiries, top-ups, ~24 registered flights, upcoming
-// bookings in every workflow state, and PPR traffic.
+// 2 admin (owner + operations) + 9 members (2 instructors, 6 pilots, 1
+// student), 3 aircraft with rate history, expiries, top-ups, ~24 registered
+// flights and upcoming bookings in every workflow state.
 //
 // Domain data goes through the REAL services (registerFlight, recordTopUp,
-// createBooking, ...) so every invariant holds (charges, hour meters, balances,
-// PPR numbering); only catalogue/anagrafica rows are raw creates, mirroring
+// createBooking, ...) so every invariant holds (charges, flight hours,
+// balances); only catalogue/anagrafica rows are raw creates, mirroring
 // `prisma/seed.ts`'s own idiom.
 //
 // Assumes a FRESHLY migrated, EMPTY domain DB (guard below) and the machine's
@@ -21,7 +21,6 @@ import type { Actor } from '../src/server/auth/rbac';
 import { recordTopUp } from '../src/server/services/accounts.service';
 import { registerFlight } from '../src/server/services/flights.service';
 import { createBooking, transitionBooking } from '../src/server/services/bookings.service';
-import { createManualPprRequest, completePprRequest } from '../src/server/services/ppr.service';
 import { recordPayout } from '../src/server/services/instructor-compensation.service';
 import { setSchedulingSettings, setMetarStation, setMembershipFeeCents } from '../src/server/services/app-settings.service';
 import type { Role, PaymentMethod, FlightType } from '../src/generated/prisma/client';
@@ -59,7 +58,7 @@ type DemoPerson = {
 };
 
 const DEMO_PEOPLE: DemoPerson[] = [
-  { firstName: 'Giulia', lastName: 'Ferraro', email: 'giulia.ferraro@libero.it', phone: '+39 338 214 7765', role: 'STAFF' },
+  { firstName: 'Giulia', lastName: 'Ferraro', email: 'giulia.ferraro@libero.it', phone: '+39 338 214 7765', role: 'ADMIN' },
   {
     firstName: 'Luca', lastName: 'Bianchi', email: 'luca.bianchi.fi@gmail.com', phone: '+39 347 660 1183',
     address: 'Via delle Colline 14, Pontedera (PI)', role: 'INSTRUCTOR',
@@ -103,48 +102,44 @@ const DEMO_PEOPLE: DemoPerson[] = [
 
 // Story Billing-1 (AC 4): "Compensi istruttori" — the instructor payout's
 // automatic money twin (`instructor-compensation.service.ts#recordPayout`).
-const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
+const CASH_CATEGORY_NAMES = ['Ricariche', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
 
 // Story 13.1 (AC 1): `kind` splits RATING from MEDICAL — the person editor
 // renders them as two separate chip groups, so a medical typed as a rating
-// shows up among the ratings. Mirrors `prisma/seed.ts`'s own catalogue;
-// `kind` defaults to `RATING` in the schema, hence only medicals set it.
+// shows up among the ratings. Mirrors `prisma/seed.ts`'s own catalogue
+// (story 19.7a: visits `ALL`, no "Licenza", the fee is `MEMBERSHIP`);
+// `kind` defaults to `RATING` in the schema, hence only the others set it.
 const STANDARD_EXPIRY_TYPES: Array<{
   name: string;
   scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
   blocksBooking: boolean;
   validityMonths?: number;
-  kind?: 'RATING' | 'MEDICAL';
+  kind?: 'RATING' | 'MEDICAL' | 'MEMBERSHIP';
 }> = [
-  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Licenza', scope: 'PILOTS', blocksBooking: true },
+  { name: 'Visita medica classe 1', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica classe 2', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica LAPL', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
   { name: 'Rating SEP', scope: 'PILOTS', blocksBooking: false },
   { name: 'Inglese ICAO', scope: 'PILOTS', blocksBooking: false },
-  { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12 },
+  { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12, kind: 'MEMBERSHIP' },
 ];
 
 // --- fleet ------------------------------------------------------------------
 
+// Story 19.3 (D-9): two billed prices per rate; the student one is the pilot
+// one minus 7,00 €/h, demo data only, so the two columns visibly differ.
 const AIRCRAFT = [
   {
     registration: 'I-B412', type: 'Ultraleggero 3 assi', model: 'Tecnam P92 Echo Super',
-    hourMeterMinutes: 1847 * 60 + 30, seats: 2, fuelType: 'Mogas',
-    notes: 'Revisione 100h eseguita a giugno; prossima prevista a 1900h.',
-    rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 12500 }, { validFrom: '2026-01-01', priceCentsPerHour: 13200, dryHourlyRateCents: 10500 }],
+    rates: [{ validFrom: '2025-06-01', studentPriceCents: 11800, pilotPriceCents: 12500 }, { validFrom: '2026-01-01', studentPriceCents: 12500, pilotPriceCents: 13200 }],
   },
   {
     registration: 'I-A661', type: 'Ultraleggero 3 assi', model: 'Tecnam P2002 Sierra',
-    hourMeterMinutes: 932 * 60 + 10, seats: 2, fuelType: 'Mogas',
-    notes: 'Radio nuova (COMM2) installata a maggio.',
-    rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 13000 }, { validFrom: '2026-01-01', priceCentsPerHour: 13800, dryHourlyRateCents: 11000 }],
+    rates: [{ validFrom: '2025-06-01', studentPriceCents: 12300, pilotPriceCents: 13000 }, { validFrom: '2026-01-01', studentPriceCents: 13100, pilotPriceCents: 13800 }],
   },
   {
     registration: 'I-PDVB', type: 'Aereo certificato', model: 'Piper PA-28-161 Warrior II',
-    hourMeterMinutes: 4210 * 60 + 45, seats: 4, fuelType: 'AVGAS 100LL',
-    notes: 'Di proprietà di un socio, in gestione al club con accordo di esercenza.',
-    rates: [{ validFrom: '2025-06-01', priceCentsPerHour: 17900 }, { validFrom: '2026-01-01', priceCentsPerHour: 18900, dryHourlyRateCents: 15200 }],
+    rates: [{ validFrom: '2025-06-01', studentPriceCents: 17200, pilotPriceCents: 17900 }, { validFrom: '2026-01-01', studentPriceCents: 18200, pilotPriceCents: 18900 }],
   },
 ];
 
@@ -161,7 +156,13 @@ const DESTINATIONS = {
 
 type TopUpPlan = { email: string; daysAgo: number; amountCents: number; method: PaymentMethod };
 
+// The two `daysAgo: 3` top-ups (Chiara, Davide): story 19.10 checks the balance
+// of a pilot's OWN booking request, and their two requests below are born PENDING
+// only if it covers them.
 const TOP_UPS: TopUpPlan[] = [
+  // Story 19.11 (D-16): one top-up OLDER than the statement's default 12 months,
+  // so the demo shows a "Saldo iniziale" other than 0,00 € on Marco's statement.
+  { email: 'marco.desantis@gmail.com', daysAgo: 400, amountCents: 25000, method: 'BANK_TRANSFER' },
   { email: 'marco.desantis@gmail.com', daysAgo: 68, amountCents: 30000, method: 'BANK_TRANSFER' },
   { email: 'marco.desantis@gmail.com', daysAgo: 35, amountCents: 30000, method: 'BANK_TRANSFER' },
   { email: 'marco.desantis@gmail.com', daysAgo: 10, amountCents: 40000, method: 'POS' },
@@ -172,8 +173,10 @@ const TOP_UPS: TopUpPlan[] = [
   { email: 'stefano.colombo61@libero.it', daysAgo: 74, amountCents: 20000, method: 'CASH' },
   { email: 'stefano.colombo61@libero.it', daysAgo: 30, amountCents: 20000, method: 'CASH' },
   { email: 'davide.marchetti@gmail.com', daysAgo: 40, amountCents: 50000, method: 'BANK_TRANSFER' },
+  { email: 'davide.marchetti@gmail.com', daysAgo: 3, amountCents: 50000, method: 'BANK_TRANSFER' },
   { email: 'chiara.esposito88@gmail.com', daysAgo: 55, amountCents: 30000, method: 'POS' },
   { email: 'chiara.esposito88@gmail.com', daysAgo: 12, amountCents: 30000, method: 'BANK_TRANSFER' },
+  { email: 'chiara.esposito88@gmail.com', daysAgo: 3, amountCents: 20000, method: 'POS' },
   { email: 'matteo.fontana01@gmail.com', daysAgo: 32, amountCents: 30000, method: 'BANK_TRANSFER' },
 ];
 
@@ -187,28 +190,31 @@ type FlightPlan = {
   instructorEmail?: string;
   flightType?: FlightType;
   touchAndGo?: number; // takeoffs/landings count
+  noCharge?: boolean; // story 19.6: "senza addebito" — charge at 0, instructor still paid
 };
 
-// Chronological (oldest first) so hour meters and balances evolve sensibly.
+// Chronological (oldest first) so balances evolve sensibly.
 const FLIGHTS: FlightPlan[] = [
   { email: 'stefano.colombo61@libero.it', reg: 'I-A661', daysAgo: 70, takeoffHour: 10, durationMin: 50 },
+  // Story 19.7a (AC 2): Stefano's two later flights sit 64-66 days back, so the
+  // demo shows a currency ending within 30 days (X=1, Y=90 -> 26 days left).
+  { email: 'stefano.colombo61@libero.it', reg: 'I-B412', daysAgo: 66, takeoffHour: 15, durationMin: 65 },
+  { email: 'stefano.colombo61@libero.it', reg: 'I-A661', daysAgo: 64, takeoffHour: 10, durationMin: 40 },
   { email: 'marco.desantis@gmail.com', reg: 'I-B412', daysAgo: 62, takeoffHour: 9, durationMin: 55, touchAndGo: 4 },
   { email: 'ale.greco77@gmail.com', reg: 'I-PDVB', daysAgo: 55, takeoffHour: 14, durationMin: 110, destination: DESTINATIONS.LIDR },
   { email: 'chiara.esposito88@gmail.com', reg: 'I-A661', daysAgo: 51, takeoffHour: 16, durationMin: 45 },
   { email: 'francesca.romano@tiscali.it', reg: 'I-B412', daysAgo: 48, takeoffHour: 10, durationMin: 75 },
-  { email: 'stefano.colombo61@libero.it', reg: 'I-B412', daysAgo: 44, takeoffHour: 15, durationMin: 65 },
   { email: 'marco.desantis@gmail.com', reg: 'I-B412', daysAgo: 41, takeoffHour: 9, durationMin: 80, destination: DESTINATIONS.LIQL },
   { email: 'davide.marchetti@gmail.com', reg: 'I-PDVB', daysAgo: 38, takeoffHour: 11, durationMin: 85, destination: DESTINATIONS.LIQL },
   { email: 'ale.greco77@gmail.com', reg: 'I-A661', daysAgo: 33, takeoffHour: 17, durationMin: 60 },
-  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 30, takeoffHour: 9, durationMin: 40, instructorEmail: 'luca.bianchi.fi@gmail.com', touchAndGo: 5 },
+  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 30, takeoffHour: 9, durationMin: 40, instructorEmail: 'luca.bianchi.fi@gmail.com', flightType: 'SCHOOL', touchAndGo: 5 },
   { email: 'francesca.romano@tiscali.it', reg: 'I-B412', daysAgo: 27, takeoffHour: 10, durationMin: 90, destination: DESTINATIONS.LIDP },
   { email: 'chiara.esposito88@gmail.com', reg: 'I-B412', daysAgo: 24, takeoffHour: 15, durationMin: 60, instructorEmail: 'luca.bianchi.fi@gmail.com' },
   { email: 'marco.desantis@gmail.com', reg: 'I-A661', daysAgo: 20, takeoffHour: 18, durationMin: 65 },
-  { email: 'stefano.colombo61@libero.it', reg: 'I-A661', daysAgo: 18, takeoffHour: 10, durationMin: 40 },
   { email: 'davide.marchetti@gmail.com', reg: 'I-B412', daysAgo: 16, takeoffHour: 16, durationMin: 70 },
   { email: 'francesca.romano@tiscali.it', reg: 'I-A661', daysAgo: 13, takeoffHour: 9, durationMin: 55 },
   { email: 'ale.greco77@gmail.com', reg: 'I-A661', daysAgo: 12, takeoffHour: 14, durationMin: 70, destination: DESTINATIONS.LILQ },
-  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 10, takeoffHour: 9, durationMin: 45, instructorEmail: 'paola.rinaldi@outlook.it', touchAndGo: 6 },
+  { email: 'matteo.fontana01@gmail.com', reg: 'I-B412', daysAgo: 10, takeoffHour: 9, durationMin: 45, instructorEmail: 'paola.rinaldi@outlook.it', flightType: 'SCHOOL', touchAndGo: 6, noCharge: true },
   { email: 'marco.desantis@gmail.com', reg: 'I-B412', daysAgo: 9, takeoffHour: 11, durationMin: 50 },
   { email: 'chiara.esposito88@gmail.com', reg: 'I-A661', daysAgo: 8, takeoffHour: 10, durationMin: 85, destination: DESTINATIONS.LIQS },
   { email: 'francesca.romano@tiscali.it', reg: 'I-B412', daysAgo: 6, takeoffHour: 17, durationMin: 60 },
@@ -225,17 +231,11 @@ const EXPIRIES: ExpiryPlan[] = [
   { email: 'ale.greco77@gmail.com', type: 'Visita medica classe 2', expiresAt: '2026-11-30' },
   { email: 'francesca.romano@tiscali.it', type: 'Visita medica classe 2', expiresAt: '2027-01-22' },
   { email: 'stefano.colombo61@libero.it', type: 'Visita medica classe 2', expiresAt: dateOnly(-10) },
-  { email: 'davide.marchetti@gmail.com', type: 'Visita medica classe 2', expiresAt: '2026-10-05' },
+  { email: 'davide.marchetti@gmail.com', type: 'Visita medica classe 2', expiresAt: dateOnly(45) },
   { email: 'chiara.esposito88@gmail.com', type: 'Visita medica classe 2', expiresAt: dateOnly(12) },
   { email: 'luca.bianchi.fi@gmail.com', type: 'Visita medica classe 1', expiresAt: '2027-02-10' },
-  { email: 'paola.rinaldi@outlook.it', type: 'Visita medica classe 1', expiresAt: '2026-09-18' },
+  { email: 'paola.rinaldi@outlook.it', type: 'Visita medica classe 1', expiresAt: dateOnly(20) },
   { email: 'matteo.fontana01@gmail.com', type: 'Visita medica LAPL', expiresAt: '2026-12-15' },
-  { email: 'marco.desantis@gmail.com', type: 'Licenza', expiresAt: '2027-05-20' },
-  { email: 'ale.greco77@gmail.com', type: 'Licenza', expiresAt: '2027-09-12' },
-  { email: 'francesca.romano@tiscali.it', type: 'Licenza', expiresAt: '2028-04-08' },
-  { email: 'stefano.colombo61@libero.it', type: 'Licenza', expiresAt: '2026-12-30' },
-  { email: 'davide.marchetti@gmail.com', type: 'Licenza', expiresAt: '2027-10-17' },
-  { email: 'chiara.esposito88@gmail.com', type: 'Licenza', expiresAt: '2029-03-25' },
   { email: 'marco.desantis@gmail.com', type: 'Rating SEP', expiresAt: '2027-05-31' },
   { email: 'ale.greco77@gmail.com', type: 'Rating SEP', expiresAt: '2026-09-30' },
   { email: 'francesca.romano@tiscali.it', type: 'Rating SEP', expiresAt: '2028-02-28' },
@@ -399,8 +399,8 @@ async function main(): Promise<void> {
       await prisma.aircraftRate.create({
         data: {
           aircraftId: created.id,
-          priceCentsPerHour: rate.priceCentsPerHour,
-          dryHourlyRateCents: 'dryHourlyRateCents' in rate ? rate.dryHourlyRateCents : null,
+          studentPriceCents: rate.studentPriceCents,
+          pilotPriceCents: rate.pilotPriceCents,
           validFrom: new Date(rate.validFrom),
           actorUserId: admin.userId,
         },
@@ -433,7 +433,11 @@ async function main(): Promise<void> {
   }
   console.log(`Seed: ${TOP_UPS.length} top-ups recorded.`);
 
-  // Flights (through the service: charges, hour meters, balances all real).
+  // Flights (through the service: charges and balances all real). `force`
+  // (story 19.9, D-15): demo history, not operations — without it the first
+  // solo of every demo pilot would fail its currency by construction, and a
+  // balance or fee shortfall would refuse the rest. A derogated flight only
+  // gets the silent stamp, never shown.
   for (const f of FLIGHTS) {
     const takeoffAt = daysFromNow(-f.daysAgo, f.takeoffHour);
     const landingAt = new Date(takeoffAt.getTime() + f.durationMin * 60_000);
@@ -447,9 +451,10 @@ async function main(): Promise<void> {
       landingAt: landingAt.toISOString(),
       flightType: f.flightType ?? 'TOURISM',
       isSolo: false,
+      noCharge: f.noCharge ?? false,
       takeoffs: f.touchAndGo ?? 1,
       landings: f.touchAndGo ?? 1,
-      notes: f.destination ? 'Andata e ritorno in giornata.' : null,
+      force: true,
     });
   }
   console.log(`Seed: ${FLIGHTS.length} flights registered.`);
@@ -473,12 +478,17 @@ async function main(): Promise<void> {
     return { userId: userIdByEmail.get(email)!, personId: personIdByEmail.get(email)!, roles: ['PILOT'] };
   }
 
+  // `force` on the admin's bookings (story 19.10's deroga, the same idiom as
+  // the demo flights above, 19.9 D-15): demo data, not operations — without
+  // it a demo pilot whose flights ate the balance fails BALANCE by construction.
+  // A pilot's own request has no deroga and goes through the checks.
   async function book(actor: Actor, email: string, reg: string, days: number, fromH: number, fromM: number, toH: number, toM: number): Promise<string> {
     const result = await createBooking(actor, {
       aircraftId: aircraftIdByReg.get(reg)!,
       personId: personIdByEmail.get(email)!,
       startsAt: daysFromNow(days, fromH, fromM).toISOString(),
       endsAt: daysFromNow(days, toH, toM).toISOString(),
+      ...(actor === admin ? { force: true } : {}),
     });
     return result.booking.id;
   }
@@ -491,28 +501,6 @@ async function main(): Promise<void> {
   const denied = await book(pilotActor('davide.marchetti@gmail.com'), 'davide.marchetti@gmail.com', 'I-B412', 4, 16, 0, 17, 30);
   await transitionBooking(admin, denied, { to: 'DENIED', reason: 'Manutenzione programmata: sostituzione elica, velivolo fermo tutto il giorno.' });
   console.log('Seed: 6 bookings ready (3 approved, 2 pending, 1 denied).');
-
-  // PPR traffic — one completed (with landing fee), one approved, one pending.
-  const completedPpr = await createManualPprRequest(admin, {
-    firstName: 'Andreas', lastName: 'Keller', email: 'a.keller@web.de', phone: '+49 171 5502211',
-    aircraftRegistration: 'D-EKPT', aircraftType: 'Cessna 172S', origin: 'Bolzano (LIPB)', destination: AIRFIELD_NAME,
-    eta: daysFromNow(-1, 11, 20).toISOString(), etd: daysFromNow(-1, 16, 0).toISOString(),
-    personsOnBoard: 2, notes: 'Sosta pranzo e rifornimento.', locale: 'en', approveImmediately: true,
-  }, { approveImmediately: true });
-  await completePprRequest(admin, completedPpr.id, { landingFeeCents: 2500, paymentMethod: 'CASH' });
-  await createManualPprRequest(admin, {
-    firstName: 'Jean', lastName: 'Moreau', email: 'j.moreau@orange.fr', phone: '+33 6 44 71 08 92',
-    aircraftRegistration: 'F-HBGA', aircraftType: 'Robin DR401', origin: 'Cannes (LFMD)', destination: AIRFIELD_NAME,
-    eta: daysFromNow(1, 10, 30).toISOString(), etd: daysFromNow(1, 17, 30).toISOString(),
-    personsOnBoard: 3, locale: 'en', approveImmediately: true,
-  }, { approveImmediately: true });
-  await createManualPprRequest(admin, {
-    firstName: 'Martin', lastName: 'Novak', email: 'm.novak@seznam.cz', phone: '+420 736 220 418',
-    aircraftRegistration: 'OK-VPR', aircraftType: 'Cirrus SR20', origin: 'Praga-Letnany (LKLT)', destination: AIRFIELD_NAME,
-    eta: daysFromNow(3, 9, 45).toISOString(),
-    personsOnBoard: 2, notes: 'Tappa di un giro turistico in Italia, chiede parcheggio per due notti.', locale: 'en', approveImmediately: false,
-  });
-  console.log('Seed: 3 PPR requests ready (1 completed with landing fee, 1 approved, 1 pending).');
 
   console.log('\nDemo seed complete. Login: admin@airmanager.local (password: SEED_ADMIN_PASSWORD from .env).');
 }

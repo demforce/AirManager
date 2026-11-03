@@ -1,0 +1,379 @@
+import { expect } from '@playwright/test';
+import type { APIResponse, Locator, Page } from '@playwright/test';
+
+/** A comfortably far-future date — never itself the boundary under test. */
+export const FAR_FUTURE_DATE = '2099-12-31';
+
+/**
+ * The estratto conto's widest period (story 19.11, D-15). The two statement
+ * pages show the last 12 months by default, so a spec whose movements carry
+ * FIXED dates (a 2020 flight, a 2026-07-01 top-up) opens the statement over
+ * this period instead of moving its fixtures into recent months — where they
+ * would pollute the month's aggregates other specs assert (lesson Billing-2 F4).
+ */
+export const ALL_TIME_STATEMENT = { from: '2000-01-01', to: FAR_FUTURE_DATE } as const;
+
+/** A statement page's URL over {@link ALL_TIME_STATEMENT} — `page` first, as the page's own pagination links write it. */
+export function allTimeStatement(path: string, page?: number): string {
+  const query = new URLSearchParams({ ...(page === undefined ? {} : { page: String(page) }), ...ALL_TIME_STATEMENT });
+  return `${path}?${query.toString()}`;
+}
+
+/** Registers a scadenza for a person via the staff API (story 14.4; `expiries` API of story 6.2). */
+export async function registerExpiry(page: Page, personId: string, expiryTypeId: string, expiresAt: string): Promise<void> {
+  const response = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId, expiresAt } });
+  expect(response.status()).toBe(201);
+}
+
+/**
+ * Story 14.4 (review F5, ratifica R-14.4-a): a person with NO `Expiry` row at
+ * all for an ACTIVE blocking RATING applicable to their role (`scope` ALL or
+ * their own) fails the flight's documents exactly like an expired one
+ * (`requirements.service.ts#evaluateRequirements`, story 19.9). Several OTHER specs
+ * (`bookings.spec.ts#createExpiryTypeForBooking`, `flights.spec.ts`'s custom
+ * types) create run-unique `scope: 'ALL'` blocking ratings for their own
+ * purposes and never deactivate them, so on this suite's long-lived,
+ * never-reset e2e DB they accumulate and block EVERY later fresh person too.
+ * This is therefore a full DYNAMIC scan (mirrors that function's
+ * `kind`/`isActive`/`blocksBooking`/`scope in [ALL, <scope>]` filter) that
+ * registers a FAR-FUTURE (valid) `Expiry` for every currently-active
+ * applicable blocking rating.
+ *
+ * Medical visits (story 19.7a, R-19-j, D-4) are ONE requirement, not one per
+ * class: whoever is on board needs one valid visit of ANY class. So this
+ * registers ONE visit — the first active MEDICAL type by name — and ONLY when
+ * the person has no visit at all. Registering all of them would make "a
+ * person whose only visit is expired" impossible to build.
+ *
+ * Caller ordering matters:
+ * - for a VISIT the test wants (an expired class 2, say), register it FIRST,
+ *   then call this — it then adds no visit of its own;
+ * - for a custom blocking RATING the test creates (several `flights.spec.ts`
+ *   tests register one as EXPIRED), call this FIRST — otherwise this scan
+ *   would already register a VALID expiry for that brand-new type and the
+ *   test's own EXPIRED registration would collide on the `Expiry` unique
+ *   constraint (personId+expiryTypeId).
+ *
+ * Idempotent (skips ratings the person already has, and any visit): a few
+ * specs call this for the long-lived SEEDED pilot/student/instructor too.
+ *
+ * A registration 409 (`expiries.service.ts`: type deactivated in the
+ * meantime, OR the same unique-constraint race the idempotent pre-check
+ * above already covers for the non-concurrent case) is swallowed, never
+ * asserted: this scan's own type list is a snapshot, and under
+ * `fullyParallel: true` a SIBLING test can legitimately deactivate one of
+ * its OWN custom types (`flights.spec.ts`'s cleanup) between this
+ * function's GET and its POST — either 409 cause means the type is no
+ * longer something this person needs covered, never a real failure.
+ *
+ * Returns how many blocking RATINGs it registered (story 19.9, review F5:
+ * `sendInRegola`'s callers read a non-zero count on a person already "in
+ * regola" as a sibling spec's type gone active in between).
+ */
+export async function ensureValidSeedExpiries(page: Page, personId: string, scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS'): Promise<number> {
+  const typesResponse = await page.request.get('/api/v1/expiry-types');
+  expect(typesResponse.status()).toBe(200);
+  // Active types only, ordered by name (the endpoint's defaults).
+  const types = (await typesResponse.json()) as { id: string; scope: string; kind: string; blocksBooking: boolean }[];
+  const ratings = types.filter((type) => type.kind === 'RATING' && type.blocksBooking && (type.scope === 'ALL' || type.scope === scope));
+  const firstMedical = types.find((type) => type.kind === 'MEDICAL');
+  if (ratings.length === 0 && firstMedical === undefined) return 0;
+
+  const existingResponse = await page.request.get(`/api/v1/expiries?personId=${personId}&pageSize=100`);
+  expect(existingResponse.status()).toBe(200);
+  // The registry also lists rows DERIVED at read time (story 19.7b, AD-5): the
+  // currency rows. Only registered documents count.
+  const existing = ((await existingResponse.json()) as { items: { source: string; expiryTypeId: string | null; category: string }[] }).items.filter(
+    (item) => item.source === 'DOCUMENT',
+  );
+  const alreadyRegisteredTypeIds = new Set(existing.map((item) => item.expiryTypeId));
+  const hasVisit = existing.some((item) => item.category === 'MEDICAL');
+
+  const toRegister = [...ratings.filter((type) => !alreadyRegisteredTypeIds.has(type.id)), ...(firstMedical !== undefined && !hasVisit ? [firstMedical] : [])];
+  let registeredRatings = 0;
+  for (const type of toRegister) {
+    const response = await page.request.post('/api/v1/expiries', { data: { personId, expiryTypeId: type.id, expiresAt: FAR_FUTURE_DATE } });
+    if (response.status() === 409) continue;
+    expect(response.status()).toBe(201);
+    if (type.kind === 'RATING') registeredRatings += 1;
+  }
+  return registeredRatings;
+}
+
+/** The UTC instant of `hhmm` on `date` on the Europe/Rome wall clock (+01:00 in winter, +02:00 in summer). */
+function romeWallClockIso(date: string, hhmm: string): string {
+  for (const offset of ['+01:00', '+02:00']) {
+    const instant = new Date(`${date}T${hhmm}:00${offset}`);
+    const wall = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(instant);
+    if (wall === hhmm) return instant.toISOString();
+  }
+  throw new Error(`romeWallClockIso: ${date} ${hhmm} does not exist on the Europe/Rome clock.`);
+}
+
+/**
+ * Registers a 30-minute flight through `POST /api/v1/flights`, taking off at
+ * 10:00 Rome on `date` — so its `flightDate` is `date` whatever the season
+ * (story 19.7a, AD-9; reused by story 19.7b). The aircraft needs a rate in
+ * effect on `date` (`db-fixtures.ts#seedAircraftRate`), the instructor one too
+ * (`seedInstructorRate`). A FIXTURE (story 19.9, E-R1): sent with `force:
+ * true`, so the requirements of the flight (documents, fee, currency,
+ * balance) never refuse it — a test that is ABOUT them posts its own body.
+ * `isSolo` marks a SCHOOL flight the student flies alone (the instructor
+ * supervises, not on board); `noCharge` leaves the balance untouched (E-R5:
+ * the way to build a currency). Returns the created flight's id.
+ */
+export async function registerFlightOn(
+  page: Page,
+  flight: {
+    aircraftId: string;
+    personId: string;
+    instructorPersonId?: string;
+    flightType: 'TOURISM' | 'SCHOOL';
+    date: string;
+    isSolo?: boolean;
+    noCharge?: boolean;
+  },
+): Promise<string> {
+  const takeoffAt = romeWallClockIso(flight.date, '10:00');
+  const response = await page.request.post('/api/v1/flights', {
+    data: {
+      aircraftId: flight.aircraftId,
+      personId: flight.personId,
+      ...(flight.instructorPersonId !== undefined ? { instructorPersonId: flight.instructorPersonId } : {}),
+      ...(flight.isSolo !== undefined ? { isSolo: flight.isSolo } : {}),
+      ...(flight.noCharge !== undefined ? { noCharge: flight.noCharge } : {}),
+      departureAirfield: 'Base Airfield',
+      arrivalAirfield: 'Base Airfield',
+      flightType: flight.flightType,
+      takeoffAt,
+      landingAt: new Date(new Date(takeoffAt).getTime() + 30 * 60_000).toISOString(),
+      force: true,
+    },
+  });
+  expect(response.status(), await response.text()).toBe(201);
+  return ((await response.json()) as { flight: { id: string } }).flight.id;
+}
+
+/**
+ * Today on the Europe/Rome calendar, `YYYY-MM-DD` (story 19.3, A16) — the
+ * "today" the API's `RATE_VALID_FROM_IN_PAST` checks against. A UTC date
+ * would be "yesterday" for Rome between 00:00 and 01:00/02:00, and a rate
+ * written for it would be a 422.
+ */
+export function todayRome(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+/** `YYYY-MM-DD` plus `days` calendar days (negative to go back), UTC arithmetic on a date-only string. */
+export function addDaysIso(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Types into a `SearchCombobox` and clicks the matching option (story 19.5:
+ * the booking forms' choice fields became comboboxes) — same body as the
+ * local copy in `flights.spec.ts`. `combobox`
+ * must already resolve to the specific `<input>`; the option lookup is scoped
+ * to the popup (`role=listbox`) with `exact: true`, never page-level.
+ */
+export async function selectFromCombobox(combobox: Locator, query: string, optionLabel: string): Promise<void> {
+  await combobox.click();
+  await combobox.fill(query);
+  await combobox.page().getByRole('listbox').getByRole('option', { name: optionLabel, exact: true }).click();
+}
+
+/** The membership fee `ensureFlightRequirements` charges (any positive amount: the fee setting only precompiles the UI field). */
+export const E2E_MEMBERSHIP_FEE_CENTS = 1000;
+
+/**
+ * A person "in regola" for a flight's requirements (story 19.9, E-R5 — reused
+ * by story 19.10): every currently active blocking document
+ * (`ensureValidSeedExpiries`), then a top-up of `topUpCents`, then the
+ * membership fee (`E2E_MEMBERSHIP_FEE_CENTS`, charged AFTER the top-up so the
+ * fee needs no deroga of its own — `topUpCents` must cover it). Returns the
+ * balance left. The currency is NOT built here: the test registers its own
+ * flight in the window (`registerFlightOn` with `noCharge: true`, which leaves
+ * the balance as it is).
+ */
+export async function ensureFlightRequirements(
+  page: Page,
+  person: { personId: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS'; topUpCents: number },
+): Promise<{ balanceCents: number }> {
+  await ensureValidSeedExpiries(page, person.personId, person.scope);
+  const topUp = await page.request.post(`/api/v1/people/${person.personId}/account/top-ups`, {
+    data: { amountCents: person.topUpCents, paymentMethod: 'CASH', effectiveDate: todayRome() },
+  });
+  expect(topUp.status(), await topUp.text()).toBe(200);
+  const fee = await page.request.post(`/api/v1/people/${person.personId}/membership-fee`, {
+    data: { amountCents: E2E_MEMBERSHIP_FEE_CENTS },
+    headers: { 'Idempotency-Key': `e2e-fee-${person.personId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` },
+  });
+  expect(fee.status(), await fee.text()).toBe(200);
+  return { balanceCents: ((await fee.json()) as { balanceCents: number }).balanceCents };
+}
+
+/** One entry of a 422 `REQUIREMENTS_NOT_MET`'s `details.failures` (story 19.9) — the e2e view of `src/lib/schemas/requirements.ts`. */
+export type E2eRequirementFailure = { type: string; role?: string; personName?: string; typeName?: string; expiresAt?: string | null; [key: string]: unknown };
+
+/**
+ * Story 19.9 (E-R6): the failures that belong to the test. The e2e catalogue
+ * is GLOBAL and shared by parallel specs, which create blocking RATINGs of
+ * their own (scope `ALL` included, TD 16.2-g): on any fresh person they show
+ * up as MISSING documents (`expiresAt: null`). Those are dropped here; kept
+ * are every non-EXPIRY failure, every expired document (a fresh person has
+ * only the ones the test registered), the medical requirement and the types
+ * the test itself names.
+ */
+export function ownFailures<T extends E2eRequirementFailure>(failures: T[], ownTypeNames: string[] = []): T[] {
+  return failures.filter(
+    (failure) =>
+      failure.type !== 'EXPIRY' ||
+      failure.expiresAt !== null ||
+      ownTypeNames.includes(failure.typeName ?? '') ||
+      (failure.typeName ?? '').includes('Visita medica'),
+  );
+}
+
+/** A person `ensureFlightRequirements` made "in regola", with the scope it was covered for. */
+export type InRegolaPerson = { personId: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' };
+
+/** True when a flight write was refused ONLY for missing documents of types the test never named (`ownFailures` keeps none). */
+async function refusedOnlyByForeignTypes(response: { status(): number; json(): Promise<unknown> }): Promise<boolean> {
+  if (response.status() !== 422) return false;
+  const failures = ((await response.json()) as { error?: { code?: string; details?: { failures?: E2eRequirementFailure[] } } }).error?.details?.failures;
+  return failures !== undefined && failures.length > 0 && ownFailures(failures).length === 0;
+}
+
+/**
+ * Story 19.9 (review F5, TD 16.2-g): a flight write that must meet NO
+ * requirement, for people made "in regola" by `ensureFlightRequirements`.
+ * That state is a snapshot of a GLOBAL catalogue: a sibling spec can
+ * activate a blocking RATING (scope `ALL`) right after it, and the person
+ * then misses that document. Only for that answer — a 422 whose every item
+ * is such a missing document — are the people covered again and the request
+ * resent (twice at most); any other answer, a failure the test owns
+ * included, is returned as is for the caller to assert.
+ */
+export async function sendInRegola(page: Page, people: InRegolaPerson[], send: () => Promise<APIResponse>): Promise<APIResponse> {
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await send();
+    if (attempt === 3 || !(await refusedOnlyByForeignTypes(response))) return response;
+    for (const person of people) await ensureValidSeedExpiries(page, person.personId, person.scope);
+  }
+}
+
+/**
+ * The flight-form counterpart of `sendInRegola` (review F5): clicks `submit`
+ * and waits for the flight write it sends; when that write was refused ONLY
+ * for a sibling spec's missing documents, covers the people again, closes
+ * the warning with «Annulla» and clicks again (twice at most). The caller
+ * asserts the outcome it expects.
+ */
+export async function submitInRegola(page: Page, people: InRegolaPerson[], submit: Locator): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    const answered = page.waitForResponse(
+      (response) => /^\/api\/v1\/flights(\/[^/]+)?$/.test(new URL(response.url()).pathname) && ['POST', 'PUT'].includes(response.request().method()),
+    );
+    await submit.click();
+    if (attempt === 3 || !(await refusedOnlyByForeignTypes(await answered))) return;
+    for (const person of people) await ensureValidSeedExpiries(page, person.personId, person.scope);
+    await page.getByTestId('requirements-warning').getByTestId('requirements-cancel').click();
+  }
+}
+
+/**
+ * Story 19.9 (E-R2): a registration or edit from the flight form whose
+ * subject is NOT the requirements warning — asserts the warning IS there (a
+ * fixture person fails at least the fee and the balance by construction) and
+ * clicks «Procedi comunque». Deliberately NOT conditional: a "click it if it
+ * shows" helper would hide a regression of the warning itself.
+ */
+export async function submitPastRequirements(page: Page): Promise<void> {
+  const warning = page.getByTestId('requirements-warning');
+  await expect(warning).toBeVisible();
+  await warning.getByTestId('requirements-proceed').click();
+}
+
+/**
+ * Story 19.10 (AD-9): the balance `ensureBookingRequirements` tops an account
+ * up to, when it sits under it — and ONLY up to it (review 19.10 F1). The
+ * top-ups of the whole suite land in the club's GLOBAL monthly «Ricariche»
+ * total, which a 320 px billing test reads: at 4 000,00 € per fresh person
+ * (the first version topped up to twice a 2 000,00 € floor) one run pushed it
+ * past 100 000 € and broke that layout. Measured: the costliest booking the
+ * suite judges without `force` after this helper is 120,00 € (an hour at
+ * 120 €/h); the rest of the floor is headroom for the seed pilot, whose
+ * balance sibling specs charge flights to meanwhile (one flight of the suite:
+ * a few hundred euros at most). The two tests that need a known balance
+ * assert it (`toBe(BOOKING_BALANCE_FLOOR_CENTS)`) rather than assume it.
+ */
+export const BOOKING_BALANCE_FLOOR_CENTS = 50_000;
+
+/**
+ * A person "in regola" for a BOOKING's requirements (story 19.10, AD-9 rule
+ * 2): for the own-path flows (a pilot or an instructor who books or moves,
+ * from the API or the form) and the admin UI flows that are NOT about the
+ * requirements — whose bookings, unlike an admin API fixture, cannot simply
+ * carry `force: true`. Idempotent, and safe on the long-lived seed people:
+ * - every active blocking document (`ensureValidSeedExpiries`, scope of the
+ *   person's profile);
+ * - the membership fee, REGISTERED through `POST /api/v1/expiries` on the
+ *   `MEMBERSHIP` type with a far-future date (a 409 = already there): no
+ *   charge, no movement in the statement;
+ * - the balance, topped up TO `BOOKING_BALANCE_FLOOR_CENTS` when an account
+ *   exists and sits under it (a negative balance fails even a booking that
+ *   costs 0; a person without an account is never judged);
+ * - with `solo: true` (a booking without an instructor — every
+ *   self-booking), the currency: when the pilot has no flight in the last 90
+ *   days (X = 1, Y = 90, the defaults), one flight TODAY, no charge, forced,
+ *   on a run-unique aircraft created with a rate from today and archived
+ *   right after (today, so the rate API needs no past `validFrom`, and the
+ *   fleet pickers never see it).
+ * Not atomic (trap 9 of the story): two specs covering the seed pilot at once
+ * may both top up or both fly. Never assert absolute counts of its flights or
+ * movements.
+ */
+export async function ensureBookingRequirements(
+  page: Page,
+  person: { personId: string; scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS'; solo?: boolean },
+): Promise<void> {
+  await ensureValidSeedExpiries(page, person.personId, person.scope);
+
+  const feeTypes = (await (await page.request.get('/api/v1/expiry-types?kind=MEMBERSHIP')).json()) as Array<{ id: string }>;
+  const fee = await page.request.post('/api/v1/expiries', { data: { personId: person.personId, expiryTypeId: feeTypes[0]!.id, expiresAt: FAR_FUTURE_DATE } });
+  expect([201, 409], await fee.text()).toContain(fee.status());
+
+  const overview = (await (await page.request.get(`/api/v1/people/${person.personId}/account`)).json()) as { account: unknown; balanceCents: number };
+  if (overview.account !== null && overview.balanceCents < BOOKING_BALANCE_FLOOR_CENTS) {
+    const topUp = await page.request.post(`/api/v1/people/${person.personId}/account/top-ups`, {
+      data: { amountCents: BOOKING_BALANCE_FLOOR_CENTS - overview.balanceCents, paymentMethod: 'CASH', effectiveDate: todayRome() },
+    });
+    expect(topUp.status(), await topUp.text()).toBe(200);
+  }
+
+  if (!person.solo) return;
+  if (person.scope !== 'PILOTS') throw new Error('ensureBookingRequirements: the solo currency is built for pilots only (a student logs SCHOOL flights).');
+  const today = todayRome();
+  const recent = await page.request.get(`/api/v1/flights?personId=${person.personId}&dateFrom=${addDaysIso(today, -89)}&pageSize=1`);
+  expect(recent.status()).toBe(200);
+  if (((await recent.json()) as { total: number }).total > 0) return;
+
+  const registration = `I-CUR${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase().slice(0, 20);
+  const aircraftResponse = await page.request.post('/api/v1/aircraft', {
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Currency', rate: { studentPriceCents: 10000, pilotPriceCents: 10000, validFrom: today } },
+  });
+  expect(aircraftResponse.status(), await aircraftResponse.text()).toBe(201);
+  const aircraftId = ((await aircraftResponse.json()) as { id: string }).id;
+  await registerFlightOn(page, { aircraftId, personId: person.personId, flightType: 'TOURISM', date: today, noCharge: true });
+  expect((await page.request.post(`/api/v1/aircraft/${aircraftId}/archive`)).status()).toBe(200);
+}
+
+/** The `Person.id` of a seed login (`pilot@airmanager.local`, …) from an admin session — `GET /api/v1/people?q=` matches the email. */
+export async function personIdByEmail(page: Page, email: string): Promise<string> {
+  const response = await page.request.get(`/api/v1/people?q=${encodeURIComponent(email)}&pageSize=10`);
+  expect(response.status()).toBe(200);
+  const person = ((await response.json()) as { items: Array<{ id: string; email: string | null }> }).items.find((item) => item.email === email);
+  if (!person) throw new Error(`personIdByEmail: no person with email ${email}.`);
+  return person.id;
+}

@@ -1,13 +1,20 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { useLocale } from 'next-intl';
+import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { RequirementsWarning } from '@/components/dashboard/requirements-warning';
+import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { DateTimeInput } from '@/components/ui/datetime-input';
-import { Field, Input, Select } from '@/components/ui/field';
+import { Field, Input } from '@/components/ui/field';
+import { focusFirstInvalid } from '@/lib/dom-focus';
+import type { RequirementFailure } from '@/lib/schemas/requirements';
+import { formatDateOnly } from '@/lib/time';
 import { SlideOver } from '@/components/ui/slide-over';
-import type { AircraftOption } from './new-booking-form';
+import { aircraftOptionLabel, type AircraftOption } from './new-booking-form';
 import type { BookingRowDto } from './bookings-table';
 
 export type EditBookingFormLabels = {
@@ -15,7 +22,8 @@ export type EditBookingFormLabels = {
   subtitle: string;
   cancel: string;
   save: string;
-  selectPlaceholder: string;
+  /** Story 19.5 (D-7): the velivolo picker's placeholder and empty row — the create form's own two texts. */
+  picker: { placeholder: string; noResults: string };
   aircraft: string;
   outOfServiceSuffix: string;
   startsAt: string;
@@ -28,11 +36,18 @@ export type EditBookingFormLabels = {
     BOOKING_IN_PAST: string;
     /** `{reason}` placeholder, client-filled. */
     AIRCRAFT_OUT_OF_SERVICE: string;
-    /** `{documents}` placeholder, client-filled. */
-    EXPIRED_DOCUMENTS: string;
+    /** Story AOG-1a, AC 7 — used only when `details.outOfServiceUntil` is present: the same sentence plus the INCLUSIVE fermo clause (`{date}`). The plain key above stays byte-identical for a grounding with no date (invariant [b]). */
+    AIRCRAFT_OUT_OF_SERVICE_UNTIL: string;
+    /** Story 15.4 (ratifica R-15.4-g): already interpolated server-side with the airfield's own window — same message the create form shows. */
+    BOOKING_OUTSIDE_WINDOW: string;
+    /** Story 16.3 (ops F2): the booking's person / instructor already has ANOTHER approved booking over the new interval, on any aircraft — the create form's own two strings. */
+    PERSON_BUSY: string;
+    INSTRUCTOR_BUSY: string;
     conflict: string;
     generic: string;
   };
+  /** Story 19.10: the requirements warning's title — with «Procedi comunque» (`title`) or blocked (`blockedTitle`), the create form's own two. */
+  requirements: { title: string; blockedTitle: string };
 };
 
 type EditBookingFormProps = {
@@ -42,6 +57,8 @@ type EditBookingFormProps = {
   aircraftOptions: AircraftOption[];
   onClose: () => void;
   onSuccess: () => void;
+  /** Story 19.10: whether the requirements warning offers «Procedi comunque» (`requirements.force`); the real gate is server-side (AD-5). */
+  canForce: boolean;
   labels: EditBookingFormLabels;
 };
 
@@ -74,7 +91,8 @@ function toDatetimeLocalValue(iso: string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-type ApiErrorBody = { error?: { code?: string; details?: { reason?: string; documents?: Array<{ typeName: string }> } } };
+/** Story AOG-1a — `outOfServiceUntil` is additive on the SAME `AIRCRAFT_OUT_OF_SERVICE` details all four guards now share (`aircraft-status.ts#outOfServiceDetails`); story 19.10 — `failures` on a 422 `REQUIREMENTS_NOT_MET`. */
+type ApiErrorBody = { error?: { code?: string; details?: { reason?: string; outOfServiceUntil?: string | null; failures?: RequirementFailure[] } } };
 
 async function errorBodyOf(response: Response): Promise<ApiErrorBody | null> {
   return (await response.json().catch(() => null)) as ApiErrorBody | null;
@@ -96,11 +114,17 @@ function valuesFromBooking(booking: BookingRowDto | null): FormValues {
  * "Modifica" (story 12.3, AC 3) — the SAME `PATCH /api/v1/bookings/{id}`
  * mechanics as the legacy `bookings-list.tsx#MoveBookingForm` this replaces
  * (was inline in the "Prossime prenotazioni" table row, now its own
- * `SlideOver`), re-skinned with `Field`/`Input`/`Select`. `booking-move-*`/
+ * `SlideOver`), re-skinned with `Field`/`Input` and, since story 19.5, a
+ * `SearchCombobox` for the velivolo (the create form's own). `booking-move-*`/
  * `move-booking-*` testids are kept UNCHANGED to minimize e2e churn, same
  * rationale as `new-booking-form.tsx`'s own doc-comment — the submit button
  * stays inside `[data-testid="move-booking-form"]`, not `SlideOver`'s
  * separate `footer` slot.
+ *
+ * Requirements (story 19.10, D-3): every move is re-judged on the server; a
+ * 422 `REQUIREMENTS_NOT_MET` opens the shared warning inside the form, exactly
+ * as in the create form (`canForce` decides «Procedi comunque» vs the blocked
+ * list; any change to the form closes it).
  *
  * Uses react-hook-form's `values` option (NOT `defaultValues`) so the form
  * re-syncs to a DIFFERENT `booking` automatically whenever the prop changes
@@ -110,13 +134,62 @@ function valuesFromBooking(booking: BookingRowDto | null): FormValues {
  * while still keeping this component (and `SlideOver`'s open/close CSS
  * transition) mounted continuously rather than remounted per booking.
  */
-export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuccess, labels }: EditBookingFormProps) {
+export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuccess, canForce, labels }: EditBookingFormProps) {
+  // Story AOG-1a, AC 7(e) — the fermo date in the out-of-service 422 goes through the app's own date formatter, in the reader's own locale.
+  const displayLocale = useLocale() === 'en' ? ('en' as const) : ('it' as const);
   const [formError, setFormError] = useState<string | null>(null);
+  // Story 19.10 (AD-6): same warning state as the create form — `body` is the
+  // PATCH just refused, resent unchanged plus `force: true`.
+  const [requirements, setRequirements] = useState<{ failures: RequirementFailure[]; body: Record<string, unknown> } | null>(null);
+  const [proceedSubmitting, setProceedSubmitting] = useState(false);
+  const [proceedError, setProceedError] = useState(false);
+  const submitButtonRef = useRef<HTMLButtonElement | null>(null);
+  const formErrorRef = useRef<HTMLParagraphElement | null>(null);
+  // Story 19.5 (AD-5): same `Controller` + `focusFirstInvalid` bridge as the
+  // create form — the combobox forwards no `ref` for RHF's own focus.
+  const formRef = useRef<HTMLFormElement | null>(null);
   const {
     register,
+    control,
     handleSubmit,
+    subscribe,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(formSchema), values: valuesFromBooking(booking) });
+  } = useForm<FormValues>({ resolver: zodResolver(formSchema), values: valuesFromBooking(booking), shouldFocusError: false });
+
+  /** Closes the warning and forgets its body — «Annulla», a new submit, a close, and ANY change to the form (the stale-body guard of the create form). */
+  function dismissRequirements(): void {
+    setRequirements(null);
+    setProceedError(false);
+  }
+
+  useEffect(() => subscribe({ formState: { values: true }, callback: () => dismissRequirements() }), [subscribe]);
+
+  /** «Annulla» of the warning — the focus goes back to «Salva» (review 19.9 F3). */
+  function cancelRequirements(): void {
+    submitButtonRef.current?.focus();
+    dismissRequirements();
+  }
+
+  /** A resend that closes the warning hands the focus to the banner saying why (review 19.9 F3). */
+  function closeRequirementsWithError(message: string): void {
+    flushSync(() => {
+      dismissRequirements();
+      setFormError(message);
+    });
+    formErrorRef.current?.focus();
+  }
+
+  // Static mode (story 19.5, D-4/D-5): the server-rendered list, out-of-service
+  // aircraft listed with their reason but not selectable.
+  const aircraftComboOptions = useMemo<SearchComboboxOption[]>(
+    () =>
+      aircraftOptions.map((aircraft) => ({
+        id: aircraft.id,
+        label: aircraftOptionLabel(aircraft, labels.outOfServiceSuffix),
+        disabled: aircraft.status === 'OUT_OF_SERVICE',
+      })),
+    [aircraftOptions, labels.outOfServiceSuffix],
+  );
 
   // Review 12.3 F4: `formError` used to leak between rows — a caller can swap
   // `booking` to a DIFFERENT row while the SlideOver stays open (clicking
@@ -129,11 +202,14 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
   if ((booking?.id ?? null) !== lastBookingId) {
     setLastBookingId(booking?.id ?? null);
     setFormError(null);
+    setRequirements(null);
+    setProceedError(false);
   }
 
   /** Every dismiss path (X, scrim, Esc) — mirrors `new-booking-form.tsx#handleClose`'s own reset-on-close pattern, so a stale error from a PREVIOUS open never survives into the next one. */
   function handleClose(): void {
     setFormError(null);
+    dismissRequirements();
     onClose();
   }
 
@@ -142,38 +218,63 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
     return fieldError.message === 'invalidRange' ? labels.invalidRange : labels.requiredField;
   }
 
+  /**
+   * The message of a refusal this form knows, or `null` — shared by «Salva»
+   * and «Procedi comunque» (story 19.10: on the resend a known 409/422 closes
+   * the warning and takes the banner; only an unknown one keeps it open).
+   * Story 16.3 — a busy person/instructor says so, every other 409 keeps the
+   * existing message.
+   */
+  function knownErrorMessage(status: number, body: ApiErrorBody | null): string | null {
+    const code = body?.error?.code;
+    if (status === 409) {
+      return code === 'PERSON_BUSY' || code === 'INSTRUCTOR_BUSY' ? labels.errors[code] : labels.errors.conflict;
+    }
+    switch (code) {
+      case 'AIRCRAFT_OUT_OF_SERVICE': {
+        // Story AOG-1a, AC 7 — same two-template rule as the create form (see
+        // `new-booking-form.tsx`): the fermo clause only when a date exists,
+        // and the no-date string byte-identical to today's.
+        const until = body?.error?.details?.outOfServiceUntil ?? null;
+        const template = until === null ? labels.errors.AIRCRAFT_OUT_OF_SERVICE : labels.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL;
+        return template.replace('{reason}', body?.error?.details?.reason ?? '').replace('{date}', until === null ? '' : formatDateOnly(until, displayLocale));
+      }
+      case 'BOOKING_IN_PAST':
+      case 'BOOKING_ALREADY_STARTED':
+        return labels.errors[code];
+      case 'BOOKING_OUTSIDE_WINDOW':
+        // Ratifica R-15.4-g — same reasoning as the create form: moving a
+        // booking outside the airfield's window must say WHICH window.
+        return labels.errors.BOOKING_OUTSIDE_WINDOW;
+      default:
+        return null;
+    }
+  }
+
   async function onSubmit(values: FormValues): Promise<void> {
     if (!booking) return;
+    dismissRequirements();
+    const body = {
+      aircraftId: values.aircraftId,
+      startsAt: new Date(values.startsAt).toISOString(),
+      endsAt: new Date(values.endsAt).toISOString(),
+      notes: values.notes.trim() === '' ? null : values.notes.trim(),
+    };
     const response = await fetch(`/api/v1/bookings/${booking.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        aircraftId: values.aircraftId,
-        startsAt: new Date(values.startsAt).toISOString(),
-        endsAt: new Date(values.endsAt).toISOString(),
-        notes: values.notes.trim() === '' ? null : values.notes.trim(),
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
-      if (response.status === 409) {
-        setFormError(labels.errors.conflict);
+      const errorBody = await errorBodyOf(response);
+      // Story 19.10: the list goes in the warning only, never also in the banner.
+      if (response.status === 422 && errorBody?.error?.code === 'REQUIREMENTS_NOT_MET') {
+        setFormError(null);
+        setRequirements({ failures: errorBody.error.details?.failures ?? [], body });
         return;
       }
-      const body = await errorBodyOf(response);
-      const code = body?.error?.code;
-      if (code === 'AIRCRAFT_OUT_OF_SERVICE') {
-        setFormError(labels.errors.AIRCRAFT_OUT_OF_SERVICE.replace('{reason}', body?.error?.details?.reason ?? ''));
-      } else if (code === 'BOOKING_IN_PAST') {
-        setFormError(labels.errors.BOOKING_IN_PAST);
-      } else if (code === 'BOOKING_ALREADY_STARTED') {
-        setFormError(labels.errors.BOOKING_ALREADY_STARTED);
-      } else if (code === 'EXPIRED_DOCUMENTS') {
-        const documentNames = (body?.error?.details?.documents ?? []).map((document) => document.typeName);
-        setFormError(labels.errors.EXPIRED_DOCUMENTS.replace('{documents}', documentNames.join(', ')));
-      } else {
-        setFormError(labels.errors.generic);
-      }
+      setFormError(knownErrorMessage(response.status, errorBody) ?? labels.errors.generic);
       return;
     }
 
@@ -181,34 +282,80 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
     onSuccess();
   }
 
+  /** «Procedi comunque» (story 19.10) — the refused PATCH unchanged plus `force: true`; the create form's own error rule. */
+  async function onProceed(): Promise<void> {
+    if (!booking || !requirements) return;
+    setProceedSubmitting(true);
+    setProceedError(false);
+
+    let response: Response;
+    try {
+      response = await fetch(`/api/v1/bookings/${booking.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...requirements.body, force: true }),
+      });
+    } catch {
+      setProceedSubmitting(false);
+      setProceedError(true);
+      return;
+    }
+    setProceedSubmitting(false);
+
+    if (!response.ok) {
+      const message = knownErrorMessage(response.status, await errorBodyOf(response));
+      if (message === null) {
+        setProceedError(true);
+        return;
+      }
+      closeRequirementsWithError(message);
+      return;
+    }
+
+    dismissRequirements();
+    setFormError(null);
+    onSuccess();
+  }
+
   return (
     <SlideOver open={open} onClose={handleClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.cancel}>
       {booking ? (
-        <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="move-booking-form">
+        <form
+          ref={formRef}
+          onSubmit={(event) => void handleSubmit(onSubmit, () => setTimeout(() => focusFirstInvalid(formRef.current), 0))(event)}
+          noValidate
+          data-testid="move-booking-form"
+        >
           <div className="form-grid">
-            <Field label={labels.aircraft}>
-              <Select aria-invalid={Boolean(errors.aircraftId)} {...register('aircraftId')}>
-                <option value="">{labels.selectPlaceholder}</option>
-                {aircraftOptions.map((aircraft) => (
-                  <option key={aircraft.id} value={aircraft.id} disabled={aircraft.status === 'OUT_OF_SERVICE'}>
-                    {aircraft.status === 'OUT_OF_SERVICE'
-                      ? `${aircraft.registration} — ${labels.outOfServiceSuffix.replace('{reason}', aircraft.statusReason ?? '')}`
-                      : aircraft.registration}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            {fieldErrorLabel(errors.aircraftId) ? <p className="fld-label">{fieldErrorLabel(errors.aircraftId)}</p> : null}
+            {/* Bare `.fld` wrapper: the combobox renders its own label. The id
+                (= testid) is distinct from the create form's `booking-aircraft`
+                — both forms are mounted on the same page. */}
+            <div className="fld">
+              <Controller
+                name="aircraftId"
+                control={control}
+                render={({ field, fieldState }) => (
+                  <SearchCombobox
+                    id="move-booking-aircraft"
+                    label={labels.aircraft}
+                    value={field.value}
+                    onChange={field.onChange}
+                    initialOptions={aircraftComboOptions}
+                    placeholder={labels.picker.placeholder}
+                    emptyText={labels.picker.noResults}
+                    error={fieldErrorLabel(fieldState.error) ?? undefined}
+                  />
+                )}
+              />
+            </div>
 
-            <Field label={labels.startsAt}>
+            <Field label={labels.startsAt} error={fieldErrorLabel(errors.startsAt) ?? undefined}>
               <DateTimeInput aria-invalid={Boolean(errors.startsAt)} {...register('startsAt')} />
             </Field>
-            {fieldErrorLabel(errors.startsAt) ? <p className="fld-label">{fieldErrorLabel(errors.startsAt)}</p> : null}
 
-            <Field label={labels.endsAt}>
+            <Field label={labels.endsAt} error={fieldErrorLabel(errors.endsAt) ?? undefined}>
               <DateTimeInput aria-invalid={Boolean(errors.endsAt)} {...register('endsAt')} />
             </Field>
-            {fieldErrorLabel(errors.endsAt) ? <p className="fld-label">{fieldErrorLabel(errors.endsAt)}</p> : null}
 
             <Field label={labels.notes} wide>
               <Input maxLength={500} {...register('notes')} />
@@ -216,16 +363,32 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
           </div>
 
           {formError ? (
-            <p role="alert" data-testid="move-booking-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
+            <p ref={formErrorRef} tabIndex={-1} role="alert" data-testid="move-booking-form-error" className="fld-label req-error-banner" style={{ color: 'var(--bad)', marginTop: 14 }}>
               {formError}
             </p>
           ) : null}
 
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+          {requirements ? (
+            <RequirementsWarning
+              failures={requirements.failures}
+              canProceed={canForce}
+              onProceed={() => void onProceed()}
+              onCancel={cancelRequirements}
+              submitting={proceedSubmitting}
+              error={proceedError}
+              moneyLocale={displayLocale}
+              title={canForce ? labels.requirements.title : labels.requirements.blockedTitle}
+            />
+          ) : null}
+
+          {/* Story 15.4 (R3, AD-6): see `new-booking-form.tsx`'s own note — the
+              class is inert above 640px and pins "Salva" to the bottom of the
+              full-screen panel below it. */}
+          <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
             <button type="button" className="btn" onClick={handleClose}>
               {labels.cancel}
             </button>
-            <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="move-booking-save">
+            <button ref={submitButtonRef} type="submit" disabled={isSubmitting} className="btn primary" data-testid="move-booking-save">
               {labels.save}
             </button>
           </div>

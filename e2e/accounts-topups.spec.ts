@@ -59,7 +59,8 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     await page.goto(`/it/dashboard/people/${personId}`);
     await expect(page.getByRole('heading', { name: 'Estratto conto' })).toBeVisible();
     await expect(page.getByTestId('account-balance')).toHaveText(/0,00\s€/);
-    await expect(page.getByText('Nessun movimento registrato.')).toBeVisible();
+    // Story 19.11 (D-13): an account with nothing in the period says so of the PERIOD.
+    await expect(page.getByText('Nessun movimento nel periodo selezionato.')).toBeVisible();
   });
 
   test('staff records a 100 € cash top-up: saldo 100,00 € and the movement appears in the preview (AC 2/3)', async ({ page }) => {
@@ -71,7 +72,7 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     await expect(page.getByTestId('account-balance')).toHaveText(/0,00\s€/);
 
     await page.getByRole('button', { name: 'Registra ricarica' }).click();
-    await page.getByLabel('Importo (EUR)').fill('100');
+    await page.getByLabel('Importo (€)').fill('100');
     await page.getByLabel('Metodo di pagamento').selectOption('CASH');
     await page.getByRole('button', { name: 'Conferma ricarica' }).click();
 

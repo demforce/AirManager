@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addDaysDateOnly,
   dateOnlyInZone,
   todayDateOnlyInZone,
+  todayDateOnlyUtcInZone,
   todayTomorrowRangeUtc,
   weekStartDateOnly,
   zonedMidnightUtc,
@@ -210,5 +211,73 @@ describe('todayDateOnlyInZone', () => {
     const now = Date.now();
     expect(now).toBeGreaterThanOrEqual(dayStart);
     expect(now).toBeLessThan(dayEnd);
+  });
+});
+
+describe('todayDateOnlyUtcInZone (story 16.1, AC 1 — "oggi" as a UTC-midnight Date on the Rome calendar day)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns the Rome calendar day, as a UTC-midnight Date, on an ordinary day', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-15T10:00:00.000Z')); // 11:00 CET, still 2026-01-15 in Rome
+    expect(todayDateOnlyUtcInZone(ROME).toISOString()).toBe('2026-01-15T00:00:00.000Z');
+  });
+
+  it('at 00:30 Rome in CEST (already tomorrow in Rome, still today in UTC), returns the ROME day', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-14T22:30:00.000Z')); // 00:30 CEST, 15 Jul
+    expect(todayDateOnlyUtcInZone(ROME).toISOString()).toBe('2026-07-15T00:00:00.000Z');
+  });
+
+  it('at 00:30 Rome in CET (already tomorrow in Rome, still today in UTC), returns the ROME day', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-14T23:30:00.000Z')); // 00:30 CET, 15 Jan
+    expect(todayDateOnlyUtcInZone(ROME).toISOString()).toBe('2026-01-15T00:00:00.000Z');
+  });
+
+  it('always returns exact UTC midnight (invariant [I-d]: the shape a `@db.Date` column binds as)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-14T22:30:00.000Z'));
+    const result = todayDateOnlyUtcInZone(ROME);
+    expect(result.getUTCHours()).toBe(0);
+    expect(result.getUTCMinutes()).toBe(0);
+    expect(result.getUTCSeconds()).toBe(0);
+    expect(result.getUTCMilliseconds()).toBe(0);
+  });
+
+  it('agrees with parseDateOnlyUtc(todayDateOnlyInZone(...)) — same value, collapsed formula (AD-2 #7)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep
+    expect(todayDateOnlyUtcInZone(ROME).toISOString()).toBe(new Date(Date.UTC(2026, 8, 1)).toISOString());
+  });
+});
+
+describe('DST boundary matrix (story 16.1, AC 6 — the two 2026 transition days at 00:00/01:00/02:00/03:00 Rome)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const cases: Array<{ utc: string; label: string; expected: string }> = [
+    { utc: '2026-03-28T23:00:00Z', label: 'spring-forward: 00:00 Rome (CET)', expected: '2026-03-29' },
+    { utc: '2026-03-29T00:00:00Z', label: 'spring-forward: 01:00 Rome (CET)', expected: '2026-03-29' },
+    { utc: '2026-03-29T01:00:00Z', label: 'spring-forward: 03:00 Rome (CEST — 02:00 does not exist)', expected: '2026-03-29' },
+    { utc: '2026-03-29T02:00:00Z', label: 'spring-forward: 04:00 Rome (CEST)', expected: '2026-03-29' },
+    { utc: '2026-10-24T22:00:00Z', label: 'fall-back: 00:00 Rome (CEST)', expected: '2026-10-25' },
+    { utc: '2026-10-24T23:00:00Z', label: 'fall-back: 01:00 Rome (CEST)', expected: '2026-10-25' },
+    { utc: '2026-10-25T00:00:00Z', label: 'fall-back: 01:00 Rome AGAIN (CET — the repeated hour)', expected: '2026-10-25' },
+    { utc: '2026-10-25T01:00:00Z', label: 'fall-back: 02:00 Rome (CET)', expected: '2026-10-25' },
+  ];
+
+  it.each(cases)('$label -> $expected', ({ utc, expected }) => {
+    expect(dateOnlyInZone(new Date(utc), ROME)).toBe(expected);
+  });
+
+  it.each(cases)('todayDateOnlyUtcInZone agrees with dateOnlyInZone at $label', ({ utc, expected }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(utc));
+    expect(todayDateOnlyUtcInZone(ROME).toISOString()).toBe(`${expected}T00:00:00.000Z`);
+    vi.useRealTimers();
   });
 });

@@ -18,10 +18,10 @@ describe('ConflictError (story 8.2, AC 1/2 — optional stable code, handoff 7.3
   });
 
   it('accepts an explicit stable code as the third argument, same shape as ValidationError', () => {
-    const error = new ConflictError('This PPR request has already been decided.', undefined, 'PPR_ALREADY_DECIDED');
+    const error = new ConflictError('This person already has an approved booking for an overlapping interval.', undefined, 'PERSON_BUSY');
 
-    expect(error.code).toBe('PPR_ALREADY_DECIDED');
-    expect(error.message).toBe('This PPR request has already been decided.');
+    expect(error.code).toBe('PERSON_BUSY');
+    expect(error.message).toBe('This person already has an approved booking for an overlapping interval.');
   });
 
   it('accepts details as the second argument (mirrors ValidationError, unused by any caller yet)', () => {

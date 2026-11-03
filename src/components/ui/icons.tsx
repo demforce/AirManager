@@ -164,6 +164,12 @@ export const Icon = {
       <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" />
     </svg>
   ),
+  /** Story 15.1: the mobile tab bar's "Altro" glyph — path taken verbatim from the `AirOps Mobile` template (`IC.grid`), the only icon the desktop set was missing. */
+  grid: (p) => (
+    <svg viewBox="0 0 24 24" {...STROKE} {...p}>
+      <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" />
+    </svg>
+  ),
   logo: (p) => (
     <svg viewBox="0 0 24 24" {...p}>
       <path d="M4 14 L12 4 L20 14 L12 11 Z" fill="currentColor" />

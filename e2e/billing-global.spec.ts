@@ -85,7 +85,7 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', ()
 
   test('the seeded unattributed historical movement is reachable via the Liquidità riquadro\'s link; reclassifying it via the inline select PATCHes the method and drops it out of the secchiello', async ({ page }) => {
     // Every LIVE writer now requires a paymentMethod (Billing-1 AC2 + review
-    // F8/D2 closed the last gap, `completePprRequest`) — the ONLY reachable
+    // F8/D2 closed the last gap) — the ONLY reachable
     // unattributed row on a test DB is the ONE seeded directly via Prisma in
     // `prisma/seed.ts` (simulating a genuinely pre-migration historical
     // entry, exactly what this feature exists for).

@@ -22,13 +22,11 @@ import { z } from './zod-with-openapi';
  * server-side (`bookings.service.ts`) — never trusted as-is. `notes` is
  * capped at 500 chars, same convention as `registerExpirySchema`.
  *
- * `force`/`forceReason` (story 7.4, AC 2): a staff-only bypass of a blocking
- * expired document (`bookings.service.ts#createBooking`'s `EXPIRED_DOCUMENTS`
- * 422 — `bookings.manage.any` is checked SERVICE-side, this schema only
- * shapes the pair). The second `.refine` requires a non-empty `forceReason`
- * whenever `force` is `true` — UNCONDITIONALLY (not only when a real block
- * exists): the motivo is a property of the REQUEST, asked upfront, not
- * something the service can retroactively demand once it discovers a block.
+ * `force` (story 19.10, R-19-h): the admin's deroga of a 422
+ * `REQUIREMENTS_NOT_MET` (`schemas/requirements.ts`) — the SAME body resent
+ * with `force: true`, no motivo; `requirements.force` is checked
+ * SERVICE-side (403 otherwise). A body still carrying the retired motivo
+ * field is accepted and that field ignored (Zod non-strict).
  */
 export const createBookingSchema = z
   .object({
@@ -39,15 +37,10 @@ export const createBookingSchema = z
     endsAt: z.iso.datetime(),
     notes: z.string().trim().max(500).optional(),
     force: z.boolean().optional(),
-    forceReason: z.string().trim().min(1).max(500).optional(),
   })
   .refine((value) => new Date(value.endsAt).getTime() > new Date(value.startsAt).getTime(), {
     message: 'endsAt must be strictly after startsAt',
     path: ['endsAt'],
-  })
-  .refine((value) => !value.force || (value.forceReason !== undefined && value.forceReason.length > 0), {
-    message: 'forceReason is required when force is true',
-    path: ['forceReason'],
   });
 
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
@@ -69,6 +62,11 @@ export type CreateBookingInput = z.infer<typeof createBookingSchema>;
  * is `bookings.service.ts#updateBooking`, after merging against the
  * booking's current values (Dev Notes: "validazione sui valori RISULTANTI
  * dal merge").
+ *
+ * `force` (story 19.10): the admin's deroga of the move's 422
+ * `REQUIREMENTS_NOT_MET`, as on the create. It is not a change: the refine
+ * counts only the four editable fields, so `{ force: true }` alone is still
+ * an empty patch (422).
  */
 export const updateBookingSchema = z
   .object({
@@ -76,8 +74,12 @@ export const updateBookingSchema = z
     startsAt: z.iso.datetime().optional(),
     endsAt: z.iso.datetime().optional(),
     notes: z.string().trim().max(500).nullable().optional(),
+    force: z.boolean().optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, { message: 'At least one field must be provided.' });
+  .refine(
+    (value) => value.aircraftId !== undefined || value.startsAt !== undefined || value.endsAt !== undefined || value.notes !== undefined,
+    { message: 'At least one field must be provided.' },
+  );
 
 export type UpdateBookingInput = z.infer<typeof updateBookingSchema>;
 
@@ -126,20 +128,29 @@ export type ListBookingsQuery = z.infer<typeof listBookingsQuerySchema>;
  * `cancelledAt` (story 7.3, AC 2) are additive — every 7.1/7.2 consumer of
  * this DTO already ignores unknown fields, so the wire contract stays
  * backward-compatible. `forcedAt` (story 7.4, AC 2) is likewise additive —
- * `null` on every normal booking, set only when staff bypassed a real
- * blocking-expiry check; `forcedByUserId`/`forceReason` are deliberately NOT
- * exposed here (DB-only for now, Contesto) to keep this read-side DTO small.
+ * `null` on every normal booking, set only when an admin derogated a failed
+ * requirement (story 19.10, D-9) — API data, never shown by the UI (A10);
+ * `forcedByUserId` is deliberately NOT exposed here (DB-only, Contesto) to
+ * keep this read-side DTO small.
  * `denyReason`/`decidedAt` (story 12.2, AC 6) are likewise additive — `null`
  * unless the booking was decided (approved/denied) at least once;
  * `decidedByUserId`/`closedAt`/`closedByUserId` stay DB-only, same
- * deliberate omission as `forcedByUserId`/`forceReason` above.
+ * deliberate omission as `forcedByUserId` above.
+ *
+ * `personName` is now `.nullable()` (story 14.5, ratifica R3): `null` is the
+ * masking signal for an actor without `bookings.read.names` viewing a
+ * booking that isn't their own — a real booking always has a person, so
+ * `null` is unambiguous ("Occupato", never "no person"). `instructorName`/
+ * `notes`/`denyReason` are ALSO forced to `null` on a masked entry (server-
+ * side, `bookings.service.ts#maskBookingNames`) — none of those NEVER reach
+ * the wire for a masked row, so this schema needs no separate boolean flag.
  */
 export const bookingItemSchema = z.object({
   id: z.string(),
   aircraftId: z.string(),
   aircraftRegistration: z.string(),
   personId: z.string(),
-  personName: z.string(),
+  personName: z.string().nullable(),
   instructorProfileId: z.string().nullable(),
   instructorName: z.string().nullable(),
   startsAt: z.iso.datetime(),
@@ -231,15 +242,21 @@ export type CalendarBookingsResponseDto = z.infer<typeof calendarBookingsRespons
  * `POST /api/v1/bookings/{id}/transition` body (AC 3/6). `to` excludes
  * `CANCELLED` (`bookingStatusSchema.exclude`) — cancelling stays
  * `POST /api/v1/bookings/{id}/cancel`'s own endpoint (story 7.3), never
- * part of this matrix. `reason` is OPTIONAL here (unlike
- * `createBookingSchema`'s `force`/`forceReason` schema-level `.refine`):
- * whether it is required depends on `to` (mandatory only for `DENIED`,
- * 422 `BOOKING_DENY_REASON_REQUIRED`) — a domain rule the SERVICE checks
+ * part of this matrix. `reason` is OPTIONAL here: whether it is required
+ * depends on `to` (mandatory only for `DENIED`, 422
+ * `BOOKING_DENY_REASON_REQUIRED`) — a domain rule the SERVICE checks
  * (`bookings.service.ts#transitionBooking`), not this shape-only schema.
+ *
+ * `force` (story 19.10): the admin's deroga of the approval's 422
+ * `REQUIREMENTS_NOT_MET` — only an approval judges requirements, so `force`
+ * with any other `to` is refused here (422), never silently ignored.
  */
-export const transitionBookingSchema = z.object({
-  to: bookingStatusSchema.exclude(['CANCELLED']),
-  reason: z.string().trim().max(500).optional(),
-});
+export const transitionBookingSchema = z
+  .object({
+    to: bookingStatusSchema.exclude(['CANCELLED']),
+    reason: z.string().trim().max(500).optional(),
+    force: z.boolean().optional(),
+  })
+  .refine((value) => !value.force || value.to === 'APPROVED', { message: 'force is only valid on an approval', path: ['force'] });
 
 export type TransitionBookingInput = z.infer<typeof transitionBookingSchema>;

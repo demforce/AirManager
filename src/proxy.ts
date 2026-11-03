@@ -8,9 +8,8 @@ const intlMiddleware = createIntlMiddleware(routing);
 
 // Web paths (locale prefix already stripped) that never require a session.
 // Anything not listed here is protected by default (AC 3) — add future
-// public pages explicitly. `/ppr` (story 8.1, FR-22) is the first
-// "biglietto da visita" public page reachable by an external pilot with no
-// AirManager account at all — it never redirects to `/login`.
+// public pages explicitly.
+// Last entry: route removed in story 19.1, kept public so anonymous visitors get a 404, not the login page.
 const PUBLIC_WEB_PATHS = new Set(['', '/login', '/set-password', '/forgot-password', '/ppr']);
 
 // Auth.js's own endpoints (sign-in, callback, csrf, session, sign-out) must
@@ -31,17 +30,12 @@ const AUTH_API_PREFIX = '/api/auth';
 // auth, a timing-safe `JOBS_SECRET` bearer check, before doing anything
 // (401/500 on its own terms). Any future `/api/v1/jobs/*` route needs the
 // same entry here.
-// `/api/v1/ppr-requests` (story 8.1, AC 1/2) backs the public `/ppr` form
-// above — its own anti-abuse (honeypot + per-IP rate limit,
-// `ppr.service.ts`) stands in for the session check this gate would
-// otherwise perform, same rationale as the auth-token endpoints.
 const PUBLIC_API_PATHS = new Set([
   '/api/v1/health',
   '/api/v1/auth/set-password',
   '/api/v1/auth/forgot-password',
   '/api/v1/openapi.json',
   '/api/v1/jobs/expiry-alerts',
-  '/api/v1/ppr-requests',
 ]);
 
 function unauthenticatedApiResponse(): NextResponse {

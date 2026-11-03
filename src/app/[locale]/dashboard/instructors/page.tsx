@@ -7,6 +7,7 @@ import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { redirect } from '@/i18n/navigation';
 import { getCompensationSummary } from '@/server/services/instructor-compensation.service';
+import { buildPersonSaveErrorLabels } from '../pilots/pilot-editor-labels';
 import { InstructorsConsole, type InstructorRow } from './instructors-console';
 
 type PageProps = {
@@ -45,6 +46,12 @@ export default async function InstructorsPage({ params }: PageProps) {
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const t = await getTranslations('InstructorsPage');
   const tExport = await getTranslations('Export');
+  // Story 19.4: the student rate field reads like the aircraft's (story 19.3)
+  // and a failed Salva like the pilot editor's (review 19.4 F2) — the same
+  // copy, not a duplicate.
+  const tAircraft = await getTranslations('AircraftPage');
+  const tPilots = await getTranslations('PilotsPage');
+  const tPeople = await getTranslations('PeoplePage');
 
   const activeCount = summary.length;
   const totalMinutes = summary.reduce((sum, row) => sum + row.totalMinutes, 0);
@@ -55,7 +62,6 @@ export default async function InstructorsPage({ params }: PageProps) {
 
   const canManagePeople = hasPermission(actor, 'people.manage');
   const canManagePayouts = hasPermission(actor, 'payouts.manage');
-  const canManageSettings = hasPermission(actor, 'settings.manage');
   const canExport = hasPermission(actor, 'finance.manage');
 
   const exportHref = buildExportHref('/api/v1/instructor-compensation', {}, locale);
@@ -90,7 +96,6 @@ export default async function InstructorsPage({ params }: PageProps) {
         items={items}
         canManagePeople={canManagePeople}
         canManagePayouts={canManagePayouts}
-        canManageSettings={canManageSettings}
         exportHref={canExport ? exportHref : undefined}
         locale={displayLocale}
         labels={{
@@ -99,6 +104,7 @@ export default async function InstructorsPage({ params }: PageProps) {
           newInstructor: t('newInstructor'),
           paymentCycleButton: t('paymentCycleButton'),
           exportLabel: tExport('button'),
+          exportXls: t('exportMenu.xlsLabel'),
           table: {
             name: t('table.name'),
             rate: t('table.rate'),
@@ -108,6 +114,7 @@ export default async function InstructorsPage({ params }: PageProps) {
             noValue: t('table.noValue'),
           },
           actions: { edit: t('actions.edit'), pay: t('actions.pay') },
+          mobile: { openDetail: t('mobile.openDetail'), close: t('mobile.close'), owedSuffix: t('mobile.owedSuffix'), openProfile: t('mobile.openProfile') },
           addInstructor: {
             title: t('addInstructor.title'),
             subtitle: t('addInstructor.subtitle'),
@@ -118,10 +125,12 @@ export default async function InstructorsPage({ params }: PageProps) {
             cancel: t('addInstructor.cancel'),
             requiredField: t('addInstructor.requiredField'),
             genericError: t('addInstructor.genericError'),
+            exclusiveError: t('addInstructor.exclusiveError'),
           },
           editor: {
             closeLabel: t('editor.closeLabel'),
             cancel: t('editor.cancel'),
+            save: t('editor.save'),
             identity: {
               sectionTitle: t('editor.identity.sectionTitle'),
               firstName: t('editor.identity.firstName'),
@@ -129,30 +138,21 @@ export default async function InstructorsPage({ params }: PageProps) {
               email: t('editor.identity.email'),
               phone: t('editor.identity.phone'),
               address: t('editor.identity.address'),
-              fiscalCode: t('editor.identity.fiscalCode'),
-              save: t('editor.identity.save'),
               loadError: t('editor.identity.loadError'),
+              requiredField: t('editor.identity.requiredField'),
             },
             payoutRate: {
               sectionTitle: t('editor.payoutRate.sectionTitle'),
               label: t('editor.payoutRate.label'),
               noValue: t('editor.payoutRate.noValue'),
-              save: t('editor.payoutRate.save'),
-              readOnlyHint: t('editor.payoutRate.readOnlyHint'),
             },
             ratings: {
               sectionTitle: t('editor.ratings.sectionTitle'),
               empty: t('editor.ratings.empty'),
               status: { ok: t('editor.ratings.status.ok'), expiring: t('editor.ratings.status.expiring'), expired: t('editor.ratings.status.expired') },
               dateLabel: t('editor.ratings.dateLabel'),
-              addAction: t('editor.ratings.addAction'),
-              cancel: t('editor.ratings.cancel'),
-              save: t('editor.ratings.save'),
-              edit: t('editor.ratings.edit'),
               remove: t('editor.ratings.remove'),
-              confirmRemove: t('editor.ratings.confirmRemove'),
-              confirmYes: t('editor.ratings.confirmYes'),
-              confirmCancel: t('editor.ratings.confirmCancel'),
+              restore: t('editor.ratings.restore'),
               requiredDate: t('editor.ratings.requiredDate'),
               genericError: t('editor.ratings.genericError'),
             },
@@ -163,30 +163,22 @@ export default async function InstructorsPage({ params }: PageProps) {
             },
             studentRate: {
               heading: t('studentRate.heading'),
-              current: t('studentRate.current'),
-              noCurrentRate: t('studentRate.noCurrentRate'),
-              loadError: t('studentRate.loadError'),
               price: t('studentRate.price'),
               validFrom: t('studentRate.validFrom'),
-              submit: t('studentRate.submit'),
-              rateAdded: t('studentRate.rateAdded'),
+              // `t.raw`, not `t`: `{price}`/`{date}` are filled CLIENT-side,
+              // and `t()` would try to resolve them as ICU variables here and
+              // throw FORMATTING_ERROR — same reason as `fleet/page.tsx`.
+              currentHint: tAircraft.raw('editor.rates.currentHint') as string,
+              noCurrentRate: t('studentRate.noCurrentRate'),
+              next: t.raw('studentRate.next') as string,
+              loadError: t('studentRate.loadError'),
               requiredField: t('studentRate.requiredField'),
               invalidPrice: t('studentRate.invalidPrice'),
               invalidDate: t('studentRate.invalidDate'),
-              genericError: t('studentRate.genericError'),
-              conflictError: t('studentRate.conflictError'),
-              readOnlyHint: t('studentRate.readOnlyHint'),
-              historyTitle: t('studentRate.historyTitle'),
-              historyEmpty: t('studentRate.historyEmpty'),
-              historyActor: t('studentRate.historyActor'),
-              historyWhen: t('studentRate.historyWhen'),
-              // `t.raw`, not `t`: the `{count}` placeholder is filled CLIENT-side
-              // (the hidden-row count is only known there), and `t()` would try to
-              // resolve it as an ICU variable here and throw FORMATTING_ERROR —
-              // same reason `fleet/page.tsx:180` reads its own `showAll` raw.
-              historyShowAll: t.raw('studentRate.historyShowAll') as string,
+              validFromPast: tAircraft('editor.errors.validFromPast'),
             },
-            errors: { generic: t('editor.errors.generic'), invalidRate: t('editor.errors.invalidRate') },
+            errors: { invalidRate: t('editor.errors.invalidRate') },
+            saveErrors: buildPersonSaveErrorLabels(tPilots, tPeople),
           },
           profile: {
             closeLabel: t('profile.closeLabel'),
@@ -224,11 +216,9 @@ export default async function InstructorsPage({ params }: PageProps) {
             closeLabel: t('paymentCycle.closeLabel'),
           },
           toast: {
-            rateSet: t('toast.rateSet'),
+            saved: t('toast.saved'),
             payoutRecorded: t('toast.payoutRecorded'),
             instructorAdded: t('toast.instructorAdded'),
-            genericError: t('toast.genericError'),
-            identitySaved: t('toast.identitySaved'),
           },
         }}
       />

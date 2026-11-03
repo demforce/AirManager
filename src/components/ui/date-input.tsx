@@ -23,8 +23,8 @@
  * `position:fixed`/clamp mechanism `schedule.tsx` already uses for its own
  * two popovers (`./fixed-popover.ts`) — auditing every real consumer found
  * this component's OLD `position:absolute` popover silently clipped by
- * `.card{overflow:hidden}` (the public `/ppr` form, the pre-existing
- * billing console filter) and `.so-body{overflow:auto}` (every SlideOver
+ * `.card{overflow:hidden}` (the pre-existing billing console filter) and
+ * `.so-body{overflow:auto}` (every SlideOver
  * form: `confirmHit`/`hitTestsOwnControl`-style measurement showed its
  * lower controls present in the DOM but NOT hit-testable whenever the field
  * sat low enough in the scrollable/clipped container) — exactly the bug
@@ -95,6 +95,10 @@ export function DateInput({ inline = false, ref: externalRef, disabled, classNam
   }
 
   const today = new Date();
+  // Story 19.3 (AD-7): the native `min` (a `YYYY-MM-DD` string, already on the
+  // input) also bounds the popover — no prop of its own. Typing an earlier
+  // date stays possible (forms are `noValidate`): callers still validate.
+  const minDate = typeof inputProps.min === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(inputProps.min) ? dateOnlyToLocalDate(inputProps.min) : undefined;
 
   function toggle(): void {
     // Re-anchor the month on every open — the value may have changed (typed,
@@ -151,6 +155,7 @@ export function DateInput({ inline = false, ref: externalRef, disabled, classNam
                 todayLabel={t('today')}
                 prevMonthLabel={t('prevMonth')}
                 nextMonthLabel={t('nextMonth')}
+                minDate={minDate}
               />
             </>,
             document.body,

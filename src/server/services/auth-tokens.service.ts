@@ -12,8 +12,7 @@ export const PASSWORD_RESET_TTL_MS = 2 * 60 * 60 * 1000;
 
 // --- H4 (CWE-799/307) throttle: mail-bomb / token-churn on forgot-password,
 // `docs/security/owasp-audit-2026-07-22.md` — same "count recent rows in a
-// window" pattern as `ppr.service.ts`'s per-IP rate limit and
-// `login-throttle.ts`'s login lockout.
+// window" pattern as `login-throttle.ts`'s login lockout.
 
 const PASSWORD_RESET_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
@@ -25,8 +24,7 @@ const PASSWORD_RESET_MAX_PER_IP = 10;
 
 /**
  * `true` when the email or the IP has reached its cap of recent
- * `PasswordResetAttempt` rows. Exported for direct unit-testing (same
- * rationale as `ppr.service.ts#extractSubmitterIp`). `ip: null` (no
+ * `PasswordResetAttempt` rows. Exported for direct unit-testing. `ip: null` (no
  * resolvable `x-forwarded-for`) skips the per-IP check but never the
  * per-email one — the email always comes from the request body itself, so
  * a missing IP can't bypass the throttle entirely (H5 lesson).

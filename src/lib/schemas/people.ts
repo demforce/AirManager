@@ -1,12 +1,13 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { exportQuerySchema } from './common';
+import { setInstructorPayoutRateSchema } from './instructor-compensation';
 import { roleSchema } from './users';
 import { z } from './zod-with-openapi';
 
 /**
  * Base anagrafica fields, shared by the create/edit person forms and
  * `POST`/`PATCH /api/v1/people` (Consistency Conventions: "Uno schema Zod
- * per input/output per endpoint"). `email`/`phone`/`address`/`fiscalCode`
+ * per input/output per endpoint"). `email`/`phone`/`address`
  * are all optional — the story only requires `firstName`/`lastName`;
  * everything else may be filled in later (e.g. via the profile story 2.2).
  * `createPersonSchema` itself (the one-step composite, story 13.1, AC 5) is
@@ -19,7 +20,6 @@ export const createPersonBaseSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()).nullish(),
   phone: z.string().trim().min(1).nullish(),
   address: z.string().trim().min(1).nullish(),
-  fiscalCode: z.string().trim().toUpperCase().min(1).nullish(),
 });
 
 /**
@@ -33,7 +33,6 @@ export const updatePersonSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()).nullish(),
   phone: z.string().trim().min(1).nullish(),
   address: z.string().trim().min(1).nullish(),
-  fiscalCode: z.string().trim().toUpperCase().min(1).nullish(),
 });
 
 export type UpdatePersonInput = z.infer<typeof updatePersonSchema>;
@@ -52,6 +51,12 @@ export const listPeopleQuerySchema = paginationQuerySchema.extend({
   // schema is ever reused off a JSON body) turns the flag on; anything else,
   // including an explicit `"false"` or an absent param, is `false`.
   includeArchived: z.preprocess((value) => value === 'true' || value === true, z.boolean()).default(false),
+  // Feedback utente 2026-07-28 (pagina Piloti): the archived toggle shows
+  // ONLY archived persons, not actives+archived mixed. `archivedOnly` wins
+  // over `includeArchived` (which stays as-is for the picker callers) and is
+  // OPTIONAL (absent = false) so the existing literal call sites keep
+  // typechecking (`ListPeopleQuery` is the z.infer OUTPUT type).
+  archivedOnly: z.preprocess((value) => (value === undefined ? undefined : value === 'true' || value === true), z.boolean().optional()),
   // Story TD-3 (AC 3) — additive, optional profile filter for the flight
   // form's typeahead pickers: `pilot-or-student` narrows to an ACTIVE pilot
   // or student profile (the "Pilota o allievo" picker's domain rule),
@@ -91,7 +96,6 @@ export const personListItemSchema = z.object({
   email: z.string().nullable(),
   phone: z.string().nullable(),
   address: z.string().nullable(),
-  fiscalCode: z.string().nullable(),
   archivedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   profiles: profileFlagsSchema,
@@ -244,10 +248,11 @@ export type PersonDetailDto = z.infer<typeof personDetailSchema>;
  * `POST /api/v1/people/{id}/instructor-rates` body (story 4.2, AC 1/2): a new
  * historicized rate. `priceCentsPerHour` is an integer number of euro cents
  * (AD-2) — an HOURLY price, always > 0, capped at the Postgres INTEGER max
- * (identical to `createAircraftRateSchema.priceCentsPerHour`). `validFrom` is
- * a calendar date only (`YYYY-MM-DD`, same `z.iso.date()` pattern) — two
- * rates sharing the same `(instructorProfileId, validFrom)` are a 409 (AC 2),
- * never silently overwritten.
+ * (identical to `createAircraftRateSchema`'s prices). `validFrom` is a
+ * calendar date only (`YYYY-MM-DD`, same `z.iso.date()` pattern); since story
+ * 19.3 (R-19-f) the service rejects one in the past (`RATE_VALID_FROM_IN_PAST`,
+ * Europe/Rome calendar) and REWRITES the row already on the same
+ * `(instructorProfileId, validFrom)` instead of answering 409.
  */
 export const createInstructorRateSchema = z.object({
   priceCentsPerHour: z.number().int().positive().max(2_147_483_647),
@@ -283,3 +288,67 @@ export type InstructorRateItemDto = z.infer<typeof instructorRateItemSchema>;
 export const instructorRateListResponseSchema = z.array(instructorRateItemSchema);
 
 export type InstructorRateListResponseDto = z.infer<typeof instructorRateListResponseSchema>;
+
+// --- One atomic save of a person (story 19.4, AD-1) --------------------------
+
+/**
+ * A profile's FINAL state in the person composite (D-2): `active: true` with
+ * the same fields `PUT /people/{id}/profiles/{type}` takes (activates or
+ * updates), `active: false` deactivates — a no-op on a profile that is
+ * already inactive or was never activated.
+ */
+const pilotProfileChangeSchema = z.discriminatedUnion('active', [
+  pilotProfileRequestSchema.extend({ active: z.literal(true) }),
+  z.object({ active: z.literal(false) }),
+]);
+
+const studentProfileChangeSchema = z.discriminatedUnion('active', [
+  studentProfileRequestSchema.extend({ active: z.literal(true) }),
+  z.object({ active: z.literal(false) }),
+]);
+
+/** The instructor profile has no field of its own (story 13.1, R-13.1-b): only its final state. */
+const instructorProfileChangeSchema = z.object({ active: z.boolean() });
+
+/**
+ * The person's scadenze, by TYPE (D-2): `set` creates the row of a type the
+ * person does not have yet, or moves the date of the one they have; `remove`
+ * deletes the row of a type (absent = no-op). A type appears at most once,
+ * in one of the two arrays — anything else is a client bug.
+ */
+const personExpiryChangesSchema = z
+  .object({
+    set: z.array(createPersonExpirySchema).max(50).optional(),
+    remove: z.array(z.string().min(1)).max(50).optional(),
+  })
+  .refine(
+    ({ set = [], remove = [] }) => {
+      const setIds = set.map((item) => item.expiryTypeId);
+      return new Set(setIds).size === setIds.length && new Set(remove).size === remove.length && !setIds.some((id) => remove.includes(id));
+    },
+    { message: 'Each expiryTypeId may appear once, in set or in remove.' },
+  );
+
+/**
+ * `PATCH /api/v1/people/{id}` (story 19.4, AD-1): the anagrafica patch of
+ * `updatePersonSchema` plus four OPTIONAL blocks saved in the SAME
+ * transaction (`people.service.ts#updatePerson`). A body with only the
+ * anagrafica keys behaves as before. `payoutRateCents` has the shape of
+ * `PUT /instructor-compensation/{id}/rate` (`setInstructorPayoutRateSchema`:
+ * integer cents ≥ 0, or `null` = no compensation) and `instructorRate` the
+ * shape of `POST /people/{id}/instructor-rates`.
+ */
+export const updatePersonCompositeSchema = updatePersonSchema.extend({
+  profiles: z
+    .object({
+      pilot: pilotProfileChangeSchema.optional(),
+      student: studentProfileChangeSchema.optional(),
+      instructor: instructorProfileChangeSchema.optional(),
+    })
+    .optional(),
+  expiries: personExpiryChangesSchema.optional(),
+  payoutRateCents: setInstructorPayoutRateSchema.shape.payoutRateCents.optional(),
+  instructorRate: createInstructorRateSchema.optional(),
+});
+
+export type UpdatePersonCompositeInput = z.infer<typeof updatePersonCompositeSchema>;

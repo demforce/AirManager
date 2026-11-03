@@ -1,3 +1,5 @@
+import { parseDateOnlyUtc } from '@/lib/date-only';
+
 /**
  * Zoned calendar-day helpers (epic 7, story 7.2; FR-19) — SERVER-SIDE only.
  * Purpose: turn a calendar day/week expressed as Europe/Rome WALL-CLOCK
@@ -178,13 +180,29 @@ export function todayDateOnlyInZone(timeZone: string): string {
 }
 
 /**
+ * "Oggi" come `Date` a mezzanotte UTC — la forma che Prisma lega a una
+ * colonna `@db.Date` (invariante [I-d]) — calcolato sul calendario
+ * WALL-CLOCK di `timeZone`, non su quello UTC.
+ *
+ * È il caso `instant = now` di {@link dateOnlyInZone}, legato in
+ * `@db.Date` da `parseDateOnlyUtc`. Da NON confondere con
+ * `date-only.ts#todayDateOnlyUtc`, che è "oggi" secondo il calendario
+ * UTC: i due divergono di un giorno fra le 00:00 di Roma e le 00:00 UTC
+ * (1h in CET, 2h in CEST), ed è esattamente quella divergenza che
+ * `FLIGHT_DATE_IN_FUTURE` e le cinque `effectiveDate` UTC hanno pagato
+ * (ops F1 / ledger MAJOR-3).
+ */
+export function todayDateOnlyUtcInZone(timeZone: string): Date {
+  return parseDateOnlyUtc(todayDateOnlyInZone(timeZone));
+}
+
+/**
  * `[from, to)` UTC instant range spanning TODAY and TOMORROW's wall-clock
  * calendar days in `timeZone` (story 10.3, AC 1) — the staff home
  * dashboard's "prenotazioni di oggi/domani" widget. A pure composition of
  * the three primitives above (`dateOnlyInZone`/`addDaysDateOnly`/
- * `zonedMidnightUtc`), the same DST-aware range-building pattern
- * `ppr.service.ts#listPprRequests` already uses for its `eta` filter — no
- * new date arithmetic. `now` defaults to the real clock but is overridable
+ * `zonedMidnightUtc`) — no new date arithmetic. `now` defaults to the real
+ * clock but is overridable
  * for tests (same pattern as `period-presets.ts#currentMonthRange`).
  */
 export function todayTomorrowRangeUtc(timeZone: string, now: Date = new Date()): { from: Date; to: Date } {

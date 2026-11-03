@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { allTimeStatement } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -78,10 +79,15 @@ async function waitForMailpitCount(to: string, expected: number, timeoutMs = 15_
 
 /** Fills and submits the adjustment panel (assumes it is already open). */
 async function submitAdjustment(page: Page, amount: string, reason: string): Promise<void> {
-  await page.getByLabel('Importo (EUR, con segno)').fill(amount);
+  await page.getByLabel('Importo (€, con segno)').fill(amount);
   await page.getByLabel('Motivo').fill(reason);
   await page.getByRole('button', { name: 'Conferma rettifica' }).click();
   await expect(page.getByTestId('adjustment-feedback')).toHaveText('Rettifica registrata.');
+  // Story 15.9 / review MINOR-1: the green arrives from `.stat-tone-ok`, not
+  // from an inline `var(--ok)` (2.73:1 in the light theme). The inline colour
+  // is GONE, not merely overridden — an inline style beats any class rule.
+  await expect(page.getByTestId('adjustment-feedback')).toHaveClass(/stat-tone-ok/);
+  await expect(page.getByTestId('adjustment-feedback')).not.toHaveAttribute('style');
 }
 
 test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () => {
@@ -143,7 +149,8 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     const personId = await createPilotPerson(page, person);
     await recordTopUp(page, personId, 10000); // +100,00 € — the movement to correct.
 
-    await page.goto(`/it/dashboard/people/${personId}/account`);
+    // Story 19.11 (D-15): the top-up is dated 2026-07-01 — read over the wide period.
+    await page.goto(allTimeStatement(`/it/dashboard/people/${personId}/account`));
     const topUpRow = page.getByTestId('account-movement-row').filter({ hasText: 'Ricarica' });
     await topUpRow.getByRole('button', { name: 'Rettifica questo movimento' }).click();
     // The panel names the linked original movement.

@@ -4,36 +4,38 @@
  * Aircraft slide-over editor (story 12.5, AC 3) — port of
  * `docs/design-reference/airops/src/Fleet.jsx#AircraftEditor`, extended to
  * sections carrying EVERY legacy `aircraft-manager.tsx` function
- * (anagrafica, disponibilità, tariffe, contaore, archivio) — all visible
+ * (anagrafica, tariffe, disponibilità, archivio) — all visible
  * TOGETHER in one scrollable slide-over, rather than the legacy's swapped
  * single-panel-at-a-time layout, since AC 3 calls for "sezioni" not
- * "pannelli". Only the identity (anagrafica) section shares a Cancel/Submit
- * pair with the create flow (mirrors the prototype's own footer); every
- * other section is a self-contained mini-form/action, closed only via the
- * slide-over's own `X`.
+ * "pannelli". Story 19.3 (R-19-m, A17): the data — anagrafica AND tariffe —
+ * live in ONE form with ONE Salva (`identity-form`, submitted from the
+ * panel's footer), in creation and in modification alike; the rate rides in
+ * the same composite request (`POST`/`PATCH /api/v1/aircraft`). Disponibilità
+ * and Archivio stay ACTIONS with effects of their own, not data.
  */
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { Field, Input, Select } from '@/components/ui/field';
+import type { z } from 'zod';
+import { Field, Input } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
-import { Segmented } from '@/components/ui/segmented';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
+import { parseApiError } from '@/lib/api-field-errors';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents, parseCents } from '@/lib/money';
-import { formatDateOnly, formatDateTime, formatMinutes } from '@/lib/time';
+import { APP_TIMEZONE, formatDateOnly, formatMinutes } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import {
   createAircraftSchema,
-  createHourMeterAdjustmentSchema,
   updateAircraftSchema,
-  type AircraftRateItemDto,
+  type AogBookingImpactDto,
   type CreateAircraftInput,
-  type CreateHourMeterAdjustmentInput,
-  type HourMeterAdjustmentListItemDto,
   type UpdateAircraftInput,
+  type UpdateAircraftRateInput,
 } from '@/lib/schemas/aircraft';
-import type { FleetCardItem } from './fleet-console';
+import type { FleetConsoleItem, RatePrices, ScheduledRate } from './fleet-console';
 
 export type AircraftEditorLabels = {
   newTitle: string;
@@ -47,14 +49,6 @@ export type AircraftEditorLabels = {
     registration: string;
     type: string;
     model: string;
-    seats: string;
-    fuelType: string;
-    fuelOptions: { avgas: string; jetA1: string; mogas: string };
-    based: string;
-    basedOptions: { based: string; guest: string };
-    notes: string;
-    hourMeter: string;
-    hourMeterHint: string;
   };
   availability: {
     sectionTitle: string;
@@ -64,34 +58,48 @@ export type AircraftEditorLabels = {
     reason: string;
     confirm: string;
     confirmReturnToService: string;
+    /** Review MAJOR-2 — the question in FRONT of the armed pair (full `ArchiveSection` idiom): it moves `out-of-service-confirm` off the point that armed it, so a double click on the trigger no longer arms AND confirms. This is the form for the preview that never answered; the counted one is the ICU `confirmQuestion`, read in `AvailabilitySection` (story 19.12a). */
+    confirmQuestionUnknown: string;
+    /** Story AOG-1a, AC 5 — the date field's own label. Says "compreso"/"inclusive" IN the label, because R-AOG-a made the day itself part of the fermo. */
+    until: string;
+    /** Optional-ness + what an empty value means, in the `Field` hint slot (never a placeholder-as-label). */
+    untilHint: string;
+    /** `t.raw` template with a `{date}` placeholder — the fermo clause appended to "Stato attuale" when a date is on file. */
+    untilValue: string;
+    /** What "Stato attuale" says instead when the aircraft is grounded with NO date (invariant [b]: a legitimate state, never an empty string or a bare dash). */
+    untilUnknown: string;
+    /** AC 2 — the split, `{pending}`/`{approved}`. NOT decorative: it is the criterion of the email (R-AOG-i), so each half says what it means. */
+    impactSplit: string;
+    /** AC 2/AC 8 — the counting window in words, `{date}`, in the INCLUSIVE form of R-AOG-a. */
+    impactWindowUntil: string;
+    /** AC 8 — invariant [b]: no date means the count is NOT delimited, and both halves of that are named. */
+    impactWindowUndelimited: string;
+    /** Review MAJOR-1 — the THIRD case: a date IS on file but its day has already passed, so the count is not delimited either. It names that date as the EXPECTED one (`{date}`) instead of claiming the fermo ended there, which is what the `impactWindowUntil` wording did over a count of every future booking. */
+    impactWindowOverdue: string;
+    /** AC 2 — the preview number is a STIMA; the authoritative one is the response's. */
+    impactEstimate: string;
+    /** AC 5 — the banner's way out towards the bookings it is talking about. */
+    impactBookingsLink: string;
   };
+  /** Story 19.3 (R-19-f) — the two prices + "In vigore da" of the ONE form; no history, no display-only price. */
   rates: {
     sectionTitle: string;
-    current: string;
-    currentDry: string;
-    noCurrentRate: string;
-    newRateTitle: string;
-    price: string;
-    priceDry: string;
+    studentPrice: string;
+    pilotPrice: string;
     validFrom: string;
-    submit: string;
+    /** `t.raw` template with a `{price}` placeholder — the field hint when a rate is in effect today (the placeholder alone is not accessible). */
+    currentHint: string;
+    /** The field hint when NO rate is in effect today. */
+    noCurrentRate: string;
+    /** `t.raw` template, `{date}`/`{student}`/`{pilot}` — the ONE "variazione programmata" line (Q-19.3-d). */
+    scheduled: string;
+    /** Shown instead of the three fields on an archived aircraft. */
     readOnlyHint: string;
-    historyTitle: string;
-    historyEmpty: string;
-    /** `t.raw` template, `"Mostra tutte ({count})"` — client-interpolated (AC 2, story 13.4: default shows only the last 5). */
-    showAll: string;
   };
-  hourMeter: {
+  /** Story 19.2 (R-19-b) — read-only: the aircraft's hours are the sum of its registered flights. */
+  flightHours: {
     sectionTitle: string;
-    current: string;
-    newValue: string;
-    hint: string;
-    reason: string;
-    delta: string;
-    submit: string;
-    historyTitle: string;
-    historyEmpty: string;
-    loadMore: string;
+    total: string;
   };
   archive: {
     sectionTitle: string;
@@ -106,11 +114,13 @@ export type AircraftEditorLabels = {
     required: string;
     generic: string;
     conflictRegistration: string;
+    /** Review 19.3 F3 — the 409 `AIRCRAFT_ARCHIVED` of a Salva with a rate, when the aircraft was archived elsewhere while the panel was open. */
+    aircraftArchived: string;
     conflictStatus: string;
-    conflictRate: string;
-    invalidHourMeter: string;
     invalidPrice: string;
     invalidDate: string;
+    /** Story 19.3 — "In vigore da" before today (client check, and the server's `RATE_VALID_FROM_IN_PAST`). */
+    validFromPast: string;
     reasonRequired: string;
   };
 };
@@ -122,39 +132,49 @@ type ToastLabels = {
   unarchived: string;
   setOutOfService: string;
   returnedToService: string;
-  hourMeterAdjusted: string;
-  rateAdded: string;
 };
 
-type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetCardItem };
+type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetConsoleItem };
 
 type AircraftEditorProps = {
   target: EditorTarget | null;
   onClose: () => void;
   /** Refreshes the server-rendered grid/summary (AD-1) — called after every successful mutation. */
   onMutated: () => void;
-  canManageSettings: boolean;
+  /** Σ `minutes` of the aircraft's `REGISTERED` flights (story 19.2, R-19-b) — `null` in create mode. Not on `EditableAircraft`: that copy is rebuilt from API responses (`toEditable`), which carry no hours (D-2). */
+  totalMinutes: number | null;
   locale: 'it' | 'en';
   labels: AircraftEditorLabels;
   toastLabels: ToastLabels;
 };
 
-/** The editor's own working copy — a subset of `FleetCardItem` (no `wetRateCents`/`reserved`, grid-only presentation fields). */
-type EditableAircraft = Omit<FleetCardItem, 'wetRateCents' | 'reserved'>;
+/**
+ * The editor's own working copy — the fleet row minus the grid-only
+ * `reserved` badge and the two rates (story 19.3), which the editor keeps in
+ * a state of its own (`AircraftEditor#rates`): this copy is rebuilt from API
+ * responses (`toEditable`), and no aircraft response carries a rate.
+ */
+type EditableAircraft = Omit<FleetConsoleItem, 'reserved' | 'currentRate' | 'scheduledRate'>;
+
+/** The rate in effect today and the next scheduled one — the placeholders and the "variazione programmata" line (story 19.3, D-6). */
+type EditorRates = { current: RatePrices | null; scheduled: ScheduledRate | null };
 
 type AircraftApiResponse = {
   id: string;
   registration: string;
   type: string;
   model: string;
-  hourMeterMinutes: number;
-  notes: string | null;
   status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
   statusReason: string | null;
-  seats: number | null;
-  fuelType: string | null;
-  based: boolean;
+  /** Story AOG-1a — `YYYY-MM-DD` on the wire (`aircraftListItemSchema`), or `null`. */
+  outOfServiceUntil: string | null;
   archivedAt: string | null;
+};
+
+/** Story AOG-1b (AD-5): `POST /out-of-service` now answers the aircraft under its own key PLUS the count its transaction recomputed — `setOutOfServiceResponseSchema`. */
+type SetOutOfServiceApiResponse = {
+  aircraft: AircraftApiResponse;
+  impactedBookings: AogBookingImpactDto;
 };
 
 function toEditable(aircraft: AircraftApiResponse): EditableAircraft {
@@ -163,13 +183,9 @@ function toEditable(aircraft: AircraftApiResponse): EditableAircraft {
     registration: aircraft.registration,
     type: aircraft.type,
     model: aircraft.model,
-    hourMeterMinutes: aircraft.hourMeterMinutes,
-    notes: aircraft.notes,
     status: aircraft.status,
     statusReason: aircraft.statusReason,
-    seats: aircraft.seats,
-    fuelType: aircraft.fuelType,
-    based: aircraft.based,
+    outOfServiceUntil: aircraft.outOfServiceUntil,
     archivedAt: aircraft.archivedAt,
   };
 }
@@ -181,38 +197,33 @@ async function errorCodeOf(response: Response): Promise<string | null> {
   return (body as ApiErrorBody | null)?.error?.code ?? null;
 }
 
-/** Same browser-local "today" `YYYY-MM-DD` default as the legacy `RatesPanel`'s `todayDateOnly`. */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** Malformed/negative values never crash the render (same defensive convention as the legacy manager's `safeFormatMinutes`). */
-function safeFormatMinutes(totalMinutes: number): string {
+/** The server's >0/`INT_MAX` price rule (`createAircraftRateSchema`), checked imperatively by the "Tariffe" block, which is plain state rather than react-hook-form. */
+function isValidRatePrice(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
   try {
-    return formatMinutes(totalMinutes);
+    const cents = parseCents(trimmed);
+    return cents > 0 && cents <= 2_147_483_647;
   } catch {
-    return '—';
+    return false;
   }
 }
 
-function formatSignedMinutes(deltaMinutes: number): string {
-  if (!Number.isInteger(deltaMinutes)) return '—';
-  const sign = deltaMinutes < 0 ? '-' : '+';
-  return `${sign}${formatMinutes(Math.abs(deltaMinutes))}`;
+/** A price the way it is typed (`132,00` — no symbol, no grouping): the placeholder of a price field (story 19.3, AD-6). */
+function typableCents(cents: number): string {
+  return (cents / 100).toFixed(2).replace('.', ',');
 }
 
-/** The row with the maximum `validFrom <= today` (AD-4), computed client-side over an already-fetched history — display only, never fed back into pricing. */
-function currentRateOf(history: AircraftRateItemDto[]): AircraftRateItemDto | null {
-  const today = todayDateOnly();
-  return history.find((rate) => rate.validFrom <= today) ?? null;
-}
-
-const KNOWN_FUEL_TYPES = ['AVGAS 100LL', 'Jet A-1', 'Mogas'];
-
-export function AircraftEditor({ target, onClose, onMutated, canManageSettings, locale, labels, toastLabels }: AircraftEditorProps) {
+export function AircraftEditor({ target, onClose, onMutated, totalMinutes, locale, labels, toastLabels }: AircraftEditorProps) {
   const toast = useToast();
   const isNew = target?.mode === 'new';
   const [current, setCurrent] = useState<EditableAircraft | null>(target?.mode === 'edit' ? target.aircraft : null);
+  /** Story 19.3 (D-6): seeded from the server row, updated locally after a Salva — survives the availability/archive actions, which rebuild `current` from responses with no rate. */
+  const [rates, setRates] = useState<EditorRates>(
+    target?.mode === 'edit' ? { current: target.aircraft.currentRate, scheduled: target.aircraft.scheduledRate } : { current: null, scheduled: null },
+  );
+  /** Mirrors `IdentitySection`'s `isSubmitting` so the footer submit can be disabled while the request is in flight. */
+  const [identityBusy, setIdentityBusy] = useState(false);
 
   const open = target !== null;
   const title = isNew ? labels.newTitle : (current?.registration ?? '');
@@ -223,41 +234,91 @@ export function AircraftEditor({ target, onClose, onMutated, canManageSettings, 
     onMutated();
   }
 
+  /**
+   * Story 19.3 (D-6) — the placeholders after a Salva, without re-reading the
+   * history: every write has `validFrom >= today`, so a rate saved for TODAY
+   * becomes the current one, and a future one only competes with the known
+   * next scheduled rate (the nearer wins; on the same date, the saved one).
+   * A price left out took the one in force on `validFrom` (review 19.3 D-1),
+   * known exactly here whenever the saved row is shown: the current rate for
+   * a row of today or one before the next scheduled, that scheduled row for a
+   * rewrite of it — a later row never becomes the line.
+   */
+  function handleRateSaved(saved: UpdateAircraftRateInput, today: string): void {
+    setRates((previous) => {
+      const inForce = previous.scheduled !== null && previous.scheduled.validFrom <= saved.validFrom ? previous.scheduled : previous.current;
+      // Non-null: a price can be left out only when a rate is in effect today (`IdentitySection#priceError`).
+      const prices = {
+        studentPriceCents: saved.studentPriceCents ?? inForce!.studentPriceCents,
+        pilotPriceCents: saved.pilotPriceCents ?? inForce!.pilotPriceCents,
+      };
+      return saved.validFrom === today
+        ? { ...previous, current: prices }
+        : {
+            ...previous,
+            scheduled:
+              previous.scheduled !== null && previous.scheduled.validFrom < saved.validFrom ? previous.scheduled : { ...prices, validFrom: saved.validFrom },
+          };
+    });
+  }
+
+  /* Story 15.10 (R-15.10-f): the identity submit moves from the in-body
+     `.so-actions` bar to `SlideOver`'s `footer` (`.so-foot`, OUTSIDE the
+     scrolling `.so-body`), reaching its form through `form="identity-form"`.
+     15.2 pinned that bar with `position: sticky`, which cannot leave its
+     containing block: measured at 375px in MODIFICA, `.so-body` scrolls 1781px
+     inside 728px and the bar ended at `top -409.41` with the submit's
+     `elementFromPoint` returning FALSE — the same defect the pilot editor was
+     credited with, on the panel that was believed already fixed. */
+  const identityFooter = (
+    <>
+      <div style={{ flex: 1 }} />
+      <button type="button" className="btn" onClick={onClose}>
+        {labels.cancel}
+      </button>
+      <button type="submit" form="identity-form" disabled={identityBusy} className="btn primary" data-testid="identity-submit">
+        {isNew ? labels.submitCreate : labels.submitEdit}
+      </button>
+    </>
+  );
+
   return (
-    <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel}>
+    <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel} footer={identityFooter}>
       {isNew ? (
-        <IdentitySection mode="new" labels={labels} toastLabels={toastLabels} toast={toast} onClose={onClose} onCreated={onMutated} />
+        <IdentitySection
+          mode="new"
+          locale={locale}
+          labels={labels}
+          toastLabels={toastLabels}
+          toast={toast}
+          onBusyChange={setIdentityBusy}
+          onClose={onClose}
+          onCreated={onMutated}
+        />
       ) : current ? (
         <>
           <IdentitySection
             mode="edit"
             aircraft={current}
+            rates={rates}
+            locale={locale}
             labels={labels}
             toastLabels={toastLabels}
             toast={toast}
+            onBusyChange={setIdentityBusy}
             onClose={onClose}
             onSaved={handleMutated}
+            onRateSaved={handleRateSaved}
           />
 
           <Section title={labels.availability.sectionTitle}>
-            <AvailabilitySection aircraft={current} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
+            <AvailabilitySection aircraft={current} locale={locale} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
           </Section>
 
-          <Section title={labels.rates.sectionTitle}>
-            <RatesSection
-              aircraftId={current.id}
-              archived={current.archivedAt !== null}
-              canManageSettings={canManageSettings}
-              locale={locale}
-              labels={labels}
-              toastLabels={toastLabels}
-              toast={toast}
-              onMutated={onMutated}
-            />
-          </Section>
-
-          <Section title={labels.hourMeter.sectionTitle}>
-            <HourMeterSection aircraft={current} locale={locale} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
+          <Section title={labels.flightHours.sectionTitle}>
+            <p className="fld-label" data-testid="aircraft-total-hours">
+              {labels.flightHours.total}: {formatMinutes(totalMinutes ?? 0)}
+            </p>
           </Section>
 
           <Section title={labels.archive.sectionTitle}>
@@ -269,7 +330,7 @@ export function AircraftEditor({ target, onClose, onMutated, canManageSettings, 
   );
 }
 
-/** Shared section wrapper — a top divider + label, same convention `ppr-console.tsx`'s `LandingFeeEditor` sub-section uses inside `PprOperatingInstructionsEditor`. */
+/** Shared section wrapper — a top divider + label. */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
@@ -286,124 +347,281 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 type ToastHandle = { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
 
 type IdentitySectionProps =
-  | { mode: 'new'; labels: AircraftEditorLabels; toastLabels: ToastLabels; toast: ToastHandle; onClose: () => void; onCreated: () => void }
   | {
-      mode: 'edit';
-      aircraft: EditableAircraft;
+      mode: 'new';
+      locale: 'it' | 'en';
       labels: AircraftEditorLabels;
       toastLabels: ToastLabels;
       toast: ToastHandle;
+      /** `useState`'s setter — stable by contract, so the effect below cannot loop. */
+      onBusyChange: (busy: boolean) => void;
+      onClose: () => void;
+      onCreated: () => void;
+    }
+  | {
+      mode: 'edit';
+      aircraft: EditableAircraft;
+      rates: EditorRates;
+      locale: 'it' | 'en';
+      labels: AircraftEditorLabels;
+      toastLabels: ToastLabels;
+      toast: ToastHandle;
+      onBusyChange: (busy: boolean) => void;
       onClose: () => void;
       onSaved: (updated: EditableAircraft) => void;
+      /** Story 19.3 (D-6) — the rate block this Salva sent (a price left out = kept, review 19.3 D-1), and the "today" it was checked against. */
+      onRateSaved: (saved: UpdateAircraftRateInput, today: string) => void;
     };
 
 function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
-  const { labels } = props;
+  const { labels, locale } = props;
   const [formError, setFormError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const isNew = props.mode === 'new';
+  // Story 19.3 (R-19-m): the "Tariffe" block lives in this ONE form in both
+  // modes — except on an archived aircraft, which takes no new rate (the
+  // server would answer 409), so the block shows a sentence instead and the
+  // body never carries `rate`.
+  const archived = props.mode === 'edit' && props.aircraft.archivedAt !== null;
+  const currentRate = props.mode === 'edit' ? props.rates.current : null;
+  const scheduledRate = props.mode === 'edit' ? props.rates.scheduled : null;
+
+  // Plain state + imperative validation, NOT react-hook-form (story 14.8's
+  // convention for this block, same as `pilot-editor.tsx`'s `NewPersonForm`):
+  // whether a field is required depends on a rate in effect, not on the field.
+  const [studentPrice, setStudentPrice] = useState('');
+  const [pilotPrice, setPilotPrice] = useState('');
+  // A16 (story 16.9 AD-1 idiom): "today" is the Europe/Rome calendar day, the
+  // same day the server's `RATE_VALID_FROM_IN_PAST` checks against. Computed
+  // once per mount: the panel only renders client-side, after a click.
+  const [today] = useState(() => todayDateOnlyInZone(APP_TIMEZONE));
+  const [rateValidFrom, setRateValidFrom] = useState(today);
+  const [rateSubmitAttempted, setRateSubmitAttempted] = useState(false);
+  /** The server's 422 `RATE_VALID_FROM_IN_PAST` (midnight between render and Salva) — cleared as soon as the date changes. */
+  const [validFromServerPast, setValidFromServerPast] = useState(false);
+
+  // Touched = at least one price typed; the date alone writes nothing (AD-6).
+  const rateTouched = !archived && (studentPrice.trim().length > 0 || pilotPrice.trim().length > 0);
+  /** `null` = valid; otherwise the message for that price field. An empty field keeps the price in force on "In vigore da" (review 19.3 D-1) and is required only without a rate in effect today. */
+  function priceError(value: string): string | null {
+    if (!rateTouched) return null;
+    if (value.trim().length === 0) return currentRate === null ? labels.errors.required : null;
+    return isValidRatePrice(value) ? null : labels.errors.invalidPrice;
+  }
+  const studentPriceError = priceError(studentPrice);
+  const pilotPriceError = priceError(pilotPrice);
+  const trimmedValidFrom = rateValidFrom.trim();
+  // Review 14.8 F2: Chromium's date input accepts >4-digit years that
+  // `z.iso.date()` rejects server-side as an unmappable `rate` fieldError —
+  // the ISO shape is enforced here so that 422 is unreachable. The native
+  // `min` does not stop a TYPED earlier date (the form is `noValidate`), so
+  // "before today" is checked here too — ISO strings compare as dates.
+  const validFromError = !rateTouched
+    ? null
+    : trimmedValidFrom.length === 0
+      ? labels.errors.required
+      : !/^\d{4}-\d{2}-\d{2}$/.test(trimmedValidFrom)
+        ? labels.errors.invalidDate
+        : trimmedValidFrom < today || validFromServerPast
+          ? labels.errors.validFromPast
+          : null;
+  const rateBlocked = studentPriceError !== null || pilotPriceError !== null || validFromError !== null;
+
   const defaultValues = isNew
-    ? { registration: '', type: '', model: '', hourMeterMinutes: 0, notes: null, seats: null, fuelType: null, based: true }
+    ? { registration: '', type: '', model: '' }
     : {
         registration: props.aircraft.registration,
         type: props.aircraft.type,
         model: props.aircraft.model,
-        notes: props.aircraft.notes,
-        seats: props.aircraft.seats,
-        fuelType: props.aircraft.fuelType,
-        based: props.aircraft.based,
       };
 
   const {
     register,
     handleSubmit,
-    setValue,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<z.input<typeof createAircraftSchema> | UpdateAircraftInput, unknown, CreateAircraftInput | UpdateAircraftInput>({
     resolver: zodResolver(isNew ? createAircraftSchema : updateAircraftSchema),
     defaultValues,
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- register()'s valueAsNumber composition, same documented exception as the legacy manager.
-  const seatsField = register('seats', { setValueAs: (value: string) => (value === '' ? null : Number(value)) }) as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same as above, create-only field.
-  const hourMeterField = isNew ? (register('hourMeterMinutes', { valueAsNumber: true }) as any) : null;
+  // The submit that runs this form lives in the panel's `.so-foot` (story
+  // 15.10), outside this component: the only state it needs from here is
+  // whether a request is in flight.
+  const { onBusyChange } = props;
+  useEffect(() => {
+    onBusyChange(isSubmitting);
+  }, [isSubmitting, onBusyChange]);
 
-  const currentFuelType = isNew ? null : props.aircraft.fuelType;
-  const extraFuelOption = currentFuelType && !KNOWN_FUEL_TYPES.includes(currentFuelType) ? currentFuelType : null;
+  /** RHF's INVALID branch (base fields failed their own zodResolver check) — same `onInvalid` role as `pilot-editor.tsx`'s `NewPersonForm`: flips the plain-state "Tariffe" block's error visibility too, so a submit with BOTH an empty identity field AND an invalid rate field marks both at once instead of leaving the rate block mute. */
+  function onInvalid(): void {
+    setRateSubmitAttempted(true);
+  }
 
   async function onSubmit(values: CreateAircraftInput | UpdateAircraftInput): Promise<void> {
     setFormError(null);
+    setRateSubmitAttempted(true);
+    if (rateBlocked) {
+      setTimeout(() => focusFirstInvalid(formRef.current), 0);
+      return;
+    }
+
+    // ONE composite body (story 14.8 for the create, story 19.3 / A17 for the
+    // update): the server writes identity and rate in one `$transaction`, so a
+    // rejected rate never leaves a half-saved form behind. An empty price is
+    // left out of the body: the server keeps the one in force on `validFrom`
+    // (review 19.3 D-1), so a change scheduled before that date survives —
+    // today's price would silently undo it. (A creation has no rate in effect:
+    // both prices are required there, `priceError`.)
+    const rate = rateTouched
+      ? {
+          ...(studentPrice.trim().length > 0 && { studentPriceCents: parseCents(studentPrice) }),
+          ...(pilotPrice.trim().length > 0 && { pilotPriceCents: parseCents(pilotPrice) }),
+          validFrom: trimmedValidFrom,
+        }
+      : null;
+    const body: CreateAircraftInput | UpdateAircraftInput = rate ? { ...values, rate } : values;
 
     const response = isNew
-      ? await fetch('/api/v1/aircraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) })
+      ? await fetch('/api/v1/aircraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       : await fetch(`/api/v1/aircraft/${props.aircraft.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(values),
+          body: JSON.stringify(body),
         });
 
     if (!response.ok) {
-      const code = await errorCodeOf(response);
-      setFormError(code === 'CONFLICT' ? labels.errors.conflictRegistration : labels.errors.generic);
+      const { code, fieldErrors } = await parseApiError(response);
+      if (code === 'RATE_VALID_FROM_IN_PAST') {
+        setValidFromServerPast(true);
+        setTimeout(() => focusFirstInvalid(formRef.current), 0);
+        return;
+      }
+      if (response.status === 422) {
+        // Story 14.2, AC 3: field-shaped 422 mapped onto the matching Field,
+        // reusing `labels.errors.required` (same generic string as client-side
+        // required checks) — the raw server message is never shown (AD-8).
+        const known: Array<'registration' | 'type' | 'model'> = ['registration', 'type', 'model'];
+        let mapped = false;
+        for (const field of known) {
+          if (fieldErrors.has(field)) {
+            setError(field, { type: 'server', message: labels.errors.required });
+            mapped = true;
+          }
+        }
+        if (mapped) {
+          setTimeout(() => focusFirstInvalid(formRef.current), 0);
+          return;
+        }
+      }
+      setFormError(
+        code === 'AIRCRAFT_ARCHIVED'
+          ? labels.errors.aircraftArchived
+          : code === 'CONFLICT'
+            ? labels.errors.conflictRegistration
+            : labels.errors.generic,
+      );
       return;
     }
 
     const updated = (await response.json()) as AircraftApiResponse;
-    if (isNew) {
+    if (props.mode === 'new') {
       props.toast.show(props.toastLabels.created, 'ok');
       props.onClose();
       props.onCreated();
     } else {
       props.toast.show(props.toastLabels.updated, 'ok');
+      // D-6: the panel stays open on a fresh, empty rate block.
+      if (rate) props.onRateSaved(rate, today);
+      setStudentPrice('');
+      setPilotPrice('');
+      setRateValidFrom(today);
+      setRateSubmitAttempted(false);
       props.onSaved(toEditable(updated));
     }
   }
 
+  /** The field hint (linked by `aria-describedby`, unlike the placeholder): the price in effect today, or that there is none. Creation has nothing to say. */
+  function priceHint(cents: number | undefined): string | undefined {
+    if (isNew) return undefined;
+    return cents === undefined ? labels.rates.noCurrentRate : labels.rates.currentHint.replace('{price}', formatCents(cents, locale));
+  }
+
   return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="identity-form">
+    <form id="identity-form" ref={formRef} onSubmit={(event) => void handleSubmit(onSubmit, onInvalid)(event)} noValidate data-testid="identity-form">
       <div className="form-grid">
-        <Field label={labels.identity.registration}>
+        <Field label={labels.identity.registration} error={errors.registration ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.registration)} {...register('registration')} />
         </Field>
-        <Field label={labels.identity.type}>
+        <Field label={labels.identity.type} error={errors.type ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.type)} {...register('type')} />
         </Field>
-        <Field label={labels.identity.model} wide>
+        <Field label={labels.identity.model} wide error={errors.model ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.model)} {...register('model')} />
         </Field>
-        <Field label={labels.identity.seats}>
-          <Input type="number" min={0} step={1} inputMode="numeric" {...seatsField} />
-        </Field>
-        <Field label={labels.identity.fuelType}>
-          <Select {...register('fuelType', { setValueAs: (value: string) => (value === '' ? null : value) })} defaultValue={currentFuelType ?? ''}>
-            <option value="">—</option>
-            <option value="AVGAS 100LL">{labels.identity.fuelOptions.avgas}</option>
-            <option value="Jet A-1">{labels.identity.fuelOptions.jetA1}</option>
-            <option value="Mogas">{labels.identity.fuelOptions.mogas}</option>
-            {extraFuelOption ? <option value={extraFuelOption}>{extraFuelOption}</option> : null}
-          </Select>
-        </Field>
-        <Field label={labels.identity.based} wide>
-          <BasedSegmented defaultValue={defaultValues.based} labels={labels} setValue={setValue} />
-        </Field>
-        {isNew ? (
-          <Field label={labels.identity.hourMeter}>
-            <Input
-              type="number"
-              min={0}
-              step={1}
-              inputMode="numeric"
-              title={labels.identity.hourMeterHint}
-              aria-invalid={Boolean((errors as Record<string, unknown>)['hourMeterMinutes'])}
-              {...hourMeterField}
-            />
-          </Field>
-        ) : null}
-        <Field label={labels.identity.notes} wide>
-          <textarea className="input" rows={3} {...register('notes', { setValueAs: (value: string) => (value === '' ? null : value) })} />
-        </Field>
       </div>
+
+      <Section title={labels.rates.sectionTitle}>
+        {archived ? (
+          <p className="fld-hint" data-testid="aircraft-rate-readonly">
+            {labels.rates.readOnlyHint}
+          </p>
+        ) : (
+          <>
+            <div className="form-grid">
+              <Field
+                label={labels.rates.studentPrice}
+                error={rateSubmitAttempted ? (studentPriceError ?? undefined) : undefined}
+                hint={priceHint(currentRate?.studentPriceCents)}
+              >
+                <Input
+                  inputMode="decimal"
+                  placeholder={currentRate ? typableCents(currentRate.studentPriceCents) : '0,00'}
+                  aria-invalid={rateSubmitAttempted && studentPriceError !== null}
+                  value={studentPrice}
+                  onChange={(event) => setStudentPrice(event.target.value)}
+                  data-testid="aircraft-rate-student"
+                />
+              </Field>
+              <Field
+                label={labels.rates.pilotPrice}
+                error={rateSubmitAttempted ? (pilotPriceError ?? undefined) : undefined}
+                hint={priceHint(currentRate?.pilotPriceCents)}
+              >
+                <Input
+                  inputMode="decimal"
+                  placeholder={currentRate ? typableCents(currentRate.pilotPriceCents) : '0,00'}
+                  aria-invalid={rateSubmitAttempted && pilotPriceError !== null}
+                  value={pilotPrice}
+                  onChange={(event) => setPilotPrice(event.target.value)}
+                  data-testid="aircraft-rate-pilot"
+                />
+              </Field>
+              <Field label={labels.rates.validFrom} error={rateSubmitAttempted ? (validFromError ?? undefined) : undefined}>
+                <DateInput
+                  aria-invalid={rateSubmitAttempted && validFromError !== null}
+                  value={rateValidFrom}
+                  min={today}
+                  onChange={(event) => {
+                    setRateValidFrom(event.target.value);
+                    setValidFromServerPast(false);
+                  }}
+                  data-testid="aircraft-rate-valid-from"
+                />
+              </Field>
+            </div>
+            {scheduledRate ? (
+              <p className="fld-hint" data-testid="aircraft-rate-scheduled" style={{ marginTop: 12 }}>
+                {labels.rates.scheduled
+                  .replace('{date}', formatDateOnly(scheduledRate.validFrom, locale))
+                  .replace('{student}', formatCents(scheduledRate.studentPriceCents, locale))
+                  .replace('{pilot}', formatCents(scheduledRate.pilotPriceCents, locale))}
+              </p>
+            ) : null}
+          </>
+        )}
+      </Section>
 
       {formError ? (
         <p role="alert" data-testid="identity-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
@@ -411,87 +629,143 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
         </p>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-        <button type="button" className="btn" onClick={props.onClose}>
-          {labels.cancel}
-        </button>
-        <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="identity-submit">
-          {isNew ? labels.submitCreate : labels.submitEdit}
-        </button>
-      </div>
     </form>
-  );
-}
-
-/**
- * `based` segmented toggle — `Segmented` has no native change event RHF's
- * `register` can bind to, so this drives the form field IMPERATIVELY via
- * `setValue` (RHF's documented pattern for custom, non-native controls)
- * instead. Local `useState` only mirrors which segment is highlighted (same
- * "state mirror, RHF stays the single source of truth at submit"
- * convention as the legacy manager's `hourMeterMinutes` mirror) — never
- * read back via `watch()`/`useWatch()` (React-Compiler-unmemoizable, same
- * documented exception as `data-table.tsx`).
- */
-function BasedSegmented({
-  defaultValue,
-  labels,
-  setValue,
-}: {
-  defaultValue: boolean;
-  labels: AircraftEditorLabels;
-  setValue: (name: 'based', value: boolean) => void;
-}) {
-  const [value, setValue_] = useState(defaultValue);
-  return (
-    <Segmented
-      options={[
-        { value: 'based', label: labels.identity.basedOptions.based },
-        { value: 'guest', label: labels.identity.basedOptions.guest },
-      ]}
-      value={value ? 'based' : 'guest'}
-      onChange={(next) => {
-        const nextBased = next === 'based';
-        setValue_(nextBased);
-        setValue('based', nextBased);
-      }}
-    />
   );
 }
 
 // --- Availability (disponibilità) ------------------------------------------
 
+/**
+ * Story AOG-1b, AC 2: how long the impacted-booking preview waits before asking
+ * again. Sized on the MEASURED behaviour of the native date control (see the
+ * effect that uses it), not on a habit — small enough that opening the section
+ * still feels immediate, large enough that a typed year is one request.
+ */
+const IMPACT_DEBOUNCE_MS = 300;
+
+/**
+ * A count on screen TOGETHER with the date it was asked about (review
+ * MAJOR-1). The sentence beside the number is chosen on this pair — never on
+ * the date field's current value, which moves ahead of the count for a whole
+ * debounce + request: an undelimited answer next to a freshly typed future
+ * date would otherwise read "fermo oltre il {that date} previsto".
+ */
+type ShownImpact = AogBookingImpactDto & { askedUntil: string | null };
+
 function AvailabilitySection({
   aircraft,
+  locale,
   labels,
   toastLabels,
   toast,
   onMutated,
 }: {
   aircraft: EditableAircraft;
+  /** Story AOG-1a — needed only to format the fermo date in "Stato attuale" (the same `formatDateOnly` + locale pair the Tariffe block uses). */
+  locale: 'it' | 'en';
   labels: AircraftEditorLabels;
   toastLabels: ToastLabels;
   toast: { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
   onMutated: (updated: EditableAircraft) => void;
 }) {
+  // Story 19.12a (D-13): the impacted-booking count is only known here, so
+  // the sentences that inflect on it are ICU plurals formatted in the browser.
+  const t = useTranslations('AircraftPage.editor.availability');
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
+  // Story AOG-1a, AC 5 — `YYYY-MM-DD` straight out of `DateInput`'s native
+  // `type="date"`, which is exactly the wire format `setOutOfServiceSchema`
+  // expects; an empty string means "not set" and is a legitimate submit.
+  const [until, setUntil] = useState('');
   const [busy, setBusy] = useState(false);
+  /**
+   * Story AOG-1b, AC 3 — the second step of the submit. Deliberately LOCAL
+   * state on a section that `fleet-console.tsx` remounts on every open
+   * (`key={target === null ? 'closed' : ...}`), so it cannot outlive a
+   * close/reopen the way `pendingForceBody` did in BLOCKER 14.4 F1. Measured,
+   * not assumed (Dev Agent Record).
+   */
+  const [confirming, setConfirming] = useState(false);
+  /** The impacted-booking count currently on screen — `null` until the first read answers. */
+  const [impact, setImpact] = useState<ShownImpact | null>(null);
+  /**
+   * Which of the two things that number IS: the estimate the preview fetched
+   * (`false`, AC 2) or the one `POST /out-of-service` recomputed inside its own
+   * transaction (`true`, AC 4) — the latter is what the persistent banner
+   * reports (AC 5). Deliberately its OWN state and not a field of `impact`: it
+   * is a dependency of the effect below, and folding it into the value the
+   * effect WRITES would make every fetch schedule another one.
+   */
+  const [authoritative, setAuthoritative] = useState(false);
   const isOutOfService = aircraft.status === 'OUT_OF_SERVICE';
+
+  /**
+   * The window the count is about: the CANDIDATE date while the aircraft is
+   * still operational (it changes as the admin types), the STORED one once it
+   * is grounded (AC 6 — the row reappears at every reopen, same function).
+   */
+  const impactUntil = isOutOfService ? aircraft.outOfServiceUntil : until === '' ? null : until;
+
+  /*
+   * AC 2: the number is fetched when the section MOUNTS and re-fetched whenever
+   * the candidate date changes. The trigger is the VALUE of the date control,
+   * not a keystroke — but a native `<input type="date">` still emits one
+   * complete value per digit of the YEAR segment while it is being typed
+   * (measured: `0002-08-10`, `0020-08-10`, `0202-08-10`, `2026-08-10`), so an
+   * un-debounced effect fires FOUR requests, three of them about years nobody
+   * asked for. `IMPACT_DEBOUNCE_MS` collapses a whole typed date into ONE
+   * request (measured, Dev Agent Record) and costs one timer.
+   *
+   * `authoritative` short-circuits the whole thing: once the grounding has
+   * answered, its own number stands — a refetch would silently replace a
+   * transactional count with a later estimate.
+   */
+  useEffect(() => {
+    if (authoritative) return;
+    const controller = new AbortController();
+    const query = impactUntil === null ? '' : `?until=${encodeURIComponent(impactUntil)}`;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch(`/api/v1/aircraft/${aircraft.id}/out-of-service-impact${query}`, { signal: controller.signal });
+          if (!response.ok) return;
+          setImpact({ ...((await response.json()) as AogBookingImpactDto), askedUntil: impactUntil });
+        } catch {
+          // An aborted/failed preview is not an error the admin has to act on:
+          // the count is advisory, and the authoritative one still arrives with
+          // the grounding itself. Never a toast, never a blocked submit.
+        }
+      })();
+    }, IMPACT_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [aircraft.id, impactUntil, authoritative]);
 
   async function submitOutOfService(): Promise<void> {
     const trimmed = reason.trim();
     if (trimmed.length === 0) {
       setReasonError(labels.errors.reasonRequired);
+      setConfirming(false);
+      return;
+    }
+    // AC 3: the FIRST press writes nothing — it only asks. The write happens on
+    // the second one, below.
+    if (!confirming) {
+      setConfirming(true);
       return;
     }
     setBusy(true);
     const response = await fetch(`/api/v1/aircraft/${aircraft.id}/out-of-service`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: trimmed }),
+      // Invariant [b]: the key is OMITTED when empty, never sent as `null`/`''`
+      // — the schema's `.optional()` is what "return date not yet known" means.
+      body: JSON.stringify({ reason: trimmed, ...(until === '' ? {} : { outOfServiceUntil: until }) }),
     });
     setBusy(false);
+    setConfirming(false);
 
     if (!response.ok) {
       const code = await errorCodeOf(response);
@@ -499,11 +773,16 @@ function AvailabilitySection({
       return;
     }
 
-    const updated = (await response.json()) as AircraftApiResponse;
+    // Story AOG-1b, AD-5: the response is now the aircraft PLUS the count its
+    // own transaction recomputed.
+    const result = (await response.json()) as SetOutOfServiceApiResponse;
     setReason('');
+    setUntil('');
     setReasonError(null);
+    setImpact({ ...result.impactedBookings, askedUntil: result.aircraft.outOfServiceUntil });
+    setAuthoritative(true);
     toast.show(toastLabels.setOutOfService, 'ok');
-    onMutated(toEditable(updated));
+    onMutated(toEditable(result.aircraft));
   }
 
   async function submitReturnToService(): Promise<void> {
@@ -518,423 +797,229 @@ function AvailabilitySection({
     }
 
     const updated = (await response.json()) as AircraftApiResponse;
+    // The aircraft is airworthy again: the count that described its fermo is
+    // no longer about anything, and the next read is an estimate again. No
+    // email goes out here (R-AOG-i).
+    setImpact(null);
+    setAuthoritative(false);
     toast.show(toastLabels.returnedToService, 'ok');
     onMutated(toEditable(updated));
   }
 
+  // Story AOG-1a, AC 5 — the fermo clause of "Stato attuale". Present ONLY
+  // while the aircraft is actually grounded; `null` is a legitimate state
+  // (invariant [b]) and is NAMED ("rientro da definire"), never rendered as an
+  // empty string or as a bare "—" in a spot that already announces a value.
+  const currentStatusText = isOutOfService
+    ? `${aircraft.statusReason} · ${
+        aircraft.outOfServiceUntil === null
+          ? labels.availability.untilUnknown
+          : labels.availability.untilValue.replace('{date}', formatDateOnly(aircraft.outOfServiceUntil, locale))
+      }`
+    : '—';
+
+  /**
+   * Story AOG-1b, AC 2/AC 8 — the window, stated in words, on EVERY surface
+   * that shows a number, and (review MAJOR-1) chosen on the bound the count was
+   * ACTUALLY taken over: `impactedBookings.effectiveUntil`, straight from the
+   * domain function. Three cases, three sentences:
+   * - a live bound -> "conteggio fino al {date} compreso";
+   * - no date at all -> "rientro da definire: conteggio non delimitato"
+   *   (invariant [b] is a legitimate state, and the one thing it must never
+   *   look like is a delimited count with a missing end);
+   * - a date whose day has already passed -> "fermo oltre il {date} previsto",
+   *   because `computeAogImpact` counted WITHOUT a bound (AC 9: an overrun
+   *   fermo must not have its warning silenced) and saying "fino al {ieri}"
+   *   over that number was simply false.
+   *
+   * The rule that decides case 3 lives ONLY in the domain function; what is
+   * read here is its answer plus the date that answer was asked about
+   * (`ShownImpact`). The empty string is unreachable in render: every consumer
+   * sits inside `impact ? ... : null`.
+   */
+  const windowText = !impact
+    ? ''
+    : impact.effectiveUntil !== null
+      ? labels.availability.impactWindowUntil.replace('{date}', formatDateOnly(impact.effectiveUntil, locale))
+      : impact.askedUntil === null
+        ? labels.availability.impactWindowUndelimited
+        : labels.availability.impactWindowOverdue.replace('{date}', formatDateOnly(impact.askedUntil, locale));
+
+  const splitText = impact
+    ? labels.availability.impactSplit.replace('{pending}', String(impact.pending)).replace('{approved}', String(impact.approved))
+    : '';
+  const impactTotal = impact ? impact.pending + impact.approved : 0;
+
   return (
     <div>
       <p className="fld-label" data-testid="availability-current">
-        {labels.availability.current}: {isOutOfService ? aircraft.statusReason : '—'}
+        {labels.availability.current}: {currentStatusText}
       </p>
 
       {isOutOfService ? (
-        <button type="button" className="btn" disabled={busy} onClick={() => void submitReturnToService()} data-testid="return-to-service-button">
-          {labels.availability.returnToService}
-        </button>
+        <>
+          {impact ? (
+            authoritative ? (
+              /* AC 5: the PERSISTENT report of what just happened. `role="status"`
+                 (polite) rather than `alert`: it is the outcome of an action the
+                 admin took on purpose, not an interruption — and unlike the
+                 2600 ms toast beside it, it does not go away. */
+              <p className="alert-box bad" role="status" style={{ marginBottom: 12, lineHeight: 1.55 }} data-testid="aog-impact-banner">
+                <span style={{ display: 'block', fontWeight: 600 }}>
+                  {t('impactBanner', { count: impactTotal })}
+                </span>
+                <span style={{ display: 'block' }}>{splitText}</span>
+                <span style={{ display: 'block' }}>{windowText}</span>
+                <a style={{ display: 'inline-block', marginTop: 4 }} href={`/${locale}/dashboard/bookings?status=PENDING,APPROVED`} data-testid="aog-impact-bookings-link">
+                  {labels.availability.impactBookingsLink}
+                </a>
+              </p>
+            ) : (
+              /* AC 6: the same number, from the same domain function, back at
+                 every reopening of an already-grounded aircraft — the banner is
+                 gone with the session, this line is not. Informative only: AD-9
+                 keeps every control that would 409 off this face. */
+              <p className="fld-hint" style={{ marginBottom: 12 }} data-testid="aog-impact-row">
+                {t('impactRow', { count: impactTotal })} · {windowText}
+              </p>
+            )
+          ) : null}
+          <button type="button" className="btn" disabled={busy} onClick={() => void submitReturnToService()} data-testid="return-to-service-button">
+            {labels.availability.returnToService}
+          </button>
+        </>
       ) : (
+        /* AD-9: the whole grounding form — reason AND date — is rendered ONLY
+           for an OPERATIONAL aircraft, because `setOutOfService`'s atomic
+           `where: { status: 'OPERATIONAL' }` guard (review 2.2 F1, untouched)
+           makes a second call a 409. Offering an editable date on an
+           already-grounded aircraft would be a control that can only ever
+           fail — the dead-end class of lezione 14.6 F2. */
         <div className="form-grid">
-          <Field label={labels.availability.reason} wide>
+          {impact && impactTotal > 0 ? (
+            /* AC 2: the warning arrives BEFORE the act, not after it. `role="status"`
+               so the number is re-announced when the candidate date changes it.
+               Only when there IS something to warn about: review MINOR-1 measured
+               this box spending 78,13 px + 14 px of gap to say "0 prenotazioni",
+               which is what pushed the primary submit under the fold of the
+               scrollable body at 1280x900. Zero takes the one-line form below. */
+            <p className="alert-box info" role="status" style={{ gridColumn: '1 / -1', lineHeight: 1.55 }} data-testid="aog-impact-preview">
+              <span style={{ display: 'block', fontWeight: 600 }}>
+                {t('impactPreview', { count: impactTotal })}
+              </span>
+              <span style={{ display: 'block' }}>{splitText}</span>
+              <span style={{ display: 'block' }}>
+                {windowText} · {labels.availability.impactEstimate}
+              </span>
+            </p>
+          ) : null}
+          <Field label={labels.availability.reason} wide error={reasonError ?? undefined}>
             <textarea
               className="input"
               rows={2}
+              aria-invalid={Boolean(reasonError)}
               value={reason}
               onChange={(event) => {
                 setReason(event.target.value);
                 if (reasonError) setReasonError(null);
+                // Editing the motivo after asking to confirm would have the
+                // second press write something the first one never showed.
+                setConfirming(false);
               }}
               data-testid="out-of-service-reason"
             />
           </Field>
-          {reasonError ? (
-            <p role="alert" className="fld-label" style={{ color: 'var(--bad)' }}>
-              {reasonError}
-            </p>
-          ) : null}
-          <div className="fld wide">
-            <button type="button" className="btn" disabled={busy} onClick={() => void submitOutOfService()} data-testid="out-of-service-submit">
-              {labels.availability.setOutOfService}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// --- Rates (tariffe) ---------------------------------------------------------
-
-const newRateFormSchema = z
-  .object({ price: z.string().trim().min(1), priceDry: z.string().trim(), validFrom: z.string().trim().min(1) })
-  .refine(
-    (values) => {
-      try {
-        const cents = parseCents(values.price);
-        return cents > 0 && cents <= 2_147_483_647;
-      } catch {
-        return false;
-      }
-    },
-    { message: 'invalidPrice', path: ['price'] },
-  )
-  .refine(
-    (values) => {
-      if (values.priceDry.trim().length === 0) return true;
-      try {
-        const cents = parseCents(values.priceDry);
-        return cents > 0 && cents <= 2_147_483_647;
-      } catch {
-        return false;
-      }
-    },
-    { message: 'invalidPrice', path: ['priceDry'] },
-  );
-
-type NewRateFormValues = z.infer<typeof newRateFormSchema>;
-
-/** Default visible window for the rates/hour-meter histories (R3, story 13.4) — full history stays reachable via "mostra tutte"/"carica altri". */
-const HISTORY_VISIBLE_COUNT = 5;
-
-/** Pure fetch, no setState (see the effect's own doc-comment for why). */
-async function fetchRatesHistory(aircraftId: string): Promise<AircraftRateItemDto[]> {
-  const response = await fetch(`/api/v1/aircraft/${aircraftId}/rates`);
-  if (!response.ok) return [];
-  return (await response.json()) as AircraftRateItemDto[];
-}
-
-function RatesSection({
-  aircraftId,
-  archived,
-  canManageSettings,
-  locale,
-  labels,
-  toastLabels,
-  toast,
-  onMutated,
-}: {
-  aircraftId: string;
-  archived: boolean;
-  canManageSettings: boolean;
-  locale: 'it' | 'en';
-  labels: AircraftEditorLabels;
-  toastLabels: ToastLabels;
-  toast: { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
-  onMutated: () => void;
-}) {
-  const [history, setHistory] = useState<AircraftRateItemDto[] | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  // AC 2 (R3): the full history is already fetched (defensively capped at
-  // 500 server-side) — showing only the last 5 by default is a pure
-  // client-side slice, no extra round-trip needed to "show all".
-  const [showAllRates, setShowAllRates] = useState(false);
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<NewRateFormValues>({ resolver: zodResolver(newRateFormSchema), defaultValues: { price: '', priceDry: '', validFrom: todayDateOnly() } });
-
-  useEffect(() => {
-    // Same `.then(callback)` shape as `account-panel.tsx`'s own fetch effect
-    // (not a named async function referenced via `void loadHistory()`, which
-    // the `react-hooks/set-state-in-effect` rule flags even behind a
-    // `cancelled` guard) — `fetchRatesHistory` itself performs no setState,
-    // only the `.then` callback below does, gated on `cancelled`.
-    let cancelled = false;
-    void fetchRatesHistory(aircraftId).then((result) => {
-      if (!cancelled) setHistory(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [aircraftId]);
-
-  async function onSubmit(values: NewRateFormValues): Promise<void> {
-    setFormError(null);
-    const priceCentsPerHour = parseCents(values.price);
-    const dryHourlyRateCents = values.priceDry.trim().length > 0 ? parseCents(values.priceDry) : undefined;
-
-    const response = await fetch(`/api/v1/aircraft/${aircraftId}/rates`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ priceCentsPerHour, dryHourlyRateCents, validFrom: values.validFrom }),
-    });
-
-    if (!response.ok) {
-      const code = await errorCodeOf(response);
-      setFormError(code === 'CONFLICT' ? labels.errors.conflictRate : labels.errors.generic);
-      return;
-    }
-
-    reset({ price: '', priceDry: '', validFrom: todayDateOnly() });
-    toast.show(toastLabels.rateAdded, 'ok');
-    setHistory(await fetchRatesHistory(aircraftId));
-    onMutated();
-  }
-
-  const current = history ? currentRateOf(history) : null;
-
-  return (
-    <div>
-      <p className="fld-label">
-        {labels.rates.current}:{' '}
-        <span data-testid="rates-current">{current ? `${formatCents(current.priceCentsPerHour, locale)}/h` : labels.rates.noCurrentRate}</span>
-      </p>
-      {current?.dryHourlyRateCents ? (
-        <p className="fld-label" data-testid="rates-current-dry">
-          {labels.rates.currentDry}: {formatCents(current.dryHourlyRateCents, locale)}/h
-        </p>
-      ) : null}
-
-      {canManageSettings && !archived ? (
-        <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="new-rate-form" style={{ marginTop: 10 }}>
-          <div className="form-grid">
-            <Field label={labels.rates.price}>
-              <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.price)} {...register('price')} />
-            </Field>
-            <Field label={labels.rates.priceDry}>
-              <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.priceDry)} {...register('priceDry')} />
-            </Field>
-            <Field label={labels.rates.validFrom}>
-              <DateInput aria-invalid={Boolean(errors.validFrom)} {...register('validFrom')} />
-            </Field>
-          </div>
-          {formError ? (
-            <p role="alert" data-testid="new-rate-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-              {formError}
-            </p>
-          ) : null}
-          <div style={{ marginTop: 10 }}>
-            <button type="submit" disabled={isSubmitting} className="btn" data-testid="new-rate-submit">
-              {labels.rates.submit}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <p className="fld-label" style={{ marginTop: 8 }}>
-          {labels.rates.readOnlyHint}
-        </p>
-      )}
-
-      <div style={{ marginTop: 14 }}>
-        <div className="fld-label" style={{ fontWeight: 600 }}>
-          {labels.rates.historyTitle}
-        </div>
-        {history === null ? null : history.length === 0 ? (
-          <p className="fld-label" style={{ marginTop: 6 }}>
-            {labels.rates.historyEmpty}
-          </p>
-        ) : (
-          <div style={{ marginTop: 6 }}>
-            {(showAllRates ? history : history.slice(0, HISTORY_VISIBLE_COUNT)).map((rate) => (
-              <div key={rate.id} data-testid="rate-history-row" className="meter-row" style={{ padding: '4px 0' }}>
-                <span>{formatDateOnly(rate.validFrom, locale)}</span>
-                <span className="v mono">
-                  {formatCents(rate.priceCentsPerHour, locale)}/h{rate.dryHourlyRateCents ? ` · ${formatCents(rate.dryHourlyRateCents, locale)}/h dry` : ''}
-                </span>
-              </div>
-            ))}
-            {!showAllRates && history.length > HISTORY_VISIBLE_COUNT ? (
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setShowAllRates(true)}
-                data-testid="rates-history-show-all"
-                style={{ marginTop: 8 }}
-              >
-                {labels.rates.showAll.replace('{count}', String(history.length - HISTORY_VISIBLE_COUNT))}
-              </button>
-            ) : null}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// --- Hour meter (contaore) ---------------------------------------------------
-
-// R3 (story 13.4): default window shrunk from 50 to 5 — "carica altri"
-// (the pre-existing `loadMore` mechanism, unchanged) reaches the rest a
-// page at a time, staying under the shared pagination cap (`pageSize` <=
-// 100, `paginationQuerySchema`) regardless of how large the history grows.
-const HOUR_METER_HISTORY_PAGE_SIZE = HISTORY_VISIBLE_COUNT;
-
-type HourMeterHistoryPage = { items: HourMeterAdjustmentListItemDto[]; total: number };
-
-/** Pure fetch, no setState (see the effect's own doc-comment for why). */
-async function fetchHourMeterHistory(aircraftId: string, page: number): Promise<HourMeterHistoryPage> {
-  const response = await fetch(`/api/v1/aircraft/${aircraftId}/hour-meter-adjustments?pageSize=${HOUR_METER_HISTORY_PAGE_SIZE}&page=${page}`);
-  if (!response.ok) return { items: [], total: 0 };
-  return (await response.json()) as HourMeterHistoryPage;
-}
-
-function HourMeterSection({
-  aircraft,
-  locale,
-  labels,
-  toastLabels,
-  toast,
-  onMutated,
-}: {
-  aircraft: EditableAircraft;
-  locale: 'it' | 'en';
-  labels: AircraftEditorLabels;
-  toastLabels: ToastLabels;
-  toast: { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
-  onMutated: (updated: EditableAircraft) => void;
-}) {
-  const [history, setHistory] = useState<HourMeterAdjustmentListItemDto[] | null>(null);
-  const [historyTotal, setHistoryTotal] = useState(0);
-  const [historyPage, setHistoryPage] = useState(1);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [newMinutes, setNewMinutes] = useState(aircraft.hourMeterMinutes);
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<CreateHourMeterAdjustmentInput>({
-    resolver: zodResolver(createHourMeterAdjustmentSchema),
-    defaultValues: { newMinutes: aircraft.hourMeterMinutes, reason: '' },
-  });
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same composed-onChange exception as the legacy manager.
-  const newMinutesField = register('newMinutes', { valueAsNumber: true }) as any;
-
-  useEffect(() => {
-    // Same `.then(callback)` shape as `RatesSection`'s own effect (and
-    // `account-panel.tsx`'s) — `fetchHourMeterHistory` performs no setState
-    // itself, only the `.then` callback below does, gated on `cancelled`.
-    let cancelled = false;
-    void fetchHourMeterHistory(aircraft.id, 1).then((result) => {
-      if (cancelled) return;
-      setHistory(result.items);
-      setHistoryTotal(result.total);
-      setHistoryPage(1);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [aircraft.id]);
-
-  async function handleLoadMore(): Promise<void> {
-    const nextPage = historyPage + 1;
-    setLoadingMore(true);
-    const result = await fetchHourMeterHistory(aircraft.id, nextPage);
-    setLoadingMore(false);
-    setHistory((currentHistory) => [...(currentHistory ?? []), ...result.items]);
-    setHistoryTotal(result.total);
-    setHistoryPage(nextPage);
-  }
-
-  async function onSubmit(values: CreateHourMeterAdjustmentInput): Promise<void> {
-    setFormError(null);
-    const response = await fetch(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
-    });
-
-    if (!response.ok) {
-      setFormError(labels.errors.generic);
-      return;
-    }
-
-    const updated = (await response.json()) as AircraftApiResponse;
-    reset({ newMinutes: updated.hourMeterMinutes, reason: '' });
-    setNewMinutes(updated.hourMeterMinutes);
-    toast.show(toastLabels.hourMeterAdjusted, 'ok');
-    const result = await fetchHourMeterHistory(aircraft.id, 1);
-    setHistory(result.items);
-    setHistoryTotal(result.total);
-    setHistoryPage(1);
-    onMutated(toEditable(updated));
-  }
-
-  const delta = Number.isInteger(newMinutes) ? newMinutes - aircraft.hourMeterMinutes : Number.NaN;
-
-  return (
-    <div>
-      <p className="fld-label" data-testid="hour-meter-current">
-        {labels.hourMeter.current}: {safeFormatMinutes(aircraft.hourMeterMinutes)}
-      </p>
-
-      <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="hour-meter-form" style={{ marginTop: 8 }}>
-        <div className="form-grid">
-          <Field label={labels.hourMeter.newValue}>
-            <Input
-              type="number"
-              min={0}
-              step={1}
-              inputMode="numeric"
-              title={labels.hourMeter.hint}
-              aria-invalid={Boolean(errors.newMinutes)}
-              {...newMinutesField}
+          <Field label={labels.availability.until} hint={labels.availability.untilHint}>
+            <DateInput
+              value={until}
               onChange={(event) => {
-                void newMinutesField.onChange(event);
-                setNewMinutes(event.target.valueAsNumber);
+                setUntil(event.target.value);
+                setConfirming(false);
               }}
+              data-testid="out-of-service-until"
             />
           </Field>
-          <Field label={labels.hourMeter.delta}>
-            <span className="mono" data-testid="hour-meter-delta">
-              {formatSignedMinutes(delta)}
-            </span>
-          </Field>
-          <Field label={labels.hourMeter.reason} wide>
-            <textarea className="input" rows={2} aria-invalid={Boolean(errors.reason)} {...register('reason')} />
-          </Field>
-        </div>
-        {formError ? (
-          <p role="alert" data-testid="hour-meter-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
-            {formError}
-          </p>
-        ) : null}
-        <div style={{ marginTop: 10 }}>
-          <button type="submit" disabled={isSubmitting} className="btn" data-testid="hour-meter-submit">
-            {labels.hourMeter.submit}
-          </button>
-        </div>
-      </form>
-
-      <div style={{ marginTop: 14 }}>
-        <div className="fld-label" style={{ fontWeight: 600 }}>
-          {labels.hourMeter.historyTitle}
-        </div>
-        {history === null ? null : history.length === 0 ? (
-          <p className="fld-label" style={{ marginTop: 6 }}>
-            {labels.hourMeter.historyEmpty}
-          </p>
-        ) : (
-          <div style={{ marginTop: 6 }}>
-            {history.map((entry) => (
-              <div key={entry.id} data-testid="hour-meter-history-row" style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                <div className="meter-row">
-                  <span>
-                    {formatDateTime(new Date(entry.createdAt), locale)} · {entry.actorEmail}
-                  </span>
-                  <span className="v mono">
-                    {safeFormatMinutes(entry.previousMinutes)} &rarr; {safeFormatMinutes(entry.newMinutes)} (
-                    {formatSignedMinutes(entry.newMinutes - entry.previousMinutes)})
-                  </span>
+          {impact && impactTotal === 0 ? (
+            /* Review MINOR-1: the whole preview, as one hint line, when there
+               is nothing to warn about. Above 640px it sits in the grid cell
+               BESIDE the date field — the one the 2-column `.form-grid` leaves
+               empty — because that cell is vertical space the form already
+               pays for: measured at 1280x900, it costs 0 px of extra height and
+               the submit is back at the pre-story y 777.13, above the fold (a
+               full-width row of its own would have left it 3.20 px under).
+               At <=640px the grid is one column and it is a row after the date
+               field. It is also where it belongs: "no bookings impacted" is an
+               answer ABOUT the window that date defines, in the same `.fld-hint`
+               idiom as the persistent row of an already-grounded aircraft.
+               `role="status"` stays, so narrowing the window to zero is
+               announced like any other change of the number. */
+            <p className="fld-hint" role="status" style={{ alignSelf: 'end', margin: 0 }} data-testid="aog-impact-preview">
+              {t('impactPreview', { count: 0 })} · {windowText}
+            </p>
+          ) : null}
+          {/* AC 3, the DOUBLE STEP (review MAJOR-2): the armed state replaces
+              the trigger with a QUESTION followed by the confirm/cancel pair.
+              The question is not decoration — it is what makes the second step a
+              step. Without it the `Conferma` button was born at the trigger's
+              own origin (both measured at x 781, y 444.25) and its box covered
+              the point that had just been clicked, so a plain double click armed
+              AND confirmed: the grounding was written and the emails fanned out
+              with nobody ever reading a confirmation. Story 19.12b (decisione PO
+              on review 19.12a F2) gives the whole question its own row and the
+              pair a row of its own under it, so the three keep one arrangement
+              at 1280 and 375 whatever the count: before, a long question pushed
+              Annulla, or the whole pair, onto a second line. The pair starts at
+              the trigger's left edge and can still cover a strip of its lower
+              part (13.6px at 1280, 7.56px at 375 with the question on one or
+              two lines): that part of the gesture is closed by the `event.detail`
+              check on the Conferma below (decisione PO 6). The question also
+              covers the "the preview never answered" case, which would otherwise
+              leave two bare buttons with nothing above them to confirm. */}
+          {/* `.fld` is a COLUMN flex box (`airops.css:1147`) — the plain, unstyled
+              wrapper is what gives the lone submit the full-width box story
+              AOG-1a measured, and it is left exactly that way. Armed, the same
+              column stacks the question over the row of the two controls. */}
+          <div className="fld wide">
+            {confirming ? (
+              <>
+                <span className="fld-label" data-testid="out-of-service-question">
+                  {impact ? t('confirmQuestion', { count: impactTotal }) : labels.availability.confirmQuestionUnknown}
+                </span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={busy}
+                    onClick={(event) => {
+                      // Decisione PO 6: the SECOND half of a double click (or
+                      // double tap) that armed this step lands here with
+                      // `detail === 2` — the browser counts clicks by time and
+                      // position, not by element — and must not confirm. A single
+                      // click is `1`, keyboard activation `0`: both still confirm.
+                      // Accepted side effects: a triple click is ignored too, and
+                      // a deliberate click that falls within the double-click
+                      // interval (and a couple of px) of the arming click needs a
+                      // second click.
+                      if (event.detail > 1) return;
+                      void submitOutOfService();
+                    }}
+                    data-testid="out-of-service-confirm"
+                  >
+                    {labels.availability.confirm}
+                  </button>
+                  <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)} data-testid="out-of-service-cancel">
+                    {labels.cancel}
+                  </button>
                 </div>
-                <div className="fld-label" style={{ marginTop: 2, textTransform: 'none' }}>
-                  {entry.reason}
-                </div>
-              </div>
-            ))}
-            {history.length < historyTotal ? (
-              <button type="button" disabled={loadingMore} onClick={() => void handleLoadMore()} className="btn" data-testid="hour-meter-load-more" style={{ marginTop: 8 }}>
-                {labels.hourMeter.loadMore}
+              </>
+            ) : (
+              <button type="button" className="btn" disabled={busy} onClick={() => void submitOutOfService()} data-testid="out-of-service-submit">
+                {labels.availability.setOutOfService}
               </button>
-            ) : null}
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

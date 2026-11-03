@@ -1,29 +1,52 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createAircraftRateSchema } from '@/lib/schemas/aircraft';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createAircraftRateSchema, updateAircraftRateSchema } from '@/lib/schemas/aircraft';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
-vi.mock('@/server/db/prisma', () => ({
-  prisma: {
-    aircraft: {
-      findUnique: vi.fn(),
+vi.mock('@/server/db/prisma', () => {
+  const aircraftRate = {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    upsert: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
+  };
+  // Review 19.3 F2: the `Aircraft` row lock (`lockAircraftForRateWrite`) is a
+  // raw query on the transaction's client.
+  const $queryRaw = vi.fn();
+  return {
+    prisma: {
+      aircraft: {
+        findUnique: vi.fn(),
+      },
+      aircraftRate,
+      $queryRaw,
+      // The interactive transaction runs its callback on a `tx` that IS the
+      // same mocked delegates — enough to assert the write and the read land
+      // inside it (`$transaction` called) and nowhere else.
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback({ aircraftRate, $queryRaw })),
     },
-    aircraftRate: {
-      findFirst: vi.fn(),
-      findMany: vi.fn(),
-      create: vi.fn(),
-    },
-  },
-}));
+  };
+});
 
 const { prisma } = await import('@/server/db/prisma');
-const { createAircraftRate, getEffectiveRate, getEffectiveRates, listAircraftRates } = await import('./rates.service');
-const { ConflictError, NotFoundError } = await import('./errors');
+const {
+  assertRateValidFromNotPast,
+  createAircraftRate,
+  fillOmittedRatePrices,
+  getEffectiveRate,
+  getEffectiveRates,
+  getNextScheduledRates,
+  listAircraftRates,
+} = await import('./rates.service');
+const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
 
 const aircraftFindUniqueMock = vi.mocked(prisma.aircraft.findUnique);
 const rateFindFirstMock = vi.mocked(prisma.aircraftRate.findFirst);
 const rateFindManyMock = vi.mocked(prisma.aircraftRate.findMany);
-const rateCreateMock = vi.mocked(prisma.aircraftRate.create);
+const rateUpsertMock = vi.mocked(prisma.aircraftRate.upsert);
+const rateFindUniqueOrThrowMock = vi.mocked(prisma.aircraftRate.findUniqueOrThrow);
+const transactionMock = vi.mocked(prisma.$transaction);
+const queryRawMock = vi.mocked(prisma.$queryRaw);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as aircraft.service.test.ts).
@@ -31,14 +54,11 @@ type Fixture = Record<string, unknown> | null;
 const aircraftFindUnique = aircraftFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const rateFindFirst = rateFindFirstMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const rateFindMany = rateFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
-const rateCreate = rateCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const rateUpsert = rateUpsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
+const rateFindUniqueOrThrow = rateFindUniqueOrThrowMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 
 function adminActor(): Actor {
   return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
-}
-
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
 }
 
 function pilotActor(): Actor {
@@ -51,8 +71,8 @@ function rateFixture(overrides: Partial<Record<string, unknown>> = {}): Record<s
   return {
     id: 'rate_1',
     aircraftId: 'aircraft_1',
-    priceCentsPerHour: 16000,
-    dryHourlyRateCents: null,
+    studentPriceCents: 15300,
+    pilotPriceCents: 16000,
     validFrom: new Date('2026-07-07T00:00:00.000Z'),
     actorUserId: 'admin_1',
     actorUser: { email: 'admin@airmanager.local' },
@@ -61,19 +81,30 @@ function rateFixture(overrides: Partial<Record<string, unknown>> = {}): Record<s
   };
 }
 
-describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)', () => {
+/** A valid two-price body (story 19.3) on `validFrom`. */
+function rateInput(validFrom: string, studentPriceCents = 15300, pilotPriceCents = 16000) {
+  return { studentPriceCents, pilotPriceCents, validFrom };
+}
+
+describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2; two prices and R-19-f since story 19.3)', () => {
   beforeEach(() => {
     aircraftFindUniqueMock.mockReset();
     rateFindFirstMock.mockReset();
     rateFindManyMock.mockReset();
-    rateCreateMock.mockReset();
+    rateUpsertMock.mockReset();
+    rateFindUniqueOrThrowMock.mockReset();
+    transactionMock.mockClear();
+    queryRawMock.mockReset();
+    queryRawMock.mockResolvedValue([{ archivedAt: null }] as never);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('authorization (AD-5)', () => {
-    it('createAircraftRate rejects a staff actor (needs settings.manage, not aircraft.manage)', async () => {
-      await expect(
-        createAircraftRate(staffActor(), 'aircraft_1', { priceCentsPerHour: 16000, validFrom: '2026-07-07' }),
-      ).rejects.toThrow(ForbiddenError);
+    it('createAircraftRate rejects a non-admin actor (needs settings.manage)', async () => {
+      await expect(createAircraftRate(pilotActor(), 'aircraft_1', rateInput('2026-07-07'))).rejects.toThrow(ForbiddenError);
       expect(aircraftFindUniqueMock).not.toHaveBeenCalled();
     });
 
@@ -90,85 +121,115 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
     });
   });
 
-  describe('createAircraftRate (AC 1/2)', () => {
+  describe('assertRateValidFromNotPast (story 19.3, AC 4 — Europe/Rome "today", A16)', () => {
+    it('00:30 in Rome on 2 November (23:30 UTC on the 1st): the 1st is already the past, the 2nd is today', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-01T23:30:00.000Z'));
+
+      expect(() => assertRateValidFromNotPast('2026-11-01')).toThrow(ValidationError);
+      try {
+        assertRateValidFromNotPast('2026-11-01');
+      } catch (error) {
+        expect((error as InstanceType<typeof ValidationError>).code).toBe('RATE_VALID_FROM_IN_PAST');
+      }
+      expect(() => assertRateValidFromNotPast('2026-11-02')).not.toThrow();
+    });
+
+    it('today is accepted, a future day too, yesterday is not', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-07T10:00:00.000Z'));
+
+      expect(() => assertRateValidFromNotPast('2026-07-07')).not.toThrow();
+      expect(() => assertRateValidFromNotPast('2026-12-01')).not.toThrow();
+      expect(() => assertRateValidFromNotPast('2026-07-06')).toThrow(ValidationError);
+    });
+  });
+
+  describe('createAircraftRate (AC 1/2; story 19.3 AC 4-5)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-07T10:00:00.000Z'));
+    });
+
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
-      await expect(
-        createAircraftRate(adminActor(), 'missing', { priceCentsPerHour: 16000, validFrom: '2026-07-07' }),
-      ).rejects.toThrow(NotFoundError);
-      expect(rateCreateMock).not.toHaveBeenCalled();
+      await expect(createAircraftRate(adminActor(), 'missing', rateInput('2026-07-07'))).rejects.toThrow(NotFoundError);
+      expect(rateUpsertMock).not.toHaveBeenCalled();
     });
 
-    it('throws ConflictError for an archived aircraft', async () => {
-      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1', archivedAt: new Date('2026-01-01T00:00:00.000Z') });
-      await expect(
-        createAircraftRate(adminActor(), 'aircraft_1', { priceCentsPerHour: 16000, validFrom: '2026-07-07' }),
-      ).rejects.toThrow(ConflictError);
-      expect(rateCreateMock).not.toHaveBeenCalled();
-    });
-
-    it('creates the rate with actorUserId = actor.userId and a UTC-midnight validFrom', async () => {
+    it('an archived aircraft is a 409 AIRCRAFT_ARCHIVED read under the Aircraft row lock INSIDE the transaction, nothing written (review 19.3 F2/F3)', async () => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      rateFindFirst.mockResolvedValue(null); // pre-check: no existing conflict
-      rateCreate.mockResolvedValue(rateFixture());
+      queryRawMock.mockResolvedValue([{ archivedAt: new Date('2026-01-01T00:00:00.000Z') }] as never);
 
-      const result = await createAircraftRate(adminActor(), 'aircraft_1', {
-        priceCentsPerHour: 16000,
-        validFrom: '2026-07-07',
+      const error = await createAircraftRate(adminActor(), 'aircraft_1', rateInput('2026-07-07')).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      expect(rateUpsertMock).not.toHaveBeenCalled();
+    });
+
+    it('locks the Aircraft row FOR UPDATE as the first statement of the transaction, before the upsert (review 19.3 F2 — order Aircraft → AircraftRate)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      rateUpsert.mockResolvedValue({ id: 'rate_1' });
+      rateFindUniqueOrThrow.mockResolvedValue(rateFixture());
+
+      await createAircraftRate(adminActor(), 'aircraft_1', rateInput('2026-07-07'));
+
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      const [strings, ...values] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+      expect(strings.join('?')).toMatch(/SELECT "archivedAt" FROM "Aircraft" WHERE "id" = \? FOR UPDATE/);
+      expect(values).toEqual(['aircraft_1']);
+      expect(queryRawMock.mock.invocationCallOrder[0]).toBeLessThan(rateUpsertMock.mock.invocationCallOrder[0]!);
+    });
+
+    it('a past validFrom is a 422 RATE_VALID_FROM_IN_PAST before any write or transaction (AC 4)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+
+      await expect(createAircraftRate(adminActor(), 'aircraft_1', rateInput('2026-07-06'))).rejects.toMatchObject({
+        code: 'RATE_VALID_FROM_IN_PAST',
       });
-
-      expect(rateCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: {
-            aircraftId: 'aircraft_1',
-            priceCentsPerHour: 16000,
-            dryHourlyRateCents: null,
-            validFrom: new Date('2026-07-07T00:00:00.000Z'),
-            actorUserId: 'admin_1',
-          },
-        }),
-      );
-      expect(result.priceCentsPerHour).toBe(16000);
-      expect(result.dryHourlyRateCents).toBeNull();
-      expect(result.validFrom).toBe('2026-07-07');
-      expect(result.actorEmail).toBe('admin@airmanager.local');
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(rateUpsertMock).not.toHaveBeenCalled();
     });
 
-    it('persists the optional dry rate when provided (story 12.5, AC 1) — display-only, PRICING is untouched by this field', async () => {
+    it('upserts on (aircraftId, validFrom) with both prices and actorUserId, flat (no nested read), then reads the row inside the same transaction (AC 5)', async () => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      rateFindFirst.mockResolvedValue(null);
-      rateCreate.mockResolvedValue(rateFixture({ dryHourlyRateCents: 11500 }));
+      rateUpsert.mockResolvedValue({ id: 'rate_1' });
+      rateFindUniqueOrThrow.mockResolvedValue(rateFixture());
 
-      const result = await createAircraftRate(adminActor(), 'aircraft_1', {
-        priceCentsPerHour: 16000,
-        dryHourlyRateCents: 11500,
-        validFrom: '2026-07-07',
+      const result = await createAircraftRate(adminActor(), 'aircraft_1', rateInput('2026-07-07'));
+
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      expect(rateUpsertMock).toHaveBeenCalledWith({
+        where: { aircraftId_validFrom: { aircraftId: 'aircraft_1', validFrom: new Date('2026-07-07T00:00:00.000Z') } },
+        create: {
+          aircraftId: 'aircraft_1',
+          studentPriceCents: 15300,
+          pilotPriceCents: 16000,
+          validFrom: new Date('2026-07-07T00:00:00.000Z'),
+          actorUserId: 'admin_1',
+        },
+        // The rewrite path (R-19-f): prices and actor, never `createdAt`.
+        update: { studentPriceCents: 15300, pilotPriceCents: 16000, actorUserId: 'admin_1' },
+        select: { id: true },
       });
+      expect(rateFindUniqueOrThrowMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'rate_1' } }));
+      expect(result).toMatchObject({ studentPriceCents: 15300, pilotPriceCents: 16000, validFrom: '2026-07-07', actorEmail: 'admin@airmanager.local' });
+    });
 
-      expect(rateCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ dryHourlyRateCents: 11500 }) }),
+    it('a second write on the same validFrom is the same upsert — never a 409, never a create (AC 5)', async () => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      rateUpsert.mockResolvedValue({ id: 'rate_1' });
+      rateFindUniqueOrThrow.mockResolvedValue(rateFixture({ studentPriceCents: 13500, pilotPriceCents: 15000 }));
+
+      const result = await createAircraftRate(adminActor(), 'aircraft_1', rateInput('2026-07-07', 13500, 15000));
+
+      expect(rateUpsertMock).toHaveBeenCalledWith(
+        expect.objectContaining({ update: { studentPriceCents: 13500, pilotPriceCents: 15000, actorUserId: 'admin_1' } }),
       );
-      expect(result.dryHourlyRateCents).toBe(11500);
-    });
-
-    it('throws ConflictError when the pre-check finds an existing rate for the same validFrom (AC 2)', async () => {
-      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      rateFindFirst.mockResolvedValue({ id: 'existing_rate' });
-
-      await expect(
-        createAircraftRate(adminActor(), 'aircraft_1', { priceCentsPerHour: 16000, validFrom: '2026-07-07' }),
-      ).rejects.toThrow(ConflictError);
-      expect(rateCreateMock).not.toHaveBeenCalled();
-    });
-
-    it('maps a race-condition P2002 to ConflictError (concurrency backstop, AC 2)', async () => {
-      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      rateFindFirst.mockResolvedValue(null);
-      rateCreateMock.mockRejectedValue(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
-
-      await expect(
-        createAircraftRate(adminActor(), 'aircraft_1', { priceCentsPerHour: 16000, validFrom: '2026-07-07' }),
-      ).rejects.toThrow(ConflictError);
+      expect(result.studentPriceCents).toBe(13500);
+      expect(result.pilotPriceCents).toBe(15000);
     });
   });
 
@@ -183,23 +244,15 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
       rateFindMany.mockResolvedValue([rateFixture()]);
 
-      const result = await listAircraftRates(staffActor(), 'aircraft_1');
+      const result = await listAircraftRates(adminActor(), 'aircraft_1');
 
       expect(rateFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { aircraftId: 'aircraft_1' }, orderBy: [{ validFrom: 'desc' }], take: 500 }),
       );
       expect(result).toHaveLength(1);
       expect(result[0]?.validFrom).toBe('2026-07-07');
-      expect(result[0]?.dryHourlyRateCents).toBeNull();
-    });
-
-    it('exposes the dry rate when recorded (story 12.5, AC 1)', async () => {
-      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
-      rateFindMany.mockResolvedValue([rateFixture({ dryHourlyRateCents: 11500 })]);
-
-      const result = await listAircraftRates(staffActor(), 'aircraft_1');
-
-      expect(result[0]?.dryHourlyRateCents).toBe(11500);
+      expect(result[0]?.studentPriceCents).toBe(15300);
+      expect(result[0]?.pilotPriceCents).toBe(16000);
     });
   });
 
@@ -207,7 +260,7 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
     it('picks the maximum validFrom <= onDate out of several candidates', async () => {
       // Fixture: 3 rates for the aircraft — 2026-01-01 (150€), 2026-06-01 (155€), 2026-07-07 (160€).
       // findFirst with orderBy validFrom desc + validFrom <= onDate simulates what Prisma would return.
-      rateFindFirst.mockResolvedValue(rateFixture({ validFrom: new Date('2026-06-01T00:00:00.000Z'), priceCentsPerHour: 15500 }));
+      rateFindFirst.mockResolvedValue(rateFixture({ validFrom: new Date('2026-06-01T00:00:00.000Z'), pilotPriceCents: 15500 }));
 
       const result = await getEffectiveRate(adminActor(), 'aircraft_1', new Date('2026-06-30T00:00:00.000Z'));
 
@@ -217,31 +270,31 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
           orderBy: [{ validFrom: 'desc' }],
         }),
       );
-      expect(result?.priceCentsPerHour).toBe(15500);
+      expect(result?.pilotPriceCents).toBe(15500);
     });
 
     it('includes the exact boundary: D === validFrom is included', async () => {
-      rateFindFirst.mockResolvedValue(rateFixture({ validFrom: new Date('2026-07-07T00:00:00.000Z'), priceCentsPerHour: 16000 }));
+      rateFindFirst.mockResolvedValue(rateFixture({ validFrom: new Date('2026-07-07T00:00:00.000Z'), pilotPriceCents: 16000 }));
 
       const result = await getEffectiveRate(adminActor(), 'aircraft_1', new Date('2026-07-07T00:00:00.000Z'));
 
       expect(rateFindFirstMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { aircraftId: 'aircraft_1', validFrom: { lte: new Date('2026-07-07T00:00:00.000Z') } } }),
       );
-      expect(result?.priceCentsPerHour).toBe(16000);
+      expect(result?.pilotPriceCents).toBe(16000);
     });
 
     it('one day before validFrom falls back to the previous rate', async () => {
       // D = 2026-07-06, one day before the 160€ rate's validFrom (2026-07-07):
       // the query's `lte` excludes it, so Prisma would return the previous (155€) rate instead.
-      rateFindFirst.mockResolvedValue(rateFixture({ validFrom: new Date('2026-06-01T00:00:00.000Z'), priceCentsPerHour: 15500 }));
+      rateFindFirst.mockResolvedValue(rateFixture({ validFrom: new Date('2026-06-01T00:00:00.000Z'), pilotPriceCents: 15500 }));
 
       const result = await getEffectiveRate(adminActor(), 'aircraft_1', new Date('2026-07-06T00:00:00.000Z'));
 
       expect(rateFindFirstMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { aircraftId: 'aircraft_1', validFrom: { lte: new Date('2026-07-06T00:00:00.000Z') } } }),
       );
-      expect(result?.priceCentsPerHour).toBe(15500);
+      expect(result?.pilotPriceCents).toBe(15500);
     });
 
     it('returns null when no rate has validFrom <= onDate (aircraft with no rate yet at that date)', async () => {
@@ -287,25 +340,25 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
       // Prisma would only ever return ONE row per aircraft — the fixture
       // simulates exactly that already-deduplicated shape.
       rateFindMany.mockResolvedValue([
-        rateFixture({ aircraftId: 'aircraft_1', validFrom: new Date('2026-06-01T00:00:00.000Z'), priceCentsPerHour: 15500 }),
-        rateFixture({ aircraftId: 'aircraft_2', validFrom: new Date('2026-01-01T00:00:00.000Z'), priceCentsPerHour: 12000 }),
+        rateFixture({ aircraftId: 'aircraft_1', validFrom: new Date('2026-06-01T00:00:00.000Z'), pilotPriceCents: 15500 }),
+        rateFixture({ aircraftId: 'aircraft_2', validFrom: new Date('2026-01-01T00:00:00.000Z'), pilotPriceCents: 12000 }),
       ]);
 
       const result = await getEffectiveRates(adminActor(), ['aircraft_1', 'aircraft_2', 'aircraft_3'], new Date('2026-07-07T00:00:00.000Z'));
 
-      expect(result.get('aircraft_1')?.priceCentsPerHour).toBe(15500);
-      expect(result.get('aircraft_2')?.priceCentsPerHour).toBe(12000);
+      expect(result.get('aircraft_1')?.pilotPriceCents).toBe(15500);
+      expect(result.get('aircraft_2')?.pilotPriceCents).toBe(12000);
       // No qualifying rate for aircraft_3 -> null in the Map, never a missing key.
       expect(result.has('aircraft_3')).toBe(true);
       expect(result.get('aircraft_3')).toBeNull();
     });
 
     it('boundary: D === validFrom is included, same as getEffectiveRate', async () => {
-      rateFindMany.mockResolvedValue([rateFixture({ aircraftId: 'aircraft_1', validFrom: new Date('2026-07-07T00:00:00.000Z'), priceCentsPerHour: 16000 })]);
+      rateFindMany.mockResolvedValue([rateFixture({ aircraftId: 'aircraft_1', validFrom: new Date('2026-07-07T00:00:00.000Z'), pilotPriceCents: 16000 })]);
 
       const result = await getEffectiveRates(adminActor(), ['aircraft_1'], new Date('2026-07-07T00:00:00.000Z'));
 
-      expect(result.get('aircraft_1')?.priceCentsPerHour).toBe(16000);
+      expect(result.get('aircraft_1')?.pilotPriceCents).toBe(16000);
     });
 
     it('a lone aircraft with no rate at all maps to null in an otherwise-empty Map', async () => {
@@ -318,50 +371,108 @@ describe('rates.service (story 4.1 — historicized aircraft rates, AD-4/AD-2)',
     });
   });
 
-  describe('createAircraftRateSchema (AC 1/2, Zod boundary)', () => {
-    it('rejects a zero price', () => {
-      expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: 0, validFrom: '2026-07-07' }).success).toBe(false);
+  describe('getNextScheduledRates (story 19.3, Q-19.3-d — the next scheduled rate per aircraft)', () => {
+    it('rejects a pilot actor', async () => {
+      await expect(getNextScheduledRates(pilotActor(), ['aircraft_1'], new Date('2026-07-07T00:00:00.000Z'))).rejects.toThrow(ForbiddenError);
+    });
+
+    it('an empty id list short-circuits without querying', async () => {
+      const result = await getNextScheduledRates(adminActor(), [], new Date('2026-07-07T00:00:00.000Z'));
+      expect(result.size).toBe(0);
+      expect(rateFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it('queries validFrom > onDate ordered aircraftId asc/validFrom asc with distinct aircraftId, null for an aircraft with nothing scheduled', async () => {
+      const onDate = new Date('2026-07-07T00:00:00.000Z');
+      rateFindMany.mockResolvedValue([rateFixture({ aircraftId: 'aircraft_1', validFrom: new Date('2026-12-01T00:00:00.000Z') })]);
+
+      const result = await getNextScheduledRates(adminActor(), ['aircraft_1', 'aircraft_2'], onDate);
+
+      expect(rateFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { aircraftId: { in: ['aircraft_1', 'aircraft_2'] }, validFrom: { gt: onDate } },
+          orderBy: [{ aircraftId: 'asc' }, { validFrom: 'asc' }],
+          distinct: ['aircraftId'],
+        }),
+      );
+      expect(result.get('aircraft_1')?.validFrom).toBe('2026-12-01');
+      expect(result.has('aircraft_2')).toBe(true);
+      expect(result.get('aircraft_2')).toBeNull();
+    });
+  });
+
+  describe('createAircraftRateSchema (AC 1/2, Zod boundary; two mandatory prices since story 19.3, AC 7)', () => {
+    it('rejects a zero price on either column', () => {
+      expect(createAircraftRateSchema.safeParse(rateInput('2026-07-07', 0, 16000)).success).toBe(false);
+      expect(createAircraftRateSchema.safeParse(rateInput('2026-07-07', 15300, 0)).success).toBe(false);
     });
 
     it('rejects a negative price', () => {
-      expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: -100, validFrom: '2026-07-07' }).success).toBe(false);
+      expect(createAircraftRateSchema.safeParse(rateInput('2026-07-07', -100, 16000)).success).toBe(false);
     });
 
     it('rejects a price beyond the Postgres INTEGER range', () => {
-      expect(
-        createAircraftRateSchema.safeParse({ priceCentsPerHour: 2_147_483_648, validFrom: '2026-07-07' }).success,
-      ).toBe(false);
+      expect(createAircraftRateSchema.safeParse(rateInput('2026-07-07', 15300, 2_147_483_648)).success).toBe(false);
     });
 
     it('rejects a malformed validFrom', () => {
-      expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, validFrom: '07/07/2026' }).success).toBe(false);
-      expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, validFrom: 'not-a-date' }).success).toBe(false);
+      expect(createAircraftRateSchema.safeParse(rateInput('07/07/2026')).success).toBe(false);
+      expect(createAircraftRateSchema.safeParse(rateInput('not-a-date')).success).toBe(false);
     });
 
-    it('accepts a valid positive integer price and ISO date', () => {
-      expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, validFrom: '2026-07-07' }).success).toBe(true);
+    it('accepts two valid positive integer prices and an ISO date', () => {
+      expect(createAircraftRateSchema.safeParse(rateInput('2026-07-07')).success).toBe(true);
     });
 
-    it('accepts an omitted dryHourlyRateCents (story 12.5, AC 1 — optional)', () => {
-      expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, validFrom: '2026-07-07' }).success).toBe(true);
+    it('requires both prices: a body with only the old priceCentsPerHour, or a single price, is rejected', () => {
+      expect(createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, validFrom: '2026-07-07' }).success).toBe(false);
+      expect(createAircraftRateSchema.safeParse({ pilotPriceCents: 16000, validFrom: '2026-07-07' }).success).toBe(false);
+      expect(createAircraftRateSchema.safeParse({ studentPriceCents: 15300, validFrom: '2026-07-07' }).success).toBe(false);
+    });
+  });
+
+  describe('updateAircraftRateSchema (review 19.3 D-1 — the PATCH rate block, one price omittable)', () => {
+    it('accepts either price alone, or both; rejects a block with neither', () => {
+      expect(updateAircraftRateSchema.safeParse({ studentPriceCents: 15300, validFrom: '2026-07-07' }).success).toBe(true);
+      expect(updateAircraftRateSchema.safeParse({ pilotPriceCents: 16000, validFrom: '2026-07-07' }).success).toBe(true);
+      expect(updateAircraftRateSchema.safeParse(rateInput('2026-07-07')).success).toBe(true);
+      expect(updateAircraftRateSchema.safeParse({ validFrom: '2026-07-07' }).success).toBe(false);
     });
 
-    it('accepts a valid dryHourlyRateCents (story 12.5, AC 1)', () => {
-      expect(
-        createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, dryHourlyRateCents: 11500, validFrom: '2026-07-07' })
-          .success,
-      ).toBe(true);
+    it('keeps the price bounds of the create block', () => {
+      expect(updateAircraftRateSchema.safeParse({ studentPriceCents: 0, validFrom: '2026-07-07' }).success).toBe(false);
+      expect(updateAircraftRateSchema.safeParse({ pilotPriceCents: 2_147_483_648, validFrom: '2026-07-07' }).success).toBe(false);
+    });
+  });
+
+  describe('fillOmittedRatePrices (review 19.3 D-1 — an omitted price is the one in force ON validFrom)', () => {
+    const tx = { aircraftRate: prisma.aircraftRate } as unknown as Parameters<typeof fillOmittedRatePrices>[0];
+
+    it('both prices given: returned as they are, nothing read', async () => {
+      await expect(fillOmittedRatePrices(tx, 'aircraft_1', rateInput('2026-08-10', 13000, 15000))).resolves.toEqual(rateInput('2026-08-10', 13000, 15000));
+      expect(rateFindFirstMock).not.toHaveBeenCalled();
     });
 
-    it('rejects a zero/negative dryHourlyRateCents (story 12.5, AC 1)', () => {
-      expect(
-        createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, dryHourlyRateCents: 0, validFrom: '2026-07-07' })
-          .success,
-      ).toBe(false);
-      expect(
-        createAircraftRateSchema.safeParse({ priceCentsPerHour: 16000, dryHourlyRateCents: -100, validFrom: '2026-07-07' })
-          .success,
-      ).toBe(false);
+    it('an omitted price takes that column of the row in force on validFrom (max validFrom <= it) — a scheduled change, not today\'s price', async () => {
+      // Today 100, scheduled 120 from D1; saving only the student price from D2 > D1 keeps the pilot at 120.
+      rateFindFirst.mockResolvedValue({ studentPriceCents: 11000, pilotPriceCents: 12000 });
+
+      const filled = await fillOmittedRatePrices(tx, 'aircraft_1', { studentPriceCents: 9000, validFrom: '2026-08-10' });
+
+      expect(filled).toEqual({ studentPriceCents: 9000, pilotPriceCents: 12000, validFrom: '2026-08-10' });
+      expect(rateFindFirstMock).toHaveBeenCalledWith({
+        where: { aircraftId: 'aircraft_1', validFrom: { lte: new Date('2026-08-10T00:00:00.000Z') } },
+        select: { studentPriceCents: true, pilotPriceCents: true },
+        orderBy: [{ validFrom: 'desc' }],
+      });
+    });
+
+    it('nothing in force on validFrom: a 422, nothing to keep', async () => {
+      rateFindFirst.mockResolvedValue(null);
+
+      await expect(fillOmittedRatePrices(tx, 'aircraft_1', { pilotPriceCents: 16000, validFrom: '2026-08-10' })).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+      });
     });
   });
 });

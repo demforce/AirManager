@@ -39,6 +39,9 @@ const eslintConfig = defineConfig([
     "_bmad/**",
     "_bmad-output/**",
     "docs/**",
+    // design-sync (claude.ai/design): generated bundle + staged converter, both gitignored.
+    "ds-bundle/**",
+    ".ds-sync/**",
   ]),
 ]);
 

@@ -16,6 +16,38 @@ import type { ScheduleLabels } from './schedule';
 
 type Translator = Awaited<ReturnType<typeof getTranslations>>;
 
+/**
+ * The human description of the airfield's booking window (story 15.4, ratifica
+ * R-15.4-g) — the tail of the `BOOKING_OUTSIDE_WINDOW` message.
+ *
+ * The server raises that one code for TWO independent settings (the
+ * `openTime`-`closeTime` window and `maxAdvanceDays`,
+ * `bookings.service.ts#assertWithinSchedulingWindow`) and carries no details
+ * telling them apart, so the message states whichever of the two is actually
+ * configured — the pair when both are, and nothing at all when neither is
+ * (in which case the 422 cannot be raised in the first place, and the callers
+ * below fall back to the generic message).
+ */
+export function buildSchedulingWindowSummary(
+  t: Translator,
+  settings: { openTime: string | null; closeTime: string | null; maxAdvanceDays: number | null },
+): string {
+  const parts: string[] = [];
+  if (settings.openTime && settings.closeTime) {
+    parts.push((t.raw('form.schedulingWindow.hours') as string).replace('{open}', settings.openTime).replace('{close}', settings.closeTime));
+  }
+  if (settings.maxAdvanceDays !== null) {
+    parts.push(t('form.schedulingWindow.advance', { days: settings.maxAdvanceDays }));
+  }
+  return parts.join(', ');
+}
+
+/** Shared by both booking forms: the window message when there IS a window to state, the existing generic one otherwise. */
+function outsideWindowMessage(t: Translator, windowSummary: string, genericKey: string): string {
+  if (windowSummary.length === 0) return t(genericKey);
+  return (t.raw('form.errors.BOOKING_OUTSIDE_WINDOW') as string).replace('{window}', windowSummary);
+}
+
 export function buildScheduleLabels(t: Translator): ScheduleLabels {
   return {
     cardTitle: t('schedule.cardTitle'),
@@ -41,15 +73,33 @@ export function buildScheduleLabels(t: Translator): ScheduleLabels {
     noAircraft: t('calendar.noAircraft'),
     clampedStartHint: t('calendar.clampedStartHint'),
     clampedEndHint: t('calendar.clampedEndHint'),
-    weekBookingsCountTemplate: t.raw('schedule.weekBookingsCount') as string,
+    occupied: t('occupied'),
+    mobile: {
+      nowTemplate: t.raw('schedule.mobile.now') as string,
+      aogTitleTemplate: t.raw('schedule.mobile.aogTitle') as string,
+      openDetail: t('schedule.mobile.openDetail'),
+      close: t('schedule.mobile.close'),
+      today: t('schedule.mobile.today'),
+      time: t('schedule.mobile.time'),
+      pilot: t('list.table.pilot'),
+      instructor: t('schedule.filtersInstructor'),
+      aircraft: t('list.table.aircraft'),
+      notes: t('form.notes'),
+      reason: t('schedule.mobile.reason'),
+      phase: {
+        inProgress: t('schedule.mobile.phase.inProgress'),
+        completed: t('schedule.mobile.phase.completed'),
+        scheduled: t('schedule.mobile.phase.scheduled'),
+      },
+    },
   };
 }
 
-export function buildNewBookingFormLabels(t: Translator): NewBookingFormLabels {
+export function buildNewBookingFormLabels(t: Translator, schedulingWindowSummary: string): NewBookingFormLabels {
   return {
     title: t('form.title'),
     subtitle: t('list.cardTitle'),
-    selectPlaceholder: t('form.selectPlaceholder'),
+    picker: { placeholder: t('form.picker.placeholder'), noResults: t('form.picker.noResults') },
     aircraft: t('form.aircraft'),
     outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
     person: t('form.person'),
@@ -69,33 +119,31 @@ export function buildNewBookingFormLabels(t: Translator): NewBookingFormLabels {
     invalidRange: t('form.invalidRange'),
     errors: {
       AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
+      // Story AOG-1a, AC 7 — the variant WITH the fermo clause; the plain key above is unchanged and still serves every no-date grounding.
+      AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL') as string,
       BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
       PERSON_NOT_BOOKABLE: t('form.errors.PERSON_NOT_BOOKABLE'),
-      EXPIRED_DOCUMENTS: t.raw('form.errors.EXPIRED_DOCUMENTS') as string,
+      BOOKING_OUTSIDE_WINDOW: outsideWindowMessage(t, schedulingWindowSummary, 'form.errors.generic'),
+      PERSON_BUSY: t('form.errors.PERSON_BUSY'),
+      INSTRUCTOR_BUSY: t('form.errors.INSTRUCTOR_BUSY'),
+      INSTRUCTOR_SAME_AS_PILOT: t('form.errors.INSTRUCTOR_SAME_AS_PILOT'),
       overlap: t('form.errors.overlap'),
       generic: t('form.errors.generic'),
     },
     success: t('form.success'),
     successWithWarnings: t('form.successWithWarnings'),
-    force: {
-      title: t('form.force.title'),
-      description: t('form.force.description'),
-      reasonLabel: t('form.force.reasonLabel'),
-      submit: t('form.force.submit'),
-      cancel: t('form.force.cancel'),
-      requiredReason: t('form.force.requiredReason'),
-      generic: t('form.force.generic'),
-    },
+    cancel: t('form.cancel'),
+    requirements: { title: t('requirements.title'), blockedTitle: t('requirements.blockedTitle') },
   };
 }
 
-export function buildEditBookingFormLabels(t: Translator): EditBookingFormLabels {
+export function buildEditBookingFormLabels(t: Translator, schedulingWindowSummary: string): EditBookingFormLabels {
   return {
     title: t('list.actions.moveTitle'),
     subtitle: t('list.cardTitle'),
     cancel: t('list.actions.dismiss'),
     save: t('list.actions.save'),
-    selectPlaceholder: t('form.selectPlaceholder'),
+    picker: { placeholder: t('form.picker.placeholder'), noResults: t('form.picker.noResults') },
     aircraft: t('form.aircraft'),
     outOfServiceSuffix: t.raw('form.outOfServiceSuffix') as string,
     startsAt: t('form.startsAt'),
@@ -107,10 +155,15 @@ export function buildEditBookingFormLabels(t: Translator): EditBookingFormLabels
       BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
       BOOKING_IN_PAST: t('form.errors.BOOKING_IN_PAST'),
       AIRCRAFT_OUT_OF_SERVICE: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
-      EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
+      // Story AOG-1a, AC 7 — same pair as the create form (both are `form.errors.*` keys; the move form has always reused them).
+      AIRCRAFT_OUT_OF_SERVICE_UNTIL: t.raw('form.errors.AIRCRAFT_OUT_OF_SERVICE_UNTIL') as string,
+      BOOKING_OUTSIDE_WINDOW: outsideWindowMessage(t, schedulingWindowSummary, 'list.actions.errors.generic'),
+      PERSON_BUSY: t('form.errors.PERSON_BUSY'),
+      INSTRUCTOR_BUSY: t('form.errors.INSTRUCTOR_BUSY'),
       conflict: t('list.actions.errors.conflict'),
       generic: t('list.actions.errors.generic'),
     },
+    requirements: { title: t('requirements.title'), blockedTitle: t('requirements.blockedTitle') },
   };
 }
 
@@ -119,6 +172,7 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
     cardTitle: t('list.cardTitle'),
     pendingSummary: t.raw('list.pendingSummary') as string,
     newButton: t('list.newButton'),
+    occupied: t('occupied'),
     exportLabel: t('list.exportLabel'),
     exportXls: t('list.exportXls'),
     exportPdf: t('list.exportPdf'),
@@ -149,7 +203,7 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
       reopen: t('list.actions.reopen'),
       cancelPrompt: t('list.actions.cancelPrompt'),
       cancelConfirm: t('list.actions.cancelConfirm'),
-      dismiss: t('list.actions.dismiss'),
+      keep: t('list.actions.keep'),
       moveTitle: t('list.actions.moveTitle'),
       save: t('list.actions.save'),
       approveSuccess: t('list.actions.approveSuccess'),
@@ -163,12 +217,19 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
         BOOKING_ALREADY_STARTED: t('list.actions.errors.BOOKING_ALREADY_STARTED'),
         BOOKING_TRANSITION_INVALID: t('list.actions.errors.BOOKING_TRANSITION_INVALID'),
         BOOKING_DENY_REASON_REQUIRED: t('list.actions.errors.BOOKING_DENY_REASON_REQUIRED'),
-        EXPIRED_DOCUMENTS: t.raw('list.actions.errors.EXPIRED_DOCUMENTS') as string,
         AIRCRAFT_OUT_OF_SERVICE: t.raw('list.actions.errors.AIRCRAFT_OUT_OF_SERVICE') as string,
+        BOOKING_NOT_STARTED: t('list.actions.errors.BOOKING_NOT_STARTED'),
+        // Story 19.10 (D-8): the create form's own string.
+        INSTRUCTOR_SAME_AS_PILOT: t('form.errors.INSTRUCTOR_SAME_AS_PILOT'),
+        // Story 16.3: the create form's own two strings — the same sentence whichever surface raised the 409.
+        PERSON_BUSY: t('form.errors.PERSON_BUSY'),
+        INSTRUCTOR_BUSY: t('form.errors.INSTRUCTOR_BUSY'),
         conflict: t('list.actions.errors.conflict'),
         generic: t('list.actions.errors.generic'),
       },
     },
+    /** Story 19.10: the title of the shared requirements warning on an approval (desktop modal, phone sheet). */
+    requirementsApproveTitle: t('requirements.approveTitle'),
     denyModal: {
       title: t('list.denyModal.title'),
       subtitle: t('list.denyModal.subtitle'),
@@ -176,6 +237,17 @@ export function buildBookingsTableLabels(t: Translator): BookingsTableLabels {
       reasonRequired: t('list.denyModal.reasonRequired'),
       submit: t('list.denyModal.submit'),
       cancel: t('list.denyModal.cancel'),
+    },
+    mobile: {
+      openDetail: t('list.mobile.openDetail'),
+      close: t('list.mobile.close'),
+      statusAll: t('list.mobile.statusAll'),
+      startsAt: t('list.table.startsAt'),
+      endsAt: t('list.table.endsAt'),
+      aircraft: t('list.table.aircraft'),
+      instructor: t('list.table.instructor'),
+      notes: t('form.notes'),
+      denyReason: t('list.mobile.denyReason'),
     },
   };
 }

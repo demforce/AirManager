@@ -7,7 +7,7 @@ type RouteParams = { id: string };
 /**
  * Thin routes (AD-1) — real authorization (`settings.manage` for POST,
  * `aircraft.manage` for GET) stays in `rates.service.ts` (AD-5), same
- * pattern as `.../hour-meter-adjustments`.
+ * pattern as `.../out-of-service`.
  */
 export const GET = apiRoute<undefined, undefined, RouteParams>({
   handle: async ({ actor, params }) => listAircraftRates(actor, params.id),

@@ -19,11 +19,13 @@
  */
 import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import type { Role } from '@/generated/prisma/client';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Field, Input, Select } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
@@ -32,12 +34,17 @@ import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { tierOf } from '@/lib/expiry-status';
+import { avatarColorFor, initialsOf, pilotRowFlag, type BlockingDocument, type PilotRowFlag } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
 import { formatDateOnly } from '@/lib/time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { PilotEditor, type PilotEditorLabels } from './pilot-editor';
 
 export type PilotUser = { id: string; email: string; roles: Role[]; isActive: boolean; passwordSet: boolean } | null;
+
+/** Story 19.7a (R-19-i): the currency of a pilot/student — `currency.service.ts#listCurrencyByPerson`'s row. */
+export type PilotCurrency = { current: boolean; expiresAt: string | null; daysUntil: number | null };
 
 export type PilotRow = {
   id: string;
@@ -46,7 +53,6 @@ export type PilotRow = {
   email: string | null;
   phone: string | null;
   address: string | null;
-  fiscalCode: string | null;
   archivedAt: string | null;
   profiles: { pilot: boolean; student: boolean; instructor: boolean };
   balanceCents: number;
@@ -67,6 +73,21 @@ export type PilotsConsoleLabels = {
   role: { pilot: string; student: string; instructor: string };
   status: { active: string; suspended: string; none: string };
   actions: { edit: string; topUp: string; suspend: string; reactivate: string };
+  /** Story 15.5 — the phone face only (row flag, detail sheet, its actions). */
+  mobile: {
+    openDetail: string;
+    close: string;
+    openProfile: string;
+    /** Carry a `{doc}`/`{days}` placeholder filled CLIENT-side — read with `t.raw`. */
+    flagExpired: string;
+    flagExpiring: string;
+    confirmSuspend: string;
+    confirmReactivate: string;
+    dismiss: string;
+    sheet: { email: string; phone: string; balance: string; lastFlight: string; profiles: string; access: string; documents: string };
+  };
+  /** Story 19.7a (D-14). `expiring`/`until`/`expiredOn` carry a `{days}`/`{date}` placeholder filled CLIENT-side — read with `t.raw`. */
+  currency: { label: string; notCurrent: string; expiring: string; until: string; expiredOn: string; never: string };
   topUp: {
     title: string;
     amount: string;
@@ -101,12 +122,16 @@ type PilotsConsoleProps = {
   page: number;
   totalPages: number;
   initialQuery: string;
-  initialIncludeArchived: boolean;
+  initialArchivedOnly: boolean;
   canManagePeople: boolean;
   canManageFinance: boolean;
   canManageUsers: boolean;
   exportHref: string;
   locale: 'it' | 'en';
+  /** Story 15.5 (R-15.5-c): blocking documents (`ExpiryType.blocksBooking`) of the people on THIS page, expired or due within 30 days. Missing key = nothing blocking. */
+  blockingDocumentsById: Record<string, BlockingDocument[]>;
+  /** Story 19.7a (D-8/D-14): the currency of the pilots/students on THIS page. Missing key = no currency (not a pilot/student, or archived). */
+  currencyById: Record<string, PilotCurrency>;
   labels: PilotsConsoleLabels;
 };
 
@@ -140,33 +165,63 @@ export function PilotsConsole({
   page,
   totalPages,
   initialQuery,
-  initialIncludeArchived,
+  initialArchivedOnly,
   canManagePeople,
   canManageFinance,
   canManageUsers,
   exportHref,
   locale,
+  blockingDocumentsById,
+  currencyById,
   labels,
 }: PilotsConsoleProps) {
   const router = useRouter();
   const toast = useToast();
   const [queryInput, setQueryInput] = useState(initialQuery);
-  const [includeArchived, setIncludeArchived] = useState(initialIncludeArchived);
+  const [archivedOnly, setArchivedOnly] = useState(initialArchivedOnly);
   const [editorTarget, setEditorTarget] = useState<EditorTarget | null>(null);
   const [topUpTarget, setTopUpTarget] = useState<PilotRow | null>(null);
   const [suspendConfirm, setSuspendConfirm] = useState<SuspendConfirm | null>(null);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  // --- phone sheet (story 15.5) ------------------------------------------
+  // Its own state, deliberately NOT the desktop's `suspendConfirm`: that one
+  // renders the inline ✓/✕ pair inside a table row, which on a phone lives in
+  // a `display: none` tree. The confirmation is the sheet's `secondStep`
+  // instead (R-15.2-a), same shape as the planning list of 15.4.
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const [sheetStep, setSheetStep] = useState<'none' | 'suspend'>('none');
+  const sheetPrimaryRef = useRef<HTMLButtonElement>(null);
+  const sheetConfirmRef = useRef<HTMLButtonElement>(null);
 
-  function navigate(next: { q: string; includeArchived: boolean }): void {
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => {
+    setSheetId(null);
+    setSheetStep('none');
+  }, []);
+
+  const sheetPilot = items.find((item) => item.id === sheetId) ?? null;
+
+  /**
+   * Swapping the sheet's body removes the very button that was pressed and
+   * `document.activeElement` falls back to `<body>` — the dialog context is
+   * lost for assistive technology even though the node survives (review 15.2
+   * F1). Inert while no sheet is open: every ref is null then.
+   */
+  useEffect(() => {
+    if (sheetStep === 'suspend') sheetConfirmRef.current?.focus();
+    else sheetPrimaryRef.current?.focus();
+  }, [sheetStep]);
+
+  function navigate(next: { q: string; archivedOnly: boolean }): void {
     const params = new URLSearchParams();
     if (next.q) params.set('q', next.q);
-    if (next.includeArchived) params.set('includeArchived', 'true');
+    if (next.archivedOnly) params.set('archivedOnly', 'true');
     const search = params.toString();
     router.push(`/dashboard/pilots${search ? `?${search}` : ''}`);
   }
 
   const debouncedSearch = useDebouncedCallback((value: string) => {
-    navigate({ q: value, includeArchived });
+    navigate({ q: value, archivedOnly });
   }, 400);
 
   function handleQueryChange(value: string): void {
@@ -174,15 +229,15 @@ export function PilotsConsole({
     debouncedSearch(value);
   }
 
-  function handleIncludeArchivedChange(checked: boolean): void {
-    setIncludeArchived(checked);
-    navigate({ q: queryInput, includeArchived: checked });
+  function handleArchivedOnlyChange(checked: boolean): void {
+    setArchivedOnly(checked);
+    navigate({ q: queryInput, archivedOnly: checked });
   }
 
   function pageHref(targetPage: number) {
     return {
       pathname: '/dashboard/pilots' as const,
-      query: { page: targetPage, ...(queryInput ? { q: queryInput } : {}), ...(includeArchived ? { includeArchived: 'true' } : {}) },
+      query: { page: targetPage, ...(queryInput ? { q: queryInput } : {}), ...(archivedOnly ? { archivedOnly: 'true' } : {}) },
     };
   }
 
@@ -199,16 +254,20 @@ export function PilotsConsole({
     return user.isActive ? labels.status.active : labels.status.suspended;
   }
 
-  async function handleSuspendConfirm(): Promise<void> {
-    if (!suspendConfirm) return;
-    setPendingUserId(suspendConfirm.userId);
-    const response = await fetch(`/api/v1/users/${suspendConfirm.userId}`, {
+  /**
+   * The PATCH behind "Sospendi"/"Riattiva" — extracted (story 15.5) so the
+   * table row's inline confirmation and the phone sheet's `secondStep` run the
+   * SAME request, the same 409 `CONFLICT` branch and the same toasts. Same
+   * rationale as `booking-transition.ts` in 15.3: one behaviour, two faces.
+   */
+  async function setUserActive(userId: string, nextActive: boolean): Promise<void> {
+    setPendingUserId(userId);
+    const response = await fetch(`/api/v1/users/${userId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: suspendConfirm.nextActive }),
+      body: JSON.stringify({ isActive: nextActive }),
     });
     setPendingUserId(null);
-    setSuspendConfirm(null);
 
     if (!response.ok) {
       const body: unknown = await response.json().catch(() => null);
@@ -217,29 +276,94 @@ export function PilotsConsole({
       return;
     }
 
-    toast.show(suspendConfirm.nextActive ? labels.toast.reactivated : labels.toast.suspended, 'ok');
+    toast.show(nextActive ? labels.toast.reactivated : labels.toast.suspended, 'ok');
     router.refresh();
   }
 
-  const cols = 'minmax(150px,1.4fr) minmax(160px,1.4fr) 100px 110px minmax(160px,1.2fr) 120px minmax(200px,1.3fr)';
+  async function handleSuspendConfirm(): Promise<void> {
+    if (!suspendConfirm) return;
+    const { userId, nextActive } = suspendConfirm;
+    setSuspendConfirm(null);
+    await setUserActive(userId, nextActive);
+  }
+
+  async function handleSheetSuspendConfirm(pilot: PilotRow): Promise<void> {
+    if (!pilot.user) return;
+    const nextActive = !pilot.user.isActive;
+    const userId = pilot.user.id;
+    closeSheet();
+    await setUserActive(userId, nextActive);
+  }
+
+  /** The one chip the phone row shows on its right, or `null` (R-15.5-c; currency since story 19.7a, D-14). */
+  function flagOf(pilot: PilotRow): PilotRowFlag | null {
+    return pilotRowFlag({ suspended: pilot.user !== null && !pilot.user.isActive, blockingDocuments: blockingDocumentsById[pilot.id] ?? [], currency: currencyById[pilot.id] ?? null });
+  }
+
+  /** The documents' half of the chip alone — the sheet's "Documenti" row, which the currency must not hide. */
+  function documentFlagOf(pilot: PilotRow): PilotRowFlag | null {
+    return pilotRowFlag({ suspended: pilot.user !== null && !pilot.user.isActive, blockingDocuments: blockingDocumentsById[pilot.id] ?? [], currency: null });
+  }
+
+  function flagLabel(flag: PilotRowFlag): string {
+    if (flag.kind === 'suspended') return labels.status.suspended;
+    if (flag.kind === 'expired') return labels.mobile.flagExpired.replace('{doc}', flag.typeName);
+    if (flag.kind === 'currencyExpired') return labels.currency.notCurrent;
+    if (flag.kind === 'currencyExpiring') return labels.currency.expiring.replace('{days}', String(flag.daysUntil));
+    return labels.mobile.flagExpiring.replace('{doc}', flag.typeName).replace('{days}', String(flag.daysUntil));
+  }
+
+  /**
+   * The desktop "Ultimo volo" cell's currency badge (story 19.7a, D-14), same
+   * `tierOf` thresholds as the phone chip: "Non current" when not current,
+   * "Currency Ngg" when it ends within 30 days, nothing otherwise — the date
+   * above it keeps meaning "last flight".
+   */
+  function currencyBadgeOf(pilot: PilotRow): { tone: BadgeTone; label: string } | null {
+    const currency = currencyById[pilot.id];
+    if (currency === undefined) return null;
+    if (!currency.current) return { tone: 'bad', label: labels.currency.notCurrent };
+    if (currency.daysUntil !== null && tierOf(currency.daysUntil) <= 2) return { tone: 'warn', label: labels.currency.expiring.replace('{days}', String(currency.daysUntil)) };
+    return null;
+  }
+
+  /**
+   * The mono over-line of the row and of the sheet: the active profiles, then
+   * the email — ellipsised, never truncated by hand. Returns an EMPTY string
+   * when the person has neither, and each caller picks its own fallback:
+   * review 15.5 F1 — the sheet's `sub` ends up inside the dialog's accessible
+   * name (`${sub} — ${title}`, `bottom-sheet.tsx`), where the "—" placeholder
+   * read as a second separator ("— — Rossi Mario"). A placeholder belongs to
+   * what is DISPLAYED, never to what is composed into an accessible name.
+   */
+  function subLineOf(pilot: PilotRow): string {
+    return [...roleBadges(pilot.profiles).map((role) => role.label), pilot.email].filter((part): part is string => Boolean(part)).join(' · ');
+  }
+
+  // «Ultimo volo» is 128px (was 110px, story 19.12b): the currency badge under the date reads «Currency scaduta» /
+  // «Currency · 12 gg» (PO Q-19.12-b), measured 126.38px wide, and the cell clips what overflows.
+  const cols = 'minmax(150px,1.4fr) minmax(160px,1.4fr) 100px 128px minmax(160px,1.2fr) 120px minmax(200px,1.3fr)';
 
   return (
     <>
       <div className="card">
-        <div className="card-head">
+        {/* ONE head at every width (AD-3) — see `fleet-console.tsx`'s own note:
+            the four controls keep their testids and their state, and ratifica
+            R-15.5-g's phone layout is CSS on `.registry-head`. */}
+        <div className="card-head registry-head">
           <div className="card-title">{labels.cardTitle}</div>
           <div className="spacer" />
           <button
             type="button"
-            className={`btn ${includeArchived ? 'on' : ''}`}
-            aria-pressed={includeArchived}
-            onClick={() => handleIncludeArchivedChange(!includeArchived)}
+            className={`btn ${archivedOnly ? 'on' : ''}`}
+            aria-pressed={archivedOnly}
+            onClick={() => handleArchivedOnlyChange(!archivedOnly)}
             data-testid="pilots-toggle-archived"
           >
-            {includeArchived ? <Icon.check /> : null}
+            {archivedOnly ? <Icon.check /> : null}
             {labels.includeArchivedLabel}
           </button>
-          <div className="search" style={{ width: 260 }}>
+          <div className="search registry-search registry-search-lg">
             <Icon.search />
             <input
               className="bare-input"
@@ -257,11 +381,11 @@ export function PilotsConsole({
         </div>
 
         {items.length === 0 ? (
-          <p className="card-body" data-testid="pilots-empty">
+          <p className="card-body pilots-desktop-body" data-testid="pilots-empty">
             {labels.empty}
           </p>
         ) : (
-          <div className="students">
+          <div className="students pilots-desktop-body">
             <div className="student-row header" style={{ gridTemplateColumns: cols }}>
               <div>{labels.table.name}</div>
               <div>{labels.table.email}</div>
@@ -274,6 +398,7 @@ export function PilotsConsole({
             {items.map((pilot) => {
               const roles = roleBadges(pilot.profiles);
               const hasUser = pilot.user !== null;
+              const currencyBadge = currencyBadgeOf(pilot);
               return (
                 <div key={pilot.id} className="student-row" data-testid={`pilot-row-${pilot.id}`} style={{ gridTemplateColumns: cols }}>
                   <div>
@@ -295,6 +420,11 @@ export function PilotsConsole({
                   </div>
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
                     {pilot.lastFlightDate ? formatDateOnly(pilot.lastFlightDate, locale) : labels.table.noValue}
+                    {currencyBadge ? (
+                      <div style={{ marginTop: 4 }} data-testid={`pilot-currency-${pilot.id}`}>
+                        <Badge tone={currencyBadge.tone}>{currencyBadge.label}</Badge>
+                      </div>
+                    ) : null}
                   </div>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {roles.length === 0 ? labels.table.noValue : roles.map((role) => <Badge key={role.key} tone={role.tone}>{role.label}</Badge>)}
@@ -363,8 +493,60 @@ export function PilotsConsole({
           </div>
         )}
 
+        {/* --- the phone face of the same list (template 232-244) -------------
+            One `<button>` per person: avatar, name + sub, and on the right the
+            balance with, under it, the single flag chip of R-15.5-c. Every
+            action of the desktop row lives in the sheet (R-15.2-b), so there is
+            no nested interactive element and the touch target IS the row. */}
+        <div className="pilots-mobile" data-testid="mobile-pilots-list">
+          {items.length === 0 ? (
+            <p className="mobile-card-empty" data-testid="mobile-pilots-empty">
+              {labels.empty}
+            </p>
+          ) : (
+            items.map((pilot) => {
+              const flag = flagOf(pilot);
+              const name = `${pilot.lastName} ${pilot.firstName}`;
+              return (
+                <button
+                  key={pilot.id}
+                  type="button"
+                  className="mobile-row mobile-row-person"
+                  aria-label={`${labels.mobile.openDetail}: ${name}`}
+                  onClick={() => setSheetId(pilot.id)}
+                  data-testid={`mobile-pilot-row-${pilot.id}`}
+                >
+                  <span className="mobile-row-avatar">
+                    <Avatar as="span" init={initialsOf(pilot.firstName, pilot.lastName)} color={avatarColorFor(pilot.id)} />
+                  </span>
+                  <span className="mobile-row-main">
+                    <span className="mobile-row-title">
+                      <span className="mobile-row-name">{name}</span>
+                    </span>
+                    <span className="mobile-row-sub">{subLineOf(pilot) || labels.table.noValue}</span>
+                  </span>
+                  <span className="mobile-row-side">
+                    {/* `.stat-tone-bad`, not the desktop cell's raw `--bad`:
+                        that token measures 3.96:1 on `--panel` in the light
+                        theme (13.9's own canvas sweep), under the 4.5:1 AC 12
+                        asks of text. `.stat-tone-bad` is the design system's
+                        already-calibrated red TEXT — 9.82:1 light, `--bad` in
+                        dark. */}
+                    <span className={`mobile-row-amount ${pilot.balanceCents < 0 ? 'stat-tone-bad' : ''}`}>{formatCents(pilot.balanceCents, locale)}</span>
+                  </span>
+                  {flag ? (
+                    <span className="mobile-row-flag">
+                      <Badge tone={flag.kind === 'expiring' || flag.kind === 'currencyExpiring' ? 'warn' : 'bad'}>{flagLabel(flag)}</Badge>
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })
+          )}
+        </div>
+
         {totalPages > 1 ? (
-          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+          <div className="card-body registry-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
             <Link
               href={pageHref(page - 1)}
               locale={locale as AppLocale}
@@ -412,8 +594,144 @@ export function PilotsConsole({
         closeLabel={labels.editor.closeLabel}
         successMessage={labels.toast.topUpRecorded}
       />
+
+      {/* Rendered conditionally (AD-7): `mobile-pilot-sheet` is ONE node. Every
+          action is the desktop row's, under the SAME permission gate; the two
+          that open a `SlideOver` CLOSE the sheet first rather than stacking a
+          z-50 panel on a z-40 sheet (R-15.4-d). */}
+      {sheetPilot ? (
+        <BottomSheet
+          open
+          onClose={closeSheet}
+          testId="mobile-pilot-sheet"
+          // No profiles and no email -> the card's own heading, the same `sub`
+          // the instructors sheet already uses. Never the "—" placeholder: it
+          // would land in the dialog's accessible name (review 15.5 F1).
+          sub={subLineOf(sheetPilot) || labels.cardTitle}
+          title={`${sheetPilot.lastName} ${sheetPilot.firstName}`}
+          badge={
+            <Badge tone={userStatusTone(sheetPilot.user)} dot>
+              {statusLabel(sheetPilot.user)}
+            </Badge>
+          }
+          rows={pilotSheetRows(sheetPilot, documentFlagOf(sheetPilot), currencyById[sheetPilot.id] ?? null, flagLabel, locale, labels)}
+          closeLabel={labels.mobile.close}
+          actions={
+            <>
+              {canManagePeople ? (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => {
+                    const pilot = sheetPilot;
+                    closeSheet();
+                    setEditorTarget({ mode: 'edit', pilot });
+                  }}
+                  data-testid="pilot-edit-mobile"
+                >
+                  {labels.actions.edit}
+                </button>
+              ) : null}
+              {canManageFinance ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    const pilot = sheetPilot;
+                    closeSheet();
+                    setTopUpTarget(pilot);
+                  }}
+                  data-testid="pilot-topup-mobile"
+                >
+                  {labels.actions.topUp}
+                </button>
+              ) : null}
+              {canManageUsers && sheetPilot.user ? (
+                <button
+                  type="button"
+                  className={sheetPilot.user.isActive ? 'btn mini bad' : 'btn mini ok'}
+                  ref={sheetPrimaryRef}
+                  disabled={pendingUserId === sheetPilot.user.id}
+                  onClick={() => setSheetStep('suspend')}
+                  data-testid={sheetPilot.user.isActive ? 'pilot-suspend-toggle-mobile' : 'pilot-reactivate-toggle-mobile'}
+                >
+                  {sheetPilot.user.isActive ? labels.actions.suspend : labels.actions.reactivate}
+                </button>
+              ) : null}
+              <Link
+                href={`/dashboard/people/${sheetPilot.id}`}
+                locale={locale as AppLocale}
+                className="btn"
+                onClick={closeSheet}
+                data-testid="pilot-open-profile-mobile"
+              >
+                {labels.mobile.openProfile}
+              </Link>
+            </>
+          }
+          secondStep={
+            sheetStep === 'suspend' && sheetPilot.user ? (
+              <div className="bottom-sheet-step">
+                <p className="fld-hint">{sheetPilot.user.isActive ? labels.mobile.confirmSuspend : labels.mobile.confirmReactivate}</p>
+                <div className="bottom-sheet-actions">
+                  <button type="button" className="btn" onClick={() => setSheetStep('none')} data-testid="pilot-suspend-dismiss-mobile">
+                    {labels.mobile.dismiss}
+                  </button>
+                  <button
+                    type="button"
+                    className={sheetPilot.user.isActive ? 'btn mini bad' : 'btn mini ok'}
+                    ref={sheetConfirmRef}
+                    disabled={pendingUserId === sheetPilot.user.id}
+                    onClick={() => void handleSheetSuspendConfirm(sheetPilot)}
+                    data-testid="pilot-suspend-confirm-mobile"
+                  >
+                    {sheetPilot.user.isActive ? labels.actions.suspend : labels.actions.reactivate}
+                  </button>
+                </div>
+              </div>
+            ) : undefined
+          }
+        />
+      ) : null}
     </>
   );
+}
+
+/** Detail rows of the pilot sheet — the template's own `openPilot` builder (script 594), with the app's fields and full parity toward the desktop table's seven columns. */
+function pilotSheetRows(
+  pilot: PilotRow,
+  flag: PilotRowFlag | null,
+  currency: PilotCurrency | null,
+  flagLabel: (flag: PilotRowFlag) => string,
+  locale: 'it' | 'en',
+  labels: PilotsConsoleLabels,
+): BottomSheetRow[] {
+  const profiles = [pilot.profiles.pilot ? labels.role.pilot : null, pilot.profiles.student ? labels.role.student : null, pilot.profiles.instructor ? labels.role.instructor : null].filter(
+    (part): part is string => part !== null,
+  );
+  const rows: BottomSheetRow[] = [
+    { k: labels.mobile.sheet.email, v: pilot.email ?? labels.table.noValue },
+    { k: labels.mobile.sheet.phone, v: pilot.phone ?? labels.table.noValue },
+    { k: labels.mobile.sheet.balance, v: formatCents(pilot.balanceCents, locale) },
+    { k: labels.mobile.sheet.lastFlight, v: pilot.lastFlightDate ? formatDateOnly(pilot.lastFlightDate, locale) : labels.table.noValue },
+    { k: labels.mobile.sheet.profiles, v: profiles.length > 0 ? profiles.join(' · ') : labels.table.noValue },
+    { k: labels.mobile.sheet.access, v: pilot.user === null ? labels.status.none : pilot.user.isActive ? labels.status.active : labels.status.suspended },
+  ];
+  // Story 19.7a (D-14): ALWAYS present for a pilot/student — unlike the row's
+  // chip, the sheet is where "current until <date>" is worth reading.
+  if (currency !== null) {
+    const value =
+      currency.expiresAt === null
+        ? labels.currency.never
+        : (currency.current ? labels.currency.until : labels.currency.expiredOn).replace('{date}', formatDateOnly(currency.expiresAt, locale));
+    rows.push({ k: labels.currency.label, v: value });
+  }
+  // Only when there IS something to say: "nessun documento in scadenza" would
+  // over-claim — the reader only ever looked 30 days ahead.
+  if (flag !== null && flag.kind !== 'suspended') {
+    rows.push({ k: labels.mobile.sheet.documents, v: flagLabel(flag) });
+  }
+  return rows;
 }
 
 // --- "Registra" top-up slide-over -------------------------------------------
@@ -507,7 +825,7 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
       {pilot ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="topup-form">
           <div className="form-grid">
-            <Field label={labels.amount}>
+            <Field label={labels.amount} error={errors.amount ? labels.requiredField : undefined}>
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.amount)} {...register('amount')} />
             </Field>
             <Field label={labels.paymentMethod}>
@@ -517,7 +835,7 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
                 <option value="POS">{labels.paymentMethods.pos}</option>
               </Select>
             </Field>
-            <Field label={labels.effectiveDate}>
+            <Field label={labels.effectiveDate} error={errors.effectiveDate ? labels.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.effectiveDate)} {...register('effectiveDate')} />
             </Field>
             <Field label={labels.description} wide>

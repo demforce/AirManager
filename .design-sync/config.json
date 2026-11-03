@@ -1,0 +1,77 @@
+{
+  "projectId": "b260e252-429b-4eb3-b2d0-b1f68ab44fbe",
+  "shape": "package",
+  "pkg": "airops",
+  "globalName": "AirOps",
+  "buildCmd": "node .design-sync/build-pkg.mjs",
+  "entry": ".ds-sync/airops-pkg/dist/index.mjs",
+  "srcDir": "../../src/components/ui",
+  "tsconfig": "../../tsconfig.json",
+  "cssEntry": "styles.css",
+  "extraEntries": [
+    "../../.design-sync/airops-root.tsx"
+  ],
+  "provider": {
+    "component": "AirOpsRoot"
+  },
+  "extraFonts": [
+    "../../node_modules/@fontsource/inter-tight/400.css",
+    "../../node_modules/@fontsource/inter-tight/500.css",
+    "../../node_modules/@fontsource/inter-tight/600.css",
+    "../../node_modules/@fontsource/jetbrains-mono/400.css",
+    "../../node_modules/@fontsource/jetbrains-mono/500.css",
+    "../../node_modules/@fontsource/jetbrains-mono/600.css",
+    "../../node_modules/@fontsource/instrument-serif/400.css"
+  ],
+  "componentSrcMap": {
+    "KPI": "../../src/components/ui/kpi.tsx",
+    "Spark": "../../src/components/ui/kpi.tsx",
+    "DateTimeInput": "../../src/components/ui/datetime-input.tsx",
+    "Icon": "../../src/components/ui/icons.tsx",
+    "Input": "../../src/components/ui/field.tsx",
+    "Select": "../../src/components/ui/field.tsx",
+    "InputGroup": "../../src/components/ui/field.tsx",
+    "ToastProvider": "../../src/components/ui/toast.tsx"
+  },
+  "docsDir": "../../.design-sync/docs",
+  "libOverrides": {
+    "dts.mjs": "isComponentName exempts AirOps' ALL-CAPS component KPI (else dropped as a constant)"
+  },
+  "overrides": {
+    "KPI": {
+      "cardMode": "column"
+    },
+    "Field": {
+      "cardMode": "column"
+    },
+    "Icon": {
+      "cardMode": "column"
+    },
+    "DateInput": {
+      "cardMode": "column"
+    },
+    "DateTimeInput": {
+      "cardMode": "column"
+    },
+    "ExportMenu": {
+      "cardMode": "column"
+    },
+    "SlideOver": {
+      "cardMode": "single",
+      "viewport": "1100x720"
+    },
+    "MobileSheet": {
+      "cardMode": "single",
+      "viewport": "390x640"
+    },
+    "BottomSheet": {
+      "cardMode": "single",
+      "viewport": "390x720"
+    },
+    "ToastProvider": {
+      "cardMode": "single",
+      "viewport": "900x420"
+    }
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}
