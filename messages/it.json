@@ -452,6 +452,7 @@
   "InstructorsPage": {
     "title": "Istruttori",
     "sub": "{active, plural, one {# attivo} other {# attivi}} · {owed} da liquidare",
+    "subInactive": "{inactive, plural, one {# non più attivo con dovuto} other {# non più attivi con dovuto}}",
     "kpi": {
       "active": "Istruttori attivi",
       "hours": "Ore totali volate",
@@ -460,6 +461,10 @@
     },
     "cardTitle": "Elenco istruttori",
     "empty": "Nessun istruttore trovato.",
+    "inactiveSection": {
+      "title": "Non più attivi, con dovuto",
+      "hint": "Archiviati o con il profilo disattivato: restano qui finché il dovuto non torna a zero."
+    },
     "newInstructor": "Aggiungi istruttore",
     "paymentCycleButton": "Compensi da liquidare",
     "table": {
@@ -468,7 +473,12 @@
       "hours": "Ore totali",
       "owed": "Totale dovuto",
       "actions": "Azioni",
+      "status": "Stato",
       "noValue": "—"
+    },
+    "status": {
+      "active": "Attivo",
+      "inactive": "Non più attivo"
     },
     "actions": {
       "edit": "Modifica",
@@ -509,7 +519,7 @@
       "payoutRate": {
         "sectionTitle": "Compenso istruttore",
         "label": "Compenso orario (€/h)",
-        "noValue": "—"
+        "hint": "Vale dai prossimi voli: quelli già registrati mantengono il compenso calcolato alla registrazione."
       },
       "ratings": {
         "sectionTitle": "Ratings",
@@ -562,6 +572,7 @@
       "invalidAmount": "Inserisci un importo positivo (es. 100,00).",
       "requiredField": "Campo obbligatorio.",
       "genericError": "Si è verificato un errore. Riprova.",
+      "nothingOwed": "Questo istruttore non è più attivo e non ha compensi da liquidare.",
       "invalidPeriod": "La data iniziale non può essere successiva a quella finale."
     },
     "paymentCycle": {

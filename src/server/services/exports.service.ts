@@ -481,7 +481,10 @@ export async function exportExpiriesXlsx(actor: Actor, query: ListAllExpiriesQue
 // --- Instructor compensation (`GET /api/v1/instructor-compensation`) -------
 // Story 12.7, AC 3 — the summary only (never the `?personId=` detail, which
 // has nothing to export, it's a slide-over). Same unpaginated-array shape as
-// the school summaries above (`assertWithinExportCap` on `.length`).
+// the school summaries above (`assertWithinExportCap` on `.length`). Story
+// 16.5 (AD-9): the summary now carries the instructors no longer active who
+// are still owed, so a fifth column says which row is which — on paper a row
+// without its state is indistinguishable from an active one.
 
 export async function exportInstructorCompensationXlsx(actor: Actor, query: InstructorCompensationQuery): Promise<XlsxExport> {
   const items = await getCompensationSummary(actor);
@@ -495,7 +498,8 @@ export async function exportInstructorCompensationXlsx(actor: Actor, query: Inst
     { header: t('table.name'), value: (row) => `${row.lastName} ${row.firstName}` },
     { header: t('table.rate'), value: (row) => (row.payoutRateCents === null ? null : row.payoutRateCents / 100), numFmt: MONEY_NUM_FMT },
     { header: t('table.hours'), value: (row) => formatMinutes(row.totalMinutes) },
-    { header: t('table.owed'), value: (row) => (row.owedTotalCents === null ? null : row.owedTotalCents / 100), numFmt: MONEY_NUM_FMT },
+    { header: t('table.owed'), value: (row) => row.owedTotalCents / 100, numFmt: MONEY_NUM_FMT },
+    { header: t('table.status'), value: (row) => (row.isActive ? t('status.active') : t('status.inactive')) },
   ];
 
   return toXlsxExport('instructor-compensation', t('title'), columns, items);

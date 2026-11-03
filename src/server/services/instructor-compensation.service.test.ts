@@ -108,6 +108,61 @@ function instructorPersonRow(overrides: Partial<Record<string, unknown>> = {}): 
   };
 }
 
+/** One instructor of the roster with the two flags the services filter on (story 16.5) — `stubRoster` answers each `person.findMany` with the ones its `where` selects. */
+type RosterPerson = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  archivedAt: Date | null;
+  instructorProfile: { id: string; payoutRateCents: number | null; deactivatedAt: Date | null };
+};
+
+function rosterPerson(id: string, overrides: { archivedAt?: Date | null; deactivatedAt?: Date | null; payoutRateCents?: number | null } = {}): RosterPerson {
+  return {
+    id: `person_${id}`,
+    firstName: id,
+    lastName: 'Rossi',
+    archivedAt: overrides.archivedAt ?? null,
+    instructorProfile: { id: `profile_${id}`, payoutRateCents: overrides.payoutRateCents === undefined ? 3000 : overrides.payoutRateCents, deactivatedAt: overrides.deactivatedAt ?? null },
+  };
+}
+
+/** Evaluates the Prisma `where` shapes the two roster queries use (equality, `null`, `{ not: null }`, `{ isNot: null }`, `OR`, a nested relation) — so a test measures the FILTER, never a fixture picked by hand. */
+function matchesWhere(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
+  return Object.entries(where).every(([key, condition]) => {
+    if (key === 'OR') return (condition as Array<Record<string, unknown>>).some((branch) => matchesWhere(row, branch));
+    const value = row[key];
+    if (condition === null) return value === null;
+    if (typeof condition === 'object' && !(condition instanceof Date)) {
+      const operator = condition as Record<string, unknown>;
+      if ('isNot' in operator) return operator['isNot'] === null && value !== null && value !== undefined;
+      if ('not' in operator) return operator['not'] === null && value !== null && value !== undefined;
+      return value !== null && typeof value === 'object' && matchesWhere(value as Record<string, unknown>, operator);
+    }
+    return value === condition;
+  });
+}
+
+function stubRoster(people: RosterPerson[]): void {
+  personFindManyMock.mockImplementation((async (args: { where: Record<string, unknown> }) =>
+    people
+      .filter((person) => matchesWhere(person as unknown as Record<string, unknown>, args.where))
+      .map((person) => ({
+        id: person.id,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        instructorProfile: { id: person.instructorProfile.id, payoutRateCents: person.instructorProfile.payoutRateCents },
+      }))) as never);
+}
+
+/** Per-profile SCHOOL flight sums (`_sum.minutes`/`_sum.instructorPayoutCents`) and payout sums, the SAME for every variant (mtd/ytd/total) — each fixture says how much the flights FROZE, the reader never recomputes it. */
+function stubAggregates(flights: Record<string, { minutes: number; accruedCents: number }>, paid: Record<string, number> = {}): void {
+  flightGroupBy.mockResolvedValue(
+    Object.entries(flights).map(([instructorProfileId, sums]) => ({ instructorProfileId, _sum: { minutes: sums.minutes, instructorPayoutCents: sums.accruedCents } })),
+  );
+  payoutGroupBy.mockResolvedValue(Object.entries(paid).map(([instructorProfileId, amountCents]) => ({ instructorProfileId, _sum: { amountCents } })));
+}
+
 /** Resolves every `flight.groupBy`/`instructorPayout.groupBy` call to empty (0 minutes/0 paid) — keeps every OTHER test from having to stub all 6 calls. */
 function stubZeroAggregates(): void {
   flightGroupBy.mockResolvedValue([]);
@@ -183,25 +238,29 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(result).toBeNull();
     });
 
-    it('returns the own payoutRateCents/mtdMinutes/owedMtdCents, scoped to the actor\'s own personId only', async () => {
+    it('returns the own payoutRateCents/mtdMinutes/owedMtdCents, scoped to the actor\'s own personId only — the ACTIVE platea alone (story 16.5, AD-9)', async () => {
       personFindMany.mockResolvedValue([instructorPersonRow()]); // rate 3000 c/h
-      flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 130 } }]);
-      payoutGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { amountCents: 2000 } }]);
+      stubAggregates({ profile_ines: { minutes: 130, accruedCents: 6500 } }, { profile_ines: 2000 });
 
       const result = await getOwnCompensationSummary({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
 
       expect(result).toEqual({ payoutRateCents: 3000, mtdMinutes: 130, owedMtdCents: 4500 });
-      const [args] = personFindManyMock.mock.calls[0] as [{ where: { id?: string } }];
-      expect(args.where.id).toBe('person_ines');
+      expect(personFindManyMock).toHaveBeenCalledTimes(1); // never the no-longer-active twin
+      const [args] = personFindManyMock.mock.calls[0] as [{ where: Record<string, unknown> }];
+      expect(args.where).toEqual({ archivedAt: null, instructorProfile: { deactivatedAt: null }, id: 'person_ines' });
     });
 
-    it('a null payoutRateCents (no rate set yet) yields a null owedMtdCents, never a fabricated 0', async () => {
+    // Story 16.5 changes this contract (R-16-k): a flight whose instructor had
+    // no payout rate froze 0, so the owed of an instructor without a rate is a
+    // NUMBER — 0 with no flights at all — never the `null` ("unknown") it was
+    // when the owed was recomputed from today's rate.
+    it('a null payoutRateCents (no rate set yet) yields owedMtdCents 0, a number like every other owed (R-16-k)', async () => {
       personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', payoutRateCents: null } })]);
       stubZeroAggregates();
 
       const result = await getOwnCompensationSummary({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
 
-      expect(result).toEqual({ payoutRateCents: null, mtdMinutes: 0, owedMtdCents: null });
+      expect(result).toEqual({ payoutRateCents: null, mtdMinutes: 0, owedMtdCents: 0 });
     });
   });
 
@@ -248,8 +307,9 @@ describe('instructor-compensation.service (story 12.7)', () => {
         payoutRateCents: 3000,
         person: { id: 'person_ines', firstName: 'Ines', lastName: 'Volpi' },
       });
-      flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 130 } }]);
-      payoutGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { amountCents: 2000 } }]);
+      // The month's flights froze 5200 c: they were flown at 24,00 €/h, before
+      // the rate became 30,00 €/h — 130 min at TODAY's rate would be 6500.
+      stubAggregates({ profile_ines: { minutes: 130, accruedCents: 5200 } }, { profile_ines: 2000 });
       payoutFindMany.mockResolvedValue([
         {
           id: 'payout_1',
@@ -266,9 +326,9 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(result).toEqual({
         payoutRateCents: 3000,
         mtdMinutes: 130,
-        mtdGrossCents: 6500, // round(130/60 * 3000) — review F4: gross, ore x tariffa
-        mtdOwedCents: 4500, // gross - 2000 already paid
-        totalOwedCents: 4500,
+        mtdGrossCents: 5200, // story 16.5 (U16): the sum the flights froze — review F4's gross, never minutes x today's rate
+        mtdOwedCents: 3200, // gross - 2000 already paid: the two KPIs reconcile
+        totalOwedCents: 3200,
         payouts: [
           {
             id: 'payout_1',
@@ -310,47 +370,58 @@ describe('instructor-compensation.service (story 12.7)', () => {
     });
   });
 
-  describe('getCompensationSummary — minutes/owed computation (AC 2)', () => {
-    it('returns 0 hours and null owed for an instructor with no flights and no payout rate', async () => {
-      personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', payoutRateCents: null } })]);
+  describe('getCompensationSummary — minutes/owed computation (AC 2; story 16.5, the snapshot)', () => {
+    it('returns 0 hours and an owed of 0 for an instructor with no flights and no payout rate (story 16.5, AC 11 — nothing accrued, nothing owed)', async () => {
+      stubRoster([rosterPerson('ines', { payoutRateCents: null })]);
       stubZeroAggregates();
 
       const [row] = await getCompensationSummary(adminActor());
 
       expect(row?.payoutRateCents).toBeNull();
       expect(row?.totalMinutes).toBe(0);
-      expect(row?.owedMtdCents).toBeNull();
-      expect(row?.owedYtdCents).toBeNull();
-      expect(row?.owedTotalCents).toBeNull();
+      expect(row?.owedMtdCents).toBe(0);
+      expect(row?.owedYtdCents).toBe(0);
+      expect(row?.owedTotalCents).toBe(0);
+      expect(row?.isActive).toBe(true);
     });
 
-    it('computes owed = round(minutes/60 * rate) minus payouts already made, for the TOTAL variant', async () => {
-      personFindMany.mockResolvedValue([instructorPersonRow()]); // rate 3000 c/h
-      flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 130 } }]); // same for every call (mtd/ytd/total) in this fixture
-      payoutGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { amountCents: 2000 } }]);
+    it('computes owed = the sum the SCHOOL flights froze (instructorPayoutCents) minus the payouts already made, for every variant (story 16.5, AC 8)', async () => {
+      stubRoster([rosterPerson('ines')]);
+      stubAggregates({ profile_ines: { minutes: 130, accruedCents: 6500 } }, { profile_ines: 2000 });
 
       const [row] = await getCompensationSummary(adminActor());
 
-      // 130 min / 60 * 3000 = 6500.0 (round -> 6500) - 2000 already paid = 4500
       expect(row?.totalMinutes).toBe(130);
+      expect(row?.owedMtdCents).toBe(4500);
+      expect(row?.owedYtdCents).toBe(4500);
       expect(row?.owedTotalCents).toBe(4500);
     });
 
-    it('rounds a fractional gross amount (Math.round, not truncation)', async () => {
-      personFindMany.mockResolvedValue([instructorPersonRow({ instructorProfile: { id: 'profile_ines', payoutRateCents: 4501 } })]);
-      // 25 minutes / 60 * 4501 = 1875.4166... -> rounds to 1875
-      flightGroupBy.mockResolvedValue([{ instructorProfileId: 'profile_ines', _sum: { minutes: 25 } }]);
-      payoutGroupBy.mockResolvedValue([]);
+    // Ledger audit MAJOR-1, the discriminating case of story 16.5 (AC 9, U9):
+    // before the snapshot the reader computed round(minutes/60 x TODAY's rate),
+    // so one rate change rewrote the owed of hours already paid — +500,00 € here.
+    it('100 h paid in full at 20,00 €/h: the owed stays 0 whatever the payout rate is TODAY (AC 9 — the past is never rewritten)', async () => {
+      stubAggregates({ profile_ines: { minutes: 6000, accruedCents: 200_000 } }, { profile_ines: 200_000 });
+
+      for (const payoutRateCents of [2000, 2500, 1800, null]) {
+        stubRoster([rosterPerson('ines', { payoutRateCents })]);
+        const [row] = await getCompensationSummary(adminActor());
+        expect(row?.owedTotalCents, `rate ${payoutRateCents}`).toBe(0);
+      }
+    });
+
+    it('sums what the flights froze, never re-rounding on the aggregate (story 16.5, AD-3): two 25-min flights at 45,01 €/h froze 1875 c each, owed 3750 — not round(50/60 x 4501) = 3751', async () => {
+      stubRoster([rosterPerson('ines', { payoutRateCents: 4501 })]);
+      stubAggregates({ profile_ines: { minutes: 50, accruedCents: 3750 } });
 
       const [row] = await getCompensationSummary(adminActor());
 
-      expect(row?.owedTotalCents).toBe(1875);
+      expect(row?.owedTotalCents).toBe(3750);
     });
 
-    it('defaults minutes to 0 for an instructor absent from the groupBy result (no SCHOOL flights this variant)', async () => {
-      personFindMany.mockResolvedValue([instructorPersonRow()]);
-      flightGroupBy.mockResolvedValue([]);
-      payoutGroupBy.mockResolvedValue([]);
+    it('defaults minutes and owed to 0 for an instructor absent from the groupBy result (no SCHOOL flights this variant)', async () => {
+      stubRoster([rosterPerson('ines')]);
+      stubZeroAggregates();
 
       const [row] = await getCompensationSummary(adminActor());
 
@@ -358,19 +429,78 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(row?.owedMtdCents).toBe(0);
     });
 
-    it('queries flights scoped to SCHOOL with no status clause (story 19.6: no-charge flights count too), batched (never N+1) across the whole instructor platea', async () => {
-      personFindMany.mockResolvedValue([instructorPersonRow()]);
+    it('queries flights scoped to SCHOOL with no status clause (story 19.6: no-charge flights count too), summing minutes AND the snapshot in the same groupBy, batched (never N+1) across both platee: 3 flight + 3 payout queries (story 16.5, U14/U15)', async () => {
+      stubRoster([rosterPerson('ines'), rosterPerson('luca'), rosterPerson('olga', { archivedAt: new Date('2026-01-01T00:00:00.000Z') })]);
       stubZeroAggregates();
 
       await getCompensationSummary(adminActor());
 
+      expect(flightGroupByMock).toHaveBeenCalledTimes(3);
+      expect(payoutGroupByMock).toHaveBeenCalledTimes(3);
       for (const call of flightGroupByMock.mock.calls) {
-        const args = call[0] as { by: string[]; where: Record<string, unknown> };
+        const args = call[0] as { by: string[]; where: Record<string, unknown>; _sum: Record<string, unknown> };
         expect(args.by).toEqual(['instructorProfileId']);
         expect(args.where['flightType']).toBe('SCHOOL');
         expect(args.where).not.toHaveProperty('status');
-        expect(args.where['instructorProfileId']).toEqual({ in: ['profile_ines'] });
+        expect(args.where['instructorProfileId']).toEqual({ in: ['profile_ines', 'profile_luca', 'profile_olga'] });
+        expect(args._sum).toEqual({ minutes: true, instructorPayoutCents: true });
       }
+    });
+  });
+
+  // Ledger audit MAJOR-2 (story 16.5, P4 — AC 13, U12/U13): the instructor who
+  // left was in NO summary, so the money owed to them was invisible.
+  describe('getCompensationSummary — the instructors no longer active (story 16.5, P4)', () => {
+    const LEFT = new Date('2026-03-01T00:00:00.000Z');
+
+    it('lists the active instructors, then those no longer active whose all-time owed is not zero, each flagged; one whose owed is zero is left out', async () => {
+      stubRoster([
+        rosterPerson('ines'),
+        rosterPerson('olga', { archivedAt: LEFT, deactivatedAt: LEFT }),
+        rosterPerson('piero', { deactivatedAt: LEFT }),
+        rosterPerson('sara', { archivedAt: LEFT }),
+        rosterPerson('ugo', { archivedAt: LEFT, deactivatedAt: LEFT }),
+      ]);
+      stubAggregates(
+        {
+          profile_ines: { minutes: 60, accruedCents: 3000 },
+          profile_olga: { minutes: 2000, accruedCents: 100_000 },
+          profile_piero: { minutes: 60, accruedCents: 3000 },
+          profile_ugo: { minutes: 120, accruedCents: 6000 },
+        },
+        // Piero was paid exactly what he accrued, Sara more than she accrued (no flights at all).
+        { profile_piero: 3000, profile_sara: 5000 },
+      );
+
+      const summary = await getCompensationSummary(adminActor());
+
+      expect(summary.map((row) => [row.personId, row.isActive, row.owedTotalCents])).toEqual([
+        ['person_ines', true, 3000],
+        ['person_olga', false, 100_000],
+        ['person_sara', false, -5000],
+        ['person_ugo', false, 6000],
+      ]);
+    });
+
+    it('an active instructor stays listed with an owed of 0 (only the no-longer-active ones are filtered)', async () => {
+      stubRoster([rosterPerson('ines')]);
+      stubZeroAggregates();
+
+      expect(await getCompensationSummary(adminActor())).toHaveLength(1);
+    });
+
+    it('reads the no-longer-active platea with ONE query: an instructor profile, and the person archived OR the profile deactivated', async () => {
+      stubRoster([]);
+      stubZeroAggregates();
+
+      await getCompensationSummary(adminActor());
+
+      const wheres = personFindManyMock.mock.calls.map((call) => (call[0] as { where: Record<string, unknown> }).where);
+      expect(wheres).toEqual([
+        { archivedAt: null, instructorProfile: { deactivatedAt: null } },
+        { instructorProfile: { isNot: null }, OR: [{ archivedAt: { not: null } }, { instructorProfile: { deactivatedAt: { not: null } } }] },
+      ]);
+      expect(flightGroupByMock).not.toHaveBeenCalled(); // nobody at all -> no aggregate query
     });
   });
 
@@ -379,7 +509,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-12-31T23:30:00.000Z'));
 
-      personFindMany.mockResolvedValue([instructorPersonRow()]);
+      stubRoster([rosterPerson('ines')]);
       stubZeroAggregates();
 
       await getCompensationSummary(adminActor());
@@ -400,7 +530,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-07-22T22:30:00.000Z')); // 2026-07-23 00:30 Rome (CEST, UTC+2)
 
-      personFindMany.mockResolvedValue([instructorPersonRow()]);
+      stubRoster([rosterPerson('ines')]);
       flightGroupBy.mockResolvedValue([]);
       payoutGroupBy.mockImplementation(async (args) => {
         const where = (args as { where: { periodEnd?: { gte: Date; lte: Date } } }).where;
@@ -421,6 +551,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
 
       expect(row?.owedMtdCents).toBe(0 - 3000);
       expect(row?.owedTotalCents).toBe(0 - 5000);
+      expect(row?.isActive).toBe(true);
 
       vi.useRealTimers();
     });
@@ -435,6 +566,17 @@ describe('instructor-compensation.service (story 12.7)', () => {
     it('404s on a person with no active instructor profile', async () => {
       personFindUnique.mockResolvedValue({ id: 'person_x', firstName: 'X', lastName: 'Y', instructorProfile: null });
       await expect(getInstructorCompensationDetail(adminActor(), 'person_x')).rejects.toThrow(NotFoundError);
+    });
+
+    it('still 404s on a DEACTIVATED profile, even one the summary lists as no longer active with an owed (story 16.5, Q-16.5-c: that row offers Paga only)', async () => {
+      personFindUnique.mockResolvedValue({
+        id: 'person_olga',
+        firstName: 'Olga',
+        lastName: 'Rossi',
+        instructorProfile: { id: 'profile_olga', payoutRateCents: 3000, deactivatedAt: new Date('2026-03-01T00:00:00.000Z') },
+      });
+      await expect(getInstructorCompensationDetail(adminActor(), 'person_olga')).rejects.toThrow(NotFoundError);
+      expect(flightGroupByMock).not.toHaveBeenCalled();
     });
 
     it('returns recentFlights (max 5, SCHOOL, non-cancelled) and DISTINCT recentStudents derived from them', async () => {
@@ -454,6 +596,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
 
       const detail = await getInstructorCompensationDetail(adminActor(), 'person_ines');
 
+      expect(detail.isActive).toBe(true);
       expect(detail.recentFlights).toHaveLength(3);
       expect(detail.recentStudents).toEqual([
         { personId: 'student_a', firstName: 'Anna', lastName: 'Allieva' },
@@ -483,17 +626,99 @@ describe('instructor-compensation.service (story 12.7)', () => {
       expect(payoutCreateMock).not.toHaveBeenCalled();
     });
 
-    it('409s when the person has no active instructor profile (never activated, or deactivated)', async () => {
-      personFindUnique.mockResolvedValue({ instructorProfile: null });
-      await expect(recordPayout(adminActor(), validInput)).rejects.toThrow(ConflictError);
-
-      personFindUnique.mockResolvedValue({ instructorProfile: { id: 'profile_ines', deactivatedAt: new Date('2026-01-01T00:00:00.000Z') } });
-      await expect(recordPayout(adminActor(), validInput)).rejects.toThrow(ConflictError);
+    it('409s when the person has no instructor profile at all (never activated) — the plain CONFLICT, no owed read', async () => {
+      personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: null });
+      await expect(recordPayout(adminActor(), validInput)).rejects.toMatchObject({ code: 'CONFLICT' });
+      expect(flightGroupByMock).not.toHaveBeenCalled();
       expect(payoutCreateMock).not.toHaveBeenCalled();
     });
 
+    // Story 16.5 (R-16-i): an instructor no longer active can still be paid
+    // the work they did — the way out of the summary's "non più attivi" card.
+    describe('an instructor no longer active (story 16.5, R-16-i)', () => {
+      const LEFT = new Date('2026-03-01T00:00:00.000Z');
+
+      beforeEach(() => {
+        cashCategoryFindUnique.mockResolvedValue({ id: 'cat_compensi' });
+        payoutCreate.mockResolvedValue({
+          id: 'payout_1',
+          instructorProfileId: 'profile_ines',
+          amountCents: 20_000,
+          periodStart: new Date('2026-01-01T00:00:00.000Z'),
+          periodEnd: new Date('2026-02-28T00:00:00.000Z'),
+          method: 'BANK_TRANSFER',
+          notes: null,
+          actorUserId: 'admin_1',
+          createdAt: new Date('2026-03-02T08:00:00.000Z'),
+        });
+        cashMovementCreate.mockResolvedValue({ id: 'cm_1' });
+      });
+
+      const payout = { ...validInput, amountCents: 20_000, periodStart: '2026-01-01', periodEnd: '2026-02-28', method: 'BANK_TRANSFER' as const };
+
+      it('1 000,00 € owed to a deactivated instructor -> a 200,00 € payout is recorded, and the summary then shows 800,00 € still owed', async () => {
+        personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: LEFT } });
+        stubAggregates({ profile_ines: { minutes: 2000, accruedCents: 100_000 } });
+
+        await expect(recordPayout(adminActor(), payout)).resolves.toMatchObject({ id: 'payout_1', amountCents: 20_000 });
+        // The owed read is the all-time one: no date bound on either sum.
+        for (const call of [...flightGroupByMock.mock.calls, ...payoutGroupByMock.mock.calls]) {
+          const where = (call[0] as { where: Record<string, unknown> }).where;
+          expect(where).not.toHaveProperty('flightDate');
+          expect(where).not.toHaveProperty('periodEnd');
+          expect(where['instructorProfileId']).toEqual({ in: ['profile_ines'] });
+        }
+        expect(transactionMock).toHaveBeenCalledTimes(1);
+
+        stubRoster([rosterPerson('ines', { deactivatedAt: LEFT })]);
+        stubAggregates({ profile_ines: { minutes: 2000, accruedCents: 100_000 } }, { profile_ines: 20_000 });
+        const [row] = await getCompensationSummary(adminActor());
+        expect(row).toMatchObject({ personId: 'person_ines', isActive: false, owedTotalCents: 80_000 });
+      });
+
+      it('an ARCHIVED person counts as no longer active too, whatever the profile says (the summary\'s own rule)', async () => {
+        personFindUnique.mockResolvedValue({ archivedAt: LEFT, instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
+        stubAggregates({ profile_ines: { minutes: 120, accruedCents: 6000 } }, { profile_ines: 6000 });
+
+        await expect(recordPayout(adminActor(), payout)).rejects.toMatchObject({ code: 'INSTRUCTOR_NOTHING_OWED' });
+      });
+
+      it('409 INSTRUCTOR_NOTHING_OWED when the owed is zero or negative — nothing is written', async () => {
+        personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: LEFT } });
+
+        for (const [accrued, paid] of [
+          [0, 0],
+          [6000, 6000],
+          [6000, 9000],
+        ] as const) {
+          stubAggregates({ profile_ines: { minutes: 120, accruedCents: accrued } }, { profile_ines: paid });
+          const error = await recordPayout(adminActor(), payout).catch((caught: unknown) => caught);
+          expect(error, `accrued ${accrued}, paid ${paid}`).toBeInstanceOf(ConflictError);
+          expect(error).toMatchObject({ code: 'INSTRUCTOR_NOTHING_OWED' });
+        }
+        expect(cashCategoryFindUniqueMock).not.toHaveBeenCalled();
+        expect(payoutCreateMock).not.toHaveBeenCalled();
+        expect(cashMovementCreateMock).not.toHaveBeenCalled();
+      });
+
+      it('no cap on the amount: 1 500,00 € may be paid against 1 000,00 € owed (R-16-i asks owed > 0 only)', async () => {
+        personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: LEFT } });
+        stubAggregates({ profile_ines: { minutes: 2000, accruedCents: 100_000 } });
+
+        await expect(recordPayout(adminActor(), { ...payout, amountCents: 150_000 })).resolves.toBeDefined();
+      });
+
+      it('an ACTIVE instructor is paid as before — no owed read at all, so an advance (owed 0) is still allowed', async () => {
+        personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
+
+        await expect(recordPayout(adminActor(), payout)).resolves.toBeDefined();
+        expect(flightGroupByMock).not.toHaveBeenCalled();
+        expect(payoutGroupByMock).not.toHaveBeenCalled();
+      });
+    });
+
     it('throws an explicit error when the "Compensi istruttori" cash category is missing (never silently create it) — resolved BEFORE the transaction', async () => {
-      personFindUnique.mockResolvedValue({ instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
+      personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
       cashCategoryFindUnique.mockResolvedValue(null);
 
       await expect(recordPayout(adminActor(), validInput)).rejects.toThrow(/Compensi istruttori/);
@@ -508,7 +733,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
       // regression to the UTC calendar would be caught here.
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 Rome (CEST), 2026-09-01
-      personFindUnique.mockResolvedValue({ instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
+      personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
       cashCategoryFindUnique.mockResolvedValue({ id: 'cat_compensi' });
       payoutCreate.mockResolvedValue({
         id: 'payout_1',
@@ -554,14 +779,17 @@ describe('instructor-compensation.service (story 12.7)', () => {
       await expect(setPayoutRate(adminActor(), 'unknown', 3000)).rejects.toThrow(NotFoundError);
     });
 
-    it('409s when the person has no active instructor profile', async () => {
-      personFindUnique.mockResolvedValue({ instructorProfile: null });
+    it('409s when the person has no active instructor profile — unlike a payout, never for one no longer active (story 16.5)', async () => {
+      personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: null });
       await expect(setPayoutRate(adminActor(), 'person_x', 3000)).rejects.toThrow(ConflictError);
+
+      personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: new Date('2026-01-01T00:00:00.000Z') } });
+      await expect(setPayoutRate(adminActor(), 'person_ines', 3000)).rejects.toThrow(ConflictError);
       expect(profileUpdateMock).not.toHaveBeenCalled();
     });
 
     it('sets a positive rate', async () => {
-      personFindUnique.mockResolvedValue({ instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
+      personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
       profileUpdate.mockResolvedValue({ payoutRateCents: 3500 });
 
       const result = await setPayoutRate(adminActor(), 'person_ines', 3500);
@@ -573,7 +801,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
     });
 
     it('clears the rate back to null', async () => {
-      personFindUnique.mockResolvedValue({ instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
+      personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
       profileUpdate.mockResolvedValue({ payoutRateCents: null });
 
       const result = await setPayoutRate(adminActor(), 'person_ines', null);

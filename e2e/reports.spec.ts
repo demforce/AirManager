@@ -227,7 +227,8 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
 
     const instructorName = `${instructor.firstName} ${instructor.lastName}`;
     const instructorRow = after.instructors.find((row) => row.name === instructorName);
-    expect(instructorRow).toEqual({ name: instructorName, minutes: 60, owedCents: null });
+    // Story 16.5 (R-16-k): this instructor has no payout rate, so the flight froze 0 — an owed of 0, never null.
+    expect(instructorRow).toEqual({ name: instructorName, minutes: 60, owedCents: 0 });
 
     const pilotName = `${pilot.firstName} ${pilot.lastName}`;
     const topPilotRow = after.topPilots.find((row) => row.name === pilotName);
@@ -244,7 +245,7 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
     // H:MM app-wide (PO ratification, review 12.10): 90min -> 1:30, 60min -> 1:00.
     await expect(page.getByTestId(`reports-fleet-row-${aircraft.registration}`)).toContainText(formatMinutesHm(90));
     await expect(page.getByTestId(`reports-instructor-row-${instructorName}`)).toContainText(formatMinutesHm(60));
-    await expect(page.getByTestId(`reports-instructor-row-${instructorName}`)).toContainText('—');
+    await expect(page.getByTestId(`reports-instructor-row-${instructorName}`)).toContainText(formatCentsIt(0)); // story 16.5: owed 0, no longer "—"
     // "Per pilota" RankBars defaults to the "Ore" metric — switch to "Spesa" to check the money column.
     await expect(page.getByTestId(`reports-rank-pilot-row-${pilotName}`)).toContainText(formatMinutesHm(90));
     await page.getByTestId('reports-rank-pilots').getByRole('button', { name: 'Spesa' }).click();

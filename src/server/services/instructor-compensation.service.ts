@@ -17,11 +17,26 @@ const INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME = 'Compensi istruttori';
  * `instructor-rates.service.ts`'s `InstructorRate` (what the STUDENT is
  * charged, D8 — that one stays untouched by this story).
  *
- * `getCompensationSummary`'s minutes query (SCHOOL, per
+ * `getCompensationSummary`'s flights query (SCHOOL, per
  * `instructorProfileId`, ONE batched groupBy) was deliberately
  * self-contained rather than shared with the pre-12.13 school area's own
  * equivalent groupBy — that area was removed in story 12.13, and this page
  * never depended on it.
+ *
+ * **The owed is the sum of what each flight froze (story 16.5, R-16-d)**:
+ * `owed = Σ Flight.instructorPayoutCents (SCHOOL flights in the window) − Σ
+ * payouts (by periodEnd in the window)`. Until this story it was
+ * `round(Σ minutes / 60 × payoutRateCents) − paid`, with TODAY's rate on
+ * every hour ever flown: one `setPayoutRate` rewrote the owed of hours
+ * already paid, in both directions (ledger audit MAJOR-1). The owed is always
+ * a number — a flight whose instructor had no rate froze `0` (R-16-k).
+ *
+ * **Archiving never hides money owed (story 16.5, P4 — same rule as
+ * `accounts.service.ts#listNegativeBalances`)**: the summary is the active
+ * instructors PLUS every instructor no longer active (person archived or
+ * profile deactivated) whose owed is not zero, each row saying which
+ * (`isActive`). Such an instructor can still be paid while their owed is
+ * positive (R-16-i, `recordPayout`); their detail stays a 404 (Q-16.5-c).
  */
 
 export type InstructorCompensationSummaryItem = {
@@ -32,9 +47,11 @@ export type InstructorCompensationSummaryItem = {
   mtdMinutes: number;
   ytdMinutes: number;
   totalMinutes: number;
-  owedMtdCents: number | null;
-  owedYtdCents: number | null;
-  owedTotalCents: number | null;
+  owedMtdCents: number;
+  owedYtdCents: number;
+  owedTotalCents: number;
+  /** `false` when the person is archived OR the instructor profile is deactivated (story 16.5, P4) — such a row is in the summary only while its `owedTotalCents` is not zero. */
+  isActive: boolean;
 };
 
 export type InstructorCompensationRecentFlight = {
@@ -70,6 +87,7 @@ type InstructorRow = {
   lastName: string;
   instructorProfileId: string;
   payoutRateCents: number | null;
+  isActive: boolean;
 };
 
 /** `[from, to]` inclusive `@db.Date` bounds, or `null` for an unbounded ("total") variant. */
@@ -115,11 +133,43 @@ async function listActiveInstructors(personId?: string): Promise<InstructorRow[]
     lastName: row.lastName,
     instructorProfileId: row.instructorProfile!.id,
     payoutRateCents: row.instructorProfile!.payoutRateCents,
+    isActive: true,
   }));
 }
 
-/** SUM(minutes) of SCHOOL flights per instructor — no-charge flights included (story 19.6, R-19-d: the compensation still accrues) — ONE batched groupBy (never N+1). */
-async function sumMinutesByProfile(instructorProfileIds: string[], bounds: VariantBounds): Promise<Map<string, number>> {
+/** Every instructor NO LONGER active (person archived OR profile deactivated) — the platea story 16.5 (P4) adds to the summary, which keeps only those whose owed is not zero. */
+async function listInactiveInstructors(): Promise<InstructorRow[]> {
+  const rows = await prisma.person.findMany({
+    where: {
+      instructorProfile: { isNot: null },
+      OR: [{ archivedAt: { not: null } }, { instructorProfile: { deactivatedAt: { not: null } } }],
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      instructorProfile: { select: { id: true, payoutRateCents: true } },
+    },
+    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+  });
+  return rows.map((row) => ({
+    personId: row.id,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    instructorProfileId: row.instructorProfile!.id,
+    payoutRateCents: row.instructorProfile!.payoutRateCents,
+    isActive: false,
+  }));
+}
+
+/**
+ * SUM(minutes) and SUM(instructorPayoutCents) — the compensation each flight
+ * froze (story 16.5) — of SCHOOL flights per instructor, no-charge flights
+ * included (story 19.6, R-19-d: the compensation still accrues). ONE batched
+ * groupBy (never N+1). A SCHOOL flight always has an instructor, so its
+ * snapshot is never `null`; the `?? 0` only covers an empty sum.
+ */
+async function sumSchoolFlightsByProfile(instructorProfileIds: string[], bounds: VariantBounds): Promise<Map<string, { minutes: number; accruedCents: number }>> {
   if (instructorProfileIds.length === 0) return new Map();
   const rows = await prisma.flight.groupBy({
     by: ['instructorProfileId'],
@@ -128,12 +178,12 @@ async function sumMinutesByProfile(instructorProfileIds: string[], bounds: Varia
       flightType: 'SCHOOL',
       ...(bounds ? { flightDate: { gte: bounds.from, lte: bounds.to } } : {}),
     },
-    _sum: { minutes: true },
+    _sum: { minutes: true, instructorPayoutCents: true },
   });
 
-  const map = new Map<string, number>();
+  const map = new Map<string, { minutes: number; accruedCents: number }>();
   for (const row of rows) {
-    if (row.instructorProfileId) map.set(row.instructorProfileId, row._sum.minutes ?? 0);
+    if (row.instructorProfileId) map.set(row.instructorProfileId, { minutes: row._sum.minutes ?? 0, accruedCents: row._sum.instructorPayoutCents ?? 0 });
   }
   return map;
 }
@@ -162,65 +212,74 @@ async function sumPayoutsByProfile(instructorProfileIds: string[], bounds: Varia
   return map;
 }
 
-/** `round(minutes/60 * payoutRateCents)`, or `null` when there is no rate to accrue against — the GROSS accrual for a period, shared by `computeOwed` (net = gross - paid) and the self-service "maturato" KPI (story 14.7, review F4: same formula, no new definition). */
-function computeGrossCents(minutes: number, payoutRateCents: number | null): number | null {
-  if (payoutRateCents === null) return null;
-  return Math.round((minutes / 60) * payoutRateCents);
-}
+/** A summary row plus the month's GROSS accrual, which only the self-service overview shows (`mtdGrossCents`). */
+type ComputedRow = { item: InstructorCompensationSummaryItem; mtdAccruedCents: number };
 
-/** `owed = round(minutes/60 * payoutRateCents) - paidCents`, or `null` when there is no rate to owe against (AC 2). */
-function computeOwed(minutes: number, payoutRateCents: number | null, paidCents: number): number | null {
-  const gross = computeGrossCents(minutes, payoutRateCents);
-  return gross === null ? null : gross - paidCents;
-}
-
-/** Computes the mtd/ytd/total minutes+owed rows for a given instructor platea — 6 batched queries total, regardless of platea size. Shared by the summary and the detail (single-instructor platea). */
-async function computeSummaryRows(instructors: InstructorRow[]): Promise<InstructorCompensationSummaryItem[]> {
+/**
+ * Computes the mtd/ytd/total minutes+owed rows for a given instructor platea
+ * — 6 batched queries total, regardless of platea size. Shared by the
+ * summary, the detail (single-instructor platea) and the self-service reads.
+ * `owed = accrued − paid` per variant, both sums over the same window.
+ */
+async function computeSummaryRows(instructors: InstructorRow[]): Promise<ComputedRow[]> {
   const ids = instructors.map((instructor) => instructor.instructorProfileId);
   const today = todayDateOnlyInZone(APP_TIMEZONE);
   const bounds = variantBounds(today);
 
-  const [mtdMinutes, ytdMinutes, totalMinutes, mtdPaid, ytdPaid, totalPaid] = await Promise.all([
-    sumMinutesByProfile(ids, bounds.mtd),
-    sumMinutesByProfile(ids, bounds.ytd),
-    sumMinutesByProfile(ids, bounds.total),
+  const [mtdFlights, ytdFlights, totalFlights, mtdPaid, ytdPaid, totalPaid] = await Promise.all([
+    sumSchoolFlightsByProfile(ids, bounds.mtd),
+    sumSchoolFlightsByProfile(ids, bounds.ytd),
+    sumSchoolFlightsByProfile(ids, bounds.total),
     sumPayoutsByProfile(ids, bounds.mtd),
     sumPayoutsByProfile(ids, bounds.ytd),
     sumPayoutsByProfile(ids, bounds.total),
   ]);
 
+  const none = { minutes: 0, accruedCents: 0 };
   return instructors.map((instructor) => {
-    const mtd = mtdMinutes.get(instructor.instructorProfileId) ?? 0;
-    const ytd = ytdMinutes.get(instructor.instructorProfileId) ?? 0;
-    const total = totalMinutes.get(instructor.instructorProfileId) ?? 0;
+    const id = instructor.instructorProfileId;
+    const mtd = mtdFlights.get(id) ?? none;
+    const ytd = ytdFlights.get(id) ?? none;
+    const total = totalFlights.get(id) ?? none;
     return {
-      personId: instructor.personId,
-      firstName: instructor.firstName,
-      lastName: instructor.lastName,
-      payoutRateCents: instructor.payoutRateCents,
-      mtdMinutes: mtd,
-      ytdMinutes: ytd,
-      totalMinutes: total,
-      owedMtdCents: computeOwed(mtd, instructor.payoutRateCents, mtdPaid.get(instructor.instructorProfileId) ?? 0),
-      owedYtdCents: computeOwed(ytd, instructor.payoutRateCents, ytdPaid.get(instructor.instructorProfileId) ?? 0),
-      owedTotalCents: computeOwed(total, instructor.payoutRateCents, totalPaid.get(instructor.instructorProfileId) ?? 0),
+      item: {
+        personId: instructor.personId,
+        firstName: instructor.firstName,
+        lastName: instructor.lastName,
+        payoutRateCents: instructor.payoutRateCents,
+        mtdMinutes: mtd.minutes,
+        ytdMinutes: ytd.minutes,
+        totalMinutes: total.minutes,
+        owedMtdCents: mtd.accruedCents - (mtdPaid.get(id) ?? 0),
+        owedYtdCents: ytd.accruedCents - (ytdPaid.get(id) ?? 0),
+        owedTotalCents: total.accruedCents - (totalPaid.get(id) ?? 0),
+        isActive: instructor.isActive,
+      },
+      mtdAccruedCents: mtd.accruedCents,
     };
   });
 }
 
-/** `GET /api/v1/instructor-compensation` (no `personId`) — the full roster's compensation summary. `finance.manage` (ADMIN-only). */
+/**
+ * `GET /api/v1/instructor-compensation` (no `personId`) — the compensation
+ * summary: every ACTIVE instructor, then every instructor no longer active
+ * whose all-time owed is not zero (story 16.5, P4 — "dovuto ≠ 0" is a
+ * COMPUTED property, so the filter runs after the math, on one batched
+ * computation over both platee). `finance.manage` (ADMIN-only).
+ */
 export async function getCompensationSummary(actor: Actor): Promise<InstructorCompensationSummaryItem[]> {
   authorize(actor, 'finance.manage');
-  const instructors = await listActiveInstructors();
-  if (instructors.length === 0) return [];
-  return computeSummaryRows(instructors);
+  const [active, inactive] = await Promise.all([listActiveInstructors(), listInactiveInstructors()]);
+  if (active.length + inactive.length === 0) return [];
+  const rows = await computeSummaryRows([...active, ...inactive]);
+  return rows.map((row) => row.item).filter((item) => item.isActive || item.owedTotalCents !== 0);
 }
 
 /** The Overview instructor landing's own-scoped compensation KPIs (AC 5, ratifica 2) — a narrow projection of {@link InstructorCompensationSummaryItem}. */
 export type OwnCompensationSummary = {
   payoutRateCents: number | null;
   mtdMinutes: number;
-  owedMtdCents: number | null;
+  owedMtdCents: number;
 };
 
 /**
@@ -246,7 +305,7 @@ export async function getOwnCompensationSummary(actor: Actor): Promise<OwnCompen
   if (instructors.length === 0) return null;
 
   const [row] = await computeSummaryRows(instructors);
-  return { payoutRateCents: row!.payoutRateCents, mtdMinutes: row!.mtdMinutes, owedMtdCents: row!.owedMtdCents };
+  return { payoutRateCents: row!.item.payoutRateCents, mtdMinutes: row!.item.mtdMinutes, owedMtdCents: row!.item.owedMtdCents };
 }
 
 /** A single received payout, as the self-service "I miei compensi" page's history table shows it (story 14.7, AC 2). */
@@ -263,12 +322,12 @@ export type OwnPayoutHistoryItem = {
 export type OwnCompensationOverview = {
   payoutRateCents: number | null;
   mtdMinutes: number;
-  /** GROSS accrual this month (`round(mtdMinutes/60 * payoutRateCents)`, "Maturato nel mese" — ratifica PO, review F4): a value DERIVED from the same rate/minutes already computed, not a new calculation. */
-  mtdGrossCents: number | null;
+  /** GROSS accrual this month ("Maturato nel mese" — ratifica PO, review F4): the sum of the month's flight snapshots (story 16.5), the very accrual `mtdOwedCents` nets — never `minutes × today's rate`. */
+  mtdGrossCents: number;
   /** NET owed this month (accrual minus payouts already made this month, "Dovuto nel mese") — same number the staff-facing roster card already shows for this instructor. */
-  mtdOwedCents: number | null;
+  mtdOwedCents: number;
   /** All-time residual owed ("saldo residuo dovuto", AC 2) — same `owedTotalCents` the staff roster row already computes. */
-  totalOwedCents: number | null;
+  totalOwedCents: number;
   /** Newest first — every individual payout ever recorded against this instructor, capped (AC 2 is a history view, not an export — same cap convention as the rate history, `instructor-rates.service.ts`). */
   payouts: OwnPayoutHistoryItem[];
 };
@@ -300,6 +359,8 @@ async function resolveInstructorRowByProfileId(instructorProfileId: string): Pro
     lastName: profile.person.lastName,
     instructorProfileId: profile.id,
     payoutRateCents: profile.payoutRateCents,
+    // Only ever reached for the actor's own ACTIVE profile (`getOwnInstructorProfileId`).
+    isActive: true,
   };
 }
 
@@ -340,11 +401,11 @@ export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompe
   ]);
 
   return {
-    payoutRateCents: row!.payoutRateCents,
-    mtdMinutes: row!.mtdMinutes,
-    mtdGrossCents: computeGrossCents(row!.mtdMinutes, row!.payoutRateCents),
-    mtdOwedCents: row!.owedMtdCents,
-    totalOwedCents: row!.owedTotalCents,
+    payoutRateCents: row!.item.payoutRateCents,
+    mtdMinutes: row!.item.mtdMinutes,
+    mtdGrossCents: row!.mtdAccruedCents,
+    mtdOwedCents: row!.item.owedMtdCents,
+    totalOwedCents: row!.item.owedTotalCents,
     payouts: payouts.map((payout) => ({
       id: payout.id,
       amountCents: payout.amountCents,
@@ -356,7 +417,7 @@ export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompe
   };
 }
 
-/** Resolves ONE active instructor by `Person.id` for the detail read (unknown person OR no/deactivated profile -> 404, no enumeration concern since `finance.manage` already sees every person). */
+/** Resolves ONE active instructor by `Person.id` for the detail read (unknown person OR no/deactivated profile -> 404, no enumeration concern since `finance.manage` already sees every person). The summary's no-longer-active rows keep this 404 (story 16.5, Q-16.5-c): they offer "Paga" only. */
 async function resolveActiveInstructorRow(personId: string): Promise<InstructorRow> {
   const person = await prisma.person.findUnique({
     where: { id: personId },
@@ -376,6 +437,7 @@ async function resolveActiveInstructorRow(personId: string): Promise<InstructorR
     lastName: person.lastName,
     instructorProfileId: person.instructorProfile.id,
     payoutRateCents: person.instructorProfile.payoutRateCents,
+    isActive: true,
   };
 }
 
@@ -418,19 +480,19 @@ export async function getInstructorCompensationDetail(actor: Actor, personId: st
     recentStudents.push({ personId: flight.personId, firstName: flight.person.firstName, lastName: flight.person.lastName });
   }
 
-  return { ...row!, recentFlights, recentStudents };
+  return { ...row!.item, recentFlights, recentStudents };
 }
 
-/** Resolves a `Person.id` to its `InstructorProfile` (unknown person -> 404; no/deactivated profile -> caller decides) — same shape as `instructor-rates.service.ts:75`'s `resolveInstructorProfile`, duplicated here (twin services, no cross-import) rather than imported. */
-async function resolveInstructorProfile(personId: string): Promise<{ id: string; deactivatedAt: Date | null } | null> {
+/** Resolves a `Person.id` to its `InstructorProfile` (unknown person -> 404; no/deactivated profile -> caller decides) — same shape as `instructor-rates.service.ts:75`'s `resolveInstructorProfile`, duplicated here (twin services, no cross-import) rather than imported. `personArchived` serves `recordPayout` alone (story 16.5: "no longer active" = archived OR deactivated, the summary's own rule). */
+async function resolveInstructorProfile(personId: string): Promise<{ id: string; deactivatedAt: Date | null; personArchived: boolean } | null> {
   const person = await prisma.person.findUnique({
     where: { id: personId },
-    select: { instructorProfile: { select: { id: true, deactivatedAt: true } } },
+    select: { archivedAt: true, instructorProfile: { select: { id: true, deactivatedAt: true } } },
   });
   if (!person) {
     throw new NotFoundError('Person not found.');
   }
-  return person.instructorProfile;
+  return person.instructorProfile ? { ...person.instructorProfile, personArchived: person.archivedAt !== null } : null;
 }
 
 /** Resolves to an ACTIVE instructor's profile id, or 409 (mirrors `createInstructorRate`'s "valid person, wrong state" choice — no enumeration concern since `people.read` actors already see the person). */
@@ -438,6 +500,33 @@ async function resolveActiveInstructorProfileId(personId: string): Promise<strin
   const profile = await resolveInstructorProfile(personId);
   if (!profile || profile.deactivatedAt !== null) {
     throw new ConflictError('This person has no active instructor profile.');
+  }
+  return profile.id;
+}
+
+/**
+ * The instructor a payout may go to (story 16.5, R-16-i): an active one
+ * always — an advance on hours not flown yet stays allowed, as before — and
+ * one NO LONGER active (person archived or profile deactivated) only while
+ * their all-time owed is positive: paying the work they did is the way out of
+ * the summary's "non più attivi" section. Otherwise 409
+ * `INSTRUCTOR_NOTHING_OWED`; no profile at all is the plain 409 as before.
+ * No cap on the amount (R-16-i only asks owed > 0), and the read takes no
+ * lock: two concurrent payouts may both pass it and overpay, which leaves a
+ * negative owed in sight on the same page — no money is lost or hidden.
+ */
+async function resolvePayableInstructorProfileId(personId: string): Promise<string> {
+  const profile = await resolveInstructorProfile(personId);
+  if (!profile) {
+    throw new ConflictError('This person has no instructor profile.');
+  }
+  if (profile.deactivatedAt === null && !profile.personArchived) {
+    return profile.id;
+  }
+  const [flights, paid] = await Promise.all([sumSchoolFlightsByProfile([profile.id], null), sumPayoutsByProfile([profile.id], null)]);
+  const owedCents = (flights.get(profile.id)?.accruedCents ?? 0) - (paid.get(profile.id) ?? 0);
+  if (owedCents <= 0) {
+    throw new ConflictError('This instructor is no longer active and is owed nothing.', undefined, 'INSTRUCTOR_NOTHING_OWED');
   }
   return profile.id;
 }
@@ -461,12 +550,13 @@ async function resolveActiveInstructorProfileId(personId: string): Promise<strin
  * misconfiguration, not a `DomainError` the caller can retry past.
  *
  * `amountCents > 0` and `periodStart <= periodEnd` are enforced at the Zod
- * boundary (`recordInstructorPayoutSchema`). `payouts.manage` (ADMIN-only).
+ * boundary (`recordInstructorPayoutSchema`). Who may be paid:
+ * `resolvePayableInstructorProfileId` (story 16.5, R-16-i). `payouts.manage` (ADMIN-only).
  */
 export async function recordPayout(actor: Actor, input: RecordInstructorPayoutInput): Promise<InstructorPayoutDto> {
   authorize(actor, 'payouts.manage');
 
-  const instructorProfileId = await resolveActiveInstructorProfileId(input.instructorPersonId);
+  const instructorProfileId = await resolvePayableInstructorProfileId(input.instructorPersonId);
 
   const category = await prisma.cashCategory.findUnique({
     where: { name: INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME, isActive: true },
@@ -526,7 +616,10 @@ export async function recordPayout(actor: Actor, input: RecordInstructorPayoutIn
  * clears (`null`) the instructor's hourly payout rate. `payouts.manage`
  * (ADMIN-only), same permission as `recordPayout` (ratified 2026-07-15:
  * symmetric to `createInstructorRate`'s `settings.manage`, just a different
- * permission). Reuses the same active-instructor resolution as `recordPayout`.
+ * permission). An ACTIVE instructor only (409 otherwise) — unlike `recordPayout`,
+ * which may also pay one no longer active (story 16.5). The new rate applies
+ * from the next flights on: every registered flight keeps the rate it froze
+ * (story 16.5, R-16-d), so this write moves no owed.
  */
 export async function setPayoutRate(actor: Actor, personId: string, payoutRateCents: number | null): Promise<{ payoutRateCents: number | null }> {
   authorize(actor, 'payouts.manage');

@@ -40,6 +40,9 @@ import { getLedgerRevenueCents } from './transactions.service';
  * "as of now" (`getCompensationSummary`'s `owedMtd`/`owedYtd`), so it is
  * `null` whenever `ref` is NOT the current period, and is looked up ONLY
  * then (never called otherwise — a wasted query on every historical view).
+ * Since story 16.5 the summary also carries the instructors no longer active
+ * whose owed is not zero, so theirs shows too; one the summary leaves out
+ * (no longer active, owed zero) stays `null`.
  *
  * **`fleet[].revenueCents`/`topPilots[].spentCents` (ratifica utente 4)**
  * are FLIGHT-charge totals, a deliberately DIFFERENT notion from the

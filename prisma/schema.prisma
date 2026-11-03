@@ -124,14 +124,17 @@ model InstructorProfile {
   personId        String    @unique
   person          Person    @relation(fields: [personId], references: [id])
   /// Hourly PAYOUT rate (epic 12, story 12.7) — what the airfield pays THIS
-  /// instructor per hour taught, in euro cents. Deliberately a single
-  /// mutable column, NOT historicized like `InstructorRate` (the rate
-  /// charged TO the student, story 4.2): the payout ledger (`InstructorPayout`
-  /// below) already carries its own dated rows, so there is no "what was the
-  /// rate on date D" question to answer for this field the way AD-4 answers
-  /// it for `InstructorRate`. `null` until an admin sets one (`setPayoutRate`,
-  /// `payouts.manage`) — the UI shows "—" and `owed` is always `null` for
-  /// that instructor until then.
+  /// instructor per hour taught, in euro cents. A single mutable column, NOT
+  /// historicized like `InstructorRate` (the rate charged TO the student,
+  /// story 4.2). The "what was the rate on date D" question does exist — the
+  /// owed asks it of every hour ever flown — and since story 16.5 (R-16-d)
+  /// its answer is the snapshot each flight freezes at registration
+  /// (`Flight.instructorPayoutRateCents`/`instructorPayoutCents`): a change
+  /// here applies from the NEXT flights on and never rewrites the owed of a
+  /// flight already registered. `null` until an admin sets one
+  /// (`setPayoutRate`, `payouts.manage`) — the UI shows "—" for the rate, and
+  /// a flight registered meanwhile freezes `0` (R-16-k: no rate means nothing
+  /// accrued, never an unknown owed).
   payoutRateCents Int?
   deactivatedAt   DateTime?
   createdAt       DateTime  @default(now())
@@ -856,7 +859,10 @@ enum AircraftPriceCategory {
 /// `aircraftAmountCents` (and, when there is an instructor,
 /// `instructorRateCentsPerHour`/`instructorAmountCents`) capture the rate in
 /// effect at `flightDate` at registration time — a later change to the rate
-/// history never rewrites an already-registered flight. Since story 19.3 the
+/// history never rewrites an already-registered flight. Since story 16.5
+/// (R-16-d) the instructor's PAYOUT rate is frozen the same way
+/// (`instructorPayoutRateCents`/`instructorPayoutCents`, below): what the club
+/// owes the instructor for this flight. Since story 19.3 the
 /// aircraft rate has two prices: `aircraftRateCentsPerHour` is the one
 /// APPLIED, `aircraftPriceCategory` says which column it came from (the
 /// person's profile at registration; a correction that keeps the person
@@ -899,8 +905,8 @@ model Flight {
   /// "Senza addebito" (story 19.6, R-19-d — admin-only, `flights.manage`):
   /// the flight is not charged — both amounts and the `FLIGHT_CHARGE` are 0,
   /// the charge's description starts with "Volo senza addebito" — while the
-  /// instructor's compensation still accrues (it reads `minutes`, never the
-  /// amounts). The rates are still REQUIRED and frozen on the row as
+  /// instructor's compensation still accrues (`instructorPayoutCents` is
+  /// never zeroed, story 16.5). The rates are still REQUIRED and frozen on the row as
   /// information (Q-19.6-a = B). The balance check it skips is story 19.9's.
   noCharge   Boolean    @default(false)
 
@@ -939,6 +945,24 @@ model Flight {
   /// FULL flight duration, `0` (never `null`: the flight still has an
   /// instructor) on a `noCharge` flight (story 19.6).
   instructorAmountCents      Int?
+  /// Snapshot (AD-4; story 16.5, R-16-d) of the instructor's PAYOUT rate
+  /// (`InstructorProfile.payoutRateCents`) at registration — what the club
+  /// pays the instructor per hour of THIS flight, unrelated to
+  /// `instructorRateCentsPerHour` (what the student is charged). Set on every
+  /// flight with an instructor, `0` when the instructor has no rate
+  /// (R-16-k); `null` <=> no instructor. An in-place edit keeps it while the
+  /// instructor stays the same and takes the new instructor's current rate
+  /// otherwise (Q-16.5-a). Its only reader is
+  /// `instructor-compensation.service.ts`, which sums SCHOOL flights alone
+  /// (`flightType: 'SCHOOL'`): a TOURISM flight with an instructor carries
+  /// the snapshot too, and nothing sums it.
+  instructorPayoutRateCents  Int?
+  /// The compensation THIS flight accrues to its instructor —
+  /// `money.ts#centsForMinutes(instructorPayoutRateCents, minutes)`, the same
+  /// rounding as the charge, NOT zeroed on a `noCharge` flight (R-19-d);
+  /// `null` together with the rate. An instructor's owed is the sum of this
+  /// column over their SCHOOL flights minus their payouts.
+  instructorPayoutCents      Int?
   /// Historical snapshot of the minutes package consumption covered (story
   /// 5.2) — consumption was retired by story 12.13 and its per-package detail
   /// table dropped by story 19.6; `0` on every flight registered since.

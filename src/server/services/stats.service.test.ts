@@ -168,12 +168,41 @@ describe('getStats (story 12.10, AC 1)', () => {
     }) as never);
     instructorProfileFindManyMock.mockResolvedValue([{ id: 'ip_1', personId: 'person_instr', person: { firstName: 'Elena', lastName: 'Nakamura' } }] as never);
     getCompensationSummaryMock.mockResolvedValue([
-      { personId: 'person_instr', firstName: 'Elena', lastName: 'Nakamura', payoutRateCents: 4000, mtdMinutes: 60, ytdMinutes: 60, totalMinutes: 60, owedMtdCents: 4000, owedYtdCents: 4000, owedTotalCents: 4000 },
+      { personId: 'person_instr', firstName: 'Elena', lastName: 'Nakamura', payoutRateCents: 4000, mtdMinutes: 60, ytdMinutes: 60, totalMinutes: 60, owedMtdCents: 4000, owedYtdCents: 4000, owedTotalCents: 4000, isActive: true },
     ] as never);
 
     const monthResult = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
     expect(getCompensationSummaryMock).toHaveBeenCalledTimes(1);
     expect(monthResult.instructors).toEqual([{ name: 'Elena Nakamura', minutes: 60, owedCents: 4000 }]);
+  });
+
+  // Story 16.5 (AD-9, AC 21): the summary now carries the instructors no longer
+  // active whose all-time owed is not zero — this page needed no change to show
+  // theirs, and one whose owed is zero (absent from the summary) keeps "—".
+  it('instructors: an instructor no longer active who flew in the current period shows the owed the summary carries, and "—" when the summary leaves them out', async () => {
+    flightGroupByMock.mockImplementation((async (args: { by: string[] }) => {
+      if (args.by[0] === 'instructorProfileId') {
+        return [
+          { instructorProfileId: 'ip_gone', _sum: { minutes: 90 } },
+          { instructorProfileId: 'ip_settled', _sum: { minutes: 30 } },
+        ];
+      }
+      return [];
+    }) as never);
+    instructorProfileFindManyMock.mockResolvedValue([
+      { id: 'ip_gone', personId: 'person_gone', person: { firstName: 'Olga', lastName: 'Neri' } },
+      { id: 'ip_settled', personId: 'person_settled', person: { firstName: 'Bruno', lastName: 'Sala' } },
+    ] as never);
+    getCompensationSummaryMock.mockResolvedValue([
+      { personId: 'person_gone', firstName: 'Olga', lastName: 'Neri', payoutRateCents: 2500, mtdMinutes: 90, ytdMinutes: 90, totalMinutes: 90, owedMtdCents: 3750, owedYtdCents: 3750, owedTotalCents: 3750, isActive: false },
+    ] as never);
+
+    const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
+
+    expect(result.instructors).toEqual([
+      { name: 'Olga Neri', minutes: 90, owedCents: 3750 },
+      { name: 'Bruno Sala', minutes: 30, owedCents: null },
+    ]);
   });
 
   it('topPilots: top 10 by minutes, spentCents = aircraft + instructor component, deterministic tie-break by name', async () => {

@@ -868,8 +868,8 @@ async function renderInstructorLanding(
   const noValue = t('instructorLanding.noValue');
   const hoursMonthValue = compensation ? formatMinutes(compensation.mtdMinutes) : noValue;
   const payoutRateValue = compensation && compensation.payoutRateCents !== null ? `${formatCents(compensation.payoutRateCents, displayLocale)}/h` : noValue;
-  const owedMonthValue = compensation && compensation.owedMtdCents !== null ? formatCents(compensation.owedMtdCents, displayLocale) : noValue;
-  const owedForSub = compensation && compensation.owedMtdCents !== null ? formatCents(compensation.owedMtdCents, displayLocale) : noValue;
+  const owedMonthValue = compensation ? formatCents(compensation.owedMtdCents, displayLocale) : noValue;
+  const owedForSub = compensation ? formatCents(compensation.owedMtdCents, displayLocale) : noValue;
 
   const statusLabels: Record<DayPhase, string> = {
     inProgress: t('instructorLanding.status.inProgress'),

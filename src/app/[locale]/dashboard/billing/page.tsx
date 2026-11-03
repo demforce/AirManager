@@ -189,7 +189,10 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
         personOptions={personOptions}
         categoryOptions={categoryOptions}
         byCategory={summary.byCategory.categories}
-        compensation={compensation.map((row) => ({
+        // Story 16.5 (AD-9): a month-to-date widget — an instructor no longer
+        // active has no hours this month, and a "0:00 · 0,00 €" row would read
+        // as "owed nothing"; their all-time owed lives on the Compensi page.
+        compensation={compensation.filter((row) => row.isActive).map((row) => ({
           personId: row.personId,
           firstName: row.firstName,
           lastName: row.lastName,

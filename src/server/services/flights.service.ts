@@ -1,6 +1,7 @@
 import { Prisma, type AircraftPriceCategory, type FlightType } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
+import { centsForMinutes } from '@/lib/money';
 import type { ListFlightsQuery, RegisterFlightInput } from '@/lib/schemas/flights';
 import { APP_TIMEZONE, formatMinutes } from '@/lib/time';
 import { dateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
@@ -61,8 +62,9 @@ import { balanceFailure, evaluateRequirements, throwRequirementsNotMet, type Req
  * **No more package consumption (story 12.13, ratifica utente 4a)**: the
  * hour-packages feature (epic 5, story 5.2) is retired from UI and API —
  * every flight charges the aircraft component at the full rate on the full
- * duration, always `Math.round(rate * minutes / 60)`, computed the same way
- * as the instructor component (`buildFlightWrite`). The `HourPackage` rows
+ * duration, always `money.ts#centsForMinutes` (story 16.5: the ONE
+ * hours->money rounding), computed the same way as the instructor component
+ * (`buildFlightWrite`). The `HourPackage` rows
  * stay purely as historical sales; their per-flight consumption table was
  * dropped by story 19.6 — this service never reads or writes packages.
  *
@@ -96,6 +98,18 @@ import { balanceFailure, evaluateRequirements, throwRequirementsNotMet, type Req
  * the charge's description. `registerFlightCore` (create) and `updateFlight`
  * (update in place) both use it, so a registration and an edit of the same
  * data can never diverge — the no-charge flag included.
+ *
+ * **The instructor's compensation is frozen too (story 16.5, R-16-d)**:
+ * `instructorPayoutRateCents`/`instructorPayoutCents` snapshot the rate the
+ * club PAYS the instructor (`InstructorProfile.payoutRateCents`, `0` when
+ * unset — R-16-k) on every flight with an instructor, so changing that rate
+ * applies from the next flights on. Unlike the two charge rates it is a
+ * mutable column, read like them before the transaction: a `setPayoutRate`
+ * racing a registration may freeze either value, both legitimate at that
+ * instant — declared, not locked (an admin changes it a few times a year).
+ * `instructor-compensation.service.ts` sums the snapshot; it is never in the
+ * flight DTO (the compensation is the club's business with the instructor,
+ * and `listFlights` has an own-access branch).
  *
  * **Deterministic lock ordering — Flight -> Aircraft -> Account (story 19.6,
  * AD-2)**: `registerFlight` locks the `Aircraft` row, then the `Account` row
@@ -294,7 +308,8 @@ function toListItem(flight: SelectedFlight, includeActorEmail: boolean): FlightL
  * (review F4, ratifica R-14.4-b) — see `resolveFlightInput`'s own
  * doc-comment for what this exempts. `aircraftPriceCategory` (story 19.3,
  * Q-19.3-b) is the price column the original flight was charged: an edit
- * that keeps the person keeps it. `id`, `isSolo` and `chargeCents` (story
+ * that keeps the person keeps it; `instructorPayoutRateCents` (story 16.5,
+ * Q-16.5-a) is the same for the instructor's compensation. `id`, `isSolo` and `chargeCents` (story
  * 19.9) feed the requirements of an edit: the flight never counts for its own
  * currency, and its current charge (`0 - amountCents` of its `FLIGHT_CHARGE`,
  * `0` on a no-charge flight) is credited back before the balance is compared.
@@ -308,6 +323,8 @@ type OriginalFlightIdentity = {
   isSolo: boolean;
   aircraftPriceCategory: AircraftPriceCategory;
   chargeCents: number;
+  /** Story 16.5 (Q-16.5-a) — the payout rate frozen on the original: an edit that keeps the instructor keeps it. */
+  instructorPayoutRateCents: number | null;
 };
 
 type ResolvedFlightInput = {
@@ -325,6 +342,8 @@ type ResolvedFlightInput = {
   instructorRateCentsPerHour: number | null;
   /** Already rounded on the FULL duration. */
   instructorAmountCents: number | null;
+  /** Story 16.5 (R-16-d/k, Q-16.5-a) — the payout rate to freeze: `null` <=> no instructor, `0` when the instructor has none. */
+  instructorPayoutRateCents: number | null;
   /** Story 19.9 (A10) — set ONLY when `force` derogated at least one requirement; `null` on every normal registration/edit, INCLUDING a `force: true` request with nothing to derogate. */
   forceStamp: { forcedAt: Date; forcedByUserId: string } | null;
   /** The balance requirement the transaction judges again under the `Account` lock (`settleBalanceUnderLock`, review 19.9 F2); `null` on a no-charge flight (A9). */
@@ -338,16 +357,23 @@ type ResolvedFlightInput = {
  * (TD-1 AC 9 / decision 5.1 D1: never reveal whether an unknown id belongs to
  * nobody or to a non-instructor).
  */
-async function findActiveInstructor(personId: string): Promise<{ personId: string; profileId: string; name: string } | null> {
+async function findActiveInstructor(
+  personId: string,
+): Promise<{ personId: string; profileId: string; name: string; payoutRateCents: number | null } | null> {
   const instructorPerson = await prisma.person.findUnique({
     where: { id: personId },
-    select: { firstName: true, lastName: true, archivedAt: true, instructorProfile: { select: { id: true, deactivatedAt: true } } },
+    select: { firstName: true, lastName: true, archivedAt: true, instructorProfile: { select: { id: true, deactivatedAt: true, payoutRateCents: true } } },
   });
   const instructorProfile = instructorPerson?.instructorProfile ?? null;
   if (!instructorPerson || instructorPerson.archivedAt !== null || !instructorProfile || instructorProfile.deactivatedAt !== null) {
     return null;
   }
-  return { personId, profileId: instructorProfile.id, name: `${instructorPerson.firstName} ${instructorPerson.lastName}` };
+  return {
+    personId,
+    profileId: instructorProfile.id,
+    name: `${instructorPerson.firstName} ${instructorPerson.lastName}`,
+    payoutRateCents: instructorProfile.payoutRateCents,
+  };
 }
 
 /**
@@ -428,11 +454,14 @@ function isIdentityUnchanged(
  * that keeps the person keeps the ORIGINAL category (Q-19.3-b, same
  * "correcting is not registering anew" principle as below), at the rate in
  * effect at the new `flightDate`. The instructor amount is rounded here,
- * `Math.round(rate * minutes / 60)` on the FULL duration (AD-2/NFR-5) — the
+ * `centsForMinutes` on the FULL duration (AD-2/NFR-5) — the
  * aircraft amount is computed the SAME way, but inside `buildFlightWrite`
  * (module doc-comment), which also zeroes both on a no-charge flight. The
  * rates are looked up on a no-charge flight too (story 19.6, Q-19.6-a = B):
- * frozen on the row as information, never charged.
+ * frozen on the row as information, never charged. The PAYOUT rate (story
+ * 16.5, Q-16.5-a) is the instructor's current one (`0` without one), except
+ * on an edit that keeps the instructor, which keeps the original's frozen
+ * rate — the amount is recomputed on the new minutes by `buildFlightWrite`.
  *
  * **Requirements (story 19.9, CR §4.4, R-19-g/h/i/j/k) — LAST, after every
  * hard guard and the cost** (D-3: "Procedi comunque" never lands on an error
@@ -605,6 +634,7 @@ async function resolveFlightInput(
   // The instructor's display name, needed ONLY to label a requirement as
   // theirs (below); `null` whenever there is no instructor on this flight.
   let instructorName: string | null = null;
+  let instructorPayoutRateCents: number | null = null;
   if (instructorPersonId) {
     if (instructorPersonId === input.personId) {
       throw new ValidationError('The instructor cannot be the same person as the pilot/student.', undefined, 'INSTRUCTOR_SAME_AS_PILOT');
@@ -622,6 +652,9 @@ async function resolveFlightInput(
     }
     instructorProfileId = instructor.profileId;
     instructorName = instructor.name;
+    // Story 16.5 (R-16-k, Q-16.5-a) — this function's own doc-comment.
+    instructorPayoutRateCents =
+      original !== undefined && original.instructorPersonId === instructorPersonId ? (original.instructorPayoutRateCents ?? 0) : (instructor.payoutRateCents ?? 0);
   }
 
   // Rate lookups BEFORE any transaction (module doc-comment) — AD-4, the
@@ -643,7 +676,7 @@ async function resolveFlightInput(
     }
   }
 
-  const instructorAmountCents = instructorRate ? Math.round((instructorRate.priceCentsPerHour * minutes) / 60) : null;
+  const instructorAmountCents = instructorRate ? centsForMinutes(instructorRate.priceCentsPerHour, minutes) : null;
 
   const resolved = {
     aircraft: { id: aircraft.id, registration: aircraft.registration },
@@ -659,6 +692,7 @@ async function resolveFlightInput(
     aircraftPriceCategory,
     instructorRateCentsPerHour: instructorRate?.priceCentsPerHour ?? null,
     instructorAmountCents,
+    instructorPayoutRateCents,
   };
   // The ONE call of the write builder: its total is the cost the balance is
   // compared with AND the charge the caller writes (story 19.9, D-6).
@@ -837,6 +871,8 @@ type FlightWrite = {
     aircraftAmountCents: number;
     instructorRateCentsPerHour: number | null;
     instructorAmountCents: number | null;
+    instructorPayoutRateCents: number | null;
+    instructorPayoutCents: number | null;
   };
   totalAmountCents: number;
   description: string;
@@ -854,11 +890,13 @@ type FlightWrite = {
  * `noCharge` flight (R-19-d) both amounts are `0` while the rates stay frozen
  * as information (Q-19.6-a = B); the instructor amount is `0`, never `null`,
  * because `null` is what says "no instructor on this flight" (`toListItem`).
+ * The instructor's compensation (story 16.5) is NOT zeroed there (R-19-d):
+ * `centsForMinutes` of the frozen payout rate, `null` with no instructor.
  * The description starts with the no-charge wording so it survives the
  * statement card's end-truncation on a phone; a normal flight's is unchanged.
  */
 function buildFlightWrite(resolved: Omit<ResolvedFlightInput, 'forceStamp' | 'balanceCheck'>, input: RegisterFlightInput): FlightWrite {
-  const aircraftAmountCents = input.noCharge ? 0 : Math.round((resolved.aircraftRateCentsPerHour * resolved.minutes) / 60);
+  const aircraftAmountCents = input.noCharge ? 0 : centsForMinutes(resolved.aircraftRateCentsPerHour, resolved.minutes);
   const instructorAmountCents = resolved.instructorAmountCents === null ? null : input.noCharge ? 0 : resolved.instructorAmountCents;
   const label = input.noCharge ? 'Volo senza addebito' : 'Volo';
   return {
@@ -882,6 +920,8 @@ function buildFlightWrite(resolved: Omit<ResolvedFlightInput, 'forceStamp' | 'ba
       aircraftAmountCents,
       instructorRateCentsPerHour: resolved.instructorRateCentsPerHour,
       instructorAmountCents,
+      instructorPayoutRateCents: resolved.instructorPayoutRateCents,
+      instructorPayoutCents: resolved.instructorPayoutRateCents === null ? null : centsForMinutes(resolved.instructorPayoutRateCents, resolved.minutes),
     },
     totalAmountCents: aircraftAmountCents + (instructorAmountCents ?? 0),
     description: `${label} ${resolved.aircraft.registration} ${toDateOnlyString(resolved.flightDate)} — ${formatMinutes(resolved.minutes)}`,
@@ -1173,8 +1213,10 @@ export async function deleteFlight(actor: Actor, flightId: string): Promise<void
  * `resolveFlightInput` guard/rate-lookup set — every 404/422 of a
  * registration applies — with the exemptions keyed on the flight's own
  * recorded identity (read here, outside the transaction, 404 if missing):
- * type (R-14.3-a), person/instructor/date (R-14.4-b), aircraft (AOG-1a) and
- * price category with the person unchanged (Q-19.3-b); the requirements
+ * type (R-14.3-a), person/instructor/date (R-14.4-b), aircraft (AOG-1a),
+ * price category with the person unchanged (Q-19.3-b) and the instructor's
+ * frozen payout rate with the instructor unchanged (story 16.5, Q-16.5-a —
+ * the compensation follows the new minutes, never today's rate); the requirements
  * leave the flight out of its own currency and credit its current charge
  * back (story 19.9). `buildFlightWrite` produces the columns, total and
  * description exactly as a registration.
@@ -1214,6 +1256,7 @@ export async function updateFlight(actor: Actor, flightId: string, input: Regist
       flightType: true,
       isSolo: true,
       aircraftPriceCategory: true,
+      instructorPayoutRateCents: true,
       instructorProfile: { select: { personId: true } },
       charge: { select: { amountCents: true } },
       updatedAt: true,
@@ -1233,6 +1276,7 @@ export async function updateFlight(actor: Actor, flightId: string, input: Regist
     aircraftPriceCategory: original.aircraftPriceCategory,
     // A missing charge is a broken invariant `loadFlightCharge` refuses under the lock.
     chargeCents: 0 - (original.charge?.amountCents ?? 0),
+    instructorPayoutRateCents: original.instructorPayoutRateCents,
   });
   const thresholdCents = await getNegativeBalanceThresholdCents();
 

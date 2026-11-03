@@ -12,6 +12,13 @@
  * page in this app already settled on (`pilots-console.tsx`/
  * `fleet-console.tsx`: every row-affecting action lives in the card, the
  * page-head is title+KPIs only).
+ *
+ * Story 16.5 (P4, R-16-i, Q-16.5-b/c): the instructors NO LONGER active who
+ * are still owed get their own card under the roster, rendered only when it
+ * has rows. Their one action is "Paga" (while the owed is positive — the
+ * server answers 409 `INSTRUCTOR_NOTHING_OWED` otherwise); no name click, no
+ * editor, no sheet: their detail read answers 404. "Compensi da liquidare"
+ * lists them too, labelled.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -43,12 +50,16 @@ export type InstructorRow = {
   lastName: string;
   payoutRateCents: number | null;
   totalMinutes: number;
-  owedTotalCents: number | null;
+  owedTotalCents: number;
+  /** Story 16.5 — `false`: person archived or profile deactivated (the card under the roster). */
+  isActive: boolean;
 };
 
 export type InstructorsConsoleLabels = {
   cardTitle: string;
   empty: string;
+  /** Story 16.5 — the card of the instructors no longer active who are still owed. */
+  inactiveSection: { title: string; hint: string };
   newInstructor: string;
   paymentCycleButton: string;
   exportLabel: string;
@@ -86,13 +97,18 @@ export type InstructorsConsoleLabels = {
     invalidPeriod: string;
     requiredField: string;
     genericError: string;
+    /** Story 16.5 (R-16-i) — the 409 `INSTRUCTOR_NOTHING_OWED`. */
+    nothingOwed: string;
   };
-  paymentCycle: { title: string; subtitle: string; empty: string; pay: string; closeLabel: string };
+  /** `inactive` (story 16.5, Q-16.5-b): the label of a row no longer active. */
+  paymentCycle: { title: string; subtitle: string; empty: string; pay: string; closeLabel: string; inactive: string };
   toast: { saved: string; payoutRecorded: string; instructorAdded: string };
 };
 
 type InstructorsConsoleProps = {
   items: InstructorRow[];
+  /** Story 16.5 — the instructors no longer active whose owed is not zero. */
+  inactiveItems: InstructorRow[];
   canManagePeople: boolean;
   canManagePayouts: boolean;
   exportHref?: string;
@@ -100,7 +116,7 @@ type InstructorsConsoleProps = {
   labels: InstructorsConsoleLabels;
 };
 
-export function InstructorsConsole({ items, canManagePeople, canManagePayouts, exportHref, locale, labels }: InstructorsConsoleProps) {
+export function InstructorsConsole({ items, inactiveItems, canManagePeople, canManagePayouts, exportHref, locale, labels }: InstructorsConsoleProps) {
   const router = useRouter();
   const toast = useToast();
   const [editorTarget, setEditorTarget] = useState<InstructorRow | null>(null);
@@ -165,7 +181,7 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
                 <div className="mono num">{instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`}</div>
                 <div className="mono num">{formatMinutes(instructor.totalMinutes)}</div>
                 <div className="mono num" style={{ fontWeight: 600 }}>
-                  {instructor.owedTotalCents === null ? labels.table.noValue : formatCents(instructor.owedTotalCents, locale)}
+                  {formatCents(instructor.owedTotalCents, locale)}
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   <button type="button" className="btn mini" onClick={() => setEditorTarget(instructor)} data-testid={`instructor-edit-${instructor.personId}`}>
@@ -217,9 +233,7 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
                   </span>
                   <span className="mobile-row-side">
                     <span className="mobile-row-amount">{formatMinutes(instructor.totalMinutes)}</span>
-                    <span className="mobile-row-note">
-                      {instructor.owedTotalCents === null ? labels.table.noValue : `${formatCents(instructor.owedTotalCents, locale)} ${labels.mobile.owedSuffix}`}
-                    </span>
+                    <span className="mobile-row-note">{`${formatCents(instructor.owedTotalCents, locale)} ${labels.mobile.owedSuffix}`}</span>
                   </span>
                 </button>
               );
@@ -227,6 +241,17 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
           )}
         </div>
       </div>
+
+      {inactiveItems.length > 0 ? (
+        <InactiveInstructorsCard
+          items={inactiveItems}
+          cols={cols}
+          canManagePayouts={canManagePayouts}
+          onPay={setPayTarget}
+          locale={locale}
+          labels={labels}
+        />
+      ) : null}
 
       <InstructorEditor
         // Distinct key NAMESPACE from `InstructorProfile` below (`editor-`/
@@ -263,7 +288,7 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, e
       <PaymentCycleSlideOver
         open={paymentCycleOpen}
         onClose={() => setPaymentCycleOpen(false)}
-        items={items.filter((instructor) => (instructor.owedTotalCents ?? 0) > 0)}
+        items={[...items, ...inactiveItems].filter((instructor) => instructor.owedTotalCents > 0)}
         locale={locale}
         labels={labels.paymentCycle}
         onPay={(instructor) => {
@@ -343,7 +368,7 @@ function InstructorSheet({ instructor, onClose, onEdit, onPay, canManagePayouts,
     { k: labels.table.rate, v: instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h` },
     { k: labels.table.hours, v: formatMinutes(instructor.totalMinutes) },
     { k: labels.profile.kpi.hoursMtd, v: detail === null ? '…' : formatMinutes(detail.mtdMinutes) },
-    { k: labels.table.owed, v: instructor.owedTotalCents === null ? labels.table.noValue : formatCents(instructor.owedTotalCents, locale) },
+    { k: labels.table.owed, v: formatCents(instructor.owedTotalCents, locale) },
     {
       k: labels.profile.recentStudents.sectionTitle,
       v:
@@ -415,6 +440,114 @@ function InstructorSheet({ instructor, onClose, onEdit, onPay, canManagePayouts,
   );
 }
 
+type InactiveInstructorsCardProps = {
+  items: InstructorRow[];
+  /** The roster's own tracks, so the two cards' columns line up. */
+  cols: string;
+  canManagePayouts: boolean;
+  onPay: (instructor: InstructorRow) => void;
+  locale: 'it' | 'en';
+  labels: InstructorsConsoleLabels;
+};
+
+/**
+ * "Non più attivi, con dovuto" (story 16.5, P4/AD-8, R-16-i, Q-16.5-c) — the
+ * instructors no longer active whose owed is not zero, under the roster. Read
+ * only but for "Paga", offered while the owed is positive (a negative owed —
+ * paid more than accrued — has nothing to pay, and the server would answer
+ * 409). The name is plain text: their detail read answers 404. The phone face
+ * is the roster's person row made static (`.mobile-row-static`): not a
+ * trigger, with "Paga" as a 44px button of its own. Its two faces have
+ * their OWN switch classes (`inactive-instructors-*`): the roster's are one
+ * node each by contract (`mobile-registries.spec.ts` locates them as such).
+ */
+function InactiveInstructorsCard({ items, cols, canManagePayouts, onPay, locale, labels }: InactiveInstructorsCardProps) {
+  const canPay = (instructor: InstructorRow): boolean => canManagePayouts && instructor.owedTotalCents > 0;
+  const rate = (instructor: InstructorRow): string =>
+    instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`;
+
+  return (
+    <div className="card" data-testid="inactive-instructors-card">
+      <div className="card-head">
+        <div className="card-title">{labels.inactiveSection.title}</div>
+        <span className="card-sub">{labels.inactiveSection.hint}</span>
+      </div>
+
+      <div className="students inactive-instructors-desktop-body">
+        <div className="student-row header" style={{ gridTemplateColumns: cols }}>
+          <div>{labels.table.name}</div>
+          <div>{labels.table.rate}</div>
+          <div>{labels.table.hours}</div>
+          <div>{labels.table.owed}</div>
+          <div>{labels.table.actions}</div>
+        </div>
+        {items.map((instructor) => {
+          const name = `${instructor.lastName} ${instructor.firstName}`;
+          return (
+            <div key={instructor.personId} className="student-row" data-testid={`inactive-instructor-row-${instructor.personId}`} style={{ gridTemplateColumns: cols }}>
+              <div>
+                <div className="student-name">{name}</div>
+              </div>
+              <div className="mono num">{rate(instructor)}</div>
+              <div className="mono num">{formatMinutes(instructor.totalMinutes)}</div>
+              <div className="mono num" style={{ fontWeight: 600 }}>
+                {formatCents(instructor.owedTotalCents, locale)}
+              </div>
+              <div>
+                {canPay(instructor) ? (
+                  <button
+                    type="button"
+                    className="btn mini ok"
+                    aria-label={`${labels.actions.pay}: ${name}`}
+                    onClick={() => onPay(instructor)}
+                    data-testid={`inactive-instructor-pay-${instructor.personId}`}
+                  >
+                    {labels.actions.pay}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="inactive-instructors-mobile" data-testid="mobile-inactive-instructors-list">
+        {items.map((instructor) => {
+          const name = `${instructor.lastName} ${instructor.firstName}`;
+          return (
+            <div key={instructor.personId} className="mobile-row mobile-row-person mobile-row-static" data-testid={`mobile-inactive-instructor-row-${instructor.personId}`}>
+              <span className="mobile-row-avatar">
+                <Avatar as="span" init={initialsOf(instructor.firstName, instructor.lastName)} color={avatarColorFor(instructor.personId)} />
+              </span>
+              <span className="mobile-row-main">
+                <span className="mobile-row-title">
+                  <span className="mobile-row-name">{name}</span>
+                </span>
+                <span className="mobile-row-sub">{rate(instructor)}</span>
+              </span>
+              <span className="mobile-row-side">
+                <span className="mobile-row-amount">{formatMinutes(instructor.totalMinutes)}</span>
+                <span className="mobile-row-note">{`${formatCents(instructor.owedTotalCents, locale)} ${labels.mobile.owedSuffix}`}</span>
+              </span>
+              {canPay(instructor) ? (
+                <button
+                  type="button"
+                  className="btn mini ok"
+                  aria-label={`${labels.actions.pay}: ${name}`}
+                  onClick={() => onPay(instructor)}
+                  data-testid={`inactive-instructor-pay-${instructor.personId}-mobile`}
+                >
+                  {labels.actions.pay}
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // --- "Paga" payout slide-over -------------------------------------------------
 
 const payFormSchema = z
@@ -467,7 +600,7 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
 
   const values: PayFormValues = instructor
     ? {
-        amount: (Math.max(instructor.owedTotalCents ?? 0, 0) / 100).toFixed(2).replace('.', ','),
+        amount: (Math.max(instructor.owedTotalCents, 0) / 100).toFixed(2).replace('.', ','),
         method: 'CASH',
         periodStart: yearStartDateOnly(),
         periodEnd: todayDateOnly(),
@@ -508,7 +641,8 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
     regenerateIdempotencyKey();
 
     if (!response.ok) {
-      setFormError(labels.genericError);
+      const { code } = await parseApiError(response);
+      setFormError(code === 'INSTRUCTOR_NOTHING_OWED' ? labels.nothingOwed : labels.genericError);
       return;
     }
 
@@ -573,7 +707,7 @@ type PaymentCycleSlideOverProps = {
   onPay: (instructor: InstructorRow) => void;
 };
 
-/** AC 5: "SOLI istruttori con dovuto>0", a per-row "Paga" that closes this panel and opens `PaySlideOver` for that row (batch manual — one POST per row). */
+/** AC 5: "SOLI istruttori con dovuto>0", a per-row "Paga" that closes this panel and opens `PaySlideOver` for that row (batch manual — one POST per row). Story 16.5 (Q-16.5-b): the instructors no longer active are listed too, after the active ones, each labelled. */
 function PaymentCycleSlideOver({ open, onClose, items, locale, labels, onPay }: PaymentCycleSlideOverProps) {
   return (
     <SlideOver open={open} onClose={onClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.closeLabel}>
@@ -597,11 +731,12 @@ function PaymentCycleSlideOver({ open, onClose, items, locale, labels, onPay }: 
                 fontSize: 13,
               }}
             >
-              <span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
                 {instructor.lastName} {instructor.firstName}
+                {instructor.isActive ? null : <Badge>{labels.inactive}</Badge>}
               </span>
               <span className="mono num" style={{ fontWeight: 600 }}>
-                {formatCents(instructor.owedTotalCents ?? 0, locale)}
+                {formatCents(instructor.owedTotalCents, locale)}
               </span>
               <button type="button" className="btn mini ok" onClick={() => onPay(instructor)} data-testid={`payment-cycle-pay-${instructor.personId}`}>
                 {labels.pay}

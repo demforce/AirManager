@@ -218,11 +218,13 @@ const PILOT_PERSON = {
 };
 // `firstName`/`lastName`: the instructor's NAME travels to the requirements
 // (story 19.9) — every other test using this fixture ignores them.
+// `payoutRateCents` (story 16.5): what the club pays this instructor per hour,
+// frozen on the flight — without it the select would hand back `undefined`.
 const INSTRUCTOR_PROFILE_ROW = {
   firstName: 'Anna',
   lastName: 'Bianchi',
   archivedAt: null,
-  instructorProfile: { id: 'instr_profile_1', deactivatedAt: null },
+  instructorProfile: { id: 'instr_profile_1', deactivatedAt: null, payoutRateCents: 3000 as number | null },
 };
 
 const ACCOUNT_OVERVIEW = { account: { id: 'account_1', createdAt: new Date('2026-01-01T00:00:00.000Z') }, balanceCents: 0, recentMovements: [] };
@@ -263,6 +265,7 @@ const ORIGINAL_FLIGHT_ROW = {
   flightType: 'TOURISM' as const,
   isSolo: false,
   aircraftPriceCategory: 'PILOT' as const,
+  instructorPayoutRateCents: null as number | null,
   instructorProfile: null as { personId: string } | null,
   charge: { amountCents: -20000 } as { amountCents: number } | null,
   updatedAt: new Date('2020-01-15T12:00:00.000Z'),
@@ -1153,6 +1156,90 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
     });
   });
 
+  // Story 16.5 (R-16-d/k, P1 — AC 4/5/19): the instructor's compensation is
+  // frozen on the flight like the two charge rates. Explicit assertions on the
+  // two columns: `objectContaining` would pass with them absent.
+  describe('registerFlight — the instructor compensation snapshot (story 16.5)', () => {
+    beforeEach(() => {
+      aircraftFindUnique.mockResolvedValue(AIRCRAFT);
+      accountUpsert.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 0 } });
+      accountMovementCreate.mockResolvedValue({ id: 'movement_1' });
+      flightCreate.mockResolvedValue(CREATED_FLIGHT_ROW);
+      queryRaw.mockResolvedValueOnce([{ id: 'aircraft_1' }]).mockResolvedValueOnce([]);
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 4000 });
+    });
+
+    function createdData(): Record<string, unknown> {
+      return (flightCreateMock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+    }
+
+    const SCHOOL_90 = registerFlightSchema.parse({ ...BASE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor', ...buildTimes('2020-01-15', 90) });
+
+    it('freezes the payout rate of the instructor and the compensation of the flight: 30,00 €/h x 90 min -> 3000 / 4500 (AC 4)', async () => {
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+      await registerFlight(adminActor(), SCHOOL_90);
+
+      expect(createdData()['instructorPayoutRateCents']).toBe(3000);
+      expect(createdData()['instructorPayoutCents']).toBe(4500);
+    });
+
+    it('reads the payout rate in the SAME instructor lookup (U7: `payoutRateCents` in the select)', async () => {
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+      await registerFlight(adminActor(), SCHOOL_90);
+
+      const instructorLookup = personFindUniqueMock.mock.calls[1]?.[0] as { where: { id: string }; select: { instructorProfile: { select: Record<string, boolean> } } };
+      expect(instructorLookup.where.id).toBe('person_instructor');
+      expect(instructorLookup.select.instructorProfile.select).toEqual({ id: true, deactivatedAt: true, payoutRateCents: true });
+    });
+
+    it('an instructor WITHOUT a payout rate freezes 0 / 0, never null (R-16-k), while the student is still charged the instructor (the two rates are independent)', async () => {
+      personFindUnique
+        .mockResolvedValueOnce(PILOT_PERSON)
+        .mockResolvedValueOnce({ ...INSTRUCTOR_PROFILE_ROW, instructorProfile: { ...INSTRUCTOR_PROFILE_ROW.instructorProfile, payoutRateCents: null } });
+
+      await registerFlight(adminActor(), SCHOOL_90);
+
+      expect(createdData()['instructorPayoutRateCents']).toBe(0);
+      expect(createdData()['instructorPayoutCents']).toBe(0);
+      expect(createdData()['instructorAmountCents']).toBe(6000);
+    });
+
+    it('a flight WITHOUT an instructor carries both columns explicitly as null — never undefined (AC 5)', async () => {
+      personFindUnique.mockResolvedValue(PILOT_PERSON);
+
+      await registerFlight(adminActor(), BASE_INPUT);
+
+      expect(createdData()).toHaveProperty('instructorPayoutRateCents', null);
+      expect(createdData()).toHaveProperty('instructorPayoutCents', null);
+    });
+
+    it('69 min at 15,10 €/h, charged AND paid: the charge and the compensation are the SAME number (AC 19 — one rounding, the exact half up)', async () => {
+      personFindUnique
+        .mockResolvedValueOnce(PILOT_PERSON)
+        .mockResolvedValueOnce({ ...INSTRUCTOR_PROFILE_ROW, instructorProfile: { ...INSTRUCTOR_PROFILE_ROW.instructorProfile, payoutRateCents: 1510 } });
+      getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 1510 });
+      const input = registerFlightSchema.parse({ ...SCHOOL_90, ...buildTimes('2020-01-15', 69) });
+
+      await registerFlight(adminActor(), input);
+
+      expect(createdData()['instructorPayoutCents']).toBe(createdData()['instructorAmountCents']);
+      expect(createdData()['instructorPayoutCents']).toBe(1737);
+    });
+
+    it('a no-charge flight still accrues the compensation (R-19-d): the charge is 0, the snapshot is not', async () => {
+      personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+      await registerFlight(adminActor(), registerFlightSchema.parse({ ...SCHOOL_90, noCharge: true }));
+
+      expect(createdData()['instructorAmountCents']).toBe(0);
+      expect(createdData()['instructorPayoutRateCents']).toBe(3000);
+      expect(createdData()['instructorPayoutCents']).toBe(4500);
+    });
+  });
+
   describe('registerFlight — negative-balance band alert (FR-27, reuses accounts.service verbatim)', () => {
     beforeEach(() => {
       aircraftFindUnique.mockResolvedValue(AIRCRAFT);
@@ -1617,6 +1704,8 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         aircraftAmountCents: 7500,
         instructorRateCentsPerHour: null,
         instructorAmountCents: null,
+        instructorPayoutRateCents: null,
+        instructorPayoutCents: null,
       });
       expect(aircraftUpdateMock).not.toHaveBeenCalled();
     });
@@ -1977,6 +2066,73 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
         await updateFlight(adminActor(), 'flight_orig', input);
 
         expect(updatedFlightData()).toMatchObject({ aircraftPriceCategory: 'PILOT', aircraftRateCentsPerHour: 15000, aircraftAmountCents: 7500 });
+      });
+    });
+
+    // Story 16.5 (Q-16.5-a, AC 7): an edit is the same flight with its data
+    // fixed — it keeps the rate the instructor was paid, and only the minutes
+    // move the compensation; another instructor brings their own current rate.
+    describe('the instructor compensation on an edit (story 16.5, Q-16.5-a)', () => {
+      const SCHOOL_ORIGINAL = { ...ORIGINAL_FLIGHT_ROW, flightType: 'SCHOOL' as const, instructorProfile: { personId: 'person_instructor' } };
+      const SCHOOL_EDIT_30 = registerFlightSchema.parse({ ...UPDATE_INPUT, flightType: 'SCHOOL', instructorPersonId: 'person_instructor' });
+
+      beforeEach(() => {
+        getEffectiveInstructorRateMock.mockResolvedValue({ priceCentsPerHour: 4000 });
+      });
+
+      it('same instructor: the ORIGINAL frozen rate stays (24,00 €/h, though it is 30,00 today) and the amount follows the new minutes', async () => {
+        flightFindUnique.mockResolvedValue({ ...SCHOOL_ORIGINAL, instructorPayoutRateCents: 2400 });
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+        await updateFlight(adminActor(), 'flight_orig', SCHOOL_EDIT_30);
+
+        expect(updatedFlightData()['instructorPayoutRateCents']).toBe(2400);
+        expect(updatedFlightData()['instructorPayoutCents']).toBe(1200);
+        const originalRead = flightFindUniqueMock.mock.calls[0]?.[0] as { select: Record<string, unknown> };
+        expect(originalRead.select).toHaveProperty('instructorPayoutRateCents', true);
+      });
+
+      it('same instructor, original frozen at 0 (no rate back then): it stays 0 even though a rate exists today — an explicit 0 and "no rate" are the same (R-16-k)', async () => {
+        flightFindUnique.mockResolvedValue({ ...SCHOOL_ORIGINAL, instructorPayoutRateCents: 0 });
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+
+        await updateFlight(adminActor(), 'flight_orig', SCHOOL_EDIT_30);
+
+        expect(updatedFlightData()['instructorPayoutRateCents']).toBe(0);
+        expect(updatedFlightData()['instructorPayoutCents']).toBe(0);
+      });
+
+      it("another instructor: THEIR current rate (30,00 €/h -> 1500 c on 30 min), never the original's", async () => {
+        flightFindUnique.mockResolvedValue({ ...SCHOOL_ORIGINAL, instructorPayoutRateCents: 2400 });
+        personFindUnique.mockResolvedValueOnce(PILOT_PERSON).mockResolvedValueOnce(INSTRUCTOR_PROFILE_ROW);
+        const input = registerFlightSchema.parse({ ...SCHOOL_EDIT_30, instructorPersonId: 'person_instructor_2' });
+
+        await updateFlight(adminActor(), 'flight_orig', input);
+
+        expect(updatedFlightData()['instructorPayoutRateCents']).toBe(3000);
+        expect(updatedFlightData()['instructorPayoutCents']).toBe(1500);
+      });
+
+      it('another instructor without a payout rate: 0 / 0', async () => {
+        flightFindUnique.mockResolvedValue({ ...SCHOOL_ORIGINAL, instructorPayoutRateCents: 2400 });
+        personFindUnique
+          .mockResolvedValueOnce(PILOT_PERSON)
+          .mockResolvedValueOnce({ ...INSTRUCTOR_PROFILE_ROW, instructorProfile: { ...INSTRUCTOR_PROFILE_ROW.instructorProfile, payoutRateCents: null } });
+        const input = registerFlightSchema.parse({ ...SCHOOL_EDIT_30, instructorPersonId: 'person_instructor_2' });
+
+        await updateFlight(adminActor(), 'flight_orig', input);
+
+        expect(updatedFlightData()['instructorPayoutRateCents']).toBe(0);
+        expect(updatedFlightData()['instructorPayoutCents']).toBe(0);
+      });
+
+      it('the instructor removed (a TOURISM flight on its own): null / null', async () => {
+        flightFindUnique.mockResolvedValue({ ...ORIGINAL_FLIGHT_ROW, instructorProfile: { personId: 'person_instructor' }, instructorPayoutRateCents: 2400 });
+
+        await updateFlight(adminActor(), 'flight_orig', UPDATE_INPUT);
+
+        expect(updatedFlightData()).toHaveProperty('instructorPayoutRateCents', null);
+        expect(updatedFlightData()).toHaveProperty('instructorPayoutCents', null);
       });
     });
 

@@ -26,6 +26,12 @@ type PageProps = {
  * Unpaginated (Dev Notes: small platea, same convention as the school hour
  * summaries `getCompensationSummary` twins) — no `?page=`/`?q=` here, unlike
  * `pilots/page.tsx`.
+ *
+ * Story 16.5 (P4, AD-8): the summary also carries the instructors no longer
+ * active who are still owed (`isActive: false`), shown in their own card
+ * under the roster. Each KPI keeps the platea its label names: "Istruttori
+ * attivi" and the average rate count the active ones only, the hours and the
+ * owed (page sub included) both lists — archiving never hides money owed.
  */
 export default async function InstructorsPage({ params }: PageProps) {
   const { locale } = await params;
@@ -53,10 +59,12 @@ export default async function InstructorsPage({ params }: PageProps) {
   const tPilots = await getTranslations('PilotsPage');
   const tPeople = await getTranslations('PeoplePage');
 
-  const activeCount = summary.length;
+  const active = summary.filter((row) => row.isActive);
+  const activeCount = active.length;
+  const inactiveCount = summary.length - activeCount;
   const totalMinutes = summary.reduce((sum, row) => sum + row.totalMinutes, 0);
-  const totalOwedCents = summary.reduce((sum, row) => sum + (row.owedTotalCents ?? 0), 0);
-  const ratedInstructors = summary.filter((row) => row.payoutRateCents !== null);
+  const totalOwedCents = summary.reduce((sum, row) => sum + row.owedTotalCents, 0);
+  const ratedInstructors = active.filter((row) => row.payoutRateCents !== null);
   const avgPayoutRateCents =
     ratedInstructors.length > 0 ? Math.round(ratedInstructors.reduce((sum, row) => sum + (row.payoutRateCents ?? 0), 0) / ratedInstructors.length) : null;
 
@@ -66,21 +74,25 @@ export default async function InstructorsPage({ params }: PageProps) {
 
   const exportHref = buildExportHref('/api/v1/instructor-compensation', {}, locale);
 
-  const items: InstructorRow[] = summary.map((row) => ({
+  const rows: InstructorRow[] = summary.map((row) => ({
     personId: row.personId,
     firstName: row.firstName,
     lastName: row.lastName,
     payoutRateCents: row.payoutRateCents,
     totalMinutes: row.totalMinutes,
     owedTotalCents: row.owedTotalCents,
+    isActive: row.isActive,
   }));
+  const items = rows.filter((row) => row.isActive);
+  const inactiveItems = rows.filter((row) => !row.isActive);
+  const sub = t('sub', { active: activeCount, owed: formatCents(totalOwedCents, displayLocale) });
 
   return (
     <main className="page">
       <div className="page-head">
         <div className="page-title-block">
           <h1>{t('title')}</h1>
-          <div className="sub">{t('sub', { active: activeCount, owed: formatCents(totalOwedCents, displayLocale) })}</div>
+          <div className="sub">{inactiveCount > 0 ? `${sub} · ${t('subInactive', { inactive: inactiveCount })}` : sub}</div>
         </div>
       </div>
 
@@ -94,6 +106,7 @@ export default async function InstructorsPage({ params }: PageProps) {
       <InstructorsConsole
         key={JSON.stringify({ count: items.length })}
         items={items}
+        inactiveItems={inactiveItems}
         canManagePeople={canManagePeople}
         canManagePayouts={canManagePayouts}
         exportHref={canExport ? exportHref : undefined}
@@ -101,6 +114,7 @@ export default async function InstructorsPage({ params }: PageProps) {
         labels={{
           cardTitle: t('cardTitle'),
           empty: t('empty'),
+          inactiveSection: { title: t('inactiveSection.title'), hint: t('inactiveSection.hint') },
           newInstructor: t('newInstructor'),
           paymentCycleButton: t('paymentCycleButton'),
           exportLabel: tExport('button'),
@@ -144,7 +158,7 @@ export default async function InstructorsPage({ params }: PageProps) {
             payoutRate: {
               sectionTitle: t('editor.payoutRate.sectionTitle'),
               label: t('editor.payoutRate.label'),
-              noValue: t('editor.payoutRate.noValue'),
+              hint: t('editor.payoutRate.hint'),
             },
             ratings: {
               sectionTitle: t('editor.ratings.sectionTitle'),
@@ -207,6 +221,7 @@ export default async function InstructorsPage({ params }: PageProps) {
             invalidPeriod: t('pay.invalidPeriod'),
             requiredField: t('pay.requiredField'),
             genericError: t('pay.genericError'),
+            nothingOwed: t('pay.nothingOwed'),
           },
           paymentCycle: {
             title: t('paymentCycle.title'),
@@ -214,6 +229,7 @@ export default async function InstructorsPage({ params }: PageProps) {
             empty: t('paymentCycle.empty'),
             pay: t('paymentCycle.pay'),
             closeLabel: t('paymentCycle.closeLabel'),
+            inactive: t('status.inactive'),
           },
           toast: {
             saved: t('toast.saved'),

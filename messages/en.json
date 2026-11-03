@@ -452,6 +452,7 @@
   "InstructorsPage": {
     "title": "Instructors",
     "sub": "{active} active · {owed} owed",
+    "subInactive": "{inactive} no longer active, still owed",
     "kpi": {
       "active": "Active instructors",
       "hours": "Total hours flown",
@@ -460,6 +461,10 @@
     },
     "cardTitle": "Instructor roster",
     "empty": "No instructors found.",
+    "inactiveSection": {
+      "title": "No longer active, still owed",
+      "hint": "Archived, or with a deactivated profile: they stay here until the amount owed is back to zero."
+    },
     "newInstructor": "Add instructor",
     "paymentCycleButton": "Payment cycle",
     "table": {
@@ -468,7 +473,12 @@
       "hours": "Total hours",
       "owed": "Total owed",
       "actions": "Actions",
+      "status": "Status",
       "noValue": "—"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "No longer active"
     },
     "actions": {
       "edit": "Edit",
@@ -509,7 +519,7 @@
       "payoutRate": {
         "sectionTitle": "Payout rate (paid to the instructor)",
         "label": "Hourly rate",
-        "noValue": "—"
+        "hint": "Applies from the next flights on: flights already registered keep the compensation computed when they were registered."
       },
       "ratings": {
         "sectionTitle": "Ratings",
@@ -562,6 +572,7 @@
       "invalidAmount": "Enter a positive amount (e.g. 100.00).",
       "requiredField": "Required field.",
       "genericError": "Something went wrong. Please try again.",
+      "nothingOwed": "This instructor is no longer active and is owed nothing.",
       "invalidPeriod": "The period start date must be on or before the period end date."
     },
     "paymentCycle": {

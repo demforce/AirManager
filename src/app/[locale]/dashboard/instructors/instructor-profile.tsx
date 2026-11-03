@@ -142,7 +142,7 @@ export function InstructorProfile({ instructor, onClose, onEdit, locale, labels 
         {[
           { label: labels.kpi.hoursTotal, value: formatMinutes(instructor.totalMinutes) },
           { label: labels.kpi.hoursMtd, value: detail ? formatMinutes(detail.mtdMinutes) : '…' },
-          { label: labels.kpi.owedTotal, value: instructor.owedTotalCents === null ? labels.noValue : formatCents(instructor.owedTotalCents, locale) },
+          { label: labels.kpi.owedTotal, value: formatCents(instructor.owedTotalCents, locale) },
           { label: labels.kpi.rate, value: instructor.payoutRateCents === null ? labels.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h` },
         ].map((kpi) => (
           <div key={kpi.label} style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 14px' }}>

@@ -2,6 +2,7 @@ import { Prisma, type AircraftPriceCategory, type AircraftStatus, type BookingSt
 import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
+import { centsForMinutes } from '@/lib/money';
 import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, TransitionBookingInput, UpdateBookingInput } from '@/lib/schemas/bookings';
 import type { SchedulingSettingsDto } from '@/lib/schemas/settings';
 import { APP_TIMEZONE } from '@/lib/time';
@@ -566,7 +567,7 @@ function bookingPriceCategory(person: TargetPerson): AircraftPriceCategory {
  * The ESTIMATED cost of a booking (story 19.10, A9, R-19-g): the aircraft
  * price of `priceCategory` × the slot's duration, plus the instructor's
  * hourly rate × the same duration when there is one — each part
- * `Math.round(perHour × minutes / 60)`, the formula of the flight charge. The
+ * `money.ts#centsForMinutes`, the formula of the flight charge. The
  * rates are those in effect on the flight day (`validFrom` the greatest ≤ the
  * Rome day of `startsAt`, the rate the flight will freeze), read WITHOUT an
  * actor: `rates.service.ts#getEffectiveRate` is gated `aircraft.manage` and
@@ -595,7 +596,7 @@ async function estimateBookingCostCents(
         });
   const minutes = Math.round((booking.endsAt.getTime() - booking.startsAt.getTime()) / 60_000);
   const aircraftPerHour = aircraftRate === null ? 0 : booking.priceCategory === 'PILOT' ? aircraftRate.pilotPriceCents : aircraftRate.studentPriceCents;
-  return Math.round((aircraftPerHour * minutes) / 60) + Math.round(((instructorRate?.priceCentsPerHour ?? 0) * minutes) / 60);
+  return centsForMinutes(aircraftPerHour, minutes) + centsForMinutes(instructorRate?.priceCentsPerHour ?? 0, minutes);
 }
 
 /**

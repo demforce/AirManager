@@ -107,17 +107,18 @@ export default async function MyCompensationPage({ params }: PageProps) {
               <KPI label={t('kpi.hoursMtd')} value={formatMinutes(overview.mtdMinutes)} />
             </div>
             {/* Ratifica PO (review F4): "Maturato nel mese" is the GROSS accrual
-                (ore x tariffa) and "Dovuto nel mese" is the NET owed (same
+                (the month's flights, each at the rate it froze — story 16.5)
+                and "Dovuto nel mese" is the NET owed (same
                 number the staff-facing card shows) — shown side by side so the
                 two adjacent KPIs reconcile instead of one silently being netted. */}
             <div data-testid="kpi-gross-mtd">
-              <KPI label={t('kpi.grossMtd')} value={overview.mtdGrossCents === null ? '—' : formatCents(overview.mtdGrossCents, displayLocale)} />
+              <KPI label={t('kpi.grossMtd')} value={formatCents(overview.mtdGrossCents, displayLocale)} />
             </div>
             <div data-testid="kpi-owed-mtd">
-              <KPI label={t('kpi.owedMtd')} value={overview.mtdOwedCents === null ? '—' : formatCents(overview.mtdOwedCents, displayLocale)} />
+              <KPI label={t('kpi.owedMtd')} value={formatCents(overview.mtdOwedCents, displayLocale)} />
             </div>
             <div data-testid="kpi-owed-total">
-              <KPI label={t('kpi.owedTotal')} value={overview.totalOwedCents === null ? '—' : formatCents(overview.totalOwedCents, displayLocale)} />
+              <KPI label={t('kpi.owedTotal')} value={formatCents(overview.totalOwedCents, displayLocale)} />
             </div>
           </div>
 

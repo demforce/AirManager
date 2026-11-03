@@ -65,7 +65,8 @@ export type InstructorEditorLabels = {
     /** Story 14.2, AC 1/4: this section had NO required-field feedback at all (not even `aria-invalid`) — its own `updatePersonSchema` RHF errors were silently dropped. */
     requiredField: string;
   };
-  payoutRate: { sectionTitle: string; label: string; noValue: string };
+  /** `hint` (story 16.5, AC 12): the rate applies from the next flights on — every registered flight keeps the one it froze. */
+  payoutRate: { sectionTitle: string; label: string; hint: string };
   ratings: { sectionTitle: string } & ExpiryDraftEditorLabels;
   readOnly: { sectionTitle: string; hoursTotal: string; owedTotal: string };
   studentRate: {
@@ -195,7 +196,7 @@ export function InstructorEditor({
                 <Input value={formatMinutes(current.totalMinutes)} disabled />
               </Field>
               <Field label={labels.readOnly.owedTotal}>
-                <Input value={current.owedTotalCents === null ? labels.payoutRate.noValue : formatCents(current.owedTotalCents, locale)} disabled />
+                <Input value={formatCents(current.owedTotalCents, locale)} disabled />
               </Field>
             </div>
           </Section>
@@ -543,7 +544,7 @@ function EditInstructorForm({
       <Section title={labels.payoutRate.sectionTitle}>
         <div ref={payoutRef} data-testid="instructor-payout-rate-form">
           <div className="form-grid">
-            <Field label={labels.payoutRate.label} error={submitAttempted ? (payoutError ?? undefined) : undefined}>
+            <Field label={labels.payoutRate.label} error={submitAttempted ? (payoutError ?? undefined) : undefined} hint={labels.payoutRate.hint}>
               <InputGroup prefix="€" suffix="/h">
                 <Input
                   inputMode="decimal"

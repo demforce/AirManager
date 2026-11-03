@@ -59,7 +59,7 @@ import { TransactionEditor, type TransactionEditorLabels } from './transaction-e
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type CategoryOption = { id: string; name: string };
-type CompensationRow = { personId: string; firstName: string; lastName: string; mtdMinutes: number; payoutRateCents: number | null; owedMtdCents: number | null };
+type CompensationRow = { personId: string; firstName: string; lastName: string; mtdMinutes: number; payoutRateCents: number | null; owedMtdCents: number };
 type NegativeBalanceRow = { personId: string; firstName: string; lastName: string; balanceCents: number };
 /** Mirrors `cash.service.ts#CashReportCategoryTotal` — the "Per categoria" panel's own row (story Billing-2: replaces the old Σ-positivi `revenueByKind` bars). */
 type CategoryTotal = { categoryId: string; categoryName: string; inCents: number; outCents: number; netCents: number };
@@ -1152,7 +1152,7 @@ export function BillingConsole({
                     {formatMinutes(row.mtdMinutes)} · {row.payoutRateCents === null ? labels.instructorCompensation.noRate : `${formatCents(row.payoutRateCents, moneyLocale)}/h`}
                   </span>
                   <span className="mono num" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-                    {row.owedMtdCents === null ? labels.instructorCompensation.noRate : formatCents(row.owedMtdCents, moneyLocale)}
+                    {formatCents(row.owedMtdCents, moneyLocale)}
                   </span>
                 </div>
               ))

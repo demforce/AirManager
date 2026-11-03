@@ -506,8 +506,8 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     const person = await createPilot(page, tag);
     const activate = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: {} });
     expect(activate.status(), await activate.text()).toBe(200);
-    // Without a payout rate `owedTotalCents` is null and the row says "—":
-    // the "dovuto" half of AC 11 only exists once a rate is on file.
+    // Without a payout rate the flight would freeze 0 (story 16.5, R-16-k):
+    // the "dovuto" half of AC 11 needs a rate on file BEFORE the flight.
     const rate = await page.request.put(`/api/v1/instructor-compensation/${person.id}/rate`, { data: { payoutRateCents: 6000 } });
     expect(rate.status(), await rate.text()).toBe(200);
 
@@ -662,7 +662,10 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
           const topBarBottom = topBar ? topBar.getBoundingClientRect().bottom : 0;
           const bad: string[] = [];
           let checked = 0;
-          for (const el of document.querySelectorAll('.page a, .page button')) {
+          // Story 16.5: the Istruttori page may END with the read-only card of the
+          // instructors no longer active, whose rows are not controls — they are
+          // content all the same, and must not sit under the tab bar either.
+          for (const el of document.querySelectorAll('.page a, .page button, .page .mobile-row-static')) {
             const rect = el.getBoundingClientRect();
             if (rect.width === 0 || rect.height === 0) continue;
             if (rect.top < topBarBottom || rect.top > window.innerHeight) continue;

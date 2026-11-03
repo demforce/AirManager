@@ -445,26 +445,51 @@ describe('exportExpiriesXlsx / exportExpiriesPdf — the currency row of the uni
   });
 });
 
-describe('exportInstructorCompensationXlsx (story 12.7, AC 3 — payout rate/owed money columns)', () => {
-  it('maps name/hours + the payout rate and owed as numeric euro cells, null when the instructor has no payout rate', async () => {
-    getCompensationSummaryMock.mockResolvedValue([
-      { instructorProfileId: 'ip_1', personId: 'p_1', firstName: 'Ines', lastName: 'Bianchi', payoutRateCents: 6000, totalMinutes: 90, owedTotalCents: 9000 },
-      { instructorProfileId: 'ip_2', personId: 'p_2', firstName: 'Luca', lastName: 'Verdi', payoutRateCents: null, totalMinutes: 0, owedTotalCents: null },
-    ] as never);
+describe('exportInstructorCompensationXlsx (story 12.7, AC 3 — payout rate/owed money columns; story 16.5, AC 20 — the Stato column)', () => {
+  const SUMMARY = [
+    { personId: 'p_1', firstName: 'Ines', lastName: 'Bianchi', payoutRateCents: 6000, totalMinutes: 90, owedTotalCents: 9000, isActive: true },
+    // R-16-k: no payout rate, so every flight froze 0 — the owed is 0, never null.
+    { personId: 'p_2', firstName: 'Luca', lastName: 'Verdi', payoutRateCents: null, totalMinutes: 0, owedTotalCents: 0, isActive: true },
+    { personId: 'p_3', firstName: 'Olga', lastName: 'Neri', payoutRateCents: 2500, totalMinutes: 600, owedTotalCents: 80000, isActive: false },
+  ];
+
+  it('maps name/hours + the payout rate and owed as numeric euro cells (the rate null when unset), and the state of each row in a fifth column', async () => {
+    getCompensationSummaryMock.mockResolvedValue(SUMMARY as never);
 
     const { buffer } = await exportInstructorCompensationXlsx(ACTOR, { locale: 'it' });
     const sheet = await readSheet(buffer);
+
+    expect([1, 2, 3, 4, 5].map((cell) => sheet.getRow(1).getCell(cell).value)).toEqual(['Nome', 'Compenso orario', 'Ore totali', 'Totale dovuto', 'Stato']);
 
     const withRate = sheet.getRow(2);
     expect(withRate.getCell(1).value).toBe('Bianchi Ines');
     expect(withRate.getCell(2).value).toBe(60); // 6000 cents → 60 as a real numeric euro cell (MONEY_NUM_FMT), never a string
     expect(withRate.getCell(3).value).toBe(formatMinutes(90));
     expect(withRate.getCell(4).value).toBe(90); // owed 9000 cents → 90
+    expect(withRate.getCell(5).value).toBe('Attivo');
 
     const noRate = sheet.getRow(3);
     expect(noRate.getCell(1).value).toBe('Verdi Luca');
     expect(noRate.getCell(2).value).toBeNull(); // rate null when the instructor has no payout rate
-    expect(noRate.getCell(4).value).toBeNull(); // owed null when no rate
+    expect(noRate.getCell(4).value).toBe(0); // owed 0 (R-16-k), a numeric cell like every other
+    expect(noRate.getCell(5).value).toBe('Attivo');
+
+    const inactive = sheet.getRow(4);
+    expect(inactive.getCell(1).value).toBe('Neri Olga');
+    expect(inactive.getCell(2).value).toBe(25);
+    expect(inactive.getCell(3).value).toBe(formatMinutes(600));
+    expect(inactive.getCell(4).value).toBe(800);
+    expect(inactive.getCell(5).value).toBe('Non più attivo');
+  });
+
+  it('in English: the same state column, translated', async () => {
+    getCompensationSummaryMock.mockResolvedValue(SUMMARY as never);
+
+    const { buffer } = await exportInstructorCompensationXlsx(ACTOR, { locale: 'en' });
+    const sheet = await readSheet(buffer);
+
+    expect(sheet.getRow(1).getCell(5).value).toBe('Status');
+    expect([2, 3, 4].map((row) => sheet.getRow(row).getCell(5).value)).toEqual(['Active', 'Active', 'No longer active']);
   });
 });
 

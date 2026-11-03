@@ -2465,7 +2465,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    these pages. */
 .fleet-mobile,
 .pilots-mobile,
-.instructors-mobile{ display: none; }
+.instructors-mobile,
+.inactive-instructors-mobile{ display: none; }
 
 /* Same two widths the inline styles had (fleet 240, pilots 260), moved into
    classes: an inline `width` cannot be overridden by a media query, and the
@@ -2483,10 +2484,12 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 @media (max-width: 640px){
   .fleet-desktop-body,
   .pilots-desktop-body,
-  .instructors-desktop-body{ display: none; }
+  .instructors-desktop-body,
+  .inactive-instructors-desktop-body{ display: none; }
   .fleet-mobile{ display: grid; }
   .pilots-mobile,
-  .instructors-mobile{ display: block; }
+  .instructors-mobile,
+  .inactive-instructors-mobile{ display: block; }
 
   /* --- the head of a registry card (ratifica R-15.5-g) ---
      ONE node per control at every width (AD-3): the toggle, the search, the
@@ -2674,6 +2677,15 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .mobile-row-side{ display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 0; grid-row: 1; grid-column: 3; }
   .mobile-row-amount{ font-family: var(--font-mono); font-size: 12px; font-weight: 600; white-space: nowrap; }
   .mobile-row-note{ font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+  /* Story 16.5 (Q-16.5-c) — the "Non più attivi, con dovuto" rows: the SAME
+     person row, but NOT a trigger (a no-longer-active instructor has no detail
+     to open — the read answers 404), so the row is a plain `div` without the
+     press feedback, and its one action, "Paga", is a 44px button of its own in
+     a fourth track. Two classes beat `.btn.mini`'s padding and type, and this
+     block comes later. */
+  .mobile-row-static{ grid-template-columns: 30px minmax(0, 1fr) auto auto; cursor: default; }
+  .mobile-row-static:active{ background: transparent; }
+  .mobile-row-static > .btn{ grid-row: 1; grid-column: 4; min-height: 44px; padding: 0 14px; font-size: 13px; }
   /* The flag chip gets its OWN row rather than the template's slot under the
      balance. Measured in that slot at 375px: a real blocking document
      ("Visita medica classe 2 scaduto", 191px) pushed the right column to 193px

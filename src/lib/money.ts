@@ -71,3 +71,18 @@ export function parseCents(value: string): number {
 
   return negative ? -cents : cents;
 }
+
+/**
+ * The ONE hours->money conversion of the domain (story 16.5, MINOR-1): what
+ * `minutes` at `rateCentsPerHour` cost, rounded half-up to the cent. Every
+ * per-flight amount — the aircraft and instructor charge, the instructor's
+ * payout snapshot — and the booking cost estimate use it, so a charge and a
+ * compensation on the same rate and minutes can never differ by a cent.
+ * `rateCentsPerHour * minutes` is an integer well below 2^53 (rates are
+ * `Int` columns, a flight is at most 1440 minutes), so the quotient is the
+ * double nearest the exact rational and `Math.round` rounds the exact half
+ * up — unlike `(minutes / 60) * rate`, whose intermediate loses it.
+ */
+export function centsForMinutes(rateCentsPerHour: number, minutes: number): number {
+  return Math.round((rateCentsPerHour * minutes) / 60);
+}

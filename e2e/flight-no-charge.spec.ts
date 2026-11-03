@@ -151,6 +151,8 @@ test.describe('Flight «senza addebito» (Story 19.6, P1 — R-19-d)', () => {
     expect(afterOff.flightCharges[0]!.description).toMatch(/^Volo I-/);
   });
 
+  // Story 16.5: the guardian of R-19-d on the snapshot — `instructorPayoutCents`
+  // is frozen at registration and never zeroed by `noCharge` (the rate is set first).
   test('a SCHOOL flight without charge still accrues its instructor compensation: minutes and owed grow by round(minutes × payout / 60) (AC 21)', async ({ page }) => {
     await loginExpectingDashboard(page);
     const instructor = await createPerson(page, 'instructor', 'Compenso');

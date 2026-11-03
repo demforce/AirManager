@@ -49,6 +49,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { addMonthsClampUtc, toDateOnlyString } from '../src/lib/date-only';
+import { centsForMinutes } from '../src/lib/money';
 import { hashPassword } from '../src/server/auth/password';
 import { prisma } from '../src/server/db/prisma';
 import type {
@@ -564,10 +565,15 @@ async function main(): Promise<void> {
     aircraftAmountCents: number;
     instructorRateCentsPerHour: number | null;
     instructorAmountCents: number | null;
+    instructorPayoutRateCents: number | null;
+    instructorPayoutCents: number | null;
     actorUserId: string;
   };
 
   const instructorRateByProfileId = new Map(instructorRateRows.map((r) => [r.instructorProfileId, r.priceCentsPerHour]));
+  // Story 16.5 (R-16-d/k): `createMany` bypasses `flights.service.ts#buildFlightWrite`,
+  // so the payout snapshot is written here — the instructor's rate (`0` without one).
+  const payoutRateByProfileId = new Map(instructorProfileRows.map((r) => [r.id, r.payoutRateCents ?? 0]));
   const accountIdByPersonId = new Map(personRecords.filter((p) => p.accountId).map((p) => [p.id, p.accountId!]));
   const AIRFIELD_NAME = 'Aviosuperficie di carico';
 
@@ -636,6 +642,8 @@ async function main(): Promise<void> {
       const aircraftAmountCents = Math.round((aircraftRateCentsPerHour * minutes) / 60);
       const instructorRateCentsPerHour = instructorProfileId ? (instructorRateByProfileId.get(instructorProfileId) ?? null) : null;
       const instructorAmountCents = instructorRateCentsPerHour !== null ? Math.round((instructorRateCentsPerHour * minutes) / 60) : null;
+      const instructorPayoutRateCents = instructorProfileId ? (payoutRateByProfileId.get(instructorProfileId) ?? 0) : null;
+      const instructorPayoutCents = instructorPayoutRateCents !== null ? centsForMinutes(instructorPayoutRateCents, minutes) : null;
 
       const touchAndGo = flightType === 'SCHOOL' && chance(0.4) ? randInt(2, 8) : 1;
 
@@ -659,6 +667,8 @@ async function main(): Promise<void> {
         aircraftAmountCents,
         instructorRateCentsPerHour,
         instructorAmountCents,
+        instructorPayoutRateCents,
+        instructorPayoutCents,
         actorUserId: ADMIN_USER_ID,
       });
     }
@@ -688,6 +698,8 @@ async function main(): Promise<void> {
           aircraftAmountCents: f.aircraftAmountCents,
           instructorRateCentsPerHour: f.instructorRateCentsPerHour,
           instructorAmountCents: f.instructorAmountCents,
+          instructorPayoutRateCents: f.instructorPayoutRateCents,
+          instructorPayoutCents: f.instructorPayoutCents,
           actorUserId: f.actorUserId,
         })),
       }),
