@@ -4,7 +4,7 @@ baseline_commit: eef77ef
 
 # Story 19.11: Estratto conto a periodo con saldo progressivo
 
-Status: **ready-for-dev** — 2026-11-01. **Q-19.11-a RATIFICATA dal PO = A** (sotto): se il PO sceglie B o C cambiano solo la direzione dell'`ORDER BY` di pagina/export e la posizione della riga «Saldo iniziale» (nota sotto la tabella della domanda). **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI su due pagine (scheda persona, «Il mio conto») con due facce ciascuna (tabella desktop, card + sheet mobile), un form di periodo nuovo, una colonna nuova, una riga nuova e una variante della primitiva `ExportMenu`, oltre a SQL, migrazione, service, Zod, OpenAPI ed e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-11-estratto-conto-periodo-progressivo`.
+Status: **review** — dev 2026-11-03 (`feat` `0556850`); story file del 2026-11-01. **Q-19.11-a RATIFICATA dal PO = A** (sotto): se il PO sceglie B o C cambiano solo la direzione dell'`ORDER BY` di pagina/export e la posizione della riga «Saldo iniziale» (nota sotto la tabella della domanda). **Modello dev: Opus 5 xhigh (UI)**: la story scrive codice UI su due pagine (scheda persona, «Il mio conto») con due facce ciascuna (tabella desktop, card + sheet mobile), un form di periodo nuovo, una colonna nuova, una riga nuova e una variante della primitiva `ExportMenu`, oltre a SQL, migrazione, service, Zod, OpenAPI ed e2e. Review: **Opus 5 xhigh adversarial**. Chiave sprint-status: `19-11-estratto-conto-periodo-progressivo`.
 
 > ⚠️ **Baseline e ordine**: ogni `file:riga` è misurato su **`eef77ef`** (19.1 e 19.2 committate; 19.3-19.10 solo come story file). L'epic si esegue in ordine 19.1 → 19.12, quindi il dev della 19.11 parte **dopo** il commit della 19.10. **Dipendenza funzionale: nessuna**, salvo la 19.6. Prima di scrivere codice vanno riletti questi punti, che le story precedenti toccano:
 > - **19.6** (la sola dipendenza vera): il `FLIGHT_CHARGE` si **aggiorna in place** con la modifica del volo (`effectiveDate` = nuova data del volo, `createdAt` invariato, D-13 della 19.6) e si **cancella** col volo. Toglie `FLIGHT_CHARGE_REVERSAL` dall'enum e da `account-section.tsx` (`:64-66`, `:173-174`, `:240-241`, `:396-400`, `:488-494`, `:549-553`), dai due mapper delle etichette (`people/[id]/page.tsx:216`, `:222`; `my-account/page.tsx:110`, `:115`) e da `ACCOUNT_MOVEMENT_TYPE_KEYS` (`exports.service.ts:311-317`); riscrive `flight-reversal.spec.ts` come `flight-delete-update.spec.ts` e la fixture di storno di `mobile-self-public.spec.ts`. Per questa story **non serve codice in più**: il saldo progressivo si calcola alla lettura, quindi un addebito modificato o cancellato si riflette da sé. Va solo verificato (AC 4, e2e su un volo modificato) e dichiarato.
@@ -419,19 +419,19 @@ Mirati prima della consegna: `account-statement-period` (nuovo), `account-statem
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Riallineamento** (tutti gli AC): `git log --oneline -12` (19.1-19.10 committate), `scripts/e2e.sh status`, `:3000` libero; leggere `account-section.tsx` e `exports.service.ts` dopo la 19.6, l'API di `DateInput`/`CalendarPopover` e `e2e/db-fixtures.ts`/`e2e/helpers.ts` dopo la 19.3; rieseguire i censimenti di §3.5 e correggere qui le righe slittate; esito di Q-19.11-a dalla sessione principale.
-- [ ] **T1 — Gemello e misura «prima»** (AC 10, 11): §4.3; `EXPLAIN` delle quattro sonde con l'indice vecchio (si può scrivere la query di AD-3 prima di toccare il codice dell'app).
-- [ ] **T2 — Schema e migrazione** (AC 9): AD-4; verifica sul gemello; `npx prisma generate`.
-- [ ] **T3 — Service e Zod** (AC 1-8): AD-1, AD-3; `accounts.ts`, `accounts.service.ts`; unit di §4.1.
-- [ ] **T4 — Export** (AC 22-26): `export-caps.ts`, helper delle righe, XLSX, PDF; unit.
-- [ ] **T5 — Periodo nelle pagine** (AC 12-13, 15, 21): `period-presets.ts`, `statement-period.ts`, le due pagine, la redirect; unit.
-- [ ] **T6 — UI** (AC 14, 16-20, 27-28): `account-section.tsx` (form, riepilogo, colonna, riga iniziale, badge, vuoti, paginazione), `ExportMenu`, `mobile-self.ts`, CSS.
-- [ ] **T7 — i18n** (AC 29): §3.6 su entrambi i file; parità misurata.
-- [ ] **T8 — OpenAPI e documenti** (AC 31, 33): `registry.ts`, `registry.test.ts`, doc-comment; verifica spine/CLAUDE.md.
-- [ ] **T9 — Seed** (AC 30): `seed-demo.ts`; `db seed` + `seed:demo` su DB fresco.
-- [ ] **T10 — e2e** (AC 34 e §3.5): spec nuovo, helper del periodo largo, spec esistenti; delta dei test.
-- [ ] **T11 — Misura «dopo» e discriminanze** (AC 10, §4.4): sonde, tempi, correttezza psql, (a)-(e) con sha256; eliminazione del gemello.
-- [ ] **T12 — Verifica** (AC 32, 35, 36): grep, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/800/375; Dev Agent Record compilato.
+- [x] **T0 — Riallineamento** (tutti gli AC): `git log --oneline -12` (19.1-19.10 committate), `scripts/e2e.sh status`, `:3000` libero; leggere `account-section.tsx` e `exports.service.ts` dopo la 19.6, l'API di `DateInput`/`CalendarPopover` e `e2e/db-fixtures.ts`/`e2e/helpers.ts` dopo la 19.3; rieseguire i censimenti di §3.5 e correggere qui le righe slittate; esito di Q-19.11-a dalla sessione principale.
+- [x] **T1 — Gemello e misura «prima»** (AC 10, 11): §4.3; `EXPLAIN` delle quattro sonde con l'indice vecchio (si può scrivere la query di AD-3 prima di toccare il codice dell'app).
+- [x] **T2 — Schema e migrazione** (AC 9): AD-4; verifica sul gemello; `npx prisma generate`.
+- [x] **T3 — Service e Zod** (AC 1-8): AD-1, AD-3; `accounts.ts`, `accounts.service.ts`; unit di §4.1.
+- [x] **T4 — Export** (AC 22-26): `export-caps.ts`, helper delle righe, XLSX, PDF; unit.
+- [x] **T5 — Periodo nelle pagine** (AC 12-13, 15, 21): `period-presets.ts`, `statement-period.ts`, le due pagine, la redirect; unit.
+- [x] **T6 — UI** (AC 14, 16-20, 27-28): `account-section.tsx` (form, riepilogo, colonna, riga iniziale, badge, vuoti, paginazione), `ExportMenu`, `mobile-self.ts`, CSS.
+- [x] **T7 — i18n** (AC 29): §3.6 su entrambi i file; parità misurata.
+- [x] **T8 — OpenAPI e documenti** (AC 31, 33): `registry.ts`, `registry.test.ts`, doc-comment; verifica spine/CLAUDE.md.
+- [x] **T9 — Seed** (AC 30): `seed-demo.ts`; `db seed` + `seed:demo` su DB fresco.
+- [x] **T10 — e2e** (AC 34 e §3.5): spec nuovo, helper del periodo largo, spec esistenti; delta dei test.
+- [x] **T11 — Misura «dopo» e discriminanze** (AC 10, §4.4): sonde, tempi, correttezza psql, (a)-(e) con sha256; eliminazione del gemello.
+- [x] **T12 — Verifica** (AC 32, 35, 36): grep, `npm run gates`, e2e mirati via `scripts/e2e.sh`, screenshot 1280/800/375; Dev Agent Record compilato.
 
 ---
 
@@ -439,28 +439,283 @@ Mirati prima della consegna: `account-statement-period` (nuovo), `account-statem
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), dev subagent `dev-19-11`, unico dev della story, 2026-11-03. Skill usate: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` e `ui-ux-pro-max`. Il brief è UI di prodotto dentro il design system AirOps, quindi della skill di design valgono solo coerenza, contrasto, target ≥ 44 px ed errori annunciati; nessun linguaggio visivo nuovo. Query `search.py "date range filter form validation inline error" --domain ux` e `"running balance ledger table tabular numbers"`: errore sotto il campo con `role=alert`, label visibili, tabella che non sfora a 375.
+
 ### §A — Riallineamento sul HEAD (T0) e righe slittate
+
+- HEAD di partenza `53738a4` (19.1-19.10 committate, 19.12a/b come story file). `scripts/e2e.sh status` dava DONE `E2E_EXIT=0` (arbitro 19.10). `:3000` era libero. `.next/dev/types/validator.ts` non c'era, quindi nulla da spostare.
+- **Q-19.11-a = A**, già ratificata nel file.
+- Il corpo della story non è stato corretto (sezioni non modificabili dal dev). Le righe slittate rispetto a `eef77ef`, lette su `53738a4` prima di ogni modifica:
+  - `schema.prisma` `@@index([accountId])` stava a `:626`, non `:627`;
+  - `accounts.service.ts` tipi dello statement `:279-340` → `:280-340`, `listAccountMovements` `:342-403` → `:342-404`, `$transaction` `:383-396` → `:383-396`;
+  - `exports.service.ts` tetti `:60-64` → `:60-64`, `ACCOUNT_MOVEMENT_TYPE_KEYS` `:311-317` → `:302-307` (la 19.6 ha già tolto `FLIGHT_CHARGE_REVERSAL`), PDF `:485-535` → `:495-545`;
+  - `accounts.ts` query `:113-120` → `:113-119`, PDF `:122-137` → `:121-136`;
+  - `registry.ts` `/movements` `:597-613` → `:626-642`, `/pdf` `:615-626` → `:644-657`;
+  - `account-section.tsx` (dopo la 19.6): `cols` a `:293`, badge `:230-238`, `pageHref` `:260-262`, `ExportMenu` `:315`, `sheetDetailRows` `:251-258`;
+  - `mobile-self.ts` `linkedBadgeText` `:40-50`, test `:36-46`;
+  - `people/[id]/page.tsx` chiamate `:106`, `:112`, label `:196-257`, href `:259-260`;
+  - `my-account/page.tsx` `:72`, `:77`, `:83-84`.
+- Censimenti di §3.5 rieseguiti su HEAD:
+  - (1) `account-movement-row|…` → `people-management`, `mobile-self-public`, `flight-no-charge`, `flight-delete-update`, `accounts-topups`, `account-statement`, `flights`, `account-adjustments`, `my-account`. `flight-reversal` non esiste più: la 19.6 l'ha sostituito con `flight-delete-update` e ha aggiunto `flight-no-charge`. `mobile-ink-targets` e `mobile-registries` non leggono più le righe, ma visitano le due pagine.
+  - (2) date fisse lette in UI: `'2026-07-01'` (account-statement, accounts-topups, account-adjustments, people-management), `'2026-01-15'` (mobile-self-public, flight-delete-update), 2020-2021 (my-account, flight-no-charge, flight-delete-update).
+  - (3) i chiamanti API senza periodo sono ancora 9 file e restano verdi per D-1.
+  - (4) `data-testid^=` non tocca `account-*`, `export-menu-*` né i testid nuovi (`account-period-*`, `account-opening-row(-mobile)`, `account-movement-balance(-mobile)`, `account-opening-balance`, `export-menu-{pdf,xls}-unavailable`).
+- API reali rilette: `DateInput` (prop trasparenti verso l'input, `min` → `minDate`, qui assente come da 19.3 AC 24); `e2e/helpers.ts` (`todayRome`, `addDaysIso`, `FAR_FUTURE_DATE`); `e2e/db-fixtures.ts` (pool `pg`, `ADMIN_USER`).
 
 ### §B — Riepilogo per AC con le prove
 
+| AC | Esito | Prova |
+|---|---|---|
+| 1 | ✅ | unit `src/lib/schemas/accounts.test.ts`: i 2 schemi × 4 casi, più i parametri della lista. e2e `account-statement-period:191`: 422 `VALIDATION_ERROR` su `movements` e `pdf` invertiti e su `2026-02-30`. |
+| 2 | ✅ | unit: forma con `from/to` null, opening 0, `bigint`→number; persona senza conto → `$queryRaw` mai chiamato. e2e: senza periodo `closingBalanceCents` = `GET /account.balanceCents`, `total` 7. |
+| 3 | ✅ | e2e: percorso di tutte le pagine da 2. Gli id sono **in ordine esatto** rispetto al ricalcolo del test (più forte dell'insieme), e i due movimenti del 15/03 escono in ordine di inserimento inverso. |
+| 4 | ✅ | e2e: ogni `balanceAfterCents` è uguale al ricalcolo; prima voce = `closing`; ultima = `opening + amount`. **Volo modificato in place** (20/03 60' → 05/03 30'): stesso id di addebito, −120 € → −60 €, nuova data, tutti i saldi ricalcolati e riverificati. |
+| 5 | ✅ | e2e: fixture su `from−1` (29/02), `from`, `to`, `to+1` (01/04, nel 2012). Opening = solo `from−1`, `total` 5, `to+1` escluso dal finale. |
+| 6 | ✅ | unit: una sola `$queryRaw` dopo le due `findUnique`, mai `$transaction`; valori legati `['account_1','2026-07-01','2026-07-31','account_1','2026-07-01',10,20]`; testo `$2::date`/`$3::date`/`$5::date`, nessun `IS NULL OR`. e2e: `page=999` → 200, `items: []`, stesso riepilogo. |
+| 7 | ✅ | unit: 403 prima di ogni query (`$queryRaw` mai chiamato), `actorEmail` solo con `people.read`. `my-account.spec.ts:189-194` verde. |
+| 8 | ✅ | e2e: rettifica collegata a un originale **prima del periodo** (29/02) e a uno su **un'altra pagina** (01/03, pageSize 2): `reversalOfEffectiveDate` = data dell'originale. |
+| 9 | ✅ | §C |
+| 10 | ✅ | §D: tutte le soglie rispettate |
+| 11 | ✅ | `airmanager_load` mai aperto in scrittura (nessun comando lo nomina se non il `\l`); gemelli eliminati (§J). |
+| 12 | ✅ | unit `period-presets.test.ts`: 4 casi (giorno qualunque, CEST 2026-03-31T22:30Z, CET 2026-01-31T23:30Z, 29/02/2028). e2e `:436`: −13 mesi nel saldo iniziale, −11 mesi in elenco, href col periodo predefinito esatto. |
+| 13 | ✅ | unit `statement-period.test.ts`: 7 casi, uno per ramo. e2e: `/people/{id}/account?from&to` atterra su `/people/{id}?from&to` con i campi valorizzati (`:302`), più `account-statement.spec.ts` (it ed en). |
+| 14 | ✅ | e2e `:302`: periodo invertito e data vuota → messaggio `role=alert`, `aria-invalid` su «Al», URL invariato, focus nel form; periodo valido → `?from&to` senza `page`; «Ultimi 12 mesi» → URL nudo e campi di nuovo al default (la `key`). |
+| 15 | ✅ | e2e: `?page=2&from=…&to=…` (`page` per primo); `page=999` → `2 / 2`; senza periodo esplicito il link resta `?page=N` (`mobile-self-public`, `my-account`). |
+| 16 | ✅ | e2e: riepilogo su pagina 1, pagina 2 e periodo vuoto, con valori calcolati dal test. |
+| 17 | ✅ | e2e: colonna desktop su 22 righe (20 + 2), nota della card a 375, riga «Saldo» nello sheet. |
+| 18 | ✅ | e2e: ultima riga dell'ultima pagina (`nextElementSibling === null`), assente a pagina 1 e a periodo vuoto. La card mobile è un `DIV` senza focusabili e 40 Tab non la raggiungono mai. |
+| 19 | ✅ | e2e: conto con movimenti solo nel 2012 nel periodo predefinito → «Nessun movimento nel periodo selezionato.» / «Nessun movimento in questo periodo.» + riepilogo; persona senza conto: testi di oggi, nessun form (`mobile-self-public` empty states verde senza modifiche). |
+| 20 | ✅ | `mobile-self-public.spec.ts:513` riscritto: originale su pagina 2 (14/01) e in pagina (15/01) → card, desktop e **sheet** dicono la data; `grep linkedBadgeText src` = 0. |
+| 21 | ✅ | e2e `:590`: «Il mio conto» con form, URL proprio, riepilogo, colonna, riga iniziale, export sull'id proprio, paginazione `my-account?page=2&from&to`, reset. |
+| 22 | ✅ | e2e: href esatti col periodo esplicito e con quello predefinito; regex di `mobile-self-public` aggiornate. |
+| 23 | ✅ | unit (exceljs): colonne, numeri, `numFmt`, riga iniziale in coda con Importo `null`. e2e: download vero (24 righe = intestazione + 22 + iniziale, ultima riga 50 € numerica). |
+| 24 | ✅ | unit su `renderReportPdf` mockato: colonne con Saldo, righe nell'ordine dello schermo + iniziale, sottotitolo, totali «Saldo iniziale al» / «Saldo finale al», `getAccountOverview` mai chiamato; con `from` solo → «Saldo finale». e2e: 200 `%PDF-`. |
+| 25 | ✅ | e2e `:539`: 2 001 rettifiche ±1 cent nel 2010 (netto +1) → `export-menu-pdf-unavailable` con il messaggio, nessun `export-menu-pdf`, XLS ancora link, 422 `EXPORT_TOO_LARGE` del server invariato, messaggio dentro lo sheet a 375; con 20 movimenti entrambi i link. `exports`, `pdf-exports`, `cash-report` verdi. |
+| 26 | ✅ | `src/lib/export-caps.ts` senza import, 10 000 / 2 000; re-export da `exports.service.ts`; unit esistenti dei tetti verdi. |
+| 27 | ✅ | e2e a 375 e 320: form in colonna, `targetsUnderFloor(form)=[]`, overflow 0, nessuno sbordo di card, card iniziale e riepilogo. Misura a 800: `.account-desktop-body` scrollWidth − clientWidth ≤ 1 (era **+160 px già prima** della colonna, +294 con la colonna: D-a). |
+| 28 | ✅ | `getByRole('form', { name: 'Periodo', exact: true })` = 1; `role=alert`; focus nel form dopo «Applica» a 1280 e a 375; card col saldo nell'`aria-label`; card iniziale fuori dal Tab. |
+| 29 | ✅ | §F |
+| 30 | ✅ con deviazione | `db seed` e `seed:demo` verdi su gemello fresco **dopo** aver riparato una rottura della 19.10 (D-c); sulla scheda di Marco il saldo iniziale al 03/11/2025 è 250,00 € (§I). `seed.ts` e `seed-load.ts` invariati. |
+| 31 | ✅ | `GET /api/v1/openapi.json` sull'app reale: query `[page, pageSize, format, locale, from, to]` su `/movements` e `[locale, from, to]` su `/pdf`; `AccountStatement` con `from, to, openingBalanceCents, closingBalanceCents`; voce con `balanceAfterCents, reversalOfEffectiveDate`; la frase «CURRENT balance» non c'è più. `registry.test.ts`: 2 test nuovi. |
+| 32 | ✅ | §F |
+| 33 | ✅ | doc-comment riscritti: `account-section.tsx` (testata, badge, `statementBasePath`, `cols`), `mobile-self.ts` (helper rimosso), `accounts.service.ts` (statement, `statementSql`, `listAccountMovements`, `listOwnAccountMovements`), `exports.service.ts` (tetti, blocco PDF), `accounts.ts` (query, voce, risposta), `my-account/page.tsx`, redirect, `registry.ts`. `ARCHITECTURE-SPINE.md` AD-3 **invariato**: «Il saldo è sempre `SUM(amountCents)` — mai un campo saldo mantenuto a mano» copre una `SUM` cumulativa calcolata alla lettura. `CLAUDE.md` invariato: nessun drift trovato. |
+| 34 | ✅ | helper unico in `e2e/helpers.ts`: `ALL_TIME_STATEMENT = { from: '2000-01-01', to: FAR_FUTURE_DATE }` + `allTimeStatement(path, page?)`. Elenco degli spec in §G. |
+| 35 | ✅ | §J |
+| 36 | ✅ | §I |
+
 ### §C — Migrazione: catena da zero, `migrate diff`, psql
 
-### §D — Prestazioni sul gemello: dataset, EXPLAIN prima/dopo, tempi, correttezza
+- File `prisma/migrations/20261103101004_account_movement_statement_index/migration.sql`, generato con `prisma migrate dev --create-only` sul gemello `am_1911_perf`; commento in testa (story, R-19-n, A13, D-3). È la 57ª migrazione, dopo `20261103100000_booking_drop_force_reason`:
+  ```sql
+  DROP INDEX "AccountMovement_accountId_idx";
+  CREATE INDEX "AccountMovement_accountId_effectiveDate_createdAt_id_idx" ON "AccountMovement"("accountId", "effectiveDate", "createdAt", "id");
+  ```
+- Gemello fresco `am_1911_e2e` (`createdb` nel container): `npx prisma migrate deploy` da zero → «All migrations have been successfully applied.», poi `db seed` verde.
+- `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script --exit-code` → `-- This is an empty migration.`, **exit=0**. `migrate status` → «Database schema is up to date!».
+- `\d "AccountMovement"` → `"AccountMovement_accountId_effectiveDate_createdAt_id_idx" btree ("accountId", "effectiveDate", "createdAt", id)`. Il vecchio `_accountId_idx` non c'è più; restano `_flightId_key` e `_reversalOfId_key` (quest'ultimo serve il join `rev`).
+- `npx prisma generate` fatto. Il flag `--shadow-database-url` di Prisma 6 non esiste in Prisma 7, quindi si è usato `--from-config-datasource` come la 19.10.
+
+### §D — Prestazioni sul gemello `am_1911_perf`: dataset, EXPLAIN prima/dopo, tempi, correttezza
+
+**Dataset** (SQL `generate_series`, poi `ANALYZE`): 1 199 conti × 90 movimenti dal 2023-05 + il conto pesante `perf_a_heavy`.
+- Il conto pesante ha 6 000 movimenti dal 2023-05-01 al 2026-11-04 (~4,65 al giorno), con `createdAt` casuale dentro il giorno (non segue l'id), più 60 rettifiche collegate a 40 giorni dall'originale. Totale 6 060.
+- Verbatim: `movements 113970 | accounts 1200`; `heavy 6060 | 2023-05-01 | 2026-11-30 | days_ge3 1282 | adjustments 60`.
+- Periodo predefinito (2025-11-03..2026-11-03): 1 726 righe; ultima pagina OFFSET 1720 (pag. 87); storico OFFSET 6040 (pag. 303).
+
+**EXPLAIN (ANALYZE, BUFFERS)** dell'istruzione di AD-3 (forma finale, `::text` sul tipo a parte), righe chiave verbatim:
+
+| Sonda | Prima (`AccountMovement_accountId_idx`) | Dopo (`…_accountId_effectiveDate_createdAt_id_idx`) |
+|---|---|---|
+| 1 predefinito pag. 1 | `Bitmap Index Scan on "AccountMovement_accountId_idx" … rows=6060` (periodo) e di nuovo `rows=6060` (saldo iniziale) — **Execution Time: 6.365 ms** | `Bitmap Index Scan on "AccountMovement_accountId_effectiveDate_createdAt_id_idx" … rows=1726`, `Index Cond: (("accountId" = 'perf_a_heavy'::text) AND ("effectiveDate" >= '2025-11-03'::date) AND ("effectiveDate" <= '2026-11-03'::date))`; saldo iniziale `rows=4332`, `Index Cond: (("accountId" = …) AND ("effectiveDate" < '2025-11-03'::date))` — **Execution Time: 4.974 ms** |
+| 2 predefinito ultima | idem — **6.268 ms** | idem — **4.764 ms** |
+| 3 storico pag. 1 | `… rows=6060`, `Sort Method: quicksort Memory: 895kB` — **16.129 ms** | `Bitmap Index Scan on "…_accountId_effectiveDate_createdAt_id_idx" … rows=6060` — **12.735 ms** |
+| 4 storico ultima | **15.010 ms** | **12.769 ms** |
+
+Dopo, sia la lettura del periodo sia la somma del saldo iniziale usano l'indice nuovo, col range su `effectiveDate` nell'`Index Cond`. Tutte le sonde stanno ≤ 50 ms.
+
+Il planner sceglie *bitmap heap scan + sort in memoria* (251 kB / 895 kB) invece di leggere l'indice in ordine: D-e.
+
+**Tempi di servizio** (`listAccountMovements` vero, script `tsx` sul gemello, 20 esecuzioni per sonda dopo un warm-up, macchina scarica):
+
+| Sonda | p50 | p95 | max |
+|---|---|---|---|
+| predefinito pag. 1 | 19,2 ms | 24,8 ms | 25,3 ms |
+| predefinito ultima | 13,4 ms | 16,7 ms | 17,7 ms |
+| storico pag. 1 | 23,3 ms | 25,3 ms | 29,2 ms |
+| storico ultima | 19,2 ms | 23,7 ms | 27,4 ms |
+
+Tutti con p95 ≤ 150 ms. Una prima misura con la suite e2e in parallelo dava un p95 massimo di 54,0 ms.
+
+**XLSX** dello storico completo (6 060 righe + intestazione): **1 345 ms**, sotto i 3 s. Sotto carico e2e parallelo la misura era 2 803 ms.
+
+**PDF** (dato d'ingresso della 17.7, nessuna soglia):
+
+| Righe | Tempo | ms/riga |
+|---|---|---|
+| 99 + 1 iniziale | 1 438 ms | 14,4 |
+| 510 + 1 | 7 632 ms | 14,9 |
+| 1 632 + 1 | 48 635 ms | 29,8 |
+
+Sotto carico: 27,1 / 29,6 / 45,9 ms/riga. Il costo per riga cresce con la lunghezza: TD-19.11-a.
+
+**Correttezza in psql** (`correctness.sql`): l'istruzione di AD-3 su tutto lo storico del conto pesante, confrontata con una `SUM` correlata ingenua sulla stessa chiave → `rows_compared 6060 | differences 0`. Stessa prova sul periodo predefinito, col saldo iniziale → `1726 | 0`.
 
 ### §E — Discriminanze §4.4 (a)-(e) con sha256
 
+sha256 prima dei mutanti e dopo il ripristino, **identici** (`diff` vuoto):
+```
+d8e8fc5ca80c6229db375933d762f3fb8205b1bf2edc94167c76dc8484ede3c4  src/server/services/accounts.service.ts
+2f5e6a3e319ee5cf1274d7615c6c915743eff535d6479875b0a6412b602f283a  src/app/[locale]/dashboard/people/[id]/account-section.tsx
+bbd23ec721bde93cbcfe456d6adf8b24314281212f98139310137be1ca83422e  src/app/[locale]/dashboard/people/[id]/page.tsx
+```
+Due build mutanti di produzione (M1 = a+d, M2 = b+e), ciascuna eseguita col server sul gemello e2e e `E2E_REUSE_SERVER=1`. Mutanti in test diversi, così ogni rosso ha una causa sola.
+
+- **(a)** `"createdAt"` tolto dalla chiave (finestra, pagina, `ORDER BY` esterno) → `account-statement-period:191` **rosso 3/3** (`--repeat-each=3`), riga `:254`: due righe del 15/03 scambiate.
+- **(b)** `SUM` cumulativa calcolata sulle righe della **pagina** → `:191` **rosso**: 4 saldi su 5 sbagliati (atteso `-6200`, ricevuto `-10500`…).
+- **(c)** `from` legato come `Date` JS al posto del testo `::date`, sessione `TimeZone=Europe/Rome` (`options=-c TimeZone=Europe/Rome` nell'URL del gemello perf, via `tsx`): **non riproducibile col driver**. Corretto e mutante danno entrambi `total=1726`: l'adapter `pg` lega la `Date` in modo che Postgres la tratti come `date`. Prova lasciata al psql, come la story prevede: con la sessione su `Europe/Rome`, `"effectiveDate" >= '2025-11-03'::date` → **1726**, `>= '2025-11-03T00:00:00Z'::timestamptz` → **1721**. Le 5 righe del giorno `from` spariscono: è la trappola che il testo `::date` evita qualunque cosa faccia il driver.
+- **(d)** badge di nuovo su `rowById` → `mobile-self-public:513` **rosso**: `adjustment-badge-mobile` atteso 2, ricevuto 1, perché l'originale sta su pagina 2.
+- **(e)** `exportPdfUnavailable` tolto dalla scheda persona → `account-statement-period:539` **rosso** alla riga `:561`: `export-menu-pdf-unavailable` non trovato, il link PDF ricompare.
+
 ### §F — Grep di AC 32 e parità i18n (verbatim)
+
+```
+$ grep -rn "linkedBadgeText\|adjustmentBadge\.linked\|currentBalance" src messages e2e   (escluso src/generated)
+(nessuna riga)
+$ grep -n "orderBy: \[{ createdAt: 'desc' }, { id: 'desc' }\]" src/server/services/accounts.service.ts
+164:    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],          ← readOverview (D-12), l'unico rimasto
+$ grep -n '\$transaction' src/server/services/accounts.service.ts
+181:  return prisma.$transaction((tx) => readOverview(tx, account));     ← buildOverview
+232:  return prisma.$transaction(async (tx) => {                         ← recordTopUp
+698:  const { balanceBeforeCents, balanceAfterCents } = await prisma.$transaction(async (tx) => {   ← recordAdjustment
+```
+Nessuna di queste è in `listAccountMovements`, `:453-497`. **Per la 17.5**: `listAccountMovements` non ha più la sua `$transaction` interattiva (una `$queryRaw`), ed `exportAccountStatementPdf` non legge più `getAccountOverview`. Restano alla 17.5 `buildOverview`/`readOverview` e i due writer.
+
+i18n: 1 616 chiavi per file prima, **1 629** dopo (+15 −2 = +13).
+- Nuove: `AccountStatementPage.table.{balance, emptyPeriod}`, `.mobile.emptyPeriod`, `.openingRow`, `.period.{label, from, to, apply, reset, required, invalidRange, openingAt, closingAt}`, `Export.{pdfTooLarge, xlsTooLarge}`.
+- Rimosse: `adjustmentBadge.linked`, `pdf.currentBalance`.
+- Parità: `diff <(jq … it.json | sort) <(jq … en.json | sort)` → **vuoto**.
+- Round-trip JSON byte-identico verificato prima dell'edit (`json.dumps(indent=2)+'\n' == raw`).
 
 ### §G — Delta test (unit ed e2e, prima/dopo; spec toccati per AC 34)
 
+- **Unit**: 2 153 → **2 178** (+25).
+  - `accounts.service.test.ts`: statement riscritto su `$queryRaw` (11 test al posto di 10) e `listOwn` (2 riscritti).
+  - `exports.service.test.ts`: PDF (6 al posto di 5), describe nuovo XLSX (3).
+  - `schemas/accounts.test.ts` nuovo (9), `statement-period.test.ts` nuovo (7), `period-presets.test.ts` +4, `registry.test.ts` +2, `mobile-self.test.ts` −2 (`linkedBadgeText`).
+  - Senza env: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` sui 5 file del §4.1 → verdi. L'import valore `Prisma` del client generato non trascina `@/lib/env`.
+- **e2e**: 598 → **604 atteso** (+6, tutti in `e2e/account-statement-period.spec.ts`, project `chromium`, fuori dalla catena). `npx playwright test --list` → `Total: 604 tests in 68 files`. Nessun test esistente aggiunto o rimosso: `mobile-self-public:513` è riscritto, non nuovo.
+- **Spec toccati per AC 34 (periodo largo)**: `my-account` (3 navigazioni + `page=999`), `account-statement` (redirect it/en e «Il mio conto»), `account-adjustments` (badge), `mobile-self-public` (9 navigazioni + test del badge), `flight-no-charge` (1), `flight-delete-update` (4).
+- **Altri spec toccati**: `accounts-topups` (testo nuovo del periodo vuoto, D-13); `mobile-self-public` (regex href AC 22; scrim cliccato in alto sullo sheet admin; `coveredControlsAtBottom` che esenta la top bar sticky, D-d).
+- **Invariati e verificati**: `flights.spec.ts:282` (volo di oggi), `people-management` (solo KPI).
+
 ### §H — Deviazioni motivate
+
+- **D-a — Griglia dell'estratto riprogettata nelle larghezze (AC 27).** Misurato sulla faccia admin, prima della correzione:
+  - a 1280 la colonna «Saldo» lasciava alla Descrizione **0 px**;
+  - a 800 (fascia 641-900) la griglia sforava di 294 px, ma sforava di **160 px già prima della story**: descrizione a 0, «Registrato da» e «Azioni» oltre il bordo.
+
+  Cosa ho cambiato:
+  - **tracce** rimisurate: 88/128/1fr/100/100/150/164 px invece di 104/150/1fr/120/(120)/170/170, `column-gap` 10 su questa griglia. A 1280 la descrizione è ~140 px;
+  - il **template** passa da `grid-template-columns` inline per riga a una custom property `--account-cols` sul contenitore, perché una media query non può battere uno stile inline (lezione R-15.8a-f);
+  - **nella fascia 641-900** la faccia admin diventa due righe sugli stessi nodi: data, tipo, importo, saldo e azione sopra, descrizione e «registrato da» sotto (`grid-template-areas`, figli per posizione). A 800 lo sforo è ≤ 1 px. La faccia self, con 4 colonne fisse, ci sta e non cambia forma.
+
+  È UI della story, non un'assunzione di dominio.
+- **D-b — `{max, number}` in italiano dà «2000», non «2.000».** CLDR `it` raggruppa da 5 cifre, quindi il tetto Excel è «10.000» e quello PDF «2000». L'aspettativa «2.000» del §AD-8 non regge. Chiave e ICU sono quelli di §3.6; il test e2e asserisce «2000».
+- **D-c — `seed:demo` rotto dalla 19.10 (AC 30).** Su DB fresco falliva a `book(admin, 'francesca.romano…')` con `REQUIREMENTS_NOT_MET` `BALANCE` (2 850 contro 13 800 cent); poi, con l'admin in deroga, sulle due richieste pilota di Chiara (13 900 contro 19 800) e Davide (−9 425 contro 20 700).
+
+  Correzione minima in `prisma/seed-demo.ts`:
+  - `force: true` sulle 3 prenotazioni dell'admin, lo stesso idioma dei voli demo (19.9 D-15);
+  - due ricariche a −3 giorni (Chiara +200 €, Davide +500 €), così le loro richieste nascono `PENDING` passando i controlli.
+
+  Dopo: «Seed: 16 top-ups recorded … 6 bookings ready (3 approved, 2 pending, 1 denied) … Demo seed complete», exit 0. Segnalato al team lead (opzione A/B) prima di procedere.
+- **D-d — Guardia `coveredControlsAtBottom` di `mobile-self-public`.** Con il form del periodo la pagina è più alta e, scrollata in fondo, un controllo (`export-menu-trigger`, `account-period-to`) può finire **sotto la top bar sticky** (misurato: `account-period-to top=13..57 covered by <DIV class="mobile-topbar-sub">`). È la normale sovrapposizione di un header sticky, che si annulla scrollando; la guardia esiste per la tab bar in basso. Ora esenta solo un `hit` dentro `.mobile-topbar`, col motivo scritto nel doc-comment.
+- **D-e — Ordine della finestra.** D-3 prevedeva che «la finestra legge le righe già ordinate». Misurato, il planner preferisce *bitmap index scan + sort in memoria* (quicksort 251-895 kB, 3-4 ms) a una scansione ordinata dell'indice; il range sull'indice nuovo c'è comunque e i tempi sono sotto le soglie. Nessun hint aggiunto.
+- **D-f — Riga iniziale negli export.** Va in coda **quando c'è `from`** (AD-7 alla lettera), anche con 0 movimenti nel periodo; sullo schermo la riga appare solo con `total > 0` (AD-6). Il file di un periodo vuoto dice comunque il saldo.
+- **D-g — Testid e helper non nominati dalla story:**
+  - `account-opening-balance`, la cella saldo della riga iniziale, distinta da `account-movement-balance`, così i conteggi per riga non la vedono;
+  - `seedAccountAdjustments` in `e2e/db-fixtures.ts`: `ADJUSTMENT` su date qualunque, `createdAt` in ordine d'array;
+  - `ALL_TIME_STATEMENT` + `allTimeStatement()`, un solo helper.
+- **D-h — Redirect `/account`.** Inoltra `from`/`to` solo se stringhe; un parametro ripetuto si perde e la destinazione applica il default, come farebbe sul proprio URL.
+- **D-i — Nota «non disponibile».** Tiene il tag mono `PDF`/`XLS` delle voci-link per coerenza visiva, quindi si legge «PDF · PDF non disponibile: …». Ripetizione accettata a favore dell'allineamento con le voci; da rivedere nella 19.12 (copy).
 
 ### §I — Verifica UI (screenshot)
 
+Niente Playwright MCP: script `playwright-core` su `~/.cache/ms-playwright/chromium-1228`, app di produzione su `localhost:3000` puntata ai gemelli (`am_1911_e2e`, poi `am_1911_demo`). Persona con 23 movimenti (1 a febbraio 2012, 22 a marzo), una ricarica di ottobre 2026 e una rettifica collegata di oggi.
+
+- **1280**:
+  - periodo predefinito: form in una riga, riepilogo, periodo vuoto;
+  - periodo esplicito pagina 1: colonna Saldo e descrizione visibile;
+  - ultima pagina: la riga «Saldo iniziale» chiude la tabella;
+  - periodo invertito: bordo rosso su «Al» e messaggio sotto;
+  - tema scuro: contrasti dei toni ok/bad di `stat-tone-*`.
+- **800**: griglia admin su due righe, nessuna colonna oltre il bordo (`scrollWidth 642 = clientWidth 642`; prima della correzione 936/642).
+- **375**:
+  - form in colonna (Dal, Al, Applica + Ultimi 12 mesi a 44 px), riepilogo chiave/valore;
+  - card con «Saldo 315,73 €» sotto l'importo, card «Saldo iniziale» in fondo;
+  - sheet con la riga «Saldo» dopo «Importo»;
+  - errore annunciato;
+  - **320**: overflow 0.
+- **Menu Export col PDF non disponibile** (fixture di AC 25, desktop e sheet a 375): coperto dall'e2e `:539`, con riquadro nel viewport e nessuno sbordo.
+- **Demo di Marco De Santis** (`am_1911_demo`, `db seed` + `seed:demo`): nel periodo predefinito, «Saldo iniziale al 03/11/2025 **250,00 €**», «Saldo finale al 03/11/2026 394,25 €» uguale al saldo attuale, riga iniziale in fondo; href XLS `…?from=2025-11-03&to=2026-11-03&format=xlsx&locale=it`.
+
+Gli screenshot erano nello scratchpad di sessione (`shots/`), non committati.
+
 ### §J — Gate ed esiti verbatim
+
+- `npm run gates` (ultimo, sul codice committato): `PASS lint (44s)`, `PASS typecheck (8s)`, `PASS test (18s) — Tests 2178 passed (2178)`, `PASS build (50s)`. Prima di ogni build: `:3000` libero o mio, nessun run e2e vivo.
+- **Serie e2e finale** (`scripts/e2e.sh start` con `E2E_REUSE_SERVER=1`, `CI=1` dello script, gemello `am_1911_e2e` **ricreato fresco**, build del codice committato), project `chromium`, 19 spec: `account-statement-period`, `account-statement`, `accounts-topups`, `account-adjustments`, `my-account`, `mobile-self-public`, `people-management`, `person-detail`, `flights`, `flight-delete-update`, `flight-no-charge`, `exports`, `pdf-exports`, `cash-report`, `mobile-ink-targets`, `mobile-registries`, `membership-fee`, `idempotency`, `api-v1` → **178 passed (5.3m)**, `E2E_EXIT=0`.
+- **Catena**: `mobile-membership-fee.spec.ts --no-deps --workers=1 --retries=0` → **2 passed**.
+- **Serie precedente** (stesso elenco, gemello non fresco, prima di D-d): 175 passed, 2 failed e 1 flaky.
+  - I 2 failed erano la guardia di D-d, poi corretta e riverificata (`mobile-self-public` + `accounts-topups`: 20 passed).
+  - Il flaky era `accounts-topups:130`, con `apiRequestContext.post: read ECONNRESET` su `POST /api/v1/people`: l'ECONNRESET infrastrutturale noto (TD-19.10-g), non attribuibile.
+- **Stato della macchina a fine lavoro**:
+  - gemelli `am_1911_perf`, `am_1911_e2e` e `am_1911_demo` **eliminati**; `pg_database` = `airmanager`, `airmanager_audit`, `airmanager_load`, `postgres`, template;
+  - `airmanager` non toccato (nessuna migrazione applicata lì: la nuova la applicherà il reset dell'arbitro); `airmanager_load` e `airmanager_audit` mai toccati;
+  - `:3000` libero (server fermati per PID);
+  - `.next` = build dell'ultimo `npm run gates`;
+  - scratchpad: un `record.md` presente lì apparteneva a un'altra sessione (19.6) ed è stato lasciato com'è.
+- **Atteso all'arbitro**: **604**.
+
+### TD (§7)
+
+- **TD-19.11-a** — motore PDF: 14-30 ms/riga a macchina scarica (45,9 sotto carico), crescente con la lunghezza; un periodo di 12 mesi di un conto attivo (1 600 righe) costa ~49 s. Dato d'ingresso della 17.7 (stream, tetto).
+- **TD-19.11-b** — il badge «Rettifica del movimento del …» resta tagliato nella cella Tipo del desktop (128 px; tagliato anche a 150 px prima della story) e si legge intero solo nello sheet. Pre-esistente, non allargato.
+- **TD-19.11-c** — `prisma/seed-demo.ts`: le date delle prenotazioni e delle ricariche demo sono relative a oggi, quindi i saldi dei piloti demo dipendono dal giorno di esecuzione. La correzione di D-c regge con margine (Davide da −94 € a +406 € contro i 207 € della richiesta più cara), ma non è una garanzia formale.
+- **TD-19.11-d** — la regex di AC 22 in `mobile-self-public` accetta qualsiasi coppia di date nel periodo predefinito; il valore esatto è asserito solo in `account-statement-period:436`, che lo ricalcola dalla data di Roma. Tra le 00:00 e le ~00:01 di Roma test e server possono vedere giorni diversi: è la fascia nota TD-19.10-a/b.
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created (story writer, 2026-11-01, ricognizione su `eef77ef`).
+- 2026-11-03 (dev 19.11): implementati tutti i 36 AC (T0-T12). Contratto API additivo (D-1); una `$queryRaw` per pagina, saldi e totale, nessuna transazione; indice (accountId, effectiveDate, createdAt, id); UI delle due pagine su due facce; export sul periodo; messaggio sul tetto; OpenAPI; i18n +15/−2; seed demo (più la riparazione della 19.10, D-c); 6 e2e nuovi e 6 spec resi indipendenti dalla data. Gate verdi, serie mirata 178/178 su gemello fresco, discriminanze (a)(b)(d)(e) rosse e (c) dimostrata in psql.
 
 ### File List
+
+- `prisma/schema.prisma` — indice dello statement (D-3)
+- `prisma/migrations/20261103101004_account_movement_statement_index/migration.sql` — nuovo
+- `prisma/seed-demo.ts` — ricarica di Marco a 400 giorni (D-16); deroga sulle prenotazioni admin e 2 ricariche (D-c)
+- `src/server/services/accounts.service.ts` — statement su una `$queryRaw`, tipi, forma vuota
+- `src/server/services/accounts.service.test.ts`
+- `src/server/services/exports.service.ts` — tetti re-esportati, righe condivise, XLSX e PDF sul periodo
+- `src/server/services/exports.service.test.ts`
+- `src/lib/export-caps.ts` — nuovo
+- `src/lib/statement-period.ts`, `src/lib/statement-period.test.ts` — nuovi
+- `src/lib/period-presets.ts`, `src/lib/period-presets.test.ts` — `lastTwelveMonthsRange`
+- `src/lib/schemas/accounts.ts`, `src/lib/schemas/accounts.test.ts` (nuovo)
+- `src/lib/schemas/registry.ts`, `src/lib/schemas/registry.test.ts`
+- `src/lib/mobile-self.ts`, `src/lib/mobile-self.test.ts` — via `linkedBadgeText`
+- `src/components/ui/export-menu.tsx` — `pdfUnavailable`/`xlsUnavailable`
+- `src/app/[locale]/dashboard/people/[id]/account-section.tsx` — form, riepilogo, colonna, riga iniziale, badge, vuoti, paginazione, griglia
+- `src/app/[locale]/dashboard/people/[id]/page.tsx`
+- `src/app/[locale]/dashboard/people/[id]/account/page.tsx` — inoltro del periodo
+- `src/app/[locale]/dashboard/my-account/page.tsx`
+- `src/styles/airops.css` — blocco 19.11
+- `messages/it.json`, `messages/en.json`
+- `e2e/account-statement-period.spec.ts` — nuovo
+- `e2e/helpers.ts` — `ALL_TIME_STATEMENT`, `allTimeStatement`
+- `e2e/db-fixtures.ts` — `seedAccountAdjustments`
+- `e2e/my-account.spec.ts`, `e2e/account-statement.spec.ts`, `e2e/account-adjustments.spec.ts`, `e2e/accounts-topups.spec.ts`, `e2e/mobile-self-public.spec.ts`, `e2e/flight-no-charge.spec.ts`, `e2e/flight-delete-update.spec.ts`
+- `_bmad-output/implementation-artifacts/19-11-estratto-conto-periodo-progressivo.md` — questo record
+
+### Change Log
+
+- 2026-11-03 — dev 19.11: implementazione completa, `feat` `0556850` (SQL, migrazione, service, Zod, OpenAPI, export, UI desktop/mobile delle due pagine, i18n, seed, unit, e2e); Status → review.
