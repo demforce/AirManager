@@ -52,7 +52,7 @@ Il corpo della story (baseline `9272129`) **non è mai stato emendato dopo l'Add
 - **Q-16.5-b — pannello «Compensi da liquidare»** = **A**: include gli ex istruttori con dovuto > 0 (unione delle due platee), con l'etichetta «Non più attivo».
 - **Q-16.5-c — dettaglio di un ex istruttore** = **A**: il 404 di `resolveActiveInstructorRow` (`:360-380`, test `:435`) resta; la riga offre solo **Paga**; su mobile la riga non è tappabile e ha un bottone Paga ≥ 44 px. Contratto API invariato.
 
-Status: **ready-for-dev** — 2026-09-10, **riallineata e ratificata il 2026-11-03 (§R, §R-PO)**. **Modello dev: Opus 5 xhigh** (la story tocca UI: una sezione NUOVA sulla pagina Compensi con le sue due facce desktop/mobile, un qualificatore sul KPI, un `hint` nel form della tariffa, una colonna nell'export e 8 stringhe i18n in due locale — v. §1 AD-8 e §3.4).
+Status: **review** — implementata il 2026-11-03 (commit `caeb973`, Dev Agent Record in coda); ready-for-dev dal 2026-09-10, **riallineata e ratificata il 2026-11-03 (§R, §R-PO)**. **Modello dev: Opus 5 xhigh** (la story tocca UI: una sezione NUOVA sulla pagina Compensi con le sue due facce desktop/mobile, un qualificatore sul KPI, un `hint` nel form della tariffa, una colonna nell'export e 8 stringhe i18n in due locale — v. §1 AD-8 e §3.4).
 
 > ⚠️ **Baseline e ordine di lavoro (misurato il 2026-09-10)**: il frontmatter dichiara `9272129` (`docs(sprint-status): 16.3 ready-for-dev`) e **tutti** i `file:riga` di questo file sono misurati **su quel HEAD**. La 16.1 è **committata** (`1a57609`); le story **16.2, 16.3 e 16.4 hanno il file pronto ma NON sono implementate**, e **due di loro toccano gli stessi file di questa**:
 > - **16.2** riscrive `flights.service.ts` in 6 punti (guardia di sovrapposizione dentro la transazione, helper del contaore, bordo inferiore della durata a `:754`) ⇒ **ogni riga di `flights.service.ts` citata qui slitta**;
@@ -594,3 +594,160 @@ Le tre domande aperte della ricognizione sono state ratificate dal PO (AskUserQu
 - **R-16-i — payout a istruttori non più attivi**: `recordPayout` ACCETTA un istruttore disattivato/archiviato purché abbia dovuto residuo > 0 (il 409 odierno resta solo per dovuto ≤ 0); la card «non più attivi, con dovuto» porta l'azione **Paga** come il roster attivo. Unit + e2e sul caso «ex istruttore con 1 000 € dovuti → payout 200 € → dovuto 800 €».
 - **R-16-j — correzione di un volo**: `correctFlight` **eredita** `instructorPayoutRateCents` dal volo originale (stesso volo, dati sistemati) e ricalcola `instructorPayoutCents` con la stessa formula sui minuti corretti; NON usa la tariffa di oggi. Se l'originale non ha tariffa (v. R-16-k) la correzione usa la tariffa vigente dell'istruttore, se esiste, altrimenti 0.
 - **R-16-k — voli con istruttore SENZA alcuna tariffa payout**: il dovuto è **0, non null** (decisione PO contro la raccomandazione «null + contatore»): backfill a 0 e registrazione a 0 quando la tariffa manca; il contatore «N voli senza tariffa» in UI DECADE. Le due colonne restano nullable SOLO per i voli senza istruttore; per ogni volo con istruttore sono sempre valorizzate. Adeguare AC, migrazione e prove di parità di conseguenza; dichiarare nel Dev Agent Record quanti voli del DB di carico ricevono 0 (attesi 2 399).
+
+---
+
+## Dev Agent Record (2026-11-03, dev Opus 5 xhigh — un solo subagent)
+
+**Commit**: `caeb973` `feat(16.5): …` (implementazione + test, pathspec). Questo record: commit `docs(16.5): Dev Agent Record …` (solo questo file). `sprint-status.yaml` e `HANDOFF.md` NON toccati (li aggiorna la sessione principale). Skill applicate: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` (design read: «estensione di un pannello admin — fuori dallo scope landing della skill, §13 — per il tesoriere, nel linguaggio AirOps esistente: zero linguaggio visivo nuovo»), `ui-ux-pro-max` (checklist: target 44 px, gap ≥ 8 px, stato a testo e non solo a colore, gerarchia della lista secondaria, sezione assente quando vuota).
+
+### File toccati (30 + 1 migrazione nuova; `git show --stat caeb973`)
+
+| File | Cosa |
+|---|---|
+| `prisma/schema.prisma` | `Flight.instructorPayoutRateCents Int?` + `instructorPayoutCents Int?` con doc-comment (R-16-d/k, lettore e filtro SCHOOL, Q-16.5-a, R-19-d); doc di `InstructorProfile.payoutRateCents` riscritto (la domanda «tariffa al giorno D» esiste, risposta = snapshot, vale dai prossimi voli); doc `Flight.noCharge` e lista degli snapshot del modello |
+| `prisma/migrations/20261103120000_flight_instructor_payout_snapshot/migration.sql` | **nuovo** — `ALTER TABLE` (DDL generato con `prisma migrate diff`) + backfill `COALESCE(ip."payoutRateCents", 0)` su TUTTI i voli con istruttore (AD-11 §R) |
+| `src/lib/money.ts` (+ `money.test.ts`) | `centsForMinutes` — l'unica conversione ore→denaro |
+| `src/server/services/flights.service.ts` | `findActiveInstructor` legge `payoutRateCents`; `OriginalFlightIdentity.instructorPayoutRateCents`; regola Q-16.5-a in `resolveFlightInput`; `buildFlightWrite` scrive i 2 campi (mai azzerati da `noCharge`); `updateFlight` legge la tariffa congelata dell'originale; `:646`/`:861` → `centsForMinutes`; doc del modulo, di `resolveFlightInput`, `buildFlightWrite`, `updateFlight` |
+| `src/server/services/bookings.service.ts` | costo stimato → `centsForMinutes` (D-R2) |
+| `src/server/services/instructor-compensation.service.ts` | `owed*` = Σ snapshot − payout (via `computeGrossCents`/`computeOwed`); `sumSchoolFlightsByProfile` (`_sum: { minutes, instructorPayoutCents }`, stesso `where`); `listInactiveInstructors`; `getCompensationSummary` = unione + filtro `isActive \|\| owedTotalCents !== 0`; `isActive` sulla riga; `mtdGrossCents` = Σ snapshot mtd; `resolvePayableInstructorProfileId` (R-16-i, 409 `INSTRUCTOR_NOTHING_OWED`); `owed*`/`mtdGrossCents` → `number` (D-R1) |
+| `src/lib/schemas/instructor-compensation.ts`, `src/lib/schemas/registry.ts` | DTO: `owed*` non più nullable, `isActive`; 4 descrizioni OpenAPI (summary + description del GET, POST payout con `INSTRUCTOR_NOTHING_OWED`, PUT rate) |
+| `src/server/services/exports.service.ts` | quinta colonna «Stato» (`Attivo`/`Non più attivo`) |
+| `src/server/services/stats.service.ts` | solo doc-comment (AD-9: l'ex istruttore col dovuto ≠ 0 compare da sé) |
+| `src/app/[locale]/dashboard/instructors/page.tsx` | KPI per platea (attivi / ore+dovuto su entrambe / media solo attivi con tariffa), `sub` + clausola `subInactive`, `inactiveItems` |
+| `src/app/[locale]/dashboard/instructors/instructors-console.tsx` | card `InactiveInstructorsCard` (desktop + mobile), Paga sugli ex con dovuto > 0, «Compensi da liquidare» = unione con badge «Non più attivo», 409 mappato in `PaySlideOver`, «—» → importo |
+| `src/app/[locale]/dashboard/instructors/instructor-editor.tsx`, `instructor-profile.tsx` | `hint` sul campo del compenso (AC 12); dovuto sempre un importo |
+| `src/app/[locale]/dashboard/billing/page.tsx`, `billing-console.tsx` | widget solo attivi (AD-9); dovuto mese sempre un importo |
+| `src/app/[locale]/dashboard/page.tsx`, `my-compensation/page.tsx` | landing istruttore e «I miei compensi»: dovuto/maturato sempre un importo |
+| `src/styles/airops.css` | `.mobile-row-static` (3 dichiarazioni, dentro il blocco ≤ 640 px) — D-e; le due classi di scambio della card aggiunte alle liste esistenti — D-o |
+| `messages/it.json`, `messages/en.json` | +8 chiavi (`subInactive`, `inactiveSection.title/hint`, `table.status`, `status.active/inactive`, `editor.payoutRate.hint`, `pay.nothingOwed`), −1 (`editor.payoutRate.noValue`, orfana) |
+| `prisma/seed-load.ts` | i 2 campi nel `createMany` dei voli (`centsForMinutes`, tariffa `?? 0`) |
+| Test unit | `flights.service.test.ts`, `instructor-compensation.service.test.ts`, `exports.service.test.ts`, `stats.service.test.ts`, `money.test.ts` |
+| Test e2e | `instructor-compensation.spec.ts` (3 fixture riordinate + 3 test nuovi), `reports.spec.ts` (null → 0, «—» → «0,00 €»), `flight-no-charge.spec.ts` (commento: guardiano di R-19-d), `mobile-registries.spec.ts` (commento stantio + guardia della tab bar che conta le righe statiche, D-o) |
+
+### AC per AC (con la lettura di §R/§R-PO)
+
+| AC | Esito | Evidenza |
+|---|---|---|
+| 1 | ✅ | colonne + doc-comment in `schema.prisma` (Flight, `noCharge`, `payoutRateCents`) |
+| 2 | ✅ misurato | backfill su `airmanager_load`: **15 697** righe valorizzate (12 513 con la tariffa, **3 184 a 0/0** — R-16-k; la cifra 2 399 del vecchio carico non vale più, D-R4), **0** con una sola colonna, **44 321** voli senza istruttore NULL/NULL |
+| 3 | ✅ misurato | 319 istruttori con tariffa: **249** cambiano dovuto, scarto max **12 c**, \|Σ\| **479 c**, netto **+259 c**; mai più di 1 c per volo (peggiore 0,273 c/volo su 9 532 voli SCHOOL, 0 violazioni). Lo zero del piano non è raggiungibile: l'arrotondamento passa dall'aggregato al singolo volo (AD-3) |
+| 4 | ✅ | U «freezes the payout rate … 3000 / 4500» (asserzioni esplicite, mai `objectContaining`) |
+| 5 | ✅ (R-16-k) | istruttore senza tariffa → **0/0**; senza istruttore → `null`/`null` esplicito (`toHaveProperty(…, null)`) |
+| 6 | ✅ | e2e «editing … deleting it lowers the owed by exactly its snapshot»: 4500 → 0 dopo `DELETE`, nessun codice nuovo in `deleteFlight`. **Conseguenza dichiarata**: cancellare un volo già liquidato porta il dovuto sotto zero |
+| 7 | ✅ (Q-16.5-a) | 5 unit `updateFlight` (stesso istruttore tiene 2400 e 0; altro istruttore → sua tariffa / 0; nessun istruttore → null) + e2e 60→90′ = 4500 con la tariffa congelata (oggi 6000 darebbe 9000) |
+| 8 | ✅ | `computeGrossCents`/`computeOwed` non esistono più; 3 + 3 `groupBy` (U15) |
+| 9 | ✅ | U «100 h paid in full … owed stays 0 whatever the payout rate is TODAY» (tariffe 2000/2500/1800/null) + e2e (6000 dopo il volo: dovuto resta 3000) |
+| 10 | ✅ (R-16-k) | e2e «a flight registered while the instructor had no payout rate stays at 0 …»: 0 → (tariffa) 0 → secondo volo 5000 (mai 10 000) |
+| 11 | ✅ | dovuto 0 per ogni istruttore senza tariffa; «—» → «0,00 €» su roster, sheet, profilo, editor, I miei compensi, landing, widget Contabilità, Statistiche (periodo corrente) |
+| 12 | ✅ | hint «Vale dai prossimi voli: …» (IT/EN), e2e lo legge; nessun «payout» in `it.json` (guardia `BANNED` verde) |
+| 13 | ✅ | card «Non più attivi, con dovuto» sotto il roster, assente se vuota; carico: **22** righe, **8 390,36 €** |
+| 14 | ✅ | KPI «Totale dovuto» include le righe; e2e: uguaglianza **nello stesso render** (KPI = Σ celle di roster + card; ore idem; «Istruttori attivi» = righe del roster) — nessun confronto fra due istanti (AC 14) |
+| 15 | OBSOLETE (§R) | — |
+| 16 | ✅ (R-16-i) | Paga sulla card (solo dovuto > 0, D-b); `PaySlideOver` riceve le righe; 409 `INSTRUCTOR_NOTHING_OWED` mappato («Questo istruttore non è più attivo e non ha compensi da liquidare.», verificato a mano); dettaglio 404 invariato (Q-16.5-c, unit + e2e) |
+| 17 | ✅ | testid `inactive-instructor-row-{id}` / `mobile-inactive-instructor-row-{id}` / `inactive-instructor-pay-{id}[-mobile]`; `grep -rn 'data-testid\^=' e2e/` → nessuna collisione (`mobile-a11y-sweep.spec.ts:283` invariato) |
+| 18 | ✅ | censimento `grep -rn "/ 60)" src/server src/app src/lib`: unica conversione in denaro `money.ts#centsForMinutes` (call-site: `flights.service.ts` ×3, `bookings.service.ts` ×2, `seed-load.ts` ×1); il resto è ore/minuti. Seed: v. D-m |
+| 19 | ✅ | U «69 min at 15,10 €/h … the SAME number» (uguaglianza fra i due campi, poi 1737) |
+| 20 | ✅ | unit export a 3 righe (attiva con tariffa, attiva senza → 0, non più attiva), IT + EN |
+| 21 | ✅ | unit `stats.service.test.ts` (ex istruttore col dovuto → valorizzato; fuori dal summary → `null`); billing filtra `isActive` |
+| 22 | ✅ | `isActive` nello schema; 4 descrizioni corrette a mano (nessun test le copre) |
+| 23 | ✅ | `seed-load.ts` popola i 2 campi; `seed-demo.ts` invariato (tariffa `:370` prima dei voli `:444`) |
+| 24 | ✅ | tre fixture riordinate (tariffa prima del volo; l'interazione UI col form resta); test nuovi (a) AC 10, (b) ex istruttore 1 000 → 200 → 800 → 0 + 409, (c) modifica Q-16.5-a + cancellazione |
+| 25 | v. «Gate» ed «e2e» | |
+
+### Prima/dopo su `airmanager_load` (rigenerato dalla sessione principale col `seed-load.ts` di HEAD, `LOAD_SEED_EXIT=0`)
+
+Script di misura (sola lettura) `…/scratchpad/story-16-5/measure.mjs`: il «prima» applica la formula di HEAD verbatim (`Math.round((minuti/60)*tariffa) − pagato`, `null` senza tariffa), il «dopo» somma gli snapshot.
+
+| Misura | Prima (HEAD) | Dopo (migrazione) |
+|---|---|---|
+| profili istruttore / con tariffa / non più attivi | 401 / 319 / 27 (archiviato ⟺ disattivato su tutti e 27) | invariato |
+| istruttori con dovuto `null` | **82** (81 con minuti SCHOOL, 0 con payout) | **0** (R-16-k: tutti a 0) |
+| voli / con istruttore / non-SCHOOL con istruttore / SCHOOL senza istruttore | 60 018 / 15 697 / 3 745 / 0 | invariato |
+| «Totale dovuto» (KPI) | **110 752,97 €** (soli attivi) | **119 145,84 €** = +8 390,36 € (MAJOR-2: 22 ex istruttori, tutti positivi) +2,51 € (arrotondamento per volo sugli attivi) |
+| «Ore totali volate» | 16621:38 | 17589:33 (+967:55 degli ex istruttori mostrati) |
+| card «non più attivi» | invisibile (8 390,28 € con la formula vecchia) | 22 righe, 8 390,36 € |
+| migrazione | — | `migrate deploy` 1,69 s wall, 0,59 s registrati in `_prisma_migrations` |
+
+**Prova SQL ≡ TS sulle righe reali (§4.5 b, rieseguita)**: sulle 15 697 coppie `(COALESCE(tariffa,0), minuti)` `SUM("instructorPayoutCents")` = **51 759 840** e somma pesata `× (tariffa·301 + minuti)` = **44 006 076 143 785**, identiche fra Postgres (`round(numeric)`) e Node (`Math.round((r*m)/60)`).
+La migrazione «da zero» non è stata eseguita su un DB nuovo (divieto di creare/cancellare DB): applicata incrementalmente su `airmanager` (e2e) e su `airmanager_load` — v. D-l.
+
+### Discriminanze rosse sul pre-fix
+
+**(1) Mutanti unit su copia isolata** (`…/scratchpad/story-16-5/iso`: `cp` di `src` + `messages` + config, `node_modules` in symlink; script `mutants.py`, ripristino con controllo sha256 dopo ogni mutante; baseline finale ripristinata 311/311 verdi):
+
+| Mutante (pre-fix simulato) | Rossi |
+|---|---|
+| M1 snapshot non scritto alla registrazione | 11 (U AC 4, AC 5, R-16-k, AC 19, R-19-d, i 5 di Q-16.5-a, «writes every input … column») |
+| M2 senza tariffa → `null` invece di 0 | 2 |
+| M3 dovuto ricalcolato dalla tariffa di oggi (MAJOR-1) | 3 (U9, AD-3, U16 lordo mtd) |
+| M4 summary = soli attivi (MAJOR-2) | 4 (U12, U13, U15, 1 000 → 800) |
+| M5 nessun filtro «dovuto ≠ 0» | 1 (U12) |
+| M6 la modifica prende la tariffa di oggi anche a istruttore invariato | 2 |
+| M7 formula ritirata sull'addebito istruttore | 1 (AC 19) |
+| M8 `centsForMinutes` con la formula ritirata | 3 |
+| M9 `recordPayout` rifiuta l'ex istruttore (pre R-16-i) | 4 |
+| M10 nessun controllo dovuto > 0 | 2 |
+| M11 persona archiviata non contata come «non più attiva» | 1 |
+| M12 `noCharge` azzera il compenso | 1 |
+| M13 export senza «Stato» | 2 |
+
+Nessun mutante equivalente fra questi; `bookings.service.ts` → `centsForMinutes` è **equivalente per costruzione** (stessa formula), dichiarato: nessun test può distinguerlo.
+
+**(2) e2e sul codice di HEAD**: build di `c3b11a9` (`git archive` in scratchpad, `next build --webpack` con `ignoreBuildErrors` SOLO in quella copia — turbopack rifiuta il `node_modules` in symlink) servita su :3100 (`timeout 900`), con un config Playwright di scratch (PORT 3100), via `scripts/e2e.sh start --config …`: **6 rossi / 8 verdi**, esattamente gli attesi — fixture 1 e «unrated» (`"—"` invece di `0,00 €`), (a) AC 10 (dovuto ≠ 0 dopo la tariffa), (c) dopo il cambio tariffa 6000 ≠ 3000 (MAJOR-1), (b) riga `undefined` (MAJOR-2), `reports.spec.ts` (`owedCents: null`). Verdi su HEAD: idempotenza, header obbligatorio, RBAC, export.
+
+**(3) Sonda MAJOR-1/2 della ricognizione (§4.4)**: portata nel file dei test con l'aspettativa rovesciata (U9 «100 h paid in full…», U12 «lists the active instructors, then those no longer active…»); il suo rosso sul pre-fix è M3/M4 sopra.
+
+### Verifica UI interattiva (niente MCP: script `playwright` throwaway `…/scratchpad/story-16-5/ui-check.mjs`, fixture run-unique via API, build di produzione)
+
+1280 e 375 px, temi chiaro e scuro (screenshot in `…/scratchpad/story-16-5/shots/`): card presente solo con righe; riga dell'ex istruttore con dovuto 187,50 € → Paga presente; ex istruttore pagato in eccesso (−120,00 €) → riga presente, **nessun** Paga; ex istruttore a dovuto 0 → assente. Contrasti (sRGB via canvas, i token sono oklch): dovuto 18,79 : 1 chiaro / 15,74 : 1 scuro a 1280; testi `--ink-3` (hint, note, sub mobile) 4,85 / 5,72; testo del Paga 7,85 / 9,30. Riga mobile: `<div>` (non trigger), 67 px; Paga mobile **44 px**; nessun overflow orizzontale a 375. «Compensi da liquidare»: riga dell'ex istruttore con badge «Non più attivo», precompilazione = dovuto. 409 provocato a mano (dovuto azzerato dietro la UI) → messaggio `pay.nothingOwed`. Hint dell'editor presente. EN: `sub` «… · N no longer active, still owed», titolo card «No longer active, still owed». Copia dell'hint della card accorciata dopo lo screenshot a 375 (4 righe → 2-3).
+
+### Gate
+
+`npm run gates` (finale, dopo l'ultima modifica, prima del commit): **PASS lint (38 s) · PASS typecheck (5 s) · PASS test (13 s) — 2238 passed (baseline 2211, +27) · PASS build (34 s)**. File di test che importano servizi «grossi» verificati anche con `env -u DATABASE_URL -u AUTH_SECRET npx vitest run …` (verdi).
+
+### e2e
+
+- Mirato (build di questa story su :3000, `E2E_REUSE_SERVER=1`, `--no-deps`): `instructor-compensation` + `flight-no-charge` + `reports` + `my-compensation` → **25 passed, E2E_EXIT=0**.
+- **HEAD come discriminante** (v. sopra): 6 rossi attesi / 8 verdi.
+- **Suite completa** (`scripts/e2e.sh start`, `CI=1 E2E_REUSE_SERVER=1`, build turbopack di questa story su :3000, avviata 23:28, log `…/scratchpad/story-16-5/full-suite-1.log`): **534 passed, 19 failed, 2 flaky, 54 did not run** (la catena serializzata non parte se il main fallisce), 19,6 min, `E2E_EXIT=1`. Classificazione dei 19:
+  - **2 regressioni MIE, corrette dopo il run** (D-o): `mobile-registries.spec.ts:503` (strict mode: `.instructors-desktop-body` trovava 2 nodi, la card riusava le classi di scambio del roster) e `:588` (`instructors@320 checked 0`: la pagina può finire con righe NON controlli della card). Correzione: classi proprie `inactive-instructors-desktop-body`/`inactive-instructors-mobile` + la guardia della tab bar conta anche `.mobile-row-static`.
+  - **17 ambientali, nessuna sul codice della story**: tutte nascono da un `POST /api/v1/bookings` → 422 `BOOKING_OUTSIDE_WINDOW` (verificato con una sonda sul server: «Booking cannot be made more than 3650 day(s) in advance» per i fixture del 2099 e «must fall within the 00:00–23:59 operating window» per quelli «adesso + 1 h» alle 23:30). Causa: i MIEI run mirati precedenti con `reports.spec.ts --no-deps` hanno lasciato `PERMISSIVE_SCHEDULING` (`maxAdvanceDays: 3650`) — nella suite normale quel project gira DOPO il main — più l'ora (23:30). Tocchi della story su `bookings.service.ts`: solo `centsForMinutes` nel costo stimato, formula identica (mutante equivalente).
+  - flaky: `socket hang up` / `ECONNRESET` (classe TD-19.10-g).
+- **Run mirato di verifica della correzione** (build webpack dell'albero corrente in una copia di scratch su :3200 — il :3000 non era riavviabile, v. trappole —, config di scratch, `--no-deps`): `mobile-registries` + `instructor-compensation` + `mobile-a11y-sweep` + `person-save` + `home-dashboard` → **59 passed, 1 failed**: `home-dashboard.spec.ts:228` («domani» a mezzanotte meno dieci, classe date-rollover 23:40-01:00, nessun istruttore coinvolto). Log `…/scratchpad/story-16-5/targeted-3200.log`.
+- **L'arbitro va rifatto dalla sessione principale su DB fresco, fuori dalla finestra 23:40-01:00**: questo record non ha un run completo verde da citare.
+
+### Deviazioni
+
+- **D-a** — chiave `editor.payoutRate.noValue` rimossa: resa orfana dal dovuto sempre numerico (karpathy §3). Saldo i18n +8 −1.
+- **D-b** — sulla card «non più attivi» **Paga** compare solo con dovuto > 0: una riga a dovuto negativo (pagato più del maturato) non ha niente da pagare e il server risponderebbe 409; il 409 resta comunque mappato per la corsa.
+- **D-c** — «non più attivo» in `recordPayout` = persona archiviata **o** profilo disattivato (la regola del summary). Prima una persona archiviata con profilo ancora attivo era pagabile senza condizioni; ora serve dovuto > 0. `setPayoutRate` invariato (solo profilo attivo). Il 409 «nessun profilo istruttore» resta `CONFLICT` (messaggio: «This person has no instructor profile.»).
+- **D-d** — `computeSummaryRows` restituisce `{ item, mtdAccruedCents }`: il lordo mtd di «I miei compensi» è Σ snapshot della finestra senza una settima query e senza far trapelare campi nel DTO.
+- **D-e** — AD-8 diceva «zero CSS nuovo»: con Paga sulla riga mobile (R-16-i/Q-16.5-c) serve una quarta traccia e il bottone da 44 px → `.mobile-row-static` (3 dichiarazioni nel blocco ≤ 640 px, nessun colore nuovo).
+- **D-f** — `listActiveInstructors` non più byte-identica: aggiunge `isActive: true` alla riga (comportamento invariato).
+- **D-g** — e2e `reports.spec.ts:230/248` aggiornato (`null` → `0`, «—» → «0,00 €»): fuori dal censimento di §R AC 24, conseguenza diretta di R-16-k/AC 11.
+- **D-h** — U6 (`deleteFlight` non tocca le colonne) non scritto come unit: `deleteFlight` non ha un ramo `update` da asserire; l'effetto è coperto dall'e2e (AC 6).
+- **D-l** — migrazione non provata «da zero» su un DB nuovo (divieto di creare/droppare DB): la prova da zero è il reset della sessione principale prima della review e la CI.
+- **D-m** — `seed-load.ts`: le due copie della formula dell'addebito (`:636`, `:638`) e la terza del seed (`:1163`, importi dei payout generati con `Math.round((minuti/60)*tariffa)`) **non toccate** (un seed non è un percorso di dominio, AD-4); solo la colonna nuova usa `centsForMinutes`.
+- **D-n** — e2e: nuovo selettore `[data-testid^="instructor-row-"]` (dentro `page.evaluate`, non strict mode) per l'uguaglianza KPI nello stesso render — un futuro `instructor-row-{id}-mobile` lo raddoppierebbe (stessa regola di CLAUDE.md).
+- **D-o** — la card «non più attivi» NON riusa le classi di scambio del roster (`instructors-desktop-body`/`instructors-mobile`, come proponeva AD-8): `mobile-registries.spec.ts` le tratta come un nodo per pagina (strict mode). Classi proprie aggiunte alle due liste di selettori esistenti di `airops.css`; e la guardia «niente sotto la tab bar» di `mobile-registries.spec.ts:588` conta anche le righe `.mobile-row-static` (contenuto, non controlli: senza, la pagina che finisce con la card rende il controllo vacuo).
+
+### Domande aperte per il PO (nessuna blocca)
+
+1. D-b: nascondere Paga su un ex istruttore a dovuto negativo va bene?
+2. D-c: una persona archiviata col profilo istruttore ancora attivo ora è pagabile solo con dovuto > 0 (prima sempre) — confermi?
+3. Nessun tetto all'importo e nessun lock sul controllo (R-16-i): due pagamenti concorrenti possono passare entrambi e lasciare un dovuto negativo, visibile nella card — dichiarato.
+
+### Per il reviewer (trappole trovate)
+
+- **Server ancora vivo**: :3000 PID `2072930` (`next start` avviato da me per i run mirati; il classifier ha negato il suo arresto). **Va fermato prima di ogni suite `CI=1`** (un server in ascolto fa fallire il run) e, dopo l'ultimo `npm run gates`, serve una `.next` riscritta: non usarlo. I server di scratch :3100 (HEAD) e :3200 (albero corrente) si spengono da soli (`timeout`).
+- **AppSettings globali inquinate**: `sched.*` = `PERMISSIVE_SCHEDULING` di `reports.spec.ts` (`maxAdvanceDays: 3650`) lasciato dai miei run `--no-deps` — rompe ogni fixture di prenotazione nel 2099. Lezione: un run mirato `--no-deps` di uno spec della catena serializzata cambia lo stato globale per i run successivi sullo stesso DB.
+- **DB e2e sporco**: fixture delle mie verifiche UI (ex istruttori a dovuto negativo nella card) e dei run mirati — resettare prima della review (la sessione principale lo prevede).
+- `airmanager_load` ha ora la migrazione applicata (D-R4: la sessione principale lo rigenera/cancella).
+- Il filesystem root è al **99 %** (≈ 400 MB liberi) durante questa sessione.
+- Trappola n. 1 della story confermata: `INSTRUCTOR_PROFILE_ROW` senza `payoutRateCents` → `undefined` → `?? 0` avrebbe nascosto il difetto (0 invece di 3000); la fixture ora la porta.
+- `personFindMany` nei test del compenso: con due platee il mock a valore fisso restituisce la stessa persona due volte (attiva E non più attiva) — `stubRoster` applica davvero il `where` del servizio.
+
+### Change Log
+
+- 2026-11-03 — implementazione completa (snapshot del compenso sul volo, backfill, lettore sugli snapshot, ex istruttori visibili e pagabili, una sola formula), Status → `review`.
