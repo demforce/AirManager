@@ -16,12 +16,12 @@ describe('expiryDaysLabel', () => {
 });
 
 describe('expiryCardSubLine', () => {
-  it('is the template\'s tipo · data, plus the day count ratifica R-15.7-b moved into the sub', () => {
-    expect(expiryCardSubLine({ typeName: 'Visita medica classe 2', dateLabel: '12/09/2026', daysLabel: '38 g' })).toBe('Visita medica classe 2 · 12/09/2026 · 38 g');
+  it('is the template\'s tipo · data, led by the day count ratifica R-15.7-b moved into the sub (review 19.12b L4)', () => {
+    expect(expiryCardSubLine({ typeName: 'Visita medica classe 2', dateLabel: '12/09/2026', daysLabel: '38 g' })).toBe('38 g · Visita medica classe 2 · 12/09/2026');
   });
 
   it('drops a blank segment instead of leaving two separators adjacent', () => {
-    expect(expiryCardSubLine({ typeName: 'Rating SEP', dateLabel: '', daysLabel: '38 g' })).toBe('Rating SEP · 38 g');
+    expect(expiryCardSubLine({ typeName: 'Rating SEP', dateLabel: '', daysLabel: '38 g' })).toBe('38 g · Rating SEP');
   });
 });
 

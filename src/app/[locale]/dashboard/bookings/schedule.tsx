@@ -340,12 +340,8 @@ export function Schedule({
   }
 
   function agendaDetailRows(row: ScheduleAgendaRow): BottomSheetRow[] {
-    if (row.kind === 'aog') {
-      return [
-        { k: labels.mobile.aircraft, v: row.registration },
-        { k: labels.mobile.reason, v: row.statusReason ?? labels.outOfService },
-      ];
-    }
+    // The registration is already the sheet's title (review 19.12b M2).
+    if (row.kind === 'aog') return [{ k: labels.mobile.reason, v: row.statusReason ?? labels.outOfService }];
     return [
       { k: labels.mobile.time, v: `${row.timeStart}–${row.timeEnd}` },
       { k: labels.mobile.pilot, v: row.personName ?? labels.occupied },
@@ -777,7 +773,7 @@ export function Schedule({
                   <button
                     type="button"
                     className={`mobile-row mobile-row-timed ${row.phase ? PHASE_EDGE_CLASS[row.phase] : 'mobile-row-edge-bad'}`}
-                    aria-label={`${labels.mobile.openDetail}: ${agendaTitle(row)}`}
+                    aria-label={`${labels.mobile.openDetail}: ${agendaTitle(row)}${row.kind === 'aog' ? ` · ${labels.aog}` : ''}`}
                     onClick={() => setOpenAgendaId(row.id)}
                     data-testid="mobile-agenda-row"
                   >
@@ -864,7 +860,8 @@ export function Schedule({
         open
         onClose={closeAgendaSheet}
         testId="mobile-booking-sheet"
-        sub={openAgendaRow.kind === 'aog' ? labels.aog : `${openAgendaRow.registration} · ${openAgendaRow.timeStart}–${openAgendaRow.timeEnd}`}
+        // An AOG row says «Fuori servizio» ONCE, in its badge (review 19.12b M2): the kicker names what the title is.
+        sub={openAgendaRow.kind === 'aog' ? labels.mobile.aircraft : `${openAgendaRow.registration} · ${openAgendaRow.timeStart}–${openAgendaRow.timeEnd}`}
         title={agendaTitle(openAgendaRow)}
         badge={
           openAgendaRow.phase ? (

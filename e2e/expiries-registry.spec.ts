@@ -195,7 +195,7 @@ test.describe('Story 19.7b — currency rows in every view of the registry (AC 3
     const cardOfA = page.getByTestId('scadenze-row-mobile').filter({ has: page.locator('.mobile-row-name', { hasText: new RegExp(`^${a.name}$`) }) });
     await expect(cardOfA).toHaveCount(1);
     // The card names the row by its category (the detail would push the date out of a 375px line), the sheet by its detail.
-    await expect(cardOfA.locator('.mobile-row-sub')).toHaveText(`Currency · ${formatDateOnly(TODAY)} · 0 gg`);
+    await expect(cardOfA.locator('.mobile-row-sub')).toHaveText(`0 gg · Currency · ${formatDateOnly(TODAY)}`);
     // A, B, D, F, H — no card for C or G.
     await expect(page.getByTestId('scadenze-row-mobile')).toHaveCount(5);
     await cardOfA.click();
@@ -422,7 +422,7 @@ test.describe('Story 19.7b — the Categoria filter (AC 9)', () => {
     await expect(page.getByTestId('mobile-scadenze-filters-button')).toHaveText('Filtri (1)');
     const card = page.getByTestId('scadenze-row-mobile');
     await expect(card).toHaveCount(1);
-    await expect(card.locator('.mobile-row-sub')).toHaveText(`Currency · ${formatDateOnly(addDaysIso(TODAY, 80))} · 80 gg`);
+    await expect(card.locator('.mobile-row-sub')).toHaveText(`80 gg · Currency · ${formatDateOnly(addDaysIso(TODAY, 80))}`);
 
     // Category + tipo = two hidden filters.
     await page.getByTestId('mobile-scadenze-filters-button').click();

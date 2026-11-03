@@ -167,7 +167,7 @@
       "noValue": "—"
     },
     "instructorLanding": {
-      "greeting": "Buongiorno, {name}",
+      "greeting": "Ciao, {name}",
       "sub": "{flightsToday, plural, one {# volo} other {# voli}} oggi · {owed} dovuti nel mese",
       "kpis": {
         "hoursMonth": "Ore nel mese",
@@ -219,7 +219,7 @@
       "metarTitle": "Meteo campo",
       "detail": {
         "aircraft": "Velivolo",
-        "pilot": "Pilota",
+        "pilot": "Persona",
         "instructor": "Istruttore",
         "startsAt": "Inizio",
         "endsAt": "Fine",
@@ -1276,7 +1276,7 @@
       "mobile": {
         "agendaCount": "{count, plural, one {# prenotazione} other {# prenotazioni}}",
         "now": "ORA · {time}",
-        "aogTitle": "{registration} fuori servizio",
+        "aogTitle": "{registration}",
         "openDetail": "Apri dettaglio",
         "close": "Chiudi",
         "today": "OGGI",
@@ -1459,7 +1459,7 @@
   },
   "Export": {
     "button": "Esporta",
-    "pdfTooLarge": "PDF non disponibile: il periodo ha più di {max, number} movimenti. Restringi il periodo o usa l'export Excel.",
+    "pdfTooLarge": "PDF non disponibile: il periodo ha più di {max, number} movimenti. Restringi il periodo o scarica l'Excel.",
     "xlsTooLarge": "Excel non disponibile: il periodo ha più di {max, number} movimenti. Restringi il periodo."
   },
   "PdfExport": {
@@ -1734,6 +1734,7 @@
       "subject": "Riepilogo avvisi di scadenza",
       "intro": "Sono stati inviati i seguenti avvisi di scadenza:",
       "itemLine": "- {name} — {typeName}: {daysPhrase} (il {date}){flag}",
+      "expiredDaysAgo": "scadenza superata da {days, plural, one {# giorno} other {# giorni}}",
       "noEmailFlag": " [senza email — contattare la persona direttamente]",
       "sendFailedFlag": " [invio email fallito — verificare l'indirizzo o riprovare]"
     },

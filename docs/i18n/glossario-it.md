@@ -1,6 +1,6 @@
 # Glossario dell'italiano di AirManager
 
-Ogni copy nuova in `messages/it.json` segue questo glossario; `src/i18n/messages.test.ts` controlla la parità dei due cataloghi (chiavi, argomenti, forme ICU) e, dalla story 19.12b, le varianti vietate.
+Ogni copy nuova in `messages/it.json` segue questo glossario; `src/i18n/messages.test.ts` controlla la parità dei due cataloghi (chiavi, argomenti, forme ICU) e, dalla story 19.12b, le varianti vietate elencate nella sua tabella `BANNED` (senza distinzione di maiuscole, con le forme flesse e lo spazio U+00A0). Le altre varianti di questa tabella, per esempio «Diario di volo», «Report finanziario», «Esporta Excel», non hanno una guardia automatica e si controllano in rilettura.
 
 Fonti: glossario A20 della CR `sprint-change-proposal-2026-11-01.md` §4.10, ratifica R5 dell'epic 13 («Ratings» come nome di sezione), decisioni PO del 2026-11-03 (Q-19.12-a…e), scelte D-1…D-17 della story 19.12a.
 

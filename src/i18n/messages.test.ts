@@ -211,31 +211,34 @@ function textOf(elements: MessageFormatElement[]): string {
     .join('');
 }
 
+// Every pattern is case-insensitive and takes the inflected forms (review 19.12b M1): a
+// label starts with a capital («Tariffa Payout», «Reset filtri»), and `\s` also matches the
+// U+00A0 the catalogue puts inside a phrase that must not wrap (19.12a F3).
 const BANNED: Array<{ pattern: RegExp; use: string; allowed?: (value: string) => boolean }> = [
-  { pattern: /[Aa]eromobil/, use: 'velivolo (row Aircraft)' },
-  { pattern: /\b[Aa]ere[oi]\b/, use: 'velivolo (row Aircraft)' },
-  { pattern: /payout/, use: 'compenso istruttore, compenso orario (row Compenso)' },
-  { pattern: /\bAOG\b/, use: 'fuori servizio (row Indisponibilità)' },
-  { pattern: /\b[Ff]ermo\b/, use: 'fuori servizio (row Indisponibilità)' },
-  { pattern: /impatt/, use: 'interessa, prenotazioni coinvolte (row Effetto sulle prenotazioni)' },
-  { pattern: /\bCFI\b/, use: 'istruttore (row Istruttore a bordo)' },
+  { pattern: /aeromobil/i, use: 'velivolo (row Aircraft)' },
+  { pattern: /\baere[oi]\b/i, use: 'velivolo (row Aircraft)' },
+  { pattern: /payout/i, use: 'compenso istruttore, compenso orario (row Compenso)' },
+  { pattern: /\bAOG\b/i, use: 'fuori servizio (row Indisponibilità)' },
+  { pattern: /\bferm[oaie]\b/i, use: 'fuori servizio (row Indisponibilità)' },
+  { pattern: /impatt/i, use: 'interessa, prenotazioni coinvolte (row Effetto sulle prenotazioni)' },
+  { pattern: /\bCFI\b/i, use: 'istruttore (row Istruttore a bordo)' },
   { pattern: /\.\.\./, use: '… (row Tipografia)' },
-  { pattern: /\(EUR/, use: '€ (row Importi)' },
-  { pattern: /\bsidebar\b/, use: "barra laterale (row Parti dell'interfaccia)" },
-  { pattern: /\bdashboard\b/, use: 'Panoramica (row Home)' },
-  { pattern: /\breset\b/, use: 'reimposta, reimpostazione (row Password)' },
-  { pattern: /\balert\b/, use: 'avviso di scadenza (row Avvisi email)' },
-  { pattern: /\bslot\b/, use: 'durata minima prenotazione (row Impostazioni di pianificazione)' },
-  { pattern: /turnaround/, use: 'tempo minimo tra prenotazioni (row Impostazioni di pianificazione)' },
-  { pattern: /[Tt]imeline/, use: 'calendario dei velivoli (row Pianificazione)' },
-  { pattern: /top \d/, use: 'primi N (row Classifiche)' },
-  { pattern: /Sei stato/, use: 'Hai ricevuto un invito (row Invito)' },
-  { pattern: /Non current/, use: 'Currency scaduta (row Currency)' },
-  { pattern: /Le mie transazioni/, use: 'Estratto conto (row Conto personale)' },
-  { pattern: /Il mio conto/, use: 'Estratto conto (row Conto personale)' },
-  { pattern: /^Admin$/, use: 'Amministratore (row Ruolo ADMIN)' },
+  { pattern: /\(EUR/i, use: '€ (row Importi)' },
+  { pattern: /\bsidebars?\b/i, use: "barra laterale (row Parti dell'interfaccia)" },
+  { pattern: /\bdashboards?\b/i, use: 'Panoramica (row Home)' },
+  { pattern: /\breset\b/i, use: 'reimposta, reimpostazione (row Password)' },
+  { pattern: /\balerts?\b/i, use: 'avviso di scadenza (row Avvisi email)' },
+  { pattern: /\bslots?\b/i, use: 'durata minima prenotazione (row Impostazioni di pianificazione)' },
+  { pattern: /turnaround/i, use: 'tempo minimo tra prenotazioni (row Impostazioni di pianificazione)' },
+  { pattern: /timeline/i, use: 'calendario dei velivoli (row Pianificazione)' },
+  { pattern: /\btop\s+\d/i, use: 'primi N (row Classifiche)' },
+  { pattern: /\bsei\s+stat[oaie]\b/i, use: 'Hai ricevuto un invito (row Invito)' },
+  { pattern: /\bnon\s+current\b/i, use: 'Currency scaduta (row Currency)' },
+  { pattern: /\ble\s+mie\s+transazioni\b/i, use: 'Estratto conto (row Conto personale)' },
+  { pattern: /\bil\s+mio\s+conto\b/i, use: 'Estratto conto (row Conto personale)' },
+  { pattern: /^\s*admin\W*$/i, use: 'Amministratore (row Ruolo ADMIN)' },
   // R5: «Ratings» stays as the exact name of the section/category.
-  { pattern: /Ratings/, use: 'rating, m., invariable (row Rating)', allowed: (value) => value === 'Ratings' },
+  { pattern: /ratings/i, use: 'rating, m., invariable (row Rating)', allowed: (value) => value === 'Ratings' },
 ];
 
 /** Italian keys allowed to keep a banned variant, each with its reason. None today. */

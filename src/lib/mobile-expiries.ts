@@ -33,10 +33,12 @@ export function expiryDaysLabel(daysUntil: number, suffixes: { ago: string; left
  * The registry card's mono sub-line — the template's own `{{x.what}} ·
  * {{x.date}}` (`AirOps Mobile` 273-283) plus the day count, which ratifica
  * R-15.7-b moved here when the right-hand pill became the app's own 5-tier
- * status `Badge`.
+ * status `Badge`. The day count LEADS (review 19.12b L4, same move as the
+ * Piloti chips' D-c): «3 gg fa» at the tail was the part the ellipsis ate at
+ * 375px, so a long type name now gives way instead of the number.
  */
 export function expiryCardSubLine(parts: { typeName: string; dateLabel: string; daysLabel: string }): string {
-  return joinSegments([parts.typeName, parts.dateLabel, parts.daysLabel]);
+  return joinSegments([parts.daysLabel, parts.typeName, parts.dateLabel]);
 }
 
 /**

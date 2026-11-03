@@ -560,7 +560,7 @@ test.describe('Estratto conto by period — the export cap and the self face (st
     const unavailable = page.getByTestId('export-menu-pdf-unavailable');
     await expect(unavailable).toBeVisible();
     // `{max, number}`: Italian CLDR groups from five digits, so the cap reads "2000" (the 10 000 of the Excel cap reads "10.000").
-    await expect(unavailable).toContainText("PDF non disponibile: il periodo ha più di 2000 movimenti. Restringi il periodo o usa l'export Excel.");
+    await expect(unavailable).toContainText("PDF non disponibile: il periodo ha più di 2000 movimenti. Restringi il periodo o scarica l'Excel.");
     await expect(page.getByTestId('export-menu-pdf')).toHaveCount(0);
     await expect(page.getByTestId('export-menu-xls')).toHaveAttribute('href', `/api/v1/people/${heavy.personId}/account/movements?from=2010-01-01&to=2010-12-31&format=xlsx&locale=it`);
     // The server's own 422 stays the last line, unchanged.

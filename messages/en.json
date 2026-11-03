@@ -167,7 +167,7 @@
       "noValue": "—"
     },
     "instructorLanding": {
-      "greeting": "Good morning, {name}",
+      "greeting": "Hi, {name}",
       "sub": "{flightsToday, plural, one {# flight} other {# flights}} today · {owed} owed this month",
       "kpis": {
         "hoursMonth": "Hours this month",
@@ -1276,7 +1276,7 @@
       "mobile": {
         "agendaCount": "{count, plural, one {# booking} other {# bookings}}",
         "now": "NOW · {time}",
-        "aogTitle": "{registration} out of service",
+        "aogTitle": "{registration}",
         "openDetail": "Open detail",
         "close": "Close",
         "today": "TODAY",
@@ -1734,6 +1734,7 @@
       "subject": "Expiry alert summary",
       "intro": "The following expiry alerts were sent:",
       "itemLine": "- {name} — {typeName}: {daysPhrase} (on {date}){flag}",
+      "expiredDaysAgo": "expired {days, plural, one {# day} other {# days}} ago",
       "noEmailFlag": " [no email on file — contact them directly]",
       "sendFailedFlag": " [email delivery failed — check the address or retry]"
     },

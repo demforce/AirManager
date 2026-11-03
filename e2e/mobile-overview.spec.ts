@@ -526,7 +526,7 @@ test.describe('story 15.3 — the two personal landings on the phone', () => {
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard');
 
-    await expect(page.getByRole('heading', { name: /^Buongiorno, /u })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: /^Ciao, /u })).toHaveCount(1);
     await expect(page.getByTestId('instructor-landing-myday-mobile')).toBeVisible();
     await expect(page.getByTestId('instructor-landing-myday-empty')).toHaveCount(1);
     await expect(page.getByTestId('instructor-landing-myday-empty-mobile')).toHaveCount(1);

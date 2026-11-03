@@ -167,6 +167,13 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
             daysLeft: -3,
             holderStatus: 'NO_EMAIL',
           },
+          {
+            personName: 'Luca Verdi',
+            typeName: 'Inglese ICAO',
+            expiresAt: new Date(Date.UTC(2026, 6, 7)),
+            daysLeft: -1,
+            holderStatus: 'EMAILED',
+          },
         ],
       });
 
@@ -174,7 +181,10 @@ describe('mail templates (story 1.4 Task 1 — no hardcoded strings, IT/EN)', ()
       expect(email.text).toContain('Mario Rossi');
       expect(email.text).toContain('scade oggi');
       expect(email.text).toContain('Chiara Bianchi');
-      expect(email.text).toContain('è scaduta da 3 giorni');
+      // Story 19.12b, decisione PO 3: the digest's own neutral phrase — the holder alert keeps «è scaduta da» (above).
+      expect(email.text).toContain('Rating SEP: scadenza superata da 3 giorni');
+      expect(email.text).toContain('Inglese ICAO: scadenza superata da 1 giorno');
+      expect(email.text).not.toContain('è scaduta');
       expect(email.text).toContain('senza email');
       // Only ONE flag, on Chiara's line — Mario's line must not carry it.
       expect(email.text.split('\n').find((line) => line.includes('Mario Rossi'))).not.toContain('senza email');

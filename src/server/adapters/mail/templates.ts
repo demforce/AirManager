@@ -121,7 +121,11 @@ function formatExpiryDate(date: Date, locale: AppLocale): string {
  * entry, not two copies). Each sub-key is a full verb phrase ("scade
  * oggi"/"expires today", "scade tra N giorni"/"expires in N days", "è
  * scaduta da N giorni"/"expired N days ago") so callers can slot it
- * straight into a sentence without re-conjugating around it.
+ * straight into a sentence without re-conjugating around it. The one
+ * exception is the digest's PAST phrase (story 19.12b, decisione PO 3): «è
+ * scaduta» agrees with the holder's «La tua scadenza», not with the type
+ * name the digest line leads with («Rating SEP: …»), so the digest reads
+ * its own neutral `Emails.expiryDigest.expiredDaysAgo` instead.
  *
  * Builds its OWN narrowly-namespaced translator (`Emails.expiryDays`)
  * rather than accepting one from the caller: `createTranslator`'s return
@@ -186,7 +190,7 @@ export async function buildExpiryDigestEmail(
   const t = createTranslator({ locale, messages, namespace: 'Emails.expiryDigest' });
 
   const lines = params.items.map((item) => {
-    const daysPhrase = expiryDaysPhrase(locale, messages, item.daysLeft);
+    const daysPhrase = item.daysLeft < 0 ? t('expiredDaysAgo', { days: Math.abs(item.daysLeft) }) : expiryDaysPhrase(locale, messages, item.daysLeft);
     const date = formatExpiryDate(item.expiresAt, locale);
     const flag = item.holderStatus === 'NO_EMAIL' ? t('noEmailFlag') : item.holderStatus === 'SEND_FAILED' ? t('sendFailedFlag') : '';
     return t('itemLine', { name: item.personName, typeName: item.typeName, daysPhrase, date, flag });

@@ -155,11 +155,22 @@ test.describe('Instructor compensation (story 12.7)', () => {
     await refreshedRow.getByTestId(`instructor-pay-${instructor.personId}`).click();
     const payForm = page.getByTestId('instructor-pay-form');
     await payForm.getByLabel('Importo (€)').fill('20,00');
+    // The form's own default period (ISO, native date inputs) — it is what the movement's description carries.
+    const [periodStart, periodEnd] = await payForm.locator('input[type="date"]').evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value));
     await page.getByTestId('instructor-pay-submit').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Pagamento registrato' })).toBeVisible();
 
     const afterPayRow = page.getByTestId(`instructor-row-${instructor.personId}`);
     await expect(afterPayRow).toContainText(/10,00\s€/);
+
+    // Story 19.12b AC 20: the payout's own Contabilità row names it «Compenso istruttore {inizio} – {fine}».
+    // Today's costs only, so the fresh row is on page 1; its period and amount single it out from the API payouts of other specs.
+    // `periodEnd` is the BROWSER's today, the movement is dated on Europe/Rome's: the window takes the day after too.
+    const dayAfter = new Date(`${periodEnd}T00:00:00Z`);
+    dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+    await page.goto(`/it/dashboard/billing?${new URLSearchParams({ dateFrom: periodEnd!, dateTo: dayAfter.toISOString().slice(0, 10), bookType: 'COST' }).toString()}`);
+    const payoutMovement = page.getByTestId('transaction-row').filter({ hasText: `Compenso istruttore ${periodStart} – ${periodEnd}` }).filter({ hasText: /\b20,00\s€/ });
+    await expect(payoutMovement.first()).toBeVisible();
   });
 
   test('a payout replayed with the SAME Idempotency-Key records only ONE payout (AC 3/5)', async ({ page }) => {

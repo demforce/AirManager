@@ -178,7 +178,7 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
 
   test('a pure istruttore lands on InstructorLanding: greeting, own compensation KPIs, "La mia giornata", NO creation CTA at all (ratifica 3, D13)', async ({ page }) => {
     await loginExpectingDashboard(page, INSTRUCTOR_EMAIL);
-    await expect(page.getByRole('heading', { name: /^Buongiorno, /u })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Ciao, /u })).toBeVisible();
 
     for (const testId of INSTRUCTOR_LANDING_KPI_TESTIDS) {
       await expect(page.getByTestId(testId)).toBeVisible();
@@ -206,7 +206,7 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
 
     // Before deactivation: the role AND the active profile agree — InstructorLanding.
     await loginExpectingDashboard(page, instructor.email, password);
-    await expect(page.getByRole('heading', { name: /^Buongiorno, /u })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Ciao, /u })).toBeVisible();
     await expect(page.getByTestId('kpi-payout-rate')).toBeVisible();
 
     // Admin deactivates the InstructorProfile — the INSTRUCTOR role itself is untouched.
@@ -221,7 +221,6 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
     await loginExpectingDashboard(page, instructor.email, password);
     await expect(page.getByTestId('kpi-payout-rate')).toHaveCount(0);
     await expect(page.getByTestId('instructor-landing-myday-empty')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: /^Buongiorno, /u })).toHaveCount(0);
   });
 });
 

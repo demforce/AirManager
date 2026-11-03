@@ -815,12 +815,31 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
         const cs = getComputedStyle(panel);
         const r = panel.getBoundingClientRect();
         const entries = [...panel.querySelectorAll('a')].map((a) => Math.round(a.getBoundingClientRect().height));
-        return { w: Math.round(r.width), position: cs.position, z: cs.zIndex, padding: cs.padding, oneLine: entries.every((h) => h === entries[0]) && entries[0]! < 40 };
+        // Horizontal padding + border of a box, so that an entry's own content width becomes its one-line width.
+        const chromeOf = (style: CSSStyleDeclaration) =>
+          ['padding-left', 'padding-right', 'border-left-width', 'border-right-width'].reduce((sum, side) => sum + parseFloat(style.getPropertyValue(side)), 0);
+        const widestEntry = Math.max(
+          ...[...panel.querySelectorAll('a')].map((a) => {
+            const range = document.createRange();
+            range.selectNodeContents(a);
+            return range.getBoundingClientRect().width + chromeOf(getComputedStyle(a));
+          }),
+        );
+        return {
+          w: Math.round(r.width),
+          fit: Math.round(Math.max(180, widestEntry + chromeOf(cs))),
+          position: cs.position,
+          z: cs.zIndex,
+          padding: cs.padding,
+          oneLine: entries.every((h) => h === entries[0]) && entries[0]! < 40,
+        };
       });
       // Story 19.12b: 180px is the floor, no longer the width — the panel grows to its longest entry so that
       // «‹Contenuto› (Excel)» / «(PDF)» stays on one line (the Contabilità's two entries wrapped in 180px).
-      expect(desktop.w, `${path} desktop popover width`).toBeGreaterThanOrEqual(180);
-      expect({ ...desktop, w: undefined }, `${path} desktop popover`).toEqual({ w: undefined, position: 'absolute', z: '20', padding: '14px', oneLine: true });
+      // And no wider (review 19.12b L2): max(180, widest entry + the panel's 2×14 padding + 2 border) — 206 on the
+      // Contabilità, 180 on Velivoli and Registro voli — so the `.popover` 320px min-width coming back stays red.
+      expect(Math.abs(desktop.w - desktop.fit), `${path} desktop popover width ${desktop.w} vs fit ${desktop.fit}`).toBeLessThanOrEqual(1);
+      expect({ ...desktop, w: undefined, fit: undefined }, `${path} desktop popover`).toEqual({ w: undefined, fit: undefined, position: 'absolute', z: '20', padding: '14px', oneLine: true });
       await expect(page.getByTestId('export-menu-xls')).toHaveCount(1);
       await expect(page.getByRole('button', { name: 'Esporta' })).toHaveCount(1);
     }
