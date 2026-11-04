@@ -666,3 +666,11 @@ Flaky: `bookings.spec.ts:1158` (pilota sposta e annulla la propria prenotazione;
 ### Change Log
 
 - 2026-11-04 — dev (Opus 5 xhigh): guardia `EFFECTIVE_DATE_IN_FUTURE` su ricariche e cassa, rami d'errore nei tre form, `payoutsTotal` + nota «Ultimi 50 di N», etichette «Cassa per categoria» / «Ricavi maturati», banda e2e 2004-2009 (`a6be2da`); Status → review.
+
+## Decisioni PO sulla review (2026-11-04, AskUserQuestion, prima del fix)
+
+Report: `16-6a-review-report.md` (SHIPPABLE-WITH-FIXES, nessun difetto nel codice di produzione; arbitro del reviewer su DB fresco 605 + 8 flaky = 613, `E2E_EXIT=0`).
+
+- **Domanda 1 — messaggi d'errore dei pannelli laterali** (Piloti «Registra ricarica», «Nuova transazione»: `--bad` 3,96:1 sotto AA, in Piloti anche maiuscolo mono) = **sì, subito in questa story**: portarli allo stile leggibile della scheda persona (`.fld-error`: rosso scuro, Inter Tight, nessun maiuscolo), ≥ 4,5:1 nei due temi, desktop e mobile; guardia di contrasto.
+- **Domanda 2 — «Ricavi maturati» dappertutto** = **sì**: anche Panoramica («Ricavi del mese») e Statistiche («Ricavi") prendono l'etichetta «Ricavi maturati» / EN «Earned revenue» per lo stesso numero (`getLedgerRevenueCents`), con l'eventuale indicazione del periodo già presente sulla card.
+- **Domanda 3 — liquidare un istruttore per un periodo non ancora finito** = **sì, resta possibile** (comportamento attuale, dichiarato).
