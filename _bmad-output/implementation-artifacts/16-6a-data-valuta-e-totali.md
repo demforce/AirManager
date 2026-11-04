@@ -38,7 +38,7 @@ Baseline del file: `9272129`. La 19.6 (`6651ec1`) ha eliminato `FlightStatus` e 
 
 - **Q-16.6a-a — i due libri si dichiarano** (AC 13, sostituisce AD-6 e la tabella delle etichette): `BillingPage.byCategory.title` «Per categoria» → **«Cassa per categoria»** (EN «Cash by category»); `panels.result.revenue` «Ricavi» → **«Ricavi maturati»** (EN «Earned revenue»). **«Costi» resta invariato**: `costCents` sono le uscite di cassa (`billing-summary.service.ts:21-22`, `computeCostCents`), quindi coincidono col libro di cassa. Il PDF non si tocca (è già «Report di cassa»); i tooltip `byCategory.in/out/net` non si toccano. Applicare la stessa etichetta su desktop (`billing-panels.tsx:105-114`) e sul foglio mobile (`billing-panels-mobile.tsx:63-71`); misurare «Ricavi maturati» a 375 px nel foglio mobile. Glossario: aggiungere i due termini in `docs/i18n/glossario-it.md` se la tabella dei termini contabili li prevede. Motivazione registrata col PO: «Per categoria» conta i soldi entrati in cassa, ricariche comprese; i Ricavi del Risultato contano i voli addebitati nel mese, pagati o no, ricariche escluse (sono acconti).
 
-Status: **ready-for-dev** — 2026-09-10, riallineata e ratificata il 2026-11-03 (§R, §R-PO). **Modello dev: Opus 5 xhigh** (la story tocca UI: 5 etichette KPI condizionate al filtro di stato, 4 etichette dei due libri in due locale su schermo E su carta, una nota «ultimi 50 di N» nuova in una card con **due facce**. È UI di TESTO, nessun layout nuovo — ma la regola utente 2026-07-29 è esplicita: se una story scrive UI, il dev è Opus). Review: **Opus 5 xhigh adversarial**.
+Status: **review** — dev 2026-11-04 (`a6be2da`, v. «Dev Agent Record» in fondo); creata 2026-09-10, riallineata e ratificata il 2026-11-03 (§R, §R-PO). **Modello dev: Opus 5 xhigh** (la story tocca UI: 5 etichette KPI condizionate al filtro di stato, 4 etichette dei due libri in due locale su schermo E su carta, una nota «ultimi 50 di N» nuova in una card con **due facce**. È UI di TESTO, nessun layout nuovo — ma la regola utente 2026-07-29 è esplicita: se una story scrive UI, il dev è Opus). Review: **Opus 5 xhigh adversarial**.
 
 > ⚠️ **Questa story è la METÀ «letture e stampe» della 16.6 del piano.** L'altra metà è `16-6b-quota-rettifiche-catene.md` (guardie di scrittura sul ledger conto: quota annuale, rettifica su addebito volo, catene di storno). Il piano descriveva **una** story; la divido perché tocca **sei superfici indipendenti** (soglia di progetto: >4 superfici non correlate o >20 AC) e perché le due metà non condividono **nessun file di produzione**: la verifica dell'una non dice niente sull'altra. **Nessuna dipendenza fra le due**: possono essere sviluppate in qualunque ordine, anche in parallelo, e nessuna delle due tocca `src/lib/api/handler.ts` (solo la 16.6b lo fa).
 >
@@ -558,3 +558,111 @@ BASELINE top-up effectiveDate written: 2027-09-10T00:00:00.000Z (requested 2027-
 - `_bmad-output/implementation-artifacts/16-1-un-solo-calendario.md` — l'idioma «un solo calendario» (`todayDateOnlyUtcInZone`), che questa story riusa
 - `_bmad-output/implementation-artifacts/16-6b-quota-rettifiche-catene.md` — l'altra metà della 16.6
 - `CLAUDE.md` — regole e2e (`scripts/e2e.sh`, project serializzati, testid), trappola env eager negli unit, gates
+
+---
+
+## Dev Agent Record (2026-11-04, dev Opus 5 xhigh — un solo subagent)
+
+**Commit**: `a6be2da` `feat(16.6a): …` (implementazione + test, pathspec). Questo record: commit `docs(16.6a): …` (solo questo file). `sprint-status.yaml` e `HANDOFF.md` NON toccati (li aggiorna la sessione principale). Partito da `dev@f1234e9` (16.5 chiusa): ogni `file:riga` di §R riletto su quell'HEAD, nessuno slittato oltre quanto §R dichiara. Skill applicate: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` (design read: «testo dentro un gestionale AirOps già stabilito — fuori dallo scope landing della skill, §13; valgono solo il self-audit della copy, gli stati d'errore inline e zero linguaggio visivo nuovo»), `ui-ux-pro-max` (`error-clarity`: la frase nomina il campo e la regola; `aria-live-errors`: i tre messaggi stanno nei `role="alert"` già esistenti; `horizontal-scroll`/`truncation-strategy` misurati a 375 e 320 px).
+
+### File toccati
+
+| File | Cosa |
+|---|---|
+| `src/server/services/cash.service.ts` | `assertEffectiveDateNotInFuture(effectiveDate: string)` esportata (422 `EFFECTIVE_DATE_IN_FUTURE`, `details: { effectiveDate }`, bordo inclusivo, calendario Roma); chiamata in `recordCashMovement` dopo la guardia della categoria di sistema, prima della `create` |
+| `src/server/services/accounts.service.ts` | import della guardia; chiamata in `recordTopUp` dopo persona e categoria «Ricariche», prima della `$transaction` |
+| `src/server/services/instructor-compensation.service.ts` | `OwnCompensationOverview.payoutsTotal` + `count` nella `Promise.all` di `getOwnCompensationOverview` (il `take: 50` resta) |
+| `src/lib/schemas/registry.ts` | description di `POST /people/{id}/account/top-ups`, `POST /cash-movements`, `POST /transactions` |
+| `src/app/[locale]/dashboard/people/[id]/account-section.tsx` + `people/[id]/page.tsx` | ramo `EFFECTIVE_DATE_IN_FUTURE` nel form ricarica (via `parseApiError`), etichetta `futureDateError` |
+| `src/app/[locale]/dashboard/pilots/pilots-console.tsx` + `pilots/page.tsx` | idem nello slide-over «Registra ricarica» |
+| `src/app/[locale]/dashboard/billing/transaction-editor.tsx` + `billing/page.tsx` | idem in «Nuova transazione» (il ramo 409 resta com'era) |
+| `src/app/[locale]/dashboard/my-compensation/page.tsx` | `card-sub` «Ultimi {shown} di {total}» nella `card-head` di «Pagamenti ricevuti», una sola volta, solo se il totale supera la lista |
+| `messages/it.json`, `messages/en.json` | +4 chiavi per locale (`PilotsPage.topUp.futureDateError`, `PersonDetailPage.accountPanel.topUp.futureDateError`, `BillingPage.newTransactionForm.futureDateError`, `MyCompensationPage.table.cap`), 2 valori cambiati (`BillingPage.byCategory.title`, `BillingPage.panels.result.revenue`) |
+| Test unit | `cash.service.test.ts` (+3), `accounts.service.test.ts` (+1), `transactions.service.test.ts` (+2), `instructor-compensation.service.test.ts` (+1, e `count` nel mock / `payoutsTotal` nel `toEqual` esistente), `registry.test.ts` (+1) |
+| Test e2e | `accounts-topups.spec.ts` (+1), `cash-register.spec.ts` (+1), `my-compensation.spec.ts` (+1), `db-fixtures.ts` (`seedInstructorPayouts`), `billing.spec.ts` (banda 2004-2009, AD-8 §R), `billing-global.spec.ts` (solo il commento `:40`, diventato falso) |
+
+Non toccati, verificato: `billing-summary.service.ts` sha256 `d36789d3…dfa4eedf5` identico a HEAD (AD-3); `prisma/schema.prisma` `db18706e…eedf5` identico (AD-9); `transactions.service.ts` (dunque `computeRevenueCents`) senza diff; in `cash.service.ts` i soli hunk sono import, guardia e chiamata (`getCashReport`, `reverseCashMovement` invariati); `membership.service.ts`, `flights.service.ts`, `exports.service.ts` senza diff.
+
+### AC per AC (con la lettura di §R/§R-PO)
+
+| AC | Esito | Evidenza |
+|---|---|---|
+| 1 | ✅ | U `accounts.service.test.ts` «rejects a value date after today (Roma) …»: `ValidationError`, `code`/`details.effectiveDate`, `$transaction`, `accountMovement.create` e `cashMovement.create` mai chiamati. e2e `accounts-topups.spec.ts:150`: 422 + `details.effectiveDate` = domani Roma, saldo `^0,00 €$` dopo tre tentativi |
+| 2 | ✅ | U `cash.service.test.ts` «recordCashMovement rejects tomorrow …» (create mai chiamata); e2e `cash-register.spec.ts:146`: 422 + `details`, la lista della categoria run-unique contiene solo la riga di oggi |
+| 3 | ✅ | nessuna guardia nel dispatcher (`transactions.service.ts` senza diff). U `transactions.service.test.ts` (2, `TOP_UP`/`CASH`): il 422 del delegato passa, la data arriva invariata. Prova della catena vera: i due e2e chiamano `POST /api/v1/transactions` con domani → 422 `EFFECTIVE_DATE_IN_FUTURE`, e non resta nessuna riga |
+| 4 | ✅ | U con orologio alle **00:30 di Roma del 15 gennaio** (`2026-01-14T23:30Z`, CET): `2026-01-15` accettata, `2026-01-16` rifiutata. e2e: oggi Roma accettata da form (ricarica) e da «Nuova transazione» (cassa) |
+| 5 | ✅ | U `2004-02-29` accettata; le 7 fixture di `billing.spec.ts` scrivono nel 2004-2009 |
+| 6 | ✅ | censimento §R: 3 scritture con data utente (`recordTopUp` ×2, `recordCashMovement`), 6 derivate dal server non toccate (v. «Non toccati») |
+| 7-12 | OBSOLETE (§R) | — |
+| 13 | ✅ (§R-PO) | «Per categoria» → **«Cassa per categoria»** / «Cash by category»; «Ricavi» → **«Ricavi maturati»** / «Earned revenue» (desktop `billing-panels.tsx` e foglio mobile `billing-panels-mobile.tsx` leggono la stessa chiave); «Costi», tooltip `byCategory.in/out/net` e PDF invariati; cifre invariate (nessun service toccato). Misura nel foglio mobile: «Ricavi maturati» **99 px** su una riga di **341 px a 375** e **286 px a 320**, una sola riga, nessun overflow del documento |
+| 14 | ✅ (§R) | nulla da fare: `CashReportPage` è letto solo dal PDF, già «Report di cassa» |
+| 15 | ✅ | U «reports payoutsTotal from a count …» (lista 50, `count` 73, `take` 50, residuo −7 300 c). e2e `my-compensation.spec.ts:326` «History cap»: 1 payout → nessuna nota; +72 da fixture SQL → 50 righe, **«Ultimi 50 di 73»**, «Residuo dovuto» −73,00 €, a 375 px 50 card mobile e **una** nota visibile. Misura a mano: nota sulla riga del titolo a 1280 e 375, va a capo sotto il titolo a 320 (la `card-head` è `flex-wrap`), nessun overflow |
+| 16 | ✅ | `dateAt` conta indietro da `2009-12-31` su 2 000 giorni; `day1 = dateAt(offset + 1)` < `day2 = dateAt(offset)` (commento nel codice); `uniquePastDateOnly` e `todayDateOnly()` invariati (solo la prima riga del commento di `uniquePastDateOnly`, che citava lo «schema far-future», e il commento dello storno `:453`) |
+| 17 | ✅ (DB non fresco, v. «e2e») | completo `CI=1`: **0 failed**, 610 passed + 1 flaky + 2 skipped = **613** = baseline 610 + 3 test nuovi | |
+| 18 | ✅ | v. «Discriminanze» |
+
+### Discriminanze (copia isolata `scratchpad/iso`: `cp -r src messages` + config, `node_modules` in symlink; sha256 dei file ripristinati verificato = repo)
+
+| # | Mutante | Esito |
+|---|---|---|
+| M0 | **pre-fix**: `cash.service.ts` e `accounts.service.ts` di HEAD | **4 failed** / 158: i 3 test di cash (`assertEffectiveDateNotInFuture is not a function`; `recordCashMovement` → «expected TypeError … to match object { code: 'EFFECTIVE_DATE_IN_FUTURE' }») e quello di accounts («expected error to be instance of ValidationError» — la ricarica a un anno viene scritta) |
+| M1 | senza la chiamata in `recordTopUp` | 1 failed (il test di accounts) |
+| M2 | senza la chiamata in `recordCashMovement` | 1 failed |
+| M3 | «oggi» UTC invece di Roma | 1 failed (il test delle 00:30 di Roma) |
+| M4 | bordo esclusivo (`>=`) | 2 failed (00:30 e «records today») |
+| M5 | `payoutsTotal: payouts.length` | 1 failed: «expected 50 to be 73» |
+| M6 | description di `POST /cash-movements` senza il codice | 1 failed: «post /api/v1/cash-movements: expected 'Append-only …' to contain 'EFFECTIVE_DATE_IN_FUTURE'» |
+
+Ripristino: sha256 di `cash.service.ts` `8886e0f6…`, `accounts.service.ts` `7e6034bc…`, `instructor-compensation.service.ts` `2d80b618…`, `registry.ts` `8e9f3279…` identici fra copia e repo dopo ogni mutante. Nessun mutante è mai stato applicato al repo. I due test di `transactions.service.test.ts` NON sono discriminanti per costruzione (delegati mockati: provano la propagazione, verdi anche sul pre-fix — dichiarato); la catena vera è discriminata dagli e2e.
+
+### Gate
+
+`npm run gates`: lint, typecheck, test, build **PASS** (due volte: prima dei mutanti e, dopo l'ultimo ritocco a un commento di test, prima del commit). Unit **2242 → 2250** (+8). Verifica env: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` sui 5 file unit toccati → verde (`cash.service.ts` non importa `mail`: la nuova dipendenza `accounts → cash` non trascina `@/lib/env`). Parità i18n: `src/i18n/messages.test.ts` verde (chiavi, argomenti `{shown}`/`{total}`, `BANNED`).
+
+### e2e
+
+Server di produzione costruito una volta dai gate e avviato una volta (`JOBS_SECRET` non segnaposto), poi `E2E_REUSE_SERVER=1 scripts/e2e.sh start …`; il DB `airmanager` era stato appena resettato dalla sessione principale (io non ho resettato nulla). Server spento a fine lavoro, porte 3000/3100 libere.
+
+1. **Mirato** (6 spec: `accounts-topups`, `cash-register`, `billing`, `my-compensation`, `cash-report`, `mobile-billing`): 63 passed, **1 failed** = `mobile-billing.spec.ts:1096` (v. «Note per il reviewer»: dato, non codice). I 3 test nuovi e le 7 fixture spostate di `billing.spec.ts` verdi.
+2. **Completo** `CI=1` (tutti i project, catena serializzata compresa), verbatim di `scripts/e2e.sh status`:
+```
+  1 flaky
+  2 skipped
+  610 passed (22.6m)
+E2E_EXIT=0
+```
+Flaky: `bookings.spec.ts:1158` (pilota sposta e annulla la propria prenotazione; verde al retry #1, nessun file della story coinvolto). Skipped: `mobile-billing.spec.ts:352` e `:526`, che si saltano da sé quando il movimento «non attribuito» del seed è già stato consumato — lo aveva consumato il run mirato del punto 1 sullo stesso DB; su DB fresco girano. Conteggio: 610 + 1 + 2 = **613** = 610 di baseline + 3 nuovi. `mobile-billing.spec.ts:1096` verde nel completo.
+
+### Verifica UI interattiva (script `playwright-core` usa-e-getta nello scratchpad, server di produzione su :3000)
+
+- Scheda persona, ricarica con domani: «La data valuta non può essere nel futuro.» (IT) / «The value date cannot be in the future.» (EN), in `.fld-error` sotto i campi.
+- Piloti, «Registra ricarica»: il messaggio esce **in maiuscolo** («LA DATA VALUTA NON PUÒ ESSERE NEL FUTURO.»): quel form rende OGNI suo errore con `fld-label` + `var(--bad)` (idioma condiviso con `instructors-console.tsx:687`, `pilot-editor.tsx:1168`, `aircraft-editor.tsx:627`), già così per «Impossibile registrare la ricarica». Non toccato (fuori perimetro) — v. domande.
+- «Nuova transazione», cassa con domani: «La data non può essere nel futuro.» sotto i campi, slide-over resta aperto; con oggi → pannello «Transazione registrata».
+- Contabilità desktop IT/EN: «Ricavi maturati»/«Earned revenue», «Cassa per categoria»/«Cash by category»; foglio «Risultato» a 375/320 come in AC 13.
+- «I miei compensi»: «Ultimi 50 di 73» / «Latest 50 of 73» come `card-sub` mono accanto al titolo.
+
+### Deviazioni dichiarate
+
+- **D-a — posto della guardia**: esportata da `cash.service.ts` e importata in `accounts.service.ts` (prima opzione di AD-1 §R), non un file nuovo. Motivo: precedente `rates.service.ts#assertRateValidFromNotPast` (la regola vive nel service che possiede il libro, gli altri la importano); entrambi i writer finiscono nel libro di cassa (la ricarica scrive il gemello «Ricariche»); `cash.service.ts` non importa `accounts.service.ts` (nessun ciclo) né `mail` (nessuna catena env). Guardia nel service e non nello Zod: precedente 19.3/R-19-f, chiude §7 Q1 (AD-2 §R).
+- **D-b — testo del messaggio in «Nuova transazione»**: «La data non può essere nel futuro.» / «The date cannot be in the future.» invece di «La data valuta …», perché in quel form il campo si chiama «Data»/«Date»; i due form di ricarica, dove il campo è «Data valuta»/«Value date», usano «La data valuta non può essere nel futuro.» / «The value date cannot be in the future.». Un messaggio che nomina il campo che l'utente vede.
+- **D-c — e2e del caso «> 50 compensi»** (§R «Fatti nuovi», al posto di §4.2 «coperto unit»): `seedInstructorPayouts` in `e2e/db-fixtures.ts` scrive 72 `InstructorPayout` SENZA il gemello di cassa — 72 gemelli datati oggi entrerebbero nel libro di cassa globale che altre spec aggregano; la pagina sotto test legge solo quella tabella (dichiarato nel doc-comment della fixture).
+- **D-d — glossario non toccato**: §R-PO chiede di aggiungere i due termini «se la tabella dei termini contabili li prevede»; `docs/i18n/glossario-it.md` non ha righe di termini contabili (c'è solo «Contabilità»), quindi niente riga nuova.
+- **D-e — nessun messaggio 404/409 nuovo nei form**: il ramo nuovo è solo `EFFECTIVE_DATE_IN_FUTURE`; tutto il resto resta su `genericError`/`conflictError` come prima (karpathy §3).
+
+### Note per il reviewer
+
+- Ordine delle risposte: `recordTopUp` = 403 → 404 persona → 500 «Ricariche» mancante → **422**; `recordCashMovement` = 403 → 404 → 409 categoria inattiva/di sistema → **422**. Lo «stato prima dell'input» di AD-1.
+- `count` e `findMany` di «Pagamenti ricevuti» sono due query nella stessa `Promise.all`, non una transazione: un payout registrato in mezzo può dare per un caricamento «Ultimi 50 di 51» con la riga nuova non in lista (o, al contrario, nessuna nota con 51). Il ricaricamento successivo è esatto; nessuna scrittura dipende da quel numero.
+- Rischio noto, non nuovo: i due e2e nuovi scrivono movimenti datati oggi (una ricarica CASH da 100 €, un'entrata di cassa da 50 €) nel libro globale, come già fanno `cash-report.spec.ts:59` e `mobile-billing.spec.ts:92/100`; il test dei tre riquadri (`billing.spec.ts:302`) misura delta prima/dopo nello stesso mese ed è esposto a questa classe come prima.
+- Run mirato (6 spec, DB appena resettato): `mobile-billing.spec.ts:1096` rosso 3/3 su `/it/dashboard/reports` — `utilBarWidths` atteso `[281, 0]`, ottenuto `[281]`: lo `0` sono le righe classificate oltre il tetto, che esistono solo quando altre spec hanno fatto volare abbastanza velivoli nell'anno. Dipende dai dati, non da questa story (nessun file della pagina Statistiche toccato); nel run completo è verde.
+- `billing-global.spec.ts`: solo il commento di `dateAt` (`:40`), che diceva «stesso schema far-future di `billing.spec.ts#dateAt`»; la funzione resta (parametro di query, `:71`). Non eseguito da solo (catena serializzata: mai `--no-deps`).
+
+### Domande per il PO (in italiano semplice)
+
+1. **Errori in maiuscolo nel form ricarica di Piloti.** Nella pagina Piloti, il messaggio «La data valuta non può essere nel futuro.» compare tutto in maiuscolo, perché quel form (come quelli di Istruttori e Velivoli) scrive tutti i suoi errori con lo stile delle etichette. Nella scheda persona lo stesso messaggio è in minuscolo normale. Vuoi una story piccola che uniformi gli errori dei pannelli laterali allo stile della scheda persona?
+2. **«Ricavi» altrove.** In Panoramica («Ricavi del mese») e in Statistiche («Ricavi») la parola indica lo stesso numero che in Contabilità ora si chiama «Ricavi maturati». Le lasciamo così (sono pagine diverse, senza un «libro di cassa» accanto) o le allineiamo?
+3. **Periodo di un compenso nel futuro** (§7 Q2, ancora aperta): liquidare un istruttore per un periodo non ancora concluso oggi è permesso; la data del movimento resta comunque oggi, quindi la liquidità non mente. Va bene così?
+
+### Change Log
+
+- 2026-11-04 — dev (Opus 5 xhigh): guardia `EFFECTIVE_DATE_IN_FUTURE` su ricariche e cassa, rami d'errore nei tre form, `payoutsTotal` + nota «Ultimi 50 di N», etichette «Cassa per categoria» / «Ricavi maturati», banda e2e 2004-2009 (`a6be2da`); Status → review.
