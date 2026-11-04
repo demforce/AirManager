@@ -678,7 +678,7 @@ Report: `16-6a-review-report.md` (SHIPPABLE-WITH-FIXES, nessun difetto nel codic
 
 ## Fix Record della review (2026-11-04, fix Opus 5.5 — un solo subagent)
 
-**Commit**: `dea21d5` `fix(16.6a): …` (codice, test, glossario) e `7a9ec4e` `chore(e2e): …` (solo `playwright.config.ts`), entrambi con pathspec; questo record: `docs(16.6a): …` (solo questo file). Partito da `dev@d543c1a`. La riga «Domanda 2-bis» qui sopra l'ha scritta la sessione principale, non committata, mentre il fix girava: entra in questo commit. `sprint-status.yaml` e `HANDOFF.md` NON toccati. Skill: `karpathy-guidelines`; `design-taste-frontend` (design read: «restyle dei messaggi d'errore dentro un gestionale AirOps già stabilito, fuori dallo scope landing della skill (§13): valgono solo form contrast check, stati d'errore inline e copy self-audit, nessun linguaggio visivo nuovo»); `ui-ux-pro-max` (`color-contrast`/`contrast-feedback` ≥ 4,5:1 nei due temi, `error-placement` invariato sotto i campi, `aria-live-errors`: restano i `role="alert"` esistenti, `horizontal-scroll`/`truncation-strategy` misurati da 320 a 1280 px).
+**Commit**: `dea21d5` `fix(16.6a): …` (codice, test, glossario), `7a9ec4e` `chore(e2e): …` (solo `playwright.config.ts`) e `dcad37e` `fix(16.6a): …` (solo il test dell'ordine degli errori), tutti con pathspec; questo record: `docs(16.6a): …` (solo questo file). Partito da `dev@d543c1a`. La riga «Domanda 2-bis» qui sopra l'ha scritta la sessione principale, non committata, mentre il fix girava: entra in questo commit. `sprint-status.yaml` e `HANDOFF.md` NON toccati. Skill: `karpathy-guidelines`; `design-taste-frontend` (design read: «restyle dei messaggi d'errore dentro un gestionale AirOps già stabilito, fuori dallo scope landing della skill (§13): valgono solo form contrast check, stati d'errore inline e copy self-audit, nessun linguaggio visivo nuovo»); `ui-ux-pro-max` (`color-contrast`/`contrast-feedback` ≥ 4,5:1 nei due temi, `error-placement` invariato sotto i campi, `aria-live-errors`: restano i `role="alert"` esistenti, `horizontal-scroll`/`truncation-strategy` misurati da 320 a 1280 px).
 
 ### Findings e decisioni PO: cosa è cambiato
 
@@ -690,6 +690,7 @@ Report: `16-6a-review-report.md` (SHIPPABLE-WITH-FIXES, nessun difetto nel codic
 | **PO 1** | ✅ | 15 punti in 10 file (sotto) | `className="fld-error"` al posto di `fld-label` + `color: var(--bad)` (o di `var(--bad)` inline), `textTransform: 'none'` tolto dove c'era, i margini restano. Guardia `e2e/mobile-ink-targets.spec.ts:526` (2 test, chiaro/scuro × 375/1280): rapporto ≥ 4,5, `text-transform: none`, `font-family` Inter Tight, classe `fld-error`, nessun colore inline, su Piloti «Registra ricarica» e «Nuova transazione» con il 422 vero (domani: non scrive nulla) |
 | **PO 2 + 2-bis** | ✅ | `messages/{it,en}.json` | `DashboardPage.overview.kpis.revenue` «Ricavi del mese» → **«Ricavi maturati»** («Revenue this month» → «Earned revenue»), `ReportsPage.kpi.revenue` e `ReportsPage.charts.revenue.title` «Ricavi» → **«Ricavi maturati»** («Revenue» → «Earned revenue»). Non toccati, perché sono altri numeri: `ReportsPage.rankAircraft.metrics.revenue` «Ricavo» (addebiti per velivolo), `BillingPage.table.bookTypes.REVENUE`, `LogbookPage.kpi.revenue` «Addebiti». Nessun e2e asseriva quelle etichette: asserzioni aggiunte in `home-dashboard.spec.ts:145` e `reports.spec.ts:243-244`. Parità e `BANNED`: `messages.test.ts` verde |
 | **I-1** | ✅ | `cash.service.test.ts` (+1) | «lo stato della categoria vince sulla data»: domani su categoria di sistema e su categoria disattivata → `ConflictError`, su categoria inesistente → `NotFoundError`. Il mutante R8 del reviewer ora è rosso (U1) |
+| **Ordine degli errori** (richiesta della sessione principale, dopo il primo giro) | ✅ (`dcad37e`) | `accounts.service.test.ts` (+1) | lato ricarica: domani per una persona inesistente → `NotFoundError` (404), mai il 422, e la `$transaction` non si apre. Lato cassa lo fissa I-1. `recordTopUp` non ha un 404 «conto»: il conto viene creato con un upsert dentro la transazione. Mutante R9 rosso (U2) |
 | **I-2** | dichiarato | — | «Cassa per categoria» a 320 px in italiano: la `card-head` passa da 49 a 73 px, col mese sotto il titolo. È il wrap previsto da `.card-head` (`flex-wrap`), senza tagli né overflow (misura del reviewer, `shots/u3-bycat-head-it-320.png`; non rimisurato qui) |
 | **I-3** | nessuna azione | — | come da report |
 | **TD-19.10-g** | ✅ (commit a parte) | `playwright.config.ts` `webServer.command` | `npm run start -- --keepAliveTimeout 75000` sotto `CI=1`, v. «Keep-alive» |
@@ -712,6 +713,7 @@ Dopo il fix, `grep` di `fld-label` con `var(--bad)` in `src`: **0**.
 | # | Mutante (solo nella copia) | Esito |
 |---|---|---|
 | U1 | R8 del reviewer: guardia spostata prima della lettura della categoria in `recordCashMovement` | **1 failed** / 78: il test I-1 («expected error to be instance of ConflictError») |
+| U2 | R9 (il reviewer non l'aveva applicato): guardia spostata prima della lettura della persona in `recordTopUp` | **1 failed** / 86: il test dell'ordine («expected error to be instance of NotFoundError») |
 | E1 | pre-fix combinato: `pilots-console.tsx` e `transaction-editor.tsx` di HEAD, messaggi di HEAD, e in più il ramo F2 rimosso (`setFormError(labels.genericError)`) | **4 failed**, ognuno per il suo motivo: `accounts-topups:150` riceve «Impossibile registrare la ricarica. Riprova.»; `home-dashboard:137` riceve «Ricavi del mese»; `mobile-ink-targets:526` chiaro: Piloti **3,96** (`fld-label`, mono, `uppercase`, colore inline); scuro: 6,61 ma `uppercase`, `fld-label`, colore inline |
 | E2 | solo `transaction-editor.tsx` di HEAD (E1 si fermava su Piloti, che viene prima) | **2 failed**: «Nuova transazione» **3,96** in chiaro; in scuro 6,61 ma niente `fld-error` e colore inline |
 
@@ -719,7 +721,7 @@ Come sono girati E1 ed E2: build Turbopack della copia, servita su :3000, con `E
 
 ### Gate
 
-`npm run gates`: lint, typecheck, test, build **PASS**, due volte (dopo il fix e dopo la 2-bis). Unit **2250 → 2251** (+1, I-1). `env -u DATABASE_URL -u AUTH_SECRET npx vitest run src/server/services/cash.service.test.ts`: 78/78.
+`npm run gates`: lint, typecheck, test, build **PASS**, tre volte (dopo il fix, dopo la 2-bis, dopo il test dell'ordine). Unit **2250 → 2252** (+1 I-1, +1 ordine degli errori). `env -u DATABASE_URL -u AUTH_SECRET npx vitest run src/server/services/cash.service.test.ts`: 78/78.
 
 ### e2e
 
@@ -758,7 +760,8 @@ Il resto del comando non cambia: build, porta, `reuseExistingServer` e `npm run 
 - **F-c**: `.fld-error` è a 12 px, quindi «Nuova transazione» e l'editor del volo scendono da 13 a 12 px, come la scheda persona.
 - **F-d**: la banda F1 è di 3 651 coppie, non 3 650. Con `* 3_650` il primo giorno sarebbe 2000-01-03, non il 2000-01-02 che il report dichiara: ho reso esatta la banda dichiarata.
 - **F-e: la guardia di contrasto misura i due pannelli nominati dal PO.** Gli altri 13 punti hanno la stessa classe, senza colore inline: lo dice il diff. Non li ho misurati uno per uno, perché ognuno vuole un errore del server diverso per comparire.
-- **F-f**: la 2-bis è venuta dalla misura del fix ed è stata ratificata dal PO tramite la sessione principale (v. sopra).
+- **F-f**: per il KPI della Panoramica vale la **decisione PO del 2026-11-04** (domanda 2-bis, opzione B): «Ricavi maturati» / «Earned revenue», senza periodo, come in Statistiche. Il PO l'ha presa sulla misura del fix: «Ricavi maturati del mese» andava su due righe a 1280 px, con la card a 94 px contro 79. Le opzioni scartate erano «Ricavi maturati (mese)» e accettare le due righe.
+- **F-g, incidente**: la terza `npm run gates` (13:15:50 → 13:17:23) ha ricostruito `.next` mentre girava un run della suite completa avviato alle 13:13:53 da un altro agente. Avevo controllato le porte prima della build, ma non la presenza di un run in corso (`scripts/e2e.sh status`). Il sorgente costruito è quello dei commit (il solo file in più era un test unit), ma il server vivo aveva in memoria un altro BUILD_ID, e nel log c'erano già dei fallimenti in quella finestra (`billing.spec.ts:185`, `:203`). La sessione principale è stata avvisata subito: quel run va considerato non valido. Da lì in poi nessuna build e nessun e2e da parte mia.
 
 ### Note per l'arbitro finale
 
@@ -776,6 +779,7 @@ Il resto del comando non cambia: build, porta, `reuseExistingServer` e `npm run 
 ### Change Log
 
 - 2026-11-04: fix della review (Opus 5.5).
+  - Ordine degli errori della ricarica fissato da un test (`dcad37e`).
   - Errori dei pannelli laterali allo stile `.fld-error`, 15 punti, con guardia di contrasto.
   - «Ricavi maturati» anche in Panoramica e Statistiche (2-bis: senza periodo).
   - Banda F1 a 2000-2009, e2e del pannello Piloti, glossario, unit I-1 (`dea21d5`).
