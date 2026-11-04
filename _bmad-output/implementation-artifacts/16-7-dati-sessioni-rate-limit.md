@@ -43,7 +43,7 @@ Baseline del file: `9272129` (130 commit fa). Su HEAD il dominio PPR non esiste 
 - **Q-16.7-a — `forcedAt` sulle righe mascherate** = **A (PO, AskUserQuestion)**: azzerato nello stesso `return` di `maskBookingNames` (`bookings.service.ts:278`) insieme a `personId`. Il campo è già `.nullable()` (`src/lib/schemas/bookings.ts:161`): contratto invariato, una riga di descrizione OpenAPI; il `toEqual` esatto dell'AC 1 lo copre. Motivo registrato col PO: dalla 19.10 `forcedAt` dice che a quel titolare è stata derogata una visita, la currency, il saldo o la quota.
 - **Q-16.7-b — righe altrui non APPROVED (PENDING/DENIED/CANCELLED) visibili a PILOT/STUDENT** (audit 2026-11-02 S-6, `?status=DENIED,CANCELLED`, `bookings.service.ts:968`) = **fuori dalla 16.7, decisione della sessione principale** (karpathy: niente allargamento di perimetro): con `personId` e `forcedAt` a null quelle righe diventano anonime (velivolo, orario, stato) e il canale di correlazione di F6 si chiude; filtrarle cambierebbe `total`, paginazione ed export di una lista ratificata (12.3 AC 3 «default UI: tutti»). Registrare **TD-16.7-e** nel Dev Agent Record.
 
-Status: **ready-for-dev** — 2026-09-10, riallineata e ratificata il 2026-11-03 (§R, §R-PO). **Modello dev**: **Opus 5 xhigh**. La story è **backend al 95%**, ma il cambio di DTO di F6 **non si esaurisce nei tipi**: `bookings-table.tsx:242-246` decide *quali righe mostrano i pulsanti «Modifica»/«Annulla»* confrontando `booking.personId === ownPersonId`, e con `personId` azzerato quel confronto diventa `null === null` (⇒ **vero**) per un attore `PILOT` **senza persona collegata**. È **una clausola** di codice client, non un ridisegno — ma è **logica di rendering**, e la regola utente 2026-07-29 («Opus 5 xhigh se la story scrive codice UI») non ha soglia, come già deciso per la 16.3. Review: **Opus 5 xhigh adversarial**, come sempre.
+Status: **review** (dev 2026-11-04, Dev Agent Record in fondo) — creata 2026-09-10, riallineata e ratificata il 2026-11-03 (§R, §R-PO). **Modello dev**: **Opus 5 xhigh**. La story è **backend al 95%**, ma il cambio di DTO di F6 **non si esaurisce nei tipi**: `bookings-table.tsx:242-246` decide *quali righe mostrano i pulsanti «Modifica»/«Annulla»* confrontando `booking.personId === ownPersonId`, e con `personId` azzerato quel confronto diventa `null === null` (⇒ **vero**) per un attore `PILOT` **senza persona collegata**. È **una clausola** di codice client, non un ridisegno — ma è **logica di rendering**, e la regola utente 2026-07-29 («Opus 5 xhigh se la story scrive codice UI») non ha soglia, come già deciso per la 16.3. Review: **Opus 5 xhigh adversarial**, come sempre.
 
 > ⚠️ **Baseline**: `9272129`. Ogni `file:riga` di questo file è **misurato su questo HEAD**. Verifica fatta: `git diff --stat b7b8d13..HEAD -- src/server/services/bookings.service.ts src/server/services/users.service.ts src/server/services/ppr.service.ts src/server/auth/jwt-active-check.ts src/lib/schemas/bookings.ts src/lib/schemas/registry.ts src/app/[locale]/dashboard/bookings/{bookings-table,page}.tsx src/app/[locale]/dashboard/page.tsx e2e/{bookings,ppr-public}.spec.ts src/server/auth/login-throttle.ts` è **VUOTO** ⇒ **tutte** le righe citate dall'ops-audit (misurate su `b7b8d13`) valgono **invariate**: `bookings.service.ts:219-222`, `:625-628`, `jwt-active-check.ts:38-52`, `ppr.service.ts:108-139` sono confermate una per una in §3. Se il dev parte da un HEAD più avanzato, **rilegge** le righe citate e **corregge questo file** dove sono slittate.
 >
@@ -571,4 +571,148 @@ Codice: i **8** di AD-9 (più `jwt-active-check.ts` **a zero**). Test: `bookings
 
 ## Dev Agent Record
 
-*(da compilare dal dev subagent — §A verifica della ricognizione sul HEAD corrente (le righe di §3.1 e §3.2 una per una, con lo shift dichiarato se la 16.3 è stata committata prima), §B riepilogo per AC con le prove, §C il censimento di AC 4 (16 campi del DTO classificati + i 14 `self.read`), §D tabella guardia → discriminanza con l'esito ROSSO e lo sha256 del ripristino, distinguendo le discriminanze dai pin tautologici, §E la misura di AC 5 prima/dopo (id distinti visibili a un PILOT su una pagina), §F la misura di AC 12 prima/dopo (righe scritte su 8 paralleli), §G l'esito di AD-5 (automatizzato o fallback, con il motivo tecnico e il tempo speso), §H deviazioni motivate — a partire da `jwt-active-check.ts` non toccato, §I TD da registrare, §J file toccati, §K cosa NON ho fatto, §L screenshot UI di AC 6, §M gate ed esiti verbatim incl. `scripts/e2e.sh status`)*
+Dev subagent Opus 5.5 (`dev-16-7`), 2026-11-04, su `dev@227b053`. Skill applicate: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` e `ui-ux-pro-max` (solo verifica: nessun cambio visivo, e la pagina è un pannello dati, fuori dal perimetro estetico di `design-taste-frontend` §13). `scratchpad/` = `/tmp/claude-1000/-home-admin-AirManager/45a65db7-6aab-42c2-90b8-6cdb4c6509a7/scratchpad/` (log dei run e2e, screenshot, script usa-e-getta; fuori dal repo).
+
+### §A — Ricognizione su HEAD (`227b053`)
+
+Righe di §R verificate una per una; quelle che hanno cambiato posto dopo la 16.5/16.6a/16.6b (e dopo le mie modifiche, che aggiungono doc-comment):
+
+| Punto | §R | HEAD dopo la story |
+|---|---|---|
+| `BookingListItem.personId` | `:161` | `bookings.service.ts:163` (`string \| null`) |
+| `maskBookingNames` (firma / `isOwn` / `return`) | `:275-279` | `:287` / `:288` / `:290` |
+| 403 sul filtro `personId` | `:959-961` | `:973` (invariato) |
+| call-site della maschera | `:987`, `:1055` | `:1001`, `:1069` (invariati) |
+| `assertOwnAccessAndTiming` (confronto sul valore di DB) | `:1122`/`:1125` | `:1136`/`:1139` (invariato) |
+| `bookingItemSchema.personId` | `:152` | `src/lib/schemas/bookings.ts:156` |
+| descrizioni OpenAPI lista / calendario | `:1426`, `:1477` | `registry.ts:1426`, `:1477`; componente `Booking` registrato a `:296` |
+| `BookingRowDto.personId` / `isOwnRow` | `:45` / `:270-274` | `bookings-table.tsx:46` / `:279-283` (clausola `:281`) |
+| mapper | `bookings/page.tsx:392`, `dashboard/page.tsx:384` | invariati, nessun cambio testuale (pass-through di tipo) |
+| `updateUser` (`findUnique` / `update`) | `:155` / `:182-191` | `users.service.ts:155` / bump a `:188` e `:199` |
+| modello del bump | `auth-tokens.service.ts:214-217` | `:216` (`data: { passwordHash, tokenVersion: { increment: 1 } }`) |
+| `jwt-active-check.ts` | `:47-49` prima di `:51` | invariato, ordine confermato |
+
+Fatto f (unici `user.update` = `auth-tokens.service.ts:214` e `users.service.ts:182`) riconfermato con `grep`; l'unico altro writer di `User.personId` è `createUserCore` (`users.service.ts:105`), che crea un utente senza sessione. Nessuna `GET /api/v1/bookings/{id}` esiste (route: lista, calendario, pdf, PATCH, cancel, transition). Il 409 aereo (`bookingConflictError`, `bookings.service.ts:528-536`) non ha `details`: nessuna superficie in più.
+
+### §B — Riepilogo per AC
+
+- **AC 1** — `maskBookingNames` azzera `personId` e `forcedAt` (Q-16.7-a) nello stesso `return` (`:290`). Unit nuovi in `bookings.service.test.ts`, describe «masked rows carry no id of their holder»: `listBookings` PILOT, `listCalendarBookings` STUDENT, `toEqual` esatto sulla riga mascherata (16 campi), riga propria e staff intatte. Il test storico che asseriva il difetto (`expect(...personId).toBe('person_pilot')`) è **invertito** con commento, non cancellato. Discriminanza: §D.
+- **AC 2** — riga propria e staff: il test «keeps personId and forcedAt on the actor's OWN row, and on any row for an actor with bookings.read.names» è verde prima e dopo (pin contro una maschera troppo larga: rosso col mutante D1c). I test 14.5 di riga propria/istruttore/admin passano senza modifiche.
+- **AC 3** — `personId: z.string().nullable()`; le due descrizioni OpenAPI elencano `personId` e `forcedAt` fra i campi a `null` e dicono che per un attore senza `bookings.read.names` l'id del titolare non arriva mai nel payload. Estratto da `GET /api/v1/openapi.json` (server di produzione, 3.1.0): `personId {"type": ["string", "null"]}`, `personName {"type": ["string", "null"]}`, `forcedAt {"type": ["string", "null"], "format": "date-time"}`. In più (deviazione H3) un unit in `registry.test.ts` che fissa `Booking.personId` a `['string','null']`. `e2e/api-v1.spec.ts` verde.
+- **AC 4** — censimento in §C. Esito come atteso: lista e calendario prenotazioni sono l'unica superficie; nessuna quindicesima.
+- **AC 5** — `e2e/bookings.spec.ts`: `personId` nullo nella lettura grezza della lista (privacy test) e del calendario (test dell'allievo); asserzione d'insieme su una pagina `?pageSize=50&from=FUTURE_DAY` (deviazione H1): nessun id diverso dal proprio, e almeno una riga mascherata sulla pagina (non vacua). Misura prima/dopo in §E.
+- **AC 6** — (a) righe cambiate: `bookings-table.tsx:46` (tipo) e `:281` (clausola `ownPersonId !== null &&`), più un doc-comment su `isOwnRow`; (b) non è un buco di autorizzazione: `assertOwnAccessAndTiming` (`bookings.service.ts:1139`) confronta `booking.personId` letto dal DB (NOT NULL) e risponde 403; (c) **l'attore che ci cadeva ora ha un e2e** (§R AC 16, `session-identity.spec.ts`, secondo test), discriminante (D4). Verifica UI: §L.
+- **AC 7** — `updateUser` calcola `personIdChanges` contro `existing.personId` (`:188`) e aggiunge `tokenVersion: { increment: 1 }` nello **stesso** `data` (`:199`). Unit: relink e unlink asseriscono **una sola** `update` con `data` esatto `{ personId, tokenVersion: { increment: 1 } }`. Trappola fixture chiusa: `SELECTED_USER.personId: 'person_1'`.
+- **AC 8** — `roles`+`locale`+`isActive` insieme → `data` esatto senza `tokenVersion` (asserzione negativa esplicita); stesso `personId` → `data: { personId: 'person_1' }` e `tokenVersion` `undefined`; «deactivates a user» invariato e verde. I due test negativi sono verdi anche sul pre-fix (tautologici prima, guardie dopo: D2b/D2c).
+- **AC 9** — eviction **provata in e2e**, ricetta AD-5 automatizzata con `encode`/`decode` di `next-auth/jwt` (§G): relink → cookie invecchiato di 16 min → `GET /api/v1/me` **401 `UNAUTHENTICATED`**; controllo decisivo: stesso invecchiamento su un utente non ricollegato → **200** con la sua persona. In più: unlink → 401 (secondo test), e il nuovo login dell'utente ricollegato legge la persona B. Gli unit `jwt-active-check.test.ts` (mismatch → `null`) sono la metà «lato lettura», non toccati e verdi.
+- **AC 10** — residui in §H/§I: (a) grazia **≤ 15 min** (`ACTIVE_RECHECK_INTERVAL_MS`, story 1.4): prima della story la sessione stantia autorizzava la persona precedente **fino a 30 giorni dall'ultimo uso** (sessione scorrevole: `@auth/core` rifirma il JWT a ogni lettura di sessione, audit S-16), ora **≤ 15 min**; (b) `jwt-active-check.ts` non modificato (H5); (c) `createUserCore` non bumpa: crea utenti senza sessione.
+- **AC 11-14** — **OBSOLETI** (§R: dominio PPR rimosso nella 19.1). Non fatti.
+- **AC 15** — `rbac.test.ts`, `jwt-active-check.test.ts`, il 403 del filtro (`listBookings — personId filter guard`) e gli e2e `api-v1`/`rbac` verdi senza modifiche. Matrice §5.4 dell'audit, riga per riga: nessun file di permessi toccato (`rbac.ts` invariato) ⇒ ogni esito invariato (`bookings.read.names` false per PILOT/STUDENT, true per INSTRUCTOR/ADMIN; flights own-only 403; PPR staff-only non più esistente; estratti conto own-only 403).
+- **AC 16** — §D: 4 discriminanze di guardia (D1 personId, D1b forcedAt, D2 bump, D4 clausola `isOwnRow`) + contratto (D3) + 3 pin che diventano guardie (D1c, D2b, D2c), più l'e2e di F6 (D5). La (3) del file originale (raffica PPR) è obsoleta.
+- **AC 17** — gate e suite in §M.
+
+### §C — Censimento AC 4
+
+**DTO mascherato (16 campi)**:
+
+| Campo | Classe | Sulla riga mascherata |
+|---|---|---|
+| `id` | operativo (id della prenotazione, non di una persona; nessuna `GET /bookings/{id}`; PATCH/cancel altrui → 403 prima di restituire dati) | intatto |
+| `aircraftId`, `aircraftRegistration` | operativo (velivolo, visibile per ratifica R3) | intatto |
+| `personId` | **identità** | `null` (**16.7**) |
+| `personName` | identità | `null` (14.5) |
+| `instructorProfileId`, `instructorName` | identità | `null` (14.5 F1) |
+| `startsAt`, `endsAt` | operativo (lo slot occupato è il senso di «Occupato») | intatto |
+| `notes`, `denyReason` | testo libero che può nominare persone | `null` (14.5) |
+| `status`, `cancelledAt`, `decidedAt`, `createdAt` | operativo (stato e istanti, non nominano nessuno) | intatto |
+| `forcedAt` | **dato sul titolare** (deroga di requisiti, 19.10) | `null` (**16.7, Q-16.7-a**) |
+
+**I 14 `authorize(actor, 'self.read')`** (HEAD): `bookings.service.ts:970` `listBookings` (**F6**), `:1043` `listCalendarBookings` (**F6**), `:1706` `listBookableAircraft` (velivoli), `:1723` `listBookableStudents` (roster, non raggiungibile: nessuna route; unico call-site `bookings/page.tsx:175` dentro `else if (ownInstructorProfileId)`), `:1736` `listActiveInstructors` (roster, non raggiungibile: `bookings/page.tsx:158` solo `if (canReadNames)`, `dashboard/page.tsx:302` dentro `renderAdminOverview`), `:1756` `getOwnInstructorProfileId` (proprio); `accounts.service.ts:103` `assertReadAccess` (403 se `actor.personId !== personId`), `:509` `getOwnAccountOverview`, `:527` `listOwnAccountMovements` (propri); `instructor-compensation.service.ts:307` `getOwnCompensationSummary`, `:394` `getOwnCompensationOverview` (propri o `null`); `flights.service.ts:1376` `authorizeFlightsQuery` (own-only, 403 sui filtri altrui; i voli dove l'attore è a bordo sono suoi); `me.service.ts:29` (sé stesso); `people.service.ts:336` `getPerson` (403 se `actor.personId !== id`). In più, non un `authorize` ma lo stesso permesso: `expiries.service.ts:127` (`hasPermission(actor, 'self.read') && actor.personId === personId`, own-only). **Nessuna quindicesima superficie.**
+
+### §D — Guardie → discriminanze (mutanti SOLO sulla copia isolata `scratchpad/iso`, `node_modules` in symlink, una guardia alla volta, ripristino verificato con sha256)
+
+| # | Guardia rimossa (mutante) | Test ROSSI | Ripristino sha256 (16 hex) |
+|---|---|---|---|
+| D1 | `personId: null` tolto dal `return` di `maskBookingNames` | 4/340: il test 14.5 invertito + `listBookings` PILOT + `listCalendarBookings` STUDENT + `toEqual` esatto | `bookings.service.ts` `a6611011ad610df1` = prima |
+| D1b | `forcedAt: null` tolto | 3/340: `listBookings` PILOT, `listCalendarBookings` STUDENT, `toEqual` esatto | `a6611011ad610df1` = prima |
+| D2 | bump assente in `updateUser` | 2/18: unlink e relink | `users.service.ts` `00947e2cfee9256a` = prima |
+| D3 | `personId: z.string()` (non nullable) | 1/55: `registry.test.ts` «documents Booking.personId as nullable» | `schemas/bookings.ts` `17901ebe4254a615` = prima |
+| D4 | clausola `ownPersonId !== null &&` tolta da `isOwnRow` (build di produzione della copia) | e2e `session-identity.spec.ts` «an unlinked pilot…»: **rosso 3/3 tentativi**, `booking-move-action` atteso 0, ricevuto **1** sulla riga «Occupato»; l'altro test verde | `bookings-table.tsx` `6df0769567e7d7ec` = repo |
+| D5 | D1 in build di produzione (e2e) | `bookings.spec.ts:671` (calendario dell'allievo, `:735` riceve un id) e `:1932` (privacy, `:2031` riceve un id): **rossi 3/3**; i due test di `session-identity` verdi (la clausola discrimina solo con F6 al suo posto) | `bookings.service.ts` ricopiato dal repo, `diff -rq` copia/repo su `src`, `e2e`, `messages` = identici |
+
+**Pin che sul pre-fix sono verdi per tautologia** (non contano come prove; diventano guardie dopo il fix):
+- D1c (maschera troppo larga, `if (canReadNames) return booking;`): rossi 5/340, fra cui «keeps personId and forcedAt on the actor's OWN row…».
+- D2b (bump sulla presenza di `personId`, non sul cambio): rosso 1/18, «re-sending the SAME personId is not a change».
+- D2c (bump incondizionato): rossi 3/18, «deactivates a user», «re-sending the SAME personId…», «a patch that does not touch personId…».
+
+Unit nuovi rossi sul codice pre-fix anche nel repo, prima di scrivere il fix (red-green): F6 4 rossi / 336 verdi; F8 2 rossi / 16 verdi.
+
+### §E — AC 5, misura prima/dopo (id di terzi su una pagina)
+
+- **Prima** (build di produzione col mutante D5, stesso test con la sola asserzione `:2031` resa `soft` nella copia per arrivare all'asserzione d'insieme): la pagina `GET /api/v1/bookings?pageSize=50&from=2031-03-10T00:00:00.000Z` del pilota del test consegna **28 `personId` distinti di terzi** (lista verbatim nel log `scratchpad/e2e-mutant-d5-set.log`).
+- Controprova SQL sullo stesso DB (la query della pagina, senza maschera): `?pageSize=50` → **27** id distinti diversi da quello del pilota del seed; `?pageSize=50&from=2031-03-10` → **22**. Sulla pagina `?pageSize=50`, **42 righe su 50** hanno `forcedAt` valorizzato (deroghe di terzi visibili prima della Q-16.7-a).
+- **Dopo** (server di produzione, `pilot@airmanager.local`): `?pageSize=50` → 50 righe, 50 mascherate, **0** `personId` non nulli, **0** `forcedAt` su righe mascherate; `?pageSize=50&from=2031-03-10` → 45 righe, **0**; calendario di domani → 3 righe, **0**. L'asserzione d'insieme dell'e2e è verde.
+
+### §F — AC 12
+
+**OBSOLETO** (PPR rimosso nella 19.1). Nessuna misura.
+
+### §G — AD-5: esito
+
+**Automatizzato, nessun fallback.** `encode`/`decode` importati da `next-auth/jwt` (che riesporta `@auth/core/jwt`; export con condizione `default`, quindi caricabile dal runner di Playwright); `salt` = nome del cookie `authjs.session-token` (http); `AUTH_SECRET` letto da `process.env` (`.env` via `dotenv/config` in `playwright.config.ts`, env del job in CI). Funzionante al primo tentativo (meno di 5 minuti). **Il lettore di `User.tokenVersion` in `e2e/db-fixtures.ts` NON è stato scritto**: serviva solo come fallback.
+
+### §H — Deviazioni motivate
+
+1. **AC 5, `from=FUTURE_DAY`** aggiunto a `?pageSize=50`: senza `from`, la pagina 1 sono le 50 prenotazioni APPROVED più vecchie del DB, e su un DB fresco con la suite in parallelo potrebbe non contenere righe di terzi (asserzione vacua). Con `from` la pagina cade sui fixture del test stesso; l'asserzione `some(personName === null)` lo garantisce.
+2. **AC 6c**: l'attore PILOT senza persona ora **ha** un e2e (lo chiede §R AC 16); il file originale lo dichiarava non automatizzabile.
+3. **`registry.test.ts`**: +1 unit sul contratto (`Booking.personId` nullable), non previsto dal piano di test. Costa 6 righe e rende discriminante l'AC 3 (D3) invece di affidarla al solo estratto nel record.
+4. **`isOwn` lato server non toccato** (`bookings.service.ts:288`, `booking.personId === actor.personId`): il tipo è ora `string | null`, ma il valore viene sempre dalla riga non mascherata di `toListItem` (`Booking.personId` NOT NULL), quindi `null === null` non può verificarsi. Detto nel doc-comment invece di aggiungere una guardia per un caso impossibile.
+5. **`jwt-active-check.ts` non modificato**, contro il rimedio dell'audit (`personId` nella `select` del recheck, `security.md:78`). Il confronto `token.tokenVersion !== user.tokenVersion` ritorna `null` (`:47-49`) **prima** dell'assegnazione di `token.roles` (`:51`): con il bump, una sessione la cui persona è cambiata non arriva mai alla riga che rinfrescherebbe `personId`. La `select` allargata sarebbe codice morto per l'unico scenario che la motiva. **Avviso al reviewer**: è una scelta voluta (AD-4).
+6. **AD-4, la ragione del «niente bump sullo stesso `personId`»** è cambiata (§R): l'unica PATCH UI (`pilots-console.tsx`) manda solo `{ isActive }`; la regola protegge i client API (futura app Flutter) che rimandano il collegamento corrente. Il commento nel codice dice questo.
+7. **Testo della story non riscritto fuori dal Dev Agent Record**: §R chiede di correggere «Il perché §2» e la TD 16.7-b sulla «sessione assoluta di 30 giorni»; le regole del workflow dev limitano le modifiche a record e Status, quindi la formula corretta («fino a 30 giorni dall'ultimo uso → ≤ 15 min») è in AC 10 sopra e in §I. Non toccato nemmeno il commento stantio di `auth.config.ts:19-26` («absolute from sign-in», audit S-16): fuori perimetro.
+8. **Verifica UI** con script `@playwright/test` usa-e-getta nello scratchpad: il Playwright MCP di questa macchina non trova Chromium (`/opt/google/chrome/chrome`), workaround sanzionato da `CLAUDE.md`.
+9. **Commento invece di doc-comment** in `updateUser`: la spiegazione del bump è un commento accanto a `personIdChanges`; il doc-comment di una riga della funzione resta com'era.
+
+### §I — TD da registrare (azione della sessione principale)
+
+- **TD 16.7-a** (invariata): `listBookableStudents`/`listActiveInstructors` gated `self.read`, roster id→nome non raggiungibili oggi; restringere il gate è un cambio di permessi da ratificare.
+- **TD 16.7-b** (formula corretta): residuo di F8, la sessione stantia autorizza la persona precedente per **≤ 15 min** (`ACTIVE_RECHECK_INTERVAL_MS`, story 1.4). Prima della story: **fino a 30 giorni dall'ultimo uso** (sessione scorrevole). Azzerarlo richiede un controllo per richiesta o una revoca push.
+- **TD-16.7-e** (Q-16.7-b): PILOT/STUDENT vedono le righe altrui PENDING/DENIED/CANCELLED con `?status=` (audit S-6). Dopo la 16.7 sono anonime (velivolo, orario, stato; `personId`, `forcedAt`, nomi, note e motivo a `null`), quindi il canale di correlazione è chiuso; filtrarle cambierebbe `total`, paginazione ed export di una lista ratificata (12.3 AC 3). Decisione rimandata.
+- TD 16.7-c/d: obsolete (PPR rimosso).
+
+### §J — File toccati
+
+Codice: `src/server/services/bookings.service.ts`, `src/lib/schemas/bookings.ts`, `src/lib/schemas/registry.ts`, `src/app/[locale]/dashboard/bookings/bookings-table.tsx`, `src/server/services/users.service.ts`. Test: `src/server/services/bookings.service.test.ts`, `src/server/services/users.service.test.ts`, `src/lib/schemas/registry.test.ts`, `e2e/bookings.spec.ts`, `e2e/session-identity.spec.ts` (nuovo). Documenti: questo file. **Non toccati**: `jwt-active-check.ts`, i due mapper `page.tsx` (bastava il tipo), `prisma/schema.prisma`, `messages/*`, `playwright.config.ts`, `.env.example`, CI, `e2e/db-fixtures.ts`, `sprint-status.yaml`, `HANDOFF.md`. Nessuna stringa, migrazione, dipendenza, env var, testid o CSS nuovi. Codice di produzione: 23 righe `+/-` fra `users.service.ts` e `bookings-table.tsx`, 2 righe di logica in `bookings.service.ts` (`return` e tipo), il resto commenti e descrizioni OpenAPI.
+
+### §K — Cosa NON ho fatto
+
+Tutto il dominio PPR (AC 11-14, AD-6/7/8, TD c/d), audit S-11/S-8/S-2, `personId` nella `select` del recheck, nessun tocco a `ACTIVE_RECHECK_INTERVAL_MS`, a `auth.config.ts` o alla matrice dei permessi, nessun filtro sulle righe non APPROVED (TD-16.7-e), nessun booleano `isOwn` sul filo, nessun lettore in `db-fixtures.ts`.
+
+### §L — Verifica UI (AC 6), build di produzione, script usa-e-getta
+
+- `pilot@airmanager.local`, desktop 1440: pagine 1-2 di `?status=PENDING,APPROVED` = 40 righe «Occupato», 0 azioni; pagina 3 = 1 riga propria («Piero Volante», In attesa) **con** «Modifica»/«Annulla», 19 «Occupato» **senza** azioni. Screenshot `scratchpad/shots/16-7-seed-pilot-desktop.png`: impaginazione identica a prima.
+- Utente PILOT **senza persona** (`me.person = null`), desktop: 20 righe, tutte «Occupato», **0** `booking-move-action`/`booking-cancel-action` (`16-7-unlinked-pilot-desktop.png`).
+- Mobile 390×844, foglio di dettaglio: utente senza persona su una card «Occupato» → nessuna azione (`16-7-unlinked-pilot-mobile-sheet.png`, solo «Chiudi»); pilota del seed → card propria con `booking-move-action-mobile` e `booking-cancel-action-mobile` (1 e 1), card «Occupato» con 0 (`16-7-seed-pilot-mobile-own-sheet.png`).
+- Nessun cambio visivo: la story non tocca layout, classi, testi o testid.
+
+### §M — Gate ed esiti
+
+- `npm run gates`: `PASS lint (32s)`, `PASS typecheck (4s)`, `PASS test (13s) — Tests 2270 passed (2270)`, `PASS build (44s)`. Unit **2262 → 2270** (baseline misurata su `227b053` nella copia isolata con `.env.example`/`ci.yml` presenti: 2262, non 2261) (+8: bookings +4, users +3, registry +1).
+- Isolamento dell'env: `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` sui tre file di test toccati → verdi (413/413 nella copia isolata).
+- e2e mirati (server di produzione riusato): `session-identity.spec.ts` 2/2; `bookings.spec.ts` + `api-v1.spec.ts` + `rbac.spec.ts` 49 passed + 2 flaky (timeout di `page.goto`, verdi al retry, test non toccati), exit 0.
+- Suite completa, run 1 su DB sporco dai miei run mirati: 558 passed, 5 flaky, **1 failed** (`home-dashboard.spec.ts:230`), 54 did not run (catena serializzata saltata per il fallimento), exit 1. Causa misurata via SQL: il mio `bookings.spec.ts` mirato delle 16:49 aveva lasciato 5 APPROVED a domani 09:00Z, che con quelle del run riempivano le 8 righe della card «Prenotazioni» della Panoramica admin prima della PENDING del test (stesso istante, id maggiore). Contesa di fixture «domani», non del codice: l'admin ha `bookings.read.names` e la card passa `canManageOwn={false}`. Log in `scratchpad/e2e-full-run1-dirtydb.log`.
+- Suite completa, run 2 su **DB fresco** (reset autorizzato, ricetta di HANDOFF; build di produzione riusata, `JOBS_SECRET` esportato), `scripts/e2e.sh status` verbatim: `state: DONE — E2E_EXIT=0`, `618 passed (20.6m)` — **0 flaky, 0 failed**. e2e **616 → 618** (+2: `session-identity.spec.ts`). Log in `scratchpad/e2e-full-run2-freshdb.log`.
+- Commit di implementazione: `7b12916` (pathspec, 10 file). sha256 (16 hex) dei file committati: `bookings.service.ts` `a6611011ad610df1`, `schemas/bookings.ts` `17901ebe4254a615`, `registry.ts` `f3a271527a899c41`, `bookings-table.tsx` `6df0769567e7d7ec`, `users.service.ts` `00947e2cfee9256a`, `bookings.service.test.ts` `b11bbd51d12d6dd5`, `users.service.test.ts` `eda4bf11923dc784`, `registry.test.ts` `7aa2c22724dc9951`, `e2e/bookings.spec.ts` `1f694278d524ef69`, `e2e/session-identity.spec.ts` `ec04d6d8dd0569b7` — gli stessi verificati dopo ogni ripristino dei mutanti (§D).
+- Parità i18n: 0/0 (nessuna stringa).
+
+### §N — Per il PO (in parole semplici)
+
+Nessuna domanda bloccante. Tre cose da sapere:
+1. Un pilota o un allievo non può più leggere dall'elenco o dal calendario delle prenotazioni il codice della persona che ha prenotato, né se a quella persona è stato concesso di prenotare nonostante un requisito mancante. Prima, da una sola pagina, se ne ricavavano 28 codici diversi.
+2. Quando un amministratore collega un utente a un'altra persona, o lo scollega, quell'utente viene disconnesso entro un quarto d'ora al massimo e al prossimo accesso vede la nuova identità. Prima poteva continuare ad agire come la persona precedente finché usava l'app, fino a 30 giorni.
+3. Un pilota senza persona collegata non vede più i pulsanti «Modifica»/«Annulla» sulle prenotazioni degli altri. Prima li vedeva (il server poi rifiutava l'operazione).
+
+### Change Log
+
+- 2026-11-04 — dev 16.7 (`7b12916`): F6 (`personId`/`forcedAt` mascherati, contratto OpenAPI nullable, clausola `isOwnRow`), F8 (bump di `tokenVersion` al cambio reale di `personId`), unit +8, e2e +2 (`session-identity.spec.ts`) e asserzioni AC 5 in `bookings.spec.ts`. Status → review.
+
