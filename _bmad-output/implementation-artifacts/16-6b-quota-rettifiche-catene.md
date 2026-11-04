@@ -705,3 +705,11 @@ Playwright MCP non utilizzabile da subagent su questa macchina (`Chromium distri
 ### Change Log
 
 - 2026-11-04 — dev (Opus 5.5): chiave di idempotenza stabile nel pannello quota con `try/catch` e bottone riabilitato; `AccountMovement.reversalRootType` con backfill e CHECK, classificatore, ricavi e filtro «Acconti» sulla radice della catena (`6e76e20`); Status → review.
+
+## Decisioni PO sulla review (2026-11-04, AskUserQuestion)
+
+Report: `16-6b-review-report.md` — **SHIPPABLE** (nessun difetto di produzione); arbitro del reviewer su DB fresco **616/616, 0 flaky, `E2E_EXIT=0`**.
+
+- **F1 + domanda del dev — doppi addebiti dopo un guasto di rete** (pannello chiuso e riaperto, ricarica della pagina, «Riprova» dopo un 409 `IDEMPOTENCY_IN_PROGRESS`: riprodotti, quota a +24 mesi) = **nuova story 16.10 in questo epic**, dopo la 16.9, per tutti i 7 form con `Idempotency-Key`: sul 409 `IN_PROGRESS` messaggio «operazione in corso, attendi» e nessuna chiave nuova; messaggio di rete che non dica «Impossibile addebitare» quando l'addebito potrebbe essere già avvenuto; chiave che sopravvive alla chiusura/riapertura del pannello e alla ricarica per lo stesso tentativo. La 16.6b resta com'è su questo punto.
+- **F5 — la correzione di un giroconto finisce nei Ricavi** (+20 € fantasma misurati) = **correggere subito in questa story**: **la correzione segue il libro della radice** — radice `TOP_UP` → DEPOSIT (già fatto), radice giroconto (ADJUSTMENT positivo standalone, TRANSFER) → TRANSFER, radice addebito (FLIGHT_CHARGE o ADJUSTMENT negativo) → REVENUE. `reversalRootType` da solo non basta (la radice è `ADJUSTMENT` sia per un giroconto sia per un addebito): serve il segno/libro della radice. Scelta tecnica al fix (colonna del libro della radice al posto del tipo, o colonna del segno accanto), motivata; la migrazione `20261104100000` non è ancora pushata né deployata.
+- F2 (TD-16.6b-a), F3 (doc del CHECK su ON DELETE), F4 (asserzione sull'anno a `membership-fee.spec.ts:357` fragile il 31/12 su runner UTC) → nel fix.
