@@ -674,3 +674,109 @@ Report: `16-6a-review-report.md` (SHIPPABLE-WITH-FIXES, nessun difetto nel codic
 - **Domanda 1 — messaggi d'errore dei pannelli laterali** (Piloti «Registra ricarica», «Nuova transazione»: `--bad` 3,96:1 sotto AA, in Piloti anche maiuscolo mono) = **sì, subito in questa story**: portarli allo stile leggibile della scheda persona (`.fld-error`: rosso scuro, Inter Tight, nessun maiuscolo), ≥ 4,5:1 nei due temi, desktop e mobile; guardia di contrasto.
 - **Domanda 2 — «Ricavi maturati» dappertutto** = **sì**: anche Panoramica («Ricavi del mese») e Statistiche («Ricavi") prendono l'etichetta «Ricavi maturati» / EN «Earned revenue» per lo stesso numero (`getLedgerRevenueCents`), con l'eventuale indicazione del periodo già presente sulla card.
 - **Domanda 3 — liquidare un istruttore per un periodo non ancora finito** = **sì, resta possibile** (comportamento attuale, dichiarato).
+- **Domanda 2-bis (dal fix, 2026-11-04)** — il KPI della Panoramica con «Ricavi maturati del mese» va su due righe a 1280 px (card 94 px contro 79): il PO sceglie **«Ricavi maturati» / EN «Earned revenue»** senza periodo (come in Statistiche), sempre su una riga.
+
+## Fix Record della review (2026-11-04, fix Opus 5.5 — un solo subagent)
+
+**Commit**: `dea21d5` `fix(16.6a): …` (codice, test, glossario) e `7a9ec4e` `chore(e2e): …` (solo `playwright.config.ts`), entrambi con pathspec; questo record: `docs(16.6a): …` (solo questo file). Partito da `dev@d543c1a`. La riga «Domanda 2-bis» qui sopra l'ha scritta la sessione principale, non committata, mentre il fix girava: entra in questo commit. `sprint-status.yaml` e `HANDOFF.md` NON toccati. Skill: `karpathy-guidelines`; `design-taste-frontend` (design read: «restyle dei messaggi d'errore dentro un gestionale AirOps già stabilito, fuori dallo scope landing della skill (§13): valgono solo form contrast check, stati d'errore inline e copy self-audit, nessun linguaggio visivo nuovo»); `ui-ux-pro-max` (`color-contrast`/`contrast-feedback` ≥ 4,5:1 nei due temi, `error-placement` invariato sotto i campi, `aria-live-errors`: restano i `role="alert"` esistenti, `horizontal-scroll`/`truncation-strategy` misurati da 320 a 1280 px).
+
+### Findings e decisioni PO: cosa è cambiato
+
+| Voce | Esito | Dove | Evidenza |
+|---|---|---|---|
+| **F1** | ✅ | `e2e/billing.spec.ts` `dateAt`/`uniqueDatePair` | coppie pescate in **2000-01-02 … 2009-12-31** (`Math.random() * 3_651`, `day1 = dateAt(offset + 1)` < `day2`: il primo `day1` possibile è 2000-01-02, dopo la data di apertura della tesoreria `2000-01-01`). Il commento ora dice «bassa probabilità di collisione, non isolamento» e spiega perché (i test filtrano il libro globale). Banda verificata libera: nessuna data 2000-2009 in `prisma/seed.ts` né negli e2e, a parte `2000-01-01` (`helpers.ts:14` `ALL_TIME_STATEMENT`, `settings.spec.ts:147/424` e `treasury-settings.spec.ts:52`: è la data di apertura della tesoreria, fuori dalla banda); `pdf-exports` parte dal 2021, `account-statement-period` dal 2010. `billing-global.spec.ts:40`: il commento l'aveva già corretto il dev, verificato e non toccato |
+| **F2** | ✅ | `e2e/accounts-topups.spec.ts:150` | blocco nuovo nel test 16.6a: `/it/dashboard/pilots?q=<cognome>` → `pilot-topup-<id>` → domani → `topup-form-error` `toHaveText('La data valuta non può essere nel futuro.')`. «tre tentativi» → «quattro» nel commento del saldo. Rosso col ramo rimosso (E1) |
+| **F3** | ✅ | `docs/i18n/glossario-it.md`, dopo «Ricarica» | due righe: **Ricavi maturati** (EN «Earned revenue»: competenza, `getLedgerRevenueCents`; varianti vietate «Ricavi», «Ricavi del mese» per questo numero; fonte PO Q-16.6a-a + domande 2 e 2-bis) e **Cassa per categoria** (EN «Cash by category»; vietato «Per categoria» da solo). Il glossario non ha una colonna EN: l'equivalente sta fra parentesi |
+| **PO 1** | ✅ | 15 punti in 10 file (sotto) | `className="fld-error"` al posto di `fld-label` + `color: var(--bad)` (o di `var(--bad)` inline), `textTransform: 'none'` tolto dove c'era, i margini restano. Guardia `e2e/mobile-ink-targets.spec.ts:526` (2 test, chiaro/scuro × 375/1280): rapporto ≥ 4,5, `text-transform: none`, `font-family` Inter Tight, classe `fld-error`, nessun colore inline, su Piloti «Registra ricarica» e «Nuova transazione» con il 422 vero (domani: non scrive nulla) |
+| **PO 2 + 2-bis** | ✅ | `messages/{it,en}.json` | `DashboardPage.overview.kpis.revenue` «Ricavi del mese» → **«Ricavi maturati»** («Revenue this month» → «Earned revenue»), `ReportsPage.kpi.revenue` e `ReportsPage.charts.revenue.title` «Ricavi» → **«Ricavi maturati»** («Revenue» → «Earned revenue»). Non toccati, perché sono altri numeri: `ReportsPage.rankAircraft.metrics.revenue` «Ricavo» (addebiti per velivolo), `BillingPage.table.bookTypes.REVENUE`, `LogbookPage.kpi.revenue` «Addebiti». Nessun e2e asseriva quelle etichette: asserzioni aggiunte in `home-dashboard.spec.ts:145` e `reports.spec.ts:243-244`. Parità e `BANNED`: `messages.test.ts` verde |
+| **I-1** | ✅ | `cash.service.test.ts` (+1) | «lo stato della categoria vince sulla data»: domani su categoria di sistema e su categoria disattivata → `ConflictError`, su categoria inesistente → `NotFoundError`. Il mutante R8 del reviewer ora è rosso (U1) |
+| **I-2** | dichiarato | — | «Cassa per categoria» a 320 px in italiano: la `card-head` passa da 49 a 73 px, col mese sotto il titolo. È il wrap previsto da `.card-head` (`flex-wrap`), senza tagli né overflow (misura del reviewer, `shots/u3-bycat-head-it-320.png`; non rimisurato qui) |
+| **I-3** | nessuna azione | — | come da report |
+| **TD-19.10-g** | ✅ (commit a parte) | `playwright.config.ts` `webServer.command` | `npm run start -- --keepAliveTimeout 75000` sotto `CI=1`, v. «Keep-alive» |
+
+**I 15 punti di PO 1** (tutti dentro uno `SlideOver`, desktop e foglio a tutto schermo su telefono):
+- Piloti «Registra ricarica»: `pilots-console.tsx:850`;
+- «Nuova transazione»: `transaction-editor.tsx:369`;
+- editor del pilota: `pilot-editor.tsx:330` (`SectionError`), `:541` (profili non caricati), `:1168` (`pilot-identity-error`), `:1318` (errore del form di creazione);
+- editor dell'istruttore: `instructor-editor.tsx:265` (`SectionError`) e `:482` (anagrafica non caricata);
+- `instructors-console.tsx:687` (`instructor-pay-form-error`) e `:881` (`add-instructor-error`);
+- velivolo: `aircraft-editor.tsx:627`;
+- scadenze: `expiry-editor.tsx:212`;
+- prenotazioni: `new-booking-form.tsx:638` e `edit-booking-form.tsx:366` (`fld-label req-error-banner`: il focus di `.req-error-banner` resta);
+- volo: `flight-editor.tsx:990` (`req-error-banner` + `var(--bad)` inline a 13 px, lo stesso idioma di «Nuova transazione»).
+
+Dopo il fix, `grep` di `fld-label` con `var(--bad)` in `src`: **0**.
+
+### Discriminanze (copia isolata `scratchpad/iso-fix`: `cp -r src messages prisma` + config, `node_modules` in symlink; manifest sha256 di 419 file `src`+`messages`)
+
+| # | Mutante (solo nella copia) | Esito |
+|---|---|---|
+| U1 | R8 del reviewer: guardia spostata prima della lettura della categoria in `recordCashMovement` | **1 failed** / 78: il test I-1 («expected error to be instance of ConflictError») |
+| E1 | pre-fix combinato: `pilots-console.tsx` e `transaction-editor.tsx` di HEAD, messaggi di HEAD, e in più il ramo F2 rimosso (`setFormError(labels.genericError)`) | **4 failed**, ognuno per il suo motivo: `accounts-topups:150` riceve «Impossibile registrare la ricarica. Riprova.»; `home-dashboard:137` riceve «Ricavi del mese»; `mobile-ink-targets:526` chiaro: Piloti **3,96** (`fld-label`, mono, `uppercase`, colore inline); scuro: 6,61 ma `uppercase`, `fld-label`, colore inline |
+| E2 | solo `transaction-editor.tsx` di HEAD (E1 si fermava su Piloti, che viene prima) | **2 failed**: «Nuova transazione» **3,96** in chiaro; in scuro 6,61 ma niente `fld-error` e colore inline |
+
+Come sono girati E1 ed E2: build Turbopack della copia, servita su :3000, con `E2E_REUSE_SERVER=1 scripts/e2e.sh start … -g …`. Turbopack rifiuta un `node_modules` in symlink che punta fuori dalla root del progetto, quindi **solo nel `next.config.ts` della copia** c'è `turbopack: { root: '/' }`. Dopo ogni mutante, ripristino e `sha256sum -c` della copia contro il manifest del repo: identica. Il repo non è mai stato mutato: il manifest, ricontrollato dal repo, è pulito. Il server della copia è stato spento prima di riavviare quello del repo.
+
+### Gate
+
+`npm run gates`: lint, typecheck, test, build **PASS**, due volte (dopo il fix e dopo la 2-bis). Unit **2250 → 2251** (+1, I-1). `env -u DATABASE_URL -u AUTH_SECRET npx vitest run src/server/services/cash.service.test.ts`: 78/78.
+
+### e2e
+
+Server di produzione della build dei gate (`next start --keepAliveTimeout 75000`, `JOBS_SECRET` non segnaposto, `NODE_ENV` tolto), poi `E2E_REUSE_SERVER=1 scripts/e2e.sh start …`. DB `airmanager` com'era stato lasciato dalla sessione principale: **non** l'ho resettato.
+1. **Mirato**, 18 spec: `accounts-topups`, `billing`, `mobile-ink-targets`, `home-dashboard`, `cash-register`, e i file che asseriscono i nodi d'errore toccati: `aircraft-management`, `aircraft-out-of-service-until`, `aircraft-rates`, `bookings`, `flight-delete-update`, `flight-requirements`, `flights`, `instructor-compensation`, `instructor-rates`, `mobile-logbook`, `person-profiles`, `person-save`, `people-management`. Esito: **258 passed, 0 flaky, 0 failed** = i 258 listati, `E2E_EXIT=0` (7,5 min). Girato con l'etichetta pre-2-bis.
+2. **Dopo la 2-bis**: `home-dashboard`, `mobile-overview`, `mobile-ink-targets` → **41 passed** = 41 listati, `E2E_EXIT=0`.
+3. **Non eseguiti da me**:
+   - `reports.spec.ts` (catena serializzata: da solo trascina 589 test come dipendenze), e così `booking-window`/`booking-requirements` (catena; asseriscono solo il testo di `booking-form-error`, che non è cambiato). Le due asserzioni nuove di `reports.spec.ts` le ho verificate sul DOM della build: un solo `.card-title` «Ricavi maturati», primo `.kpi-label` «Ricavi maturati». Restano all'arbitro.
+   - Conteggio della suite: **615 test in 69 file** (613 + i 2 nuovi di `mobile-ink-targets`).
+
+### Verifica UI (script `playwright-core` usa-e-getta nello scratchpad, build di produzione)
+
+- **Errori dei pannelli**, Piloti «Registra ricarica» e «Nuova transazione», chiaro/scuro × 1280/375 × IT/EN.
+  - Testo: 12 px, Inter Tight, `innerText` in minuscolo («La data valuta non può essere nel futuro.» / «The value date cannot be in the future.»; «La data non può essere nel futuro.» / «The date cannot be in the future.»).
+  - Colore: in chiaro il letterale `oklch(0.4 0.17 25)`, in scuro `var(--bad)`.
+  - Layout: nessun salto, il messaggio sta sotto i campi come nella scheda persona.
+  - Screenshot: `shots/fix-pilots-error-*`, `shots/fix-newtx-error-*`.
+- **KPI «Ricavi maturati»** a 1280/1024/768/375/320 px, IT/EN, Panoramica e Statistiche: una riga, card tutte alte uguali (79 px desktop, 77 telefono), nessun overflow del documento. Con «Ricavi maturati del mese» (prima della 2-bis) a 1280 la card andava a 94 px contro 79, e anche fra 901 e ~920 px (`shots/fix-kpirow-it-1280.png`): da qui la domanda 2-bis.
+
+### Keep-alive (TD-19.10-g)
+
+`npx next start --help` (Next 16.2.10) espone `--keepAliveTimeout`, e `start-server.js:249-250` lo assegna a `server.keepAliveTimeout`. Misure con un socket grezzo su `localhost`:
+- senza il flag (server temporaneo su :3100, poi spento), un socket keep-alive inattivo si chiude a **6,1 s**;
+- con `75000` è ancora aperto a 7 s;
+- inattivo per 66 s, cioè oltre `headersTimeout` = 60 s, risponde ancora **200** a una seconda richiesta sullo stesso socket (Node 24.15).
+
+Il resto del comando non cambia: build, porta, `reuseExistingServer` e `npm run dev` fuori da CI.
+
+### Deviazioni dichiarate
+
+- **F-a: il perimetro di PO 1 è di 15 punti**, non gli «11 + `transaction-editor`» del report. Il censimento del report non vedeva tre punti, tutti in pannelli laterali: i due form di prenotazione (`fld-label req-error-banner`, lo stesso idioma) e l'editor del volo (`var(--bad)` inline a 13 px, lo stesso di «Nuova transazione»).
+- **F-b: fuori dai pannelli laterali, non toccati.** Hanno lo stesso 3,96:1 in chiaro e la stessa correzione di una riga; candidati a un TD.
+  - Mini-modali: `membership-fee-error` (`scadenze-console.tsx:1050`), `flight-cancel-error` (`logbook-console.tsx:837`), `transaction-adjust-error` e `transaction-reverse-error` (`billing-console.tsx:1238`, `:1278`).
+  - Feedback di stato: `smtp-test-email-feedback` (`smtp-card.tsx:97`), `billing-reclassify-feedback` (`billing-console.tsx:743`).
+  - Il saldo negativo nella lista Piloti (`pilots-console.tsx:421`): è una cifra, non un messaggio.
+- **F-c**: `.fld-error` è a 12 px, quindi «Nuova transazione» e l'editor del volo scendono da 13 a 12 px, come la scheda persona.
+- **F-d**: la banda F1 è di 3 651 coppie, non 3 650. Con `* 3_650` il primo giorno sarebbe 2000-01-03, non il 2000-01-02 che il report dichiara: ho reso esatta la banda dichiarata.
+- **F-e: la guardia di contrasto misura i due pannelli nominati dal PO.** Gli altri 13 punti hanno la stessa classe, senza colore inline: lo dice il diff. Non li ho misurati uno per uno, perché ognuno vuole un errore del server diverso per comparire.
+- **F-f**: la 2-bis è venuta dalla misura del fix ed è stata ratificata dal PO tramite la sessione principale (v. sopra).
+
+### Note per l'arbitro finale
+
+- Su DB fresco ci si aspettano **615** test.
+- Test nuovi o estesi:
+  - `mobile-ink-targets.spec.ts:526` ×2 crea una persona pilota run-unique («Inchiostro-…») e un 422 senza scritture: nessuno stato globale, progetto di default;
+  - `accounts-topups.spec.ts:150` esteso;
+  - `home-dashboard.spec.ts:145`, `reports.spec.ts:243-244` (catena).
+- Con `7a9ec4e` il webServer `CI=1` parte con `--keepAliveTimeout 75000`: da guardare se spariscono i flaky ECONNRESET / «socket hang up» (4 su 8 nell'arbitro della review).
+  - Se l'arbitro riusa un server (`E2E_REUSE_SERVER=1`), va avviato con `npm run start -- --keepAliveTimeout 75000`, altrimenti l'effetto non si misura.
+  - La ricetta di CLAUDE.md (`env -u NODE_ENV npm run build && npm run start &`) non ha il flag: non l'ho toccata (fuori dal mio perimetro). Da allineare se l'arbitro conferma.
+- Persone di sonda lasciate nel DB (run-unique, inerti): due «Sonda-…» della verifica UI, oltre a quelle dei test.
+- Porte 3000 e 3100 libere, nessun server avviato da me ancora vivo.
+
+### Change Log
+
+- 2026-11-04: fix della review (Opus 5.5).
+  - Errori dei pannelli laterali allo stile `.fld-error`, 15 punti, con guardia di contrasto.
+  - «Ricavi maturati» anche in Panoramica e Statistiche (2-bis: senza periodo).
+  - Banda F1 a 2000-2009, e2e del pannello Piloti, glossario, unit I-1 (`dea21d5`).
+  - Keep-alive del server e2e (`7a9ec4e`).
