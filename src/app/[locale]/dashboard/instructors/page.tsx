@@ -103,8 +103,11 @@ export default async function InstructorsPage({ params }: PageProps) {
         <KPI label={t('kpi.avgRate')} value={avgPayoutRateCents === null ? '—' : formatCents(avgPayoutRateCents, displayLocale)} unit={avgPayoutRateCents === null ? undefined : '/h'} />
       </div>
 
+      {/* No `key`, unlike the paginated registries (keyed on their URL state):
+          this page has none, and its old key — the active count — remounted the
+          console on every refresh that moved the count, closing whatever panel
+          was open, the 409 of "Paga" included (fix post-arbitro 16.6a). */}
       <InstructorsConsole
-        key={JSON.stringify({ count: items.length })}
         items={items}
         inactiveItems={inactiveItems}
         canManagePeople={canManagePeople}

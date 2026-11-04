@@ -451,12 +451,17 @@ test.describe('Instructor compensation (story 12.7)', () => {
       data: { instructorPersonId: instructor.personId, amountCents: 80_000, periodStart: PAST_DATE, periodEnd: PAST_DATE, method: 'CASH', notes: null },
     });
     expect(behind.status()).toBe(201);
+    // Fix post-arbitro 16.6a: an instructor added meanwhile moves the roster's
+    // count in that refresh. The console was keyed on that count, and the remount
+    // closed this panel with its 409 — before, only when a parallel worker did it.
+    await createInstructorPerson(page, 'Behind');
     await page.getByTestId('instructor-pay-submit').click();
     await expect(page.getByTestId('instructor-pay-form-error')).toHaveText('Questo istruttore non è più attivo e non ha compensi da liquidare.');
 
-    // Owed back to zero: out of the card (the refresh behind the panel) and of the summary...
+    // Owed back to zero: out of the card (the refresh behind the panel) and of the summary —
+    // while the panel, still open, still says why...
     await expect(mobileRow).toHaveCount(0);
-    await expect(page.getByTestId('instructor-pay-form')).toBeVisible();
+    await expect(page.getByTestId('instructor-pay-form-error')).toHaveText('Questo istruttore non è più attivo e non ha compensi da liquidare.');
     expect(await summaryRowOf(page, instructor.personId)).toBeUndefined();
     // ...and nothing more to pay (409, never a silent overpayment).
     const again = await page.request.post('/api/v1/instructor-payouts', {
