@@ -752,3 +752,12 @@ Nessun mutante equivalente fra questi; `bookings.service.ts` → `centsForMinute
 ### Change Log
 
 - 2026-11-03 — implementazione completa (snapshot del compenso sul volo, backfill, lettore sugli snapshot, ex istruttori visibili e pagabili, una sola formula), Status → `review`.
+
+## Decisioni PO sulla review (2026-11-04, AskUserQuestion, prima del fix)
+
+Report: `16-5-review-report.md` (SHIPPABLE-WITH-FIXES; arbitro del reviewer su DB fresco 609/609, `E2E_EXIT=0`).
+
+- **I-1 / domanda 2 — due pagamenti contemporanei allo stesso ex istruttore** = **BLOCCARE** (ribalta la risposta «basta dichiararlo» della notte, data su una descrizione imprecisa della sessione principale: i due pagamenti passano entrambi e la cassa registra due uscite). Il controllo «dovuto > 0» di `recordPayout` va deciso **sotto lock** (lock della riga del profilo istruttore o advisory per profilo dentro la transazione del payout, dovuto ricalcolato sotto lock): il secondo pagamento concorrente → 409 `INSTRUCTOR_NOTHING_OWED`. Discriminanza: la sonda concorrente del reviewer (201/201 → dovuto −155 €) diventa 201/409.
+- **F3 / domanda 1 — istruttore cambiato e poi rimesso** = si dichiara e basta (regola Q-16.5-a: la tariffa congelata vale solo se l'istruttore non cambia); scriverlo nel doc-comment di `updateFlight` e nel record.
+- **F1 / domanda 3 — archiviato col profilo attivo** = come il disattivato: il dettaglio (`?personId=`) risponde **404**, coerente con Q-16.5-c e con la descrizione OpenAPI già scritta; idem `setPayoutRate` su un archiviato → 409 come sul disattivato (oggi 200, nota Info del reviewer). Unit accanto a «still 404s on a DEACTIVATED profile».
+- **F2 / domanda 4 — «Paga» a 320 px** = sotto ~360 px «Paga» scende su una seconda riga sotto il nome; sopra resta accanto. Guardia e2e che misura `clientWidth` del nome a 320 e 375.
