@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-04 14:20 — ciclo «chiudiamo tutte le epic incomplete»: **16.5 e 16.6a done**, prossima 16.6b)
+# HANDOFF — AirManager (aggiornato: 2026-11-04 14:20 — ciclo «chiudiamo tutte le epic incomplete»: **16.5, 16.6a, 16.6b done**, prossima 16.7)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -16,7 +16,8 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
   - Epic 15 corretto a `done` (era rimasto `in-progress`).
 - **16.5 done** (`caeb973` feat, `be11075` record, `2d012ab` decisioni PO sulla review, `c635b34` fix, `f23ca47` Fix Record): compenso istruttore congelato sul volo, ex istruttori visibili e pagabili, pagamenti concorrenti bloccati sotto lock. Arbitro finale 607 + 3 flaky = **610**, exit 0. **Conteggi**: e2e **610**, unit **2242**.
 - **16.6a done** (`a6be2da`, `76c7eba`, `d543c1a`, `dea21d5`, `7a9ec4e`, `c5c1efa`, `dcad37e`, `c47ec70`): data valuta futura rifiutata (422 `EFFECTIVE_DATE_IN_FUTURE`), errori dei pannelli leggibili (`.fld-error`, ≥ 4,5:1), «Cassa per categoria» e «Ricavi maturati» ovunque, **keep-alive 75 s del server e2e** (TD-19.10-g chiuso: 0 ECONNRESET da allora). Durante la chiusura trovato e corretto un bug di prodotto della 16.5 (`6c19915`: remount della console Istruttori che chiudeva il pannello «Paga»). Arbitro finale **615/615**, exit 0. **Conteggi**: e2e **615**, unit **2252**.
-- **Prossima**: 16.6b, 16.7, 16.8, 16.9 → fine Epic 16 (handoff, push, PR #22) → Epic 17 nell'ordine dei file (17.2 → 17.3 → 17.4 → 17.5 → 17.6 → 17.7 → 17.8, dipendenze nello Status di ogni file) → Epic 18.
+- **16.6b done** (`6e76e20`, `91a70b0`, `c453b22`, `25ef34d`, `470d4ca`): chiave di idempotenza stabile nel pannello quota; catene di rettifica classificate dal **libro della radice** (`reversalRootBook`, enum DEPOSIT/REVENUE/TRANSFER) — la correzione di un giroconto resta giroconto (decisione PO). Arbitro finale 614 + 2 flaky = **616**, exit 0. **Conteggi**: e2e **616**, unit **2261**. Nuova story **16.10** (doppi addebiti dopo un guasto di rete nei 7 form con `Idempotency-Key`) in coda all'Epic 16, file da creare dopo la 16.9.
+- **Prossima**: 16.7, 16.7, 16.8, 16.9 → fine Epic 16 (handoff, push, PR #22) → Epic 17 nell'ordine dei file (17.2 → 17.3 → 17.4 → 17.5 → 17.6 → 17.7 → 17.8, dipendenze nello Status di ogni file) → Epic 18.
 
 ## Key Decisions di oggi
 
@@ -32,6 +33,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 - **Mai mandare un SendMessage a un subagent mentre gira un arbitro**: il messaggio lo risveglia e lui può lanciare `npm run gates`, che ricostruisce `.next` sotto il server dell'arbitro (successo nella 16.6a: arbitro scartato). Se serve, scrivere esplicitamente «niente build/gate/e2e».
 - **Salvare subito il log di ogni arbitro** (`cp /tmp/airmanager-e2e/last-run.log` nello scratchpad): ogni `scripts/e2e.sh start` successivo (anche di un subagent) ruota `last-run.log` in `.prev` e due run bastano a perderlo.
+- **Login-timeout** (`toHaveURL(/dashboard$/)` scaduto a 5 s dopo il submit del login) resta l'unica classe di flaky ricorrente dopo il keep-alive: 2 nell'arbitro della 16.6b. Candidato TD se cresce.
 - Un flaky su un test della story precedente non si archivia come «classe nota» senza leggerne il messaggio: nella 16.6a era un bug di prodotto della 16.5.
 
 - **Fascia 23:40-01:00 di Roma**: il reviewer ha programmato l'arbitro alle 01:06; la macchina poi è rimasta ferma fino alle 09:39 e il reviewer non si è risvegliato da solo → riprenderlo con SendMessage quando il run è finito.
@@ -53,7 +55,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 ## Next Steps
 
-1. 16.6b, 16.7, 16.8, 16.9 con lo stesso ciclo (reset → dev → reset → review → decisioni PO → fix → reset → arbitro della sessione principale → `docs(N)`).
+1. 16.7, 16.8, 16.9, poi 16.10 (story file da creare con `bmad-create-story`) con lo stesso ciclo (reset → dev → reset → review → decisioni PO → fix → reset → arbitro della sessione principale → `docs(N)`).
 3. Fine Epic 16: `/handoff`, push di `dev`, aggiornare titolo/descrizione della PR #22.
 4. Epic 17, poi Epic 18 (ordine e dipendenze nello Status di ogni file story).
 

@@ -168,3 +168,78 @@ E2E_EXIT=0
 - Nessun DB creato, cancellato o resettato: solo transazioni `BEGIN … ROLLBACK` e uno schema usa-e-getta dentro di esse, residui 0 verificati.
 - Dati run-unique (`Rv …`) scritti su `airmanager` da probe e mutanti. La quota globale è stata riportata al valore trovato (`feeRestoredTo: 0`).
 - Tutti i server avviati da me sono spenti; porte 3000/3100 libere.
+
+## Re-review del fix (2026-11-04, statica — `25ef34d` fix, `470d4ca` Fix Record)
+
+Perimetro su richiesta della sessione principale, con il suo arbitro in corso:
+- **niente** build, gate, `next start` o e2e;
+- **nessuna** scrittura su `airmanager` fuori da schemi usa-e-getta dentro `BEGIN … ROLLBACK`, più query di sola lettura.
+
+Il fix sostituisce `reversalRootType` con `reversalRootBook` (enum `AccountMovementRootBook` DEPOSIT/REVENUE/TRANSFER) e introduce `rootBookType(type, amountCents)` in `src/lib/schemas/transactions.ts`. La migrazione `20261104100000` è emendata in place: lecito, perché `origin/dev` è a `56c6664`, `git branch -r --contains 6e76e20` risponde vuoto, e `airmanager_load` non ha mai applicato 20261104. Sul DB dell'arbitro risultano già la colonna `reversalRootBook`, il vincolo `AccountMovement_reversalRootBook_check` e il checksum nuovo.
+
+### Verdetto: **il fix è corretto — SHIPPABLE confermato.** F5 risolto, F3 e F4 chiusi, nessuna regressione trovata.
+
+### 1. Il libro della radice è deciso una volta e coincide ovunque
+
+- **Decisione**: `rootBookType`.
+  - `TOP_UP` → DEPOSIT, `FLIGHT_CHARGE` → REVENUE, `PACKAGE_PURCHASE` → TRANSFER.
+  - `ADJUSTMENT` → REVENUE se `amountCents < 0`, altrimenti TRANSFER.
+- **Writer**: `accounts.service.ts:754`, `original.reversalRootBook ?? rootBookType(original.type, original.amountCents)`.
+  - La `select` dell'originale prende ora `amountCents`.
+  - Una radice calcola il proprio libro, un anello eredita quello congelato.
+- **Classificatore**: `transactions.service.ts:182-191`.
+  - Una riga collegata legge `reversalRootBook`.
+  - Una riga non collegata passa dalla STESSA `rootBookType`.
+- **Predicati (le regole di filtro) e aggregati**: un `where` Prisma non può chiamare una funzione, quindi i predicati ripetono la regola per le righe non collegate. Ho verificato caso per caso che coincidono con `rootBookType` e col badge:
+
+| Riga | Badge (`accountBookType`) | Predicato che la prende | Aggregato ricavi |
+|---|---|---|---|
+| `TOP_UP` | DEPOSIT | `ACCOUNT_DEPOSIT_OR[0]` | escluso |
+| `FLIGHT_CHARGE` | REVENUE | `ACCOUNT_REVENUE_OR[0]` | incluso |
+| `ADJUSTMENT` standalone < 0 (quota, addebito) | REVENUE | `ACCOUNT_REVENUE_OR[1]` (`reversalOfId IS NULL AND amountCents < 0`) | incluso |
+| `ADJUSTMENT` standalone ≥ 0 (giroconto) | TRANSFER | `ACCOUNT_TRANSFER_WHERE`, ramo 1 | escluso |
+| anello con radice DEPOSIT (catena di ricarica, qualunque profondità e segno) | DEPOSIT | `ACCOUNT_DEPOSIT_OR[1]` | escluso |
+| anello con radice REVENUE (quota, addebito, `FLIGHT_CHARGE` legacy) | REVENUE | `ACCOUNT_REVENUE_OR[2]` | incluso (fa la compensazione) |
+| anello con radice TRANSFER (**correzione di un giroconto**, profondità 1-3) | TRANSFER | `ACCOUNT_TRANSFER_WHERE`, ramo 2 | **escluso** (era il ricavo fantasma di F5) |
+
+Le righe di conto sono ripartite: nessuna riga raggiungibile cade in due libri o in nessuno. Il `CHECK` esclude un anello senza libro.
+
+`getLedgerRevenueCents`, quindi Statistiche, Panoramica e riepilogo Contabilità, usa `ACCOUNT_REVENUE_OR` invariato come sorgente: segue da sé.
+
+**Discordanze residue, tutte irraggiungibili o preesistenti:**
+- uno storno collegato a importo **zero**: badge TRANSFER (F9(2)), filtro secondo la radice. Irraggiungibile, perché `recordAdjustmentSchema` rifiuta `amountCents: 0` (`schemas/accounts.ts:231`); in un aggregato varrebbe comunque 0;
+- `PACKAGE_PURCHASE` non collegato: badge TRANSFER fuori dal filtro TRANSFER. Preesistente (F9(1)) e nascosto dalla regola che toglie i doppioni.
+
+**Comportamento che cambia, solo su dati legacy**: gli anelli di una catena con radice `PACKAGE_PURCHASE` passano da REVENUE a TRANSFER. Il caso è possibile solo prima di TD-1 (`374405c`, da cui la guardia 409), e la scelta è coerente con la regola ratificata «la correzione segue il libro della radice».
+
+**Nota di forma, non un difetto**: il doc-comment dice «one function, never two copies», ma la regola per le righe non collegate vive anche nei tre `where` e nel `CASE` SQL del backfill (eseguito una volta sola). Coincidono oggi (tabella sopra). A guardia dei `where` ci sono i test unit che ne fissano la forma letterale: `transactions.service.test.ts`, il filtro REVENUE, il filtro TRANSFER (nuovo) e l'aggregato.
+
+### 2. Backfill e CHECK coerenti
+
+- **Gemello**: schema `rv166b_twin2` dentro `BEGIN … ROLLBACK`, con `migration.sql` emendata eseguita **verbatim**; l'enum viene creato nel gemello, quindi nessun conflitto con quello di `public`.
+- **Fixture**: catena di ricarica fino a profondità 6 (segni alterni e non); radice `FLIGHT_CHARGE` legacy fino a profondità 3; quota con due storni; **giroconto con correzioni a profondità 1, 2 e 3**; radice `ADJUSTMENT` a importo 0; radice `PACKAGE_PURCHASE` legacy; uno standalone.
+- **Esito**: **`mismatches 0 / total 23`**, con gli attesi calcolati con la regola di `rootBookType` (`scratchpad/twin2.sql`, `twin2.out`). Il `CASE` SQL corrisponde a `rootBookType` riga per riga, compreso lo 0 trattato come TRANSFER.
+- **CHECK** (`rv166b_twin3`): rifiuta un anello senza libro e una riga standalone con libro (23514 `AccountMovement_reversalRootBook_check`), accetta un anello col suo libro. Schemi residui: 0.
+- **F3 chiuso**: l'interazione fra il CHECK e l'`ON DELETE SET NULL` è documentata nel commento della migrazione.
+
+### 3. Nessuna regressione sui casi già verificati
+
+- **NULL e righe standalone**: SQL generato da Prisma 7.8.0 (`scratchpad/sqlprobe2.out`, sola lettura, nessuna riga toccata). REVENUE ⇒ `("type" = … OR ("type" = … AND "reversalOfId" IS NULL AND "amountCents" < $4) OR ("type" = … AND "reversalRootBook" = …))`. Il debito standalone non dipende più da una colonna NULL: la trappola dei NULL è sparita per costruzione, non per un `OR` difensivo.
+- **Filtro «Acconti»**: DEPOSIT ⇒ `("type" = 'TOP_UP' OR ("type" = 'ADJUSTMENT' AND "reversalRootBook" = 'DEPOSIT'))`, lo stesso insieme di prima.
+- **Filtro giroconti**: TRANSFER ⇒ `"type" = 'ADJUSTMENT' AND (("reversalOfId" IS NULL AND "amountCents" >= $3) OR "reversalRootBook" = 'TRANSFER')`, cioè giroconti standalone più le loro correzioni (nuovo, coerente col badge).
+- **Catena di ricarica, quota con storno, `FLIGHT_CHARGE` legacy**: libro identico a prima (tabella sopra e unit esistenti con le sole fixture riscritte).
+- **Discriminanti nuovi, letti**:
+  - `it.each` del writer con giroconto → TRANSFER e debito → REVENUE: i due `ADJUSTMENT` standalone che `reversalRootType` non distingueva;
+  - classificatore: catena di giroconto → TRANSFER a profondità 1 e 2;
+  - forma letterale del filtro TRANSFER.
+
+  Il dev riporta il test del classificatore rosso sul pre-fix e i gate a 2261 (+3 = il caso `it.each` in più + 2 test nuovi, conteggio coerente). Non rieseguiti da me (perimetro statico).
+- **F4 chiuso**: rimossa la riga dell'anno, `membership-fee.spec.ts:357`. Resta l'uguaglianza con `committed.expiresAt`, che è quella discriminante.
+
+### Suggerimento facoltativo, dopo l'arbitro
+
+Nessun e2e esercita la correzione di un giroconto sull'app vera. Se si vuole la prova empirica, `scratchpad/probe-q5.mjs` su una build di HEAD servita su :3100 deve dare:
+- `"rv G1 storno del giroconto:TRANSFER"`;
+- `TRANSFER.total = 2` (G e G1);
+- `REVENUE` = solo l'addebito standalone;
+- **`revenueDelta: 700`** (prima del fix era 2700).

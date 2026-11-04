@@ -44,7 +44,7 @@ Il file sotto è misurato su `9272129` (2026-09-10). Da allora sono atterrati 16
 
 - **Q-16.6b-a + Q-16.6b-b — una catena di correzioni partita da una ricarica resta acconto, a ogni livello e segno, e compare nel filtro «Acconti»** (raccomandazione A su entrambe, poste al PO in una sola domanda): la **radice** decide il libro (`reversalRootType === 'TOP_UP'` → DEPOSIT a qualunque profondità; è la ratifica Billing-1 F3 applicata in modo transitivo). Il filtro `bookType=DEPOSIT` (`transactions.service.ts:221`, oggi `{ type: 'TOP_UP' }`) diventa `OR [{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootType: 'TOP_UP' }]` — stessa definizione del badge e dell'aggregato; oggi quelle righe spariscono da tutti i filtri (vincolato da `billing.spec.ts:190`, da aggiornare). Riscrivere il doc di `transactions.service.ts:171-177` («fuori scope»). Sui dati misurati oggi nessuna riga cambia libro (profondità massima 1).
 
-Status: **review** (dev 2026-11-04, v. Dev Agent Record in coda) — creata 2026-09-10, riallineata e ratificata il 2026-11-03 (§R, §R-PO). **Modello dev: Opus 5 xhigh** (la story tocca UI: il `fetch` della quota associativa in `scadenze-console.tsx` — chiave di idempotenza, `try/catch`, bottone che oggi resta bloccato per sempre —, un ramo d'errore nuovo con la sua frase in due locale, e il predicato dell'azione di riga dell'estratto conto su **due facce**). Review: **Opus 5 xhigh adversarial**.
+Status: **done** — 2026-11-04 (Review Record in coda). Era: **review** (dev 2026-11-04, v. Dev Agent Record in coda) — creata 2026-09-10, riallineata e ratificata il 2026-11-03 (§R, §R-PO). **Modello dev: Opus 5 xhigh** (la story tocca UI: il `fetch` della quota associativa in `scadenze-console.tsx` — chiave di idempotenza, `try/catch`, bottone che oggi resta bloccato per sempre —, un ramo d'errore nuovo con la sua frase in due locale, e il predicato dell'azione di riga dell'estratto conto su **due facce**). Review: **Opus 5 xhigh adversarial**.
 
 > ⚠️ **Questa story è la METÀ «guardie di scrittura» della 16.6 del piano.** L'altra metà è `16-6a-data-valuta-e-totali.md` (data valuta, parità PDF/schermo, etichette dei libri). Il piano descriveva **una** story; la divido perché tocca **sei superfici indipendenti** (soglia di progetto: >4 superfici non correlate o >20 AC) e perché le due metà non condividono **nessun** file di produzione. **Nessuna dipendenza fra le due**: qualunque ordine, anche in parallelo.
 >
@@ -786,3 +786,16 @@ Nessuna: le due domande aperte della review (F1, F5) erano già state decise dal
 ### Change Log
 
 - 2026-11-04 — fix (Sonnet 5): `reversalRootType` → `reversalRootBook` (libro della radice, non il suo tipo) chiude il ricavo fantasma di una correzione di giroconto (review F5); doc del CHECK vs `ON DELETE SET NULL` (F3); asserzione sull'anno fragile rimossa da `membership-fee.spec.ts` (F4); F2 lasciato dichiarato (`25ef34d`). Status → review.
+
+## Review Record (sessione principale, 2026-11-04)
+
+- **Review** (Opus, `16-6b-review-report.md`): **SHIPPABLE**, nessun difetto di produzione nel diff; arbitro del reviewer su DB fresco **616/616, 0 flaky**. Findings: F1 medium (doppio addebito dopo un 409 `IDEMPOTENCY_IN_PROGRESS` / chiusura del pannello — fuori scope dichiarato), F2 TD-16.6b-a, F3 doc del CHECK, F4 asserzione fragile al 31/12, F5 preesistente (correzione di un giroconto contata nei Ricavi, +20 € fantasma).
+- **Decisioni PO**: F1 → **nuova story 16.10** (7 form con `Idempotency-Key`); F5 → **corretto qui**: la correzione segue il **libro** della radice.
+- **Fix** (Sonnet, backend): `25ef34d` + `470d4ca` — `reversalRootType` sostituito da `reversalRootBook` (enum DEPOSIT/REVENUE/TRANSFER) deciso una volta da `rootBookType(type, amountCents)` (`src/lib/schemas/transactions.ts`) per writer e classificatore; predicati come uguaglianze dirette (la trappola dei NULL non può più esistere); migrazione `20261104100000` emendata in place (non pushata né deployata); F3 commento sul CHECK, F4 riga ridondante rimossa; unit 2261 (+3); test F5 rosso sul pre-fix.
+- **Re-review statica del fix** (stesso reviewer): corretto, SHIPPABLE confermato (backfill su schema usa-e-getta 23/23, CHECK nei due versi, nessuna regressione su NULL/standalone/Acconti).
+- **Arbitro finale** (sessione principale, DB fresco, 16:12-16:35, HEAD `470d4ca`): **614 passed + 2 flaky = 616, `E2E_EXIT=0`, 0 ECONNRESET**. Flaky: `bookings.spec.ts:1004` e `instructor-compensation.spec.ts:217`, entrambi `toHaveURL(/dashboard$/)` scaduto al login (classe login-timeout), verdi al retry. Log in scratchpad (`arbiter-16-6b-final.log`).
+- **Prova empirica della correzione F5** (sessione principale, build dell'arbitro su :3100, `probe-q5` del reviewer adattato a `reversalRootBook`): giroconto standalone TRANSFER, sua correzione **TRANSFER** (prima REVENUE), `revenueDelta` **700** (prima 2700); il campo non esce in nessuna API né in OpenAPI.
+- **Conteggi**: e2e 615 → **616**, unit 2252 → **2261**.
+- **TD**: TD-16.6b-a (il test nuovo della quota scrive un AppSetting globale nel project principale); il 409 `IN_PROGRESS` e la chiave dopo chiudi/riapri → story 16.10.
+
+Status: **done**.
