@@ -159,7 +159,8 @@ export type BookingListItem = {
   id: string;
   aircraftId: string;
   aircraftRegistration: string;
-  personId: string;
+  /** `null` on a masked entry too (story 16.7, ops F6) — see `maskBookingNames`'s doc-comment. */
+  personId: string | null;
   /** `null` on a masked (non-own, no `bookings.read.names`) entry — see `maskBookingNames`'s doc-comment (story 14.5). */
   personName: string | null;
   instructorProfileId: string | null;
@@ -169,7 +170,7 @@ export type BookingListItem = {
   notes: string | null;
   status: BookingStatus;
   cancelledAt: Date | null;
-  /** Set only when an admin derogated a failed requirement (story 19.10) — see `Booking.forcedAt`'s doc-comment. */
+  /** Set only when an admin derogated a failed requirement (story 19.10) — see `Booking.forcedAt`'s doc-comment. Masked to `null` too (story 16.7, Q-16.7-a). */
   forcedAt: Date | null;
   /** Set only after a DENIED decision (story 12.2, AC 3) — see `Booking.denyReason`'s doc-comment. */
   denyReason: string | null;
@@ -272,11 +273,21 @@ function toListItem(booking: SelectedBooking): BookingListItem {
  * requirement). `status`/`cancelledAt`/etc. are left untouched — none of
  * them name a person, and hiding them would be an unrequested behavior
  * change (AC 5: admin/instructor/own bookings stay pixel-identical).
+ *
+ * Story 16.7 (ops F6): `personId` is masked too — it was the last id on a
+ * masked row that names a person, and exactly what the 403 on
+ * `listBookings`'s `personId` filter protects (one unfiltered page handed
+ * the holders' ids over anyway). `forcedAt` too (Q-16.7-a): since story 19.10
+ * it says that holder had a failed requirement (medical visit, currency,
+ * balance, quota) derogated by an admin. Both are a DTO projection only:
+ * `isOwn` below reads the unmasked `toListItem` row, whose `personId` is
+ * never `null` (`Booking.personId` is NOT NULL), and `assertOwnAccessAndTiming`
+ * compares the DB value, never this one.
  */
 function maskBookingNames(actor: Actor, canReadNames: boolean, ownInstructorProfileId: string | null, booking: BookingListItem): BookingListItem {
   const isOwn = booking.personId === actor.personId || (booking.instructorProfileId !== null && booking.instructorProfileId === ownInstructorProfileId);
   if (canReadNames || isOwn) return booking;
-  return { ...booking, personName: null, instructorProfileId: null, instructorName: null, notes: null, denyReason: null };
+  return { ...booking, personId: null, personName: null, instructorProfileId: null, instructorName: null, notes: null, forcedAt: null, denyReason: null };
 }
 
 type TargetPerson = {
@@ -940,7 +951,9 @@ export async function createBooking(actor: Actor, input: CreateBookingInput): Pr
  * otherwise, checked before any query) — same guard shape as
  * `flights.service.ts#authorizeFlightsQuery`: masked names alone would still
  * let such an actor enumerate "every booking of person X" via this filter,
- * a linkability channel the masking itself does nothing to close. Ordered
+ * a linkability channel the masking itself does nothing to close (and since
+ * story 16.7 a masked row no longer carries `personId`, so an unfiltered
+ * page cannot hand X's id over instead). Ordered
  * `startsAt asc, id asc` (soonest-first, deterministic tie-break). The DTO
  * includes the booking-holder and instructor NAMES and `notes` — but MASKED
  * (story 14.5, ratifica R3, superseding the original "an aeroclub is

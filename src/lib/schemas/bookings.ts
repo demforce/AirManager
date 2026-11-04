@@ -144,12 +144,16 @@ export type ListBookingsQuery = z.infer<typeof listBookingsQuerySchema>;
  * `notes`/`denyReason` are ALSO forced to `null` on a masked entry (server-
  * side, `bookings.service.ts#maskBookingNames`) — none of those NEVER reach
  * the wire for a masked row, so this schema needs no separate boolean flag.
+ * `personId` is `.nullable()` for the same reason (story 16.7, ops F6), and
+ * `forcedAt` is masked too: on a masked entry both are `null`. The single-
+ * booking responses (create, PATCH, cancel, transition) are never masked,
+ * so there `personId` is always set.
  */
 export const bookingItemSchema = z.object({
   id: z.string(),
   aircraftId: z.string(),
   aircraftRegistration: z.string(),
-  personId: z.string(),
+  personId: z.string().nullable(),
   personName: z.string().nullable(),
   instructorProfileId: z.string().nullable(),
   instructorName: z.string().nullable(),

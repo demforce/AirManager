@@ -163,6 +163,13 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(createBookingResponse?.properties).toHaveProperty('warnings');
   });
 
+  it('documents Booking.personId as nullable — null on a masked row, like personName (story 16.7, ops F6, AC 3)', () => {
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, { type?: unknown }> }> | undefined;
+    const booking = schemas?.['Booking']?.properties;
+    expect(booking?.['personId']?.type).toEqual(['string', 'null']);
+    expect(booking?.['personName']?.type).toEqual(['string', 'null']);
+  });
+
   it('documents the optional composite rate block on CreateAircraftRequest (story 14.8, review F3)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
     expect(schemas?.['CreateAircraftRequest']?.properties).toHaveProperty('rate');

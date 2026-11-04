@@ -60,6 +60,10 @@ const SELECTED_USER = {
   isActive: true,
   locale: 'it',
   passwordHash: null,
+  // Story 16.7: `updateUser` compares the patch against the stored link —
+  // without it, `null !== undefined` would make every unlink look like a
+  // change even when there was nothing linked to drop.
+  personId: 'person_1',
   person: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -197,14 +201,16 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       expect(result.isActive).toBe(false);
     });
 
-    it('allows unlinking the person (personId: null) without a Person lookup', async () => {
+    it('allows unlinking the person (personId: null) without a Person lookup — and ends the sessions (story 16.7, R-16-f)', async () => {
       userFindUnique.mockResolvedValue(SELECTED_USER);
       userUpdate.mockResolvedValue(SELECTED_USER);
 
       await updateUser(adminActor(), 'user_1', { personId: null });
 
       expect(personFindUniqueMock).not.toHaveBeenCalled();
-      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { personId: null } }));
+      // ONE write carrying both fields: the bump cannot land without the unlink, or the reverse.
+      expect(updateMock).toHaveBeenCalledTimes(1);
+      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { personId: null, tokenVersion: { increment: 1 } } }));
     });
 
     it('throws ConflictError when re-linking to a person already linked elsewhere', async () => {
@@ -212,6 +218,43 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       personFindUnique.mockResolvedValue({ id: 'person_2', user: { id: 'someone_else' } });
 
       await expect(updateUser(adminActor(), 'user_1', { personId: 'person_2' })).rejects.toThrow(ConflictError);
+    });
+
+    // Story 16.7 (ops F8, R-16-f): a re-link or an unlink is a change of
+    // identity — `tokenVersion` advances in the same write, and
+    // `applyActiveRecheck` ends every session issued before it.
+    it('re-linking to another person bumps tokenVersion in the SAME update call', async () => {
+      userFindUnique.mockResolvedValue(SELECTED_USER);
+      personFindUnique.mockResolvedValue({ id: 'person_2', user: null });
+      userUpdate.mockResolvedValue(SELECTED_USER);
+
+      await updateUser(adminActor(), 'user_1', { personId: 'person_2' });
+
+      expect(updateMock).toHaveBeenCalledTimes(1);
+      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'user_1' }, data: { personId: 'person_2', tokenVersion: { increment: 1 } } }));
+    });
+
+    it('re-sending the SAME personId is not a change: no bump', async () => {
+      userFindUnique.mockResolvedValue(SELECTED_USER);
+      personFindUnique.mockResolvedValue({ id: 'person_1', user: { id: 'user_1' } });
+      userUpdate.mockResolvedValue(SELECTED_USER);
+
+      await updateUser(adminActor(), 'user_1', { personId: 'person_1' });
+
+      const data = updateMock.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+      expect(data).toEqual({ personId: 'person_1' });
+      expect(data.tokenVersion).toBeUndefined();
+    });
+
+    it('a patch that does not touch personId (roles, locale, isActive) never bumps — a role change stays a permission change, propagated by the recheck', async () => {
+      userFindUnique.mockResolvedValue(SELECTED_USER);
+      userUpdate.mockResolvedValue(SELECTED_USER);
+
+      await updateUser(adminActor(), 'user_1', { roles: ['STUDENT'], locale: 'en', isActive: true });
+
+      const data = updateMock.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+      expect(data).toEqual({ roles: ['STUDENT'], locale: 'en', isActive: true });
+      expect(data.tokenVersion).toBeUndefined();
     });
   });
 

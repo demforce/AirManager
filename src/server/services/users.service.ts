@@ -177,6 +177,16 @@ export async function updateUser(actor: Actor, id: string, patch: UpdateUserInpu
     }
   }
 
+  // Story 16.7 (ops F8, R-16-f): re-linking or unlinking the person is a
+  // change of identity, and every "own" check reads `personId` from the
+  // session — so it ends that user's sessions, through the same
+  // `tokenVersion` bump as a password set (TD-6), in the same write.
+  // `applyActiveRecheck` evicts a stale session at its next recheck (≤ 15
+  // min). Only on a REAL change: an API client re-sending the current link
+  // is not one. Roles and `isActive` do not bump: the recheck already
+  // propagates them.
+  const personIdChanges = patch.personId !== undefined && patch.personId !== existing.personId;
+
   let user;
   try {
     user = await prisma.user.update({
@@ -186,6 +196,7 @@ export async function updateUser(actor: Actor, id: string, patch: UpdateUserInpu
         ...(patch.locale !== undefined && { locale: patch.locale }),
         ...(patch.personId !== undefined && { personId: patch.personId }),
         ...(patch.isActive !== undefined && { isActive: patch.isActive }),
+        ...(personIdChanges && { tokenVersion: { increment: 1 } }),
       },
       select: USER_SELECT,
     });

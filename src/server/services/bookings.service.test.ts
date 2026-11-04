@@ -814,7 +814,11 @@ describe('listBookings — privacy masking (Story 14.5, AC 1/2/6, ratifica R3)',
     // Untouched: masking never hides operational fields, only identity-bearing ones.
     expect(result.items[0]?.status).toBe('DENIED');
     expect(result.items[0]?.aircraftRegistration).toBe('I-ABCD');
-    expect(result.items[0]?.personId).toBe('person_pilot');
+    // Story 16.7 (ops F6): this line used to read `.toBe('person_pilot')`, and
+    // it asserted the defect — the holder's id is exactly what the 403 on the
+    // `personId` filter protects, so a masked row must not hand it over
+    // unfiltered. Never "fix" a red here by putting the id back.
+    expect(result.items[0]?.personId).toBeNull();
   });
 
   it("does NOT mask a pilot's OWN booking (personId === actor.personId)", async () => {
@@ -880,6 +884,77 @@ describe('listBookings — privacy masking (Story 14.5, AC 1/2/6, ratifica R3)',
     const result = await listBookings(pilotActor('someone_else'), { page: 1, pageSize: 20 });
 
     expect(result.items[0]?.personName).toBeNull();
+  });
+});
+
+describe('masked rows carry no id of their holder (Story 16.7, ops F6, Q-16.7-a)', () => {
+  // `forcedAt` set: since story 19.10 it says the holder had a failed
+  // requirement derogated, so the masked row must drop it too (Q-16.7-a).
+  const OTHERS_FORCED_ROW = {
+    ...CREATED_BOOKING_ROW,
+    instructorProfileId: 'instr_profile_1',
+    instructorProfile: { person: { firstName: 'Livia', lastName: 'Bernasconi' } },
+    notes: 'Recupero volo di gruppo',
+    forcedAt: new Date('2026-06-30T08:00:00.000Z'),
+  };
+
+  it('listBookings: personId and forcedAt are null on a row that is not the PILOT actor own', async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_FORCED_ROW]); // personId: 'person_pilot'
+    bookingCount.mockResolvedValue(1);
+
+    const result = await listBookings(pilotActor('someone_else'), { page: 1, pageSize: 20 });
+
+    expect(result.items[0]?.personId).toBeNull();
+    expect(result.items[0]?.forcedAt).toBeNull();
+  });
+
+  it('listCalendarBookings: personId and forcedAt are null on a row that is not the STUDENT actor own', async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_FORCED_ROW]);
+
+    const result = await listCalendarBookings(studentActor(), { from: '2026-08-03T00:00:00.000Z', to: '2026-08-04T00:00:00.000Z' });
+
+    expect(result[0]?.personId).toBeNull();
+    expect(result[0]?.forcedAt).toBeNull();
+  });
+
+  it('the masked row has this EXACT shape — a field added to the DTO later fails here until it is classified', async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_FORCED_ROW]);
+    bookingCount.mockResolvedValue(1);
+
+    const result = await listBookings(pilotActor('someone_else'), { page: 1, pageSize: 20 });
+
+    expect(result.items[0]).toEqual({
+      id: 'booking_1',
+      aircraftId: 'aircraft_1',
+      aircraftRegistration: 'I-ABCD',
+      personId: null,
+      personName: null,
+      instructorProfileId: null,
+      instructorName: null,
+      startsAt: new Date(FUTURE_STARTS_AT),
+      endsAt: new Date(FUTURE_ENDS_AT),
+      notes: null,
+      status: 'APPROVED',
+      cancelledAt: null,
+      forcedAt: null,
+      denyReason: null,
+      decidedAt: null,
+      createdAt: new Date('2026-07-01T00:00:00.000Z'),
+    });
+  });
+
+  it("keeps personId and forcedAt on the actor's OWN row, and on any row for an actor with bookings.read.names", async () => {
+    bookingFindMany.mockResolvedValue([OTHERS_FORCED_ROW]);
+    bookingCount.mockResolvedValue(1);
+
+    const own = await listBookings(pilotActor('person_pilot'), { page: 1, pageSize: 20 });
+    const staff = await listBookings(adminActor(), { page: 1, pageSize: 20 });
+
+    for (const item of [own.items[0], staff.items[0]]) {
+      expect(item?.personId).toBe('person_pilot');
+      expect(item?.forcedAt).toEqual(new Date('2026-06-30T08:00:00.000Z'));
+      expect(item?.personName).toBe('Mario Rossi');
+    }
   });
 });
 

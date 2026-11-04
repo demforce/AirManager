@@ -728,9 +728,11 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const calendarTo = `${tomorrow}T23:59:59.000Z`;
     const rawResponse = await page.request.get(`/api/v1/bookings/calendar?from=${calendarFrom}&to=${calendarTo}`);
     expect(rawResponse.status()).toBe(200);
-    const rawBookings = (await rawResponse.json()) as Array<{ aircraftId: string; personName: string | null }>;
+    const rawBookings = (await rawResponse.json()) as Array<{ aircraftId: string; personName: string | null; personId: string | null }>;
     const rawBlock = rawBookings.find((item) => item.aircraftId === aircraft.id);
     expect(rawBlock?.personName).toBeNull();
+    // Story 16.7 (ops F6): nor the holder's id.
+    expect(rawBlock?.personId).toBeNull();
 
     // Story 12.3, AC 3: `NewBookingForm` (and `EditBookingForm`) are only
     // ever MOUNTED for an actor who could ever open one (`canCreate`) — an
@@ -2021,10 +2023,23 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
     // dev DB has accumulated on that same far-future day. ------------------
     const rawListResponse = await page.request.get(`/api/v1/bookings?aircraftId=${aircraftOther.id}`);
     expect(rawListResponse.status()).toBe(200);
-    const rawBookings = (await rawListResponse.json()) as { items: Array<{ personName: string | null; instructorName: string | null }> };
+    const rawBookings = (await rawListResponse.json()) as { items: Array<{ personName: string | null; instructorName: string | null; personId: string | null }> };
     expect(rawBookings.items).toHaveLength(1);
     expect(rawBookings.items[0]?.personName).toBeNull();
     expect(rawBookings.items[0]?.instructorName).toBeNull();
+    // Story 16.7 (ops F6): nor the holder's id.
+    expect(rawBookings.items[0]?.personId).toBeNull();
+
+    // Story 16.7, AC 5: a whole page yields no third party's id. The audit
+    // read 16 distinct holder ids off one page of 50; now the only id that
+    // may appear is the pilot's own. `from` lands the page on `FUTURE_DAY`,
+    // where this test's own fixtures guarantee other people's rows.
+    const pageResponse = await page.request.get(`/api/v1/bookings?pageSize=50&from=${FUTURE_DAY}T00:00:00.000Z`);
+    expect(pageResponse.status()).toBe(200);
+    const pageItems = ((await pageResponse.json()) as { items: Array<{ personName: string | null; personId: string | null }> }).items;
+    expect(pageItems.some((item) => item.personName === null)).toBe(true);
+    const visibleIds = new Set(pageItems.flatMap((item) => (item.personId === null ? [] : [item.personId])));
+    expect([...visibleIds].filter((id) => id !== me.person.id)).toEqual([]);
 
     // --- Instructor: sees real names, on a booking that is NEITHER theirs
     // nor their own (bookings.read.names, not ownership) ------------------

@@ -42,7 +42,8 @@ export type BookingRowDto = {
   id: string;
   aircraftId: string;
   aircraftRegistration: string;
-  personId: string;
+  /** `null` on a masked row too (story 16.7, ops F6) — never compare it to a `null` `ownPersonId`, see `isOwnRow`. */
+  personId: string | null;
   /** `null` on a masked (non-own, `bookings.read.names`-less) row — story 14.5, ratifica R3: rendered as `labels.occupied`. */
   personName: string | null;
   instructorProfileId: string | null;
@@ -267,9 +268,17 @@ export function BookingsTable({
     else sheetPrimaryRef.current?.focus();
   }, [sheetStep]);
 
+  /**
+   * Story 16.7 (AD-3): a masked row has `personId: null`, so an actor with no
+   * linked person (`ownPersonId: null`, e.g. a PILOT user unlinked by an
+   * admin) would match EVERY masked row on `null === null` and see
+   * «Modifica»/«Annulla» on other people's bookings. Cosmetic, not an
+   * authorization hole — `assertOwnAccessAndTiming` compares the DB value and
+   * answers 403 — hence the guard, not a new field on the wire.
+   */
   function isOwnRow(booking: BookingRowDto): boolean {
     if (!canManageOwn) return false;
-    if (booking.personId === ownPersonId) return true;
+    if (ownPersonId !== null && booking.personId === ownPersonId) return true;
     return booking.instructorProfileId !== null && booking.instructorProfileId === ownInstructorProfileId;
   }
 
