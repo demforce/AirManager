@@ -675,6 +675,27 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       // this failure never reaches the caller as "committed, then errored".
       await expect(recordTopUp(adminActor(), 'person_1', input)).rejects.toThrow('transient read failure');
     });
+
+    // Story 16.6a (R-16-h, ledger-audit MAJOR-4) — discriminant: before the
+    // guard, a top-up dated a year ahead was written verbatim, with its cash twin.
+    it('rejects a value date after today (Roma) with 422 EFFECTIVE_DATE_IN_FUTURE — the transaction never opens, neither movement is written', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-01T10:00:00.000Z'));
+      try {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        cashCategoryFindUnique.mockResolvedValue({ id: 'category_ricariche' });
+
+        const rejection = recordTopUp(adminActor(), 'person_1', { ...input, effectiveDate: '2027-07-01' });
+
+        await expect(rejection).rejects.toThrow(ValidationError);
+        await expect(rejection).rejects.toMatchObject({ code: 'EFFECTIVE_DATE_IN_FUTURE', details: { effectiveDate: '2027-07-01' } });
+        expect(transactionMock).not.toHaveBeenCalled();
+        expect(accountMovementCreateMock).not.toHaveBeenCalled();
+        expect(cashMovementCreateMock).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('recordAdjustment (story 3.3, AC 1 — AD-3: a NEW movement, the original is never touched)', () => {

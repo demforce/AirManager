@@ -124,6 +124,8 @@ export type AccountSectionLabels = {
     invalidAmount: string;
     requiredField: string;
     genericError: string;
+    /** 422 `EFFECTIVE_DATE_IN_FUTURE` (story 16.6a). */
+    futureDateError: string;
   };
   /** Same "only when `canManageFinance`" contract as {@link AccountSectionLabels.topUp} above. */
   adjustments?: {
@@ -885,7 +887,8 @@ function TopUpForm({
     regenerateIdempotencyKey();
 
     if (!response.ok) {
-      setFormError(labels.genericError);
+      const { code } = await parseApiError(response);
+      setFormError(code === 'EFFECTIVE_DATE_IN_FUTURE' ? labels.futureDateError : labels.genericError);
       return;
     }
 

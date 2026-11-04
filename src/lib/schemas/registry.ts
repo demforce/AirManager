@@ -613,7 +613,7 @@ registry.registerPath({
   path: '/api/v1/people/{id}/account/top-ups',
   summary: 'Record a prepaid-account top-up',
   description:
-    'Append-only (AD-3, story 3.1, AC 2/3) — in one transaction, upserts the `Account`, creates an immutable `AccountMovement` (TOP_UP) and its automatic `CashMovement` twin under the seeded "Ricariche" category. There is no update/delete endpoint for either ledger. Requires `finance.manage` (ADMIN-only) — never "own". Accepts the opt-in `Idempotency-Key` header (story TD-2).',
+    'Append-only (AD-3, story 3.1, AC 2/3) — in one transaction, upserts the `Account`, creates an immutable `AccountMovement` (TOP_UP) and its automatic `CashMovement` twin under the seeded "Ricariche" category. There is no update/delete endpoint for either ledger. Requires `finance.manage` (ADMIN-only) — never "own". An `effectiveDate` after today on the Europe/Rome calendar is 422 `EFFECTIVE_DATE_IN_FUTURE` (`details.effectiveDate`), before anything is written — today is accepted, a past date too (story 16.6a). Accepts the opt-in `Idempotency-Key` header (story TD-2).',
   tags: ['Accounts'],
   security,
   request: { params: personIdParams, headers: [idempotencyKeyHeader], body: { content: jsonContent(recordTopUpSchema), required: true } },
@@ -830,7 +830,7 @@ registry.registerPath({
   path: '/api/v1/cash-movements',
   summary: 'Record a manual cash movement (entrata or uscita)',
   description:
-    'Append-only (AD-3, story 3.4, AC 2): there is no update/delete endpoint — corrections go through `POST /api/v1/cash-movements/{id}/reverse` (NOT idempotency-key-protected, already covered by `reversalOfId`). The category must exist and be active (409 if deactivated). `amountCents` is SIGNED: positive = entrata, negative = uscita. Requires `finance.manage`. Accepts the opt-in `Idempotency-Key` header (story TD-2).',
+    'Append-only (AD-3, story 3.4, AC 2): there is no update/delete endpoint — corrections go through `POST /api/v1/cash-movements/{id}/reverse` (NOT idempotency-key-protected, already covered by `reversalOfId`). The category must exist and be active (409 if deactivated). `amountCents` is SIGNED: positive = entrata, negative = uscita. An `effectiveDate` after today on the Europe/Rome calendar is 422 `EFFECTIVE_DATE_IN_FUTURE` (`details.effectiveDate`), before anything is written — today is accepted, a past date too (story 16.6a). Requires `finance.manage`. Accepts the opt-in `Idempotency-Key` header (story TD-2).',
   tags: ['Cash'],
   security,
   request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(recordCashMovementSchema), required: true } },
@@ -925,7 +925,7 @@ registry.registerPath({
   path: '/api/v1/transactions',
   summary: 'Record a new transaction — top-up, account adjustment, or cash movement (AirOps "Nuova transazione")',
   description:
-    'A discriminated union over 3 branches (`kind`), each a pure dispatch onto a PRE-EXISTING writer, unchanged and still independently reachable on their own routes: `TOP_UP` -> `POST /api/v1/people/{id}/account/top-ups`\' `recordTopUp`; `ADJUSTMENT` -> `POST /api/v1/people/{id}/account/adjustments`\' `recordAdjustment` (the wire `amountCents` is the positive "importo addebito", negated server-side into that model\'s DB sign convention for a charge); `CASH` -> `POST /api/v1/cash-movements`\' `recordCashMovement`. `finance.manage` is enforced by each delegate. `Idempotency-Key` is MANDATORY here (unlike the 5 opt-in TD-2 routes it delegates to) — same pattern as `POST /api/v1/instructor-payouts` (story 12.7).',
+    'A discriminated union over 3 branches (`kind`), each a pure dispatch onto a PRE-EXISTING writer, unchanged and still independently reachable on their own routes: `TOP_UP` -> `POST /api/v1/people/{id}/account/top-ups`\' `recordTopUp`; `ADJUSTMENT` -> `POST /api/v1/people/{id}/account/adjustments`\' `recordAdjustment` (the wire `amountCents` is the positive "importo addebito", negated server-side into that model\'s DB sign convention for a charge); `CASH` -> `POST /api/v1/cash-movements`\' `recordCashMovement`. `finance.manage` is enforced by each delegate, and so is the value-date rule: `TOP_UP` and `CASH` answer their delegate\'s 422 `EFFECTIVE_DATE_IN_FUTURE` for an `effectiveDate` after today (Europe/Rome, story 16.6a). `Idempotency-Key` is MANDATORY here (unlike the 5 opt-in TD-2 routes it delegates to) — same pattern as `POST /api/v1/instructor-payouts` (story 12.7).',
   tags: ['Billing'],
   security,
   request: { headers: [idempotencyKeyHeader], body: { content: jsonContent(recordTransactionSchema), required: true } },

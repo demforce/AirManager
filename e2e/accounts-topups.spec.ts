@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { addDaysIso, todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -144,5 +145,43 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     expect(patchResponse.status()).toBe(405);
     const deleteResponse = await page.request.delete(`/api/v1/people/${personId}/account/top-ups`);
     expect(deleteResponse.status()).toBe(405);
+  });
+
+  test('a top-up dated after today (Europe/Rome) is a 422 EFFECTIVE_DATE_IN_FUTURE that writes nothing, on its route and through "Nuova transazione"; the scheda form names the rule, and today goes through (story 16.6a, R-16-h)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const personId = await createPilotPerson(page, uniquePerson('Futura'));
+    const today = todayRome();
+    const tomorrow = addDaysIso(today, 1);
+
+    const direct = await page.request.post(`/api/v1/people/${personId}/account/top-ups`, {
+      data: { amountCents: 10000, paymentMethod: 'CASH', effectiveDate: tomorrow },
+    });
+    expect(direct.status()).toBe(422);
+    expect((await direct.json()).error).toMatchObject({ code: 'EFFECTIVE_DATE_IN_FUTURE', details: { effectiveDate: tomorrow } });
+
+    // AC 3: the dispatcher has no guard of its own — the writer's 422 comes through.
+    const dispatched = await page.request.post('/api/v1/transactions', {
+      headers: { 'Idempotency-Key': `e2e-16-6a-topup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` },
+      data: { kind: 'TOP_UP', personId, amountCents: 10000, paymentMethod: 'CASH', effectiveDate: tomorrow },
+    });
+    expect(dispatched.status()).toBe(422);
+    expect((await dispatched.json()).error.code).toBe('EFFECTIVE_DATE_IN_FUTURE');
+
+    await page.goto(`/it/dashboard/people/${personId}`);
+    await page.getByRole('button', { name: 'Registra ricarica' }).click();
+    const form = page.getByTestId('account-topup-form');
+    await page.getByLabel('Importo (€)').fill('100');
+    await form.locator('input[type="date"]').fill(tomorrow);
+    await page.getByRole('button', { name: 'Conferma ricarica' }).click();
+    await expect(form.getByRole('alert')).toHaveText('La data valuta non può essere nel futuro.');
+    // None of the three attempts wrote a movement (anchored: «100,00 €» contains «0,00 €»).
+    await expect(page.getByTestId('account-balance')).toHaveText(/^0,00\s€$/);
+
+    // The bound is inclusive.
+    await form.locator('input[type="date"]').fill(today);
+    await page.getByRole('button', { name: 'Conferma ricarica' }).click();
+    await expect(page.getByTestId('account-balance')).toHaveText(/^100,00\s€$/);
   });
 });

@@ -215,6 +215,16 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     });
   });
 
+  describe('Future value date (story 16.6a, R-16-h)', () => {
+    const paths = doc.paths as Record<string, Record<string, { description?: string }>>;
+
+    it('documents the 422 EFFECTIVE_DATE_IN_FUTURE on the three routes that reach its two writers', () => {
+      for (const path of ['/api/v1/people/{id}/account/top-ups', '/api/v1/cash-movements', '/api/v1/transactions']) {
+        expect(paths[path]?.['post']?.description, `post ${path}`).toContain('EFFECTIVE_DATE_IN_FUTURE');
+      }
+    });
+  });
+
   describe('Person composite save (story 19.4, AC 12)', () => {
     const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
     const patch = (doc.paths as Record<string, Record<string, { description?: string; responses: Record<string, { content?: Record<string, { schema?: unknown }> }> }>>)[

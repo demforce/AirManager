@@ -345,7 +345,8 @@
       "cancel": "Cancel",
       "invalidAmount": "Enter a positive amount (e.g. 100.00).",
       "requiredField": "Required field.",
-      "genericError": "Something went wrong. Please try again."
+      "genericError": "Something went wrong. Please try again.",
+      "futureDateError": "The value date cannot be in the future."
     },
     "editor": {
       "newTitle": "New pilot",
@@ -650,7 +651,8 @@
         "cancel": "Cancel",
         "invalidAmount": "Enter a valid amount greater than zero.",
         "requiredField": "This field is required.",
-        "genericError": "Could not record the top-up. Please try again."
+        "genericError": "Could not record the top-up. Please try again.",
+        "futureDateError": "The value date cannot be in the future."
       }
     }
   },
@@ -756,6 +758,7 @@
     },
     "table": {
       "heading": "Payments received",
+      "cap": "Latest {shown} of {total}",
       "empty": "No payments recorded.",
       "date": "Date",
       "period": "Period",
@@ -1769,7 +1772,7 @@
     "panels": {
       "result": {
         "title": "Result",
-        "revenue": "Revenue",
+        "revenue": "Earned revenue",
         "cost": "Cost",
         "net": "Profit/Loss"
       },
@@ -1846,7 +1849,7 @@
       "pdfLabel": "Cash report (PDF)"
     },
     "byCategory": {
-      "title": "By category",
+      "title": "Cash by category",
       "sub": "{month}",
       "empty": "No movements recorded this month.",
       "in": "In",
@@ -1928,6 +1931,7 @@
       "invalidAmount": "Enter a valid amount greater than zero.",
       "conflictError": "The selected category was deactivated: choose another one.",
       "genericError": "Could not record the transaction. Try again.",
+      "futureDateError": "The date cannot be in the future.",
       "result": {
         "title": "Transaction recorded",
         "newBalance": "New balance",

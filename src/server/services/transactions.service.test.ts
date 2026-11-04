@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { listTransactionsQuerySchema } from '@/lib/schemas/transactions';
 import type { Actor } from '@/server/auth/rbac';
-import { ForbiddenError } from './errors';
+import { ForbiddenError, ValidationError } from './errors';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
@@ -695,5 +695,20 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
       effectiveDate: '2026-07-10',
     });
     expect(recordCashMovementMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountCents: -5000, paymentMethod: 'BANK_TRANSFER' }));
+  });
+
+  // Story 16.6a (R-16-h): the future-value-date guard lives in the two
+  // delegates only — the dispatcher forwards `effectiveDate` untouched and
+  // lets their 422 through (the real chain: `e2e/accounts-topups.spec.ts`, `e2e/cash-register.spec.ts`).
+  it.each([
+    { kind: 'TOP_UP' as const, input: { kind: 'TOP_UP' as const, personId: 'person_1', amountCents: 1000, paymentMethod: 'CASH' as const, effectiveDate: '2099-01-01' } },
+    { kind: 'CASH' as const, input: { kind: 'CASH' as const, categoryId: 'cat_1', direction: 'in' as const, amountCents: 1000, paymentMethod: 'CASH' as const, effectiveDate: '2099-01-01' } },
+  ])('$kind lets the delegate\'s 422 EFFECTIVE_DATE_IN_FUTURE through, with the date forwarded as sent', async ({ kind, input }) => {
+    const futureDate = new ValidationError('effectiveDate cannot be in the future.', { effectiveDate: '2099-01-01' }, 'EFFECTIVE_DATE_IN_FUTURE');
+    const delegate = kind === 'TOP_UP' ? recordTopUpMock : recordCashMovementMock;
+    delegate.mockRejectedValue(futureDate);
+
+    await expect(recordTransaction(adminActor(), input)).rejects.toBe(futureDate);
+    expect(delegate.mock.calls[0]?.at(-1)).toMatchObject({ effectiveDate: '2099-01-01' });
   });
 });

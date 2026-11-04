@@ -23,19 +23,28 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Run-unique day, far in the future — same isolation pattern as `cash-report.spec.ts`'s `uniqueDatePair` (a fresh DB per session, but re-runs against a dirty one must not collide). */
-function dateAt(daysFromBase: number): string {
-  return new Date(Date.UTC(2033, 0, 1) + daysFromBase * 86_400_000).toISOString().slice(0, 10);
+/**
+ * Run-unique day, SAFELY IN THE PAST (story 16.6a, R-16-h): a top-up or a cash
+ * movement dated after today is a 422 `EFFECTIVE_DATE_IN_FUTURE`, as a future
+ * flight is for `uniquePastDateOnly` below. Counts BACK from 2009-12-31 over
+ * ~2 000 days (2004-06 .. 2009-12): a band no other fixture writes in (the
+ * seed's cash rows are 2019, `account-statement-period.spec.ts` uses 2010 and
+ * 2012, `uniquePastDateOnly` 2020-2022), so a re-run against a dirty DB does
+ * not collide. Top-ups and cash movements read no rate, so no 2020 floor.
+ */
+function dateAt(daysBeforeBase: number): string {
+  return new Date(Date.UTC(2009, 11, 31) - daysBeforeBase * 86_400_000).toISOString().slice(0, 10);
 }
 
 function uniqueDatePair(): { day1: string; day2: string } {
-  const dayOffset = Math.floor(Math.random() * 9_000);
-  return { day1: dateAt(dayOffset), day2: dateAt(dayOffset + 1) };
+  const dayOffset = Math.floor(Math.random() * 2_000);
+  // day1 < day2: `dateAt` counts BACKWARD, so the larger offset is the earlier day.
+  return { day1: dateAt(dayOffset + 1), day2: dateAt(dayOffset) };
 }
 
 /**
- * A run-unique isolation date SAFELY IN THE PAST (unlike `dateAt`/
- * `uniqueDatePair`'s own far-future scheme) — `registerFlight` rejects a
+ * A run-unique isolation date SAFELY IN THE PAST and after 2020 (`dateAt`'s
+ * band is older than any rate) — `registerFlight` rejects a
  * future `takeoffAt` with a 422 `FLIGHT_DATE_IN_FUTURE`
  * (`flights.service.ts`), so any scenario involving a real flight charge
  * needs a past isolation date instead. Counts backward from a fixed 2022
@@ -441,7 +450,7 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
 
     // Filtered by the (unique, single-use) category — NOT by date: `reverseCashMovement`
     // always dates the storno row as TODAY (server clock), not the original's `day1`
-    // (a far-future isolation date), so a date-scoped filter would hide the storno row.
+    // (a past isolation date), so a date-scoped filter would hide the storno row.
     await gotoBilling(page, { categoryId });
     const row = billingRows(page).filter({ hasText: 'Uscita da stornare' });
     await row.getByTestId('transaction-reverse-action').click();

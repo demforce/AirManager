@@ -34,6 +34,7 @@ import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
+import { parseApiError } from '@/lib/api-field-errors';
 import { tierOf } from '@/lib/expiry-status';
 import { avatarColorFor, initialsOf, pilotRowFlag, type BlockingDocument, type PilotRowFlag } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
@@ -100,6 +101,8 @@ export type PilotsConsoleLabels = {
     invalidAmount: string;
     requiredField: string;
     genericError: string;
+    /** 422 `EFFECTIVE_DATE_IN_FUTURE` (story 16.6a). */
+    futureDateError: string;
   };
   editor: PilotEditorLabels;
   toast: {
@@ -810,7 +813,8 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
     regenerateIdempotencyKey();
 
     if (!response.ok) {
-      setFormError(labels.genericError);
+      const { code } = await parseApiError(response);
+      setFormError(code === 'EFFECTIVE_DATE_IN_FUTURE' ? labels.futureDateError : labels.genericError);
       return;
     }
 

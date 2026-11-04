@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureValidSeedExpiries } from './helpers';
-import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
+import { seedAircraftRate, seedInstructorPayouts, seedInstructorRate } from './db-fixtures';
 
 /**
  * "I miei compensi" — self-service instructor compensation page (story
@@ -320,6 +320,34 @@ test.describe('Own compensation only (AC 2/3/5/6)', () => {
     await expect(kpis).not.toContainText('99,99 €');
     await expect(page.getByTestId('my-compensation-payout-row')).toHaveCount(0);
     await expect(page.getByTestId('my-compensation-payouts-empty')).toBeVisible();
+  });
+});
+
+test.describe('History cap (story 16.6a, ledger-audit MINOR-5)', () => {
+  test('past 50 payouts the card says «Ultimi 50 di N» ONCE for both faces and «Residuo dovuto» still nets all N; up to 50 there is no note', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const password = 'MyCompensationCap123!';
+    const instructor = await createInstructorWithLogin(page, password, 'Cap');
+    await setPayoutRate(page, instructor.personId, 5000);
+    await recordPayout(page, instructor.personId, 100, 'CASH');
+
+    await loginExpectingDashboard(page, instructor.email, password);
+    await page.goto('/it/dashboard/my-compensation');
+    await expect(page.getByTestId('my-compensation-payout-row')).toHaveCount(1);
+    await expect(page.getByTestId('my-compensation-payouts-cap')).toHaveCount(0);
+
+    // 72 more of 1,00 € each, past period: 73 in all, no flights — the residual is -73,00 €.
+    await seedInstructorPayouts(instructor.personId, 72, { amountCents: 100, period: PAST_DATE });
+    await page.reload();
+    await expect(page.getByTestId('my-compensation-payout-row')).toHaveCount(50);
+    await expect(page.getByTestId('my-compensation-payouts-cap')).toHaveText('Ultimi 50 di 73');
+    await expect(page.getByTestId('kpi-owed-total')).toContainText('-73,00 €');
+
+    // The phone face lists the same 50 under the SAME single note.
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.getByTestId('my-compensation-payout-row-mobile')).toHaveCount(50);
+    await expect(page.getByTestId('my-compensation-payouts-cap')).toHaveCount(1);
+    await expect(page.getByTestId('my-compensation-payouts-cap')).toBeVisible();
   });
 });
 

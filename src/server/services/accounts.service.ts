@@ -8,6 +8,7 @@ import { getMailSender } from '@/server/adapters/mail';
 import { buildNegativeBalanceAlertEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { assertEffectiveDateNotInFuture } from './cash.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 /** The cash category top-ups land in (story 3.1, AC 2) — seeded, never created on the fly (Dev Notes). */
@@ -226,6 +227,9 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
     );
   }
 
+  // Story 16.6a (R-16-h): before the transaction — a 404 person still wins
+  // over the 422, the same "state before input" order as `recordCashMovement`.
+  assertEffectiveDateNotInFuture(input.effectiveDate);
   const effectiveDate = new Date(input.effectiveDate);
   const description = input.description ?? null;
 

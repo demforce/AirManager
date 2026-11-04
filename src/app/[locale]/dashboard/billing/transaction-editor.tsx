@@ -17,6 +17,7 @@ import { Field, Input, InputGroup, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
+import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents, parseCents } from '@/lib/money';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
@@ -51,6 +52,8 @@ export type TransactionEditorLabels = {
   invalidAmount: string;
   conflictError: string;
   genericError: string;
+  /** 422 `EFFECTIVE_DATE_IN_FUTURE` of the `TOP_UP`/`CASH` delegate (story 16.6a). */
+  futureDateError: string;
   result: { title: string; newBalance: string; close: string };
   picker: { placeholder: string; noResults: string };
 };
@@ -189,7 +192,8 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     regenerateIdempotencyKey();
 
     if (!response.ok) {
-      setFormError(response.status === 409 ? labels.conflictError : labels.genericError);
+      const { code } = await parseApiError(response);
+      setFormError(code === 'EFFECTIVE_DATE_IN_FUTURE' ? labels.futureDateError : response.status === 409 ? labels.conflictError : labels.genericError);
       return;
     }
 

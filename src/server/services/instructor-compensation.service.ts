@@ -336,6 +336,8 @@ export type OwnCompensationOverview = {
   totalOwedCents: number;
   /** Newest first — every individual payout ever recorded against this instructor, capped (AC 2 is a history view, not an export — same cap convention as the rate history, `instructor-rates.service.ts`). */
   payouts: OwnPayoutHistoryItem[];
+  /** How many payouts this instructor has in all (story 16.6a, ledger-audit MINOR-5) — the page declares «Ultimi N di M» when it exceeds `payouts.length`. */
+  payoutsTotal: number;
 };
 
 /** History rows fetched for the self-service page (review F8) — a reasonable cap for a read-only recap, not a paginated/exportable ledger. */
@@ -396,7 +398,7 @@ export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompe
   const instructor = await resolveInstructorRowByProfileId(instructorProfileId);
   if (!instructor) return null;
 
-  const [[row], payouts] = await Promise.all([
+  const [[row], payouts, payoutsTotal] = await Promise.all([
     computeSummaryRows([instructor]),
     prisma.instructorPayout.findMany({
       where: { instructorProfileId },
@@ -404,6 +406,7 @@ export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompe
       take: OWN_PAYOUT_HISTORY_LIMIT,
       select: { id: true, amountCents: true, periodStart: true, periodEnd: true, method: true, createdAt: true },
     }),
+    prisma.instructorPayout.count({ where: { instructorProfileId } }),
   ]);
 
   return {
@@ -420,6 +423,7 @@ export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompe
       method: payout.method,
       createdAt: payout.createdAt,
     })),
+    payoutsTotal,
   };
 }
 

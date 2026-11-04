@@ -28,6 +28,7 @@ vi.mock('@/server/db/prisma', () => ({
 
 const { prisma } = await import('@/server/db/prisma');
 const {
+  assertEffectiveDateNotInFuture,
   createCashCategory,
   deactivateCashCategory,
   deleteCashCategory,
@@ -40,7 +41,7 @@ const {
   renameCashCategory,
   reverseCashMovement,
 } = await import('./cash.service');
-const { ConflictError, NotFoundError } = await import('./errors');
+const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
 
 const categoryFindManyMock = vi.mocked(prisma.cashCategory.findMany);
 const categoryFindUniqueMock = vi.mocked(prisma.cashCategory.findUnique);
@@ -462,6 +463,61 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       });
 
       expect(result.amountCents).toBe(-3000);
+    });
+  });
+
+  // Story 16.6a (R-16-h, ledger-audit MAJOR-4) — discriminant: before the
+  // guard, a value date years ahead was written verbatim and counted in
+  // today's "Liquidità".
+  describe('story 16.6a — a future value date is a 422 EFFECTIVE_DATE_IN_FUTURE', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('at 00:30 Rome on 15 January (CET, still the 14th in UTC) accepts the 15th — the Roma calendar, never the UTC one — and rejects the 16th with the date in details', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-14T23:30:00.000Z'));
+
+      expect(() => assertEffectiveDateNotInFuture('2026-01-15')).not.toThrow();
+      let thrown: unknown;
+      try {
+        assertEffectiveDateNotInFuture('2026-01-16');
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(ValidationError);
+      expect(thrown).toMatchObject({ code: 'EFFECTIVE_DATE_IN_FUTURE', details: { effectiveDate: '2026-01-16' } });
+    });
+
+    it('accepts a value date in the remote past (no lower bound)', () => {
+      expect(() => assertEffectiveDateNotInFuture('2004-02-29')).not.toThrow();
+    });
+
+    it('recordCashMovement rejects tomorrow (Roma) before writing anything, and records today', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-01T10:00:00.000Z'));
+      categoryFindUnique.mockResolvedValue({ id: 'cat_1', name: 'Carburante', isActive: true });
+
+      await expect(
+        recordCashMovement(adminActor(), { categoryId: 'cat_1', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-02', description: null }),
+      ).rejects.toMatchObject({ code: 'EFFECTIVE_DATE_IN_FUTURE', details: { effectiveDate: '2026-07-02' } });
+      expect(movementCreateMock).not.toHaveBeenCalled();
+
+      movementCreate.mockResolvedValue({
+        id: 'move_today',
+        categoryId: 'cat_1',
+        category: { name: 'Carburante' },
+        amountCents: 5000,
+        effectiveDate: parseDateOnlyUtc('2026-07-01'),
+        description: null,
+        actorUser: { email: 'staff@airmanager.local' },
+        createdAt: new Date('2026-07-01T10:00:00.000Z'),
+        reversalOfId: null,
+        reversal: null,
+        accountMovementId: null,
+      });
+      await recordCashMovement(adminActor(), { categoryId: 'cat_1', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null });
+      expect(movementCreateMock).toHaveBeenCalledTimes(1);
     });
   });
 

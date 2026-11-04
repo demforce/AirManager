@@ -1,11 +1,12 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
+import { parseDateOnlyUtc } from '@/lib/date-only';
 import type { CashReportQuery, ListCashCategoriesQuery, ListCashMovementsQuery, ReclassifyCashMovementInput, RecordCashMovementInput } from '@/lib/schemas/cash';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { ConflictError, NotFoundError } from './errors';
+import { ConflictError, NotFoundError, ValidationError } from './errors';
 
 /** Prisma unique-constraint violation (same pattern as every other service). */
 function isUniqueViolation(error: unknown): boolean {
@@ -347,6 +348,25 @@ function toMovementListItem(movement: SelectedCashMovement): CashMovementListIte
 }
 
 /**
+ * The value-date rule of the two writers that take `effectiveDate` from the
+ * caller (story 16.6a, R-16-h, ledger-audit MAJOR-4): `recordCashMovement`
+ * below and `accounts.service.ts#recordTopUp` — both land in this ledger (a
+ * top-up writes its "Ricariche" twin). A day after today on the Europe/Rome
+ * calendar is a 422 `EFFECTIVE_DATE_IN_FUTURE`; today is accepted and there is
+ * no lower bound. Same comparison as `FLIGHT_DATE_IN_FUTURE`
+ * (`flights.service.ts`): two UTC-midnight `Date`s for two Roma days. Checked
+ * in the service BEFORE any write, like `rates.service.ts#assertRateValidFromNotPast`
+ * (19.3, R-19-f) — a Zod `.refine` would answer the generic `VALIDATION_ERROR`
+ * and put the clock inside schemas the client and the OpenAPI share.
+ * `effectiveDate` is already a `z.iso.date()` string.
+ */
+export function assertEffectiveDateNotInFuture(effectiveDate: string): void {
+  if (parseDateOnlyUtc(effectiveDate).getTime() > todayDateOnlyUtcInZone(APP_TIMEZONE).getTime()) {
+    throw new ValidationError('effectiveDate cannot be in the future.', { effectiveDate }, 'EFFECTIVE_DATE_IN_FUTURE');
+  }
+}
+
+/**
  * Records a manual cash-register entry — an entrata (positive) or uscita
  * (negative), append-only (AD-3: no update/delete API). This is NOT how the
  * automatic top-up twin is created (that stays `recordTopUp`'s job, story
@@ -377,6 +397,7 @@ export async function recordCashMovement(actor: Actor, input: RecordCashMovement
     // those lines are written exclusively by their automatic flow.
     throw new ConflictError('This category is reserved for automatic movements — record manual entries in another category.');
   }
+  assertEffectiveDateNotInFuture(input.effectiveDate);
 
   const movement = await prisma.cashMovement.create({
     data: {

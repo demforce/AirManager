@@ -181,6 +181,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
             invalidAmount: t('topUp.invalidAmount'),
             requiredField: t('topUp.requiredField'),
             genericError: t('topUp.genericError'),
+            futureDateError: t('topUp.futureDateError'),
           },
           editor: buildPilotEditorLabels(t, tProfiles, tUsers),
           toast: {

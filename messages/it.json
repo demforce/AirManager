@@ -345,7 +345,8 @@
       "cancel": "Annulla",
       "invalidAmount": "Inserisci un importo positivo (es. 100,00).",
       "requiredField": "Campo obbligatorio.",
-      "genericError": "Impossibile registrare la ricarica. Riprova."
+      "genericError": "Impossibile registrare la ricarica. Riprova.",
+      "futureDateError": "La data valuta non può essere nel futuro."
     },
     "editor": {
       "newTitle": "Nuovo pilota",
@@ -650,7 +651,8 @@
         "cancel": "Annulla",
         "invalidAmount": "Inserisci un importo valido maggiore di zero.",
         "requiredField": "Campo obbligatorio.",
-        "genericError": "Impossibile registrare la ricarica. Riprova."
+        "genericError": "Impossibile registrare la ricarica. Riprova.",
+        "futureDateError": "La data valuta non può essere nel futuro."
       }
     }
   },
@@ -756,6 +758,7 @@
     },
     "table": {
       "heading": "Pagamenti ricevuti",
+      "cap": "Ultimi {shown} di {total}",
       "empty": "Nessun pagamento registrato.",
       "date": "Data",
       "period": "Periodo",
@@ -1769,7 +1772,7 @@
     "panels": {
       "result": {
         "title": "Risultato",
-        "revenue": "Ricavi",
+        "revenue": "Ricavi maturati",
         "cost": "Costi",
         "net": "Utile/Perdita"
       },
@@ -1846,7 +1849,7 @@
       "pdfLabel": "Report di cassa (PDF)"
     },
     "byCategory": {
-      "title": "Per categoria",
+      "title": "Cassa per categoria",
       "sub": "{month}",
       "empty": "Nessun movimento registrato questo mese.",
       "in": "Entrate",
@@ -1928,6 +1931,7 @@
       "invalidAmount": "Inserisci un importo valido maggiore di zero.",
       "conflictError": "La categoria selezionata è stata disattivata: scegline un'altra.",
       "genericError": "Impossibile registrare la transazione. Riprova.",
+      "futureDateError": "La data non può essere nel futuro.",
       "result": {
         "title": "Transazione registrata",
         "newBalance": "Nuovo saldo",

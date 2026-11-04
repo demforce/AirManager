@@ -17,7 +17,7 @@ vi.mock('@/server/db/prisma', () => ({
     // `findUnique` (story 14.7): `getOwnInstructorProfileId` (`bookings.service.ts`,
     // reused here — see `getOwnCompensationOverview`) reads it via the SAME
     // mocked `prisma` module (vitest's module registry is per-test-file).
-    instructorPayout: { groupBy: vi.fn(), create: vi.fn(), findMany: vi.fn() },
+    instructorPayout: { groupBy: vi.fn(), create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
     instructorProfile: { update: vi.fn(), findUnique: vi.fn() },
     cashCategory: { findUnique: vi.fn() },
     cashMovement: { create: vi.fn() },
@@ -62,6 +62,7 @@ const flightFindManyMock = vi.mocked(prisma.flight.findMany);
 const payoutGroupByMock = vi.mocked(prisma.instructorPayout.groupBy);
 const payoutCreateMock = vi.mocked(prisma.instructorPayout.create);
 const payoutFindManyMock = vi.mocked(prisma.instructorPayout.findMany);
+const payoutCountMock = vi.mocked(prisma.instructorPayout.count);
 const profileUpdateMock = vi.mocked(prisma.instructorProfile.update);
 const profileFindUniqueMock = vi.mocked(prisma.instructorProfile.findUnique);
 const cashCategoryFindUniqueMock = vi.mocked(prisma.cashCategory.findUnique);
@@ -81,6 +82,7 @@ const flightFindMany = flightFindManyMock as unknown as { mockResolvedValue: (v:
 const payoutGroupBy = payoutGroupByMock as unknown as { mockResolvedValue: (v: Fixture[]) => void; mockImplementation: (fn: ImplFn) => void };
 const payoutCreate = payoutCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const payoutFindMany = payoutFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
+const payoutCount = payoutCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const profileUpdate = profileUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const profileFindUnique = profileFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
@@ -181,6 +183,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
     payoutGroupByMock.mockReset();
     payoutCreateMock.mockReset();
     payoutFindManyMock.mockReset();
+    payoutCountMock.mockReset();
     profileUpdateMock.mockReset();
     profileFindUniqueMock.mockReset();
     cashCategoryFindUniqueMock.mockReset();
@@ -324,6 +327,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
           createdAt: new Date('2026-07-16T10:00:00.000Z'),
         },
       ]);
+      payoutCount.mockResolvedValue(1);
 
       const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
 
@@ -343,6 +347,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
             createdAt: new Date('2026-07-16T10:00:00.000Z'),
           },
         ],
+        payoutsTotal: 1,
       });
 
       // The payout query is scoped to the profile `getOwnInstructorProfileId`
@@ -367,6 +372,39 @@ describe('instructor-compensation.service (story 12.7)', () => {
       // `listActiveInstructors` (the `Person.archivedAt`-filtering path used by
       // the staff-facing reads) is never reached from this function.
       expect(personFindManyMock).not.toHaveBeenCalled();
+    });
+
+    // Story 16.6a (ledger-audit MINOR-5): the history stays capped at 50, and
+    // the page now says so — `payoutsTotal` is the uncapped count of the SAME
+    // profile's payouts, never the length of the capped list.
+    it('reports payoutsTotal from a count over the same profile, independent of the 50-row take — the residual stays the net of ALL payouts', async () => {
+      profileFindUnique.mockResolvedValue({
+        id: 'profile_ines',
+        deactivatedAt: null,
+        payoutRateCents: 3000,
+        person: { id: 'person_ines', firstName: 'Ines', lastName: 'Volpi' },
+      });
+      stubAggregates({ profile_ines: { minutes: 0, accruedCents: 0 } }, { profile_ines: 7300 });
+      payoutFindMany.mockResolvedValue(
+        Array.from({ length: 50 }, (_, index) => ({
+          id: `payout_${index}`,
+          amountCents: 100,
+          periodStart: parseDateOnlyUtc('2026-01-01'),
+          periodEnd: parseDateOnlyUtc('2026-01-01'),
+          method: 'CASH',
+          createdAt: new Date('2026-01-02T10:00:00.000Z'),
+        })),
+      );
+      payoutCount.mockResolvedValue(73);
+
+      const result = await getOwnCompensationOverview({ userId: 'u1', personId: 'person_ines', roles: ['INSTRUCTOR'] });
+
+      expect(result?.payouts).toHaveLength(50);
+      expect(result?.payoutsTotal).toBe(73);
+      expect(result?.totalOwedCents).toBe(-7300);
+      const [findManyArgs] = payoutFindManyMock.mock.calls[0] as [{ take?: number }];
+      expect(findManyArgs.take).toBe(50);
+      expect(payoutCountMock).toHaveBeenCalledWith({ where: { instructorProfileId: 'profile_ines' } });
     });
 
     it('never accepts a second (personId/instructorProfileId) argument — there is no parameter to pass one through', () => {

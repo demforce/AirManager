@@ -322,6 +322,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             invalidAmount: t('newTransactionForm.invalidAmount'),
             conflictError: t('newTransactionForm.conflictError'),
             genericError: t('newTransactionForm.genericError'),
+            futureDateError: t('newTransactionForm.futureDateError'),
             result: { title: t('newTransactionForm.result.title'), newBalance: t('newTransactionForm.result.newBalance'), close: t('newTransactionForm.result.close') },
             picker: { placeholder: t('newTransactionForm.picker.placeholder'), noResults: t('newTransactionForm.picker.noResults') },
           },

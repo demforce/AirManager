@@ -81,3 +81,25 @@ export async function seedAccountAdjustments(personId: string, rows: Array<{ amo
   // RETURNING carries no order guarantee: sort back on the insertion order the rows were given.
   return [...result.rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).map((row) => row.id);
 }
+
+/**
+ * `count` instructor payouts on a chosen past period, straight into the
+ * history (story 16.6a): the self-service «I miei compensi» list is capped at
+ * 50, and 51 `POST /instructor-payouts` would each also write a cash twin
+ * dated TODAY into the global cash book other specs aggregate. The columns
+ * `instructor-compensation.service.ts#recordPayout` writes on
+ * `InstructorPayout`, WITHOUT that twin — the page under test reads only this
+ * table. Throws if the person has no instructor profile.
+ */
+export async function seedInstructorPayouts(personId: string, count: number, payout: { amountCents: number; period: string }): Promise<void> {
+  const result = await pool.query(
+    `INSERT INTO "InstructorPayout" ("id", "instructorProfileId", "amountCents", "periodStart", "periodEnd", "method", "actorUserId")
+     SELECT 'e2e_' || gen_random_uuid(), ip."id", $2, $3::date, $3::date, 'CASH', ${ADMIN_USER}
+     FROM "InstructorProfile" ip, generate_series(1, $4::int)
+     WHERE ip."personId" = $1`,
+    [personId, payout.amountCents, payout.period, count],
+  );
+  if (result.rowCount !== count) {
+    throw new Error(`seedInstructorPayouts: person ${personId} has no instructor profile.`);
+  }
+}

@@ -125,6 +125,14 @@ export default async function MyCompensationPage({ params }: PageProps) {
           <div className="card">
             <div className="card-head">
               <h2 className="card-title">{t('table.heading')}</h2>
+              {/* Story 16.6a (ledger-audit MINOR-5): ONE note for both faces of
+                  the list below, and only when the history is cut — the
+                  «Residuo dovuto» KPI above nets every payout, not just these. */}
+              {overview.payoutsTotal > overview.payouts.length ? (
+                <span className="card-sub" data-testid="my-compensation-payouts-cap">
+                  {t('table.cap', { shown: overview.payouts.length, total: overview.payoutsTotal })}
+                </span>
+              ) : null}
             </div>
             <div className="card-body">
               {overview.payouts.length === 0 ? (

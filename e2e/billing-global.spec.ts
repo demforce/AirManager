@@ -37,7 +37,7 @@ async function loginExpectingDashboard(page: Page, email: string): Promise<void>
   await expect(page).toHaveURL(/\/it\/dashboard$/);
 }
 
-/** Same far-future scheme as `billing.spec.ts#dateAt` — used here only to build a date range that DEFINITELY excludes everything (no per-run uniqueness needed, this test never collides with itself). */
+/** A far-future day — used here only as a QUERY bound for a date range that DEFINITELY excludes everything (no row can be dated after today since story 16.6a, and no per-run uniqueness is needed: this test never collides with itself). */
 function dateAt(daysFromBase: number): string {
   return new Date(Date.UTC(2033, 0, 1) + daysFromBase * 86_400_000).toISOString().slice(0, 10);
 }

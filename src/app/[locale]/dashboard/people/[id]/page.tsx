@@ -260,6 +260,7 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
       invalidAmount: t('accountPanel.topUp.invalidAmount'),
       requiredField: t('accountPanel.topUp.requiredField'),
       genericError: t('accountPanel.topUp.genericError'),
+      futureDateError: t('accountPanel.topUp.futureDateError'),
     },
     adjustments: {
       action: tAccount('adjustments.action'),
