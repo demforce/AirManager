@@ -44,7 +44,7 @@ Il file sotto è misurato su `9272129` (2026-09-10). Da allora sono atterrati 16
 
 - **Q-16.6b-a + Q-16.6b-b — una catena di correzioni partita da una ricarica resta acconto, a ogni livello e segno, e compare nel filtro «Acconti»** (raccomandazione A su entrambe, poste al PO in una sola domanda): la **radice** decide il libro (`reversalRootType === 'TOP_UP'` → DEPOSIT a qualunque profondità; è la ratifica Billing-1 F3 applicata in modo transitivo). Il filtro `bookType=DEPOSIT` (`transactions.service.ts:221`, oggi `{ type: 'TOP_UP' }`) diventa `OR [{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootType: 'TOP_UP' }]` — stessa definizione del badge e dell'aggregato; oggi quelle righe spariscono da tutti i filtri (vincolato da `billing.spec.ts:190`, da aggiornare). Riscrivere il doc di `transactions.service.ts:171-177` («fuori scope»). Sui dati misurati oggi nessuna riga cambia libro (profondità massima 1).
 
-Status: **ready-for-dev** — 2026-09-10, riallineata e ratificata il 2026-11-03 (§R, §R-PO). **Modello dev: Opus 5 xhigh** (la story tocca UI: il `fetch` della quota associativa in `scadenze-console.tsx` — chiave di idempotenza, `try/catch`, bottone che oggi resta bloccato per sempre —, un ramo d'errore nuovo con la sua frase in due locale, e il predicato dell'azione di riga dell'estratto conto su **due facce**). Review: **Opus 5 xhigh adversarial**.
+Status: **review** (dev 2026-11-04, v. Dev Agent Record in coda) — creata 2026-09-10, riallineata e ratificata il 2026-11-03 (§R, §R-PO). **Modello dev: Opus 5 xhigh** (la story tocca UI: il `fetch` della quota associativa in `scadenze-console.tsx` — chiave di idempotenza, `try/catch`, bottone che oggi resta bloccato per sempre —, un ramo d'errore nuovo con la sua frase in due locale, e il predicato dell'azione di riga dell'estratto conto su **due facce**). Review: **Opus 5 xhigh adversarial**.
 
 > ⚠️ **Questa story è la METÀ «guardie di scrittura» della 16.6 del piano.** L'altra metà è `16-6a-data-valuta-e-totali.md` (data valuta, parità PDF/schermo, etichette dei libri). Il piano descriveva **una** story; la divido perché tocca **sei superfici indipendenti** (soglia di progetto: >4 superfici non correlate o >20 AC) e perché le due metà non condividono **nessun** file di produzione. **Nessuna dipendenza fra le due**: qualunque ordine, anche in parallelo.
 >
@@ -584,3 +584,124 @@ BASELINE second expiresAt: 2029-03-10 (charged 2027-03-10)
 - `_bmad-output/implementation-artifacts/16-2-guardie-registro-voli.md` §AD-3 e `16-3-prenotazioni-persona-istruttore-approvazione.md` — la stessa riga di `handler.ts:60`
 - `_bmad-output/implementation-artifacts/16-6a-data-valuta-e-totali.md` — l'altra metà della 16.6
 - `CLAUDE.md` — regole e2e (`scripts/e2e.sh`, project serializzati, testid, cap anti-brute-force), trappola env eager negli unit, gates
+
+---
+
+## Dev Agent Record (2026-11-04, dev Opus 5.5 — un solo subagent)
+
+**Commit**: `6e76e20` `feat(16.6b): …` (implementazione + test, pathspec). Questo record: commit `docs(16.6b): …` (solo questo file). `sprint-status.yaml` e `HANDOFF.md` NON toccati (li aggiorna la sessione principale). Partito da `dev@304865f` (16.5 e 16.6a chiuse): ogni `file:riga` di §R riletto su quell'HEAD; slittamenti trovati e assorbiti (`charge()` a `:920-926`, `submit()` `:934-955`, `proceed()` `:958-977` come da §R; la `select`/`create` di `recordAdjustment` a `:718-721`/`:756-765` su `304865f`; il test del filtro «Acconti» in `billing.spec.ts` è a `:203`, non `:190`). Migrazione `20261104100000_account_movement_reversal_root_type`, DOPO `20261103120000` (16.5). Skill applicate: `bmad-dev-story`, `karpathy-guidelines`, `design-taste-frontend` (design read: «modale esistente di una console AirOps — superficie dashboard, fuori dallo scope landing della skill (§13); cambio di solo comportamento: si riusano la riga `role="alert"` e il bottone che ci sono, zero linguaggio visivo nuovo»), `ui-ux-pro-max` (`submit-feedback`: niente più «click senza risposta»; `aria-live-errors`: il messaggio sta nel `role="alert"` esistente; `error-recovery`: «Riprova» nel testo + bottone riabilitato).
+
+### File toccati
+
+| File | Cosa |
+|---|---|
+| `prisma/schema.prisma` | `AccountMovement.reversalRootType AccountMovementType?` con doc-comment (unico writer, perché denormalizzato, CHECK) |
+| `prisma/migrations/20261104100000_account_movement_reversal_root_type/migration.sql` | **NUOVA**: colonna, backfill con CTE ricorsiva (risale ogni riga collegata fino all'originale senza `reversalOfId` e ne copia il tipo, qualunque profondità), CHECK `"AccountMovement_reversalRootType_check"` |
+| `src/server/services/accounts.service.ts` | `recordAdjustment`: `select` dell'originale + `reversalRootType`; `reversalRootType = original.reversalRootType ?? original.type` (una radice passa il proprio tipo, un anello passa la radice che porta); `create` scrive il campo (`null` per una rettifica standalone) |
+| `src/server/services/transactions.service.ts` | `ACCOUNT_ROW_SELECT`: `reversalRootType: true` al posto del join a due livelli `reversalOf.reversalOf`; `NOT_ROOTED_IN_TOP_UP` (`[{ reversalRootType: null }, { reversalRootType: { not: 'TOP_UP' } }]`) nelle due clausole `ADJUSTMENT` di `ACCOUNT_REVENUE_OR`; `ACCOUNT_DEPOSIT_OR` (`[{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootType: 'TOP_UP' }]`) per il filtro `bookType=DEPOSIT`; `accountBookType` sulla radice (`Pick` aggiornato); doc-comment riscritti (il «fuori scope» di `:171-177` non esiste più) |
+| `src/lib/schemas/transactions.ts` | solo il JSDoc di `bookTypeSchema` («DEPOSIT = un `TOP_UP`», reso falso da §R-PO) |
+| `src/app/[locale]/dashboard/expiries/scadenze-console.tsx` | `useIdempotencyKey()` nel modale; `charge()` manda `[IDEMPOTENCY_KEY_HEADER]: idempotencyKey` e chiama `regenerateIdempotencyKey()` dopo che il `fetch` ha restituito una risposta (copre entrambi i chiamanti); `submit()` con `try/catch` → `setSubmitting(false)` + `labels.genericError`; import di `randomIdempotencyKey` sostituito (nessun orfano); doc-comment del modale e di `charge()` aggiornati. Nessuna chiave i18n nuova |
+| `src/lib/use-idempotency-key.ts` | solo doc: «5 forms» → 7, elenco dei form reale (via «vendita pacchetto», ritirata nella 12.13; dentro ricarica di Piloti, pagamento istruttore, quota) |
+| Test unit | `transactions.service.test.ts`: fixture `reversalOf` → `reversalRootType` (base, F3 ×3, F9), forma letterale dei due `where` (`:331`, `:549`) e del filtro DEPOSIT riscritta, **+2** test (radice `TOP_UP` a profondità 3/4/5 e segni non alternati → DEPOSIT; radice `ADJUSTMENT`/`FLIGHT_CHARGE` → REVENUE). `accounts.service.test.ts`: le 4 fixture dell'originale senza `type` rese esplicite (`type: 'TOP_UP', reversalRootType: null`), il test della `create` asserisce `reversalRootType: 'TOP_UP'`, **+4** test (3 `it.each` sul tipo radice ereditato + rettifica standalone → `null`/`null`) |
+| Test e2e | `membership-fee.spec.ts`: **+1** test (Q1); `billing.spec.ts:203`: il test del filtro «Acconti» prende una rettifica della ricarica (in «Acconti», non in «Ricavi») |
+
+Non toccati, verificato: `membership.service.ts`, `flights.service.ts`, `handler.ts`, `registry.ts` (nessuna modifica OpenAPI: `reversalRootType` non esce in nessun DTO — `toAccountRow` mappa campo per campo, `RECENT_MOVEMENT_SELECT` e l'estratto conto in SQL hanno colonne esplicite), `account-section.tsx`, `messages/*.json`, `billing-summary.service.ts` (i suoi `deposits` sono i saldi dei conti, non una classificazione).
+
+### AC per AC (con la lettura di §R/§R-PO)
+
+| AC | Esito | Evidenza |
+|---|---|---|
+| 1 | ✅ | e2e `membership-fee.spec.ts:296`, tentativo 2 (il server COMMITTA, il browser riceve `connectionreset`): `membership-fee-error` = «Impossibile addebitare la quota. Riprova.», bottone abilitato, e il tentativo 3 porta la STESSA chiave (`keys[2] === keys[1]`) |
+| 2 | ✅ | stesso test, tentativo 1 (risposta HTTP 500 stub): chiave nuova al tentativo successivo (`keys[1] !== keys[0]`). Solo e2e: vitest gira in `node` (§R) |
+| 3 | ✅ | stesso test: risposta del tentativo 3 = 200 con `Idempotency-Replayed: true`, estratto conto con **una** riga «Quota associativa» (`[-3500]`), `expiresAt` = quello del commit del tentativo 2 e anno = anno corrente + 1 (12 mesi, non 24) |
+| 4-11 | OBSOLETE (§R) | — |
+| 12 | ✅ | U «story 16.6b: a link of a chain ROOTED in a TOP_UP is DEPOSIT at depth 3, 4 and 5, either sign, and when the signs do not alternate» — nessuna profondità nel codice |
+| 13 | ✅ | famiglia F3/F9 e le altre di `transactions.service.test.ts` verdi con le sole fixture riscritte (asserzioni invariate); U nuovo: radice `ADJUSTMENT` (quota) e `FLIGHT_CHARGE` legacy → REVENUE in entrambi i segni |
+| 14 | ✅ (contro Postgres) | probe usa-e-getta `scratchpad/null-trap.probe.mts`: `ACCOUNT_REVENUE_OR` VERO importato dal service, righe reali in una transazione sempre annullata (DB `airmanager`, 0 righe residue verificato). SQL generato: `… "amountCents" < $4 AND ("reversalRootType" IS NULL OR "reversalRootType" <> CAST($5::text AS "AccountMovementType")) …` → la quota standalone È ricavo. La trappola misurata: `NOT: { reversalRootType: 'TOP_UP' }` → `(NOT "reversalRootType" = …)` e `reversalRootType: { not: 'TOP_UP' }` → `"reversalRootType" <> …` **escludono entrambi** la quota standalone (13/13 PASS, verbatim in `scratchpad/null-trap.out`). Il filtro «Acconti» sulle stesse righe = la ricarica + i suoi 3 anelli, nient'altro |
+| 15 | ✅ | un solo writer (`flights.service.ts` non scrive più storni dalla 19.6): 4 unit su `recordAdjustment`; CHECK provato sul gemello (sotto) in entrambi i versi (23514) |
+| 16 | ✅ (gemello) | v. «Backfill» |
+| 17-18 | OBSOLETE (§R) | — |
+| 19 | ✅ (DB non fresco, v. «e2e») | completo `CI=1`: **0 failed**, 614 passed + 2 flaky = **616** = 615 di baseline + 1 test nuovo |
+| 20 | ✅ | le 2 discriminanze di §R, v. «Discriminanze» |
+| §R-PO | ✅ | U: forma del filtro DEPOSIT; e2e `billing.spec.ts:203`: con `personQuery` del pilota run-unique, «Acconti» = 2 righe (ricarica + «Ricarica registrata in eccesso», −20,00 €), «Ricavi» = 0 righe. Prima del fix la rettifica non compariva in nessun filtro |
+
+### Backfill (AC 16) — gemello in uno schema usa-e-getta, dentro una transazione sempre annullata
+
+Nessun database creato né cancellato. `scratchpad/backfill-twin.probe.mjs`: `BEGIN` → `CREATE SCHEMA story_16_6b_twin` → `CREATE TABLE … (LIKE public."AccountMovement" INCLUDING ALL)` (forma pre-migrazione: se `public` è già migrato la colonna viene tolta dalla copia, e il CHECK con lei) → 21 righe costruite → **la `migration.sql` del repo eseguita verbatim** (`search_path` = gemello, poi `public` per l'enum) → verifiche → `ROLLBACK` (schema residuo: nessuno). Fixture: profondità 0 (`TOP_UP`, quota, giroconto, `FLIGHT_CHARGE`, `PACKAGE_PURCHASE`), radice `TOP_UP` a segni alterni fino a profondità 3 (il caso dell'audit), radice `TOP_UP` a segni NON alterni (negativo di un negativo), radice `ADJUSTMENT` (quota) fino a profondità 2, radice `FLIGHT_CHARGE` **legacy** fino a profondità 3. Esito verbatim (`scratchpad/backfill-twin.out`):
+```
+twin: 21 rows, 11 linked, max depth 3
+PASS  backfill … (21 righe: tipo radice atteso su ognuna, NULL sulle 10 non collegate)
+classification before/after — changed: b2: REVENUE -> DEPOSIT, a3: REVENUE -> DEPOSIT
+PASS  only the depth-3 alternating link (a3) and the non-alternating negative link (b2) change book
+PASS  CHECK refuses a linked row with no root type — 23514 … violates check constraint "AccountMovement_reversalRootType_check"
+PASS  CHECK refuses a standalone row with a root type — 23514 …
+PASS  CHECK accepts a linked row WITH its root type
+rolled back — twin schema left behind: none
+ALL PASS
+```
+«Prima» = il classificatore a due livelli di HEAD (genitore/nonno via join), «dopo» = quello sulla radice: cambiano libro **solo** i due casi che il fix deve cambiare (a3 = il ricavo fantasma dell'audit; b2 = l'estensione di §7.3, ratificata da §R-PO); profondità 1-2 a segni alterni e tutte le radici `ADJUSTMENT`/`FLIGHT_CHARGE` invariate. Dati veri: `airmanager` aveva **0** righe collegate al momento del `migrate deploy` (appena resettato); `airmanager_load` (esiste ancora, letto in sola lettura, non migrato da me) **0** righe collegate su 102 888. Dopo la suite completa, sul DB e2e: 14 righe collegate scritte dall'app, **14/14** con il tipo radice giusto (radici `TOP_UP` e `ADJUSTMENT`), 0 righe che violano l'invariante.
+
+### CHECK: perché sì (scelta tecnica, contro il precedente 19.7a D-f)
+
+1. D-f lo scartò per una regola di **perimetro** di quella story (AD-1 19.7a «nessun altro DDL»), non per un'obiezione tecnica; qui la migrazione esiste comunque (colonna + backfill).
+2. Senza CHECK, un writer futuro che collega una riga e dimentica il campo scrive una riga che **ogni** predicato legge in silenzio come «non radicata in un `TOP_UP`» (libro sbagliato, nessun errore); con il CHECK la scrittura fallisce subito (23514).
+3. Prisma non lo vede e non lo tocca: `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` sul DB migrato → «This is an empty migration.»; gates verdi.
+4. Nessun writer SQL grezzo di `reversalOfId`: `prisma/seed-load.ts` scrive `null`, `e2e/db-fixtures.ts` non lo scrive.
+Il writer si appoggia all'invariante (`original.reversalRootType ?? original.type`): radice ⟺ `reversalRootType` NULL.
+
+### Discriminanze (copia isolata `scratchpad/iso`: `cp -r src messages prisma` + config + `.env`, `node_modules` in symlink, `turbopack: { root: '/' }` SOLO nel `next.config.ts` della copia)
+
+| # | Pre-fix simulato | Esito |
+|---|---|---|
+| D1 (Q5, unit) | `transactions.service.ts` di HEAD + il test file nuovo; nella copia le fixture del test di profondità prendono ANCHE il `reversalOf` annidato vero a due livelli (tutto ciò che il codice vecchio legge) | **rosso**: `- "am_depth3": "DEPOSIT" … + "am_depth3": "REVENUE"`, idem `am_depth4`, `am_depth5`, `am_negative_of_negative`. Con il fix (stessa copia): 55/55. Senza l'aggiunta del `reversalOf` falliscono in 6 (anche i vecchi F3 e i due `where`: la forma delle fixture è cambiata — quelli NON sono discriminanti, dichiarato) |
+| D2 (Q1, e2e) | `scadenze-console.tsx` di HEAD, build di produzione della copia servita su :3000, `E2E_REUSE_SERVER=1 scripts/e2e.sh start e2e/membership-fee.spec.ts -g "dropped connection"` | **rosso** 3/3 (con i retry `CI`): `membership-fee.spec.ts:335` `expect(error).toHaveText('Impossibile addebitare la quota. Riprova.')` → «element(s) not found», DOPO che il tentativo 2 era stato committato (`poll` a 200 passato) e il tentativo 1 (500) era verde. Log in `scratchpad/e2e-q1-prefix-red.log` |
+
+Misura di base del difetto sulla stessa build pre-fix (`scratchpad/prefix-baseline.mjs`, cioè ciò che l'operatore poteva fare: bottone bloccato → ricarica la pagina e riaddebita): `{"afterDroppedConnection":{"submitDisabled":true,"errorShown":false},"sameKeyOnRetry":false,"quotaRows":[-3500,-3500],"expiresAt":"2028-11-04"}` — due addebiti e scadenza a **+24 mesi** per un pagamento del 2026-11-04.
+
+Nessun mutante applicato al repo: `sha256sum -c` di `transactions.service.ts` `1f1ece04…`, `transactions.service.test.ts`, `scadenze-console.tsx` `c164f6cb…`, `membership-fee.spec.ts` → OK dopo le discriminanze.
+
+### Gate
+
+`npm run gates`: lint, typecheck, test, build **PASS**. Unit **2252 → 2258** (+6). `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` su `transactions.service.test.ts` e `accounts.service.test.ts` → verde (nessun import nuovo). `npx prisma migrate deploy` + `npx prisma generate` prima del typecheck (client 7.8.0 in `src/generated/prisma`).
+
+### e2e
+
+Build dei gate, server di produzione avviato una volta (`JOBS_SECRET` non segnaposto, `--keepAliveTimeout 75000`), poi `E2E_REUSE_SERVER=1 scripts/e2e.sh start …`; DB `airmanager` resettato dalla sessione principale prima del mio arrivo (io non ho resettato nulla). Tutti i server avviati da me spenti, porte 3000/3100 libere. Log copiati nello scratchpad.
+
+1. **Mirato** (`membership-fee.spec.ts` + `billing.spec.ts`): **22 passed** (31.4s), exit 0.
+2. **Completo** `CI=1` (tutti i project, catena serializzata compresa), verbatim di `scripts/e2e.sh status`:
+```
+  2 flaky
+  614 passed (21.5m)
+E2E_EXIT=0
+```
+Flaky (verdi al retry): `my-compensation.spec.ts:303` e `:373`, entrambi alla riga di login (`toHaveURL` resta su `/it/login` oltre 5 s) — la classe nota «login sotto contesa», nessun file della story coinvolto. Conteggio: 614 + 2 = **616** = 615 + 1. DB non fresco: prima del completo erano girati il mirato e le due verifiche UI (6 piloti run-unique in più).
+
+### Verifica UI interattiva
+
+Playwright MCP non utilizzabile da subagent su questa macchina (`Chromium distribution 'chrome' is not found at /opt/google/chrome/chrome`): fallback sanzionato, script `playwright-core` usa-e-getta (`scratchpad/ui-verify.mjs`) sul Chromium in cache, build di produzione post-fix su :3000, a **1280×800** e **375×812**: primo addebito committato e connessione troncata → riga `role="alert"` «Impossibile addebitare la quota. Riprova.» sotto l'importo, bottone **abilitato** (alto 44 px a 375, il pannello a tutto schermo della 15.7 invariato); «Addebita e rinnova» di nuovo → stessa chiave, `Idempotency-Replayed: true`, «Quota addebitata. Nuovo saldo: 965,00 € · valida fino al 04/11/2027.», errore sparito, **una** riga di quota. Screenshot in `scratchpad/shots/`. Quota globale riportata a 0 a fine script.
+
+### Deviazioni dichiarate
+
+- **D-a — e2e nel project principale** (scelta lasciata al dev da §R): il test nuovo sta in `membership-fee.spec.ts` (`mode: 'serial'` nel file), scrive `PUT /settings/membership-fee` come i test 19.10 `:215`/`:255`. Motivo: nel project principale nessun altro spec scrive quella chiave (grep: `membership-fee.spec.ts` è l'unico; `settings`, `mobile-settings`, `mobile-membership-fee` sono in catena), e `mobile-membership-fee.spec.ts` è uno spec di layout telefono. ⇒ **TD-16.6b-a da registrare** (sessione principale, `sprint-status.yaml`): `membership-fee.spec.ts` scrive AppSettings globali fuori dalla catena serializzata.
+- **D-b — rigenerazione dentro `charge()`**, non ripetuta in `submit()` e `proceed()`: la riga dopo `await fetch` gira solo se è arrivata una risposta HTTP, quindi copre i due chiamanti con una riga sola (stessa semantica del blocco d'uso dell'hook).
+- **D-c — AC 2 con un 500 stub** (`route.fulfill`): ciò che si prova è la regola del client «qualunque risposta HTTP → chiave nuova»; uno stub non crea record lato server. Il percorso reale 422 → «Procedi comunque» resta coperto dal test `:255` (che però passerebbe anche con la stessa chiave, perché il 422 la libera — non discriminante, dichiarato).
+- **D-d — `NOT_ROOTED_IN_TOP_UP` e `ACCOUNT_DEPOSIT_OR` come costanti** accanto agli altri predicati di libro, invece del letterale ripetuto: una definizione, un doc-comment sulla trappola dei NULL.
+- **D-e — due file fuori dall'elenco di §R, solo commenti**: JSDoc di `bookTypeSchema` (`src/lib/schemas/transactions.ts`) e commento di `ACCOUNT_ROW_SELECT`, resi falsi dalla ratifica.
+
+### Note per il reviewer
+
+- **Rischio residuo di Q1, da non sopravvalutare**: la chiave vive nello stato del modale. Se dopo un guasto di rete l'operatore CHIUDE il pannello o RICARICA la pagina e riaddebita, la chiave è nuova e l'addebito raddoppia (con la scadenza a +24 mesi) come prima — stesso contratto degli altri 6 form. La differenza: prima il pannello lo obbligava a quel gesto (bottone bloccato, nessun messaggio); ora gli offre il ritentativo sul posto, che replaya. V. domanda al PO.
+- Fuori scope dichiarato da §R e confermato: dopo un 409 `IDEMPOTENCY_IN_PROGRESS` l'hook rigenera la chiave (tutti e 7 i form) → **TD da registrare**.
+- Il `DEPOSIT` di `ACCOUNT_DEPOSIT_OR` coincide col badge su ogni riga raggiungibile; l'unica differenza teorica è lo storno a importo zero (F9(2), badge TRANSFER), irraggiungibile: `recordAdjustmentSchema` rifiuta `amountCents: 0`.
+- La migrazione è applicata al DB condiviso `airmanager`: una build di HEAD pre-16.6b che registra una rettifica COLLEGATA su questo DB prende 500 (CHECK). Rilevante solo per sessioni parallele con build vecchie.
+- Per la 17.4 (AD-9): con `reversalRootType` la riscrittura SQL di `computeRevenueCents` è un predicato scalare (`"reversalRootType" IS DISTINCT FROM 'TOP_UP'`), niente join.
+- Osservazione non toccata (preesistente): nel modale la parola «Persona» compare due volte — la `<label className="fld-label">` del modale sopra il `SearchCombobox`, che rende già la propria `<label htmlFor>` (screenshot `q1-desktop-network-error.png`).
+
+### Domande per il PO (in italiano semplice)
+
+1. **Chiudere il pannello dopo un errore di rete.** Ora, se la connessione cade mentre addebiti la quota, il pannello dice «Impossibile addebitare la quota. Riprova.» e il bottone torna attivo: premendolo di nuovo, l'addebito NON si ripete. Ma se invece chiudi il pannello (o ricarichi la pagina) e riaddebiti, il sistema lo considera un addebito nuovo: la quota esce due volte e la scadenza va a +24 mesi. Vale per tutti i 7 form che muovono denaro. Ti va bene così (si corregge con uno storno), o vuoi una story che ricordi il tentativo anche dopo la chiusura del pannello?
+
+### Change Log
+
+- 2026-11-04 — dev (Opus 5.5): chiave di idempotenza stabile nel pannello quota con `try/catch` e bottone riabilitato; `AccountMovement.reversalRootType` con backfill e CHECK, classificatore, ricavi e filtro «Acconti» sulla radice della catena (`6e76e20`); Status → review.
