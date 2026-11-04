@@ -499,13 +499,13 @@ development_status:
   17-8-alert-job-a-lotti: ready-for-dev  # story file 2026-11-03 + ratifiche PO Q-17.8-a..e (200 per giro, ritentativo, mai doppio, email velivolo dopo la risposta, «altri N in coda»); dev Opus DOPO 16.8/16.9
   epic-17-retrospective: optional
   epic-18: backlog
-  18-1-pavimento-mobile-unico: backlog
-  18-2-fold-liste: backlog
-  18-3-indietro-chiude-navigazione-risponde: backlog
-  18-4-filtri-pianificazione-mobile: backlog  # dopo 17.6
-  18-5-righe-tab-lessico: backlog  # RIPERIMETRATA 2026-11-03 alla chiusura della 19.12b: il LESSICO di M6/M11/M13a-c e' fatto nella 19.12b (Estratto conto, Velivoli, Registra volo, Ricarica, sottotitolo Pianificazione). Restano layout e comportamento: M4 righe col dato che distingue; M6 tab bar su una riga a prescindere dall'etichetta (font, audit MOB-2; in EN «Account statement» va su due righe a 390-414, review 19.12b I2); M11 seconda tab del pilota diversa dalla console admin; M13d azione primaria nello sheet prenotazione; TD-19.12b-a Registro voli, lo scroller .logbook non contiene la griglia (scroll del documento a 641-1100 px, +50 px dalla 19.12b L3); eventuale ritocco della card «Anagrafica piloti» (PO, 19.12b domanda 1)
-  18-6-tema-di-sistema: backlog
-  18-7-desktop-colonne-sticky-fermo-panoramica: backlog  # D1 residuo dopo 17.2
+  18-1-pavimento-mobile-unico: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.1-a..d; dev Opus DOPO 16.8 (chiude TD 16.8-f)
+  18-2-fold-liste: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.2-a..d; SPLIT 18.2a (fold) / 18.2b (stati vuoti), entrambe nel file; dev Opus DOPO 16.6a/16.6b/17.3/18.1
+  18-3-indietro-chiude-navigazione-risponde: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.3-a..c; SPLIT 18.3a (Indietro chiude) / 18.3b (scheletro e pending, dopo l'Epic 17), entrambe nel file; dev Opus
+  18-4-filtri-pianificazione-mobile: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.4-a..c; dev Opus DOPO 17.2 e 17.6 (rimisurare)
+  18-5-righe-tab-lessico: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.5-a..e; SPLIT 18.5a (M4, M6, M13d, TD-19.12b-a — diagnosi corretta: lo sfondamento lo causano le sr-only della 19.12b —, card «Anagrafica») / 18.5b (M11, dopo 18.4); dev Opus. Nota della riperimetrazione: RIPERIMETRATA 2026-11-03 alla chiusura della 19.12b: il LESSICO di M6/M11/M13a-c e' fatto nella 19.12b (Estratto conto, Velivoli, Registra volo, Ricarica, sottotitolo Pianificazione). Restano layout e comportamento: M4 righe col dato che distingue; M6 tab bar su una riga a prescindere dall'etichetta (font, audit MOB-2; in EN «Account statement» va su due righe a 390-414, review 19.12b I2); M11 seconda tab del pilota diversa dalla console admin; M13d azione primaria nello sheet prenotazione; TD-19.12b-a Registro voli, lo scroller .logbook non contiene la griglia (scroll del documento a 641-1100 px, +50 px dalla 19.12b L3); eventuale ritocco della card «Anagrafica piloti» (PO, 19.12b domanda 1)
+  18-6-tema-di-sistema: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.6-a/b; dev Opus; chiude il TD color-scheme della 15.10
+  18-7-desktop-colonne-sticky-fermo-panoramica: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.7-a..c; SPLIT 18.7a (colonne, intestazioni, KPI a 4 — chiude TD-19.1-d) / 18.7b (fuori servizio dal telefono dopo 16.8, Panoramica dopo 17.2/17.6); dev Opus
   epic-18-retrospective: optional
   # EPIC 19 — Semplificazione e regole operative (change request PO 2026-11-01,
   # _bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md, ratifiche R-19-a..p).
