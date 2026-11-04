@@ -200,7 +200,7 @@ test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType col
     await expect(billingRows(page).nth(1)).toContainText('Voce cassa manuale');
   });
 
-  test('bookType filter (story Billing-2, AC 2): DEPOSIT narrows to acconti (TOP_UP), REVENUE narrows to ricavi — independent of the "Categoria" filter', async ({ page }) => {
+  test('bookType filter (story Billing-2, AC 2; story 16.6b): DEPOSIT narrows to acconti (a TOP_UP and the rettifiche of its chain), REVENUE narrows to ricavi — independent of the "Categoria" filter', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilot = await createPilotPerson(page, 'TipoFiltro');
     const category = await createCategory(page, `TipoFiltro-${uniqueSuffix()}`);
@@ -215,6 +215,23 @@ test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType col
     await gotoBilling(page, { dateFrom: day1, dateTo: day1, bookType: 'REVENUE' });
     await expect(billingRows(page)).toHaveCount(1);
     await expect(billingRows(page).first()).toContainText('Entrata cassa');
+
+    // Story 16.6b (ratifica PO 2026-11-03): a rettifica of that ricarica is an
+    // acconto too, so "Acconti" lists it and "Ricavi" does not. A rettifica is
+    // dated today, so the pilot (run-unique name) scopes the rows, not day1.
+    const movements = (await (await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`)).json()) as { items: Array<{ id: string; type: string }> };
+    const topUpId = movements.items.find((item) => item.type === 'TOP_UP')!.id;
+    const adjustment = await page.request.post(`/api/v1/people/${pilot.personId}/account/adjustments`, {
+      data: { amountCents: -2000, reason: 'Ricarica registrata in eccesso', originalMovementId: topUpId },
+    });
+    expect(adjustment.status()).toBe(200);
+
+    await gotoBilling(page, { personQuery: pilot.lastName, bookType: 'DEPOSIT' });
+    await expect(billingRows(page)).toHaveCount(2);
+    await expect(billingRows(page).filter({ hasText: 'Ricarica registrata in eccesso' })).toHaveCount(1);
+
+    await gotoBilling(page, { personQuery: pilot.lastName, bookType: 'REVENUE' });
+    await expect(billingRows(page)).toHaveCount(0);
   });
 
   test('Categoria filter (cash categories only, replaces the old combined Tipo select) narrows to that category only', async ({ page }) => {

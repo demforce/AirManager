@@ -608,6 +608,14 @@ model AccountMovement {
   reversalOfId  String?             @unique
   reversalOf    AccountMovement?    @relation("AccountMovementReversal", fields: [reversalOfId], references: [id])
   reversal      AccountMovement?    @relation("AccountMovementReversal")
+  /// Type of the ROOT of the reversal chain this row belongs to (story 16.6b,
+  /// ledger MINOR-3) — `NULL` exactly when `reversalOfId` is (a CHECK in the
+  /// migration enforces it). Denormalized AT WRITE because a Prisma `where`
+  /// cannot climb a relation to an arbitrary depth (unrolling N levels moves
+  /// the hole to N+1), and it never goes stale: the ledger is append-only and
+  /// `reversalOfId` is `@unique`, so a chain is linear and its root fixed at
+  /// insert. The one writer is `accounts.service.ts#recordAdjustment`.
+  reversalRootType AccountMovementType?
   createdAt     DateTime            @default(now())
 
   /// The automatic cash-ledger counterpart created in the same transaction

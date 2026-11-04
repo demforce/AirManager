@@ -781,7 +781,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
 
     it('creates the ADJUSTMENT movement (reason in description, actor, linked original) WITHOUT ever updating the original (AD-3) and with NO CashMovement (story 3.4)', async () => {
       mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
-      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', reversal: null });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', type: 'TOP_UP', reversalRootType: null, reversal: null });
 
       const result = await recordAdjustment(adminActor(), 'person_1', {
         amountCents: -2500,
@@ -799,6 +799,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
             description: 'Importo errato',
             actorUserId: 'admin_1',
             reversalOfId: 'movement_1',
+            reversalRootType: 'TOP_UP',
           }),
         }),
       );
@@ -832,6 +833,35 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       });
     });
 
+    // Story 16.6b (ledger MINOR-3, AC 15): the one writer of `reversalOfId`
+    // is the one writer of `reversalRootType` — a root passes its own type, a
+    // link passes on the root it already carries, a standalone row has none.
+    it.each([
+      ['a standalone ADJUSTMENT (a quota, the root)', 'ADJUSTMENT', { type: 'ADJUSTMENT', reversalRootType: null }],
+      ['a link of a TOP_UP chain (depth 2 written)', 'TOP_UP', { type: 'ADJUSTMENT', reversalRootType: 'TOP_UP' }],
+      ['a legacy link of a FLIGHT_CHARGE chain', 'FLIGHT_CHARGE', { type: 'ADJUSTMENT', reversalRootType: 'FLIGHT_CHARGE' }],
+    ] as const)('story 16.6b: the rettifica of %s is written with reversalRootType %s', async (_label, expectedRootType, original) => {
+      mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: 2500 });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', ...original, reversal: null });
+
+      await recordAdjustment(adminActor(), 'person_1', { amountCents: 2500, reason: 'Storno', originalMovementId: 'movement_1' });
+
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ reversalOfId: 'movement_1', reversalRootType: expectedRootType }) }),
+      );
+    });
+
+    it('story 16.6b: a standalone rettifica is written with NO root type (reversalOfId and reversalRootType both null)', async () => {
+      mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
+
+      await recordAdjustment(adminActor(), 'person_1', { amountCents: -2500, reason: 'Addebito manuale' });
+
+      expect(accountMovementFindUniqueMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ reversalOfId: null, reversalRootType: null }) }),
+      );
+    });
+
     it('locks the Account row (FOR UPDATE) inside the movement transaction (review 2.5 F1 pattern)', async () => {
       mockAdjustmentHappyPath({ balanceBeforeCents: 0, amountCents: 100 });
 
@@ -845,7 +875,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     it('throws NotFoundError for an originalMovementId belonging to ANOTHER account (never reveal it exists)', async () => {
       personFindUnique.mockResolvedValue(PERSON);
       accountFindUnique.mockResolvedValue(ACCOUNT);
-      accountMovementFindUnique.mockResolvedValue({ id: 'movement_x', accountId: 'account_OTHER', reversal: null });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_x', accountId: 'account_OTHER', type: 'TOP_UP', reversalRootType: null, reversal: null });
 
       await expect(
         recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_x' }),
@@ -870,6 +900,8 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       accountMovementFindUnique.mockResolvedValue({
         id: 'movement_1',
         accountId: 'account_1',
+        type: 'TOP_UP',
+        reversalRootType: null,
         reversal: { id: 'movement_adj' },
       });
 
@@ -928,7 +960,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
 
     it('maps a concurrent P2002 on the unique reversalOfId to ConflictError (TOCTOU backstop)', async () => {
       mockAdjustmentHappyPath({ balanceBeforeCents: 0, amountCents: -100 });
-      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', reversal: null });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', type: 'TOP_UP', reversalRootType: null, reversal: null });
       accountMovementCreate.mockRejectedValue({ code: 'P2002' });
 
       await expect(

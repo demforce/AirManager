@@ -60,12 +60,9 @@ const ACCOUNT_ROW_SELECT = {
   createdAt: true,
   flightId: true,
   reversalOfId: true,
-  // Review F3: two levels deep — `reversalOf.type` catches a DIRECT rettifica
-  // of a TOP_UP, `reversalOf.reversalOf.type` catches the SYMMETRIC case (a
-  // storno of THAT rettifica, verified reachable via the per-row "Rettifica"
-  // action, which never restricts its target to TOP_UP/FLIGHT_CHARGE rows —
-  // see `accountBookType`'s own doc-comment).
-  reversalOf: { select: { type: true, reversalOf: { select: { type: true } } } },
+  // Story 16.6b (ledger MINOR-3): the chain's ROOT type, stored on the row —
+  // replaces the two-level `reversalOf.reversalOf` join of review Billing-2 F3.
+  reversalRootType: true,
   reversal: { select: { id: true } },
   cashMovement: { select: { id: true } },
   account: { select: { personId: true, person: { select: { firstName: true, lastName: true } } } },
@@ -108,34 +105,41 @@ type SelectedCashRow = Prisma.CashMovementGetPayload<{ select: typeof CASH_ROW_S
  *   storno's OWN month, review Billing-1 F3). `PACKAGE_PURCHASE` never
  *   reaches this predicate (its `AccountMovement` amount is always 0 — the
  *   twin-dedup above hides it; the value lives on its `CASH` twin instead).
- *   **Review Billing-2 F3**: an `ADJUSTMENT` whose original (or, one level
- *   further, whose original's own original) is a `TOP_UP` belongs to the
- *   ACCONTI book, never revenue — "lo storno appartiene al libro del suo
- *   originale" (Billing-1's own ratifica), generalized here to a ricarica: a
- *   rettifica-di-ricarica is excluded from the negative-`ADJUSTMENT` clause
- *   (any storno of a `TOP_UP` is negative, reducing the deposit), and the
- *   SYMMETRIC positive case — a storno OF that rettifica — is excluded from
- *   the positive-reversal clause, checking one level deeper
- *   (`reversalOf.reversalOf`) since that positive row's own `reversalOf` is
- *   the ADJUSTMENT, not the TOP_UP itself. Without this, correcting a wrong
- *   ricarica showed up as ghost ricavo (the reviewer's own measured case:
- *   +50,00 €).
+ *   **Story 16.6b (ledger MINOR-3, ratifica PO 2026-11-03)**: an `ADJUSTMENT`
+ *   whose chain is ROOTED in a `TOP_UP` (`reversalRootType`, any depth, any
+ *   sign) belongs to the ACCONTI book, never revenue — "lo storno appartiene
+ *   al libro del suo originale" (Billing-1's own ratifica) applied
+ *   transitively: the root, not the parent. It replaces review Billing-2
+ *   F3's two-level check (`reversalOf`, `reversalOf.reversalOf`), which was
+ *   the depth-1 and depth-2 instances of this one rule — in a chain of true
+ *   stornos the signs alternate, so "negative with a TOP_UP parent" IS
+ *   "negative rooted in a TOP_UP at depth 1" — and left a ghost ricavo one
+ *   link further (`TOP_UP <- A1 <- A2 <- A3`, the audit's +50,00 €). An
+ *   operator's amount is free, so the signs need not alternate: a negative
+ *   storno of a rettifica-di-ricarica is DEPOSIT too. `ACCOUNT_DEPOSIT_OR` is
+ *   the exact complement for those rows (the "Acconti" filter).
+ *   ⚠️ The exclusion is spelled `OR: NOT_ROOTED_IN_TOP_UP` (`null` OR
+ *   `not TOP_UP`), NEVER `NOT: { reversalRootType: 'TOP_UP' }` nor
+ *   `reversalRootType: { not: 'TOP_UP' }`: Prisma compiles both to SQL that
+ *   drops the `NULL` rows, i.e. every STANDALONE debit (a quota, an
+ *   addebito) would silently leave the revenue (measured on Postgres, story
+ *   16.6b AC 14).
  * - `CASH_REVENUE_OR` / `CASH_COST_OR`: a normal entrata/uscita
  *   (`reversalOfId` null) keeps its own sign; a storno of one
  *   (`reversalOfId` set) is DB-opposite-signed by construction
  *   (`reverseCashMovement`) and nets in the ORIGINAL's book, not its own —
  *   `CASH_COST_OR` is the exact mirror of `CASH_REVENUE_OR`.
  */
+const NOT_ROOTED_IN_TOP_UP: Prisma.AccountMovementWhereInput[] = [{ reversalRootType: null }, { reversalRootType: { not: 'TOP_UP' } }];
+
 export const ACCOUNT_REVENUE_OR: Prisma.AccountMovementWhereInput[] = [
   { type: 'FLIGHT_CHARGE' },
-  { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
-  {
-    type: 'ADJUSTMENT',
-    amountCents: { gt: 0 },
-    reversalOfId: { not: null },
-    NOT: { OR: [{ reversalOf: { type: 'TOP_UP' } }, { reversalOf: { reversalOf: { type: 'TOP_UP' } } }] },
-  },
+  { type: 'ADJUSTMENT', amountCents: { lt: 0 }, OR: NOT_ROOTED_IN_TOP_UP },
+  { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null }, OR: NOT_ROOTED_IN_TOP_UP },
 ];
+
+/** The ACCONTI book (story 16.6b, ratifica PO 2026-11-03): a ricarica, and every link of a chain rooted in one. */
+const ACCOUNT_DEPOSIT_OR: Prisma.AccountMovementWhereInput[] = [{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootType: 'TOP_UP' }];
 
 /** A standalone credit `ADJUSTMENT` (no `reversalOfId`) — the "giroconto" bucket, no P&L role either way (story Billing-2, AC 2). */
 const ACCOUNT_TRANSFER_WHERE: Prisma.AccountMovementWhereInput = { type: 'ADJUSTMENT', amountCents: { gte: 0 }, reversalOfId: null };
@@ -165,26 +169,19 @@ export const CASH_COST_OR: Prisma.CashMovementWhereInput[] = [
  * F9(2): an `ADJUSTMENT` with `amountCents === 0` AND `reversalOfId` set is a
  * zero-effect storno — no book role either way (also unreachable today, same
  * defensive reasoning).
- * F3(3): a rettifica whose DIRECT original is a `TOP_UP` is DEPOSIT
- * (mirrors `ACCOUNT_REVENUE_OR`'s negative-clause exclusion); its SYMMETRIC
- * case — a positive storno of THAT rettifica — is also DEPOSIT, checked one
- * level deeper (mirrors the positive-clause exclusion). Sign-gated on
- * purpose, not a blanket "any TOP_UP ancestor" check: it must match
- * `ACCOUNT_REVENUE_OR`'s own two clauses exactly, or the badge and the
- * aggregate would drift on a case neither clause actually excludes (a
- * negative storno of a rettifica-of-TOP_UP, out of scope — see the
- * predicate's own doc-comment).
+ * Story 16.6b (ledger MINOR-3): a link of a chain ROOTED in a `TOP_UP` is
+ * DEPOSIT at any depth and sign (mirrors `ACCOUNT_REVENUE_OR`'s two
+ * exclusions and `ACCOUNT_DEPOSIT_OR` — see the predicates' own
+ * doc-comment); the depth never appears here, the root is on the row.
  */
-function accountBookType(row: Pick<SelectedAccountRow, 'type' | 'amountCents' | 'reversalOfId' | 'reversalOf'>): BookTypeDto {
+function accountBookType(row: Pick<SelectedAccountRow, 'type' | 'amountCents' | 'reversalOfId' | 'reversalRootType'>): BookTypeDto {
   if (row.type === 'TOP_UP') return 'DEPOSIT';
   if (row.type === 'FLIGHT_CHARGE') return 'REVENUE';
   if (row.type === 'PACKAGE_PURCHASE') return 'TRANSFER';
   // ADJUSTMENT only from here — matches ACCOUNT_REVENUE_OR's last two clauses exactly.
   if (row.amountCents === 0 && row.reversalOfId !== null) return 'TRANSFER';
-  if (row.amountCents < 0) return row.reversalOf?.type === 'TOP_UP' ? 'DEPOSIT' : 'REVENUE';
-  if (row.reversalOfId !== null) {
-    return row.reversalOf?.type === 'TOP_UP' || row.reversalOf?.reversalOf?.type === 'TOP_UP' ? 'DEPOSIT' : 'REVENUE';
-  }
+  if (row.reversalRootType === 'TOP_UP') return 'DEPOSIT';
+  if (row.amountCents < 0 || row.reversalOfId !== null) return 'REVENUE';
   return 'TRANSFER';
 }
 
@@ -218,7 +215,7 @@ function buildAccountWhere(filters: LedgerFilters): Prisma.AccountMovementWhereI
   if (filters.personQuery) and.push({ account: { person: personNameMatch(filters.personQuery) } });
   if (filters.movementType) and.push({ type: filters.movementType });
   if (filters.bookType === 'REVENUE') and.push({ OR: ACCOUNT_REVENUE_OR });
-  if (filters.bookType === 'DEPOSIT') and.push({ type: 'TOP_UP' });
+  if (filters.bookType === 'DEPOSIT') and.push({ OR: ACCOUNT_DEPOSIT_OR });
   if (filters.bookType === 'TRANSFER') and.push(ACCOUNT_TRANSFER_WHERE);
   if (filters.direction === 'charge') and.push({ amountCents: { lt: 0 } });
   if (filters.direction === 'payment') and.push({ amountCents: { gt: 0 } });

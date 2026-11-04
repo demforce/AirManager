@@ -82,7 +82,7 @@ const baseAccountRow: Fixture = {
   createdAt: new Date('2026-07-10T09:00:00.000Z'),
   flightId: null,
   reversalOfId: null,
-  reversalOf: null,
+  reversalRootType: null,
   reversal: null,
   cashMovement: null,
   account: { personId: 'person_1', person: { firstName: 'Elena', lastName: 'Nakamura' } },
@@ -255,8 +255,8 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
 
     it('review Billing-2 F3: a rettifica whose original is a TOP_UP is DEPOSIT (never REVENUE), any sign — the reviewer\'s own ghost-revenue case (correcting a wrong ricarica must never show +50,00 € of ricavo)', async () => {
       accountFindMany.mockResolvedValue([
-        { ...baseAccountRow, id: 'am_rettifica_down', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'am_topup', reversalOf: { type: 'TOP_UP', reversalOf: null } },
-        { ...baseAccountRow, id: 'am_rettifica_up', type: 'ADJUSTMENT', amountCents: 5000, reversalOfId: 'am_topup', reversalOf: { type: 'TOP_UP', reversalOf: null } },
+        { ...baseAccountRow, id: 'am_rettifica_down', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'am_topup', reversalRootType: 'TOP_UP' },
+        { ...baseAccountRow, id: 'am_rettifica_up', type: 'ADJUSTMENT', amountCents: 5000, reversalOfId: 'am_topup', reversalRootType: 'TOP_UP' },
       ]);
       accountCount.mockResolvedValue(2);
       cashFindMany.mockResolvedValue([]);
@@ -277,7 +277,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
           type: 'ADJUSTMENT',
           amountCents: 5000,
           reversalOfId: 'am_rettifica_down',
-          reversalOf: { type: 'ADJUSTMENT', reversalOf: { type: 'TOP_UP' } },
+          reversalRootType: 'TOP_UP',
         },
       ]);
       accountCount.mockResolvedValue(1);
@@ -289,10 +289,54 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       expect(result.items[0]?.bookType).toBe('DEPOSIT');
     });
 
+    // Story 16.6b (ledger MINOR-3): the two-level check above left a ghost
+    // ricavo one link further — the ROOT stored on the row has no depth.
+    it('story 16.6b: a link of a chain ROOTED in a TOP_UP is DEPOSIT at depth 3, 4 and 5, either sign, and when the signs do not alternate (the audit\'s TOP_UP <- A1 <- A2 <- A3)', async () => {
+      accountFindMany.mockResolvedValue([
+        { ...baseAccountRow, id: 'am_depth3', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'am_depth2', reversalRootType: 'TOP_UP' },
+        { ...baseAccountRow, id: 'am_depth4', type: 'ADJUSTMENT', amountCents: 5000, reversalOfId: 'am_depth3', reversalRootType: 'TOP_UP' },
+        { ...baseAccountRow, id: 'am_depth5', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'am_depth4', reversalRootType: 'TOP_UP' },
+        { ...baseAccountRow, id: 'am_negative_of_negative', type: 'ADJUSTMENT', amountCents: -500, reversalOfId: 'am_rettifica_down', reversalRootType: 'TOP_UP' },
+      ]);
+      accountCount.mockResolvedValue(4);
+      cashFindMany.mockResolvedValue([]);
+      cashCount.mockResolvedValue(0);
+
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
+
+      expect(Object.fromEntries(result.items.map((item) => [item.id, item.bookType]))).toEqual({
+        am_depth3: 'DEPOSIT',
+        am_depth4: 'DEPOSIT',
+        am_depth5: 'DEPOSIT',
+        am_negative_of_negative: 'DEPOSIT',
+      });
+    });
+
+    it('story 16.6b: a chain rooted in a debit ADJUSTMENT or in a legacy FLIGHT_CHARGE stays REVENUE at any depth, either sign', async () => {
+      accountFindMany.mockResolvedValue([
+        { ...baseAccountRow, id: 'am_quota_depth3', type: 'ADJUSTMENT', amountCents: 3000, reversalOfId: 'am_quota_depth2', reversalRootType: 'ADJUSTMENT' },
+        { ...baseAccountRow, id: 'am_quota_depth4', type: 'ADJUSTMENT', amountCents: -3000, reversalOfId: 'am_quota_depth3', reversalRootType: 'ADJUSTMENT' },
+        { ...baseAccountRow, id: 'am_flight_depth1', type: 'ADJUSTMENT', amountCents: 12000, reversalOfId: 'am_charge', reversalRootType: 'FLIGHT_CHARGE' },
+        { ...baseAccountRow, id: 'am_flight_depth2', type: 'ADJUSTMENT', amountCents: -12000, reversalOfId: 'am_flight_depth1', reversalRootType: 'FLIGHT_CHARGE' },
+      ]);
+      accountCount.mockResolvedValue(4);
+      cashFindMany.mockResolvedValue([]);
+      cashCount.mockResolvedValue(0);
+
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
+
+      expect(Object.fromEntries(result.items.map((item) => [item.id, item.bookType]))).toEqual({
+        am_quota_depth3: 'REVENUE',
+        am_quota_depth4: 'REVENUE',
+        am_flight_depth1: 'REVENUE',
+        am_flight_depth2: 'REVENUE',
+      });
+    });
+
     it('review Billing-2 F9: the three "unreachable today" edges align with their predicate — a zero-amount PACKAGE_PURCHASE-shaped ACCOUNT row and a zero-amount storno ADJUSTMENT are TRANSFER, a zero-amount CASH row is TRANSFER (never badged COST)', async () => {
       accountFindMany.mockResolvedValue([
         { ...baseAccountRow, id: 'am_package', type: 'PACKAGE_PURCHASE', amountCents: 0, reversalOfId: null },
-        { ...baseAccountRow, id: 'am_zero_storno', type: 'ADJUSTMENT', amountCents: 0, reversalOfId: 'am_debit', reversalOf: { type: 'ADJUSTMENT', reversalOf: null } },
+        { ...baseAccountRow, id: 'am_zero_storno', type: 'ADJUSTMENT', amountCents: 0, reversalOfId: 'am_debit', reversalRootType: 'ADJUSTMENT' },
       ]);
       accountCount.mockResolvedValue(2);
       cashFindMany.mockResolvedValue([{ ...baseCashRow, id: 'cm_zero', amountCents: 0, reversalOfId: null }]);
@@ -339,13 +383,8 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       expect(whereArg(accountFindManyMock).AND).toContainEqual({
         OR: [
           { type: 'FLIGHT_CHARGE' },
-          { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
-          {
-            type: 'ADJUSTMENT',
-            amountCents: { gt: 0 },
-            reversalOfId: { not: null },
-            NOT: { OR: [{ reversalOf: { type: 'TOP_UP' } }, { reversalOf: { reversalOf: { type: 'TOP_UP' } } }] },
-          },
+          { type: 'ADJUSTMENT', amountCents: { lt: 0 }, OR: [{ reversalRootType: null }, { reversalRootType: { not: 'TOP_UP' } }] },
+          { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null }, OR: [{ reversalRootType: null }, { reversalRootType: { not: 'TOP_UP' } }] },
         ],
       });
       expect(whereArg(cashFindManyMock).AND).toContainEqual({
@@ -372,7 +411,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
 
       await listTransactions(adminActor(), { page: 1, pageSize: 20, bookType: 'DEPOSIT' });
 
-      expect(whereArg(accountFindManyMock).AND).toContainEqual({ type: 'TOP_UP' });
+      expect(whereArg(accountFindManyMock).AND).toContainEqual({ OR: [{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootType: 'TOP_UP' }] });
       expect(cashFindManyMock).not.toHaveBeenCalled();
       expect(cashCountMock).not.toHaveBeenCalled();
     });
@@ -546,13 +585,8 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
         effectiveDate: { gte: new Date('2026-07-01'), lte: new Date('2026-07-31') },
         OR: [
           { type: 'FLIGHT_CHARGE' },
-          { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
-          {
-            type: 'ADJUSTMENT',
-            amountCents: { gt: 0 },
-            reversalOfId: { not: null },
-            NOT: { OR: [{ reversalOf: { type: 'TOP_UP' } }, { reversalOf: { reversalOf: { type: 'TOP_UP' } } }] },
-          },
+          { type: 'ADJUSTMENT', amountCents: { lt: 0 }, OR: [{ reversalRootType: null }, { reversalRootType: { not: 'TOP_UP' } }] },
+          { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null }, OR: [{ reversalRootType: null }, { reversalRootType: { not: 'TOP_UP' } }] },
         ],
       },
       _sum: { amountCents: true },

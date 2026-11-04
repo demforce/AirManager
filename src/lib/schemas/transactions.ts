@@ -22,8 +22,9 @@ export type TransactionSourceDto = z.infer<typeof transactionSourceSchema>;
  * `ACCOUNT_REVENUE_OR`/`CASH_REVENUE_OR`/`CASH_COST_OR`), so the per-row
  * badge and the riquadri totals can never drift (review Billing-1 F6's
  * lesson, closed at the root by this story instead of left to rot):
- * `REVENUE` (ricavo), `COST` (costo), `DEPOSIT` (acconto — a `TOP_UP`,
- * increases the debito verso i piloti, "non incide sul risultato"),
+ * `REVENUE` (ricavo), `COST` (costo), `DEPOSIT` (acconto — a `TOP_UP`, or
+ * any rettifica of a chain rooted in one (story 16.6b), moves the debito
+ * verso i piloti, "non incide sul risultato"),
  * `TRANSFER` (giroconto — a standalone credit `ADJUSTMENT` with no
  * `reversalOfId`: no P&L role either).
  */

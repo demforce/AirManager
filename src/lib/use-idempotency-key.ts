@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 /**
- * The header name the 5 forms send and `src/lib/api/handler.ts`'s
+ * The header name the 7 forms send and `src/lib/api/handler.ts`'s
  * `idempotency` option reads (`IDEMPOTENCY_KEY_HEADER` there) — duplicated
  * as a literal rather than imported: `handler.ts` is a server module (it
  * statically imports `next/server`/`@/server/db/prisma`) and must never be
@@ -31,9 +31,10 @@ export function randomIdempotencyKey(): string {
 
 /**
  * Client-side lifecycle for the `Idempotency-Key` header (story TD-2, AC 6),
- * shared by the money-mutating forms (top-up, rettifica, vendita
- * pacchetto, registrazione volo, movimento cassa) — "a network retry must
- * replay, not duplicate". The key survives a
+ * shared by the money-mutating forms (ricarica on the person page and on
+ * Piloti, rettifica, registrazione volo, movimento of the Contabilità,
+ * pagamento istruttore, quota associativa — story 16.6b) — "a network retry
+ * must replay, not duplicate". The key survives a
  * NETWORK failure (the `fetch` call itself throws — offline, DNS, a dropped
  * connection mid-request — exactly the retry this protects: the caller must
  * reuse the SAME key so the server-side wrapper (`src/lib/api/handler.ts`)
@@ -42,7 +43,7 @@ export function randomIdempotencyKey(): string {
  * fresh submission attempt, after the user corrected the input, must not
  * collide with a completed or still-PENDING record under the OLD key.
  *
- * Usage (identical shape in all 5 forms):
+ * Usage (same shape in all 7 forms):
  * ```ts
  * const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
  * // ...

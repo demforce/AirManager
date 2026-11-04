@@ -31,7 +31,7 @@ import type { AppLocale } from '@/i18n/routing';
 import { tierOf } from '@/lib/expiry-status';
 import { expiryCardSubLine, expiryDaysLabel, expirySheetSub } from '@/lib/mobile-expiries';
 import { formatCents, parseCents } from '@/lib/money';
-import { randomIdempotencyKey } from '@/lib/use-idempotency-key';
+import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import type { ExpiryDashboardItemDto, ExpiryWindowDto, RegistryCategoryDto } from '@/lib/schemas/expiries';
 import type { RequirementFailure } from '@/lib/schemas/requirements';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
@@ -869,10 +869,16 @@ type MembershipFeeModalProps = {
  * 422 `REQUIREMENTS_NOT_MET` of flights and bookings, and the modal shows the
  * shared `RequirementsWarning` (the balance and the amount) — «Procedi
  * comunque» (`canForce`) resends the same body with `force: true` and a NEW
- * `Idempotency-Key` (the 422 freed the old one anyway, `handler.ts`); its
- * «Annulla» goes back to the form with the values intact, and a change to the
- * pilot or the amount closes it (never derogate a body other than the one
- * listed).
+ * `Idempotency-Key` (the 422 was an HTTP response, so the key was already
+ * regenerated); its «Annulla» goes back to the form with the values intact,
+ * and a change to the pilot or the amount closes it (never derogate a body
+ * other than the one listed).
+ *
+ * Story 16.6b (ledger MAJOR-6): the one route where the server REQUIRES the
+ * key follows the `useIdempotencyKey` contract like the other six forms — the
+ * key survives a network failure, so the operator's retry REPLAYS the charge
+ * a dropped connection may already have committed instead of charging (and
+ * renewing the fee) twice.
  *
  * Story 15.7 (ratifica R-15.7-g): on a phone the SAME node becomes a
  * full-screen panel (title on top, action row pinned to the bottom), because
@@ -908,6 +914,7 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
   // both errors are DERIVED from submitAttempted + current value (clear on
   // correction is automatic), the `error` banner stays for SERVER failures only.
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
   const pilotMissing = submitAttempted && !personId;
   const amountInvalid = submitAttempted && parseAmountCents(amount) === null;
 
@@ -916,13 +923,19 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
     setProceedError(false);
   }
 
-  /** The charge itself — `force` only from «Procedi comunque»; a new `Idempotency-Key` per attempt, as always. */
-  function charge(targetPersonId: string, amountCents: number, force: boolean): Promise<Response> {
-    return fetch(`/api/v1/people/${targetPersonId}/membership-fee`, {
+  /**
+   * The charge itself — `force` only from «Procedi comunque». The key is
+   * regenerated once ANY HTTP response arrives (TD-2, AC 6); a network
+   * failure throws before that line and keeps it, so the retry replays.
+   */
+  async function charge(targetPersonId: string, amountCents: number, force: boolean): Promise<Response> {
+    const response = await fetch(`/api/v1/people/${targetPersonId}/membership-fee`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': randomIdempotencyKey() },
+      headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       body: JSON.stringify(force ? { amountCents, force: true } : { amountCents }),
     });
+    regenerateIdempotencyKey();
+    return response;
   }
 
   async function charged(response: Response): Promise<void> {
@@ -939,7 +952,15 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
     if (!personId || parsedAmount === null) return;
 
     setSubmitting(true);
-    const response = await charge(personId, parsedAmount, false);
+    let response: Response;
+    try {
+      response = await charge(personId, parsedAmount, false);
+    } catch {
+      // Network failure: the key is kept (see `charge`) and the button comes back for the retry.
+      setSubmitting(false);
+      setError(labels.genericError);
+      return;
+    }
     setSubmitting(false);
 
     if (!response.ok) {

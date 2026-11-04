@@ -286,6 +286,77 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     expect(fee?.expiresAt.slice(0, 4)).toBe(String(now.getFullYear() + 1));
   });
 
+  // Story 16.6b (ledger MAJOR-6): the panel keeps its Idempotency-Key across a
+  // NETWORK failure and regenerates it after any HTTP response. Attempt 1 gets
+  // a stubbed 500 (an HTTP response: the key must change); attempt 2 reaches
+  // the server, which COMMITS the charge, and the browser is then told the
+  // connection dropped (`route.fetch()` then `route.abort()`); attempt 3, the
+  // operator's retry, must carry attempt 2's key and be REPLAYED — one charge,
+  // and the fee renewed once (+12 months), not twice (+24).
+  test('a retry after a dropped connection replays the charge instead of charging and renewing twice; the key changes after an HTTP response (story 16.6b)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 3500 } });
+
+    const pilot = await createPilotPerson(page);
+    await topUpAccount(page, pilot.personId, 100_000); // the charge is covered: no requirements warning
+
+    const keys: string[] = [];
+    const committed: { status?: number; expiresAt?: string } = {};
+    await page.route(`**/api/v1/people/${pilot.personId}/membership-fee`, async (route) => {
+      keys.push(route.request().headers()['idempotency-key'] ?? '');
+      if (keys.length === 1) {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+      } else if (keys.length === 2) {
+        const response = await route.fetch();
+        committed.status = response.status();
+        committed.expiresAt = ((await response.json()) as { expiresAt: string }).expiresAt;
+        await route.abort('connectionreset');
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.goto('/it/dashboard/expiries');
+    await page.getByTestId('scadenze-membership-fee-button').click();
+    const panel = page.getByTestId('membership-fee-panel');
+    const combobox = panel.getByRole('combobox', { name: 'Persona' });
+    await combobox.click();
+    await combobox.fill(pilot.lastName);
+    await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();
+    const submit = panel.getByTestId('membership-fee-submit');
+    const error = panel.getByTestId('membership-fee-error');
+
+    await submit.click(); // attempt 1: HTTP 500
+    await expect(error).toHaveText('Impossibile addebitare la quota. Riprova.');
+    await expect(submit).toBeEnabled();
+
+    await submit.click(); // attempt 2: committed server-side, dropped client-side
+    await expect.poll(() => committed.status).toBe(200);
+    await expect(error).toHaveText('Impossibile addebitare la quota. Riprova.');
+    await expect(submit).toBeEnabled();
+
+    const replayed = page.waitForResponse((response) => response.url().endsWith(`/people/${pilot.personId}/membership-fee`) && response.request().method() === 'POST');
+    await submit.click(); // attempt 3: the operator's retry
+    const retry = await replayed;
+    expect(retry.status()).toBe(200);
+    expect(retry.headers()['idempotency-replayed']).toBe('true');
+    await expect(panel.getByTestId('membership-fee-success')).toBeVisible();
+
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).not.toBe(keys[0]);
+    expect(keys[2]).toBe(keys[1]);
+
+    const movements = (await (await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`)).json()) as {
+      items: { type: string; amountCents: number; description: string | null }[];
+    };
+    expect(movements.items.filter((m) => m.type === 'ADJUSTMENT' && m.description?.startsWith('Quota associativa')).map((m) => m.amountCents)).toEqual([-3500]);
+
+    const expiries = (await (await page.request.get(`/api/v1/people/${pilot.personId}/expiries`)).json()) as { typeName: string; expiresAt: string }[];
+    const fee = expiries.find((e) => e.typeName === 'Quota associativa');
+    expect(fee?.expiresAt).toBe(committed.expiresAt);
+    expect(fee?.expiresAt.slice(0, 4)).toBe(String(new Date().getFullYear() + 1));
+  });
+
   test('setting the fee to 0 disables the button on the Scadenze page, with a hint', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 0 } });
