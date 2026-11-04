@@ -2750,6 +2750,19 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .person-expiries .card-body > .fld-label{ padding: 14px 16px; }
 }
 
+/* Story 16.5 (review F2, PO 2026-11-04) — the narrowest phones: at 320px
+   (`PHONE_NARROW`) the fourth track of `.mobile-row-static` left the NAME of
+   the instructor to pay 5-22px (measured; the text needs ~138px), since
+   "Paga" and the hours/owed column took the rest. At 360px and below the
+   button drops to a second row under the name, so the name keeps the width
+   of a roster row; above, it stays beside. Column 2 only, never `2 / -1`:
+   the `.mobile-row-flag` lesson above (a spanning item feeds its max-content
+   back into the `auto` track). Same 44px target, no new token. */
+@media (max-width: 360px){
+  .mobile-row-static{ grid-template-columns: 30px minmax(0, 1fr) auto; }
+  .mobile-row-static > .btn{ grid-row: 2; grid-column: 2; justify-self: start; }
+}
+
 /* ---------- registro voli mobile (story 15.6, epic 15 R1-R4) ----------
    The widest table of the app (measured 317/1344 at 375px: 1027px of it off
    screen) becomes one card per flight, in the template's own language

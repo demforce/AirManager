@@ -1,3 +1,4 @@
+import type { Prisma } from '@/generated/prisma/client';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import type { RecordInstructorPayoutInput } from '@/lib/schemas/instructor-compensation';
 import { APP_TIMEZONE } from '@/lib/time';
@@ -167,11 +168,16 @@ async function listInactiveInstructors(): Promise<InstructorRow[]> {
  * froze (story 16.5) — of SCHOOL flights per instructor, no-charge flights
  * included (story 19.6, R-19-d: the compensation still accrues). ONE batched
  * groupBy (never N+1). A SCHOOL flight always has an instructor, so its
- * snapshot is never `null`; the `?? 0` only covers an empty sum.
+ * snapshot is never `null`; the `?? 0` only covers an empty sum. `db` is the
+ * payout's `tx` under its lock (`assertStillOwedUnderLock`).
  */
-async function sumSchoolFlightsByProfile(instructorProfileIds: string[], bounds: VariantBounds): Promise<Map<string, { minutes: number; accruedCents: number }>> {
+async function sumSchoolFlightsByProfile(
+  instructorProfileIds: string[],
+  bounds: VariantBounds,
+  db: Prisma.TransactionClient = prisma,
+): Promise<Map<string, { minutes: number; accruedCents: number }>> {
   if (instructorProfileIds.length === 0) return new Map();
-  const rows = await prisma.flight.groupBy({
+  const rows = await db.flight.groupBy({
     by: ['instructorProfileId'],
     where: {
       instructorProfileId: { in: instructorProfileIds },
@@ -192,11 +198,11 @@ async function sumSchoolFlightsByProfile(instructorProfileIds: string[], bounds:
  * SUM(amountCents) of payouts per instructor, attributed by `periodEnd`
  * falling in `bounds` (AC 2's binding attribution rule, index-backed by
  * `InstructorPayout`'s `@@index([instructorProfileId, periodEnd])`) — ONE
- * batched groupBy per variant.
+ * batched groupBy per variant. `db`: as `sumSchoolFlightsByProfile`.
  */
-async function sumPayoutsByProfile(instructorProfileIds: string[], bounds: VariantBounds): Promise<Map<string, number>> {
+async function sumPayoutsByProfile(instructorProfileIds: string[], bounds: VariantBounds, db: Prisma.TransactionClient = prisma): Promise<Map<string, number>> {
   if (instructorProfileIds.length === 0) return new Map();
-  const rows = await prisma.instructorPayout.groupBy({
+  const rows = await db.instructorPayout.groupBy({
     by: ['instructorProfileId'],
     where: {
       instructorProfileId: { in: instructorProfileIds },
@@ -417,7 +423,7 @@ export async function getOwnCompensationOverview(actor: Actor): Promise<OwnCompe
   };
 }
 
-/** Resolves ONE active instructor by `Person.id` for the detail read (unknown person OR no/deactivated profile -> 404, no enumeration concern since `finance.manage` already sees every person). The summary's no-longer-active rows keep this 404 (story 16.5, Q-16.5-c): they offer "Paga" only. */
+/** Resolves ONE active instructor by `Person.id` for the detail read (unknown person, archived person OR no/deactivated profile -> 404, no enumeration concern since `finance.manage` already sees every person). "Active" is the summary's own rule, so a row it flags `isActive: false` — archived OR deactivated — keeps this 404 (story 16.5, Q-16.5-c; review F1): it offers "Paga" only. */
 async function resolveActiveInstructorRow(personId: string): Promise<InstructorRow> {
   const person = await prisma.person.findUnique({
     where: { id: personId },
@@ -425,10 +431,11 @@ async function resolveActiveInstructorRow(personId: string): Promise<InstructorR
       id: true,
       firstName: true,
       lastName: true,
+      archivedAt: true,
       instructorProfile: { select: { id: true, payoutRateCents: true, deactivatedAt: true } },
     },
   });
-  if (!person || !person.instructorProfile || person.instructorProfile.deactivatedAt !== null) {
+  if (!person || person.archivedAt !== null || !person.instructorProfile || person.instructorProfile.deactivatedAt !== null) {
     throw new NotFoundError('Person not found or has no active instructor profile.');
   }
   return {
@@ -483,7 +490,7 @@ export async function getInstructorCompensationDetail(actor: Actor, personId: st
   return { ...row!.item, recentFlights, recentStudents };
 }
 
-/** Resolves a `Person.id` to its `InstructorProfile` (unknown person -> 404; no/deactivated profile -> caller decides) — same shape as `instructor-rates.service.ts:75`'s `resolveInstructorProfile`, duplicated here (twin services, no cross-import) rather than imported. `personArchived` serves `recordPayout` alone (story 16.5: "no longer active" = archived OR deactivated, the summary's own rule). */
+/** Resolves a `Person.id` to its `InstructorProfile` (unknown person -> 404; no/deactivated profile -> caller decides) — same shape as `instructor-rates.service.ts:75`'s `resolveInstructorProfile`, duplicated here (twin services, no cross-import) rather than imported. `personArchived`: "no longer active" = archived OR deactivated, the summary's own rule (story 16.5). */
 async function resolveInstructorProfile(personId: string): Promise<{ id: string; deactivatedAt: Date | null; personArchived: boolean } | null> {
   const person = await prisma.person.findUnique({
     where: { id: personId },
@@ -495,10 +502,10 @@ async function resolveInstructorProfile(personId: string): Promise<{ id: string;
   return person.instructorProfile ? { ...person.instructorProfile, personArchived: person.archivedAt !== null } : null;
 }
 
-/** Resolves to an ACTIVE instructor's profile id, or 409 (mirrors `createInstructorRate`'s "valid person, wrong state" choice — no enumeration concern since `people.read` actors already see the person). */
+/** Resolves to an ACTIVE instructor's profile id — person not archived, profile not deactivated (review 16.5 F1: the summary's rule) — or 409 (mirrors `createInstructorRate`'s "valid person, wrong state" choice — no enumeration concern since `people.read` actors already see the person). */
 async function resolveActiveInstructorProfileId(personId: string): Promise<string> {
   const profile = await resolveInstructorProfile(personId);
-  if (!profile || profile.deactivatedAt !== null) {
+  if (!profile || profile.deactivatedAt !== null || profile.personArchived) {
     throw new ConflictError('This person has no active instructor profile.');
   }
   return profile.id;
@@ -508,27 +515,43 @@ async function resolveActiveInstructorProfileId(personId: string): Promise<strin
  * The instructor a payout may go to (story 16.5, R-16-i): an active one
  * always — an advance on hours not flown yet stays allowed, as before — and
  * one NO LONGER active (person archived or profile deactivated) only while
- * their all-time owed is positive: paying the work they did is the way out of
- * the summary's "non più attivi" section. Otherwise 409
- * `INSTRUCTOR_NOTHING_OWED`; no profile at all is the plain 409 as before.
- * No cap on the amount (R-16-i only asks owed > 0), and the read takes no
- * lock: two concurrent payouts may both pass it and overpay, which leaves a
- * negative owed in sight on the same page — no money is lost or hidden.
+ * their all-time owed is positive (`assertStillOwedUnderLock`). No profile at
+ * all is the plain 409 as before.
  */
-async function resolvePayableInstructorProfileId(personId: string): Promise<string> {
+async function resolvePayee(personId: string): Promise<{ instructorProfileId: string; isActive: boolean }> {
   const profile = await resolveInstructorProfile(personId);
   if (!profile) {
     throw new ConflictError('This person has no instructor profile.');
   }
-  if (profile.deactivatedAt === null && !profile.personArchived) {
-    return profile.id;
-  }
-  const [flights, paid] = await Promise.all([sumSchoolFlightsByProfile([profile.id], null), sumPayoutsByProfile([profile.id], null)]);
-  const owedCents = (flights.get(profile.id)?.accruedCents ?? 0) - (paid.get(profile.id) ?? 0);
+  return { instructorProfileId: profile.id, isActive: profile.deactivatedAt === null && !profile.personArchived };
+}
+
+/**
+ * Story 16.5 (R-16-i): an instructor no longer active is paid only while
+ * their all-time owed is positive — paying the work they did is the way out
+ * of the summary's "non più attivi" section; otherwise 409
+ * `INSTRUCTOR_NOTHING_OWED`. No cap on the amount (R-16-i only asks owed > 0).
+ *
+ * Decided UNDER A LOCK, inside the payout's own transaction (review 16.5 I-1,
+ * PO 2026-11-04): read before it, two concurrent payouts both saw the same
+ * owed and both passed, so the money went out twice. The `InstructorProfile`
+ * row lock serializes the payouts of one instructor, and the owed is read
+ * after it on `tx` — a fresh statement under READ COMMITTED sees the payout
+ * the first transaction committed, so the second one answers 409. `FOR NO KEY
+ * UPDATE`, not `FOR UPDATE`, as `bookings.service.ts#lockBookingPeople`: it
+ * does not conflict with the `FOR KEY SHARE` of the foreign-key checks on the
+ * profile (this payout's own insert, a flight's). Every read here goes
+ * through `tx` (review 19.10 F2: never a second pool connection while one is
+ * held).
+ */
+async function assertStillOwedUnderLock(tx: Prisma.TransactionClient, instructorProfileId: string): Promise<void> {
+  await tx.$queryRaw`SELECT "id" FROM "InstructorProfile" WHERE "id" = ${instructorProfileId} FOR NO KEY UPDATE`;
+  const flights = await sumSchoolFlightsByProfile([instructorProfileId], null, tx);
+  const paid = await sumPayoutsByProfile([instructorProfileId], null, tx);
+  const owedCents = (flights.get(instructorProfileId)?.accruedCents ?? 0) - (paid.get(instructorProfileId) ?? 0);
   if (owedCents <= 0) {
     throw new ConflictError('This instructor is no longer active and is owed nothing.', undefined, 'INSTRUCTOR_NOTHING_OWED');
   }
-  return profile.id;
 }
 
 /**
@@ -550,13 +573,14 @@ async function resolvePayableInstructorProfileId(personId: string): Promise<stri
  * misconfiguration, not a `DomainError` the caller can retry past.
  *
  * `amountCents > 0` and `periodStart <= periodEnd` are enforced at the Zod
- * boundary (`recordInstructorPayoutSchema`). Who may be paid:
- * `resolvePayableInstructorProfileId` (story 16.5, R-16-i). `payouts.manage` (ADMIN-only).
+ * boundary (`recordInstructorPayoutSchema`). Who may be paid: `resolvePayee`
+ * and, for an instructor no longer active, `assertStillOwedUnderLock` as the
+ * transaction's first statements (story 16.5, R-16-i). `payouts.manage` (ADMIN-only).
  */
 export async function recordPayout(actor: Actor, input: RecordInstructorPayoutInput): Promise<InstructorPayoutDto> {
   authorize(actor, 'payouts.manage');
 
-  const instructorProfileId = await resolvePayableInstructorProfileId(input.instructorPersonId);
+  const { instructorProfileId, isActive } = await resolvePayee(input.instructorPersonId);
 
   const category = await prisma.cashCategory.findUnique({
     where: { name: INSTRUCTOR_PAYOUT_CASH_CATEGORY_NAME, isActive: true },
@@ -571,6 +595,8 @@ export async function recordPayout(actor: Actor, input: RecordInstructorPayoutIn
   const effectiveDate = todayDateOnlyUtcInZone(APP_TIMEZONE);
 
   const payout = await prisma.$transaction(async (tx) => {
+    if (!isActive) await assertStillOwedUnderLock(tx, instructorProfileId);
+
     const created = await tx.instructorPayout.create({
       data: {
         instructorProfileId,
@@ -616,8 +642,9 @@ export async function recordPayout(actor: Actor, input: RecordInstructorPayoutIn
  * clears (`null`) the instructor's hourly payout rate. `payouts.manage`
  * (ADMIN-only), same permission as `recordPayout` (ratified 2026-07-15:
  * symmetric to `createInstructorRate`'s `settings.manage`, just a different
- * permission). An ACTIVE instructor only (409 otherwise) — unlike `recordPayout`,
- * which may also pay one no longer active (story 16.5). The new rate applies
+ * permission). An ACTIVE instructor only — person not archived, profile not
+ * deactivated (409 otherwise, review 16.5 F1) — unlike `recordPayout`, which
+ * may also pay one no longer active (story 16.5). The new rate applies
  * from the next flights on: every registered flight keeps the rate it froze
  * (story 16.5, R-16-d), so this write moves no owed.
  */

@@ -642,7 +642,13 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
 
     if (!response.ok) {
       const { code } = await parseApiError(response);
-      setFormError(code === 'INSTRUCTOR_NOTHING_OWED' ? labels.nothingOwed : labels.genericError);
+      if (code === 'INSTRUCTOR_NOTHING_OWED') {
+        setFormError(labels.nothingOwed);
+        // Review 16.5 I-4: someone else paid in the meantime — the rows behind the panel still show the old owed and "Paga".
+        onMutated();
+        return;
+      }
+      setFormError(labels.genericError);
       return;
     }
 

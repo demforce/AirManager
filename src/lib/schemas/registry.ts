@@ -1853,7 +1853,7 @@ registry.registerPath({
   path: '/api/v1/instructor-compensation',
   summary: 'Compensation summary (active instructors, and those no longer active who are still owed), or one instructor DETAIL with `?personId=`',
   description:
-    "No `personId`: every active instructor's mtd/ytd/total flown minutes and owed cents, then every instructor no longer active (person archived or profile deactivated, `isActive: false`) whose all-time owed is not zero. `owed*Cents` is always a number: the sum of the compensation each SCHOOL flight froze at registration (its instructor's payout rate of that day, `0` without one) minus the payouts by `periodEnd` — changing the rate never moves the owed of a flight already registered. With `?personId=` (an ACTIVE instructor only, 404 otherwise): the SAME row plus the 5 most recent SCHOOL flights as CFI and the distinct students among them (the profile slide-over — no additional endpoint). `?format=xlsx` exports the summary (never the detail). Requires `finance.manage` (ADMIN-only).",
+    "No `personId`: every active instructor's mtd/ytd/total flown minutes and owed cents, then every instructor no longer active (person archived or profile deactivated, `isActive: false`) whose all-time owed is not zero. `owed*Cents` is always a number: the sum of the compensation each SCHOOL flight froze at registration (its instructor's payout rate of that day, `0` without one) minus the payouts by `periodEnd` — changing the rate never moves the owed of a flight already registered. With `?personId=` (an ACTIVE instructor only — the summary's `isActive: true` — 404 otherwise): the SAME row plus the 5 most recent SCHOOL flights as CFI and the distinct students among them (the profile slide-over — no additional endpoint). `?format=xlsx` exports the summary (never the detail). Requires `finance.manage` (ADMIN-only).",
   tags: ['InstructorCompensation'],
   security,
   request: { query: instructorCompensationQuerySchema },
@@ -1871,7 +1871,7 @@ registry.registerPath({
   path: '/api/v1/instructor-payouts',
   summary: 'Record an instructor payout',
   description:
-    "Body `{ instructorPersonId, amountCents, periodStart, periodEnd, method, notes? }` — `amountCents > 0`, `periodStart <= periodEnd`. 404 on an unknown `instructorPersonId`; 409 if the person has no instructor profile; 409 `INSTRUCTOR_NOTHING_OWED` if the instructor is no longer active (person archived or profile deactivated) and their all-time owed is not positive — an active instructor can always be paid. `Idempotency-Key` is MANDATORY (422 `IDEMPOTENCY_KEY_REQUIRED` without it) — see `requiredIdempotencyKeyHeader`'s doc-comment. Requires `payouts.manage` (ADMIN-only).",
+    "Body `{ instructorPersonId, amountCents, periodStart, periodEnd, method, notes? }` — `amountCents > 0`, `periodStart <= periodEnd`. 404 on an unknown `instructorPersonId`; 409 if the person has no instructor profile; 409 `INSTRUCTOR_NOTHING_OWED` if the instructor is no longer active (person archived or profile deactivated) and their all-time owed is not positive — an active instructor can always be paid. That owed is checked under a per-instructor lock, so of two concurrent payouts to such an instructor the second sees the first and answers 409 when nothing is left. `Idempotency-Key` is MANDATORY (422 `IDEMPOTENCY_KEY_REQUIRED` without it) — see `requiredIdempotencyKeyHeader`'s doc-comment. Requires `payouts.manage` (ADMIN-only).",
   tags: ['InstructorCompensation'],
   security,
   request: { headers: [requiredIdempotencyKeyHeader], body: { content: jsonContent(recordInstructorPayoutSchema), required: true } },
@@ -1886,7 +1886,7 @@ registry.registerPath({
   path: '/api/v1/instructor-compensation/{personId}/rate',
   summary: "Set (or clear) an instructor's hourly payout rate",
   description:
-    'Body `{ payoutRateCents }` — an integer `>= 0`, or `null` to unset it (the summary/detail then show "—" for the rate). The rate applies from the next flights on: every registered flight keeps the rate it froze, so this never moves an owed. Distinct from `PUT /api/v1/people/{id}/instructor-rates` (the STUDENT-charged rate, `settings.manage`, D8) — this is the amount PAID to the instructor. 404 on an unknown person; 409 if the person has no active instructor profile. Requires `payouts.manage` (ADMIN-only).',
+    'Body `{ payoutRateCents }` — an integer `>= 0`, or `null` to unset it (the summary/detail then show "—" for the rate). The rate applies from the next flights on: every registered flight keeps the rate it froze, so this never moves an owed. Distinct from `PUT /api/v1/people/{id}/instructor-rates` (the STUDENT-charged rate, `settings.manage`, D8) — this is the amount PAID to the instructor. 404 on an unknown person; 409 if the person has no active instructor profile or is archived. Requires `payouts.manage` (ADMIN-only).',
   tags: ['InstructorCompensation'],
   security,
   request: { params: instructorPersonIdParams, body: { content: jsonContent(setInstructorPayoutRateSchema), required: true } },

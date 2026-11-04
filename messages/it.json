@@ -519,7 +519,7 @@
       "payoutRate": {
         "sectionTitle": "Compenso istruttore",
         "label": "Compenso orario (€/h)",
-        "hint": "Vale dai prossimi voli: quelli già registrati mantengono il compenso calcolato alla registrazione."
+        "hint": "Vale dai prossimi voli: quelli già registrati mantengono il compenso orario in vigore alla registrazione."
       },
       "ratings": {
         "sectionTitle": "Ratings",

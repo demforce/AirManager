@@ -519,7 +519,7 @@
       "payoutRate": {
         "sectionTitle": "Payout rate (paid to the instructor)",
         "label": "Hourly rate",
-        "hint": "Applies from the next flights on: flights already registered keep the compensation computed when they were registered."
+        "hint": "Applies from the next flights on: flights already registered keep the hourly rate in force when they were registered."
       },
       "ratings": {
         "sectionTitle": "Ratings",

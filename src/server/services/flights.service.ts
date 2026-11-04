@@ -1216,10 +1216,14 @@ export async function deleteFlight(actor: Actor, flightId: string): Promise<void
  * type (R-14.3-a), person/instructor/date (R-14.4-b), aircraft (AOG-1a),
  * price category with the person unchanged (Q-19.3-b) and the instructor's
  * frozen payout rate with the instructor unchanged (story 16.5, Q-16.5-a —
- * the compensation follows the new minutes, never today's rate); the requirements
- * leave the flight out of its own currency and credit its current charge
- * back (story 19.9). `buildFlightWrite` produces the columns, total and
- * description exactly as a registration.
+ * the compensation follows the new minutes, never today's rate). The rate is
+ * kept only while THIS edit leaves the instructor as it is: an edit that
+ * changes the instructor and a later one that puts the first back re-price
+ * the flight at that instructor's rate of TODAY, the frozen one is gone
+ * (review 16.5 F3, declared by the PO on 2026-11-04 — same pattern as the
+ * price category, Q-19.3-b). The requirements leave the flight out of its own
+ * currency and credit its current charge back (story 19.9). `buildFlightWrite`
+ * produces the columns, total and description exactly as a registration.
  *
  * ONE `prisma.$transaction`, lock order Flight -> Aircraft -> Account (module
  * doc-comment): the `Flight` row `FOR UPDATE` (0 rows => 404: deleted in the

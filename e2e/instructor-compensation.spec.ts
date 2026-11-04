@@ -352,6 +352,12 @@ test.describe('Instructor compensation (story 12.7)', () => {
     // Q-16.5-c: their detail stays a 404 — the row offers "Paga" only.
     expect((await page.request.get(`/api/v1/instructor-compensation?personId=${instructor.personId}`)).status()).toBe(404);
 
+    // AD-9 (review 16.5 F4): Contabilità's month-to-date widget lists the active instructors only — this one is in the summary, yet absent there.
+    await page.goto('/it/dashboard/billing');
+    const widgetRows = page.getByTestId('billing-instructor-compensation-row');
+    await expect(widgetRows.first()).toBeVisible();
+    await expect(widgetRows.filter({ hasText: instructor.lastName })).toHaveCount(0);
+
     await page.goto('/it/dashboard/instructors');
     const row = page.getByTestId(`inactive-instructor-row-${instructor.personId}`);
     await expect(row).toBeVisible();
@@ -372,14 +378,23 @@ test.describe('Instructor compensation (story 12.7)', () => {
       const kpis = [...document.querySelectorAll('.kpi-row .kpi .kpi-value')].map((value) => (value as HTMLElement).innerText);
       return {
         rosterCount: roster.length,
+        inactiveCount: inactive.length,
         owed: [...roster, ...inactive].map((row) => cell(row, 3)),
         hours: [...roster, ...inactive].map((row) => cell(row, 2)),
+        rosterRates: roster.map((row) => cell(row, 1)),
         kpis,
+        sub: (document.querySelector('.page-head .sub') as HTMLElement).innerText,
       };
     });
     expect(Number(page1.kpis[0])).toBe(page1.rosterCount);
     expect(parseHours(page1.kpis[1]!)).toBe(page1.hours.reduce((sum, text) => sum + parseHours(text), 0));
     expect(parseEuroText(page1.kpis[2]!)).toBe(page1.owed.reduce((sum, text) => sum + parseEuroText(text), 0));
+    // Review 16.5 F4: the average rate is the ACTIVE instructors' with a rate — this one's 100,00 €/h is not in it.
+    const rosterRates = page1.rosterRates.filter((text) => text !== '—').map(parseEuroText);
+    if (rosterRates.length === 0) expect(page1.kpis[3]).toBe('—');
+    else expect(parseEuroText(page1.kpis[3]!)).toBe(Math.round(rosterRates.reduce((sum, cents) => sum + cents, 0) / rosterRates.length));
+    // ...and the page sub counts the card's rows in its own clause.
+    expect(page1.sub).toMatch(new RegExp(`^${page1.rosterCount} attiv[oi] · .+ da liquidare · ${page1.inactiveCount} non più attiv[oi] con dovuto$`));
 
     // Q-16.5-b: "Compensi da liquidare" lists them, labelled.
     await page.getByTestId('instructors-payment-cycle-button').click();
@@ -407,13 +422,41 @@ test.describe('Instructor compensation (story 12.7)', () => {
     expect(await mobileRow.evaluate((element) => element.tagName)).toBe('DIV');
     const mobilePay = page.getByTestId(`inactive-instructor-pay-${instructor.personId}-mobile`);
     expect((await mobilePay.boundingBox())!.height).toBeGreaterThanOrEqual(43.5);
+
+    // Review 16.5 F2: the name stays readable. Beside the name down to 361px,
+    // under it at 360px and below — at 320px "Paga" in a fourth track left
+    // the name 5-22px.
+    const nameLayout = () =>
+      mobileRow.evaluate((element) => {
+        const name = element.querySelector('.mobile-row-name') as HTMLElement;
+        const pay = element.querySelector('.btn') as HTMLElement;
+        return { nameWidth: name.clientWidth, nameBottom: name.getBoundingClientRect().bottom, payTop: pay.getBoundingClientRect().top };
+      });
+    const at375 = await nameLayout();
+    expect(at375.nameWidth, 'name width at 375px').toBeGreaterThanOrEqual(48);
+    expect(at375.payTop, '"Paga" beside the name at 375px').toBeLessThan(at375.nameBottom);
+    await page.setViewportSize({ width: 320, height: 812 });
+    const at320 = await nameLayout();
+    expect(at320.nameWidth, 'name width at 320px').toBeGreaterThanOrEqual(48);
+    expect(at320.payTop, '"Paga" under the name at 320px').toBeGreaterThanOrEqual(at320.nameBottom);
+    expect((await mobilePay.boundingBox())!.height).toBeGreaterThanOrEqual(43.5);
+
     await mobilePay.click();
     await expect(page.getByTestId('instructor-pay-form').getByLabel('Importo (€)')).toHaveValue('800,00');
+    // Review 16.5 F4/I-4: someone else pays the 800,00 € behind the UI while the
+    // panel is open — the submit then answers 409, the panel says why, and the
+    // page behind it refreshes.
+    const behind = await page.request.post('/api/v1/instructor-payouts', {
+      headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
+      data: { instructorPersonId: instructor.personId, amountCents: 80_000, periodStart: PAST_DATE, periodEnd: PAST_DATE, method: 'CASH', notes: null },
+    });
+    expect(behind.status()).toBe(201);
     await page.getByTestId('instructor-pay-submit').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Pagamento registrato' })).toBeVisible();
+    await expect(page.getByTestId('instructor-pay-form-error')).toHaveText('Questo istruttore non è più attivo e non ha compensi da liquidare.');
 
-    // Owed back to zero: out of the card and of the summary...
+    // Owed back to zero: out of the card (the refresh behind the panel) and of the summary...
     await expect(mobileRow).toHaveCount(0);
+    await expect(page.getByTestId('instructor-pay-form')).toBeVisible();
     expect(await summaryRowOf(page, instructor.personId)).toBeUndefined();
     // ...and nothing more to pay (409, never a silent overpayment).
     const again = await page.request.post('/api/v1/instructor-payouts', {
@@ -422,6 +465,36 @@ test.describe('Instructor compensation (story 12.7)', () => {
     });
     expect(again.status()).toBe(409);
     expect(((await again.json()) as { error: { code: string } }).error.code).toBe('INSTRUCTOR_NOTHING_OWED');
+  });
+
+  // Story 16.5 D-b (review F4): a negative owed — paid more than accrued —
+  // keeps the row in sight, but there is nothing to pay.
+  test('an instructor no longer active who was paid more than accrued stays listed with the negative owed, and offers no "Paga" (story 16.5, D-b)', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorPerson(page, 'Overpaid');
+    // An advance while active (always allowed), then the instructor leaves: owed -50,00 €.
+    const advance = await page.request.post('/api/v1/instructor-payouts', {
+      headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
+      data: { instructorPersonId: instructor.personId, amountCents: 5000, periodStart: PAST_DATE, periodEnd: PAST_DATE, method: 'CASH', notes: null },
+    });
+    expect(advance.status()).toBe(201);
+    expect((await page.request.post(`/api/v1/people/${instructor.personId}/profiles/instructor/deactivate`)).status()).toBe(200);
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ isActive: false, owedTotalCents: -5000 });
+
+    await page.goto('/it/dashboard/instructors');
+    const row = page.getByTestId(`inactive-instructor-row-${instructor.personId}`);
+    await expect(row).toBeVisible();
+    await expect(cellsOf(row).owed).toHaveText(/^[-−]50,00\s€$/);
+    await expect(page.getByTestId(`inactive-instructor-pay-${instructor.personId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`inactive-instructor-pay-${instructor.personId}-mobile`)).toHaveCount(0);
+    await expect(page.getByTestId(`mobile-inactive-instructor-row-${instructor.personId}`)).toHaveCount(1);
+
+    // Nor in "Compensi da liquidare" (owed > 0 only).
+    await page.getByTestId('instructors-payment-cycle-button').click();
+    await expect(page.getByText('Istruttori con compensi da liquidare', { exact: true })).toBeVisible();
+    await expect(page.getByTestId(`payment-cycle-row-${instructor.personId}`)).toHaveCount(0);
   });
 
   test('RBAC: POST payout / PUT rate answer 403 for a non-admin actor (AC 3/4/6, payouts.manage)', async ({ page }) => {

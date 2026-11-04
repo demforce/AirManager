@@ -22,6 +22,8 @@ vi.mock('@/server/db/prisma', () => ({
     cashCategory: { findUnique: vi.fn() },
     cashMovement: { create: vi.fn() },
     $transaction: vi.fn(),
+    // The payout's row lock (review 16.5 I-1, `assertStillOwedUnderLock`).
+    $queryRaw: vi.fn(),
   },
 }));
 
@@ -65,6 +67,7 @@ const profileFindUniqueMock = vi.mocked(prisma.instructorProfile.findUnique);
 const cashCategoryFindUniqueMock = vi.mocked(prisma.cashCategory.findUnique);
 const cashMovementCreateMock = vi.mocked(prisma.cashMovement.create);
 const transactionMock = vi.mocked(prisma.$transaction);
+const queryRawMock = vi.mocked(prisma.$queryRaw);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as instructor-rates.service.test.ts)
@@ -183,6 +186,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
     cashCategoryFindUniqueMock.mockReset();
     cashMovementCreateMock.mockReset();
     transactionMock.mockReset();
+    queryRawMock.mockReset();
     mockTransaction();
     vi.useRealTimers();
   });
@@ -573,7 +577,20 @@ describe('instructor-compensation.service (story 12.7)', () => {
         id: 'person_olga',
         firstName: 'Olga',
         lastName: 'Rossi',
+        archivedAt: null,
         instructorProfile: { id: 'profile_olga', payoutRateCents: 3000, deactivatedAt: new Date('2026-03-01T00:00:00.000Z') },
+      });
+      await expect(getInstructorCompensationDetail(adminActor(), 'person_olga')).rejects.toThrow(NotFoundError);
+      expect(flightGroupByMock).not.toHaveBeenCalled();
+    });
+
+    it('404s on an ARCHIVED person too, even with the profile still active — the summary flags that row isActive: false (review 16.5 F1)', async () => {
+      personFindUnique.mockResolvedValue({
+        id: 'person_olga',
+        firstName: 'Olga',
+        lastName: 'Rossi',
+        archivedAt: new Date('2026-03-01T00:00:00.000Z'),
+        instructorProfile: { id: 'profile_olga', payoutRateCents: 4500, deactivatedAt: null },
       });
       await expect(getInstructorCompensationDetail(adminActor(), 'person_olga')).rejects.toThrow(NotFoundError);
       expect(flightGroupByMock).not.toHaveBeenCalled();
@@ -584,6 +601,7 @@ describe('instructor-compensation.service (story 12.7)', () => {
         id: 'person_ines',
         firstName: 'Ines',
         lastName: 'Volpi',
+        archivedAt: null,
         instructorProfile: { id: 'profile_ines', payoutRateCents: 3000, deactivatedAt: null },
       });
       flightGroupBy.mockResolvedValue([]);
@@ -696,7 +714,6 @@ describe('instructor-compensation.service (story 12.7)', () => {
           expect(error, `accrued ${accrued}, paid ${paid}`).toBeInstanceOf(ConflictError);
           expect(error).toMatchObject({ code: 'INSTRUCTOR_NOTHING_OWED' });
         }
-        expect(cashCategoryFindUniqueMock).not.toHaveBeenCalled();
         expect(payoutCreateMock).not.toHaveBeenCalled();
         expect(cashMovementCreateMock).not.toHaveBeenCalled();
       });
@@ -714,6 +731,89 @@ describe('instructor-compensation.service (story 12.7)', () => {
         await expect(recordPayout(adminActor(), payout)).resolves.toBeDefined();
         expect(flightGroupByMock).not.toHaveBeenCalled();
         expect(payoutGroupByMock).not.toHaveBeenCalled();
+        expect(queryRawMock).not.toHaveBeenCalled();
+      });
+
+      // Review 16.5 I-1 (PO 2026-11-04: concurrent payouts are BLOCKED).
+      it('decides the owed under the InstructorProfile row lock: the lock is the transaction\'s first statement, and both sums are read AFTER it on tx, never on the global client (review 19.10 F2)', async () => {
+        personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: LEFT } });
+        stubAggregates({ profile_ines: { minutes: 2000, accruedCents: 100_000 } });
+        const calls: string[] = [];
+        const tx = {
+          $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+            calls.push(`lock ${strings.join('?')} ${values.join(',')}`);
+            return [];
+          }),
+          flight: { groupBy: vi.fn(async (...args: unknown[]) => (calls.push('flights'), flightGroupByMock(...(args as [never])))) },
+          instructorPayout: {
+            groupBy: vi.fn(async (...args: unknown[]) => (calls.push('payouts'), payoutGroupByMock(...(args as [never])))),
+            create: vi.fn(async (...args: unknown[]) => (calls.push('create'), payoutCreateMock(...(args as [never])))),
+          },
+          cashMovement: { create: vi.fn(async () => (calls.push('movement'), { id: 'cm_1' })) },
+        };
+        transaction.mockImplementation((fn: unknown) => (fn as (client: unknown) => unknown)(tx));
+
+        await expect(recordPayout(adminActor(), payout)).resolves.toMatchObject({ id: 'payout_1' });
+
+        expect(calls).toEqual(['lock SELECT "id" FROM "InstructorProfile" WHERE "id" = ? FOR NO KEY UPDATE profile_ines', 'flights', 'payouts', 'create', 'movement']);
+        // Called through `tx` only: the stand-ins above delegate to these, so each count is the tx's.
+        expect(flightGroupByMock).toHaveBeenCalledTimes(1);
+        expect(payoutGroupByMock).toHaveBeenCalledTimes(1);
+        expect(queryRawMock).not.toHaveBeenCalled();
+      });
+
+      it('two concurrent payouts of the whole owed: the first is recorded, the second waits for its commit and answers 409 INSTRUCTOR_NOTHING_OWED (review 16.5 I-1 — before the fix both passed and the money went out twice)', async () => {
+        personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: LEFT } });
+        cashCategoryFindUnique.mockResolvedValue({ id: 'cat_compensi' });
+        // A one-instructor database under READ COMMITTED: a read sees the
+        // payouts COMMITTED so far, and the row lock is held until the end of
+        // the transaction that took it.
+        let committedCents = 0;
+        let lockHeld: Promise<void> | null = null;
+        const readFlights = async () => [{ instructorProfileId: 'profile_ines', _sum: { minutes: 600, instructorPayoutCents: 100_000 } }];
+        const readPayouts = async () => [{ instructorProfileId: 'profile_ines', _sum: { amountCents: committedCents } }];
+        flightGroupByMock.mockImplementation(readFlights as never);
+        payoutGroupByMock.mockImplementation(readPayouts as never);
+        transaction.mockImplementation(async (fn: unknown) => {
+          let release = (): void => {};
+          let pendingCents = 0;
+          const tx = {
+            $queryRaw: async () => {
+              while (lockHeld) await lockHeld;
+              lockHeld = new Promise<void>((resolve) => {
+                release = () => {
+                  lockHeld = null;
+                  resolve();
+                };
+              });
+              return [];
+            },
+            flight: { groupBy: readFlights },
+            instructorPayout: {
+              groupBy: readPayouts,
+              create: async ({ data }: { data: Record<string, unknown> }) => {
+                pendingCents += data['amountCents'] as number;
+                return { id: `payout_${pendingCents}`, createdAt: new Date(), ...data };
+              },
+            },
+            cashMovement: { create: async () => ({ id: 'cm' }) },
+          };
+          try {
+            const result = await (fn as (client: unknown) => Promise<unknown>)(tx);
+            committedCents += pendingCents;
+            return result;
+          } finally {
+            release();
+          }
+        });
+
+        const whole = { ...payout, amountCents: 100_000 };
+        const [first, second] = await Promise.allSettled([recordPayout(adminActor(), whole), recordPayout(adminActor(), whole)]);
+
+        expect(first.status).toBe('fulfilled');
+        expect(second.status).toBe('rejected');
+        expect((second as PromiseRejectedResult).reason).toMatchObject({ code: 'INSTRUCTOR_NOTHING_OWED' });
+        expect(committedCents).toBe(100_000);
       });
     });
 
@@ -784,6 +884,12 @@ describe('instructor-compensation.service (story 12.7)', () => {
       await expect(setPayoutRate(adminActor(), 'person_x', 3000)).rejects.toThrow(ConflictError);
 
       personFindUnique.mockResolvedValue({ archivedAt: null, instructorProfile: { id: 'profile_ines', deactivatedAt: new Date('2026-01-01T00:00:00.000Z') } });
+      await expect(setPayoutRate(adminActor(), 'person_ines', 3000)).rejects.toThrow(ConflictError);
+      expect(profileUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it('409s on an ARCHIVED person too, even with the profile still active — like a deactivated profile (review 16.5 F1)', async () => {
+      personFindUnique.mockResolvedValue({ archivedAt: new Date('2026-03-01T00:00:00.000Z'), instructorProfile: { id: 'profile_ines', deactivatedAt: null } });
       await expect(setPayoutRate(adminActor(), 'person_ines', 3000)).rejects.toThrow(ConflictError);
       expect(profileUpdateMock).not.toHaveBeenCalled();
     });
