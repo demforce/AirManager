@@ -551,6 +551,19 @@ enum AccountMovementType {
   FLIGHT_CHARGE
 }
 
+/// The book a reversal chain's ROOT belongs to (story 16.6b, review F5 fix,
+/// ratifica PO 2026-11-04) — never `COST` (cash-only, no `AccountMovement`
+/// is ever a cost). A root's TYPE alone cannot tell a giroconto (a standalone
+/// CREDIT `ADJUSTMENT`, book `TRANSFER`) from a quota/addebito (a standalone
+/// DEBIT `ADJUSTMENT`, book `REVENUE`): both are type `ADJUSTMENT`. See
+/// `AccountMovement.reversalRootBook` and `src/lib/schemas/transactions.ts#rootBookType`
+/// (the one function that decides it, shared by the writer and every reader).
+enum AccountMovementRootBook {
+  DEPOSIT
+  REVENUE
+  TRANSFER
+}
+
 /// How a top-up was paid (story 3.1, AC 2). Only meaningful for `TOP_UP`
 /// movements today — kept on `AccountMovement` rather than a separate table
 /// since every current movement type needs at most this one extra field.
@@ -591,32 +604,37 @@ model Account {
 /// `AircraftRate.actorUserId`: the staff member recording a cash top-up is
 /// not the account holder.
 model AccountMovement {
-  id            String              @id @default(cuid())
-  accountId     String
-  account       Account             @relation(fields: [accountId], references: [id])
-  type          AccountMovementType
-  amountCents   Int
-  paymentMethod PaymentMethod?
-  description   String?
+  id               String                   @id @default(cuid())
+  accountId        String
+  account          Account                  @relation(fields: [accountId], references: [id])
+  type             AccountMovementType
+  amountCents      Int
+  paymentMethod    PaymentMethod?
+  description      String?
   /// Value date (data valuta), calendar-only like `StudentProfile.courseStartDate`
   /// (story 2.2) — never a timestamp.
-  effectiveDate DateTime            @db.Date
-  actorUserId   String
-  actorUser     User                @relation(fields: [actorUserId], references: [id])
+  effectiveDate    DateTime                 @db.Date
+  actorUserId      String
+  actorUser        User                     @relation(fields: [actorUserId], references: [id])
   /// Self-FK to the original movement this one reverses (AD-3 storno,
   /// story 3.3). `@unique` — at most one reversal per original movement.
-  reversalOfId  String?             @unique
-  reversalOf    AccountMovement?    @relation("AccountMovementReversal", fields: [reversalOfId], references: [id])
-  reversal      AccountMovement?    @relation("AccountMovementReversal")
-  /// Type of the ROOT of the reversal chain this row belongs to (story 16.6b,
-  /// ledger MINOR-3) — `NULL` exactly when `reversalOfId` is (a CHECK in the
-  /// migration enforces it). Denormalized AT WRITE because a Prisma `where`
-  /// cannot climb a relation to an arbitrary depth (unrolling N levels moves
-  /// the hole to N+1), and it never goes stale: the ledger is append-only and
-  /// `reversalOfId` is `@unique`, so a chain is linear and its root fixed at
-  /// insert. The one writer is `accounts.service.ts#recordAdjustment`.
-  reversalRootType AccountMovementType?
-  createdAt     DateTime            @default(now())
+  reversalOfId     String?                  @unique
+  reversalOf       AccountMovement?         @relation("AccountMovementReversal", fields: [reversalOfId], references: [id])
+  reversal         AccountMovement?         @relation("AccountMovementReversal")
+  /// BOOK of the ROOT of the reversal chain this row belongs to (story
+  /// 16.6b, ledger MINOR-3; review F5 fix, ratifica PO 2026-11-04) — `NULL`
+  /// exactly when `reversalOfId` is (a CHECK in the migration enforces it).
+  /// Denormalized AT WRITE because a Prisma `where` cannot climb a relation
+  /// to an arbitrary depth (unrolling N levels moves the hole to N+1), and
+  /// it never goes stale: the ledger is append-only and `reversalOfId` is
+  /// `@unique`, so a chain is linear and its root fixed at insert. Stores
+  /// the ROOT's BOOK, not its raw type (the original `reversalRootType`
+  /// design, story 16.6b first cut): a root TYPE alone can't tell a
+  /// giroconto from a quota/addebito (both `ADJUSTMENT`) — see
+  /// `AccountMovementRootBook`'s own doc-comment. The one writer is
+  /// `accounts.service.ts#recordAdjustment`.
+  reversalRootBook AccountMovementRootBook?
+  createdAt        DateTime                 @default(now())
 
   /// The automatic cash-ledger counterpart created in the same transaction
   /// (story 3.1, AC 2) — present only for movement types that also move cash

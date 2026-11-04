@@ -353,8 +353,11 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
 
     const expiries = (await (await page.request.get(`/api/v1/people/${pilot.personId}/expiries`)).json()) as { typeName: string; expiresAt: string }[];
     const fee = expiries.find((e) => e.typeName === 'Quota associativa');
+    // `expiresAt === committed.expiresAt` already separates a +12-month renewal
+    // (the only charge that actually committed) from +24 (a double charge) —
+    // review F4: a further absolute-year assertion here added no discriminance
+    // and was flaky on a UTC runner between 23:00 and 24:00 UTC on 31/12.
     expect(fee?.expiresAt).toBe(committed.expiresAt);
-    expect(fee?.expiresAt.slice(0, 4)).toBe(String(new Date().getFullYear() + 1));
   });
 
   test('setting the fee to 0 disables the button on the Scadenze page, with a hint', async ({ page }) => {

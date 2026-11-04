@@ -1,7 +1,8 @@
-import { Prisma, type AccountMovementType, type PaymentMethod } from '@/generated/prisma/client';
+import { Prisma, type AccountMovementRootBook, type AccountMovementType, type PaymentMethod } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { AppLocale } from '@/i18n/routing';
 import type { RecordAdjustmentInput, RecordTopUpInput } from '@/lib/schemas/accounts';
+import { rootBookType } from '@/lib/schemas/transactions';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
@@ -706,11 +707,11 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
     // serialization mutex around the SUM read below.
     await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR UPDATE`;
 
-    // Story 16.6b (ledger MINOR-3): the type of the chain's ROOT, `null` for a
-    // standalone rettifica — this is the one writer of `reversalOfId`, so the
-    // one writer of `reversalRootType` (the migration's CHECK holds them
-    // together).
-    let reversalRootType: AccountMovementType | null = null;
+    // Story 16.6b (ledger MINOR-3; review F5 fix, ratifica PO 2026-11-04):
+    // the BOOK of the chain's ROOT, `null` for a standalone rettifica — this
+    // is the one writer of `reversalOfId`, so the one writer of
+    // `reversalRootBook` (the migration's CHECK holds them together).
+    let reversalRootBook: AccountMovementRootBook | null = null;
     if (originalMovementId) {
       // Read UNDER the lock (review 19.6 F1/F2): a flight charge is the one
       // movement that can be deleted or moved to another account
@@ -722,7 +723,7 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
       // different account is reported exactly like an unknown one.
       const original = await tx.accountMovement.findUnique({
         where: { id: originalMovementId },
-        select: { id: true, accountId: true, type: true, reversalRootType: true, reversal: { select: { id: true } } },
+        select: { id: true, accountId: true, type: true, amountCents: true, reversalRootBook: true, reversal: { select: { id: true } } },
       });
       if (!original || original.accountId !== account.id) {
         throw new NotFoundError('Movement not found.');
@@ -749,8 +750,8 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
       if (original.reversal) {
         throw new ConflictError('This movement already has a linked adjustment.');
       }
-      // A root passes its own type down; a link passes on the root it carries.
-      reversalRootType = original.reversalRootType ?? original.type;
+      // A root computes its own book (`rootBookType`); a link passes on the book it already carries.
+      reversalRootBook = original.reversalRootBook ?? rootBookType(original.type, original.amountCents);
     }
 
     const aggregate = await tx.accountMovement.aggregate({
@@ -769,7 +770,7 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
           effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
           actorUserId: actor.userId,
           reversalOfId: originalMovementId,
-          reversalRootType,
+          reversalRootBook,
         },
       });
     } catch (error) {

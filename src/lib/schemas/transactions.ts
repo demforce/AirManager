@@ -1,5 +1,11 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
-import { accountMovementTypeSchema, accountOverviewSchema, accountOverviewWithAlertSchema, paymentMethodSchema } from './accounts';
+import {
+  accountMovementTypeSchema,
+  accountOverviewSchema,
+  accountOverviewWithAlertSchema,
+  paymentMethodSchema,
+  type AccountMovementTypeDto,
+} from './accounts';
 import { cashMovementItemSchema } from './cash';
 import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
@@ -31,6 +37,31 @@ export type TransactionSourceDto = z.infer<typeof transactionSourceSchema>;
 export const bookTypeSchema = z.enum(['REVENUE', 'COST', 'DEPOSIT', 'TRANSFER']);
 
 export type BookTypeDto = z.infer<typeof bookTypeSchema>;
+
+/**
+ * The book a reversal chain's ROOT belongs to — never `COST` (cash-only, no
+ * `AccountMovement` is ever a cost). This is the ONE place "what book does
+ * this type+sign belong to" is decided for an `AccountMovement` that has no
+ * `reversalOfId` of its own (a `TOP_UP`, a `FLIGHT_CHARGE`, a
+ * `PACKAGE_PURCHASE`, or a standalone `ADJUSTMENT`): shared by the writer
+ * (`accounts.service.ts#recordAdjustment`, which calls it ONCE — when a root
+ * is first linked — and freezes the result on
+ * `AccountMovement.reversalRootBook`, story 16.6b) and the reader
+ * (`transactions.service.ts`'s `accountBookType`, which calls it for every
+ * UNLINKED row and reads the frozen value back for every LINK of a chain).
+ * A root's TYPE alone can't tell a giroconto (a standalone CREDIT
+ * `ADJUSTMENT`) from a quota/addebito (a standalone DEBIT `ADJUSTMENT`) —
+ * both are type `ADJUSTMENT` — hence the `amountCents` sign (review F5 fix,
+ * ratifica PO 2026-11-04: a correction of a giroconto was landing in
+ * REVENUE, a ricavo fantasma).
+ */
+export function rootBookType(type: AccountMovementTypeDto, amountCents: number): 'DEPOSIT' | 'REVENUE' | 'TRANSFER' {
+  if (type === 'TOP_UP') return 'DEPOSIT';
+  if (type === 'FLIGHT_CHARGE') return 'REVENUE';
+  if (type === 'PACKAGE_PURCHASE') return 'TRANSFER';
+  // ADJUSTMENT only from here: a debit is a charge-like addebito (REVENUE), a credit is a giroconto (TRANSFER).
+  return amountCents < 0 ? 'REVENUE' : 'TRANSFER';
+}
 
 /**
  * One ledger row (AC 1; amount convention rewritten story Billing-2, AC 2).

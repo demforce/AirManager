@@ -2,7 +2,7 @@ import type { AccountMovementType } from '@/generated/prisma/client';
 import { Prisma } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
-import type { BookTypeDto, ListTransactionsQuery, RecordTransactionInput, TransactionRowDto } from '@/lib/schemas/transactions';
+import { rootBookType, type BookTypeDto, type ListTransactionsQuery, type RecordTransactionInput, type TransactionRowDto } from '@/lib/schemas/transactions';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { recordAdjustment, recordTopUp, type AccountOverview } from './accounts.service';
@@ -60,9 +60,9 @@ const ACCOUNT_ROW_SELECT = {
   createdAt: true,
   flightId: true,
   reversalOfId: true,
-  // Story 16.6b (ledger MINOR-3): the chain's ROOT type, stored on the row —
+  // Story 16.6b (ledger MINOR-3): the chain's ROOT book, stored on the row —
   // replaces the two-level `reversalOf.reversalOf` join of review Billing-2 F3.
-  reversalRootType: true,
+  reversalRootBook: true,
   reversal: { select: { id: true } },
   cashMovement: { select: { id: true } },
   account: { select: { personId: true, person: { select: { firstName: true, lastName: true } } } },
@@ -99,50 +99,51 @@ type SelectedCashRow = Prisma.CashMovementGetPayload<{ select: typeof CASH_ROW_S
  *
  * - `ACCOUNT_REVENUE_OR`: `FLIGHT_CHARGE` unconditionally (always DB-negative
  *   or 0 — a flight edited or deleted rewrites or removes its own charge,
- *   story 19.6, so no reversal type exists to net), a debit
- *   `ADJUSTMENT` (an addebito, e.g. quota associativa), or a storno OF one
- *   (`reversalOfId` set, any sign — nets that debit's revenue in the
+ *   story 19.6, so no reversal type exists to net), a standalone debit
+ *   `ADJUSTMENT` (an addebito, e.g. quota associativa, `reversalOfId: null`),
+ *   or a LINK of a chain whose ROOT is a charge-like row (`reversalRootBook
+ *   === 'REVENUE'`, any depth, any sign — nets that debit's revenue in the
  *   storno's OWN month, review Billing-1 F3). `PACKAGE_PURCHASE` never
  *   reaches this predicate (its `AccountMovement` amount is always 0 — the
  *   twin-dedup above hides it; the value lives on its `CASH` twin instead).
- *   **Story 16.6b (ledger MINOR-3, ratifica PO 2026-11-03)**: an `ADJUSTMENT`
- *   whose chain is ROOTED in a `TOP_UP` (`reversalRootType`, any depth, any
- *   sign) belongs to the ACCONTI book, never revenue — "lo storno appartiene
- *   al libro del suo originale" (Billing-1's own ratifica) applied
- *   transitively: the root, not the parent. It replaces review Billing-2
- *   F3's two-level check (`reversalOf`, `reversalOf.reversalOf`), which was
- *   the depth-1 and depth-2 instances of this one rule — in a chain of true
- *   stornos the signs alternate, so "negative with a TOP_UP parent" IS
- *   "negative rooted in a TOP_UP at depth 1" — and left a ghost ricavo one
- *   link further (`TOP_UP <- A1 <- A2 <- A3`, the audit's +50,00 €). An
- *   operator's amount is free, so the signs need not alternate: a negative
- *   storno of a rettifica-di-ricarica is DEPOSIT too. `ACCOUNT_DEPOSIT_OR` is
- *   the exact complement for those rows (the "Acconti" filter).
- *   ⚠️ The exclusion is spelled `OR: NOT_ROOTED_IN_TOP_UP` (`null` OR
- *   `not TOP_UP`), NEVER `NOT: { reversalRootType: 'TOP_UP' }` nor
- *   `reversalRootType: { not: 'TOP_UP' }`: Prisma compiles both to SQL that
- *   drops the `NULL` rows, i.e. every STANDALONE debit (a quota, an
- *   addebito) would silently leave the revenue (measured on Postgres, story
- *   16.6b AC 14).
+ *   **Story 16.6b (ledger MINOR-3, ratifica PO 2026-11-03; review F5 fix,
+ *   ratifica PO 2026-11-04)**: `reversalRootBook` is the BOOK the chain's
+ *   root already resolves to (`src/lib/schemas/transactions.ts#rootBookType`
+ *   — DEPOSIT for a `TOP_UP` root, REVENUE for a `FLIGHT_CHARGE` or a
+ *   standalone DEBIT `ADJUSTMENT` root, TRANSFER for a standalone CREDIT
+ *   `ADJUSTMENT` root, i.e. a giroconto), frozen on every link at write time
+ *   — "lo storno appartiene al libro del suo originale" (Billing-1's own
+ *   ratifica) applied transitively: the root's BOOK, not the parent's type.
+ *   It replaces review Billing-2 F3's two-level check (`reversalOf`,
+ *   `reversalOf.reversalOf`) AND story 16.6b's first cut (`reversalRootType`,
+ *   the root's raw TYPE): a type alone can't tell a giroconto from a
+ *   quota/addebito (both `ADJUSTMENT`) — review F5 measured the correction
+ *   of a giroconto landing in REVENUE, a ricavo fantasma. Storing the BOOK
+ *   directly also drops the old NULL-trap concern entirely: every clause
+ *   below is a plain equality (`reversalRootBook: 'REVENUE'`), which already
+ *   excludes `NULL` rows with no `NOT` involved (unlike `reversalRootType`'s
+ *   old `NOT: { reversalRootType: 'TOP_UP' }`, proven on Postgres to also
+ *   swallow the standalone-debit rows it must keep, story 16.6b AC 14).
  * - `CASH_REVENUE_OR` / `CASH_COST_OR`: a normal entrata/uscita
  *   (`reversalOfId` null) keeps its own sign; a storno of one
  *   (`reversalOfId` set) is DB-opposite-signed by construction
  *   (`reverseCashMovement`) and nets in the ORIGINAL's book, not its own —
  *   `CASH_COST_OR` is the exact mirror of `CASH_REVENUE_OR`.
  */
-const NOT_ROOTED_IN_TOP_UP: Prisma.AccountMovementWhereInput[] = [{ reversalRootType: null }, { reversalRootType: { not: 'TOP_UP' } }];
-
 export const ACCOUNT_REVENUE_OR: Prisma.AccountMovementWhereInput[] = [
   { type: 'FLIGHT_CHARGE' },
-  { type: 'ADJUSTMENT', amountCents: { lt: 0 }, OR: NOT_ROOTED_IN_TOP_UP },
-  { type: 'ADJUSTMENT', amountCents: { gt: 0 }, reversalOfId: { not: null }, OR: NOT_ROOTED_IN_TOP_UP },
+  { type: 'ADJUSTMENT', reversalOfId: null, amountCents: { lt: 0 } },
+  { type: 'ADJUSTMENT', reversalRootBook: 'REVENUE' },
 ];
 
 /** The ACCONTI book (story 16.6b, ratifica PO 2026-11-03): a ricarica, and every link of a chain rooted in one. */
-const ACCOUNT_DEPOSIT_OR: Prisma.AccountMovementWhereInput[] = [{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootType: 'TOP_UP' }];
+const ACCOUNT_DEPOSIT_OR: Prisma.AccountMovementWhereInput[] = [{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootBook: 'DEPOSIT' }];
 
-/** A standalone credit `ADJUSTMENT` (no `reversalOfId`) — the "giroconto" bucket, no P&L role either way (story Billing-2, AC 2). */
-const ACCOUNT_TRANSFER_WHERE: Prisma.AccountMovementWhereInput = { type: 'ADJUSTMENT', amountCents: { gte: 0 }, reversalOfId: null };
+/** The GIROCONTO book (story Billing-2, AC 2; story 16.6b review F5 fix): a standalone credit `ADJUSTMENT` (no `reversalOfId`), and every link of a chain rooted in one — no P&L role either way. */
+const ACCOUNT_TRANSFER_WHERE: Prisma.AccountMovementWhereInput = {
+  type: 'ADJUSTMENT',
+  OR: [{ reversalOfId: null, amountCents: { gte: 0 } }, { reversalRootBook: 'TRANSFER' }],
+};
 
 export const CASH_REVENUE_OR: Prisma.CashMovementWhereInput[] = [
   { reversalOfId: null, amountCents: { gt: 0 } },
@@ -165,24 +166,28 @@ export const CASH_COST_OR: Prisma.CashMovementWhereInput[] = [
  * Review Billing-2 F9(1): `PACKAGE_PURCHASE` is a zero-amount marker (the
  * real value lives on its `CASH` twin, feature retired in 12.13) — TRANSFER,
  * never REVENUE (unreachable today, the twin-dedup already hides it, but the
- * classifier must not claim otherwise).
+ * classifier must not claim otherwise). Handled by `rootBookType` itself
+ * (its own case for a row with no `reversalOfId`).
  * F9(2): an `ADJUSTMENT` with `amountCents === 0` AND `reversalOfId` set is a
  * zero-effect storno — no book role either way (also unreachable today, same
  * defensive reasoning).
- * Story 16.6b (ledger MINOR-3): a link of a chain ROOTED in a `TOP_UP` is
- * DEPOSIT at any depth and sign (mirrors `ACCOUNT_REVENUE_OR`'s two
- * exclusions and `ACCOUNT_DEPOSIT_OR` — see the predicates' own
- * doc-comment); the depth never appears here, the root is on the row.
+ * Story 16.6b (ledger MINOR-3; review F5 fix, ratifica PO 2026-11-04): a
+ * LINK (`reversalOfId` set) reads back the book its root already froze on
+ * `reversalRootBook` — no depth, no sign check, the root decided both. A
+ * row with no `reversalOfId` (a `TOP_UP`, a `FLIGHT_CHARGE`, a
+ * `PACKAGE_PURCHASE`, or a standalone `ADJUSTMENT`) IS its own root, so it
+ * goes through the SAME `rootBookType` the writer calls to freeze the value
+ * in the first place (`accounts.service.ts#recordAdjustment`) — one
+ * function, never two copies of "what book does this type+sign belong to".
  */
-function accountBookType(row: Pick<SelectedAccountRow, 'type' | 'amountCents' | 'reversalOfId' | 'reversalRootType'>): BookTypeDto {
-  if (row.type === 'TOP_UP') return 'DEPOSIT';
-  if (row.type === 'FLIGHT_CHARGE') return 'REVENUE';
-  if (row.type === 'PACKAGE_PURCHASE') return 'TRANSFER';
-  // ADJUSTMENT only from here — matches ACCOUNT_REVENUE_OR's last two clauses exactly.
+function accountBookType(row: Pick<SelectedAccountRow, 'type' | 'amountCents' | 'reversalOfId' | 'reversalRootBook'>): BookTypeDto {
   if (row.amountCents === 0 && row.reversalOfId !== null) return 'TRANSFER';
-  if (row.reversalRootType === 'TOP_UP') return 'DEPOSIT';
-  if (row.amountCents < 0 || row.reversalOfId !== null) return 'REVENUE';
-  return 'TRANSFER';
+  if (row.reversalOfId !== null) {
+    // The CHECK in the migration guarantees `reversalRootBook` is set
+    // whenever `reversalOfId` is — this cast only appeases the type checker.
+    return row.reversalRootBook as BookTypeDto;
+  }
+  return rootBookType(row.type, row.amountCents);
 }
 
 /**
