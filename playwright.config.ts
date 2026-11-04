@@ -203,7 +203,10 @@ export default defineConfig({
     // on-demand compilation under CI-runner contention causes timeout
     // flakiness and hangs (known cold-compile flaky class). NODE_ENV is
     // unset for the build per repo rule (it breaks `next build`).
-    command: process.env['CI'] ? 'env -u NODE_ENV npm run build && npm run start' : 'npm run dev',
+    // `--keepAliveTimeout` (TD-19.10-g): Node closes an idle keep-alive socket
+    // after 5 s by default, and a fixture POST that reuses a socket in the
+    // instant the server closes it dies as ECONNRESET / "socket hang up".
+    command: process.env['CI'] ? 'env -u NODE_ENV npm run build && npm run start -- --keepAliveTimeout 75000' : 'npm run dev',
     url: baseURL,
     // Under CI=1 the build runs INSIDE the suite's clock, so a series of runs
     // (what a dev/review cycle actually does) pays `next build` every time —
