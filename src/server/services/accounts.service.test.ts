@@ -696,6 +696,20 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         vi.useRealTimers();
       }
     });
+
+    it('the state wins over the date (review 16.6a, R8 on the top-up side): tomorrow for an unknown person is still the 404, never the 422', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-01T10:00:00.000Z'));
+      try {
+        personFindUnique.mockResolvedValue(null);
+        cashCategoryFindUnique.mockResolvedValue({ id: 'category_ricariche' });
+
+        await expect(recordTopUp(adminActor(), 'missing', { ...input, effectiveDate: '2026-07-02' })).rejects.toThrow(NotFoundError);
+        expect(transactionMock).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('recordAdjustment (story 3.3, AC 1 — AD-3: a NEW movement, the original is never touched)', () => {
