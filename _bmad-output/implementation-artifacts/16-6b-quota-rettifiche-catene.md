@@ -713,3 +713,76 @@ Report: `16-6b-review-report.md` — **SHIPPABLE** (nessun difetto di produzione
 - **F1 + domanda del dev — doppi addebiti dopo un guasto di rete** (pannello chiuso e riaperto, ricarica della pagina, «Riprova» dopo un 409 `IDEMPOTENCY_IN_PROGRESS`: riprodotti, quota a +24 mesi) = **nuova story 16.10 in questo epic**, dopo la 16.9, per tutti i 7 form con `Idempotency-Key`: sul 409 `IN_PROGRESS` messaggio «operazione in corso, attendi» e nessuna chiave nuova; messaggio di rete che non dica «Impossibile addebitare» quando l'addebito potrebbe essere già avvenuto; chiave che sopravvive alla chiusura/riapertura del pannello e alla ricarica per lo stesso tentativo. La 16.6b resta com'è su questo punto.
 - **F5 — la correzione di un giroconto finisce nei Ricavi** (+20 € fantasma misurati) = **correggere subito in questa story**: **la correzione segue il libro della radice** — radice `TOP_UP` → DEPOSIT (già fatto), radice giroconto (ADJUSTMENT positivo standalone, TRANSFER) → TRANSFER, radice addebito (FLIGHT_CHARGE o ADJUSTMENT negativo) → REVENUE. `reversalRootType` da solo non basta (la radice è `ADJUSTMENT` sia per un giroconto sia per un addebito): serve il segno/libro della radice. Scelta tecnica al fix (colonna del libro della radice al posto del tipo, o colonna del segno accanto), motivata; la migrazione `20261104100000` non è ancora pushata né deployata.
 - F2 (TD-16.6b-a), F3 (doc del CHECK su ON DELETE), F4 (asserzione sull'anno a `membership-fee.spec.ts:357` fragile il 31/12 su runner UTC) → nel fix.
+
+## Fix Record (2026-11-04, fix-subagent — un solo subagent)
+
+**Commit**: `25ef34d` `fix(16.6b): …` (implementazione + test, pathspec, 8 file). Questo record: commit `docs(16.6b): …` (solo questo file). Partito da `dev@c453b22` (review + decisioni PO). Skill applicate: `karpathy-guidelines` (letta e seguita: modifica chirurgica, ogni riga riconducibile a F3/F4/F5; nessun refactor di cortesia — v. «Disciplina karpathy» più sotto).
+
+### Scelta tecnica (F5): si sostituisce la colonna, non la si affianca
+
+Tra le due opzioni poste dal reviewer — «sostituire la colonna con il libro della radice» o «aggiungere il segno della radice accanto» — ho scelto la **prima**: `reversalRootType AccountMovementType?` → `reversalRootBook AccountMovementRootBook?` (nuovo enum Prisma a 3 valori: `DEPOSIT`, `REVENUE`, `TRANSFER`, mai `COST` — nessun `AccountMovement` è mai un costo).
+
+**Perché**: il libro di una radice (`TOP_UP`→DEPOSIT, `FLIGHT_CHARGE`→REVENUE, `PACKAGE_PURCHASE`→TRANSFER, `ADJUSTMENT` standalone: negativo→REVENUE/positivo→TRANSFER) è una funzione pura di `type`+`amountCents`, calcolabile una volta sola alla scrittura e letta invariata per ogni anello — esattamente il pattern che il campo già seguiva, solo con l'informazione giusta dentro. Tenere `reversalRootType` e aggiungere un secondo campo (es. il segno) avrebbe richiesto che OGNI consumatore (il classificatore di riga, i tre predicati, gli aggregati) combinasse due colonne con la stessa logica ripetuta quattro volte — la stessa classe di rischio-drift che l'intera story 16.6b esiste per chiudere (AD-1: «una regola di dominio vive in una funzione»). Con una sola colonna che porta già il libro, ogni consumatore fa un confronto diretto (`reversalRootBook === 'REVENUE'`), e la trappola dei `NULL` di F1/AC 14 (quella di `NOT: { reversalRootType: 'TOP_UP' }`) **sparisce del tutto**: nessuna clausola nuova usa `NOT`, un'uguaglianza diretta esclude i `NULL` per costruzione.
+
+**La funzione condivisa**: `rootBookType(type, amountCents)` in `src/lib/schemas/transactions.ts` (accanto a `bookTypeSchema`/`BookTypeDto`, non in `transactions.service.ts`, per evitare un giro di import circolare con `accounts.service.ts`, che già lo importa) — chiamata dal writer (`accounts.service.ts#recordAdjustment`, una volta, quando un ORIGINALE senza `reversalRootBook` proprio viene collegato per la prima volta: `original.reversalRootBook ?? rootBookType(original.type, original.amountCents)`) e dal lettore (`transactions.service.ts#accountBookType`, per OGNI riga non collegata — una radice vera e propria — mentre una riga collegata si limita a rileggere il valore già congelato). Una funzione, due chiamanti, zero seconde copie.
+
+**I tre predicati**, riscritti su uguaglianze dirette:
+```ts
+ACCOUNT_REVENUE_OR  = [{ type: 'FLIGHT_CHARGE' }, { type: 'ADJUSTMENT', reversalOfId: null, amountCents: { lt: 0 } }, { type: 'ADJUSTMENT', reversalRootBook: 'REVENUE' }]
+ACCOUNT_DEPOSIT_OR  = [{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootBook: 'DEPOSIT' }]
+ACCOUNT_TRANSFER_WHERE = { type: 'ADJUSTMENT', OR: [{ reversalOfId: null, amountCents: { gte: 0 } }, { reversalRootBook: 'TRANSFER' }] }
+```
+`ACCOUNT_TRANSFER_WHERE` guadagna la seconda clausola (`reversalRootBook: 'TRANSFER'`): è la correzione F5 vista dal filtro «Giroconti», non solo dal badge — prima della fix una rettifica di un giroconto non appariva in NESSUN filtro (né Ricavi né Giroconti).
+
+### Migrazione `20261104100000`: amendata in place (non pushata né deployata)
+
+La migrazione non è mai uscita da questa sessione locale (24 commit non pushati su `dev`, verificato con `git log origin/dev..dev`): l'ho riscritta per intero invece di aggiungerne una seconda. `CREATE TYPE "AccountMovementRootBook"`, la colonna rinominata, il backfill CTE ora classifica il **tipo+importo della radice** (non copia più il tipo del nonno), stesso CHECK (`reversalOfId IS NULL = reversalRootBook IS NULL`).
+
+Il DB `airmanager` aveva già la vecchia migrazione applicata (dalla sessione di review) con **0 righe collegate** (DB appena resettato dalla sessione principale): ho portato lo schema al nuovo stato con un `ALTER` manuale equivalente (stesso DDL della migrazione riscritta) e aggiornato il checksum in `_prisma_migrations` al nuovo file — `npx prisma migrate status` → «up to date», `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script` → «This is an empty migration.». Nessun reset/drop/create di database (vietato dal mandato): solo DDL ordinario.
+
+### F3 — CHECK vs `ON DELETE SET NULL`
+
+Commento aggiunto nella migrazione (non nello schema, per non toccare il doc-comment del campo oltre al necessario): il CHECK rende `AccountMovement_reversalOfId_fkey`'s `ON DELETE SET NULL` un RESTRICT di fatto per ogni riga con uno storno collegato — cancellare l'originale fallirebbe (23514) invece di orfanare lo storno con un libro radice ormai sbagliato. Nessun percorso applicativo lo raggiunge oggi (`deleteFlight` rifiuta già un `FLIGHT_CHARGE` rettificato; nessun altro writer cancella un `AccountMovement`).
+
+### F4 — asserzione sull'anno fragile
+
+Rimossa `e2e/membership-fee.spec.ts:357` (`expiresAt.slice(0,4) === anno+1`): ridondante con la riga precedente (`fee.expiresAt === committed.expiresAt`, che già separa un rinnovo +12 da un doppio +24) e rossa per costruzione su un runner UTC tra le 23:00 e le 24:00 del 31/12. Un commento spiega la rimozione.
+
+### F2 — TD-16.6b-a
+
+Nessuna azione: resta dichiarato (`membership-fee.spec.ts` fuori dalla catena serializzata pur scrivendo `AppSettings` globali). Non è stato chiesto di chiuderlo in questo fix, solo di «tenerlo dichiarato» — lo è già nel Dev Agent Record (D-a) e nel report di review (F2).
+
+### Discriminanze
+
+| # | Dove | Metodo | Esito |
+|---|---|---|---|
+| D1 (F5, unit) | copia isolata (`cp src+messages`, `node_modules` symlink) con `transactions.service.ts`/`accounts.service.ts`/`src/lib/schemas/transactions.ts` riportati a `6e76e20` (il commit pre-fix) | nuovo test `story 16.6b review F5 fix: a chain rooted in a GIROCONTO …` | **rosso**: `am_giroconto_storno`/`am_giroconto_depth2` → `REVENUE` invece di `TRANSFER` (identico al repro del reviewer, `probe-q5.mjs`: +20 € di ricavo fantasma). Verde sul codice corrente (57/57 nel file) |
+| D2 (backfill, SQL reale) | schema Postgres usa-e-getta `story_16_6b_f5_twin`, dentro `BEGIN…ROLLBACK`, sul DB `airmanager` reale — `migration.sql` del repo eseguita verbatim | 13 righe fisse (radici `TOP_UP`/`FLIGHT_CHARGE` legacy/`ADJUSTMENT` debito/`ADJUSTMENT` credito, ciascuna con una catena a profondità 3) | **`PASS backfill: all 13 rows … match rootBookType`**, `mismatches 0`; CHECK rifiuta sia una riga collegata senza libro sia una riga standalone con un libro (23514 in entrambi i versi); schema residuo: **0** (verificato con una `SELECT` dopo il `ROLLBACK`) |
+
+Nessun mutante applicato al repo di lavoro: la copia isolata (`scratchpad/iso-f5`) è stata cancellata dopo l'uso; `git status` sul repo durante l'esperimento era identico a prima.
+
+### Gate
+
+`npm run gates`: **PASS** lint (38s), typecheck (4s), test — **2261/2261** (+3 rispetto ai 2258 della review: 2 unit nuovi in `transactions.service.test.ts` — il test F5 e il filtro `bookType=TRANSFER` — e l'`it.each` di `accounts.service.test.ts` passato da 3 a 4 casi), build (196s, lento per contesa sulla macchina ma **PASS**, exit 0).
+
+### e2e (mirato, server di produzione riusato)
+
+`JOBS_SECRET` non segnaposto, `npm run start -- --keepAliveTimeout 75000`, poi `E2E_REUSE_SERVER=1 scripts/e2e.sh start … --no-deps` (nessuno di questi spec è nella catena serializzata):
+- `membership-fee.spec.ts` + `billing.spec.ts` + `account-adjustments.spec.ts`: **26 passed**, exit 0 (include il test Q1 della story originale e il test `billing.spec.ts:203` del filtro Acconti della review — entrambi ancora verdi col nuovo campo).
+- `flight-delete-update.spec.ts` (tocca lo stesso `recordAdjustment` la cui `select` ha guadagnato `amountCents`): **8 passed**, exit 0, incluso il test Q4 (`ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE`).
+
+Nessuna e2e nuova per il caso giroconto→TRANSFER: la copertura unit (classificatore + le forme dei tre predicati) più la prova diretta su Postgres (D2 sopra, SQL vero, non un mock) è la stessa disciplina con cui il dev ha provato AC 14/16 nella review precedente, e mi è parsa sufficiente senza aggiungere una superficie e2e nuova per un caso già provato a quel livello (karpathy: minimo necessario). Tutti i server avviati da me sono stati spenti; porte 3000/3100 libere; nessun DB creato/cancellato/resettato.
+
+### Disciplina karpathy (cosa NON ho toccato)
+
+- `src/app/[locale]/dashboard/expiries/scadenze-console.tsx`, `use-idempotency-key.ts`, `registry.ts`, `messages/*.json`, `account-section.tsx`: non toccati (F1/16.10 fuori scope, nessun DTO espone il campo).
+- `sprint-status.yaml`, `HANDOFF.md`: non toccati (mandato: li aggiorna la sessione principale).
+- Ho revertito a mano una riformattazione di `AircraftRate` che `npx prisma format` aveva introdotto come effetto collaterale (campi non toccati da questa story) prima di rigenerare il client.
+
+### Domande per il PO
+
+Nessuna: le due domande aperte della review (F1, F5) erano già state decise dal PO prima dell'avvio di questo fix.
+
+### Change Log
+
+- 2026-11-04 — fix (Sonnet 5): `reversalRootType` → `reversalRootBook` (libro della radice, non il suo tipo) chiude il ricavo fantasma di una correzione di giroconto (review F5); doc del CHECK vs `ON DELETE SET NULL` (F3); asserzione sull'anno fragile rimossa da `membership-fee.spec.ts` (F4); F2 lasciato dichiarato (`25ef34d`). Status → review.
