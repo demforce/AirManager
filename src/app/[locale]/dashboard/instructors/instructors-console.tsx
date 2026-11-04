@@ -684,7 +684,7 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
             </Field>
           </div>
           {formError ? (
-            <p role="alert" data-testid="instructor-pay-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
+            <p role="alert" data-testid="instructor-pay-form-error" className="fld-error" style={{ marginTop: 14 }}>
               {formError}
             </p>
           ) : null}
@@ -878,7 +878,7 @@ function AddInstructorSlideOver({ open, onClose, onMutated, labels, successMessa
       {selected ? (
         <div style={{ marginTop: 16 }} data-testid="add-instructor-form">
           {formError ? (
-            <p role="alert" data-testid="add-instructor-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 10 }}>
+            <p role="alert" data-testid="add-instructor-error" className="fld-error" style={{ marginTop: 10 }}>
               {formError}
             </p>
           ) : null}

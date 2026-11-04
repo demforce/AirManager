@@ -987,7 +987,7 @@ export function FlightEditor({
           {noAircraft ? <p style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 10 }}>{labels.fields.noAircraftAvailable}</p> : null}
           {noPerson ? <p style={{ color: 'var(--ink-3)', fontSize: 12, marginTop: 4 }}>{labels.fields.noPersonAvailable}</p> : null}
           {formError ? (
-            <p ref={formErrorRef} tabIndex={-1} role="alert" data-testid="flight-form-error" className="req-error-banner" style={{ color: 'var(--bad)', fontSize: 13, marginTop: 14 }}>
+            <p ref={formErrorRef} tabIndex={-1} role="alert" data-testid="flight-form-error" className="fld-error req-error-banner" style={{ marginTop: 14 }}>
               {formError}
             </p>
           ) : null}

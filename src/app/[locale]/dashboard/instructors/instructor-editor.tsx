@@ -262,7 +262,7 @@ function focusSection(section: HTMLElement | null): void {
 /** A section's error after a failed Salva — `role="alert"` (announced) and focusable, so the focus can land on it when no field is to blame. */
 function SectionError({ message, testId }: { message: string; testId: string }) {
   return (
-    <p role="alert" tabIndex={-1} data-testid={testId} className="fld-label" style={{ color: 'var(--bad)', marginTop: 10, textTransform: 'none' }}>
+    <p role="alert" tabIndex={-1} data-testid={testId} className="fld-error" style={{ marginTop: 10 }}>
       {message}
     </p>
   );
@@ -479,7 +479,7 @@ function EditInstructorForm({
 
   if (loadError) {
     return (
-      <p className="fld-label" style={{ color: 'var(--bad)' }}>
+      <p className="fld-error">
         {labels.identity.loadError}
       </p>
     );

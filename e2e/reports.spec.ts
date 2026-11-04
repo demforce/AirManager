@@ -239,6 +239,9 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
     await expect(page.getByTestId('reports-period-month')).toHaveClass(/on/);
     const kpiValues = page.locator('.kpi-row .kpi .kpi-value');
     await expect(kpiValues.nth(0)).toContainText(formatCentsIt(after.kpis.revenueCents));
+    // Decisione PO sulla review 16.6a: the same `getLedgerRevenueCents` number is «Ricavi maturati» everywhere.
+    await expect(page.locator('.kpi-row .kpi .kpi-label').nth(0)).toHaveText('Ricavi maturati');
+    await expect(page.locator('.card-title').filter({ hasText: /^Ricavi maturati$/ })).toHaveCount(1);
     await expect(kpiValues.nth(1)).toContainText(formatMinutesHm(after.kpis.flightMinutes));
     await expect(kpiValues.nth(2)).toContainText(String(after.kpis.movements));
 

@@ -519,6 +519,19 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       await recordCashMovement(adminActor(), { categoryId: 'cat_1', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: '2026-07-01', description: null });
       expect(movementCreateMock).toHaveBeenCalledTimes(1);
     });
+
+    it('the state of the category wins over the date (review 16.6a I-1): tomorrow on a system or an inactive category is still the 409, on an unknown one the 404', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-01T10:00:00.000Z'));
+      const tomorrow = { amountCents: 5000, paymentMethod: 'CASH' as const, effectiveDate: '2026-07-02', description: null };
+
+      categoryFindUnique.mockResolvedValue({ id: 'cat_sys', name: 'Ricariche', isActive: true });
+      await expect(recordCashMovement(adminActor(), { categoryId: 'cat_sys', ...tomorrow })).rejects.toThrow(ConflictError);
+      categoryFindUnique.mockResolvedValue({ id: 'cat_1', name: 'Carburante', isActive: false });
+      await expect(recordCashMovement(adminActor(), { categoryId: 'cat_1', ...tomorrow })).rejects.toThrow(ConflictError);
+      categoryFindUnique.mockResolvedValue(null);
+      await expect(recordCashMovement(adminActor(), { categoryId: 'missing', ...tomorrow })).rejects.toThrow(NotFoundError);
+    });
   });
 
   describe('reverseCashMovement (Task 2, AC 2 — AD-3 storno)', () => {

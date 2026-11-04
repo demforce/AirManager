@@ -117,7 +117,7 @@
         "flightsToday": "Voli oggi",
         "fleetAvailable": "Flotta disponibile",
         "bookingsPending": "Prenotazioni in attesa",
-        "revenue": "Ricavi del mese"
+        "revenue": "Ricavi maturati"
       },
       "mobile": {
         "inProgress": {
@@ -1976,14 +1976,14 @@
       "year": "Anno {year}"
     },
     "kpi": {
-      "revenue": "Ricavi",
+      "revenue": "Ricavi maturati",
       "hours": "Ore volate",
       "movements": "Movimenti",
       "fleetUtilization": "Utilizzo flotta"
     },
     "charts": {
       "revenue": {
-        "title": "Ricavi",
+        "title": "Ricavi maturati",
         "sub": "{count, plural, one {ultimo mese} other {ultimi # mesi}} · €"
       },
       "hours": {

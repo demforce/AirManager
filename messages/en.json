@@ -117,7 +117,7 @@
         "flightsToday": "Flights today",
         "fleetAvailable": "Fleet available",
         "bookingsPending": "Bookings pending",
-        "revenue": "Revenue this month"
+        "revenue": "Earned revenue"
       },
       "mobile": {
         "inProgress": {
@@ -1976,14 +1976,14 @@
       "year": "Year {year}"
     },
     "kpi": {
-      "revenue": "Revenue",
+      "revenue": "Earned revenue",
       "hours": "Hours flown",
       "movements": "Movements",
       "fleetUtilization": "Fleet utilization"
     },
     "charts": {
       "revenue": {
-        "title": "Revenue",
+        "title": "Earned revenue",
         "sub": "{count, plural, one {last month} other {last # months}} · €"
       },
       "hours": {

@@ -141,6 +141,8 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
     for (const testId of ADMIN_OVERVIEW_KPI_TESTIDS) {
       await expect(page.getByTestId(testId)).toBeVisible();
     }
+    // Decisione PO sulla review 16.6a: the same `getLedgerRevenueCents` number is «Ricavi maturati» everywhere.
+    await expect(page.getByTestId('kpi-revenue').locator('.kpi-label')).toHaveText('Ricavi maturati');
     await expect(page.getByTestId('dispatch-flight-button')).toBeVisible();
     await expect(page.getByTestId('schedule-section')).toBeVisible();
     await expect(page.getByTestId('bookings-list-section')).toBeVisible();

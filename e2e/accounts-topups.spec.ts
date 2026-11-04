@@ -151,7 +151,8 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-    const personId = await createPilotPerson(page, uniquePerson('Futura'));
+    const person = uniquePerson('Futura');
+    const personId = await createPilotPerson(page, person);
     const today = todayRome();
     const tomorrow = addDaysIso(today, 1);
 
@@ -169,6 +170,15 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     expect(dispatched.status()).toBe(422);
     expect((await dispatched.json()).error.code).toBe('EFFECTIVE_DATE_IN_FUTURE');
 
+    // Review 16.6a F2: the Piloti slide-over «Registra ricarica» names the rule too.
+    await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(person.lastName)}`);
+    await page.getByTestId(`pilot-topup-${personId}`).click();
+    const pilotsForm = page.getByTestId('topup-form');
+    await pilotsForm.getByLabel('Importo (€)').fill('100');
+    await pilotsForm.locator('input[type="date"]').fill(tomorrow);
+    await page.getByTestId('topup-submit').click();
+    await expect(page.getByTestId('topup-form-error')).toHaveText('La data valuta non può essere nel futuro.');
+
     await page.goto(`/it/dashboard/people/${personId}`);
     await page.getByRole('button', { name: 'Registra ricarica' }).click();
     const form = page.getByTestId('account-topup-form');
@@ -176,7 +186,7 @@ test.describe('Prepaid account and top-ups (Story 3.1)', () => {
     await form.locator('input[type="date"]').fill(tomorrow);
     await page.getByRole('button', { name: 'Conferma ricarica' }).click();
     await expect(form.getByRole('alert')).toHaveText('La data valuta non può essere nel futuro.');
-    // None of the three attempts wrote a movement (anchored: «100,00 €» contains «0,00 €»).
+    // None of the four attempts wrote a movement (anchored: «100,00 €» contains «0,00 €»).
     await expect(page.getByTestId('account-balance')).toHaveText(/^0,00\s€$/);
 
     // The bound is inclusive.

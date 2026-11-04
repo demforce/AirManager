@@ -635,7 +635,7 @@ export function NewBookingForm({
         </div>
 
         {formError ? (
-          <p ref={formErrorRef} tabIndex={-1} role="alert" data-testid="booking-form-error" className="fld-label req-error-banner" style={{ color: 'var(--bad)', marginTop: 14 }}>
+          <p ref={formErrorRef} tabIndex={-1} role="alert" data-testid="booking-form-error" className="fld-error req-error-banner" style={{ marginTop: 14 }}>
             {formError}
           </p>
         ) : null}

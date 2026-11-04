@@ -26,6 +26,8 @@ Fonti: glossario A20 della CR `sprint-change-proposal-2026-11-01.md` §4.10, rat
 | Registro voli | **Registro voli**; la riga è un **volo** | Diario di volo, voce | D-6 |
 | Contabilità | **Contabilità**; la riga della lista unificata è una **transazione** (f.) | Finanze, Report finanziario | — |
 | Ricarica | **ricarica**, «Registra ricarica», bottone «Ricarica» | «Registra» senza oggetto | audit M13c |
+| Ricavi per competenza (`getLedgerRevenueCents`: voli addebitati nel periodo, pagati o no, quote, rettifiche, entrate di cassa non da ricarica; le ricariche sono acconti, non ricavi) | **Ricavi maturati** (EN «Earned revenue»), lo stesso nome, senza periodo, in Contabilità («Risultato»), Statistiche e Panoramica (il periodo lo dicono la pagina o il filtro) | «Ricavi», «Ricavi del mese» per questo numero | PO Q-16.6a-a, decisioni PO sulla review 16.6a (domande 2 e 2-bis) |
+| Entrate e uscite di cassa raggruppate per categoria, ricariche comprese | **Cassa per categoria** (EN «Cash by category») | «Per categoria» da solo | PO Q-16.6a-a |
 | Elenco misto | **Persona** | Pilota (per un elenco che include allievi e istruttori) | D-5 |
 | Credenziali | **accesso** | utente (per le credenziali) | D-15 |
 | Ruolo ADMIN | **Amministratore** | Admin | PO Q-19.12-c |

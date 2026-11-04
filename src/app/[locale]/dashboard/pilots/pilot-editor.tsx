@@ -327,7 +327,7 @@ function focusSection(section: HTMLElement | null): void {
 /** A section's error after a failed Salva — `role="alert"` (announced) and focusable, so the focus can land on it when no field is to blame. */
 function SectionError({ message, testId }: { message: string; testId: string }) {
   return (
-    <p role="alert" tabIndex={-1} data-testid={testId} className="fld-label" style={{ color: 'var(--bad)', marginTop: 14, textTransform: 'none' }}>
+    <p role="alert" tabIndex={-1} data-testid={testId} className="fld-error" style={{ marginTop: 14 }}>
       {message}
     </p>
   );
@@ -538,7 +538,7 @@ function EditPersonForm({
       <Section title={profileLabels.sectionTitle}>
         <div ref={profilesRef}>
           {profilesLoadError ? (
-            <p className="fld-label" style={{ color: 'var(--bad)' }}>
+            <p className="fld-error">
               {profileLabels.errors.generic}
             </p>
           ) : !profilesDetail || !profileDraft ? (
@@ -1165,7 +1165,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
       ) : null}
 
       {formError ? (
-        <p role="alert" data-testid="pilot-identity-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
+        <p role="alert" data-testid="pilot-identity-error" className="fld-error" style={{ marginTop: 14 }}>
           {formError}
         </p>
       ) : null}
@@ -1315,7 +1315,7 @@ function AccessSection({
           </p>
         ) : null}
         {formError ? (
-          <p role="alert" className="fld-label" style={{ color: 'var(--bad)', marginTop: 8 }}>
+          <p role="alert" className="fld-error" style={{ marginTop: 8 }}>
             {formError}
           </p>
         ) : null}

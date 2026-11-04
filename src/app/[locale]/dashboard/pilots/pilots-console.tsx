@@ -847,7 +847,7 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
             </Field>
           </div>
           {formError ? (
-            <p role="alert" data-testid="topup-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
+            <p role="alert" data-testid="topup-form-error" className="fld-error" style={{ marginTop: 14 }}>
               {formError}
             </p>
           ) : null}

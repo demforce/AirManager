@@ -366,7 +366,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
           </div>
 
           {formError ? (
-            <p role="alert" data-testid="transaction-form-error" style={{ color: 'var(--bad)', fontSize: 13, marginTop: 14 }}>
+            <p role="alert" data-testid="transaction-form-error" className="fld-error" style={{ marginTop: 14 }}>
               {formError}
             </p>
           ) : null}

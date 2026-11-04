@@ -26,18 +26,22 @@ function uniqueSuffix(): string {
 /**
  * Run-unique day, SAFELY IN THE PAST (story 16.6a, R-16-h): a top-up or a cash
  * movement dated after today is a 422 `EFFECTIVE_DATE_IN_FUTURE`, as a future
- * flight is for `uniquePastDateOnly` below. Counts BACK from 2009-12-31 over
- * ~2 000 days (2004-06 .. 2009-12): a band no other fixture writes in (the
- * seed's cash rows are 2019, `account-statement-period.spec.ts` uses 2010 and
- * 2012, `uniquePastDateOnly` 2020-2022), so a re-run against a dirty DB does
- * not collide. Top-ups and cash movements read no rate, so no 2020 floor.
+ * flight is for `uniquePastDateOnly` below. A pair is drawn from 2000-01-02 ..
+ * 2009-12-31 (3 651 pairs), a band no other fixture writes in: the seed's cash
+ * rows are 2019, `account-statement-period.spec.ts` uses 2010 and 2012,
+ * `uniquePastDateOnly` 2020-2022, and 2000-01-01 is the treasury opening date
+ * (`treasury-settings.spec.ts#SAFE_OPENING_DATE`). It is a LOW collision
+ * probability, not an isolation: the tests filter the GLOBAL books by date, so
+ * two draws of the same pair (this run's, or a previous run's on a DB that was
+ * not reset) see each other's rows. Top-ups and cash movements read no rate,
+ * so no 2020 floor.
  */
 function dateAt(daysBeforeBase: number): string {
   return new Date(Date.UTC(2009, 11, 31) - daysBeforeBase * 86_400_000).toISOString().slice(0, 10);
 }
 
 function uniqueDatePair(): { day1: string; day2: string } {
-  const dayOffset = Math.floor(Math.random() * 2_000);
+  const dayOffset = Math.floor(Math.random() * 3_651);
   // day1 < day2: `dateAt` counts BACKWARD, so the larger offset is the earlier day.
   return { day1: dateAt(dayOffset + 1), day2: dateAt(dayOffset) };
 }

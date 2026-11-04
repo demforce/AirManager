@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { addDaysIso, todayRome } from './helpers';
 
 /**
  * Story 15.10 — the ink and the touch targets of the final sweep
@@ -487,6 +488,85 @@ test.describe('story 15.10 — the three page-level contrasts (AC 6)', () => {
         for (const ratio of measured.ratios) expect(ratio, `${viewport.width}px`).toBeGreaterThanOrEqual(4.5);
         // The colour used to be the ONLY thing marking these as links.
         expect(measured.decorations).toEqual(['underline']);
+      }
+    });
+  }
+});
+
+/** The rendered error message `testId` of an open panel: its contrast and the type it is set in. */
+async function measureError(page: Page, testId: string) {
+  await expect(page.getByTestId(testId)).toBeVisible();
+  await installContrast(page);
+  return page.getByTestId(testId).evaluate((el) => {
+    const style = getComputedStyle(el);
+    return {
+      ratio: (window as unknown as { __contrast: (node: Element) => number }).__contrast(el),
+      textTransform: style.textTransform,
+      fontFamily: style.fontFamily,
+      cls: el.className,
+      inlineColor: (el.getAttribute('style') ?? '').includes('color'),
+    };
+  });
+}
+
+test.describe('story 16.6a — the error messages of the side panels read like the scheda persona (PO, review 16.6a)', () => {
+  /**
+   * Pre-fix, light theme: the Piloti «Registra ricarica» error was `fld-label`
+   * + inline `var(--bad)` (JetBrains Mono 10.5px, UPPERCASE, 3.96:1) and the
+   * «Nuova transazione» one inline `var(--bad)` at 13px (3.96:1). Both now
+   * take `.fld-error`, the scheda persona's own: Inter Tight, no uppercase,
+   * the darker literal in light and the raw token in dark. The same class
+   * replaced the same idiom in the other side panels (pilot, instructor,
+   * aircraft, booking and flight editors).
+   *
+   * The message is the real 422 of a value date after today, so nothing is
+   * written. As in AC 6 above, the class SUBSTITUTES the inline colour.
+   */
+  for (const theme of ['light', 'dark'] as const) {
+    test(`Piloti «Registra ricarica» and «Nuova transazione»: the error clears 4.5:1 in the ${theme} theme, in Inter Tight and not uppercased, on the phone and on the desktop`, async ({ page }) => {
+      await setTheme(page, theme);
+      await loginExpectingDashboard(page, ADMIN_EMAIL);
+      const lastName = `Inchiostro-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const created = await page.request.post('/api/v1/people', { data: { firstName: 'Errore', lastName } });
+      expect(created.status()).toBe(201);
+      const personId = ((await created.json()) as { id: string }).id;
+      expect((await page.request.put(`/api/v1/people/${personId}/profiles/pilot`, { data: { licenseNumber: 'IT-PPL-E2E', licenseType: 'PPL(A)' } })).status()).toBe(200);
+      const tomorrow = addDaysIso(todayRome(), 1);
+
+      for (const viewport of [PHONE, DESKTOP]) {
+        await page.setViewportSize(viewport);
+        await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
+        await page.waitForSelector('.page');
+        if (viewport === PHONE) {
+          await page.getByTestId(`mobile-pilot-row-${personId}`).click();
+          await page.getByTestId('pilot-topup-mobile').click();
+        } else {
+          await page.getByTestId(`pilot-topup-${personId}`).click();
+        }
+        await page.getByTestId('topup-form').getByLabel('Importo (€)').fill('1');
+        await page.getByTestId('topup-form').locator('input[type="date"]').fill(tomorrow);
+        await page.getByTestId('topup-submit').click();
+        const topUp = await measureError(page, 'topup-form-error');
+
+        await page.goto('/it/dashboard/billing');
+        await page.waitForSelector('.page');
+        await page.getByTestId('billing-new-transaction-button').click();
+        await page.waitForSelector('[data-testid="transaction-form"]');
+        await page.getByTestId('transaction-kind').selectOption('cash');
+        await page.getByTestId('transaction-category').selectOption({ label: 'Altro' });
+        await page.getByTestId('transaction-amount').fill('1');
+        await page.getByTestId('transaction-date').fill(tomorrow);
+        await page.getByTestId('transaction-submit').click();
+        const transaction = await measureError(page, 'transaction-form-error');
+
+        for (const [name, error] of [['Piloti', topUp], ['Nuova transazione', transaction]] as const) {
+          const where = `${viewport.width}px ${name}: ${JSON.stringify(error)}`;
+          expect(error.ratio, where).toBeGreaterThanOrEqual(4.5);
+          expect(error.textTransform, where).toBe('none');
+          expect(error.fontFamily, where).toMatch(/^"?Inter Tight/);
+          expect(error.cls, where).toMatch(/\bfld-error\b/);
+          expect(error.inlineColor, where).toBe(false);
+        }
       }
     });
   }

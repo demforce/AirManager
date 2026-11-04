@@ -209,7 +209,7 @@ export type ExpiryDraftEditorProps = {
 export function ExpiryDraftEditor({ draft, kind, profiles, labels, showMissingDates, rowError = null }: ExpiryDraftEditorProps) {
   if (draft.status === 'error') {
     return (
-      <p className="fld-label" style={{ color: 'var(--bad)' }}>
+      <p className="fld-error">
         {labels.genericError}
       </p>
     );

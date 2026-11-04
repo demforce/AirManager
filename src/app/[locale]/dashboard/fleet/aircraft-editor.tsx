@@ -624,7 +624,7 @@ function IdentitySection(props: IdentitySectionProps): React.JSX.Element {
       </Section>
 
       {formError ? (
-        <p role="alert" data-testid="identity-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
+        <p role="alert" data-testid="identity-form-error" className="fld-error" style={{ marginTop: 14 }}>
           {formError}
         </p>
       ) : null}
