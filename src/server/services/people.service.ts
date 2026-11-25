@@ -193,12 +193,12 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   const conditions: Array<Record<string, unknown>> = [];
   if (query.archivedOnly) conditions.push({ archivedAt: { not: null } });
   else if (!query.includeArchived) conditions.push({ archivedAt: null });
-  if (q) {
+  for (const word of q ? q.split(/\s+/) : []) {
     conditions.push({
       OR: [
-        { firstName: { contains: q, mode: 'insensitive' as const } },
-        { lastName: { contains: q, mode: 'insensitive' as const } },
-        { email: { contains: q, mode: 'insensitive' as const } },
+        { firstName: { contains: word, mode: 'insensitive' as const } },
+        { lastName: { contains: word, mode: 'insensitive' as const } },
+        { email: { contains: word, mode: 'insensitive' as const } },
       ],
     });
   }

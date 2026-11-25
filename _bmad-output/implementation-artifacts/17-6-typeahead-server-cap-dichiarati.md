@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.6: Typeahead server-side per persone e velivoli, cap dichiarati ovunque restino
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (UI: `SearchCombobox`, form prenotazione, filtro del Registro voli, avvisi; skill `design-taste-frontend` + `ui-ux-pro-max`). Review: Opus 5 xhigh adversarial. **Ordine**: dopo l'Epic 16 (16.5 tocca `bookings.service.ts`, `registry.ts`, `messages`, `instructors-console.tsx`; 16.7 estende `maskBookingNames` a `personId` e TD-16.7-a diventa vivo con T1; 16.8 aggiunge `listArchivedAircraftByIds`; 16.9 tocca `transaction-editor.tsx` e `flight-editor.tsx`) e dopo 17.2 (il suo filtro per URL userà la ricerca di T1) e 17.5 (riscrive la lettura di `listPeople`/`listAircraft`). 18.4 consuma da T1 la ricerca velivolo e istruttore. Righe da rileggere su HEAD al momento del dev.
+Status: **in-progress** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (UI: `SearchCombobox`, form prenotazione, filtro del Registro voli, avvisi; skill `design-taste-frontend` + `ui-ux-pro-max`). Review: Opus 5 xhigh adversarial. **Ordine**: dopo l'Epic 16 (16.5 tocca `bookings.service.ts`, `registry.ts`, `messages`, `instructors-console.tsx`; 16.7 estende `maskBookingNames` a `personId` e TD-16.7-a diventa vivo con T1; 16.8 aggiunge `listArchivedAircraftByIds`; 16.9 tocca `transaction-editor.tsx` e `flight-editor.tsx`) e dopo 17.2 (il suo filtro per URL userà la ricerca di T1) e 17.5 (riscrive la lettura di `listPeople`/`listAircraft`). 18.4 consuma da T1 la ricerca velivolo e istruttore. Righe da rileggere su HEAD al momento del dev.
 
 ## Story
 
@@ -101,3 +101,7 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 ### Completion Notes List
 
 ### File List
+
+### Checkpoint backend — ricerca per parole (AC 11)
+
+Base verificata `f375b3ebcacf988bda84dc3e1f0cf5a861e98ee5`. Il servizio persone applica una condizione per ogni parola su nome, cognome o email. Due casi sintetici verificano le due sequenze del nome, spazi multipli e filtro identico per elenco e totale. Sul codice iniziale il comando `vitest run src/server/services/people.service.test.ts -t 'matches every name token'` è uscito con codice 1 (due asserzioni sul filtro AND fallite). Dopo la modifica: 94/94 test del servizio, typecheck, lint dei due file e controllo del diff con esito positivo. Il checkpoint riguarda il servizio; restano l’integrazione nei picker, i gate completi, le misure e la revisione della story.

@@ -393,6 +393,18 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       });
     });
 
+    it.each(['Mario Rossi', '  Rossi   Mario  '])('matches every name token across searchable fields: %s', async (q) => {
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(0);
+      await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false, q });
+      const where = findManyMock.mock.calls[0]?.[0]?.where;
+      for (const word of ['Mario', 'Rossi']) {
+        const match = { contains: word, mode: 'insensitive' };
+        expect(where?.AND).toContainEqual({ OR: [{ firstName: match }, { lastName: match }, { email: match }] });
+      }
+      expect(countMock.mock.calls[0]?.[0]?.where).toEqual(where);
+    });
+
     it('combines q and profile as separate AND conditions, never colliding on the OR key (AC 1/3, story TD-3)', async () => {
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
