@@ -5,7 +5,7 @@ import { prisma } from '@/server/db/prisma';
 export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 /**
- * Re-verifies `User.isActive`, `User.roles` and `User.tokenVersion` against
+ * Re-verifies `User.isActive`, `User.roles`, `User.tokenVersion` and `User.personId` against
  * the DB at most once every `ACTIVE_RECHECK_INTERVAL_MS`, using
  * `token.lastActiveCheck` as the watermark. Node runtime only (`auth.ts`) —
  * never called from `src/proxy.ts`'s `getToken` read, which has no Prisma
@@ -22,6 +22,8 @@ export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
  * issued before that bump fails this comparison and is evicted here — the
  * mechanism that makes a password reset actually end an attacker's existing
  * session, instead of leaving it valid for the JWT's full 30-day lifetime.
+ * A changed linked person also ends the session instead of silently changing
+ * the identity it acts for (story 16.7).
  * A token with NO `tokenVersion` claim at all (issued before this field
  * existed) is treated the same as a mismatch — accepted, documented
  * one-time logout of every session alive at deploy time. In every `null`
@@ -37,14 +39,14 @@ export async function applyActiveRecheck(token: JWT, now: number = Date.now()): 
 
   const user = await prisma.user.findUnique({
     where: { id: token.userId },
-    select: { isActive: true, roles: true, tokenVersion: true },
+    select: { isActive: true, roles: true, tokenVersion: true, personId: true },
   });
 
   if (!user || !user.isActive) {
     return null;
   }
 
-  if (token.tokenVersion !== user.tokenVersion) {
+  if (token.tokenVersion !== user.tokenVersion || token.personId !== user.personId) {
     return null;
   }
 
