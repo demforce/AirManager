@@ -29,6 +29,8 @@
   { "name": "pdf account", "path": "/api/v1/people/{PERSON}/account/pdf" },
   { "name": "page overview", "path": "/it/dashboard", "burst": true },
   { "name": "page bookings", "path": "/it/dashboard/bookings", "burst": true },
+  { "name": "page bookings week", "path": "/it/dashboard/bookings?view=week" },
+  { "name": "page bookings show all", "path": "/it/dashboard/bookings?showAircraft=all" },
   { "name": "page bookings list", "path": "/it/dashboard/bookings?view=list" },
   { "name": "page pilots", "path": "/it/dashboard/pilots", "burst": true },
   { "name": "page pilots q", "path": "/it/dashboard/pilots?q=ros" },

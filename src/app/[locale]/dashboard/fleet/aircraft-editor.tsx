@@ -884,7 +884,7 @@ function AvailabilitySection({
                 </span>
                 <span style={{ display: 'block' }}>{splitText}</span>
                 <span style={{ display: 'block' }}>{windowText}</span>
-                <a style={{ display: 'inline-block', marginTop: 4 }} href={`/${locale}/dashboard/bookings?status=PENDING,APPROVED`} data-testid="aog-impact-bookings-link">
+                <a style={{ display: 'inline-block', marginTop: 4 }} href={`/${locale}/dashboard/bookings?status=PENDING,APPROVED&aircraft=${encodeURIComponent(aircraft.id)}`} data-testid="aog-impact-bookings-link">
                   {labels.availability.impactBookingsLink}
                 </a>
               </p>
@@ -1132,7 +1132,7 @@ function ArchiveSection({
           <strong>{t('impactBanner', { count: result.pending + result.approved })}</strong><br />
           {split(result)}<br />
           {labels.archive.impactWindow}<br />
-          <a href={`/${locale}/dashboard/bookings?status=PENDING,APPROVED`} data-testid="archive-impact-bookings-link">
+          <a href={`/${locale}/dashboard/bookings?status=PENDING,APPROVED&aircraft=${encodeURIComponent(aircraft.id)}`} data-testid="archive-impact-bookings-link">
             {labels.availability.impactBookingsLink}
           </a>
         </p>

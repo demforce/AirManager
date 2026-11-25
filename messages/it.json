@@ -1284,6 +1284,9 @@
     "sub": "Calendario dei velivoli e prenotazioni da approvare.",
     "occupied": "Occupato",
     "schedule": {
+      "freeAircraftCount": "{count, plural, one {Un altro velivolo libero} other {Altri # velivoli liberi}}",
+      "showFreeAircraft": "Mostra",
+      "hideFreeAircraft": "Nascondi",
       "cardTitle": "Programma",
       "cardTitleToday": "Programma di oggi",
       "prevMonth": "Mese precedente",

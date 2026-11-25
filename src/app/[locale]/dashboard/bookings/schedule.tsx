@@ -13,7 +13,7 @@
  * server-computed prop, no point sharing a module for one tiny function).
  * The aircraft/instructor filters (Contesto AC 2: "filtro tipo volo" from
  * the prototype does not exist on the Booking domain, D13 — replaced with
- * aircraft/instructor) are pure client state, never persisted to the URL.
+ * aircraft/instructor): aircraft is a server URL filter (17.2); instructor remains local.
  *
  * Blocks/AOG rows reuse `page.tsx`'s existing `projectDayBlocks`/
  * `projectWeekChips` output UNCHANGED (Contesto: "cambia la PRESENTAZIONE,
@@ -24,8 +24,8 @@
  * since both are just "how far through the 06:00-22:00 window" percentages.
  */
 import { useTranslations } from 'next-intl';
-import { Fragment, useCallback, useRef, useState, type MouseEvent } from 'react';
-import { getPathname, useRouter } from '@/i18n/navigation';
+import { Fragment, useCallback, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { getPathname, Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
@@ -147,6 +147,11 @@ export type ScheduleProps = {
   /** The 7 dates (Monday..Sunday) of the shown week, each with its own precomputed day-view href — only read when `view === 'week'`. */
   weekDates: Array<{ dateOnly: string; href: string }>;
   aircraft: readonly ScheduleAircraftRow[];
+  hasAircraft: boolean;
+  aircraftFilters: readonly { id: string; registration: string }[];
+  aircraftFilterId?: string | null;
+  showAllAircraft?: boolean;
+  freeAircraftCount: number;
   instructors: InstructorOption[];
   dayBlocks: CalendarDayBlock[];
   weekChips: CalendarWeekChip[];
@@ -223,12 +228,17 @@ const FILTER_POPOVER_WIDTH = 320;
 const FILTER_POPOVER_HEIGHT = 320;
 
 /** Small client-only duplicate of `page.tsx#calendarHref`'s day-view case — see module doc-comment. */
-function buildDateHref(dateOnly: string, view: BookingCalendarView, listPage: number, today: string, listStatus: string | null): string {
+function buildDateHref(
+  dateOnly: string, view: BookingCalendarView, listPage: number, today: string, listStatus: string | null,
+  aircraftId: string | null, showAll: boolean,
+): string {
   const params = new URLSearchParams();
   if (view !== 'day') params.set('view', view);
   if (dateOnly !== today) params.set('date', dateOnly);
   if (listPage > 1) params.set('page', String(listPage));
   if (listStatus) params.set('status', listStatus);
+  if (aircraftId) params.set('aircraft', aircraftId);
+  if (showAll) params.set('showAircraft', 'all');
   const qs = params.toString();
   return `/dashboard/bookings${qs ? `?${qs}` : ''}`;
 }
@@ -250,6 +260,11 @@ export function Schedule({
   isToday,
   weekDates,
   aircraft,
+  hasAircraft,
+  aircraftFilters,
+  aircraftFilterId = null,
+  freeAircraftCount,
+  showAllAircraft = false,
   instructors,
   dayBlocks,
   weekChips,
@@ -265,14 +280,14 @@ export function Schedule({
   labels,
 }: ScheduleProps) {
   // Story 19.12a: the per-day and agenda booking counts change with the
-  // client-only aircraft/instructor filter and inflect (ICU plural), so they
+  // aircraft and instructor filters and inflect (ICU plural), so they
   // are formatted here rather than pre-formatted server-side.
   const t = useTranslations('BookingsPage.schedule');
   const router = useRouter();
   const HOURS = Array.from({ length: windowEndHour - windowStartHour + 1 }, (_, i) => windowStartHour + i);
-  const hourLeftPercent = (hour: number) => ((hour - windowStartHour) / (windowEndHour - windowStartHour)) * 100;
+  const trackStyle = { '--sched-hours': Math.max(1, HOURS.length - 1) } as CSSProperties;
   const [calCursor, setCalCursor] = useState(() => dateOnlyToLocalDate(date));
-  const [filterAircraftId, setFilterAircraftId] = useState('all');
+  const filterAircraftId = aircraftFilterId ?? 'all';
   const [filterInstructorId, setFilterInstructorId] = useState('all');
   // AC 1 fix (+ review F1: the SAME fix extended to the calendar popover,
   // its twin — see `useFixedPopover` above): both popovers are
@@ -291,27 +306,25 @@ export function Schedule({
   const filterPopover = useFixedPopover(filterTriggerRef, filterPopoverRef);
 
   const filterCount = (filterAircraftId !== 'all' ? 1 : 0) + (filterInstructorId !== 'all' ? 1 : 0);
-  const visibleAircraft = aircraft.filter((ac) => filterAircraftId === 'all' || ac.id === filterAircraftId);
+  function filterHref(id: string | null, showAll = showAllAircraft): string {
+    return buildDateHref(date, view, listPage, today, listStatus, id, showAll);
+  }
 
   function matchesInstructorFilter(instructorProfileId: string | null): boolean {
     return filterInstructorId === 'all' || instructorProfileId === filterInstructorId;
   }
 
   function navigateToDate(dateOnly: string) {
-    router.push(buildDateHref(dateOnly, view, listPage, today, listStatus));
+    router.push(buildDateHref(dateOnly, view, listPage, today, listStatus, aircraftFilterId, showAllAircraft));
   }
 
   // --- phone agenda (story 15.4) -----------------------------------------
-  // The SAME `filterAircraftId`/`filterInstructorId` the popover drives
-  // (ratifica R-15.4-c: the tail chips are a second AFFORDANCE, never a second
-  // source of truth), applied to the server-ordered rows. An AOG row has no
+  // The aircraft slice comes from the server. The local instructor filter
+  // is applied to those ordered rows. An AOG row has no
   // instructor, so the instructor filter leaves it alone — exactly like the
   // desktop, where an out-of-service aircraft keeps its row whatever the
   // instructor filter says.
-  const visibleAgendaRows = agendaRows.filter(
-    (row) =>
-      (filterAircraftId === 'all' || row.aircraftId === filterAircraftId) && (row.kind !== 'booking' || matchesInstructorFilter(row.instructorProfileId)),
-  );
+  const visibleAgendaRows = agendaRows.filter((row) => row.kind !== 'booking' || matchesInstructorFilter(row.instructorProfileId));
   const agendaMovementCount = visibleAgendaRows.filter((row) => row.kind === 'booking').length;
   // Recomputed on the FILTERED rows, never precomputed server-side: filtering
   // the morning away moves the marker (unit-tested, `mobile-agenda.test.ts`).
@@ -503,19 +516,21 @@ export function Schedule({
                 <div className="pop-row">
                   <div className="fld-label">{labels.filtersAircraft}</div>
                   <div className="segmented" style={{ flexWrap: 'wrap' }}>
-                    <button type="button" className={filterAircraftId === 'all' ? 'on' : ''} onClick={() => setFilterAircraftId('all')}>
+                    <Link href={filterHref(null)} scroll={false} prefetch={false} className={aircraftFilterId === null ? 'on' : ''} aria-current={aircraftFilterId === null ? 'true' : undefined}>
                       {labels.filtersAll}
-                    </button>
-                    {aircraft.map((ac) => (
-                      <button
+                    </Link>
+                    {aircraftFilters.map((ac) => (
+                      <Link
                         key={ac.id}
-                        type="button"
-                        className={filterAircraftId === ac.id ? 'on' : ''}
-                        onClick={() => setFilterAircraftId(ac.id)}
+                        href={filterHref(ac.id)}
+                        scroll={false}
+                        prefetch={false}
+                        className={aircraftFilterId === ac.id ? 'on' : ''}
+                        aria-current={aircraftFilterId === ac.id ? 'true' : undefined}
                         data-testid={`schedule-filter-aircraft-${ac.id}`}
                       >
                         {ac.registration}
-                      </button>
+                      </Link>
                     ))}
                   </div>
                 </div>
@@ -552,7 +567,7 @@ export function Schedule({
                     type="button"
                     className="btn"
                     onClick={() => {
-                      setFilterAircraftId('all');
+                      if (aircraftFilterId) router.push(filterHref(null), { scroll: false });
                       setFilterInstructorId('all');
                     }}
                   >
@@ -589,12 +604,12 @@ export function Schedule({
         </div>
       </div>
 
-      {aircraft.length === 0 ? (
+      {!hasAircraft ? (
         <p className="schedule-desktop-body" style={{ marginTop: 16, fontSize: 14, lineHeight: '20px', padding: '0 18px 18px' }}>
           {labels.noAircraft}
         </p>
       ) : view === 'day' ? (
-        <div className="schedule schedule-desktop-body">
+        <div className="schedule schedule-desktop-body" style={trackStyle}>
           <div className="sched-axis">
             <div className="axis-label">{labels.filtersAircraft}</div>
             <div className="axis-ticks" style={{ gridTemplateColumns: `repeat(${HOURS.length - 1}, 1fr)` }}>
@@ -605,7 +620,7 @@ export function Schedule({
               ))}
             </div>
           </div>
-          {visibleAircraft.map((ac) => {
+          {aircraft.map((ac) => {
             const isAog = ac.status === 'OUT_OF_SERVICE';
             const isArchived = ac.status === 'ARCHIVED';
             const blocks = isAog ? [] : dayBlocks.filter((block) => block.aircraftId === ac.id && matchesInstructorFilter(block.instructorProfileId));
@@ -622,9 +637,6 @@ export function Schedule({
                   </div>
                 </div>
                 <div className="sched-track">
-                  {HOURS.map((hour) => (
-                    <div key={hour} className="grid-line" style={{ left: `${hourLeftPercent(hour)}%` }} />
-                  ))}
                   {/* `data-time` (ratifica R-15.4-b): `.now-line::before` has
                       printed `content: attr(data-time)` since story 12.3
                       against an attribute nobody wrote — measured at 375px AND
@@ -676,7 +688,15 @@ export function Schedule({
               </div>
             );
           })}
-          {dayBlocks.length === 0 && visibleAircraft.every((ac) => ac.status !== 'OUT_OF_SERVICE') ? (
+          {freeAircraftCount > 0 && !aircraftFilterId ? (
+            <div className="schedule-free-aircraft" data-testid="schedule-free-aircraft">
+              <span>{t('freeAircraftCount', { count: freeAircraftCount })}</span>
+              <Link href={filterHref(null, !showAllAircraft)} scroll={false} prefetch={false} data-testid="schedule-toggle-free">
+                {showAllAircraft ? t('hideFreeAircraft') : t('showFreeAircraft')}
+              </Link>
+            </div>
+          ) : null}
+          {dayBlocks.length === 0 && aircraft.every((ac) => ac.status !== 'OUT_OF_SERVICE') ? (
             <p style={{ marginTop: 16, fontSize: 14, lineHeight: '20px', padding: '0 18px' }}>
               {labels.dayEmpty}
             </p>
@@ -688,7 +708,6 @@ export function Schedule({
             const count = weekChips.filter(
               (chip) =>
                 chip.dateOnly === dateOnly &&
-                (filterAircraftId === 'all' || chip.aircraftId === filterAircraftId) &&
                 matchesInstructorFilter(chip.instructorProfileId),
             ).length;
             const isTodayCell = dateOnly === today;
@@ -732,28 +751,30 @@ export function Schedule({
           view the vertical list of seven days ratified in R-15.4-a — neither
           is a 1000px grid inside a horizontal scroller. */}
       <div className="schedule-mobile">
-        {aircraft.length > 0 ? (
+        {aircraftFilters.length > 0 ? (
           <div className="mobile-chip-strip" data-testid="mobile-tail-chips">
-            <button
-              type="button"
+            <Link
+              href={filterHref(null)}
+              scroll={false}
+              prefetch={false}
               className={`btn ${filterAircraftId === 'all' ? 'primary' : ''}`}
-              onClick={() => setFilterAircraftId('all')}
-              aria-pressed={filterAircraftId === 'all'}
+              aria-current={filterAircraftId === 'all' ? 'true' : undefined}
               data-testid="mobile-tail-chip-all"
             >
               {labels.filtersAll}
-            </button>
-            {aircraft.map((ac) => (
-              <button
+            </Link>
+            {aircraftFilters.map((ac) => (
+              <Link
                 key={ac.id}
-                type="button"
+                href={filterHref(ac.id)}
+                scroll={false}
+                prefetch={false}
                 className={`btn ${filterAircraftId === ac.id ? 'primary' : ''}`}
-                onClick={() => setFilterAircraftId(ac.id)}
-                aria-pressed={filterAircraftId === ac.id}
+                aria-current={filterAircraftId === ac.id ? 'true' : undefined}
                 data-testid={`mobile-tail-chip-${ac.id}`}
               >
                 {ac.registration}
-              </button>
+              </Link>
             ))}
           </div>
         ) : null}
@@ -762,7 +783,7 @@ export function Schedule({
           <div data-testid="mobile-agenda">
             {visibleAgendaRows.length === 0 ? (
               <p className="mobile-card-empty" data-testid="mobile-agenda-empty">
-                {aircraft.length === 0 ? labels.noAircraft : labels.dayEmpty}
+                {hasAircraft ? labels.dayEmpty : labels.noAircraft}
               </p>
             ) : (
               visibleAgendaRows.map((row, index) => (
@@ -817,13 +838,12 @@ export function Schedule({
               // R-15.4-a says "tocco -> vista giorno". `buildDateHref` with
               // `'day'` is the same helper the calendar popover uses, so `?page`
               // and `?status` ride along exactly as they do there.
-              const href = buildDateHref(dateOnly, 'day', listPage, today, listStatus);
+              const href = buildDateHref(dateOnly, 'day', listPage, today, listStatus, aircraftFilterId, showAllAircraft);
               // The SAME count the desktop cell shows, filtered the same way
               // (ratifica R-15.4-a: "nessun dato nuovo dal server").
               const count = weekChips.filter(
                 (chip) =>
                   chip.dateOnly === dateOnly &&
-                  (filterAircraftId === 'all' || chip.aircraftId === filterAircraftId) &&
                   matchesInstructorFilter(chip.instructorProfileId),
               ).length;
               return (

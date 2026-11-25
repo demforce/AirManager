@@ -336,7 +336,10 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/bookings');
     // Filtered to this run's aircraft, so the marker's neighbours are ours.
-    await page.getByTestId(`mobile-tail-chip-${aircraft.id}`).click();
+    const chip = page.getByTestId(`mobile-tail-chip-${aircraft.id}`);
+    await chip.click();
+    await expect(chip).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByTestId('mobile-agenda-row')).toHaveCount(2);
 
     const marker = page.getByTestId('mobile-agenda-now');
     await expect(marker).toHaveCount(1);
@@ -369,6 +372,13 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     const aircraft = await createAircraft(page, 'CH');
     const other = await createAircraft(page, 'CO');
     const pilot = await createPilot(page, 'CH');
+    // Story 17.2 shows only relevant aircraft in the strip. Stage enough
+    // grounded aircraft to make the scroll assertion meaningful on a fresh DB.
+    for (let i = 0; i < 5; i++) {
+      const filler = await createAircraft(page, 'SC');
+      const response = await page.request.post(`/api/v1/aircraft/${filler.id}/out-of-service`, { data: { reason: 'Chip scroll e2e' } });
+      expect(response.status()).toBe(200);
+    }
     // Today and still ahead: creatable as-is, no staging needed.
     await createBooking(page, aircraft.id, pilot.id, slotAroundNow(12, 20));
 
@@ -392,6 +402,8 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     // One tap filters the agenda AND selects the same aircraft in the popover:
     // one source of truth (ratifica R-15.4-c).
     await page.getByTestId(`mobile-tail-chip-${aircraft.id}`).click();
+    await expect(page).toHaveURL(new RegExp(`aircraft=${aircraft.id}`));
+    await expect(page.getByTestId(`mobile-tail-chip-${aircraft.id}`)).toHaveAttribute('aria-current', 'true');
     await expect(page.getByTestId('mobile-agenda-row').filter({ hasText: pilot.lastName })).toHaveCount(1);
     await expect(page.getByTestId('mobile-agenda-row').filter({ hasText: other.registration })).toHaveCount(0);
     await page.getByTestId('schedule-filter-toggle').click();
@@ -753,8 +765,8 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     // A far-future day, filtered to an aircraft created seconds ago: nothing
     // can be booked on it, and the AOG rows the shared DB carries belong to
     // OTHER aircraft (they are date-independent by design, R-15.4-h).
-    await page.goto('/it/dashboard/bookings?date=2031-03-11');
-    await page.getByTestId(`mobile-tail-chip-${aircraft.id}`).click();
+    await page.goto(`/it/dashboard/bookings?date=2031-03-11&aircraft=${aircraft.id}`);
+    await expect(page.getByTestId(`mobile-tail-chip-${aircraft.id}`)).toHaveAttribute('aria-current', 'true');
     await expect(page.getByTestId('mobile-agenda-row')).toHaveCount(0);
     await expect(page.getByTestId('mobile-agenda-empty')).toHaveCount(1);
     await expect(page.getByTestId('mobile-agenda-now')).toHaveCount(0);

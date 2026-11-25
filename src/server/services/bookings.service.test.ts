@@ -26,6 +26,7 @@ vi.mock('@/server/db/prisma', () => ({
     },
     aircraft: {
       findMany: vi.fn(),
+      count: vi.fn(),
     },
     expiry: {
       findMany: vi.fn(),
@@ -2747,27 +2748,72 @@ describe('booking-form picker helpers (Task 5)', () => {
     expect(aircraftFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { archivedAt: null } }));
   });
 
-  it('schedule includes only confirmed archived candidates and does not change picker rows', async () => {
-    const active = [{ id: 'a1', registration: 'I-ZZZZ', model: 'Active', status: 'OPERATIONAL', statusReason: null }] as const;
-    aircraftFindMany.mockResolvedValue([{ id: 'a2', registration: 'I-AAAA', model: 'Archived' }]);
+  const available = { id: 'free', registration: 'I-C', model: 'Free', status: 'OPERATIONAL', statusReason: null, archivedAt: null };
+  const reserved = { ...available, id: 'reserved', registration: 'I-A' };
+  const grounded = { ...available, id: 'grounded', registration: 'I-B', status: 'OUT_OF_SERVICE' };
+  const archived = { ...grounded, id: 'archived', registration: 'I-D', archivedAt: new Date('2026-11-01') };
+  const visibleBookings = [{ aircraftId: 'reserved' }, { aircraftId: 'archived' }, { aircraftId: 'reserved' }];
 
-    const result = await listScheduleAircraft(studentActor(), active, [
-      { aircraftId: 'a1' }, { aircraftId: 'a2' }, { aircraftId: 'a2' }, { aircraftId: 'other' },
-    ]);
+  it('schedule defaults to booked and grounded aircraft, including relevant archives, plus a count of the omitted active rows', async () => {
+    aircraftFindMany.mockResolvedValue([reserved, grounded, archived]);
+    vi.mocked(prisma.aircraft.count).mockResolvedValue(1002);
+
+    const result = await listScheduleAircraft(studentActor(), visibleBookings, {});
 
     expect(aircraftFindManyMock).toHaveBeenCalledExactlyOnceWith({
-      where: { id: { in: ['a2', 'other'] }, archivedAt: { not: null } },
-      select: { id: true, registration: true, model: true },
+      where: { OR: [{ id: { in: ['reserved', 'archived'] } }, { archivedAt: null, status: 'OUT_OF_SERVICE' }] },
+      select: { id: true, registration: true, model: true, status: true, statusReason: true, archivedAt: true },
       orderBy: { registration: 'asc' },
     });
-    expect(result).toEqual([{ id: 'a2', registration: 'I-AAAA', model: 'Archived', status: 'ARCHIVED', statusReason: null }, active[0]]);
-    expect(active).toHaveLength(1);
+    expect(prisma.aircraft.count).toHaveBeenCalledExactlyOnceWith({ where: { archivedAt: null } });
+    expect(result.rows.map(({ id, status }) => [id, status])).toEqual([
+      ['reserved', 'OPERATIONAL'], ['grounded', 'OUT_OF_SERVICE'], ['archived', 'ARCHIVED'],
+    ]);
+    expect(result.freeCount).toBe(1000);
+    expect(result.activeCount).toBe(1002);
+    expect(result.rows[0]).not.toHaveProperty('archivedAt');
   });
 
-  it('schedule does not query when the selected bookings all have active picker rows', async () => {
-    const active = [{ id: 'a1', registration: 'I-ZZZZ', model: 'Active', status: 'OPERATIONAL', statusReason: null }] as const;
-    await expect(listScheduleAircraft(studentActor(), active, [{ aircraftId: 'a1' }])).resolves.toEqual(active);
-    expect(aircraftFindManyMock).not.toHaveBeenCalled();
+  it('a selected free aircraft narrows the rows but remains in the filter options; other free aircraft are not fetched', async () => {
+    aircraftFindMany.mockResolvedValue([reserved, grounded, available, archived]);
+    vi.mocked(prisma.aircraft.count).mockResolvedValue(1002);
+
+    const result = await listScheduleAircraft(studentActor(), visibleBookings, { aircraftId: 'free', showAll: true });
+
+    expect(result.aircraftId).toBe('free');
+    expect(result.rows.map(({ id }) => id)).toEqual(['free']);
+    expect(result.filterOptions.map(({ id }) => id)).toEqual(['reserved', 'grounded', 'free', 'archived']);
+    expect(aircraftFindManyMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { OR: [
+        { id: { in: ['reserved', 'archived'] } },
+        { archivedAt: null, status: 'OUT_OF_SERVICE' },
+        { id: 'free', archivedAt: null },
+      ] },
+    }));
+  });
+
+  it('showing all includes free rows, but the free rows alone are not picker chips', async () => {
+    aircraftFindMany.mockResolvedValue([reserved, grounded, available, archived]);
+    vi.mocked(prisma.aircraft.count).mockResolvedValue(3);
+
+    const result = await listScheduleAircraft(adminActor(), visibleBookings, { showAll: true });
+
+    expect(aircraftFindManyMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { OR: [{ id: { in: ['reserved', 'archived'] } }, { archivedAt: null }] },
+    }));
+    expect(result.rows).toHaveLength(4);
+    expect(result.filterOptions.map(({ id }) => id)).toEqual(['reserved', 'grounded', 'archived']);
+    expect(result.freeCount).toBe(1);
+  });
+
+  it('ignores an unknown filter id', async () => {
+    aircraftFindMany.mockResolvedValue([reserved]);
+    vi.mocked(prisma.aircraft.count).mockResolvedValue(1002);
+
+    const result = await listScheduleAircraft(adminActor(), [{ aircraftId: 'reserved' }], { aircraftId: 'unknown' });
+
+    expect(result.aircraftId).toBeNull();
+    expect(result.rows.map(({ id }) => id)).toEqual(['reserved']);
   });
 
   it('listBookableStudents returns only active students, requires only self.read', async () => {

@@ -35,7 +35,7 @@ type PageProps = {
    * `string | string[]` because a REPEATED param is an ARRAY here (review 15.4
    * F2: the narrower type was a lie, and `?status=A&status=B` answered 500).
    */
-  searchParams: Promise<{ page?: string; view?: string; date?: string; status?: string | string[] }>;
+  searchParams: Promise<{ page?: string; view?: string; date?: string; status?: string | string[]; aircraft?: string | string[]; showAircraft?: string | string[] }>;
 };
 
 /** Staff/instructor picker candidate cap — same "small admin-managed list" convention as `flights/page.tsx`'s `OPTIONS_PAGE_SIZE`. */
@@ -121,7 +121,7 @@ function sanitizeDate(value: string | undefined, today: string): string {
  */
 export default async function BookingsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { page: pageParam, view: viewParam, date: dateParam, status: statusParam } = await searchParams;
+  const { page: pageParam, view: viewParam, date: dateParam, status: statusParam, aircraft: aircraftParam, showAircraft } = await searchParams;
   setRequestLocale(locale);
 
   const actor = await getSessionActor();
@@ -139,8 +139,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   const canCreate = canManageAny || canManageOwn;
 
-  // `listBookableAircraft` serves both the timeline (every viewer) and the
-  // create form's picker — called unconditionally (story 7.2 Task 3).
+  // Unchanged picker DTO. The timeline has its own bounded read (17.2).
   const aircraftOptions: AircraftOption[] = await listBookableAircraft(actor);
 
   // Story 7.3/12.3: needed for the create form's instructor toggle, the
@@ -215,22 +214,6 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   // the page fetched before this story.
   const statusFilter = sanitizeBookingStatusFilter(statusParam);
   const listStatuses: BookingStatusDto[] = statusFilter.param === null ? [...ALL_BOOKING_STATUSES] : statusFilter.statuses;
-  let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
-  let bookingsResult = await listBookings(actor, { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, page, status: listStatuses });
-  // Clamp an out-of-range ?page to the last real page (same pattern as `FlightsPage`).
-  const lastPage = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
-  if (page > lastPage) {
-    page = lastPage;
-    bookingsResult = await listBookings(actor, { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, page, status: listStatuses });
-  }
-  const totalPages = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
-
-  // "N in attesa" (story 12.3, AC 3, card-sub) — a dedicated cheap count
-  // query (`pageSize: 1`, only `.total` is read) rather than counting
-  // `bookingsResult.items` client-side, since that's only the CURRENT page.
-  const pendingResult = await listBookings(actor, { from: nowIso, status: ['PENDING'], page: 1, pageSize: 1 });
-  const pendingCount = pendingResult.total;
-
   // --- Timeline (story 7.2, AC 1; re-presented story 12.3, AC 2) ---------
   const today = todayDateOnlyInZone(APP_TIMEZONE);
   const view = sanitizeView(viewParam);
@@ -246,17 +229,41 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   // Story 12.11, AC 4: the day-view axis reads `sched.openTime`/`closeTime`
   // when configured, falling back to the original 06:00-22:00 default.
-  const schedulingSettings = await getSchedulingSettings();
+  const [schedulingSettings, calendarBookings] = await Promise.all([
+    getSchedulingSettings(),
+    listCalendarBookings(actor, { from: calendarFrom.toISOString(), to: calendarTo.toISOString() }),
+  ]);
   const { start: windowStartMinutes, end: windowEndMinutes } = resolveWindowMinutes(schedulingSettings.openTime, schedulingSettings.closeTime);
 
-  const calendarBookings = await listCalendarBookings(actor, { from: calendarFrom.toISOString(), to: calendarTo.toISOString() });
-  const scheduleAircraft = await listScheduleAircraft(actor, aircraftOptions, calendarBookings);
-  const dayBlocks = view === 'day' ? projectDayBlocks(calendarBookings, date, windowStartMinutes, windowEndMinutes) : [];
+  const schedule = await listScheduleAircraft(actor, calendarBookings, {
+    aircraftId: typeof aircraftParam === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(aircraftParam) ? aircraftParam : null,
+    showAll: showAircraft === 'all',
+  });
+  const aircraftFilter = schedule.aircraftId ? { aircraftId: schedule.aircraftId } : {};
+  const visibleCalendarBookings = schedule.aircraftId
+    ? calendarBookings.filter((booking) => booking.aircraftId === schedule.aircraftId)
+    : calendarBookings;
+  const dayBlocks = view === 'day' ? projectDayBlocks(visibleCalendarBookings, date, windowStartMinutes, windowEndMinutes) : [];
+
+  let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
+  const listQuery = { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, status: listStatuses, ...aircraftFilter };
+  const [firstPage, pendingResult] = await Promise.all([
+    listBookings(actor, { ...listQuery, page }),
+    // Dedicated count for the summary, with the same aircraft filter.
+    listBookings(actor, { from: nowIso, status: ['PENDING'], page: 1, pageSize: 1, ...aircraftFilter }),
+  ]);
+  // Clamp an out-of-range ?page to the last real page (same pattern as `FlightsPage`).
+  const lastPage = Math.max(1, Math.ceil(firstPage.total / BOOKINGS_PAGE_SIZE));
+  const bookingsResult = page <= lastPage ? firstPage : await listBookings(actor, { ...listQuery, page: lastPage });
+  page = Math.min(lastPage, page);
+  const totalPages = Math.max(1, Math.ceil(bookingsResult.total / BOOKINGS_PAGE_SIZE));
+  const pendingCount = pendingResult.total;
+
   // Story 12.3: the week view needs chips across the WHOLE displayed week
   // regardless of `view` (the day-view branch above only projects `date`
   // itself) — always computed when `view === 'week'`, matching the
   // `calendarBookings` range fetched for that case.
-  const weekChips = view === 'week' ? projectWeekChips(calendarBookings, weekDatesOnly) : [];
+  const weekChips = view === 'week' ? projectWeekChips(visibleCalendarBookings, weekDatesOnly) : [];
 
   const nowLinePercent = isToday
     ? clampToWindowPercent(wallMinutesOfDay(new Date()) - windowStartMinutes, windowEndMinutes - windowStartMinutes)
@@ -275,7 +282,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   /**
    * The phone agenda's rows (story 15.4, ratifiche R-15.4-h/R-15.4-i).
    *
-   * Built from `calendarBookings` — the SAME APPROVED-only read the desktop
+   * Built from `visibleCalendarBookings` — the SAME APPROVED-only read the desktop
    * timeline uses (zero new queries, and no divergence from the desktop on the
    * same data) — and NOT from `dayBlocks`: the day projection carries window
    * percentages the agenda has no use for, and drops the `startsAt`/`endsAt`/
@@ -286,7 +293,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
    */
   const agendaRows: ScheduleAgendaRow[] =
     view === 'day'
-      ? buildAgendaEntries(calendarBookings, scheduleAircraft, now).map((entry) =>
+      ? buildAgendaEntries(visibleCalendarBookings, schedule.rows, now).map((entry) =>
           entry.kind !== 'booking'
             ? {
                 kind: entry.kind,
@@ -323,6 +330,10 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   const prevDate = view === 'day' ? addDaysDateOnly(date, -1) : addDaysDateOnly(date, -7);
   const nextDate = view === 'day' ? addDaysDateOnly(date, 1) : addDaysDateOnly(date, 7);
+  const aircraftHrefQuery = {
+    ...(schedule.aircraftId ? { aircraft: schedule.aircraftId } : {}),
+    ...(schedule.showAll ? { showAircraft: 'all' } : {}),
+  };
 
   // Href builder (lesson 6.4 M1): every timeline link preserves the LIST
   // section's `?page` (only when it isn't the default page 1), never resets
@@ -340,6 +351,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         // list's new `?status` (story 15.4): moving the calendar must not
         // silently drop the filter the list below is showing.
         ...(statusFilter.param !== null ? { status: statusFilter.param } : {}),
+        ...aircraftHrefQuery,
       },
     };
   }
@@ -377,9 +389,9 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   // Story 15.4: `listStatuses`, not the constant — with `?status` in play the
   // rule ("l'export riflette gli STESSI filtri della lista") is only kept by
   // exporting exactly what the list was fetched with.
-  const exportHref = buildExportHref('/api/v1/bookings', { from: listFrom, status: listStatuses.join(',') }, locale);
+  const exportHref = buildExportHref('/api/v1/bookings', { from: listFrom, status: listStatuses.join(','), ...aircraftFilter }, locale);
   // Story 13.7, AC 2 — the PDF counterpart, same filters (dedicated route, spine :105).
-  const exportPdfHref = buildPdfExportHref('/api/v1/bookings/pdf', { from: listFrom, status: listStatuses.join(',') }, locale);
+  const exportPdfHref = buildPdfExportHref('/api/v1/bookings/pdf', { from: listFrom, status: listStatuses.join(','), ...aircraftFilter }, locale);
 
   // Story 7.3/12.3: serialize the already status-filtered, service-side rows
   // into plain wire DTOs before crossing the server -> client boundary
@@ -433,7 +445,12 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         today={today}
         isToday={isToday}
         weekDates={weekDates}
-        aircraft={scheduleAircraft}
+        aircraft={schedule.rows}
+        hasAircraft={schedule.activeCount > 0 || schedule.rows.length > 0}
+        aircraftFilterId={schedule.aircraftId}
+        aircraftFilters={schedule.filterOptions}
+        showAllAircraft={schedule.showAll}
+        freeAircraftCount={schedule.aircraftId ? 0 : schedule.freeCount}
         instructors={instructorOptions}
         dayBlocks={dayBlocks}
         weekChips={weekChips}
@@ -474,6 +491,8 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         canCreate={canCreate}
         canCreateNew={canCreateNew}
         status={statusFilter.param}
+        aircraftFilterId={schedule.aircraftId}
+        showAllAircraft={schedule.showAll}
         formMode={formMode}
         canForce={hasPermission(actor, 'requirements.force')}
         personOptions={personOptions}

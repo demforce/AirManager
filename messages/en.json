@@ -1284,6 +1284,9 @@
     "sub": "Aircraft timeline and bookings awaiting approval.",
     "occupied": "Booked",
     "schedule": {
+      "freeAircraftCount": "{count, plural, one {One more available aircraft} other {# more available aircraft}}",
+      "showFreeAircraft": "Show",
+      "hideFreeAircraft": "Hide",
       "cardTitle": "Schedule",
       "cardTitleToday": "Today's schedule",
       "prevMonth": "Previous month",

@@ -241,7 +241,7 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
     await expect(banner).toContainText('Fuori servizio registrato: 4 prenotazioni coinvolte.');
     await expect(banner).toContainText('In attesa (congelate): 1 · Approvate (da gestire): 3');
     await expect(banner).toContainText(`conteggio fino al ${formatDateOnly(until, 'it')} compreso`);
-    await expect(page.getByTestId('aog-impact-bookings-link')).toHaveAttribute('href', '/it/dashboard/bookings?status=PENDING,APPROVED');
+    await expect(page.getByTestId('aog-impact-bookings-link')).toHaveAttribute('href', `/it/dashboard/bookings?status=PENDING,APPROVED&aircraft=${aircraft.id}`);
 
     // The REQUIREMENT is "still there long after the toast is gone". The toast
     // lives 2600 ms (`toast.tsx`), so anything measured under that proves

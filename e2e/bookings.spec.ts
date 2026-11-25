@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
-import { BOOKING_BALANCE_FLOOR_CENTS, ensureBookingRequirements, ownFailures, personIdByEmail, selectFromCombobox, todayRome, type E2eRequirementFailure } from './helpers';
+import { BOOKING_BALANCE_FLOOR_CENTS, addDaysIso, ensureBookingRequirements, ownFailures, personIdByEmail, selectFromCombobox, todayRome, type E2eRequirementFailure } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -431,31 +431,6 @@ async function findBookingRow(page: Page, filterText: string | string[]): Promis
   throw new Error(`Booking row matching "${filterText}" not found within ${MAX_PAGES} pages of /dashboard/bookings`);
 }
 
-/**
- * Sums `booking-row` matches for `filterText` across EVERY page — the
- * `toHaveCount(N)` counterpart of `findBookingRow` above (N>1 case, same
- * pagination defect): a page-1-only count is meaningless once a heavily-
- * reused fixture day's pile can straddle a page boundary between the very
- * rows being counted.
- */
-async function countBookingRowsAcrossPages(page: Page, filterText: string | string[]): Promise<number> {
-  const filterTexts = Array.isArray(filterText) ? filterText : [filterText];
-  const MAX_PAGES = 50;
-  let total = 0;
-  for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
-    await page.goto(`/it/dashboard/bookings?page=${pageNumber}`);
-    await page.waitForLoadState('networkidle');
-    const row = filterTexts.reduce((locator, text) => locator.filter({ hasText: text }), page.getByTestId('booking-row'));
-    total += await row.count();
-    const statusLocator = page.getByTestId('booking-pagination-status');
-    if ((await statusLocator.count()) === 0) break; // a single page has no pagination controls at all
-    const statusText = (await statusLocator.textContent()) ?? '';
-    const totalPages = Number.parseInt(statusText.split('/')[1]?.trim() ?? '1', 10);
-    if (pageNumber >= totalPages) break;
-  }
-  return total;
-}
-
 test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
   test('pilot books via UI for a future interval; an overlap on an APPROVED booking shows 409 in the form; back-to-back (semi-open) succeeds', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -516,11 +491,12 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await formAfterApproval.getByRole('button', { name: 'Prenota' }).click();
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
 
-    // Both rows share the run-unique aircraft — counted across EVERY page
-    // (never assumed page 1, same reason `findBookingRow` above walks pages):
-    // a heavily-reused fixture day's pile can straddle a page boundary
-    // between these two very rows.
-    expect(await countBookingRowsAcrossPages(page, aircraft.registration)).toBe(2);
+    // Scope the table to this run's aircraft (17.2). Walking offsets in
+    // the global list used to double-count a row when another worker inserted
+    // a fixture ahead of the offset between two page loads.
+    await page.goto(`/it/dashboard/bookings?aircraft=${aircraft.id}`);
+    await expect(page.getByTestId('booking-row')).toHaveCount(2);
+    await expect(page.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toHaveCount(2);
   });
 
   test('staff books for another (run-unique) pilot from the "Pilota o allievo" picker', async ({ page }) => {
@@ -807,6 +783,71 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(targetDayCell.getByTestId('schedule-week-day-count')).toContainText('2');
   });
 
+  test('17.2 shows only relevant aircraft by default and keeps the URL filter in planning, list and downloads', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const booked = await createAircraft(page);
+    const free = await createAircraft(page);
+    const pilot = await createPilotPerson(page);
+    const targetDay = addDaysIso(todayRome(), 3);
+    const result = await page.request.post('/api/v1/bookings', {
+      data: { aircraftId: booked.id, personId: pilot.personId, startsAt: `${targetDay}T09:00:00.000Z`, endsAt: `${targetDay}T10:00:00.000Z`, force: true },
+    });
+    expect(result.status()).toBe(201);
+
+    await page.goto(`/it/dashboard/bookings?date=${targetDay}&status=APPROVED`);
+    const rows = page.getByTestId('schedule-aircraft-row');
+    const bookedRow = rows.filter({ hasText: booked.registration });
+    const freeRow = rows.filter({ hasText: free.registration });
+    await expect(bookedRow.getByTestId('schedule-block')).toHaveCount(1);
+    await expect(freeRow).toHaveCount(0);
+    await expect(page.getByTestId('schedule-section').locator('.grid-line')).toHaveCount(0);
+    await expect(bookedRow.locator('.sched-track')).toHaveCSS('background-image', /linear-gradient/);
+    await expect(bookedRow.locator('.sched-track')).toHaveCSS('--sched-hours', '16');
+
+    await page.getByTestId('schedule-toggle-free').click();
+    await expect(freeRow).toBeVisible();
+    await expect(page).toHaveURL(/showAircraft=all/);
+    await page.getByTestId('schedule-toggle-free').click();
+    await expect(page).not.toHaveURL(/showAircraft=all/);
+    await expect(freeRow).toHaveCount(0);
+
+    // The fixed popover closes on document scroll. Let the browser finish
+    // anchoring the shorter schedule and scrolling the trigger into view.
+    const filterTrigger = page.getByTestId('schedule-filter-toggle');
+    await filterTrigger.scrollIntoViewIfNeeded();
+    await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    await filterTrigger.click();
+    await expect(page.getByTestId('schedule-filter-done')).toBeVisible();
+    const chosen = page.getByTestId(`schedule-filter-aircraft-${booked.id}`);
+    await chosen.click();
+    await expect(chosen).toHaveAttribute('aria-current', 'true');
+    await page.getByTestId('schedule-filter-done').click();
+    await expect(rows).toHaveCount(1);
+    await expect(page.getByTestId('schedule-free-aircraft')).toHaveCount(0);
+    await expect(page.getByTestId('booking-row')).toHaveCount(1);
+    await expect(page.getByTestId('booking-row')).toContainText(booked.registration);
+
+    await page.getByTestId('export-menu-trigger').click();
+    for (const id of ['export-menu-pdf', 'export-menu-xls']) {
+      const href = await page.getByTestId(id).getAttribute('href');
+      const params = new URL(href!, page.url()).searchParams;
+      expect(params.get('aircraftId')).toBe(booked.id);
+      expect(params.get('status')).toBe('APPROVED');
+    }
+
+    await page.goto(`/it/dashboard/bookings?date=${targetDay}&status=APPROVED&aircraft=${free.id}`);
+    await expect(rows).toHaveCount(1);
+    await expect(freeRow).toBeVisible();
+    await expect(page.getByTestId('booking-row')).toHaveCount(0);
+    await page.getByTestId('calendar-view-week').click();
+    await expect(page).toHaveURL(new RegExp(`aircraft=${free.id}`));
+    await expect(page.getByTestId('schedule-week-day')).toHaveCount(7);
+
+    await page.goto(`/it/dashboard/bookings?date=${targetDay}&aircraft=no-such-id`);
+    await expect(bookedRow).toBeVisible();
+    await expect(page.getByTestId('schedule-free-aircraft')).toBeVisible();
+  });
+
   test('story 13.7 AC 1 (review F2/F3/F5): the filter popover escapes the card clip and its bottom-most control ("Fatto") is genuinely hit-testable — not just present in the DOM or reachable via Playwright\'s own auto-scroll', async ({
     page,
   }) => {
@@ -825,7 +866,11 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const created: Array<{ id: string }> = [];
     try {
       for (let i = 0; i < 6; i++) {
-        created.push(await createAircraft(page));
+        const aircraft = await createAircraft(page);
+        created.push(aircraft);
+        // 17.2 intentionally excludes free rows from the filter.
+        const grounded = await page.request.post(`/api/v1/aircraft/${aircraft.id}/out-of-service`, { data: { reason: 'Popovers e2e' } });
+        expect(grounded.status()).toBe(200);
       }
 
       await page.goto('/it/dashboard/bookings?view=week');
@@ -1225,8 +1270,9 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // Gone from the timeline too (an own-path booking starts PENDING, story
     // 12.2 AC 2 — it was never APPROVED, so it was never on the timeline to
     // begin with; this assertion is the exact mirror of that: still zero).
-    await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}`);
+    await page.goto(`/it/dashboard/bookings?date=${FUTURE_DAY}&aircraft=${aircraft2.id}`);
     const scheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft2.registration });
+    await expect(scheduleRow).toBeVisible();
     await expect(scheduleRow.getByTestId('schedule-block')).toHaveCount(0);
 
     // The freed slot (aircraft2 @ 13:00-14:00Z) accepts a brand-new booking.

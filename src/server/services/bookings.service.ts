@@ -1693,8 +1693,7 @@ async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
 export type BookableAircraftOption = { id: string; registration: string; model: string; status: AircraftStatus; statusReason: string | null };
 
 /**
- * Non-archived aircraft, for the booking form's aircraft picker (AC 1/3) AND
- * (story 12.3) the Pianificazione timeline's row list — `model` is additive
+ * Non-archived aircraft, for the booking form's aircraft picker (AC 1/3) — `model` is additive
  * (story 12.3, AC 2: the timeline row shows registration + model, ported
  * from the prototype's `.res-type`), every pre-12.3 caller already ignores
  * unknown fields. `self.read` (every role) — deliberately NOT `aircraft.manage`.
@@ -1714,25 +1713,51 @@ export async function listBookableAircraft(actor: Actor): Promise<BookableAircra
 
 type ScheduleAircraftOption = Omit<BookableAircraftOption, 'status'> & { status: BookableAircraftOption['status'] | 'ARCHIVED' };
 
-/** Confirm archive status only for aircraft missing from the active picker and visible in this range. */
+/**
+ * The schedule renders only booked or grounded aircraft unless the viewer
+ * explicitly requests the free rows. Archived aircraft appear when booked
+ * in the shown interval, or when a manager opens a direct fleet link.
+ */
 export async function listScheduleAircraft(
   actor: Actor,
-  active: readonly BookableAircraftOption[],
   bookings: readonly { aircraftId: string }[],
-): Promise<readonly ScheduleAircraftOption[]> {
+  { aircraftId = null, showAll = false }: { aircraftId?: string | null; showAll?: boolean },
+) {
   authorize(actor, 'self.read');
 
-  const activeIds = new Set(active.map(({ id }) => id));
-  const missingIds = [...new Set(bookings.map(({ aircraftId }) => aircraftId).filter((id) => !activeIds.has(id)))];
-  if (missingIds.length === 0) return active;
+  const bookedIds = new Set(bookings.map(({ aircraftId: id }) => id));
+  const includeFree = showAll && !aircraftId;
+  const [aircraft, activeCount] = await Promise.all([
+    prisma.aircraft.findMany({
+      where: {
+        OR: [
+          { id: { in: [...bookedIds] } },
+          includeFree ? { archivedAt: null } : { archivedAt: null, status: 'OUT_OF_SERVICE' },
+          ...(aircraftId ? [{ id: aircraftId, ...(hasPermission(actor, 'aircraft.manage') ? {} : { archivedAt: null }) }] : []),
+        ],
+      },
+      select: { id: true, registration: true, model: true, status: true, statusReason: true, archivedAt: true },
+      orderBy: { registration: 'asc' },
+    }),
+    prisma.aircraft.count({ where: { archivedAt: null } }),
+  ]);
 
-  const archived = await prisma.aircraft.findMany({
-    where: { id: { in: missingIds }, archivedAt: { not: null } },
-    select: { id: true, registration: true, model: true },
-    orderBy: { registration: 'asc' },
-  });
-  return [...active, ...archived.map((aircraft) => ({ ...aircraft, status: 'ARCHIVED' as const, statusReason: null }))]
-    .sort((a, b) => a.registration.localeCompare(b.registration));
+  const selected = aircraftId && aircraft.some((option) => option.id === aircraftId) ? aircraftId : null;
+  const relevant = (option: (typeof aircraft)[number]) =>
+    bookedIds.has(option.id) || (option.archivedAt === null && option.status === 'OUT_OF_SERVICE');
+  const rows: ScheduleAircraftOption[] = aircraft
+    .filter((option) => !selected || option.id === selected)
+    .map(({ archivedAt, ...option }) => archivedAt ? { ...option, status: 'ARCHIVED', statusReason: null } : option);
+  return {
+    rows,
+    filterOptions: aircraft.filter((option) => relevant(option) || option.id === selected).map(({ id, registration }) => ({ id, registration })),
+    aircraftId: selected,
+    showAll: selected ? showAll : includeFree,
+    // The count and the rows are concurrent reads, so a just-archived row
+    // may transiently appear in both snapshots. Never show a negative count.
+    freeCount: Math.max(0, activeCount - aircraft.filter((option) => option.archivedAt === null && relevant(option)).length),
+    activeCount,
+  };
 }
 
 export type BookablePersonOption = { id: string; firstName: string; lastName: string };

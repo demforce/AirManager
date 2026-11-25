@@ -154,6 +154,8 @@ type BookingsTableProps = {
   canCreateNew: boolean;
   /** The list's current `?status` (ratifica R-15.4-e), `null` when unfiltered — echoed by every href this card builds. */
   status: string | null;
+  aircraftFilterId?: string | null;
+  showAllAircraft?: boolean;
   formMode: NewBookingFormMode;
   /** Story 19.10: `requirements.force` — whether the requirements warnings (forms, approval) offer «Procedi comunque». */
   canForce: boolean;
@@ -194,6 +196,8 @@ export function BookingsTable({
   canCreate,
   canCreateNew,
   status,
+  aircraftFilterId,
+  showAllAircraft,
   formMode,
   canForce,
   personOptions,
@@ -465,6 +469,8 @@ export function BookingsTable({
         ...(view !== 'day' ? { view } : {}),
         ...(date !== today ? { date } : {}),
         ...(status ? { status } : {}),
+        ...(aircraftFilterId ? { aircraft: aircraftFilterId } : {}),
+        ...(showAllAircraft ? { showAircraft: 'all' } : {}),
         page: targetPage,
       },
     };
@@ -483,6 +489,8 @@ export function BookingsTable({
         ...(view !== 'day' ? { view } : {}),
         ...(date !== today ? { date } : {}),
         ...(nextStatus ? { status: nextStatus } : {}),
+        ...(aircraftFilterId ? { aircraft: aircraftFilterId } : {}),
+        ...(showAllAircraft ? { showAircraft: 'all' } : {}),
       },
     };
   }
