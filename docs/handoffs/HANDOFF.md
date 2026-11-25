@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.5 chiusa, 17.6 prossima)
+# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.6 chiusa)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -9,7 +9,9 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 ## Current Progress
 
-- **17.5 done** (`eb0cf2b`): revisione indipendente Codex approvata, due rilievi bassi nel record. Gate 2.293 unit e build; 624 browser su dati sintetici, sette casi recuperati dopo retry. Panoramica da 82 a 53 statement e da 5 a 0 BEGIN. La 17.6 è il prossimo traguardo.
+- **17.6 done** (`a85f77c`). Revisione indipendente GPT 6 Sol xhigh approvata. Gate verdi con 2.306 unit e 626 casi browser su dati sintetici, uno recuperato al retry. Limite della prova ACL documentato nel record della story.
+
+- **17.5 done** (`eb0cf2b`): revisione indipendente Codex approvata, due rilievi bassi nel record. Gate 2.293 unit e build; 624 browser su dati sintetici, sette casi recuperati dopo retry. Panoramica da 82 a 53 statement e da 5 a 0 BEGIN.
 
 - **17.4 done** (`0f6cc37`): Statistiche e ricavi aggregati, classifiche con anteprima 8 e pagina separata; indici del registro verificati. Statistiche a 375 px: 1.214 → 122 KiB e 348 → 128 ms; parità a 10 finestre e su catene sintetiche. 2.283 unit, browser: 624 passati, 0 saltati, 0 flaky, 0 falliti. Push su `dev` previsto con soli commit verificati e senza modificare `main`.
 

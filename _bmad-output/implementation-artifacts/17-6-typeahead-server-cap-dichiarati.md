@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.6: Typeahead server-side per persone e velivoli, cap dichiarati ovunque restino
 
-Status: **review** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (UI: `SearchCombobox`, form prenotazione, filtro del Registro voli, avvisi; skill `design-taste-frontend` + `ui-ux-pro-max`). Review: Opus 5 xhigh adversarial. **Ordine**: dopo l'Epic 16 (16.5 tocca `bookings.service.ts`, `registry.ts`, `messages`, `instructors-console.tsx`; 16.7 estende `maskBookingNames` a `personId` e TD-16.7-a diventa vivo con T1; 16.8 aggiunge `listArchivedAircraftByIds`; 16.9 tocca `transaction-editor.tsx` e `flight-editor.tsx`) e dopo 17.2 (il suo filtro per URL userà la ricerca di T1) e 17.5 (riscrive la lettura di `listPeople`/`listAircraft`). 18.4 consuma da T1 la ricerca velivolo e istruttore. Righe da rileggere su HEAD al momento del dev.
+Status: **done** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (UI: `SearchCombobox`, form prenotazione, filtro del Registro voli, avvisi; skill `design-taste-frontend` + `ui-ux-pro-max`). Review: Opus 5 xhigh adversarial. **Ordine**: dopo l'Epic 16 (16.5 tocca `bookings.service.ts`, `registry.ts`, `messages`, `instructors-console.tsx`; 16.7 estende `maskBookingNames` a `personId` e TD-16.7-a diventa vivo con T1; 16.8 aggiunge `listArchivedAircraftByIds`; 16.9 tocca `transaction-editor.tsx` e `flight-editor.tsx`) e dopo 17.2 (il suo filtro per URL userà la ricerca di T1) e 17.5 (riscrive la lettura di `listPeople`/`listAircraft`). 18.4 consuma da T1 la ricerca velivolo e istruttore. Righe da rileggere su HEAD al momento del dev.
 
 ## Story
 
@@ -98,7 +98,7 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 
 ### Agent Model Used
 
-Codex Cloud, un solo agente di sviluppo. Revisione indipendente Opus 5 xhigh in attesa.
+Codex Cloud, un solo agente di sviluppo. Revisione indipendente approvata da GPT 6 Sol xhigh, sostituto autorizzato dal PO.
 
 ### Completion Notes List
 
@@ -139,3 +139,9 @@ Otto target di `bench.mjs`, cinque iterazioni e dieci richieste concorrenti per 
 **Prove discriminanti e diagnostica.** Su copia della base, i due unit del calendario (1.000 e 1.001 righe) falliscono sul vecchio array senza `items` (Vitest exit 1). Sul browser pre-fix la selezione staff oltre 100 va in timeout e la guardia nativa legge 55 opzioni contro un massimo di 50 (Playwright exit 1). Su copie isolate del codice modificato i test falliscono (exit 1) togliendo rispettivamente la lettura della riga 21, la soglia di due caratteri o il reinserimento della selezione. I test di autorizzazione controllano il rifiuto esplicito per ruolo, il profilo istruttore disattivato e l’assenza di letture della rosa quando l’accesso viene negato.
 
 **Gate e recuperi.** La build esplorativa con `next build --webpack` è uscita con 1 per il tipo del contesto GET della route preesistente `accounts/negative-balances`. Il comando di build del repository usa Turbopack ed è passato. Il primo `npm run gates` è uscito con 1 per TS2339 nel nuovo test browser (proprietà DOM `options`). Corretto il conteggio degli elementi e ripetuto il gate completo: exit 0, lint, typecheck, 2.306 unit e build production. Nel primo run integrato browser, il test del velivolo fuori servizio metteva a terra il velivolo prima della ricerca: il nuovo picker lo mostrava correttamente disabilitato. Il test è stato corretto selezionando prima il velivolo operativo e mettendolo a terra prima del salvataggio, per verificare la 422 prevista.
+
+### Revisione indipendente e chiusura — 2026-11-25
+
+Il revisore separato `review176`, avviato con `fork_turns=none`, `model=gpt-6-sol` e `reasoning_effort=xhigh`, ha approvato il diff `f375b3e..a85f77c` senza rilievi bloccanti. Ha esaminato i criteri 1–15, contratti, autorizzazioni, masking, UI, misure e log dei gate eseguiti dallo sviluppo. Gate finale exit 0, 2.306 unit; Chromium exit 0, 625 passati al primo tentativo e un retry Mailpit.
+
+Per pilota e allievo il test del servizio fallisce con un successo sintetico nel doppio (exit 1, due casi) e passa sul servizio originale (exit 0, due casi). Il piano include una mutazione del gate ACL che il PO ha escluso dall’esecuzione. Il revisore ha accettato questo limite.
