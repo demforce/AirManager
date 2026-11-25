@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.7: Export PDF a stream
 
-Status: **in-progress** — implementation and synthetic verification on 2026-11-25; independent review pending. Original story created 2026-11-03 on `e951960`. **Dev/review model substitution:** per Enrico's permanent AirManager instruction, use GPT 6 Sol in place of Opus 5 xhigh. **Ordine**: dopo il commit della 16.5 (stessi file `exports.service.ts`, `exports.service.test.ts`, `registry.ts`) e della 16.6a (rinomina le intestazioni del Report di cassa): gli screenshot prima/dopo vanno presi sulla **stessa** base.
+Status: **done** — implementation, synthetic verification and independent review completed 2026-11-25. Original story created 2026-11-03 on `e951960`. **Dev/review model substitution:** per Enrico's permanent AirManager instruction, use GPT 6 Sol in place of Opus 5 xhigh. **Ordine**: dopo il commit della 16.5 (stessi file `exports.service.ts`, `exports.service.test.ts`, `registry.ts`) e della 16.6a (rinomina le intestazioni del Report di cassa): gli screenshot prima/dopo vanno presi sulla **stessa** base.
 
 ## Story
 
@@ -140,3 +140,7 @@ Codex (single delegated development context). Independent review has not yet bee
 - `src/server/adapters/pdf/document.ts` (replaces `document.tsx`), `document.test.ts`; `next.config.ts`; `playwright.config.ts`; `package.json`, `package-lock.json`; `src/lib/export-caps.ts`, `src/lib/schemas/registry.ts`; `_bmad-output/planning-artifacts/architecture/architecture-AirManager-2026-07-04/ARCHITECTURE-SPINE.md`.
 - `src/app/[locale]/dashboard/{page.tsx,logbook/page.tsx,logbook/logbook-console.tsx,bookings/page.tsx,bookings/bookings-table.tsx,expiries/page.tsx,expiries/scadenze-console.tsx}`; `messages/{it,en}.json`; `e2e/account-statement-period.spec.ts`.
 - `scripts/perf/{pdf-bench.ts,pdf-mutants.sh,bench.mjs,targets.json,README.md}`; `docs/superpowers/plans/2026-11-25-story-17-7-pdf-stream.md`; fifteen side-by-side PNGs and one oversize-row PNG, plus benchmark, parity, UI, and SHA-256 records under `_bmad-output/implementation-artifacts/evidence/17-7/`.
+
+### Independent review and closure — 2026-11-25
+
+GPT 6 Sol xhigh in a separate read-only reviewer context first requested changes for the oversize-row text loss at `c5b1c21`. The sole developer corrected it in `6326e7a`. The same independent reviewer reran the 600-character case (600/600, one page), recomputed 24/24 page text comparisons and 25/25 artifact hashes, checked final gates (2,308 unit and build) and production PDF e2e (9/9), and **approved** the corrected diff with no blocking findings. The full 626-case browser suite preceded the final adapter correction; the final PDF-specific 9 cases passed afterward. Old flights endpoint has one post-warm baseline sample; old expiries target returned 422. A row too tall even for expanded layout now fails rendering before response rather than silently truncating.

@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.6 chiusa)
+# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.7 chiusa)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -8,6 +8,8 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **Fonte di verità**: `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Current Progress
+
+- **17.7 done** (`6326e7a`): pdfkit 0.20.2, PDF massimo 5.000 righe, messaggi UI oltre i tetti. Revisione indipendente GPT 6 Sol xhigh approvata dopo correzione della riga lunga. Gate 2.308 unit e build; 626 casi browser nella suite completa prima dell’ultima correzione, poi 9/9 export PDF sulla build finale. p50 endpoint voli 2.739 ms sul carico sintetico; parità testuale dei cinque report pagina per pagina.
 
 - **17.6 done** (`a85f77c`). Revisione indipendente GPT 6 Sol xhigh approvata. Gate verdi con 2.306 unit e 626 casi browser su dati sintetici, uno recuperato al retry. Limite della prova ACL documentato nel record della story.
 

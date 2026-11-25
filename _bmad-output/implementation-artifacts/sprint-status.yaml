@@ -496,7 +496,7 @@ development_status:
   17-4-statistiche-ledger-mensile-sql: done  # ricavi/ore aggregati, classifiche paginabili, indici e parità verificati sullo stack integrato
   17-5-letture-senza-transazione-interattiva: done  # 2026-11-25: gate, 624 e2e e benchmark su dati sintetici nel record della story.
   17-6-typeahead-server-cap-dichiarati: done  # story file 2026-11-03 + ratifiche PO Q-17.6-a..f (Q-17.6-c supera la decisione PO del 2026-07-21 sul filtro velivolo del registro); dev Opus
-  17-7-export-pdf-stream: in-progress  # implementation + synthetic gates underway; independent review pending; pdfkit 0.20.2
+  17-7-export-pdf-stream: done  # independent GPT 6 Sol xhigh review approved; pdfkit 0.20.2
   17-8-alert-job-a-lotti: ready-for-dev  # story file 2026-11-03 + ratifiche PO Q-17.8-a..e (200 per giro, ritentativo, mai doppio, email velivolo dopo la risposta, «altri N in coda»); dev Opus DOPO 16.8/16.9
   epic-17-retrospective: optional
   epic-18: backlog
