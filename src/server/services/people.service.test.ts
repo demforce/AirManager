@@ -143,7 +143,7 @@ const personFindUnique = findUniqueMock as unknown as { mockResolvedValue: (v: P
 const personFindFirst = findFirstMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 const personCreate = createMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 const personUpdate = updateMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
-const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void };
+const personFindMany = findManyMock as unknown as { mockResolvedValue: (v: PersonFixture[]) => void };
 const pilotProfileUpsert = pilotProfileUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 const studentProfileUpsert = studentProfileUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
 const instructorProfileUpsert = instructorProfileUpsertMock as unknown as { mockResolvedValue: (v: PersonFixture) => void };
@@ -237,10 +237,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     // form (invokes the callback with the plain `prisma` mock as `tx`) and a
     // legacy batch-array argument (`Promise.all`), same rationale as
     // `mockTransaction` in `cash.service.test.ts`.
-    // Per-test `transaction.mockResolvedValue(...)` calls (e.g. `listPeople`'s
-    // `[items, total]`) still override this default outright (they don't
-    // inspect the argument at all), since they run later in the same test.
-    (transaction as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation(
+    (transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation(
       (arg: unknown) => (typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[])),
     );
   });
@@ -291,8 +288,22 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
   });
 
   describe('listPeople', () => {
+    it('reads the page and filtered total without a transaction (17.5 AC 2)', async () => {
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(31);
+
+      const result = await listPeople(adminActor(), { page: 2, pageSize: 10, includeArchived: false, profile: 'instructor' });
+
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(findManyMock).toHaveBeenCalledTimes(1);
+      expect(countMock).toHaveBeenCalledTimes(1);
+      expect(countMock).toHaveBeenCalledWith({ where: findManyMock.mock.calls[0]?.[0]?.where });
+      expect(result.total).toBe(31);
+    });
+
     it('returns the AD-8 paginated shape', async () => {
-      transaction.mockResolvedValue([[SELECTED_PERSON], 1]);
+      personFindMany.mockResolvedValue([SELECTED_PERSON]);
+      countMock.mockResolvedValueOnce(1);
 
       const result = await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
@@ -317,17 +328,15 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     });
 
     it('flags a profile as active only when it exists with deactivatedAt null (story 2.2, AC 1)', async () => {
-      transaction.mockResolvedValue([
-        [
-          {
-            ...SELECTED_PERSON,
-            pilotProfile: { deactivatedAt: null },
-            studentProfile: { deactivatedAt: new Date('2026-03-01T00:00:00.000Z') },
-            instructorProfile: null,
-          },
-        ],
-        1,
+      personFindMany.mockResolvedValue([
+        {
+          ...SELECTED_PERSON,
+          pilotProfile: { deactivatedAt: null },
+          studentProfile: { deactivatedAt: new Date('2026-03-01T00:00:00.000Z') },
+          instructorProfile: null,
+        },
       ]);
+      countMock.mockResolvedValue(1);
 
       const result = await listPeople(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
@@ -335,11 +344,6 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     });
 
     it('excludes archived persons by default (AC 2)', async () => {
-      // Interactive-callback transaction (story TD-1, AC 3): the generic
-      // `beforeEach` `mockImplementation` invokes the callback with `prisma`
-      // as `tx`, so `findMany`/`count` must resolve on their OWN mocks now —
-      // a per-test `transaction.mockResolvedValue(...)` override would skip
-      // invoking the callback entirely (never calling `findMany`).
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
@@ -786,7 +790,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     }
 
     function runOn(tx: unknown): void {
-      (transaction as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation((arg: unknown) =>
+      (transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation((arg: unknown) =>
         (arg as (t: unknown) => unknown)(tx),
       );
     }
@@ -1391,7 +1395,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     }
 
     function runOn(tx: unknown): void {
-      (transaction as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation((arg: unknown) =>
+      (transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation((arg: unknown) =>
         (arg as (t: unknown) => unknown)(tx),
       );
     }
@@ -1481,7 +1485,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     });
 
     it('enriches a multi-person page with batched balance/last-flight/user-status reads, never a per-row query', async () => {
-      transaction.mockResolvedValue([[PERSON_A, PERSON_B], 2]);
+      personFindMany.mockResolvedValue([PERSON_A, PERSON_B]);
+      countMock.mockResolvedValueOnce(2);
       accountFindMany.mockResolvedValue([
         { id: 'account_a', personId: 'person_a' },
         // person_b never activated a pilot/student profile — no Account row.
@@ -1534,7 +1539,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     });
 
     it('reports fleet-wide (unfiltered) totalCount/suspendedCount headline stats alongside the filtered page', async () => {
-      transaction.mockResolvedValue([[PERSON_A], 1]);
+      personFindMany.mockResolvedValue([PERSON_A]);
+      countMock.mockResolvedValueOnce(1);
       accountFindMany.mockResolvedValue([]);
       flightGroupBy.mockResolvedValue([]);
       userFindMany.mockResolvedValue([]);
@@ -1550,7 +1556,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     });
 
     it('skips every enrichment query when the page is empty', async () => {
-      transaction.mockResolvedValue([[], 0]);
+      personFindMany.mockResolvedValue([]);
+      countMock.mockResolvedValueOnce(0);
       countMock.mockResolvedValue(0);
       userCount.mockResolvedValue(0);
 

@@ -556,11 +556,11 @@ function toRegistryItem(row: RegistryRow, today: Date, settings: CurrencySetting
  * different `daysUntil` between 00:00 and 02:00. The currency settings (X, Y)
  * are read once per call.
  */
-export async function listAllExpiries(actor: Actor, query: ListAllExpiriesQuery): Promise<ExpiryDashboardListResult> {
+export async function listAllExpiries(actor: Actor, query: ListAllExpiriesQuery, currencySettings?: CurrencySettings): Promise<ExpiryDashboardListResult> {
   authorize(actor, 'expiries.manage');
 
   const today = todayDateOnlyInZone(APP_TIMEZONE);
-  const settings = await getCurrencySettings();
+  const settings = currencySettings ?? await getCurrencySettings();
   const rowsSql = registryRowsSql(today, settings);
   const whereSql = registryWhereSql(query, today);
   const { skip, take } = paginationOffset(query);

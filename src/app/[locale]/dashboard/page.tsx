@@ -21,7 +21,7 @@ import { hasPermission, type Actor } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getAccountOverview, getNegativeBalanceSummary } from '@/server/services/accounts.service';
 import { listAircraft, listOutOfServiceAircraft } from '@/server/services/aircraft.service';
-import { getAirfieldBranding, getAirfieldIcao, getMetarStation, getSchedulingSettings } from '@/server/services/app-settings.service';
+import { getAdminOverviewSettings, getMetarStation } from '@/server/services/app-settings.service';
 import {
   getOwnInstructorProfileId,
   listActiveInstructors,
@@ -38,7 +38,8 @@ import { getOwnCompensationSummary } from '@/server/services/instructor-compensa
 import { getMetar } from '@/server/services/metar.service';
 import { getMe, type MeResult } from '@/server/services/me.service';
 import { listPeople } from '@/server/services/people.service';
-import { getStats } from '@/server/services/stats.service';
+import { currentMonthRange } from '@/lib/period-presets';
+import { getLedgerRevenueCents } from '@/server/services/transactions.service';
 import {
   buildBookingsTableLabels,
   buildNewBookingFormLabels,
@@ -225,8 +226,8 @@ function slotRange(booking: BookingListItem, displayLocale: DisplayLocale): stri
  * failure degrades to `null` by the service's contract, and `null` renders
  * NOTHING (same `metar &&` guard the sidebar has always applied).
  */
-async function renderMobileMetarCard(title: string): Promise<ReactElement | null> {
-  const station = await getMetarStation();
+async function renderMobileMetarCard(title: string, configuredStation?: string): Promise<ReactElement | null> {
+  const station = configuredStation ?? await getMetarStation();
   const metar = await getMetar(station);
   if (!metar) return null;
   return <MobileMetarCard station={station} tempC={Math.round(metar.tempC)} category={metar.category} raw={metar.raw} labels={{ title }} />;
@@ -253,22 +254,19 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const tomorrowStart = zonedMidnightUtc(addDaysDateOnly(today, 1), APP_TIMEZONE);
   const listFrom = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
 
-  // Sequential (NOT Promise.all): `listAircraft`/`listPeople` each run their
-  // own interactive `$transaction` (Dev Notes, `people.service.ts#listPeople`'s
-  // own doc-comment) — never concurrently with EACH OTHER.
+  const month = currentMonthRange(now);
   const aircraftResult = await listAircraft(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: false });
   const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: false });
 
   const allAircraftIds = aircraftResult.items.map((aircraft) => aircraft.id);
   const operationalIds = aircraftResult.items.filter((aircraft) => aircraft.status === 'OPERATIONAL').map((aircraft) => aircraft.id);
 
+  const settings = getAdminOverviewSettings();
   const [
-    icao,
-    branding,
-    schedulingSettings,
+    { icao, branding, schedulingSettings },
     reservedIds,
     pendingBookingsResult,
-    monthStats,
+    revenueCents,
     flightsTodayTotals,
     calendarBookingsToday,
     embedPendingResult,
@@ -280,12 +278,10 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     metarCard,
     outOfServiceAircraft,
   ] = await Promise.all([
-    getAirfieldIcao(),
-    getAirfieldBranding(),
-    getSchedulingSettings(),
+    settings,
     listReservedAircraftIds(actor, allAircraftIds, now),
     listBookings(actor, { status: ['PENDING'], page: 1, pageSize: 1 }),
-    getStats(actor, { period: 'month' }),
+    getLedgerRevenueCents(actor, month.from, month.to),
     getFlightTotals(actor, { dateFrom: today, dateTo: today, page: 1, pageSize: 1 }),
     listCalendarBookings(actor, { from: todayStart.toISOString(), to: tomorrowStart.toISOString() }),
     // Windowed PENDING count for the desktop card's "N in attesa" summary
@@ -298,7 +294,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     // (PO decision 2026-07-26, replacing story 12.12's pending-first
     // ordering — two concatenated queries made the dates look unsorted).
     listBookings(actor, { from: listFrom, status: [...ALL_BOOKING_STATUSES], page: 1, pageSize: EMBED_BOOKINGS_PAGE_SIZE }),
-    listAllExpiries(actor, { window: '60', page: 1, pageSize: EXPIRIES_WIDGET_SCAN_LIMIT }),
+    settings.then(({ currencySettings }) => listAllExpiries(actor, { window: '60', page: 1, pageSize: EXPIRIES_WIDGET_SCAN_LIMIT }, currencySettings)),
     listBookableAircraft(actor),
     listActiveInstructors(actor),
     // Story 15.3 (ratifica R-15.3-e): the ONE new query the mobile "Avvisi"
@@ -310,7 +306,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     // a settings read plus an upstream HTTP fetch, and serializing it added
     // that latency to every render of the home — including at 1280px, where the
     // card has a 0x0 box. R-15.3-f ratified the double fetch, not the wait.
-    renderMobileMetarCard(t('mobile.metarTitle')),
+    settings.then(({ metarStation }) => renderMobileMetarCard(t('mobile.metarTitle'), metarStation)),
     // Story AOG-1a, AC 13 (ratifica R-AOG-f): the FLEET-WIDE grounded set, the
     // very same unpaginated reader `/dashboard/fleet` uses for its own "N AOG".
     // See `aogCount` below for the defect this closes.
@@ -547,7 +543,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           <KPI label={t('overview.kpis.bookingsPending')} value={pendingBookingsResult.total} />
         </div>
         <div data-testid="kpi-revenue">
-          <KPI label={t('overview.kpis.revenue')} value={formatCents(monthStats.kpis.revenueCents, displayLocale)} />
+          <KPI label={t('overview.kpis.revenue')} value={formatCents(revenueCents, displayLocale)} />
         </div>
       </div>
 

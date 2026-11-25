@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { currentMonthRange } from '@/lib/period-presets';
 import { listTransactionsQuerySchema } from '@/lib/schemas/transactions';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError, ValidationError } from './errors';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
+    flight: { groupBy: vi.fn().mockResolvedValue([]) },
     accountMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn(), groupBy: vi.fn() },
     cashMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn(), groupBy: vi.fn() },
   },
@@ -19,6 +21,12 @@ vi.mock('@/server/db/prisma', () => ({
 vi.mock('./accounts.service', () => ({ recordTopUp: vi.fn(), recordAdjustment: vi.fn() }));
 vi.mock('./cash.service', () => ({ recordCashMovement: vi.fn() }));
 
+vi.mock('./stats-rankings.service', () => ({
+  readStatsRankingPreviewPair: async () => ({ hours: { items: [], total: 0 }, money: { items: [], total: 0 } }),
+  listStatsRanking: async () => ({ items: [], total: 0 }),
+}));
+vi.mock('./app-settings.service', () => ({ getSchedulingSettings: async () => ({ openTime: null, closeTime: null }) }));
+const { getStats } = await import('./stats.service');
 const { prisma } = await import('@/server/db/prisma');
 const { getLedgerRevenueByDay, getLedgerRevenueCents, listTransactions, recordTransaction } = await import('./transactions.service');
 const { recordTopUp, recordAdjustment } = await import('./accounts.service');
@@ -779,6 +787,30 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
 
 
 describe('daily ledger revenue (17.4)', () => {
+  it('the overview ledger total equals the monthly statistics KPI across a Rome month boundary', async () => {
+    const now = new Date('2026-07-31T22:30:00Z'); // Already August in Rome.
+    const { from, to } = currentMonthRange(now);
+    const prior = new Date('2026-07-31T00:00:00Z');
+    const first = new Date('2026-08-01T00:00:00Z');
+    const last = new Date('2026-08-31T00:00:00Z');
+    vi.mocked(prisma.accountMovement.groupBy).mockResolvedValue([
+      { effectiveDate: prior, _sum: { amountCents: -999 } },
+      { effectiveDate: first, _sum: { amountCents: -1750 } },
+      { effectiveDate: last, _sum: { amountCents: 250 } },
+    ] as never);
+    vi.mocked(prisma.cashMovement.groupBy).mockResolvedValue([{ effectiveDate: first, _sum: { amountCents: -300 } }] as never);
+    aggregateByRange(accountAggregate, { '2026-08-01': -1500 });
+    aggregateByRange(cashAggregate, { '2026-08-01': -300 });
+
+    const stats = await getStats(adminActor(), { period: 'month' }, now);
+    const revenue = await getLedgerRevenueCents(adminActor(), from, to);
+    expect(revenue).toBe(1200);
+    expect(revenue).toBe(stats.kpis.revenueCents);
+    for (const mock of [accountAggregateMock, cashAggregateMock]) {
+      expect(mock.mock.calls[0]?.[0]?.where).toMatchObject({ effectiveDate: { gte: first, lte: last } });
+    }
+  });
+
   it('aggregates each book once and uses the same date bounds, sign and ledger classification as totals', async () => {
     const from = new Date('2026-01-01T00:00:00.000Z');
     const to = new Date('2026-02-28T00:00:00.000Z');

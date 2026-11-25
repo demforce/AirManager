@@ -133,12 +133,13 @@ describe('getStats (story 12.10, AC 1)', () => {
 
   it('uses the total operational fleet, not the number of preview rows, as the utilization denominator', async () => {
     getSchedulingSettingsMock.mockResolvedValue({ openTime: '08:00', closeTime: '20:00', minSlotMinutes: null, turnaroundMinutes: null, maxAdvanceDays: null });
-    rankingsMock.mockResolvedValue({ hours: { items: [{ key:'a', label: 'A', minutes: 6696, cents: 0 }], total: 12 }, money: empty });
+    rankingsMock.mockResolvedValue({ hours: { items: [{ key:'a', label: 'A', minutes: 6696, cents: 0 }], total: 1460 }, money: empty });
     flightGroupByMock.mockImplementation((async (args: { by: string[] }) => args.by[0] === 'flightType'
       ? [{ flightType: 'SCHOOL', _count: { _all: 1 }, _sum: { minutes: 6696 } }]
       : []) as never);
     const result = await getStats(adminActor(), { period: 'month', ref: '2026-07' }, NOW);
-    expect(result.kpis.fleetUtilization).toBeCloseTo(6696 / (31 * 12 * 60 * 12));
+    expect(result.kpis.fleetUtilization).toBeCloseTo(6696 / (31 * 12 * 60 * 1460), 10);
+    expect(rankingsMock.mock.calls.filter(([scope]) => scope === 'fleet')).toHaveLength(1);
     rankingsMock.mockResolvedValue({ hours: empty, money: empty });
     expect((await getStats(adminActor(), { period: 'month' }, NOW)).kpis.fleetUtilization).toBeNull();
   });

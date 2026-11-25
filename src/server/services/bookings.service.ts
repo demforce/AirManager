@@ -987,15 +987,14 @@ export async function listBookings(actor: Actor, query: ListBookingsQuery): Prom
     ...(query.personId ? { personId: query.personId } : {}),
   };
 
-  const [items, total] = await prisma.$transaction([
-    prisma.booking.findMany({
-      select: BOOKING_SELECT,
-      where,
-      orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
-      ...paginationOffset(query),
-    }),
-    prisma.booking.count({ where }),
-  ]);
+  // READ COMMITTED takes a fresh snapshot per statement, even inside a transaction.
+  const items = await prisma.booking.findMany({
+    select: BOOKING_SELECT,
+    where,
+    orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
+    ...paginationOffset(query),
+  });
+  const total = await prisma.booking.count({ where });
 
   return paginate(
     items.map((item) => maskBookingNames(actor, canReadNames, ownInstructorProfileId, toListItem(item))),

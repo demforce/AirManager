@@ -78,10 +78,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const personQuery = sp.personQuery || undefined;
   const unattributed = sp.unattributed === 'true';
 
-  // Sequential (not `Promise.all`): `listPeople` runs an interactive
-  // `$transaction` internally — same "never concurrent with another
-  // `$transaction`-based read" constraint documented on the logbook/fleet
-  // pages' own options-fetch blocks.
   const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
   const personOptions = peopleResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
 

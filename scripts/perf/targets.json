@@ -11,7 +11,7 @@
   { "name": "api flights default", "path": "/api/v1/flights", "burst": true },
   { "name": "api flights aircraft", "path": "/api/v1/flights?aircraftId={AIRCRAFT}" },
   { "name": "api stats month", "path": "/api/v1/stats?period=month", "burst": true },
-  { "name": "api stats year", "path": "/api/v1/stats?period=year" },
+  { "name": "api stats year", "path": "/api/v1/stats?period=year", "burst": true },
   { "name": "api transactions", "path": "/api/v1/transactions" },
   { "name": "api transactions month", "path": "/api/v1/transactions?from={MONTH_START}&to={TODAY}" },
   { "name": "api negative balances", "path": "/api/v1/accounts/negative-balances" },

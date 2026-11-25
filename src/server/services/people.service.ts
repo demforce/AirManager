@@ -216,24 +216,14 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   }
   const where = conditions.length > 0 ? { AND: conditions } : {};
 
-  // Interactive transaction (story TD-1, AC 3) — a batch `$transaction([...])`
-  // sends both queries over the shared driver-adapter connection without
-  // waiting for the first to finish, which the underlying `pg` driver flags
-  // as a deprecated "client already executing a query" (only ever surfaces
-  // once per process, per Node's warning dedup — reproduced empirically on a
-  // fresh dev server before this fix). The awaited callback form serializes
-  // the two reads while staying in the SAME transaction (still one
-  // consistent snapshot for items/total under concurrent writes).
-  const [items, total] = await prisma.$transaction(async (tx) => {
-    const items = await tx.person.findMany({
-      where,
-      select: PERSON_SELECT,
-      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
-      ...paginationOffset(query),
-    });
-    const total = await tx.person.count({ where });
-    return [items, total] as const;
+  // READ COMMITTED takes a fresh snapshot per statement, even inside a transaction.
+  const items = await prisma.person.findMany({
+    where,
+    select: PERSON_SELECT,
+    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    ...paginationOffset(query),
   });
+  const total = await prisma.person.count({ where });
 
   return paginate(items.map(toListItem), total, query);
 }

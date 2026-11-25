@@ -63,7 +63,7 @@ Two changes, both dev-machine tuning (assumes 4-8 GB RAM):
 
 | Setting | Value | Verify |
 |---|---|---|
-| `shm_size` | `512mb` | `docker compose exec -T postgres df -h /dev/shm` |
+| `shm_size` | `1gb` | `docker compose exec -T postgres df -h /dev/shm` |
 | `shared_buffers` | `512MB` | `docker compose exec -T postgres psql -U airmanager -d airmanager_load -Atc "SHOW shared_buffers"` |
 | `work_mem` | `16MB` | `... -Atc "SHOW work_mem"` |
 | `effective_cache_size` | `3GB` | `... -Atc "SHOW effective_cache_size"` |
@@ -108,12 +108,14 @@ handlers and page rendering each instantiate `src/server/db/prisma.ts` in
 their own layer, so one `next start` opens up to 2 × `DATABASE_POOL_MAX`
 connections (measured: 6 client backends at `DATABASE_POOL_MAX=3` under one
 API+page burst; multiply further by however many `next start`/container
-instances point at the same database). This story does not change the
-default or fix the `P2028 Unable to start a transaction in the given time`
-that shows up under contention — see the harness's pool-10-vs-20 comparison
-in story 17.1's Dev Agent Record for the numbers that inform story 17.5,
-which fixes the underlying cause (read-only interactive transactions
-holding a connection).
+instances point at the same database). Allow about 20 MB of dynamic shared
+memory per concurrent
+parallel query when sizing for a mixed API/page burst. With the 1 GiB
+container limit, 40 connections at pool 20 leave less headroom for other
+processes than 20 connections at pool 10. Measure both pools with the
+same data and CPU budget before raising the default. Story 17.5 requires
+a 10-way burst below 3 s on each hot target and peak shared memory below
+80% at pool 20 before selecting 20 to remedy a failing pool 10.
 
 ## 4. The measurement harness
 
@@ -154,6 +156,50 @@ the committed harness (`PERSON`/`AIRCRAFT` explicit) against the retuned
 container: story 17.1's Dev Agent Record §C (and its Review Record for the
 corrected numbers). Story 17.2 onward measures its own prima/dopo against
 that run, not against the table above.
+
+### Story 17.5 on the integrated 17.2–17.4 base
+
+Before and after used production builds, base `151d51d`, on the same
+fresh synthetic `airmanager_load` snapshot (5,007 people, 1,501 aircraft,
+60,018 flights, 40,000 bookings and 102,899 account movements). The
+dedicated PostgreSQL 16 container used the §2 settings on a four-CPU
+quota. Both runs used the same explicit person and aircraft, an empty
+METAR fixture, and an empty AppSetting table exercising the ICAO fallback.
+
+| Pool 10, five iterations then ten concurrent requests | Before p50 (ms) | After p50 (ms) | Before burst wall (ms) | After burst wall (ms) |
+|---|---:|---:|---:|---:|
+| Page overview | 343 | 300 | 2,949 | 2,226 |
+| Page reports | 104 | 113 | 1,172 | 1,030 |
+| Page billing | 368 | 487 | 2,139 | 2,411 |
+| API stats year | 71 | 87 | 745 | 703 |
+| API stats month | 75 | 68 | 554 | 636 |
+
+All five bursts had zero HTTP errors before and after. The login probe
+started a fresh credentials session 25 ms after issuing ten parallel
+overview requests. Authentication and `/api/v1/me` succeeded in 394 ms
+before and 465 ms after, with all ten page responses HTTP 200 each time.
+The application logs contained zero occurrences of `P2028` and `53100`
+in all four runs.
+
+| Simultaneous 10 year API + 10 reports page | API wall (ms) | Page wall (ms) | HTTP errors | Sampled /dev/shm peak (KiB) |
+|---|---:|---:|---:|---:|
+| Before, pool 10 | 1,673 | 1,904 | 0 | 1,052 |
+| Before, pool 20 | 3,822 | 4,059 | 0 | 1,052 |
+| After, pool 10 | 2,862 | 3,087 | 0 | 1,052 |
+| After, pool 20 | 2,121 | 2,423 | 0 | 1,052 |
+
+Two bench processes warmed their own target and synchronized before the
+timed bursts. Container `df -k /dev/shm` sampling captured 10, 23, 15 and
+22 observations respectively. The 3 s criterion applies to each target
+under ten concurrent requests. Pool 10 met it for all five endpoints,
+and the login write succeeded with the existing 2,000 ms maxWait.
+
+On a quiet server, the warmed admin dashboard request executed **82 → 53
+SQL statements**, including **5 → 0 BEGIN** and **5 → 0 COMMIT**. Counts
+include the layout and count each execution once, excluding parse and
+bind events. AppSetting reads fell **7 → 3**. The updated page performed
+one read covering all ten keys. The layout contributed the two remaining
+reads, including its ICAO fallback.
 
 ## 6. Rule [I-a]
 

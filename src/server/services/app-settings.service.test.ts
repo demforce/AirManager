@@ -22,6 +22,7 @@ vi.mock('@/server/db/prisma', () => ({
 
 const { prisma } = await import('@/server/db/prisma');
 const {
+  getAdminOverviewSettings,
   getAirfieldBranding,
   setAirfieldBranding,
   getAirfieldIcao,
@@ -621,5 +622,34 @@ describe('treasury opening balances (story Billing-1, AC 3)', () => {
       expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'treasury.openingBankCents' }, update: { value: '-2500' } }));
       expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({ where: { key: 'treasury.openingDate' }, update: { value: '2026-01-01' } }));
     });
+  });
+});
+
+describe('admin overview settings', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each([undefined, '', 'LIMC'])('reads all page settings once, applying METAR override %s', async (station) => {
+    findMany.mockResolvedValue([
+      { key: 'airfield.icao', value: 'LIRF' },
+      { key: 'airfield.name', value: '' },
+      { key: 'sched.openTime', value: '07:30' },
+      { key: 'sched.minSlotMinutes', value: '15' },
+      { key: 'sched.turnaroundMinutes', value: 'bad' },
+      { key: 'currency.windowDays', value: '60' },
+      ...(station === undefined ? [] : [{ key: 'metar.station', value: station }]),
+    ]);
+    expect(await getAdminOverviewSettings()).toEqual({
+      icao: 'LIRF', branding: { name: 'AirManager' }, metarStation: station || 'LIRF',
+      schedulingSettings: { openTime: '07:30', closeTime: null, minSlotMinutes: 15, turnaroundMinutes: null, maxAdvanceDays: null },
+      currencySettings: { minFlights: 1, windowDays: 60 },
+    });
+    expect(findManyMock).toHaveBeenCalledExactlyOnceWith({
+      where: { key: { in: expect.arrayContaining([
+        'airfield.name', 'airfield.icao', 'metar.station', 'sched.openTime', 'sched.closeTime',
+        'sched.minSlotMinutes', 'sched.turnaroundMinutes', 'sched.maxAdvanceDays', 'currency.minFlights', 'currency.windowDays',
+      ]) } },
+      select: { key: true, value: true },
+    });
+    expect(findUniqueMock).not.toHaveBeenCalled();
   });
 });

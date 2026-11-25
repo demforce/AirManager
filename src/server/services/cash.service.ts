@@ -562,19 +562,14 @@ export async function listCashMovements(actor: Actor, query: ListCashMovementsQu
     ...(query.sign === 'in' ? { amountCents: { gt: 0 } } : query.sign === 'out' ? { amountCents: { lt: 0 } } : {}),
   };
 
-  // Interactive transaction (story TD-1, AC 3) — see
-  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
-  // `pg` DeprecationWarning rationale.
-  const [items, total] = await prisma.$transaction(async (tx) => {
-    const items = await tx.cashMovement.findMany({
-      select: CASH_MOVEMENT_SELECT,
-      where,
-      orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
-      ...paginationOffset(query),
-    });
-    const total = await tx.cashMovement.count({ where });
-    return [items, total] as const;
+  // READ COMMITTED takes a fresh snapshot per statement, even inside a transaction.
+  const items = await prisma.cashMovement.findMany({
+    select: CASH_MOVEMENT_SELECT,
+    where,
+    orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+    ...paginationOffset(query),
   });
+  const total = await prisma.cashMovement.count({ where });
 
   return paginate(items.map(toMovementListItem), total, query);
 }

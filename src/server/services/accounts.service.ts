@@ -136,24 +136,11 @@ export async function getAccountOverview(actor: Actor, personId: string): Promis
     return { account: null, balanceCents: 0, recentMovements: [] };
   }
 
-  return buildOverview(account);
+  return readOverview(prisma, account);
 }
 
-/**
- * Assembles the overview for an account the caller is already authorized to
- * see. Kept guard-free on purpose (review 3.1 F1): `recordTopUp` returns the
- * fresh overview through here after its committed write, and routing that
- * read back through `assertReadAccess` would couple `finance.manage` to also
- * holding a read permission — a future write-only role would get its top-up
- * committed and then a 403 on the response.
- */
-/**
- * The two reads `buildOverview` needs, against a GIVEN client — either
- * `prisma` itself (wrapped in `buildOverview`'s own transaction below) or an
- * outer `tx` a caller is already inside (`recordTopUp`, H3 fix: see its
- * doc-comment). Extracted so the read can run atomically WITH a mutation's
- * own transaction instead of only ever as a separate one after it commits.
- */
+// READ COMMITTED gives each statement its own snapshot. Standalone reads use
+// the pool directly; a writer passes its transaction client to see its own changes.
 async function readOverview(client: Prisma.TransactionClient, account: { id: string; createdAt: Date }): Promise<AccountOverview> {
   const aggregate = await client.accountMovement.aggregate({
     where: { accountId: account.id },
@@ -176,12 +163,6 @@ async function readOverview(client: Prisma.TransactionClient, account: { id: str
     balanceCents: aggregate._sum.amountCents ?? 0,
     recentMovements: recent.map(toMovementListItem),
   };
-}
-
-async function buildOverview(account: { id: string; createdAt: Date }): Promise<AccountOverview> {
-  // Interactive transaction (story TD-1, AC 3) — see `people.service.ts#listPeople`'s
-  // doc-comment for the batch-vs-interactive `pg` DeprecationWarning rationale.
-  return prisma.$transaction((tx) => readOverview(tx, account));
 }
 
 /**
@@ -277,7 +258,7 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
     // Idempotency-Key (`apiRoute`'s AC 4) and let a retry double the top-up.
     // Guard-free on purpose: the write was authorized by `finance.manage`,
     // and the fresh overview must not require a separate read permission
-    // (review 3.1 F1 — see `buildOverview`).
+    // (review 3.1 F1).
     return readOverview(tx, upserted);
   });
 }
@@ -797,7 +778,7 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
   // the (committed) transaction instead of throwing.
   let overview: AccountOverview;
   try {
-    overview = await buildOverview(account);
+    overview = await readOverview(prisma, account);
   } catch (error) {
     console.error('recordAdjustment: post-commit account overview read failed', error);
     overview = { account, balanceCents: balanceAfterCents, recentMovements: [] };

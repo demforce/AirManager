@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.5: Letture senza transazione interattiva, Panoramica con meno query
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Sonnet 5 xhigh** (backend puro: `dashboard/page.tsx` cambia solo nella lettura dei dati, vincolo zero differenze di markup; se il dev deve toccare il JSX → Opus). Review: Opus 5 xhigh adversarial. **Ordine (decisione della sessione principale, è quello del piano)**: dopo 17.2 → 17.3 → 17.4 (l'AC del `Promise.all` dice «dopo 17.2-17.4»; i 3 s di Contabilità e Statistiche dipendono da 17.3 e 17.4; la 17.4 elimina `listAllActiveAircraft`, causa del P2028 di `stats?period=year`). Tutte le righe vanno rilette su HEAD al momento del dev.
+Status: **review** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Sonnet 5 xhigh** (backend puro: `dashboard/page.tsx` cambia solo nella lettura dei dati, vincolo zero differenze di markup; se il dev deve toccare il JSX → Opus). Review: Opus 5 xhigh adversarial. **Ordine (decisione della sessione principale, è quello del piano)**: dopo 17.2 → 17.3 → 17.4 (l'AC del `Promise.all` dice «dopo 17.2-17.4»; i 3 s di Contabilità e Statistiche dipendono da 17.3 e 17.4; la 17.4 elimina `listAllActiveAircraft`, causa del P2028 di `stats?period=year`). Tutte le righe vanno rilette su HEAD al momento del dev.
 
 ## Story
 
@@ -54,10 +54,10 @@ Già fatto: `listAllExpiries` con `COUNT(*) OVER ()` (19.7b `450a0f6`, `expiries
 
 ## Tasks / Subtasks
 
-- [ ] Rileggere il censimento su HEAD (dopo 17.2-17.4 ed Epic 16); misura «prima» (AC 4-7).
-- [ ] R1-R6 con T1; `listAllActiveAircraft` con T2 se esiste ancora; Panoramica con T3/T4; commenti con T7.
-- [ ] Unit AC 2-4 con discriminanza su copia isolata (mutanti: `prisma.$transaction` rimesso in `listPeople`; `where` diverso a `count`; paginazione a 100 senza ciclo in `listAllActiveAircraft` → rosso il test 15.4 F3).
-- [ ] Misura «dopo», pool (T5), `maxWait` (T6), `load-testing.md` §3/§5, `targets*.json` (`burst: true` su `api stats year` allineato nei due file, NIT 17.1); Dev Agent Record.
+- [x] Rileggere il censimento su HEAD (dopo 17.2-17.4 ed Epic 16); misura «prima» (AC 4-7).
+- [x] R1-R6 con T1; `listAllActiveAircraft` con T2 se esiste ancora; Panoramica con T3/T4; commenti con T7.
+- [x] Unit AC 2-4 con discriminanza su copia isolata (mutanti: `prisma.$transaction` rimesso in `listPeople`; `where` diverso a `count`; paginazione a 100 senza ciclo in `listAllActiveAircraft` → rosso il test 15.4 F3).
+- [x] Misura «dopo», pool (T5), `maxWait` (T6), `load-testing.md` §3/§5, `targets*.json` (`burst: true` su `api stats year` allineato nei due file, NIT 17.1); Dev Agent Record.
 
 ## Dev Notes
 
@@ -94,8 +94,17 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 
 ## Dev Agent Record
 
-### Agent Model Used
+### Ambiente e verifiche
 
-### Completion Notes List
+Lavoro su Codex Cloud, ramo locale `story/17-5`, base `151d51db7023cae8c1fa3f0df234bda4085cc852`. Il checkout iniziale era pulito.
 
-### File List
+- R1–R4 e R6 eseguono pagina e conteggio in sequenza sul client ordinario con lo stesso filtro. I cinque test AC 2 falliscono sulla base isolata perché rilevano una chiamata a `$transaction`. Il mutante di `listPeople` che conta con `where: {}` fallisce sul confronto del filtro. Dopo la modifica passano tutti i 793 test dei cinque servizi.
+- R5 passa il client ordinario a `readOverview` nelle letture autonome, e il client della scrittura in `recordTopUp`. Il test sul saldo e sul filtro delle due letture falliva sul codice precedente (una transazione aperta). Dopo la modifica passano tutti i 91 test del servizio conti, inclusi H3 e il recupero post-commit di `recordAdjustment`.
+- Su questa base il censimento delle chiamate di produzione passa da 36 a 30. Restano le transazioni di scrittura, inclusa l’archiviazione dei velivoli aggiunta dopo il censimento iniziale.
+- La Panoramica admin condivide una lettura di branding, ICAO, METAR, pianificazione e valuta delle scadenze. Il layout conserva le sue letture. Il KPI usa il totale del libro contabile sul mese di Roma; il test di parità include il cambio mese alle 22:30 UTC del 31 luglio. Passano 231 test delle quattro suite interessate. Sulla base isolata i tre test del lettore settings e il test del riuso nelle scadenze falliscono. I mutanti che limitano la flotta a 100 o troncano il mese al primo giorno sono stati rilevati.
+- Il confronto dei 586 nodi JSX della pagina (struttura, attributi e letterali, escluse le espressioni dinamiche) sulla base e sul ramo produce lo stesso SHA-256 `066509a930de1c838bb28fb0ce9430ae5fc5419d5adb0127bad7401b8c52a4a2`. Nessuna differenza in schema Prisma, migrazioni o `src/lib/schemas`.
+- Benchmark su PostgreSQL 16 sintetico con 60.018 voli e 102.899 movimenti. Panoramica: 82 → 53 statement, 5 → 0 BEGIN, 7 → 3 query AppSetting (1 nella pagina, 2 nel layout). A pool 10 i wall prima → dopo dei burst da dieci sono 2949 → 2226 ms (Panoramica), 1172 → 1030 (report), 2139 → 2411 (contabilità), 745 → 703 (API anno), 554 → 636 (API mese). Tutti con zero errori.
+- Burst misto anno/report dopo la modifica: 2862/3087 ms a pool 10 e 2121/2423 ms a pool 20. Picco shm campionato 1052 KiB su 1 GiB, zero P2028 e 53100. Login con sessione nuova durante dieci Panoramiche: 465 ms, dieci HTTP 200. I criteri T5 e T6 mantengono pool 10 e maxWait 2000 ms. Metodo e misure precedenti in `docs/operations/load-testing.md`, §§3 e 5.
+- OpenAPI: HTTP 200, 393.522 byte prima e dopo; confronto byte per byte riuscito, SHA-256 `ab19f90c7916940453aceebc019f84f71e1dbf13c883aa62aedd07b4cb20d537`.
+- Gate integrato `npm run gates` exit 0: lint, typecheck, 2293 test in 85 file e build production. Al primo ciclo i validator Next generati prima del checkout riferivano route eliminate; rigenerati i tipi e ripetuto l'intero gate.
+- Arbitro browser su database fresco sintetico, SMTP Mailpit e METAR da fixture: 624 casi, 617 passati al primo tentativo e 7 dopo retry, zero falliti o saltati. E2E_EXIT=0 in 28,9 minuti. Casi con retry: account-adjustments:94, bookings:1103 e :1208, mobile-logbook:1223 e :1266, mobile-reports:420, session-identity:138.

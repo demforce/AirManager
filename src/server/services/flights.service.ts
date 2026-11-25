@@ -1467,21 +1467,16 @@ export async function listFlights(actor: Actor, query: ListFlightsQuery): Promis
 
   const includeActorEmail = hasPermission(actor, 'people.read');
 
-  // Interactive transaction (story TD-1, AC 3) — see
-  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
-  // `pg` DeprecationWarning rationale.
-  const [items, total] = await prisma.$transaction(async (tx) => {
-    const items = await tx.flight.findMany({
-      select: FLIGHT_SELECT,
-      where,
-      // `id` tie-break: same-millisecond rows must not make the page order
-      // non-deterministic (same pattern as `buildOverview`/`listAccountMovements`).
-      orderBy: [{ flightDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
-      ...paginationOffset(query),
-    });
-    const total = await tx.flight.count({ where });
-    return [items, total] as const;
+  // READ COMMITTED takes a fresh snapshot per statement, even inside a transaction.
+  const items = await prisma.flight.findMany({
+    select: FLIGHT_SELECT,
+    where,
+    // `id` tie-break: same-millisecond rows must not make the page order
+    // non-deterministic (same pattern as `readOverview`/`listAccountMovements`).
+    orderBy: [{ flightDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+    ...paginationOffset(query),
   });
+  const total = await prisma.flight.count({ where });
 
   return paginate(
     items.map((item) => toListItem(item, includeActorEmail)),

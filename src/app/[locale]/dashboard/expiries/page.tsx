@@ -82,9 +82,6 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     const expiryTypeId = sp.expiryTypeId || undefined;
     const personQuery = sp.personQuery || undefined;
 
-    // Sequential (not `Promise.all`): `listPeople` runs its own interactive
-    // `$transaction` internally — same "never concurrent with another
-    // `$transaction`-based read" constraint as the billing/fleet/logbook pages.
     const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
     const personOptions = peopleResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
 

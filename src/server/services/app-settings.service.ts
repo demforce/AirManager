@@ -174,8 +174,10 @@ function parseStoredInt(value: string | undefined): number | null {
  */
 export async function getSchedulingSettings(): Promise<SchedulingSettingsDto> {
   const rows = await prisma.appSetting.findMany({ where: { key: { in: [...SCHED_KEYS] } }, select: { key: true, value: true } });
-  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  return parseSchedulingSettings(new Map(rows.map((row) => [row.key, row.value])));
+}
 
+function parseSchedulingSettings(byKey: ReadonlyMap<string, string>): SchedulingSettingsDto {
   return {
     openTime: byKey.get(SCHED_OPEN_TIME_KEY) ?? null,
     closeTime: byKey.get(SCHED_CLOSE_TIME_KEY) ?? null,
@@ -410,11 +412,30 @@ export async function getCurrencySettings(): Promise<CurrencySettings> {
     where: { key: { in: [CURRENCY_MIN_FLIGHTS_KEY, CURRENCY_WINDOW_DAYS_KEY] } },
     select: { key: true, value: true },
   });
-  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  return parseCurrencySettings(new Map(rows.map((row) => [row.key, row.value])));
+}
 
+function parseCurrencySettings(byKey: ReadonlyMap<string, string>): CurrencySettings {
   return {
     minFlights: parseCurrencySetting(CURRENCY_MIN_FLIGHTS_KEY, byKey.get(CURRENCY_MIN_FLIGHTS_KEY), CURRENCY_LIMITS.minFlights, CURRENCY_DEFAULTS.minFlights),
     windowDays: parseCurrencySetting(CURRENCY_WINDOW_DAYS_KEY, byKey.get(CURRENCY_WINDOW_DAYS_KEY), CURRENCY_LIMITS.windowDays, CURRENCY_DEFAULTS.windowDays),
+  };
+}
+
+/** All settings consumed by the admin overview, including its expiry registry and weather card. */
+export async function getAdminOverviewSettings() {
+  const rows = await prisma.appSetting.findMany({
+    where: { key: { in: [AIRFIELD_NAME_KEY, AIRFIELD_ICAO_KEY, METAR_STATION_KEY, ...SCHED_KEYS, CURRENCY_MIN_FLIGHTS_KEY, CURRENCY_WINDOW_DAYS_KEY] } },
+    select: { key: true, value: true },
+  });
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  const icao = byKey.get(AIRFIELD_ICAO_KEY) ?? '';
+  return {
+    icao,
+    branding: { name: byKey.get(AIRFIELD_NAME_KEY) || DEFAULT_AIRFIELD_NAME },
+    metarStation: byKey.get(METAR_STATION_KEY) || icao,
+    schedulingSettings: parseSchedulingSettings(byKey),
+    currencySettings: parseCurrencySettings(byKey),
   };
 }
 

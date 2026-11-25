@@ -134,19 +134,14 @@ export async function listAircraft(actor: Actor, query: ListAircraftQuery): Prom
       : {}),
   };
 
-  // Interactive transaction (story TD-1, AC 3) — see
-  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
-  // `pg` DeprecationWarning rationale.
-  const [items, total] = await prisma.$transaction(async (tx) => {
-    const items = await tx.aircraft.findMany({
-      where,
-      select: AIRCRAFT_SELECT,
-      orderBy: [{ registration: 'asc' }],
-      ...paginationOffset(query),
-    });
-    const total = await tx.aircraft.count({ where });
-    return [items, total] as const;
+  // READ COMMITTED takes a fresh snapshot per statement, even inside a transaction.
+  const items = await prisma.aircraft.findMany({
+    where,
+    select: AIRCRAFT_SELECT,
+    orderBy: [{ registration: 'asc' }],
+    ...paginationOffset(query),
   });
+  const total = await prisma.aircraft.count({ where });
 
   return paginate(items.map(toListItem), total, query);
 }

@@ -485,6 +485,13 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       return result.items[0]!;
     }
 
+    it('uses the overview currency settings without querying them again', async () => {
+      queryRawMock.mockResolvedValue([] as never);
+      await listAllExpiries(adminActor(), { page: 1, pageSize: 20 }, { minFlights: 7, windowDays: 45 });
+      expect(getCurrencySettingsMock).not.toHaveBeenCalled();
+      expect(rawCall().values).toEqual(expect.arrayContaining([7, 45]));
+    });
+
     it('a document: source DOCUMENT, its type, status/daysUntil from today, no currency', async () => {
       const item = await mapOne(registryRowFixture({ expiresAt: addDaysDateOnly(romeToday(), -5), notes: 'nota' }));
 

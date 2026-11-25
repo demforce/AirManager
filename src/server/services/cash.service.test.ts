@@ -808,6 +808,19 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       accountMovementId: null,
     };
 
+    it('reads the page and filtered total without a transaction (17.5 AC 2)', async () => {
+      movementFindManyMock.mockResolvedValue([]);
+      movementCountMock.mockResolvedValue(31);
+
+      const result = await listCashMovements(adminActor(), { page: 2, pageSize: 10, sign: 'out' });
+
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(movementFindManyMock).toHaveBeenCalledTimes(1);
+      expect(movementCountMock).toHaveBeenCalledTimes(1);
+      expect(movementCountMock).toHaveBeenCalledWith({ where: movementFindManyMock.mock.calls[0]?.[0]?.where });
+      expect(result.total).toBe(31);
+    });
+
     it('rejects a pilot (finance.manage required)', async () => {
       await expect(listCashMovements(pilotActor(), { page: 1, pageSize: 20 })).rejects.toThrow(ForbiddenError);
       expect(movementFindManyMock).not.toHaveBeenCalled();

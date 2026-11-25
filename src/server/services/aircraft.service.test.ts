@@ -118,7 +118,7 @@ const userFindMany = userFindManyMock as unknown as { mockResolvedValue: (v: Arr
 const transaction = transactionMock as unknown as { mockResolvedValue: (v: unknown) => void; mockImplementation: (fn: (arg: unknown) => unknown) => void };
 
 /**
- * `listAircraft` (and the other interactive transactions of this service) run
+ * Writes in this service run
  * their work inside `prisma.$transaction(async (tx) => ...)` — the
  * interactive-transaction overload. The mocked module's `prisma.aircraft`
  * delegates ARE what the service calls whether reached directly or via `tx`,
@@ -232,8 +232,23 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   });
 
   describe('listAircraft', () => {
+    it('reads the page and filtered total without a transaction (17.5 AC 2)', async () => {
+      mockInteractiveTransaction();
+      findManyMock.mockResolvedValue([]);
+      countMock.mockResolvedValue(31);
+
+      const result = await listAircraft(adminActor(), { page: 2, pageSize: 10, includeArchived: false, q: 'AB' });
+
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(findManyMock).toHaveBeenCalledTimes(1);
+      expect(countMock).toHaveBeenCalledTimes(1);
+      expect(countMock).toHaveBeenCalledWith({ where: findManyMock.mock.calls[0]?.[0]?.where });
+      expect(result.total).toBe(31);
+    });
+
     it('returns the AD-8 paginated shape', async () => {
-      transaction.mockResolvedValue([[SELECTED_AIRCRAFT], 1]);
+      aircraftFindMany.mockResolvedValue([SELECTED_AIRCRAFT]);
+      countMock.mockResolvedValue(1);
 
       const result = await listAircraft(adminActor(), { page: 1, pageSize: 20, includeArchived: false });
 
@@ -258,12 +273,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     });
 
     it('excludes archived aircraft by default (AC 2)', async () => {
-      // Interactive-callback transaction (story TD-1, AC 3): opt into the
-      // interactive-callback stand-in (invokes the callback with `prisma`
-      // as `tx`) and mock
-      // `findMany`/`count` on their OWN mocks — a `transaction.mockResolvedValue(...)`
-      // override would skip invoking the callback entirely (never calling `findMany`).
-      mockInteractiveTransaction();
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
@@ -274,7 +283,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     });
 
     it('includes archived aircraft when includeArchived is true (AC 2)', async () => {
-      mockInteractiveTransaction();
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 
@@ -285,7 +293,6 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     });
 
     it('searches registration and model case-insensitively (AC 1)', async () => {
-      mockInteractiveTransaction();
       findManyMock.mockResolvedValue([]);
       countMock.mockResolvedValue(0);
 

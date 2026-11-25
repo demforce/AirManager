@@ -673,6 +673,19 @@ describe('createBooking (Story 7.1, AC 1/2/3)', () => {
 });
 
 describe('listBookings (Story 7.1, AC 1, FR-19)', () => {
+  it('reads the page and filtered total without a transaction (17.5 AC 2)', async () => {
+    bookingFindManyMock.mockResolvedValue([]);
+    bookingCountMock.mockResolvedValue(31);
+
+    const result = await listBookings(adminActor(), { page: 2, pageSize: 10, aircraftId: 'aircraft_1' });
+
+    expect(transactionMock).not.toHaveBeenCalled();
+    expect(bookingFindManyMock).toHaveBeenCalledTimes(1);
+    expect(bookingCountMock).toHaveBeenCalledTimes(1);
+    expect(bookingCountMock).toHaveBeenCalledWith({ where: bookingFindManyMock.mock.calls[0]?.[0]?.where });
+    expect(result.total).toBe(31);
+  });
+
   it('any authenticated role (self.read) can list — a student succeeds', async () => {
     bookingFindMany.mockResolvedValue([CREATED_BOOKING_ROW]);
     bookingCount.mockResolvedValue(1);

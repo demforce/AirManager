@@ -2586,6 +2586,19 @@ describe('flights.service (story 5.1 — flight logging with automatic charges, 
       return listFlightsQuerySchema.parse({ page: 1, pageSize: 20, ...overrides });
     }
 
+    it('reads the page and filtered total without a transaction (17.5 AC 2)', async () => {
+      flightFindManyMock.mockResolvedValue([]);
+      flightCountMock.mockResolvedValue(31);
+
+      const result = await listFlights(adminActor(), baseQuery({ page: 2, pageSize: 10, aircraftId: 'aircraft_1' }));
+
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(flightFindManyMock).toHaveBeenCalledTimes(1);
+      expect(flightCountMock).toHaveBeenCalledTimes(1);
+      expect(flightCountMock).toHaveBeenCalledWith({ where: flightFindManyMock.mock.calls[0]?.[0]?.where });
+      expect(result.total).toBe(31);
+    });
+
     it('rejects an actor with neither flights.manage nor self.read', async () => {
       await expect(listFlights(noRoleActor(), baseQuery())).rejects.toThrow(ForbiddenError);
       expect(flightFindManyMock).not.toHaveBeenCalled();

@@ -106,16 +106,7 @@ const appSettingFindUnique = appSettingFindUniqueMock as unknown as { mockResolv
 const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void };
 
-/**
- * Every call site in this service now uses the interactive-callback overload
- * (`$transaction(async (tx) => ...)`, story TD-1 AC 3 hardened `buildOverview`
- * off the batch/array form — same as `recordTopUp`/`recordAdjustment` already
- * did, and same as `listAircraft` in aircraft.service.ts; `listAccountMovements`
- * has no transaction at all since story 19.11, one `$queryRaw`). This stand-in
- * still accepts a legacy array argument too (`Promise.all` over it) for
- * robustness, but a function is the only form this service's production code
- * sends: it is invoked with the mocked `prisma` itself as `tx`.
- */
+// Write transactions receive the mocked client as their transaction client.
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
 
 function mockTransaction(): void {
@@ -236,6 +227,10 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
 
       const result = await getAccountOverview(adminActor(), 'person_1');
 
+      expect(transactionMock).not.toHaveBeenCalled();
+      const accountFilter = { accountId: 'account_1' };
+      expect(accountMovementAggregateMock.mock.calls[0]?.[0]?.where).toEqual(accountFilter);
+      expect(accountMovementFindManyMock.mock.calls[0]?.[0]?.where).toEqual(accountFilter);
       expect(result.balanceCents).toBe(15000);
       expect(result.recentMovements).toEqual([
         {
@@ -739,7 +734,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       appSettingFindUnique.mockResolvedValue(options.thresholdValue === undefined ? null : { value: options.thresholdValue });
       queryRaw.mockResolvedValue([]);
       // First aggregate = the locked "balance before" read inside the tx;
-      // second = buildOverview's post-commit balance.
+      // second = readOverview's post-commit balance.
       accountMovementAggregate
         .mockResolvedValueOnce({ _sum: { amountCents: options.balanceBeforeCents } })
         .mockResolvedValueOnce({ _sum: { amountCents: options.balanceBeforeCents + options.amountCents } });
@@ -1121,7 +1116,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     describe('H3 fix (docs/security/owasp-audit-2026-07-22.md) — the adjustment already committed by the time the post-commit re-read runs', () => {
       it('does NOT throw when the post-commit overview re-read fails — degrades to the balance already computed inside the transaction', async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
-        // `buildOverview`'s post-commit read calls BOTH `aggregate` and
+        // `readOverview`'s post-commit read calls BOTH `aggregate` and
         // `findMany`; the mutation's own in-tx read only calls `aggregate`.
         // Failing `findMany` isolates the failure to the read that runs
         // AFTER the movement create above has already committed.

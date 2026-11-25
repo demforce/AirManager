@@ -97,10 +97,6 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
 
   const branding = await getAirfieldBranding();
 
-  // Sequential (not `Promise.all`): concurrent `$transaction`s on the shared
-  // driver-adapter Prisma client trigger a `pg` "client is already executing
-  // a query" warning under load (5.1 Debug Log) — same order as the legacy page.
-  // Story AOG-1a, AC 12: same shape the editor's own `AircraftOption` declares.
   let aircraftOptions: { id: string; registration: string; status: 'OPERATIONAL' | 'OUT_OF_SERVICE'; statusReason: string | null }[] = [];
   // Story 14.3, AC 2: `profiles` (active-only, pilot/student) travels with
   // the person picker's options so `FlightEditor` can force/lock Tipo volo
@@ -142,12 +138,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   }
   const totalPages = Math.max(1, Math.ceil(flightsResult.total / FLIGHTS_PAGE_SIZE));
 
-  // NOT `Promise.all` with `listFlights` above — same sequential constraint
-  // documented for the aircraft/people options block above (Dev Notes:
-  // concurrent queries on the shared driver-adapter Prisma client trigger a
-  // pg "client is already executing a query" warning under load). `page` is
-  // irrelevant to the aggregate itself (`getFlightTotals` never paginates) —
-  // passed only to satisfy `ListFlightsQuery`'s required shape.
+  // The totals cover every matching flight, regardless of the requested page.
   const totals = await getFlightTotals(actor, { ...flightsQuery, page });
 
   // ISO-serialize (AD-8) — same fields as the legacy page.
