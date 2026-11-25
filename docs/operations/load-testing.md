@@ -162,3 +162,16 @@ harness and reports the numbers in its own Dev Agent Record. A story that
 claims a performance improvement without a before/after pair produced by
 `scripts/perf/` has not met that story's acceptance criteria, regardless of
 what else it changed.
+
+
+## Story 17.4: report and ledger checkpoint (2026-11-25)
+
+On the same synthetic load snapshot before and after 17.4, with pool 10
+and the integrated 17.2 and 17.3 branches, the annual stats API p50 was
+195 → 83 ms (110,356 → 4,739 bytes); the reports page response was
+1,242,760 → 124,702 bytes. Both 10-way bursts completed without errors.
+The mobile report kept 492 nodes, down from 16,162. The filtered ledger
+kept the same exact total, 2,071, with p50 22 → 25 ms. Both effective-date
+indexes were selected for the primary date filters in the actual Prisma
+statements. The annual stats service fell from 105 to 18 SQL statements,
+including the elimination of 15 BEGIN and 15 COMMIT statements.

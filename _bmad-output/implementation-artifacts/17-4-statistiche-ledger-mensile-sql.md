@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.4: Statistiche e ledger mensile in SQL, classifiche cappate dal server
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (UI + backend: console Statistiche, `RankBars`, elenco completo nuovo, CSS, i18n). Review: Opus 5 xhigh adversarial. **Ordine**: DOPO 16.5 (snapshot dei compensi dentro il `Promise.all` di `getStats`, `stats.service.ts`/`.test.ts`), **16.6b** (sostituisce i self-join `reversalOf` con la colonna `reversalRootType`: la 17.4 va scritta sul predicato della 16.6b) e 16.9 (`reports/page.tsx:57-59`). Il «prima» si misura sullo sha di partenza della 17.4, con le migrazioni 16.x applicate al DB di carico (lo fa la sessione principale). Righe da rileggere su HEAD al momento del dev.
+Status: **done** — 2026-11-25. Misure e controllo di integrazione nel record finale.
 
 ## Story
 
@@ -40,10 +40,10 @@ Fonte: `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md` §«Story 17.4»
 
 ## Tasks / Subtasks
 
-- [ ] Passo 0: misura «prima» (AC 7) sullo sha di partenza, server su porta libera (mai :3000 sotto un arbitro), `PERSON`/`AIRCRAFT` espliciti, `JOBS_SECRET` reale; target nuovi in `targets*.json`: `"burst": true` su `api stats year`, `api stats rankings <lista> p2`, la pagina dell'elenco.
-- [ ] Serie ore e ricavi (AC 1, 2) con T1; indici (AC 3).
-- [ ] Classifiche server (AC 4, 5) con T3/T4; UI console + `RankBars` + elenco completo; via il cap CSS e gli orfani (`rankedTopIndexes`, `useRankedExpansion` se sparisce l'espansione sul posto).
-- [ ] Unit e parità (AC 8) su copia isolata; e2e adeguati; misura «dopo»; aggiornare `load-testing.md` e la nota della 17.5 in `sprint-status.yaml` tramite la sessione principale (segnalarlo nel record).
+- [x] Passo 0: misura «prima» (AC 7) sullo sha di partenza, server su porta libera (mai :3000 sotto un arbitro), `PERSON`/`AIRCRAFT` espliciti, `JOBS_SECRET` reale; target nuovi in `targets*.json`: `"burst": true` su `api stats year`, `api stats rankings <lista> p2`, la pagina dell'elenco.
+- [x] Serie ore e ricavi (AC 1, 2) con T1; indici (AC 3).
+- [x] Classifiche server (AC 4, 5) con T3/T4; UI console + `RankBars` + elenco completo; via il cap CSS e gli orfani (`rankedTopIndexes`, `useRankedExpansion` se sparisce l'espansione sul posto).
+- [x] Unit e parità (AC 8) su copia isolata; e2e adeguati; misura «dopo»; aggiornare `load-testing.md` e la nota della 17.5 in `sprint-status.yaml` tramite la sessione principale (segnalarlo nel record).
 
 ## Dev Notes
 
@@ -84,3 +84,13 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 ### Completion Notes List
 
 ### File List
+
+
+## Record finale di integrazione — 2026-11-25
+
+- Implementazione `0f6cc37` sulla base integrata di 17.2 e 17.3. Serie ore raggruppata per data; due query giornaliere per ricavi sul perimetro unione, con i predicati canonici. Conservati totali Contabilità, quota compensi e calendari di Roma.
+- Stessa base sintetica, pool 10, cinque campioni e burst 10: API anno p50 **195 → 83 ms**, **110.356 → 4.739 byte**; pagina Statistiche **1.242.760 → 124.702 byte**, con **0 errori** per entrambi i burst. A 375 px: **16.162 → 492 nodi**, **1.214 → 122 KiB**, interattività **348 → 128 ms**; a 1280 px, 1.063 → 227 ms. Il registro mantiene **2.071** movimenti e p50 **22 → 25 ms**.
+- SQL effettivo catturato dal driver: **105 → 18 statement** per Statistiche anno (prima: 15 BEGIN e 15 COMMIT; dopo: nessuno). I quattro piani del registro usano entrambi i nuovi indici effettivi per le due letture di data; eventuali scansioni complete sono sui lati di join, non sui filtri primari. Migrazione da DB fresco e diff schema vuoto.
+- Dieci combinazioni periodo/riferimento: KPI, serie, composizione e ranking confrontabili in parità. Sul gemello con zona Europe/Moscow anche Statistiche e Contabilità sono uguali con storni, gemelli zero/non-zero e un ricavo di dicembre futuro; scostamenti attesi rispetto al controllo: ottobre +1.414 cent, novembre −693, anno +834. Le prove di discriminanza distinguono spostamento di mese, perdita del debito standalone con un `<>` ingenuo e taglio per posizione anziché per rango. Il mutante di binding raw delle date nei ricavi non si applica: il lettore usa `groupBy` Prisma.
+- Classifiche server a 8 righe per metrica, pari merito per etichetta binaria e chiave; pagine 1 e 2 disgiunte e totale esatto. L'anteprima spesa coincide con la prima pagina della classifica. Endpoint `/api/v1/stats/rankings` con OpenAPI e guardia finanziaria; viste e link verificati in Chromium.
+- Gate: lint, tipi, **2.283 unit**, build verdi. I test del report e della Contabilità ora distinguono pulsanti aggiunti e righe non più montate; il test della Pianificazione aspetta che sia visibile la settimana prima di cambiare filtro. Tutte e tre le prove mirate passano tre volte, senza retry. Suite integrata: **624 passati, 0 saltati, 0 flaky, 0 falliti**, exit 0.

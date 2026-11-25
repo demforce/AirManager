@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.3 chiusa, 17.4 in sviluppo)
+# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.4 chiusa, 17.5 prossima)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -9,10 +9,12 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 ## Current Progress
 
+- **17.4 done** (`0f6cc37`): Statistiche e ricavi aggregati, classifiche con anteprima 8 e pagina separata; indici del registro verificati. Statistiche a 375 px: 1.214 → 122 KiB e 348 → 128 ms; parità a 10 finestre e su catene sintetiche. 2.283 unit, browser: 624 passati, 0 saltati, 0 flaky, 0 falliti. Push su `dev` previsto con soli commit verificati e senza modificare `main`.
+
 - **17.3 done** (`d68647a`): primi 20 saldi, elenco paginato e ricerca, API riepilogo, conteggio Avvisi mantenuto. SQL indipendente verificata su dati sintetici. **2292 unit, 621 browser passati, 3 METAR saltati, 0 falliti**. Contabilità mobile 1.102 → 392 ms; payload API 647 → 3,3 KB. Nessun push.
 
 - **17.2 done** (`0ebfbc2`): Pianificazione e Panoramica riducono le righe, con filtro velivolo lato server condiviso con elenco ed esportazioni. **2291 unit, 623/623 browser**. Nel giorno carico: 41.731 → 5.628 nodi, 1.023 → 271 ms a 1280 px; 128 blocchi preservati. Agenda mobile identica nel campione visivo.
-- **Pubblicazione in attesa di accesso**: GitHub ha rifiutato la scrittura; il bundle verificato di Epic 16 è stato consegnato. Rami remoti e PR #22 non modificati.
+- **Epic 16 pubblicato**: `dev` verificato a `0855a20`; da questa base partono le story 17.2–17.4. Merge e deploy esclusi.
 
 - **16.10 done** (`482d9fc`, `35264e0`): i sette form mantengono la chiave quando l’esito è incerto, anche dopo ricarica della scheda con i medesimi dati. La prova della quota verifica un solo addebito e un solo rinnovo. **2289 unit**, gate verdi, **69 browser mirati**, **622 casi browser distinti verificati** (566 + volo corretto + 55 della catena).
 
@@ -30,7 +32,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **16.5 done** (`caeb973` feat, `be11075` record, `2d012ab` decisioni PO sulla review, `c635b34` fix, `f23ca47` Fix Record): compenso istruttore congelato sul volo, ex istruttori visibili e pagabili, pagamenti concorrenti bloccati sotto lock. Arbitro finale 607 + 3 flaky = **610**, exit 0. **Conteggi**: e2e **610**, unit **2242**.
 - **16.6a done** (`a6be2da`, `76c7eba`, `d543c1a`, `dea21d5`, `7a9ec4e`, `c5c1efa`, `dcad37e`, `c47ec70`): data valuta futura rifiutata (422 `EFFECTIVE_DATE_IN_FUTURE`), errori dei pannelli leggibili (`.fld-error`, ≥ 4,5:1), «Cassa per categoria» e «Ricavi maturati» ovunque, **keep-alive 75 s del server e2e** (TD-19.10-g chiuso: 0 ECONNRESET da allora). Durante la chiusura trovato e corretto un bug di prodotto della 16.5 (`6c19915`: remount della console Istruttori che chiudeva il pannello «Paga»). Arbitro finale **615/615**, exit 0. **Conteggi**: e2e **615**, unit **2252**.
 - **16.6b done** (`6e76e20`, `91a70b0`, `c453b22`, `25ef34d`, `470d4ca`): chiave di idempotenza stabile nel pannello quota; catene di rettifica classificate dal **libro della radice** (`reversalRootBook`, enum DEPOSIT/REVENUE/TRANSFER) — la correzione di un giroconto resta giroconto (decisione PO). Arbitro finale 614 + 2 flaky = **616**, exit 0. **Conteggi**: e2e **616**, unit **2261**. Nuova story **16.10** (doppi addebiti dopo un guasto di rete nei 7 form con `Idempotency-Key`) in coda all'Epic 16, file da creare dopo la 16.9.
-- **Prossima**: pubblicare Epic 16 su `dev` e aggiornare PR #22, poi Epic 17 nell'ordine dei file (17.2 → 17.3 → 17.4 → 17.5 → 17.6 → 17.7 → 17.8, dipendenze nello Status di ogni file) → Epic 18.
+- **Prossima**: 17.5 → 17.6 → 17.7 → 17.8, poi Epic 18. Verificare lo stato di `dev` prima di ogni pubblicazione.
 
 ## Key Decisions di oggi
 
@@ -64,12 +66,12 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **DB**: `airmanager` (e2e, post-arbitro) e **`airmanager_load`** (DB di carico rigenerato il 2026-11-03 con `seed:load`, migrazione della 16.5 applicata) — gemello per le misure dell'Epic 17, **da cancellare a fine Epic 17**.
 - Porte 3000/3100 libere. Nessun subagent attivo.
 - File untracked/modificati non nostri, da non committare: `.agents/`, `.claude/skills/*` (compresa la cancellazione di `.claude/skills/design-taste-frontend/SKILL.md`), `.claude/workflows/`, `.github/hooks/`, `.github/skills/`, `skills-lock.json`, `q.txt`, `_bmad-output/planning-artifacts/audit-2026-11-02/`.
-- `dev` è avanti rispetto a origin dei commit di questo ciclo: push a fine Epic 16 (mandato PO).
+- Prima della pubblicazione 17.2–17.4, ricontrollare `origin/dev` e usare un push fast-forward.
 
 ## Next Steps
 
-1. Fine Epic 16: pubblicare il codice su `dev` senza force e aggiornare la PR #22. Non fare merge o deploy.
-2. Epic 17 (17.3 in lavorazione: saldi paginati e verifiche), poi Epic 18 secondo stato e dipendenze dei file story.
+1. Pubblicare i commit verificati su `dev` solo in fast-forward. Non fare merge o deploy.
+2. Riprendere con la 17.5, poi Epic 18 secondo stato e dipendenze dei file story.
 3. Correggere la corrispondenza delle tabelle in PDF/Excel. Poi iniziare le prove email con provider gratuiti, solo in sandbox e con dati fittizi.
 
 ## Suggested skills
