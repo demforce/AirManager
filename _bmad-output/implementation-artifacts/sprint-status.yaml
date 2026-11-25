@@ -476,7 +476,7 @@ development_status:
   # report: _bmad-output/planning-artifacts/audit-2026-09-10/). Ratifiche R-16-a..g chiuse il
   # 2026-09-10 (AskUserQuestion + chat), inclusa R-16-h (data valuta futura rifiutata): nessuna ratifica pendente.
   # Ordine: 16 (correttezza dominio) → 17 (scalabilità; 17.1 parallelizzabile) → 18 (mobile 2).
-  epic-16: in-progress
+  epic-16: done  # 2026-11-25: 16.7–16.10 verificate; prossima story 17.2
   16-1-un-solo-calendario: done  # 2026-09-10 — review SHIPPABLE-WITH-FIXES (0 major), fix 6e8d8a9, arbitro 522+2 flaky = 524 exit 0; TD 16.1-a..e in action_items
   16-2-guardie-registro-voli: done  # 2026-09-26 — feat 3138115, record bc64012, review re-run SHIPPABLE-WITH-FIXES (1 major: ramo Forza registrazione cieco sul 409 FLIGHT_OVERLAP; 1 minor: sorgente del flake TD 16.2-g; 2 low), fix 1a9552b (E8 + unit LOW-1, entrambi provati rossi sul pre-fix); arbitro finale 532+1 flaky = 533 exit 0 (flaky E3 = classe 16.2-g provata via SQL); TD 16.2-a..g in action_items
   16-3-prenotazioni-persona-istruttore-approvazione: done  # 2026-11-01 — feat 4a1ae4d, lock 24d4072, review SHIPPABLE-WITH-FIXES (2 major + 1 low), fix 411b73c (guardie rosse sul pre-fix; sonda D1 40/40 -> 0/100 con 500), arbitro finale 542+1 flaky = 543 exit 0 (flaky bookings:1128 = classe pagina-1, TD 16.3-h); PO-1 -> 19.10 (R-19-o); TD 16.3-g -> 19.10
@@ -487,7 +487,7 @@ development_status:
   16-7-dati-sessioni-rate-limit: done  # 2026-11-25 — F1 review chiuso con ff43e17, F2/F3 nel Fix Record; 2272 unit, lint/typecheck/build, 618/618 e2e su DB isolato, exit 0
   16-8-archivio-velivolo-tutele-aog: done  # 2026-11-25: 2278 unit, 567+54 browser in due esecuzioni; 2026-11-03: RIPERIMETRATA su 56c6664 (§R: via contaore e tariffe gia' chiuse da 19.3; copy ICU, riga di conferma 19.12b con guardia detail>1 incondizionata; Q-16.8-c..f decise per precedente); dev Opus
   16-9-un-solo-calendario-client: done  # 2026-11-25: d45d308, 2282 unit, 621 browser + 1 flaky recuperato, exit 0; 2026-11-03: riallineata su 56c6664 (§R: 5 copie client + expiry-editor; D-R1 entra il dominio Scadenze in UTC, chiude TD-19.9-b; D-R2 via todayDateOnlyUtc); dev Opus
-  16-10-idempotenza-form-importi: review  # 2026-11-25: implementata e 69 browser mirati passati; arbitro completo in corso. NUOVA 2026-11-04, decisione PO sulla review 16.6b (F1): per i 7 form con Idempotency-Key — 409 IDEMPOTENCY_IN_PROGRESS = «operazione in corso» senza chiave nuova; messaggio di rete onesto; stessa chiave dopo chiudi/riapri e ricarica per lo stesso tentativo
+  16-10-idempotenza-form-importi: done  # 2026-11-25: 2289 unit, 69 browser mirati e tutti i 622 casi browser verificati in tre segmenti. NUOVA 2026-11-04, decisione PO sulla review 16.6b (F1): per i 7 form con Idempotency-Key — 409 IDEMPOTENCY_IN_PROGRESS = «operazione in corso» senza chiave nuova; messaggio di rete onesto; stessa chiave dopo chiudi/riapri e ricarica per lo stesso tentativo
   epic-16-retrospective: optional
   epic-17: in-progress
   17-1-fondamenta-misura-configurazione: done  # 2026-09-27 — feat a6e2a39 + record 24c9e2b (dev Sonnet dal parziale dello stash), review SHIPPABLE-WITH-FIXES (3 major: AC 9 non soddisfatto alla lettera → PO opzione A, AC emendato; 53100 riproducibile a 512mb → shm 1gb; render.mjs moltiplicava i long task), fix 405189a/141c444; container ricreato 2 volte dalla sessione principale (volume intatto); arbitro finale 537/537 exit 0

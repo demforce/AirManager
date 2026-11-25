@@ -4,7 +4,7 @@ baseline_commit: d45d308
 
 # Story 16.10: Riprovare i moduli con importi senza ripetere l’operazione
 
-Status: **in-review** — 2026-11-25. Contratto: sprint-status, decisione PO sulla review 16.6b F1.
+Status: **done** — 2026-11-25. Contratto: sprint-status, decisione PO sulla review 16.6b F1.
 
 ## Criteri di accettazione
 
@@ -18,4 +18,6 @@ Status: **in-review** — 2026-11-25. Contratto: sprint-status, decisione PO sul
 
 - Il submitter comune conserva il tentativo anche in caso di 5xx, corpo JSON incompleto e perdita della sessione. La risposta viene letta prima di scartare la chiave. Un mismatch esplicito invita a verificare il registro, senza avviare un altro addebito.
 - Nessuna migrazione, nessun cambiamento all’API. Client e server mantengono i rispettivi confini. `@noble/hashes` era già nella lockfile (1.8.0); dichiarato direttamente per calcolare il digest anche sugli ambienti LAN in HTTP privi di Web Crypto SubtleCrypto.
-- **7 unit aggiunti** su trasferimento del tentativo, risposte conclusive e incerte, deroga, isolamento e fallback; **2289 unit** e gate (lint, tipi e build) verdi. **69 browser mirati** passati, inclusi i quattro tentativi con una sola chiave, ricarica della pagina, replay, un solo addebito e un solo rinnovo nel DB sintetico. L’arbitro completo è ancora in corso.
+- **7 unit aggiunti** su trasferimento del tentativo, risposte conclusive e incerte, deroga, isolamento e fallback; **2289 unit** e gate (lint, tipi e build) verdi. **69 browser mirati** passati, inclusi i quattro tentativi con una sola chiave, ricarica della pagina, replay, un solo addebito e un solo rinnovo nel DB sintetico. Verifica browser finale: **622/622 casi distinti**, a segmenti su DB sintetici.
+
+- Chiusura browser: **566** casi verdi nel progetto principale; il caso con la deroga del volo era rosso per l’asserzione del testo precedente, ora verifica il nuovo messaggio e che il 5xx conservi la chiave (**1/1**, exit 0). L’asserzione dei delta globali di Contabilità era instabile con i writer paralleli: spostata nel progetto serializzato `billing-global` (fix test `35264e0`). Catena seriale completa con il caso spostato: **55/55**, exit 0. La lista del runner contiene **622** casi; nessun caso non verificato.
