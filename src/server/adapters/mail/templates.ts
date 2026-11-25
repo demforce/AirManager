@@ -32,7 +32,7 @@ export type AircraftGroundedEmailContent = { subject: string; text: string };
  * `EMAILED` (no flag), `NO_EMAIL` (no `Person.email` on file — the
  * recovery-net flag), and `SEND_FAILED` (an email exists but SMTP send
  * failed — a DIFFERENT flag, since the staff recovery action differs:
- * "contact them directly" vs "retry/verify the address"). Replaces the
+ * "contact them directly" vs "automatic retry next run"). Replaces the
  * earlier boolean `holderEmailed`, which conflated the latter two cases.
  */
 export type ExpiryDigestItem = {
@@ -172,14 +172,14 @@ export async function buildExpiryAlertEmail(
 
 /**
  * Builds the staff digest email (story 6.3, AC 1; tri-state flag hardened
- * story TD-1, AC 2) — one per active admin/staff user per run, sent ONLY
- * when the run consumed at least one alert (the caller,
+ * story TD-1, AC 2) — one per active ADMIN user per run, sent ONLY
+ * when the run attempted at least one alert (the caller,
  * `expiry-alerts.service.ts`, never invokes this otherwise). Lists every
- * alert consumed this run, flagging `NO_EMAIL` holders (no `Person.email` on
+ * alert attempted this run, flagging `NO_EMAIL` holders (no `Person.email` on
  * file — the recovery net for the "thresholds are consumed regardless" rule,
  * Contesto) DISTINCTLY from `SEND_FAILED` holders (an email exists but the
- * SMTP send itself failed — the staff recovery action differs: verify the
- * address or retry, not "contact them directly"). `EMAILED` items carry no
+ * SMTP send itself failed and the next run will retry automatically, rather
+ * than requiring direct contact). `EMAILED` items carry no
  * flag at all.
  */
 export async function buildExpiryDigestEmail(

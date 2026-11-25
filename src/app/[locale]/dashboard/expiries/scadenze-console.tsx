@@ -376,8 +376,8 @@ export function ScadenzeConsole({
       toast.show(labels.reminders.error, 'bad');
       return;
     }
-    const body = (await response.json()) as { holderEmailsSent: number; digestEmailsSent: number };
-    const message = labels.reminders.sent.replace('{holders}', String(body.holderEmailsSent)).replace('{digests}', String(body.digestEmailsSent));
+    const body = (await response.json()) as { holderEmailsSent: number; digestEmailsSent: number; remaining: number };
+    const message = labels.reminders.sent.replace('{holders}', String(body.holderEmailsSent)).replace('{digests}', String(body.digestEmailsSent)).replace('{remaining}', String(body.remaining));
     setRemindersFeedback(message);
     toast.show(message, 'ok');
     router.refresh();

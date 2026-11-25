@@ -661,6 +661,20 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
   });
 
   describe('archiveAircraft', () => {
+    it('D7 archive returns while an approved-holder send remains pending', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue({ ...SELECTED_AIRCRAFT, archivedAt: new Date() });
+      bookingFindMany.mockResolvedValue([{ id: 'b1', status: 'APPROVED', personId: 'p1', startsAt: new Date('2031-05-01') }]);
+      personFindMany.mockResolvedValue([{ id: 'p1', firstName: 'Test', email: 'test@example.test' }]);
+      sendMock.mockImplementation(() => new Promise(() => {}));
+      const completed = await Promise.race([
+        archiveAircraft(adminActor(), 'aircraft_1').then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 50)),
+      ]);
+      expect(completed).toBe(true);
+    });
     it('throws NotFoundError for a missing aircraft', async () => {
       aircraftFindUnique.mockResolvedValue(null);
       await expect(archiveAircraft(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
@@ -705,7 +719,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         impactedBookings: { pending: 1, approved: 2, effectiveUntil: null },
       });
       expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_1'] } } }));
-      expect(sendMock).toHaveBeenCalledExactlyOnceWith({ to: 'pilot@example.test', subject: 'Aircraft archived subject', text: 'Aircraft archived text' });
+      await vi.waitFor(() => expect(sendMock).toHaveBeenCalledExactlyOnceWith({ to: 'pilot@example.test', subject: 'Aircraft archived subject', text: 'Aircraft archived text' }));
     });
   });
 
@@ -876,6 +890,20 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
    * the transaction" claims below are asserted on ORDER, not on identity.
    */
   describe('setOutOfService — impacted-booking count and grounding email (story AOG-1b)', () => {
+    it('D7 grounding returns while an approved-holder send remains pending', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture({ outOfServiceUntil: null }));
+      bookingFindMany.mockResolvedValue([{ id: 'b1', status: 'APPROVED', personId: 'p1', startsAt: new Date('2031-05-01') }]);
+      personFindMany.mockResolvedValue([{ id: 'p1', firstName: 'Test', email: 'test@example.test' }]);
+      sendMock.mockImplementation(() => new Promise(() => {}));
+      const completed = await Promise.race([
+        setOutOfService(adminActor(), 'aircraft_1', { reason: 'Inspection' }).then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 50)),
+      ]);
+      expect(completed).toBe(true);
+    });
     function groundedFixture(overrides: Record<string, unknown> = {}) {
       return { ...SELECTED_AIRCRAFT, status: 'OUT_OF_SERVICE', statusReason: 'Revisione 100h', ...overrides };
     }
@@ -948,7 +976,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       // The PENDING holder is not even LOOKED UP: the recipient set is the
       // APPROVED subset, decided by the one domain function (R-AOG-i).
       expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_approved'] } } }));
-      expect(sendMock).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
       expect(sendMock).toHaveBeenCalledWith({ to: 'anna@example.test', subject: 'Aircraft grounded subject', text: 'Aircraft grounded text' });
       // Recipient locale is the holder's OWN `User.locale` (AD-7), and the mail
       // names the aircraft, the reason, the window and THEIR booking.
@@ -976,7 +1004,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Attesa pezzo' });
 
-      expect(buildAircraftGroundedEmail).toHaveBeenCalledWith('it', expect.objectContaining({ outOfServiceUntil: null, reason: 'Attesa pezzo' }));
+      await vi.waitFor(() => expect(buildAircraftGroundedEmail).toHaveBeenCalledWith('it', expect.objectContaining({ outOfServiceUntil: null, reason: 'Attesa pezzo' })));
       // No date => no upper bound at all in the count either.
       const where = bookingFindManyMock.mock.calls[0]![0]!.where as { startsAt: { gte: Date; lt?: Date } };
       expect(where.startsAt.lt).toBeUndefined();
@@ -998,7 +1026,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       // The COUNT still says two bookings — the fan-out is what dedupes.
       expect(result.impactedBookings).toEqual({ pending: 0, approved: 2, effectiveUntil: null });
-      expect(sendMock).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
       expect(buildAircraftGroundedEmail).toHaveBeenCalledWith('it', expect.objectContaining({ startsAt: new Date('2031-05-02T09:00:00.000Z') }));
     });
 
@@ -1019,7 +1047,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h' });
 
-      expect(sendMock).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
       expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'elena@example.test' }));
       expect(result.impactedBookings).toEqual({ pending: 0, approved: 2, effectiveUntil: null });
     });
@@ -1048,7 +1076,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(updateManyMock).toHaveBeenCalledTimes(1);
       // ...and the SECOND recipient still got their mail: one bad address does
       // not swallow the rest of the fan-out.
-      expect(sendMock).toHaveBeenCalledTimes(2);
+      await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(2));
       expect(consoleError).toHaveBeenCalled();
       consoleError.mockRestore();
     });
@@ -1073,7 +1101,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Revisione 100h' });
 
-      expect(order).toEqual(['tx-start', 'tx-end', 'send']);
+      await vi.waitFor(() => expect(order).toEqual(['tx-start', 'tx-end', 'send']));
     });
   });
 

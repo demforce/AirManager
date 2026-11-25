@@ -328,9 +328,9 @@ export async function archiveAircraft(actor: Actor, id: string): Promise<Archive
   });
 
   const listItem = toListItem(aircraft);
-  await sendImpactedHolderEmails(impact, 'archiveAircraft', (locale, holder) =>
+  void sendImpactedHolderEmails(impact, 'archiveAircraft', (locale, holder) =>
     buildAircraftArchivedEmail(locale, { aircraftRegistration: listItem.registration, ...holder }),
-  );
+  ).catch((error) => console.error('archiveAircraft: unexpected email fan-out failure', error));
   return { aircraft: listItem, impactedBookings: { pending: impact.pending, approved: impact.approved, effectiveUntil: impact.effectiveUntil } };
 }
 
@@ -423,7 +423,7 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
   });
 
   const listItem = toListItem(aircraft);
-  await sendImpactedHolderEmails(impact, 'setOutOfService', (locale, holder) =>
+  void sendImpactedHolderEmails(impact, 'setOutOfService', (locale, holder) =>
     buildAircraftGroundedEmail(locale, {
       ...holder,
       aircraftRegistration: listItem.registration,
@@ -432,7 +432,7 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
       outOfServiceUntil: listItem.outOfServiceUntil,
       effectiveUntil: impact.effectiveUntil,
     }),
-  );
+  ).catch((error) => console.error('setOutOfService: unexpected email fan-out failure', error));
 
   // Story AOG-1b (review MAJOR-1): `effectiveUntil` travels with the two
   // numbers, so the sentence the admin reads describes the window the count

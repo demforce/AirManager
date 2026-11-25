@@ -450,6 +450,7 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
     await expect(page.getByTestId('scadenze-send-reminders-button')).toHaveCount(1);
     await page.getByTestId('scadenze-send-reminders-button').click();
     await expect(page.getByTestId('toast')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('toast')).toContainText('in coda');
     // The paragraph is still ONE node and still carries the outcome — it is
     // simply not on screen here (ratifica R-15.7-g).
     await expect(page.getByTestId('scadenze-reminders-feedback')).toHaveCount(1);

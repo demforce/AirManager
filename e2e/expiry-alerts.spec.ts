@@ -231,8 +231,9 @@ test.describe('Session-authenticated trigger (Story 12.11, AC 3; ratifica utente
 
     const firstRun = await page.request.post('/api/v1/expiry-alerts/trigger');
     expect(firstRun.status()).toBe(200);
-    const firstBody = (await firstRun.json()) as { holderEmailsSent: number; digestEmailsSent: number };
+    const firstBody = (await firstRun.json()) as { holderEmailsSent: number; digestEmailsSent: number; remaining: number };
     expect(typeof firstBody.holderEmailsSent).toBe('number');
+    expect(firstBody.remaining).toBeGreaterThanOrEqual(0);
 
     const holderEmail = await waitForMailpitMessage(person.email, expiryType.name);
     expect(holderEmail.Text).toContain(expiryType.name);

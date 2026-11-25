@@ -1213,7 +1213,7 @@
       },
       "reminders": {
         "button": "Send reminders",
-        "sent": "Reminders sent: {holders} to holders, {digests} to the admins.",
+        "sent": "Reminders sent: {holders} to holders, {digests} to the admins. {remaining} more are queued for the next run.",
         "error": "Send failed. Please try again."
       },
       "membershipFee": {
@@ -1777,7 +1777,7 @@
       "itemLine": "- {name} — {typeName}: {daysPhrase} (on {date}){flag}",
       "expiredDaysAgo": "expired {days, plural, one {# day} other {# days}} ago",
       "noEmailFlag": " [no email on file — contact them directly]",
-      "sendFailedFlag": " [email delivery failed — check the address or retry]"
+      "sendFailedFlag": " [email delivery failed — automatically retried on the next run]"
     },
     "bookingDenied": {
       "subject": "Booking denied: {aircraftRegistration}",

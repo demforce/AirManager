@@ -1213,7 +1213,7 @@
       },
       "reminders": {
         "button": "Invia promemoria",
-        "sent": "Promemoria ai titolari: {holders} · riepiloghi agli amministratori: {digests}.",
+        "sent": "Promemoria ai titolari: {holders} · riepiloghi agli amministratori: {digests}. Altri {remaining} in coda: partiranno al prossimo giro.",
         "error": "Impossibile inviare i promemoria. Riprova."
       },
       "membershipFee": {
@@ -1777,7 +1777,7 @@
       "itemLine": "- {name} — {typeName}: {daysPhrase} (il {date}){flag}",
       "expiredDaysAgo": "scadenza superata da {days, plural, one {# giorno} other {# giorni}}",
       "noEmailFlag": " [senza email — contattare la persona direttamente]",
-      "sendFailedFlag": " [invio email fallito — verificare l'indirizzo o riprovare]"
+      "sendFailedFlag": " [invio email fallito — nuovo tentativo automatico al prossimo giro]"
     },
     "bookingDenied": {
       "subject": "Prenotazione rifiutata: {aircraftRegistration}",

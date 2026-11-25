@@ -221,3 +221,99 @@ kept the same exact total, 2,071, with p50 22 → 25 ms. Both effective-date
 indexes were selected for the primary date filters in the actual Prisma
 statements. The annual stats service fell from 105 to 18 SQL statements,
 including the elimination of 15 BEGIN and 15 COMMIT statements.
+
+## Story 17.8: expiry alert batches (2026-11-25)
+
+All writes below used `airmanager_load_178_pre`, `_post`, or `_final`, made by
+`pg_dump airmanager_load | psql <isolated database>` inside the local Postgres
+container. The shared synthetic `airmanager_load` remained at **6,731**
+`SentAlert` rows throughout. SMTP went only to a dedicated Mailpit at local
+ports **1125/8125**; the shared e2e Mailpit was not used. A fresh clone is
+required for each series because every job run consumes thresholds. The source
+snapshot had 10,792 expiries. An independent SQL `EXISTS`/`NOT EXISTS` check
+using the Europe/Rome date found **2,005** active, unarchived expiries with a
+due threshold. The older story estimate of 2,013 referred to another seed
+snapshot and date, not this copy.
+
+| Measurement | Before, uncapped | After, batches of 200 |
+|---|---:|---:|
+| First HTTP run, `bench.mjs` cold sample | 123,294 ms | 12,003 ms |
+| First run on final claim-ID source/build | — | **12,403 ms** |
+| Holder emails in first run | 2,119 | 200 |
+| Admin digests in first run | 4 | 4 |
+| SQL executions in measured full run | 10,604 (5.00/holder) | 826 (4.13/holder) |
+| Full batches, median / max | one unbounded run | 11,528 / 12,003 ms |
+| Full-batch median per holder | 58.2 ms | 57.6 ms |
+
+`scripts/perf/bench.mjs` was run with a one-target POST JSON and **zero timed
+iterations**, so its `cold_ms` is the one destructive run; the zero-valued
+`p50_ms` in its table is intentionally not a latency measurement. The final
+source/build repeated the first full batch and returned `candidates=200`,
+`alertsCreated=800`, `holderEmailsSent=200`, `digestEmailsSent=4`,
+`remaining=1805`, with HTTP 200. The final source's first run used a direct
+cron HTTP POST on a fresh `_final2` copy. A second 200-holder run on this
+final claim-ID build returned HTTP 200 in **12,821 ms**, `remaining=1605`,
+with **426 execute + 400 statement = 826 SQL executions** (4.13/holder).
+PostgreSQL statement logging enabled **only
+for each isolated database** supplied the SQL counts; the window excludes
+benchmark login and counts each `execute` or `statement` once, including
+`BEGIN`/`COMMIT`. A separate SQL list of the first 200 pending expiries on
+the unchanged source copy, sorted by `(expiresAt, id)`, matched exactly the
+200 distinct expiry IDs whose alerts were newly written in the final run
+(`diff -q` exit 0). The same 200-ID comparison on `_final2` after explicit
+claim IDs also returned `diff -q` exit 0; its marker set was selected by the
+first-run `sentAt` window because the load seed already contains UUID IDs.
+
+The full post-fix series used ten 200-person runs and one five-person run:
+2,005 holder messages, 44 admin digests and 6,244 new `SentAlert` rows; each
+full run was below the declared **20-second ceiling with healthy local SMTP**.
+Three 10-second connection timeouts could exceed that ceiling during an
+outage; the stop-after-three rule bounds the attempt count, not absolute time.
+`remaining` stepped
+1805, 1605, …, 5, 0. A twelfth run returned six zero counters, including
+`remaining=0`; independent SQL confirmed zero eligible pending rows, while
+114 due rows excluded by archive/inactive filters remained untouched. The
+dedicated Mailpit reported 2,049 SMTP accepts and zero rejects; it retains
+only a bounded mailbox, so `SMTPAccepted` is the count, not its current
+`Messages` size.
+
+A 30-recipient component probe using the same settings getter, template and
+Nodemailer options measured p50 **settings 1.60 ms**, **template 1.13 ms**,
+**transport construction 0.06 ms**, and **`sendMail` 49.15 ms**. `sendMail`
+includes TCP connection, SMTP handshake and DATA; those phases are not
+separable without changing the mail adapter. The first settings query was
+cold (mean 13.53 ms), so these p50 figures describe warmed components and do
+not sum exactly to the end-to-end HTTP cost.
+
+An outage probe on the `_post` copy with three new synthetic expiries and
+Mailpit stopped returned HTTP 200, `candidates=3`, `alertsCreated=0`,
+`remaining=3`, and zero `SentAlert` rows for them. With the same dedicated
+Mailpit restored, the next run sent three holder messages and four digests,
+created three `SentAlert` rows and returned `remaining=0`. This proves retry
+after a clear transport failure; it cannot prove whether an SMTP server
+accepted a message immediately before a connection failure.
+The final claim-ID build repeated this definite-outage probe on three new
+synthetic expiries: zero markers remained after three refused sends; after
+restoring the dedicated Mailpit, the next HTTP run wrote three markers and
+sent three holder emails plus four digests. Claim IDs are generated before
+`createMany`, and failure cleanup deletes by those IDs so a concurrently
+replaced claim cannot be removed by an older failing attempt.
+
+A concurrent HTTP probe on the drained `_post` clone inserted one new pending
+expiry and issued two job POSTs simultaneously. Both returned HTTP 200; one
+sent the holder email and four admin digests, and the other sent nothing.
+Independent SQL found one `SentAlert` for the expiry, while the dedicated
+Mailpit counted five SMTP accepts and zero rejects. This exercises the
+database claim under overlapping requests; it does not cover an ambiguous
+SMTP acceptance followed by a transport error.
+The final claim-ID build repeated this overlap probe on another new expiry:
+the two responses sent one holder email in total, SQL found one marker, and
+Mailpit's accept counter advanced by five (one holder, four digests).
+
+For aircraft email fan-out, 21 distinct synthetic APPROVED holders were
+attached to each of two aircraft on the isolated `_post` copy. Real
+authenticated HTTP requests returned in **58 ms** for grounding and **26 ms**
+for archiving, while all 21 messages per request reached the dedicated Mailpit
+about 1.1 seconds later. These local measurements exercise the self-hosted
+Node process; in-process best-effort mail is not a durable queue across a
+process crash or shutdown.

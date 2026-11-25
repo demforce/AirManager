@@ -6,12 +6,13 @@ vi.mock('@/server/db/prisma', () => ({
   prisma: {
     expiry: {
       findMany: vi.fn(),
+      count: vi.fn(),
     },
     sentAlert: {
       createMany: vi.fn(),
+      deleteMany: vi.fn(),
     },
     user: {
-      findUnique: vi.fn(),
       findMany: vi.fn(),
     },
   },
@@ -32,8 +33,9 @@ const { buildExpiryAlertEmail, buildExpiryDigestEmail } = await import('@/server
 const { runExpiryAlertsJob } = await import('./expiry-alerts.service');
 
 const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
+const expiryCountMock = vi.mocked(prisma.expiry.count);
 const sentAlertCreateManyMock = vi.mocked(prisma.sentAlert.createMany);
-const userFindUniqueMock = vi.mocked(prisma.user.findUnique);
+const sentAlertDeleteManyMock = vi.mocked(prisma.sentAlert.deleteMany);
 const userFindManyMock = vi.mocked(prisma.user.findMany);
 
 type Fixture = Record<string, unknown>;
@@ -42,7 +44,6 @@ const sentAlertCreateMany = sentAlertCreateManyMock as unknown as {
   mockResolvedValue: (v: { count: number }) => void;
   mockRejectedValueOnce: (v: unknown) => void;
 };
-const userFindUnique = userFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture | null) => void };
 const userFindMany = userFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 
 function addDaysUtc(date: Date, days: number): Date {
@@ -71,15 +72,17 @@ function adminUserFixture(overrides: Partial<Fixture> = {}): Fixture {
 describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, idempotent job, FR-37, AD-9)', () => {
   beforeEach(() => {
     expiryFindManyMock.mockReset();
+    expiryCountMock.mockReset();
     sentAlertCreateManyMock.mockReset();
-    userFindUniqueMock.mockReset();
+    sentAlertDeleteManyMock.mockReset();
     userFindManyMock.mockReset();
     sendMock.mockReset();
     vi.mocked(buildExpiryAlertEmail).mockClear();
     vi.mocked(buildExpiryDigestEmail).mockClear();
 
     sentAlertCreateMany.mockResolvedValue({ count: 1 });
-    userFindUnique.mockResolvedValue(null);
+    expiryCountMock.mockResolvedValue(0);
+    sentAlertDeleteManyMock.mockResolvedValue({ count: 1 });
     userFindMany.mockResolvedValue([adminUserFixture()]);
   });
 
@@ -90,8 +93,8 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
     await runExpiryAlertsJob();
 
-    const call = expiryFindManyMock.mock.calls[0]?.[0] as { where: { expiresAt: { lte: Date } } };
-    expect(call.where.expiresAt.lte.getTime()).toBe(addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 60).getTime());
+    const call = expiryFindManyMock.mock.calls[0]?.[0] as { where: { OR: { expiresAt: { lte: Date } }[] } };
+    expect(call.where.OR[0]?.expiresAt.lte.getTime()).toBe(addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 60).getTime());
   });
 
   it('reaches the next expiry threshold just after Rome midnight while UTC is still yesterday', async () => {
@@ -100,8 +103,8 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
       vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z'));
       expiryFindMany.mockResolvedValue([]);
       await runExpiryAlertsJob();
-      const call = expiryFindManyMock.mock.calls[0]?.[0] as { where: { expiresAt: { lte: Date } } };
-      expect(call.where.expiresAt.lte.toISOString()).toBe('2026-10-31T00:00:00.000Z');
+      const call = expiryFindManyMock.mock.calls[0]?.[0] as { where: { OR: { expiresAt: { lte: Date } }[] } };
+      expect(call.where.OR[0]?.expiresAt.lte.toISOString()).toBe('2026-10-31T00:00:00.000Z');
     } finally {
       vi.useRealTimers();
     }
@@ -115,7 +118,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
       const result = await runExpiryAlertsJob();
 
-      expect(sentAlertCreateManyMock).toHaveBeenCalledWith({ data: [{ expiryId: 'exp_1', threshold: 60 }] });
+      expect(sentAlertCreateManyMock).toHaveBeenCalledWith({ data: [{ id: expect.any(String), expiryId: 'exp_1', threshold: 60 }] });
       expect(sendMock).toHaveBeenCalledTimes(2); // holder + digest (admin)
       expect(result).toMatchObject({ candidates: 1, alertsCreated: 1, holderEmailsSent: 1, holdersWithoutEmail: 0, digestEmailsSent: 1 });
     });
@@ -127,7 +130,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
       const result = await runExpiryAlertsJob();
 
-      expect(sentAlertCreateManyMock).toHaveBeenCalledWith({ data: [{ expiryId: 'exp_1', threshold: 30 }] });
+      expect(sentAlertCreateManyMock).toHaveBeenCalledWith({ data: [{ id: expect.any(String), expiryId: 'exp_1', threshold: 30 }] });
       expect(result.alertsCreated).toBe(1);
       expect(result.holderEmailsSent).toBe(1);
     });
@@ -143,9 +146,9 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
       expect(sentAlertCreateManyMock).toHaveBeenCalledWith({
         data: [
-          { expiryId: 'exp_1', threshold: 60 },
-          { expiryId: 'exp_1', threshold: 30 },
-          { expiryId: 'exp_1', threshold: 7 },
+          { id: expect.any(String), expiryId: 'exp_1', threshold: 60 },
+          { id: expect.any(String), expiryId: 'exp_1', threshold: 30 },
+          { id: expect.any(String), expiryId: 'exp_1', threshold: 7 },
         ],
       });
       expect(result.alertsCreated).toBe(3);
@@ -159,10 +162,10 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
       expect(sentAlertCreateManyMock).toHaveBeenCalledWith({
         data: [
-          { expiryId: 'exp_1', threshold: 60 },
-          { expiryId: 'exp_1', threshold: 30 },
-          { expiryId: 'exp_1', threshold: 7 },
-          { expiryId: 'exp_1', threshold: 0 },
+          { id: expect.any(String), expiryId: 'exp_1', threshold: 60 },
+          { id: expect.any(String), expiryId: 'exp_1', threshold: 30 },
+          { id: expect.any(String), expiryId: 'exp_1', threshold: 7 },
+          { id: expect.any(String), expiryId: 'exp_1', threshold: 0 },
         ],
       });
       expect(result.alertsCreated).toBe(4);
@@ -236,7 +239,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     );
   });
 
-  it('titolare HAS an email but the SMTP send fails -> thresholds still consumed, NOT counted in holdersWithoutEmail, digest flags SEND_FAILED distinctly from NO_EMAIL (TD-1, AC 2)', async () => {
+  it('SMTP failure releases thresholds, is NOT counted in holdersWithoutEmail, and flags SEND_FAILED in digest', async () => {
     expiryFindMany.mockResolvedValue([
       candidateFixture({ person: { id: 'person_3', firstName: 'Luca', lastName: 'Neri', email: 'luca@example.com' }, sentAlerts: [] }),
     ]);
@@ -244,7 +247,9 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
     const result = await runExpiryAlertsJob();
 
-    expect(result.alertsCreated).toBe(1);
+    expect(result.alertsCreated).toBe(0);
+    const claims = sentAlertCreateManyMock.mock.calls[0]?.[0]?.data as { id: string }[];
+    expect(sentAlertDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: claims.map((claim) => claim.id) } } });
     expect(result.holderEmailsSent).toBe(0);
     // NOT the no-email counter — the semantics stay reserved for a truly
     // missing `Person.email` (TD-1, AC 2: the story's binding decision).
@@ -260,7 +265,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
   describe('recipient locale (AD-7 — the RECIPIENT locale, not the actor)', () => {
     it('holder with a linked User whose locale is "en" -> the alert is built in English', async () => {
       expiryFindMany.mockResolvedValue([candidateFixture({ sentAlerts: [] })]);
-      userFindUnique.mockResolvedValue({ locale: 'en' });
+      userFindMany.mockResolvedValue([{ personId: 'person_1', locale: 'en' }]);
 
       await runExpiryAlertsJob();
 
@@ -269,7 +274,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
     it('holder with no linked User -> falls back to Italian (same rule as sendNegativeBalanceAlert, 3.3)', async () => {
       expiryFindMany.mockResolvedValue([candidateFixture({ sentAlerts: [] })]);
-      userFindUnique.mockResolvedValue(null);
+      userFindMany.mockResolvedValue([]);
 
       await runExpiryAlertsJob();
 
@@ -310,7 +315,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
       const result = await runExpiryAlertsJob();
 
       expect(result.digestEmailsSent).toBe(0);
-      expect(userFindManyMock).not.toHaveBeenCalled();
+      expect(userFindManyMock).not.toHaveBeenCalledWith(expect.objectContaining({ where: { isActive: true, roles: { has: 'ADMIN' } } }));
       expect(buildExpiryDigestEmail).not.toHaveBeenCalled();
     });
 
@@ -343,7 +348,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
       const result = await runExpiryAlertsJob();
 
-      expect(result.alertsCreated).toBe(1);
+      expect(result.alertsCreated).toBe(0);
       expect(result.holderEmailsSent).toBe(0);
       consoleErrorSpy.mockRestore();
     });

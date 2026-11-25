@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.8: L'alert job a lotti
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (Q-17.8-e = A ratificata: la UI del bottone «Invia promemoria» cambia). Review: Opus 5 xhigh adversarial. **Ordine**: il dev parte **DOPO la 16.8** (che rinomina e generalizza il fan-out `sendAircraftGroundedEmails` e lo chiama anche dall'archiviazione) **e la 16.9** (che porta `expiry-alerts.service.ts:110` su Europe/Rome e riscrive le fixture di `expiry-alerts.service.test.ts:58-293`, cancellando `todayDateOnlyUtc`): ogni `file:riga` qui sotto va **riletto su HEAD** al momento del dev.
+Status: **review** — 2026-11-25 (sviluppo, benchmark e gate completi; revisione indipendente non avviata). Ricognizione iniziale su `e951960`; implementazione dopo 16.8 e 16.9 sulla base `e13ff401`. Per istruzione permanente di Enrico, GPT 6 Sol sostituisce Opus 5 xhigh nello sviluppo e nella revisione ordinaria; la revisione deve restare indipendente.
 
 ## Story
 
@@ -39,12 +39,12 @@ Fonte: `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md` §«Story 17.8»
 
 ## Tasks / Subtasks
 
-- [ ] Rileggere su HEAD (dopo 16.8/16.9) le righe citate; ri-misurare i conteggi sulla copia del load DB (AC 1, 6).
-- [ ] Riscrivere la query candidati (AC 1) e il ciclo a pagine keyset con tetto (AC 2), `remaining` (AC 7), lingue a lotto (AC 5).
-- [ ] Meccanismo dell'invio fallito secondo §PO (AC 3, 4), stop dopo K fallimenti di trasporto consecutivi e P2003 → saltato (D-T6).
-- [ ] Fan-out velivolo secondo §PO Q-17.8-d (AC 8).
-- [ ] UI del bottone secondo §PO Q-17.8-e; copy `Emails.expiryDigest.sendFailedFlag` riscritta se il ritentativo diventa automatico (glossario + `messages.test.ts`).
-- [ ] Unit D1-D7 (sotto) e adeguamento dei pin; misura AC 6; Dev Agent Record.
+- [x] Rileggere su HEAD (dopo 16.8/16.9) le righe citate; ri-misurare i conteggi sulla copia del load DB (AC 1, 6).
+- [x] Riscrivere la query candidati (AC 1) e il ciclo a pagine keyset con tetto (AC 2), `remaining` (AC 7), lingue a lotto (AC 5).
+- [x] Meccanismo dell'invio fallito secondo §PO (AC 3, 4), stop dopo K fallimenti di trasporto consecutivi e P2003 → saltato (D-T6).
+- [x] Fan-out velivolo secondo §PO Q-17.8-d (AC 8).
+- [x] UI del bottone secondo §PO Q-17.8-e; copy `Emails.expiryDigest.sendFailedFlag` riscritta se il ritentativo diventa automatico (glossario + `messages.test.ts`).
+- [x] Unit D1-D7 (sotto) e adeguamento dei pin; misura AC 6; Dev Agent Record.
 
 ## Dev Notes
 
@@ -90,6 +90,221 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 
 ### Agent Model Used
 
+Codex development context (single agent; no delegated implementers).
+
 ### Completion Notes List
 
+- Base `e13ff401d21f1715af172e4b4fcd7d4d277d9b76`, branch `story/17-8`.
+  `origin` was already verified as `demforce/AirManager` by the parent task;
+  this development context made no remote write. All database writes and
+  emails below used synthetic local fixtures only.
+- AC 1/2/5: `expiry.findMany` now selects only due unsent thresholds of
+  unarchived people and active types, ordered by `(expiresAt, id)`, with
+  keyset pages of 50 and a hard maximum of 200 processed candidates per run.
+  Per-page `user.findMany` replaces per-candidate `findUnique`; a final count
+  reports `remaining`. The injected cap is for unit tests; the production
+  default and maximum are both 200.
+- AC 3/4/9: `createMany` still reserves thresholds before sending, preserving
+  the unique constraint and P2002 loser behavior. A failed holder send releases
+  only the claim IDs created by that attempt so it is retried next run; a
+  concurrent renewal and replacement claim cannot be erased by the failing
+  older attempt. A missing email
+  still consumes them. P2003 from concurrent deletion is skipped. Three
+  consecutive transport failures stop the run; its attempted items still
+  appear in that run's admin digest. The allowed crash window between claim
+  and delivery remains. An ambiguous SMTP failure after acceptance cannot be
+  distinguished from a definite rejection by this adapter, so exactly-once
+  delivery cannot be demonstrated for that case; the fixture outage was a
+  definite connection refusal.
+- AC 7/UI: `remaining` added to the response schema and route fixture;
+  OpenAPI descriptions define the changed `candidates` meaning. Both locales
+  show the queued count in the existing desktop status and mobile toast.
+  Digest failure text now says the next run retries automatically.
+- AC 8: both grounding and archive return after the write transaction and
+  launch the existing best-effort holder fan-out without awaiting it. No
+  permission or recipient-selection rule changed. This in-process path is
+  best-effort across a process shutdown, not a durable queue.
+
+### Discriminant and functional evidence
+
+- Red probe on an isolated `git archive` of the verified base with local
+  `node_modules`/generated Prisma copied in: `vitest run
+  src/server/services/expiry-alerts-17-8.test.ts
+  src/server/services/aircraft.service.test.ts -t 'D[1-7]'` → **exit 1**, 8
+  failed/75 skipped. D1 cap, D2 release, D3 `where`, D4 keyset, D5 batch
+  locale, D6 P2003, D7 grounding and archive nonblocking all discriminated.
+  Baseline SHA-256: service
+  `75e42f72c1cbb641cf912e6c57bef7a1cbf708aff45da1e478f6023ffd197c38`,
+  aircraft service
+  `14b56875703e0d8ae6dc015867a24a0f21451b07e5424323dd5d92318b3e03c7`,
+  Italian messages
+  `2e4a271cbc3a9bc5db4fa6d07198ef6fac042d1f087f036f9f1c69780a09e03d`;
+  `sha256sum -c` after the probe → **exit 0**, all three `OK`.
+- The final probe on the implementation → **exit 0**, 8 passed/77 skipped;
+  source hashes before and after were identical (`sha256sum -c` exit 0).
+  Final SHA-256: service
+  `6aadd542f2200861c615b447a3075621b31afe1efb48a3883a3ebc3652331af4`,
+  aircraft service
+  `da1d7f1ac437c019e1c476f361e65999aaa2af8f0f793e5773d7604345bdd54b`,
+  Italian messages
+  `118b87b17c45e3125d53bb18399b25e7e95e007840215469969923f09cc9ccf9`.
+  `env -u DATABASE_URL -u AUTH_SECRET npx vitest run` on focused service,
+  route, message and aircraft tests → **139 passed**. The final
+  `npm run gates` after claim-ID hardening → **exit 0**, lint, typecheck,
+  **2,320** unit, production build (log
+  `/tmp/airmanager-178-gates-ownership.log`).
+- Independently of mocks, the local SQL `EXISTS`/`NOT EXISTS` query counted
+  **2,005** eligible pending rows on a fresh copy of `airmanager_load` (10,792
+  expiries, 6,731 existing `SentAlert`), versus the older 2,013 estimate on
+  another snapshot. The shared `airmanager_load` stayed at 6,731 `SentAlert`.
+  Ten batches of 200 and one of five consumed all 2,005; `remaining` reached
+  zero and the twelfth run sent no holder mail or digest. The copied DB retained
+  114 excluded due rows for archived people/inactive types.
+- The exact first 200 urgent IDs on the untouched source (`ORDER BY
+  expiresAt, id LIMIT 200`) matched the 200 IDs with newly written
+  `SentAlert` on the final-build copy: two 200-line SQL exports,
+  `diff -q` **exit 0**. This checks priority independently of the unit mock.
+  Repeating the comparison on `_final2` after claim-ID hardening also gave
+  **200/200 equal IDs, diff exit 0**, using the first-run `sentAt` window.
+- A dedicated Mailpit outage on the isolated copy: three synthetic due
+  expiries → HTTP 200, `candidates=3`, `alertsCreated=0`, `remaining=3`, zero
+  `SentAlert` for them. After restoring Mailpit → HTTP 200, three holder
+  emails, three `SentAlert`, four digest emails, `remaining=0`. Logs:
+  `/tmp/airmanager-178-retry-{failed,success}.log`.
+- Repeated the definite-outage probe on the **final claim-ID build** and
+  drained `_post` copy: three new synthetic expiries, Mailpit unavailable →
+  HTTP 200, `candidates=3`, `alertsCreated=0`, `remaining=3`, zero markers;
+  after Mailpit restart → HTTP 200, three holder messages, four digests,
+  three markers, `remaining=0`, seven SMTP accepts. Logs
+  `/tmp/airmanager-178-retry2-{failed,success}.log`.
+- A real concurrent HTTP probe on the drained `_post` copy inserted one new
+  synthetic pending expiry. Two `POST /api/v1/jobs/expiry-alerts` calls via
+  `Promise.all` both returned HTTP 200: one returned `candidates=1`,
+  `holderEmailsSent=1`, `digestEmailsSent=4`, `remaining=0`; the other returned
+  `candidates=1`, zero holder/digest emails and `remaining=0`. Independent
+  SQL found exactly one `SentAlert` for the expiry, and dedicated Mailpit
+  reported five SMTP accepts (one holder plus four digests), zero rejects.
+  The claim loser sent no duplicate. The first fixture insert command exited
+  **3** on an existing person/type pair (`Expiry_personId_expiryTypeId_key`);
+  selecting a free pair corrected it (`INSERT 0 1`, exit 0).
+- Repeated the concurrent probe on the final claim-ID build: two HTTP 200
+  responses with holder counts 1 and 0, one marker, and exactly five new
+  SMTP accepts (the dedicated Mailpit counter advanced 7 → 12). Log
+  `/tmp/airmanager-178-concurrent2-probe.log`.
+- A real HTTP grounding with 21 distinct APPROVED holders returned 200 in
+  58 ms; archive on another aircraft returned 200 in 26 ms. Their 21 holder
+  emails each arrived in dedicated Mailpit after 1.1–1.2 s. Both response
+  counts kept APPROVED and PENDING separate. Logs:
+  `/tmp/airmanager-178-aircraft{-archive}-bench.log`.
+
+### Performance (AC 6)
+
+See `docs/operations/load-testing.md` §Story 17.8 for setup and limits.
+`scripts/perf/bench.mjs` with one POST target and zero timed iterations
+measured the single destructive cold run on fresh isolated copies:
+
+| Metric | Baseline | Batched | Final batched build |
+|---|---:|---:|---:|
+| First HTTP run | 123,294 ms | 12,003 ms | 12,403 ms |
+| Holder mail | 2,119 | 200 | 200 |
+| SQL executions / holder | 10,604 / 2,119 = 5.00 | 826 / 200 = 4.13 | 826 / 200 = 4.13 (second batch) |
+
+The 10 full post-fix runs had p50 **11,528 ms**, maximum **12,003 ms**,
+below the declared **20 s/run** ceiling; the last five-person run took
+539 ms and the empty run 56 ms. The final build's first full run took
+12,403 ms on the final claim-ID build, using one direct cron HTTP POST on a
+fresh `_final2` copy (10,792 expiries, 6,731 markers). A second full batch
+on that same final build took **12,821 ms**, returned `remaining=1605`, and
+logged **426 execute + 400 statement = 826 SQL executions**, 4.13 per holder.
+The logging was enabled only for `_final2` and reset to `none` afterward;
+the shared `airmanager_load` still had 6,731 markers. A 30-send component
+probe measured p50 settings **1.60 ms**,
+template **1.13 ms**, transport construction **0.06 ms**, delivery **49.15
+ms** per recipient. Delivery includes TCP/SMTP handshake; the local adapter
+does not expose a finer split. PostgreSQL logging was enabled only on the
+isolated copy and reset afterward; counts include transaction control SQL.
+The 20-second ceiling applies to measured healthy local SMTP; three
+10-second connection timeouts could exceed it during an outage.
+SMTP delivery dominates the healthy-run cost, but the 200-person run is
+already below that ceiling. A pooled sender would change the shared mail
+adapter's per-send settings refresh and all other mail paths, so it is left
+outside this measured, capped change.
+
+### Gate and diagnostics
+
+- Reproducible verification commands on the candidate:
+  `env -u DATABASE_URL -u AUTH_SECRET npx vitest run
+  src/server/services/expiry-alerts-17-8.test.ts
+  src/server/services/aircraft.service.test.ts -t 'D[1-7]'`
+  (**exit 0**, 8 passed/77 skipped), `sha256sum -c
+  /tmp/airmanager-178-final-source-sha256.txt` (**exit 0**), and
+  `npm run gates` (**exit 0**, lint/typecheck/2,320 unit/build). On the
+  isolated `/tmp/airmanager-178-baseline` source copy the same Vitest filter
+  returned **exit 1**, 8 failed/77 skipped; baseline `sha256sum -c` returned
+  **exit 0**. Logs are `/tmp/airmanager-178-discriminant-{red-final,green-ownership}.log`
+  and `/tmp/airmanager-178-gates-ownership.log`.
+- Final synthetic data setup used `docker compose exec -T postgres dropdb
+  -U airmanager --force airmanager`, `createdb -U airmanager -O airmanager
+  airmanager`, then `DATABASE_URL=<local synthetic airmanager> npx prisma
+  migrate deploy` and `npx prisma db seed` (both **exit 0**; logs
+  `/tmp/airmanager-178-final-e2e-{migrate,seed}.log`). No production database
+  or real SMTP destination was used.
+- Final SQL count: `ALTER DATABASE airmanager_load_178_final2 SET
+  log_statement='all'` (**exit 0**), `node
+  /tmp/airmanager-178-single-probe.mjs` (**exit 0**, HTTP 200), then `python
+  /tmp/airmanager-178-count-final2-sql.py` (**exit 0**, 826 statements in the
+  recorded request window). `ALTER DATABASE ... RESET log_statement`
+  returned **exit 0**, and a fresh connection reported `none`.
+- Baseline copied-source `npm run build` initially exited **1**:
+  `TurbopackInternalError: Symlink [project]/node_modules is invalid, it
+  points out of the filesystem root`. A hard-link copy attempt exited **1**
+  (`Invalid cross-device link`); a regular `cp -a` of dependencies and Prisma
+  output resolved the environment issue. The baseline build then exited 0.
+- The first retry fixture SQL exited **3** with `operator does not exist:
+  date + bigint` from `docker compose exec -T postgres psql -U airmanager
+  -d airmanager_load_178_post -v ON_ERROR_STOP=1 <
+  /tmp/airmanager-178-retry-fixture.sql`; casting the row number to `int`
+  resolved it, and the fixture
+  insert and both HTTP retry runs exited 0. The first temporary component
+  probe exited **1** (`Top-level await ... not supported with the cjs output
+  format`); an async `main()` resolved it, and the temporary source was
+  removed from the repository after measurement. A dedicated Mailpit restart
+  briefly encountered Docker name conflict after `stop`; removing that test
+  container and restarting it resolved the issue before the post-fix run.
+- A preliminary `_final2` priority comparison selected UUID-shaped IDs and
+  `diff -q` exited **1**: the synthetic load seed already used UUID IDs, so
+  that filter included old alerts. Selecting the measured first-run `sentAt`
+  window instead returned exactly 800 new markers and 200 distinct expiries;
+  the 200-ID `diff -q` exited **0**.
+- `scripts/e2e.sh start` on the final claim-ID build and a freshly
+  migrated/seeded synthetic `airmanager` database returned **exit 0**;
+  `scripts/e2e.sh status` established `E2E_EXIT=0`, state `DONE`, **621 passed,
+  3 flaky recovered on retry, 2 skipped** in 24.0 min. The final sanitized
+  log is `/tmp/airmanager-178-e2e-ownership.log`. First-attempt diagnostics:
+  account-adjustment waited 15 s for a Mailpit message;
+  session-identity's `apiRequestContext.post('/api/v1/users')` exceeded its
+  30 s test timeout; mobile-METAR remained at `/it/login` for a 5 s dashboard
+  URL assertion. All three passed on retry; their root cause was not isolated.
+  Story 17.8 expiry, mobile queue toast, aircraft grounding and archive
+  cases passed. The two METAR skips are existing test skips, not passing
+  assertions. The preceding build's full suite had the same totals (log
+  `/tmp/airmanager-178-e2e-final.log`), but the final claim-ID build was
+  independently retested. `git diff --check` returned **exit 0**.
+  Independent review has **not** been run; this record is `review`, not done.
+
 ### File List
+
+- `src/server/services/expiry-alerts.service.ts`,
+  `src/server/services/expiry-alerts.service.test.ts`,
+  `src/server/services/expiry-alerts-17-8.test.ts`
+- `src/server/services/aircraft.service.ts`,
+  `src/server/services/aircraft.service.test.ts`
+- `src/server/adapters/mail/templates.ts` (digest contract comment)
+- `src/lib/schemas/expiry-alerts.ts`, `src/lib/schemas/registry.ts`,
+  `src/app/api/v1/jobs/expiry-alerts/route.test.ts`
+- `src/app/[locale]/dashboard/expiries/scadenze-console.tsx`,
+  `src/app/[locale]/dashboard/expiries/page.tsx`, `messages/it.json`,
+  `messages/en.json`, `e2e/expiry-alerts.spec.ts`,
+  `e2e/mobile-expiries-movements.spec.ts`
+- `docs/operations/load-testing.md`,
+  `docs/superpowers/plans/2026-11-25-expiry-alert-batches.md`, this record

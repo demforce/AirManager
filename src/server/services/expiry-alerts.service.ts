@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import type { AppLocale } from '@/i18n/routing';
@@ -21,7 +22,7 @@ import { prisma } from '@/server/db/prisma';
  * matching `SentAlert` row yet. When there is at least one to consume, this
  * job sends exactly ONE holder email — about the REAL `daysLeft`, never
  * about which threshold(s) triggered it — and inserts a `SentAlert` row for
- * EVERY threshold it just consumed. The normal cadence (job runs daily,
+ * EVERY threshold it just consumed. The normal cadence (job runs regularly,
  * nothing skipped) walks the array one threshold at a time: 60, then 30,
  * then 7, then 0 — four emails over the scadenza's life. A missed cron (or
  * a scadenza registered already close to/past its date, even already
@@ -30,18 +31,11 @@ import { prisma } from '@/server/db/prisma';
  * them all up behind that single email: never four emails at once, and
  * never an alert permanently lost to a missed cron run.
  *
- * **Idempotence (AC 2, AD-9) is a DB constraint, and the order is
- * insert-BEFORE-send.** The `SentAlert` rows for a candidate are created
- * (`createMany`, one write) in a try/catch BEFORE the holder email is sent.
- * A `P2002` (a concurrent run already claimed at least one of these
- * thresholds for this expiry) is caught and treated as "the other run owns
- * this email" — this run silently skips it, sends nothing, throws nothing.
- * This ordering has a known, accepted trade-off (doc'd here, not just
- * asserted): a crash between the successful insert and the `send()` call
- * loses that one holder email — AD-9 privileges "never more than one alert
- * per threshold, ever" over "never lose an alert"; the admin digest below
- * is the recovery net for exactly this case (an admin sees the
- * scadenza listed even if the titolare's own inbox never got it).
+ * **Idempotence (AC 2, AD-9)**: claim due thresholds before sending. A
+ * concurrent run's P2002 loses the claim and sends nothing. A failed send
+ * releases only this attempt's claim IDs so the next run can retry. A process
+ * crash between claim and send can still lose one reminder, the ratified
+ * trade-off that prevents duplicate emails without a durable queue.
  *
  * **Titolare without an email** (`Person.email === null`): thresholds are
  * consumed anyway (`SentAlert` created — the job must not re-evaluate this
@@ -50,17 +44,15 @@ import { prisma } from '@/server/db/prisma';
  * (Contesto).
  *
  * **Admin digest**: ONE email per active `ADMIN` user, in their OWN
- * locale, listing every alert this run actually consumed — sent ONLY when
- * the run consumed at least one alert (`alertsCreated > 0`); a run that
- * consumes nothing sends no digest to anyone (this is what makes AC 2 true
- * end-to-end, digest included: a second identical run is a complete no-op).
+ * locale, listing this run's attempts, including failed sends that will be
+ * retried. A run with no attempts sends no digest.
  * A single recipient's send failure is caught per-recipient — it never
  * blocks the others, and the job never throws for a mail failure (Dev
  * Notes: never let SMTP failures fail an idempotent write job whose rows
  * already committed).
  */
 export type ExpiryAlertsJobResult = {
-  /** Scadenze inspected this run (`expiresAt <= today + 60 days`), before filtering to those with something new to consume. */
+  /** Pending scadenze processed in this run (at most EXPIRY_ALERTS_MAX_PER_RUN). */
   candidates: number;
   /** `SentAlert` rows created this run (thresholds consumed, not emails sent). */
   alertsCreated: number;
@@ -68,18 +60,20 @@ export type ExpiryAlertsJobResult = {
   holderEmailsSent: number;
   /** Candidates that consumed a threshold but have no `Person.email` on file. */
   holdersWithoutEmail: number;
-  /** Admin digest emails sent (0 when `alertsCreated === 0`). */
+  /** Admin digest emails sent (0 when this run made no attempts). */
   digestEmailsSent: number;
+  /** Due, unsent scadenze still pending after this run, including failed sends. */
+  remaining: number;
 };
 
-/** Prisma unique-constraint violation (same pattern as every other service). */
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2002';
+/** Prisma conflict code, used for concurrent claims and deleted expiries. */
+function hasPrismaCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === code;
 }
 
-/** Never hardcode `60` a second time (Task 3) — the query horizon is always derived from the threshold list itself. */
-const MAX_ALERT_THRESHOLD_DAYS = Math.max(...EXPIRY_ALERT_THRESHOLDS);
 const MS_PER_DAY = 86_400_000;
+export const EXPIRY_ALERTS_MAX_PER_RUN = 200;
+const PAGE_SIZE = 50;
 
 /** Recipient locale, same fallback rule as `sendNegativeBalanceAlert` (story 3.3): `User.locale === 'en'` -> `en`, everything else (including no linked `User`) -> `it`. */
 function resolveLocale(locale: string | null | undefined): AppLocale {
@@ -107,86 +101,121 @@ function dueThresholds(daysLeft: number): number[] {
   return EXPIRY_ALERT_THRESHOLDS.filter((threshold) => daysLeft <= threshold);
 }
 
-export async function runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult> {
+export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN): Promise<ExpiryAlertsJobResult> {
   const today = todayDateOnlyUtcInZone(APP_TIMEZONE);
-  const horizon = new Date(today.getTime() + MAX_ALERT_THRESHOLD_DAYS * MS_PER_DAY);
-
-  const candidates: Candidate[] = await prisma.expiry.findMany({
-    where: { expiresAt: { lte: horizon } },
-    select: CANDIDATE_SELECT,
-  });
+  const limit = Math.max(1, Math.min(maxPerRun, EXPIRY_ALERTS_MAX_PER_RUN));
+  const pendingWhere = {
+    person: { archivedAt: null },
+    expiryType: { isActive: true },
+    OR: EXPIRY_ALERT_THRESHOLDS.map((threshold) => ({
+      expiresAt: { lte: new Date(today.getTime() + threshold * MS_PER_DAY) },
+      sentAlerts: { none: { threshold } },
+    })),
+  };
 
   let alertsCreated = 0;
   let holderEmailsSent = 0;
   let holdersWithoutEmail = 0;
+  let candidatesProcessed = 0;
+  let transportFailures = 0;
   const digestItems: ExpiryDigestItem[] = [];
+  let cursor: { expiresAt: Date; id: string } | null = null;
 
-  for (const candidate of candidates) {
-    const daysLeft = daysUntilUtc(candidate.expiresAt, today);
-    const consumed = new Set(candidate.sentAlerts.map((sentAlert) => sentAlert.threshold));
-    const toConsume = dueThresholds(daysLeft).filter((threshold) => !consumed.has(threshold));
+  while (candidatesProcessed < limit) {
+    const where = cursor === null ? pendingWhere : {
+      AND: [pendingWhere, { OR: [
+        { expiresAt: { gt: cursor.expiresAt } },
+        { expiresAt: cursor.expiresAt, id: { gt: cursor.id } },
+      ] }],
+    };
+    const take = Math.min(PAGE_SIZE, limit - candidatesProcessed);
+    const page: Candidate[] = await prisma.expiry.findMany({
+      where,
+      orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }],
+      take,
+      select: CANDIDATE_SELECT,
+    });
+    if (page.length === 0) break;
+    const locales = await prisma.user.findMany({
+      where: { personId: { in: page.map((candidate) => candidate.person.id) } },
+      select: { personId: true, locale: true },
+    });
+    const localeByPerson = new Map(locales.map((user) => [user.personId, user.locale]));
 
-    if (toConsume.length === 0) {
-      continue;
-    }
+    for (const candidate of page) {
+      candidatesProcessed += 1;
+      cursor = { expiresAt: candidate.expiresAt, id: candidate.id };
+      const daysLeft = daysUntilUtc(candidate.expiresAt, today);
+      const consumed = new Set(candidate.sentAlerts.map((sentAlert) => sentAlert.threshold));
+      const toConsume = dueThresholds(daysLeft).filter((threshold) => !consumed.has(threshold));
 
-    try {
-      await prisma.sentAlert.createMany({
-        data: toConsume.map((threshold) => ({ expiryId: candidate.id, threshold })),
-      });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        // A concurrent run already claimed (at least one of) these
-        // thresholds for this expiry — AD-9: that run owns the holder
-        // email, this one skips silently (no email, no digest entry, no
-        // throw).
+      if (toConsume.length === 0) {
         continue;
       }
-      throw error;
-    }
 
-    alertsCreated += toConsume.length;
-
-    const personName = `${candidate.person.firstName} ${candidate.person.lastName}`;
-    // Tri-state (story TD-1, AC 2): `EMAILED`/`NO_EMAIL`/`SEND_FAILED` — the
-    // digest flag must distinguish "no email on file" (contact them
-    // directly) from "the send itself failed" (verify the address or
-    // retry). `holdersWithoutEmail` below counts ONLY the true `NO_EMAIL`
-    // case (semantics unchanged from story 6.3).
-    let holderStatus: 'EMAILED' | 'NO_EMAIL' | 'SEND_FAILED';
-
-    if (candidate.person.email) {
+      // Stable claim IDs let a failed attempt release only rows it inserted.
+      // A concurrent renewal can clear the old markers and another run can
+      // claim the same thresholds before this send reports its failure.
+      const claims = toConsume.map((threshold) => ({ id: randomUUID(), expiryId: candidate.id, threshold }));
       try {
-        const user = await prisma.user.findUnique({ where: { personId: candidate.person.id }, select: { locale: true } });
-        const locale = resolveLocale(user?.locale);
-        const { subject, text } = await buildExpiryAlertEmail(locale, {
-          personName,
-          typeName: candidate.expiryType.name,
-          expiresAt: candidate.expiresAt,
-          daysLeft,
+        await prisma.sentAlert.createMany({
+          data: claims,
         });
-        await getMailSender().send({ to: candidate.person.email, subject, text });
-        holderEmailsSent += 1;
-        holderStatus = 'EMAILED';
       } catch (error) {
-        // Never let a mail failure surface to the caller — the SentAlert
-        // rows are already committed and must stay valid (same rationale as
-        // `sendNegativeBalanceAlert`, story 3.3).
-        console.error('runExpiryAlertsJob: failed to send holder alert email', error);
-        holderStatus = 'SEND_FAILED';
+        if (hasPrismaCode(error, 'P2002') || hasPrismaCode(error, 'P2003')) {
+          // A concurrent run owns the claim, or the expiry was deleted while
+          // this page was processed. Neither case should send an email.
+          continue;
+        }
+        throw error;
       }
-    } else {
-      holdersWithoutEmail += 1;
-      holderStatus = 'NO_EMAIL';
-    }
 
-    digestItems.push({
-      personName,
-      typeName: candidate.expiryType.name,
-      expiresAt: candidate.expiresAt,
-      daysLeft,
-      holderStatus,
-    });
+      const personName = `${candidate.person.firstName} ${candidate.person.lastName}`;
+      // Tri-state (story TD-1, AC 2): `EMAILED`/`NO_EMAIL`/`SEND_FAILED` — the
+      // digest flag must distinguish "no email on file" (contact them
+      // directly) from "the send itself failed" (retry next run).
+      // `holdersWithoutEmail` below counts ONLY the true `NO_EMAIL`
+      // case (semantics unchanged from story 6.3).
+      let holderStatus: 'EMAILED' | 'NO_EMAIL' | 'SEND_FAILED';
+
+      if (candidate.person.email) {
+        let sendAttempted = false;
+        try {
+          const locale = resolveLocale(localeByPerson.get(candidate.person.id));
+          const { subject, text } = await buildExpiryAlertEmail(locale, {
+            personName,
+            typeName: candidate.expiryType.name,
+            expiresAt: candidate.expiresAt,
+            daysLeft,
+          });
+          sendAttempted = true;
+          await getMailSender().send({ to: candidate.person.email, subject, text });
+          holderEmailsSent += 1;
+          alertsCreated += toConsume.length;
+          transportFailures = 0;
+          holderStatus = 'EMAILED';
+        } catch (error) {
+          console.error('runExpiryAlertsJob: failed to send holder alert email', error);
+          await prisma.sentAlert.deleteMany({ where: { id: { in: claims.map((claim) => claim.id) } } });
+          if (sendAttempted) transportFailures += 1;
+          holderStatus = 'SEND_FAILED';
+        }
+      } else {
+        holdersWithoutEmail += 1;
+        alertsCreated += toConsume.length;
+        holderStatus = 'NO_EMAIL';
+      }
+
+      digestItems.push({
+        personName,
+        typeName: candidate.expiryType.name,
+        expiresAt: candidate.expiresAt,
+        daysLeft,
+        holderStatus,
+      });
+      if (transportFailures >= 3) break;
+    }
+    if (transportFailures >= 3 || page.length < take) break;
   }
 
   let digestEmailsSent = 0;
@@ -209,10 +238,11 @@ export async function runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult> {
   }
 
   return {
-    candidates: candidates.length,
+    candidates: candidatesProcessed,
     alertsCreated,
     holderEmailsSent,
     holdersWithoutEmail,
     digestEmailsSent,
+    remaining: await prisma.expiry.count({ where: pendingWhere }),
   };
 }

@@ -1591,7 +1591,7 @@ registry.registerPath({
   tags: ['Jobs'],
   security: jobsSecurity,
   responses: {
-    200: { description: 'The job ran (possibly with nothing to do — see `alertsCreated`).', content: jsonContent(expiryAlertsJobResultSchema) },
+    200: { description: 'The job ran. `candidates` is the number of pending expiries processed in this run (at most 200); `remaining` counts due expiries still waiting after the run, including failed deliveries.', content: jsonContent(expiryAlertsJobResultSchema) },
     ...errorResponses(401),
   },
 });
@@ -1862,7 +1862,7 @@ registry.registerPath({
   tags: ['Settings'],
   security,
   responses: {
-    200: { description: 'The job run result.', content: jsonContent(expiryAlertsJobResultSchema) },
+    200: { description: 'The job run result. `candidates` counts pending expiries processed in this run; `remaining` counts due expiries still waiting after it.', content: jsonContent(expiryAlertsJobResultSchema) },
     ...errorResponses(401, 403),
   },
 });

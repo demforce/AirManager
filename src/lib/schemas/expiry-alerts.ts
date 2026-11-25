@@ -11,6 +11,7 @@ export const expiryAlertsJobResultSchema = z.object({
   holderEmailsSent: z.number().int().nonnegative(),
   holdersWithoutEmail: z.number().int().nonnegative(),
   digestEmailsSent: z.number().int().nonnegative(),
+  remaining: z.number().int().nonnegative(),
 });
 
 export type ExpiryAlertsJobResultDto = z.infer<typeof expiryAlertsJobResultSchema>;
