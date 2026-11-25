@@ -217,6 +217,12 @@ export const setOutOfServiceResponseSchema = z.object({
   impactedBookings: aogBookingImpactSchema,
 });
 
+/** Story 16.8: the archive response includes the count of future bookings. */
+export const archiveAircraftResponseSchema = z.object({
+  aircraft: aircraftListItemSchema,
+  impactedBookings: aogBookingImpactSchema,
+});
+
 // --- Rates (story 4.1, Task 1/2/3, AC 1/2) ----------------------------------
 // `createAircraftRateSchema`/`CreateAircraftRateInput` moved above
 // `createAircraftSchema` (story 14.8) — see that schema's doc-comment.

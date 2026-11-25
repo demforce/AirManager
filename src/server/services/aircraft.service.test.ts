@@ -54,6 +54,7 @@ vi.mock('@/server/adapters/mail', () => ({
 }));
 
 vi.mock('@/server/adapters/mail/templates', () => ({
+  buildAircraftArchivedEmail: vi.fn(async () => ({ subject: 'Aircraft archived subject', text: 'Aircraft archived text' })),
   buildAircraftGroundedEmail: vi.fn(async () => ({ subject: 'Aircraft grounded subject', text: 'Aircraft grounded text' })),
 }));
 
@@ -658,21 +659,46 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       await expect(archiveAircraft(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
     });
 
-    it('throws ConflictError when already archived', async () => {
-      aircraftFindUnique.mockResolvedValue({ ...SELECTED_AIRCRAFT, archivedAt: new Date('2026-02-01T00:00:00.000Z') });
+    it('refuses the losing archive write without recounting or mailing', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+      aircraftUpdateMany.mockResolvedValue({ count: 0 });
+
       await expect(archiveAircraft(adminActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
+      expect(bookingFindManyMock).not.toHaveBeenCalled();
+      expect(sendMock).not.toHaveBeenCalled();
     });
 
-    it('sets archivedAt (AC 2)', async () => {
+    it('freezes the current status, recounts future bookings and emails the approved holder once', async () => {
+      const startsAt = new Date('2031-05-01T10:00:00.000Z');
+      mockInteractiveTransaction();
       aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
-      aircraftUpdate.mockResolvedValue({ ...SELECTED_AIRCRAFT, archivedAt: new Date('2026-02-01T00:00:00.000Z') });
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue({
+        ...SELECTED_AIRCRAFT,
+        archivedAt: new Date('2026-02-01T00:00:00.000Z'),
+        status: 'OUT_OF_SERVICE',
+        statusReason: 'Inspection',
+      });
+      bookingFindMany.mockResolvedValue([
+        { id: 'approved1', status: 'APPROVED', personId: 'person_1', startsAt },
+        { id: 'pending1', status: 'PENDING', personId: 'person_2', startsAt },
+        { id: 'approved2', status: 'APPROVED', personId: 'person_1', startsAt: new Date('2031-05-02T10:00:00.000Z') },
+      ]);
+      personFindMany.mockResolvedValue([{ id: 'person_1', firstName: 'Pilot', email: 'pilot@example.test' }]);
 
       const result = await archiveAircraft(adminActor(), 'aircraft_1');
 
-      expect(updateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'aircraft_1' }, data: { archivedAt: expect.any(Date) } }),
-      );
-      expect(result.archivedAt).not.toBeNull();
+      expect(updateManyMock).toHaveBeenCalledWith({
+        where: { id: 'aircraft_1', archivedAt: null },
+        data: { archivedAt: expect.any(Date) },
+      });
+      expect(result).toMatchObject({
+        aircraft: { status: 'OUT_OF_SERVICE', statusReason: 'Inspection', archivedAt: expect.any(Date) },
+        impactedBookings: { pending: 1, approved: 2, effectiveUntil: null },
+      });
+      expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_1'] } } }));
+      expect(sendMock).toHaveBeenCalledExactlyOnceWith({ to: 'pilot@example.test', subject: 'Aircraft archived subject', text: 'Aircraft archived text' });
     });
   });
 
@@ -718,12 +744,11 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       const result = await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Engine inspection' });
 
       expect(updateManyMock).toHaveBeenCalledWith({
-        where: { id: 'aircraft_1', status: 'OPERATIONAL' },
+        where: { id: 'aircraft_1', status: 'OPERATIONAL', archivedAt: null },
         // Story AOG-1a, invariant [b]: no date supplied -> the column is written
         // `null` EXPLICITLY, never left at whatever a previous grounding left.
-        // Story AOG-1b (AD-3/AD-8): the `$transaction` wraps this call, it does
-        // NOT change it — asserted EXACTLY, never relaxed to `objectContaining`
-        // (lezione 14.6), because "the guard is byte-identical" IS the claim.
+        // Story 16.8: both the status and archive predicates must be part
+        // of the write, not inferred from a separate read.
         data: { status: 'OUT_OF_SERVICE', statusReason: 'Engine inspection', outOfServiceUntil: null },
       });
       expect(result.aircraft.status).toBe('OUT_OF_SERVICE');
@@ -746,6 +771,17 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(sendMock).not.toHaveBeenCalled();
     });
 
+    it('refuses to ground an archived aircraft without counting bookings or sending email', async () => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1', archivedAt: new Date('2026-02-01T00:00:00.000Z') });
+      aircraftUpdateMany.mockResolvedValue({ count: 0 });
+
+      await expect(setOutOfService(adminActor(), 'aircraft_1', { reason: 'Engine inspection' }))
+        .rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+      expect(bookingFindManyMock).not.toHaveBeenCalled();
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
     // --- story AOG-1a: the expected-return date -------------------------------
 
     it('writes outOfServiceUntil as a UTC-midnight calendar date, in the SAME guarded updateMany as the reason (AC 1/AC 3)', async () => {
@@ -764,7 +800,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(updateManyMock).toHaveBeenCalledWith({
         // The atomic guard of review 2.2 F1 is BYTE-IDENTICAL — this story adds
         // one key to `data` and nothing to `where`.
-        where: { id: 'aircraft_1', status: 'OPERATIONAL' },
+        where: { id: 'aircraft_1', status: 'OPERATIONAL', archivedAt: null },
         data: { status: 'OUT_OF_SERVICE', statusReason: 'Revisione 100h', outOfServiceUntil: new Date(Date.UTC(2031, 4, 12)) },
       });
       // Never a timestamp (review 3.5 F1): a `@db.Date` binding must carry no
@@ -1104,7 +1140,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       const result = await returnToService(adminActor(), 'aircraft_1');
 
       expect(updateManyMock).toHaveBeenCalledWith({
-        where: { id: 'aircraft_1', status: 'OUT_OF_SERVICE' },
+        where: { id: 'aircraft_1', status: 'OUT_OF_SERVICE', archivedAt: null },
         // Story AOG-1a, AC 3: the date is cleared in the SAME statement as the
         // reason — asserted EXACTLY (never relaxed to `objectContaining`,
         // lezione 14.6), because "both keys, one statement" IS the invariant.
@@ -1119,6 +1155,14 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       aircraftUpdateMany.mockResolvedValue({ count: 0 });
 
       await expect(returnToService(adminActor(), 'aircraft_1')).rejects.toThrow(ConflictError);
+    });
+
+    it('refuses to restore service for an archived aircraft with the archive error taking precedence', async () => {
+      aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1', archivedAt: new Date('2026-02-01T00:00:00.000Z') });
+      aircraftUpdateMany.mockResolvedValue({ count: 0 });
+
+      await expect(returnToService(adminActor(), 'aircraft_1')).rejects.toMatchObject({ code: 'AIRCRAFT_ARCHIVED' });
+      expect(findUniqueOrThrowMock).not.toHaveBeenCalled();
     });
 
     it('sends NO email and counts NOTHING (story AOG-1b, R-AOG-i: the return to service is silent)', async () => {

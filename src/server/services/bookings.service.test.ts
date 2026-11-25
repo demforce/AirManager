@@ -89,6 +89,7 @@ const {
   cancelBooking,
   transitionBooking,
   listBookableAircraft,
+  listScheduleAircraft,
   listBookableStudents,
   listActiveInstructors,
   getOwnInstructorProfileId,
@@ -2744,6 +2745,29 @@ describe('booking-form picker helpers (Task 5)', () => {
 
     expect(result).toEqual([{ id: 'a1', registration: 'I-ABCD', status: 'OPERATIONAL', statusReason: null }]);
     expect(aircraftFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { archivedAt: null } }));
+  });
+
+  it('schedule includes only confirmed archived candidates and does not change picker rows', async () => {
+    const active = [{ id: 'a1', registration: 'I-ZZZZ', model: 'Active', status: 'OPERATIONAL', statusReason: null }] as const;
+    aircraftFindMany.mockResolvedValue([{ id: 'a2', registration: 'I-AAAA', model: 'Archived' }]);
+
+    const result = await listScheduleAircraft(studentActor(), active, [
+      { aircraftId: 'a1' }, { aircraftId: 'a2' }, { aircraftId: 'a2' }, { aircraftId: 'other' },
+    ]);
+
+    expect(aircraftFindManyMock).toHaveBeenCalledExactlyOnceWith({
+      where: { id: { in: ['a2', 'other'] }, archivedAt: { not: null } },
+      select: { id: true, registration: true, model: true },
+      orderBy: { registration: 'asc' },
+    });
+    expect(result).toEqual([{ id: 'a2', registration: 'I-AAAA', model: 'Archived', status: 'ARCHIVED', statusReason: null }, active[0]]);
+    expect(active).toHaveLength(1);
+  });
+
+  it('schedule does not query when the selected bookings all have active picker rows', async () => {
+    const active = [{ id: 'a1', registration: 'I-ZZZZ', model: 'Active', status: 'OPERATIONAL', statusReason: null }] as const;
+    await expect(listScheduleAircraft(studentActor(), active, [{ aircraftId: 'a1' }])).resolves.toEqual(active);
+    expect(aircraftFindManyMock).not.toHaveBeenCalled();
   });
 
   it('listBookableStudents returns only active students, requires only self.read', async () => {

@@ -52,6 +52,7 @@ export type AircraftEditorLabels = {
   };
   availability: {
     sectionTitle: string;
+    archivedHint: string;
     current: string;
     setOutOfService: string;
     returnToService: string;
@@ -107,6 +108,7 @@ export type AircraftEditorLabels = {
     unarchive: string;
     confirmArchive: string;
     confirmUnarchive: string;
+    impactWindow: string;
     confirmYes: string;
     confirmCancel: string;
   };
@@ -116,6 +118,7 @@ export type AircraftEditorLabels = {
     conflictRegistration: string;
     /** Review 19.3 F3 — the 409 `AIRCRAFT_ARCHIVED` of a Salva with a rate, when the aircraft was archived elsewhere while the panel was open. */
     aircraftArchived: string;
+    aircraftArchivedStatus: string;
     conflictStatus: string;
     invalidPrice: string;
     invalidDate: string;
@@ -322,7 +325,7 @@ export function AircraftEditor({ target, onClose, onMutated, totalMinutes, local
           </Section>
 
           <Section title={labels.archive.sectionTitle}>
-            <ArchiveSection aircraft={current} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
+            <ArchiveSection aircraft={current} locale={locale} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
           </Section>
         </>
       ) : null}
@@ -698,6 +701,7 @@ function AvailabilitySection({
    */
   const [authoritative, setAuthoritative] = useState(false);
   const isOutOfService = aircraft.status === 'OUT_OF_SERVICE';
+  const isArchived = aircraft.archivedAt !== null;
 
   /**
    * The window the count is about: the CANDIDATE date while the aircraft is
@@ -721,7 +725,7 @@ function AvailabilitySection({
    * transactional count with a later estimate.
    */
   useEffect(() => {
-    if (authoritative) return;
+    if (isArchived || authoritative) return;
     const controller = new AbortController();
     const query = impactUntil === null ? '' : `?until=${encodeURIComponent(impactUntil)}`;
     const timer = setTimeout(() => {
@@ -741,7 +745,7 @@ function AvailabilitySection({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [aircraft.id, impactUntil, authoritative]);
+  }, [aircraft.id, impactUntil, authoritative, isArchived]);
 
   async function submitOutOfService(): Promise<void> {
     const trimmed = reason.trim();
@@ -769,7 +773,11 @@ function AvailabilitySection({
 
     if (!response.ok) {
       const code = await errorCodeOf(response);
-      toast.show(code === 'CONFLICT' ? labels.errors.conflictStatus : labels.errors.generic, 'bad');
+      toast.show(
+        code === 'AIRCRAFT_ARCHIVED' ? labels.errors.aircraftArchivedStatus
+          : code === 'CONFLICT' ? labels.errors.conflictStatus : labels.errors.generic,
+        'bad',
+      );
       return;
     }
 
@@ -792,7 +800,11 @@ function AvailabilitySection({
 
     if (!response.ok) {
       const code = await errorCodeOf(response);
-      toast.show(code === 'CONFLICT' ? labels.errors.conflictStatus : labels.errors.generic, 'bad');
+      toast.show(
+        code === 'AIRCRAFT_ARCHIVED' ? labels.errors.aircraftArchivedStatus
+          : code === 'CONFLICT' ? labels.errors.conflictStatus : labels.errors.generic,
+        'bad',
+      );
       return;
     }
 
@@ -856,7 +868,9 @@ function AvailabilitySection({
         {labels.availability.current}: {currentStatusText}
       </p>
 
-      {isOutOfService ? (
+      {isArchived ? (
+        <p className="fld-hint" data-testid="availability-archived-hint">{labels.availability.archivedHint}</p>
+      ) : isOutOfService ? (
         <>
           {impact ? (
             authoritative ? (
@@ -1028,54 +1042,130 @@ function AvailabilitySection({
 
 function ArchiveSection({
   aircraft,
+  locale,
   labels,
   toastLabels,
   toast,
   onMutated,
 }: {
   aircraft: EditableAircraft;
+  locale: 'it' | 'en';
   labels: AircraftEditorLabels;
   toastLabels: ToastLabels;
   toast: { show: (msg: string, tone?: 'ok' | 'bad' | 'warn' | 'info') => void };
   onMutated: (updated: EditableAircraft) => void;
 }) {
+  const t = useTranslations('AircraftPage.editor.archive');
+  const tAvailability = useTranslations('AircraftPage.editor.availability');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<AogBookingImpactDto | null>(null);
+  const [result, setResult] = useState<AogBookingImpactDto | null>(null);
   const archived = aircraft.archivedAt !== null;
+
+  useEffect(() => {
+    if (archived) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/v1/aircraft/${aircraft.id}/out-of-service-impact`, { signal: controller.signal });
+        if (!response.ok) return;
+        const data = (await response.json()) as AogBookingImpactDto;
+        if (!controller.signal.aborted) setPreview(data);
+      } catch {
+        // The preview is advisory; the archive write returns its own count.
+      }
+    })();
+    return () => controller.abort();
+  }, [aircraft.id, archived]);
 
   async function submit(): Promise<void> {
     setBusy(true);
-    const response = await fetch(`/api/v1/aircraft/${aircraft.id}/${archived ? 'unarchive' : 'archive'}`, { method: 'POST' });
-    setBusy(false);
-    setConfirming(false);
-
-    if (!response.ok) {
+    try {
+      const response = await fetch(`/api/v1/aircraft/${aircraft.id}/${archived ? 'unarchive' : 'archive'}`, { method: 'POST' });
+      if (!response.ok) {
+        toast.show(response.status === 409 ? labels.errors.conflictStatus : labels.errors.generic, 'bad');
+        return;
+      }
+      if (archived) {
+        const updated = (await response.json()) as AircraftApiResponse;
+        setResult(null);
+        setPreview(null);
+        toast.show(toastLabels.unarchived, 'ok');
+        onMutated(toEditable(updated));
+      } else {
+        const updated = (await response.json()) as SetOutOfServiceApiResponse;
+        setResult(updated.impactedBookings);
+        setPreview(null);
+        toast.show(toastLabels.archived, 'ok');
+        onMutated(toEditable(updated.aircraft));
+      }
+    } catch {
       toast.show(labels.errors.generic, 'bad');
-      return;
+    } finally {
+      setBusy(false);
+      setConfirming(false);
     }
-
-    const updated = (await response.json()) as AircraftApiResponse;
-    toast.show(archived ? toastLabels.unarchived : toastLabels.archived, 'ok');
-    onMutated(toEditable(updated));
   }
 
-  if (confirming) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span className="fld-label">{archived ? labels.archive.confirmUnarchive : labels.archive.confirmArchive}</span>
-        <button type="button" className="btn primary" disabled={busy} onClick={() => void submit()} data-testid="archive-confirm">
-          {labels.archive.confirmYes}
-        </button>
-        <button type="button" className="btn" onClick={() => setConfirming(false)}>
-          {labels.archive.confirmCancel}
-        </button>
-      </div>
-    );
-  }
+  const count = preview === null ? 0 : preview.pending + preview.approved;
+  const split = ({ pending, approved }: AogBookingImpactDto) =>
+    labels.availability.impactSplit.replace('{pending}', String(pending)).replace('{approved}', String(approved));
 
   return (
-    <button type="button" className="btn" onClick={() => setConfirming(true)} data-testid="archive-toggle-button">
-      {archived ? labels.archive.unarchive : labels.archive.archive}
-    </button>
+    <div className="fld">
+      {!archived && preview ? (
+        count === 0 ? (
+          <p className="fld-hint" role="status" data-testid="archive-impact-preview">
+            {tAvailability('impactPreview', { count })} · {labels.archive.impactWindow}
+          </p>
+        ) : (
+          <p className="alert-box info" role="status" data-testid="archive-impact-preview">
+            <strong>{tAvailability('impactPreview', { count })}</strong><br />
+            {split(preview)}<br />
+            {labels.archive.impactWindow} · {labels.availability.impactEstimate}
+          </p>
+        )
+      ) : null}
+      {archived && result ? (
+        <p className="alert-box bad" role="status" data-testid="archive-impact-banner">
+          <strong>{t('impactBanner', { count: result.pending + result.approved })}</strong><br />
+          {split(result)}<br />
+          {labels.archive.impactWindow}<br />
+          <a href={`/${locale}/dashboard/bookings?status=PENDING,APPROVED`} data-testid="archive-impact-bookings-link">
+            {labels.availability.impactBookingsLink}
+          </a>
+        </p>
+      ) : null}
+      {confirming ? (
+        <>
+          <span className="fld-label" data-testid="archive-question">
+            {archived ? labels.archive.confirmUnarchive : preview ? t('confirmQuestion', { count }) : labels.archive.confirmArchive}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={busy}
+              onClick={(event) => {
+                // The second click or tap can land on the newly revealed control.
+                if (event.detail > 1) return;
+                void submit();
+              }}
+              data-testid="archive-confirm"
+            >
+              {labels.archive.confirmYes}
+            </button>
+            <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)} data-testid="archive-cancel">
+              {labels.archive.confirmCancel}
+            </button>
+          </div>
+        </>
+      ) : (
+        <button type="button" className="btn" onClick={() => setConfirming(true)} data-testid="archive-toggle-button">
+          {archived ? labels.archive.unarchive : labels.archive.archive}
+        </button>
+      )}
+    </div>
   );
 }

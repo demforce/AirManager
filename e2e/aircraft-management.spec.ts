@@ -150,9 +150,16 @@ test.describe('Aircraft fleet CRUD with archiving (Story 2.4; rebuilt AirOps epi
 
     await gotoSearched(page, aircraft.registration);
     await cardFor(page, aircraft.registration).click();
+    await expect(page.getByTestId('archive-impact-preview')).toContainText('Nessuna prenotazione coinvolta');
+    await page.getByTestId('archive-toggle-button').click();
+    await expect(page.getByTestId('archive-question')).toContainText('Nessuna prenotazione coinvolta');
+    await page.getByTestId('archive-cancel').click();
+    await expect(page.getByTestId('archive-confirm')).toHaveCount(0);
     await page.getByTestId('archive-toggle-button').click();
     await page.getByTestId('archive-confirm').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Velivolo archiviato' })).toBeVisible();
+    await expect(page.getByTestId('archive-impact-banner')).toContainText('nessuna prenotazione coinvolta');
+    await expect(page.getByTestId('out-of-service-submit')).toHaveCount(0);
     await page.keyboard.press('Escape');
 
     // `router.refresh()` (AD-1) re-fetches the same (still non-archived) list — gone immediately.

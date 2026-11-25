@@ -283,3 +283,20 @@ export async function buildAircraftGroundedEmail(
     }),
   };
 }
+
+/** Notify an approved holder without implying their booking was cancelled. */
+export async function buildAircraftArchivedEmail(
+  locale: AppLocale,
+  params: { firstName: string; aircraftRegistration: string; startsAt: Date },
+): Promise<{ subject: string; text: string }> {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.aircraftArchived' });
+  return {
+    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
+    text: t('body', {
+      firstName: params.firstName,
+      aircraftRegistration: params.aircraftRegistration,
+      when: formatDateTime(params.startsAt, locale),
+    }),
+  };
+}

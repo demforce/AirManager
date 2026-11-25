@@ -16,6 +16,15 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(doc.info.title).toBe('AirManager API');
   });
 
+  it('documents archive as aircraft plus advisory booking counts and leaves unarchive unchanged', () => {
+    type Response = { content?: Record<string, { schema?: { properties?: Record<string, unknown> } }> };
+    const paths = doc.paths as Record<string, { post?: { responses?: Record<string, Response> } }>;
+    const props = (name: string) => paths[`/api/v1/aircraft/{id}/${name}`]?.post?.responses?.['200']?.content?.['application/json']?.schema?.properties;
+    expect(Object.keys(props('archive') ?? {})).toEqual(['aircraft', 'impactedBookings']);
+    expect(props('unarchive')).toHaveProperty('archivedAt');
+    expect(doc.components?.schemas).toHaveProperty('ArchiveAircraftResponse');
+  });
+
   it('includes every existing endpoint', () => {
     const paths = Object.keys(doc.paths ?? {});
     expect(paths).toEqual(

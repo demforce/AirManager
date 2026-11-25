@@ -19,7 +19,7 @@ const flying = { id: 'ac-ok', status: 'OPERATIONAL' } as const;
 const grounded = { id: 'ac-aog', status: 'OUT_OF_SERVICE' } as const;
 
 function ids(entries: ReturnType<typeof buildAgendaEntries>): string[] {
-  return entries.map((entry) => (entry.kind === 'aog' ? entry.aircraft.id : entry.booking.id));
+  return entries.map((entry) => (entry.kind === 'booking' ? entry.booking.id : entry.aircraft.id));
 }
 
 /** What the component actually hands `nowMarkerIndex`: EVERY row on screen, AOG rows included (they are never "after now"). */
@@ -36,6 +36,16 @@ describe('buildAgendaEntries', () => {
   it('puts every out-of-service aircraft FIRST, before the movements (ratifica R-15.4-h)', () => {
     const entries = buildAgendaEntries([morning, afternoon], [flying, grounded], NOW);
     expect(ids(entries)).toEqual(['ac-aog', 'b-morning', 'b-afternoon']);
+  });
+
+  it('puts archived aircraft with bookings after grounded aircraft and before movements', () => {
+    const archived = { id: 'ac-archived', status: 'ARCHIVED' } as const;
+    const noBookings = { id: 'ac-no-bookings', status: 'ARCHIVED' } as const;
+    const booking = { ...afternoon, aircraftId: archived.id };
+    const entries = buildAgendaEntries([booking], [archived, grounded, noBookings], NOW);
+    expect(entries.map((entry) => entry.kind)).toEqual(['aog', 'archived', 'booking']);
+    expect(ids(entries)).toEqual(['ac-aog', 'ac-archived', 'b-afternoon']);
+    expect(nowMarkerIndex(markerInput(entries))).toBe(2);
   });
 
   it('is empty on an empty day with a fully serviceable fleet', () => {
@@ -107,7 +117,7 @@ describe('nowMarkerIndex', () => {
 
   it('follows the aircraft filter: filtering the past movement away moves the marker to the head', () => {
     const rows = buildAgendaEntries([morning, afternoon], [flying], NOW);
-    const filtered = rows.filter((entry) => entry.kind === 'aog' || entry.booking.id !== 'b-morning');
+    const filtered = rows.filter((entry) => entry.kind !== 'booking' || entry.booking.id !== 'b-morning');
     expect(nowMarkerIndex(markerInput(rows))).toBe(1);
     expect(nowMarkerIndex(markerInput(filtered))).toBe(0);
   });

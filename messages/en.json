@@ -873,6 +873,7 @@
         "impactRow": "{count, plural, one {# booking inside the grounding} other {# bookings inside the grounding}}",
         "impactSplit": "Pending (frozen): {pending} · Approved (to handle): {approved}",
         "impactWindowUntil": "counted until {date} inclusive",
+        "archivedHint": "Archived aircraft: restore it before changing availability.",
         "impactWindowUndelimited": "return date not yet known: count not delimited",
         "impactWindowOverdue": "grounding past the expected {date}: count not delimited",
         "impactEstimate": "estimate",
@@ -897,6 +898,9 @@
         "archive": "Archive",
         "unarchive": "Restore",
         "confirmArchive": "Archive this aircraft?",
+        "confirmQuestion": "Archive this aircraft? {count, plural, =0 {No bookings affected} one {# booking affected} other {# bookings affected}}",
+        "impactWindow": "all future bookings: no end date for this count",
+        "impactBanner": "Aircraft archived: {count, plural, =0 {no bookings affected} one {# booking affected} other {# bookings affected}}.",
         "confirmUnarchive": "Restore this aircraft?",
         "confirmYes": "Confirm",
         "confirmCancel": "Cancel"
@@ -906,6 +910,7 @@
         "generic": "Something went wrong. Please try again.",
         "conflictRegistration": "An aircraft with this registration already exists.",
         "aircraftArchived": "The aircraft was archived in the meantime and cannot take new rates: nothing was saved.",
+        "aircraftArchivedStatus": "The aircraft was archived in the meantime. Its status did not change.",
         "conflictStatus": "The aircraft's status already changed in the meantime.",
         "invalidPrice": "The price must be a positive amount (e.g. 160.00).",
         "invalidDate": "Enter a valid date.",
@@ -1284,6 +1289,7 @@
       "filtersAll": "All",
       "filtersAircraft": "Aircraft",
       "filtersInstructor": "Instructor",
+      "archived": "Archived",
       "aog": "AOG",
       "available": "Available",
       "weekBookingsCount": "{count, plural, one {# booking} other {# bookings}}",
@@ -1755,6 +1761,10 @@
     "bookingDenied": {
       "subject": "Booking denied: {aircraftRegistration}",
       "body": "Hello {firstName},\n\nYour booking for {aircraftRegistration} on {when} has been denied.\n\nReason: {reason}"
+    },
+    "aircraftArchived": {
+      "subject": "Aircraft archived: {aircraftRegistration}",
+      "body": "Hello {firstName},\n\nAircraft {aircraftRegistration}, which you have an approved booking for, has been archived: it has left the fleet and can no longer be booked.\n\nYour first affected booking: {when}\n\nThe booking has NOT been cancelled: please contact the airfield to agree how to proceed."
     },
     "aircraftGrounded": {
       "subject": "Aircraft out of service: {aircraftRegistration}",

@@ -1712,6 +1712,29 @@ export async function listBookableAircraft(actor: Actor): Promise<BookableAircra
   });
 }
 
+type ScheduleAircraftOption = Omit<BookableAircraftOption, 'status'> & { status: BookableAircraftOption['status'] | 'ARCHIVED' };
+
+/** Confirm archive status only for aircraft missing from the active picker and visible in this range. */
+export async function listScheduleAircraft(
+  actor: Actor,
+  active: readonly BookableAircraftOption[],
+  bookings: readonly { aircraftId: string }[],
+): Promise<readonly ScheduleAircraftOption[]> {
+  authorize(actor, 'self.read');
+
+  const activeIds = new Set(active.map(({ id }) => id));
+  const missingIds = [...new Set(bookings.map(({ aircraftId }) => aircraftId).filter((id) => !activeIds.has(id)))];
+  if (missingIds.length === 0) return active;
+
+  const archived = await prisma.aircraft.findMany({
+    where: { id: { in: missingIds }, archivedAt: { not: null } },
+    select: { id: true, registration: true, model: true },
+    orderBy: { registration: 'asc' },
+  });
+  return [...active, ...archived.map((aircraft) => ({ ...aircraft, status: 'ARCHIVED' as const, statusReason: null }))]
+    .sort((a, b) => a.registration.localeCompare(b.registration));
+}
+
 export type BookablePersonOption = { id: string; firstName: string; lastName: string };
 
 /**

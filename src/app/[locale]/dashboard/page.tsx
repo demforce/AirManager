@@ -26,6 +26,7 @@ import {
   getOwnInstructorProfileId,
   listActiveInstructors,
   listBookableAircraft,
+  listScheduleAircraft,
   listBookings,
   listCalendarBookings,
   listReservedAircraftIds,
@@ -360,6 +361,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
 
   // --- Embedded Schedule (vista giorno, oggi) — data-prep shared with `bookings/page.tsx` (@/lib/booking-schedule, AC 1) ---
   const { start: windowStartMinutes, end: windowEndMinutes } = resolveWindowMinutes(schedulingSettings.openTime, schedulingSettings.closeTime);
+  const scheduleAircraft = await listScheduleAircraft(actor, scheduleAircraftOptions, calendarBookingsToday);
   const dayBlocks = projectDayBlocks(calendarBookingsToday, today, windowStartMinutes, windowEndMinutes);
   const nowLinePercent = clampToWindowPercent(wallMinutesOfDay(now) - windowStartMinutes, windowEndMinutes - windowStartMinutes);
   // Ratifica R-15.4-g: the embedded create/edit panels are the SAME components
@@ -645,7 +647,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           today={today}
           isToday
           weekDates={[]}
-          aircraft={scheduleAircraftOptions}
+          aircraft={scheduleAircraft}
           instructors={instructorOptions}
           dayBlocks={dayBlocks}
           weekChips={[]}

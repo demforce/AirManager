@@ -13,6 +13,7 @@ import {
   getOwnInstructorProfileId,
   listActiveInstructors,
   listBookableAircraft,
+  listScheduleAircraft,
   listBookableStudents,
   listBookings,
   listCalendarBookings,
@@ -249,6 +250,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   const { start: windowStartMinutes, end: windowEndMinutes } = resolveWindowMinutes(schedulingSettings.openTime, schedulingSettings.closeTime);
 
   const calendarBookings = await listCalendarBookings(actor, { from: calendarFrom.toISOString(), to: calendarTo.toISOString() });
+  const scheduleAircraft = await listScheduleAircraft(actor, aircraftOptions, calendarBookings);
   const dayBlocks = view === 'day' ? projectDayBlocks(calendarBookings, date, windowStartMinutes, windowEndMinutes) : [];
   // Story 12.3: the week view needs chips across the WHOLE displayed week
   // regardless of `view` (the day-view branch above only projects `date`
@@ -284,11 +286,11 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
    */
   const agendaRows: ScheduleAgendaRow[] =
     view === 'day'
-      ? buildAgendaEntries(calendarBookings, aircraftOptions, now).map((entry) =>
-          entry.kind === 'aog'
+      ? buildAgendaEntries(calendarBookings, scheduleAircraft, now).map((entry) =>
+          entry.kind !== 'booking'
             ? {
-                kind: 'aog' as const,
-                id: `aog-${entry.aircraft.id}`,
+                kind: entry.kind,
+                id: `${entry.kind}-${entry.aircraft.id}`,
                 aircraftId: entry.aircraft.id,
                 registration: entry.aircraft.registration,
                 timeStart: '',
@@ -431,7 +433,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         today={today}
         isToday={isToday}
         weekDates={weekDates}
-        aircraft={aircraftOptions}
+        aircraft={scheduleAircraft}
         instructors={instructorOptions}
         dayBlocks={dayBlocks}
         weekChips={weekChips}

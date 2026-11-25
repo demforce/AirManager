@@ -50,7 +50,7 @@ export type ScheduleAircraftRow = {
   id: string;
   registration: string;
   model: string;
-  status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
+  status: 'OPERATIONAL' | 'OUT_OF_SERVICE' | 'ARCHIVED';
   statusReason: string | null;
 };
 
@@ -64,7 +64,7 @@ export type ScheduleAircraftRow = {
 export type ScheduleAgendaRow = {
   /** `aog-<aircraftId>` on an out-of-service row, the booking id otherwise. */
   id: string;
-  kind: 'aog' | 'booking';
+  kind: 'aog' | 'archived' | 'booking';
   aircraftId: string;
   registration: string;
   /** Europe/Rome wall clock; both empty on an AOG row (an out-of-service aircraft has no slot). */
@@ -107,6 +107,7 @@ export type ScheduleLabels = {
   prevMonth: string;
   nextMonth: string;
   aog: string;
+  archived: string;
   available: string;
   outOfService: string;
   dayEmpty: string;
@@ -145,7 +146,7 @@ export type ScheduleProps = {
   isToday: boolean;
   /** The 7 dates (Monday..Sunday) of the shown week, each with its own precomputed day-view href — only read when `view === 'week'`. */
   weekDates: Array<{ dateOnly: string; href: string }>;
-  aircraft: ScheduleAircraftRow[];
+  aircraft: readonly ScheduleAircraftRow[];
   instructors: InstructorOption[];
   dayBlocks: CalendarDayBlock[];
   weekChips: CalendarWeekChip[];
@@ -309,7 +310,7 @@ export function Schedule({
   // instructor filter says.
   const visibleAgendaRows = agendaRows.filter(
     (row) =>
-      (filterAircraftId === 'all' || row.aircraftId === filterAircraftId) && (row.kind === 'aog' || matchesInstructorFilter(row.instructorProfileId)),
+      (filterAircraftId === 'all' || row.aircraftId === filterAircraftId) && (row.kind !== 'booking' || matchesInstructorFilter(row.instructorProfileId)),
   );
   const agendaMovementCount = visibleAgendaRows.filter((row) => row.kind === 'booking').length;
   // Recomputed on the FILTERED rows, never precomputed server-side: filtering
@@ -321,7 +322,9 @@ export function Schedule({
   const openAgendaRow = visibleAgendaRows.find((row) => row.id === openAgendaId) ?? null;
 
   function agendaTitle(row: ScheduleAgendaRow): string {
-    return row.kind === 'aog' ? labels.mobile.aogTitleTemplate.replace('{registration}', row.registration) : (row.personName ?? labels.occupied);
+    if (row.kind === 'aog') return labels.mobile.aogTitleTemplate.replace('{registration}', row.registration);
+    if (row.kind === 'archived') return row.registration;
+    return row.personName ?? labels.occupied;
   }
 
   /**
@@ -335,6 +338,7 @@ export function Schedule({
    */
   function agendaSub(row: ScheduleAgendaRow): string {
     if (row.kind === 'aog') return row.statusReason ?? labels.outOfService;
+    if (row.kind === 'archived') return '';
     const trailing = row.instructorName ?? row.notes;
     return trailing ? `${row.registration} · ${trailing}` : row.registration;
   }
@@ -342,6 +346,7 @@ export function Schedule({
   function agendaDetailRows(row: ScheduleAgendaRow): BottomSheetRow[] {
     // The registration is already the sheet's title (review 19.12b M2).
     if (row.kind === 'aog') return [{ k: labels.mobile.reason, v: row.statusReason ?? labels.outOfService }];
+    if (row.kind === 'archived') return [];
     return [
       { k: labels.mobile.time, v: `${row.timeStart}–${row.timeEnd}` },
       { k: labels.mobile.pilot, v: row.personName ?? labels.occupied },
@@ -602,6 +607,7 @@ export function Schedule({
           </div>
           {visibleAircraft.map((ac) => {
             const isAog = ac.status === 'OUT_OF_SERVICE';
+            const isArchived = ac.status === 'ARCHIVED';
             const blocks = isAog ? [] : dayBlocks.filter((block) => block.aircraftId === ac.id && matchesInstructorFilter(block.instructorProfileId));
             return (
               <div key={ac.id} className="sched-row" data-testid="schedule-aircraft-row">
@@ -609,9 +615,9 @@ export function Schedule({
                   <div className="res-meta">
                     <div className="tail">{ac.registration}</div>
                     <div className="res-type">{ac.model}</div>
-                    <div className={`res-status ${isAog ? 'aog' : ''}`}>
+                    <div className={`res-status ${isAog || isArchived ? 'aog' : ''}`} data-testid={isArchived ? 'schedule-archived-status' : undefined}>
                       <span className="pill-dot" />
-                      {isAog ? labels.aog : labels.available}
+                      {isArchived ? labels.archived : isAog ? labels.aog : labels.available}
                     </div>
                   </div>
                 </div>
@@ -773,19 +779,19 @@ export function Schedule({
                   <button
                     type="button"
                     className={`mobile-row mobile-row-timed ${row.phase ? PHASE_EDGE_CLASS[row.phase] : 'mobile-row-edge-bad'}`}
-                    aria-label={`${labels.mobile.openDetail}: ${agendaTitle(row)}${row.kind === 'aog' ? ` · ${labels.aog}` : ''}`}
+                    aria-label={`${labels.mobile.openDetail}: ${agendaTitle(row)}${row.kind === 'booking' ? '' : ` · ${row.kind === 'archived' ? labels.archived : labels.aog}`}`}
                     onClick={() => setOpenAgendaId(row.id)}
                     data-testid="mobile-agenda-row"
                   >
                     <span className="mobile-row-times">
-                      <span className="mobile-row-t1">{row.kind === 'aog' ? '—' : row.timeStart}</span>
+                      <span className="mobile-row-t1">{row.kind === 'booking' ? row.timeStart : '—'}</span>
                       <span className="mobile-row-t2">{row.timeEnd}</span>
                     </span>
                     <span className="mobile-row-main">
                       <span className="mobile-row-title">
                         <span className="mobile-row-name">{agendaTitle(row)}</span>
                       </span>
-                      <span className="mobile-row-sub">{agendaSub(row)}</span>
+                      {row.kind !== 'archived' ? <span className="mobile-row-sub">{agendaSub(row)}</span> : null}
                     </span>
                     {row.phase ? (
                       <Badge tone={PHASE_TONE[row.phase]} dot>
@@ -793,7 +799,7 @@ export function Schedule({
                       </Badge>
                     ) : (
                       <Badge tone="bad" dot>
-                        {labels.aog}
+                        {row.kind === 'archived' ? labels.archived : labels.aog}
                       </Badge>
                     )}
                   </button>
@@ -861,7 +867,7 @@ export function Schedule({
         onClose={closeAgendaSheet}
         testId="mobile-booking-sheet"
         // An AOG row says «Fuori servizio» ONCE, in its badge (review 19.12b M2): the kicker names what the title is.
-        sub={openAgendaRow.kind === 'aog' ? labels.mobile.aircraft : `${openAgendaRow.registration} · ${openAgendaRow.timeStart}–${openAgendaRow.timeEnd}`}
+        sub={openAgendaRow.kind !== 'booking' ? labels.mobile.aircraft : `${openAgendaRow.registration} · ${openAgendaRow.timeStart}–${openAgendaRow.timeEnd}`}
         title={agendaTitle(openAgendaRow)}
         badge={
           openAgendaRow.phase ? (
@@ -870,7 +876,7 @@ export function Schedule({
             </Badge>
           ) : (
             <Badge tone="bad" dot>
-              {labels.aog}
+              {openAgendaRow.kind === 'archived' ? labels.archived : labels.aog}
             </Badge>
           )
         }

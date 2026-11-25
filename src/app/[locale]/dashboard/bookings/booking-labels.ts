@@ -67,6 +67,7 @@ export function buildScheduleLabels(t: Translator): ScheduleLabels {
     prevMonth: t('schedule.prevMonth'),
     nextMonth: t('schedule.nextMonth'),
     aog: t('schedule.aog'),
+    archived: t('schedule.archived'),
     available: t('schedule.available'),
     outOfService: t('calendar.outOfService'),
     dayEmpty: t('calendar.dayEmpty'),

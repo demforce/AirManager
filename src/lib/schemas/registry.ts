@@ -16,6 +16,7 @@ import {
   aircraftRateItemSchema,
   aircraftRateListResponseSchema,
   aogBookingImpactSchema,
+  archiveAircraftResponseSchema,
   createAircraftRateSchema,
   createAircraftSchema,
   listAircraftQuerySchema,
@@ -253,6 +254,7 @@ registry.register('UpdateAircraftRequest', updateAircraftSchema);
 registry.register('SetOutOfServiceRequest', setOutOfServiceSchema);
 registry.register('AogBookingImpact', aogBookingImpactSchema);
 registry.register('SetOutOfServiceResponse', setOutOfServiceResponseSchema);
+registry.register('ArchiveAircraftResponse', archiveAircraftResponseSchema);
 registry.register('AircraftRate', aircraftRateItemSchema);
 registry.register('AircraftRateList', aircraftRateListResponseSchema);
 registry.register('CreateAircraftRateRequest', createAircraftRateSchema);
@@ -1080,12 +1082,12 @@ registry.registerPath({
   method: 'post',
   path: '/api/v1/aircraft/{id}/archive',
   summary: 'Archive an aircraft',
-  description: 'Soft-archive only (AC 2) — there is no physical delete endpoint for an Aircraft.',
+  description: 'Soft-archive without changing availability status or cancelling bookings. Reports future pending and approved bookings; their holders are notified best-effort for approved bookings only.',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams },
   responses: {
-    200: { description: 'The archived aircraft.', content: jsonContent(aircraftListItemSchema) },
+    200: { description: 'The archived aircraft and future-booking counts. effectiveUntil is always null.', content: jsonContent(archiveAircraftResponseSchema) },
     ...errorResponses(401, 403, 404, 409),
   },
 });
@@ -1108,7 +1110,7 @@ registry.registerPath({
   path: '/api/v1/aircraft/{id}/out-of-service',
   summary: 'Mark an aircraft out of service, with a mandatory reason',
   description:
-    'Not archiving (story 2.5, AC 1) — the aircraft stays in the default fleet list, just flagged as ungrounded/not currently airworthy. Conflict if already out of service. Story AOG-1a: the optional `outOfServiceUntil` (`YYYY-MM-DD`, nullable — an omitted key and an explicit `null` both mean "return date not yet known") records the LAST day the aircraft is grounded, INCLUSIVE (ratifica R-AOG-a); it is informative only and never returns the aircraft to service by itself — `POST /return-to-service` clears it together with the reason.',
+    'Not archiving (story 2.5, AC 1) — the aircraft stays in the default fleet list, just flagged as ungrounded/not currently airworthy. Conflict if already out of service or archived (AIRCRAFT_ARCHIVED). Story AOG-1a: the optional `outOfServiceUntil` (`YYYY-MM-DD`, nullable — an omitted key and an explicit `null` both mean "return date not yet known") records the LAST day the aircraft is grounded, INCLUSIVE (ratifica R-AOG-a); it is informative only and never returns the aircraft to service by itself — `POST /return-to-service` clears it together with the reason.',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams, body: { content: jsonContent(setOutOfServiceSchema), required: true } },
@@ -1125,9 +1127,9 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/aircraft/{id}/out-of-service-impact',
-  summary: 'Preview how many live bookings a grounding would impact',
+  summary: 'Preview how many live bookings a grounding or archive would impact',
   description:
-    'Story AOG-1b (AD-2): the number the admin sees BEFORE grounding an aircraft. `until` is the CANDIDATE expected-return date (`YYYY-MM-DD`); the counting window is `[now, end of that calendar day]`, INCLUSIVE (ratifica R-AOG-a). OMITTING `until` means the window is NOT delimited (`[now, +infinity)`), which is a different answer from "delimited by today". An `until` whose day has ALREADY PASSED is no bound either: the count is not delimited and `effectiveUntil` answers `null`, so a client can tell that case apart from the omitted one (it sent the date) and word it accordingly. Only `PENDING` and `APPROVED` bookings count; a booking that has already started never does. This is a STIMA: the authoritative number is the one `POST /out-of-service` returns, computed inside its own transaction.',
+    'Story AOG-1b (AD-2): the number the admin sees BEFORE grounding an aircraft. `until` is the CANDIDATE expected-return date (`YYYY-MM-DD`); the counting window is `[now, end of that calendar day]`, INCLUSIVE (ratifica R-AOG-a). OMITTING `until` means the window is NOT delimited (`[now, +infinity)`), which is also the archive preview. An `until` whose day has ALREADY PASSED is no bound either: the count is not delimited and `effectiveUntil` answers `null`, so a client can tell that case apart from the omitted one (it sent the date) and word it accordingly. Only `PENDING` and `APPROVED` bookings count; a booking that has already started never does. This is a STIMA: the authoritative number is the one the corresponding `POST /out-of-service` or `POST /archive` returns, computed inside its own transaction.',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams, query: outOfServiceImpactQuerySchema },
@@ -1141,7 +1143,7 @@ registry.registerPath({
   method: 'post',
   path: '/api/v1/aircraft/{id}/return-to-service',
   summary: 'Return an out-of-service aircraft to service',
-  description: 'Clears the status reason. Conflict if already operational.',
+  description: 'Clears the status reason. Conflict if already operational or archived (AIRCRAFT_ARCHIVED).',
   tags: ['Aircraft'],
   security,
   request: { params: aircraftIdParams },

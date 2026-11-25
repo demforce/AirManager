@@ -626,3 +626,119 @@ async function setPassword(pilotPage: Page, adminPage: Page, email: string, pers
   await pilotPage.getByRole('button', { name: 'Imposta password' }).click();
   await expect(pilotPage.getByTestId('set-password-success')).toBeVisible();
 }
+
+test.describe('Aircraft archive (story 16.8)', () => {
+  test('reports future bookings, emails the approved holder once, and retains the archived aircraft on the calendar', async ({ page, browser }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const holder = await createPilotPerson(page, 'archive');
+    const day = dateOnlyFromToday(2);
+    await book(page, aircraft.id, holder.personId, day);
+    await book(page, aircraft.id, holder.personId, dateOnlyFromToday(3));
+    await openFleetEditor(page, aircraft.registration);
+
+    await expect(page.getByTestId('archive-impact-preview')).toContainText('2 prenotazioni');
+    await page.getByTestId('archive-toggle-button').click();
+    await expect(page.getByTestId('archive-question')).toContainText('2 prenotazioni');
+    const archiveResponse = page.waitForResponse((response) =>
+      response.request().method() === 'POST' && response.url().endsWith(`/api/v1/aircraft/${aircraft.id}/archive`),
+    );
+    await page.getByTestId('archive-confirm').click();
+    expect(await (await archiveResponse).json()).toMatchObject({
+      aircraft: { id: aircraft.id, status: 'OPERATIONAL' },
+      impactedBookings: { pending: 0, approved: 2, effectiveUntil: null },
+    });
+    await expect(page.getByTestId('archive-impact-banner')).toContainText('2 prenotazioni');
+    const message = await waitForMailpitMessage(holder.email, `Velivolo archiviato: ${aircraft.registration}`);
+    expect(message.Text).toContain('NON è stata annullata');
+
+    for (const [action, data] of [
+      ['out-of-service', { reason: 'Revisione' }],
+      ['return-to-service', undefined],
+    ] as const) {
+      const response = await page.request.post(`/api/v1/aircraft/${aircraft.id}/${action}`, { data });
+      expect(response.status()).toBe(409);
+      expect(await response.json()).toMatchObject({ error: { code: 'AIRCRAFT_ARCHIVED' } });
+    }
+
+    const scheduleUrl = `/it/dashboard/bookings?date=${day}&view=day`;
+    await page.goto(scheduleUrl);
+    const scheduleRow = page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration });
+    await expect(scheduleRow.getByTestId('schedule-archived-status')).toHaveText('Archiviato');
+    await expect(scheduleRow.getByTestId('schedule-block')).toHaveCount(1);
+    await expect(scheduleRow.getByTestId('schedule-aog-block')).toHaveCount(0);
+
+    const phone = await browser.newContext({ viewport: { width: 375, height: 812 }, storageState: await page.context().storageState() });
+    try {
+      const mobile = await phone.newPage();
+      await mobile.goto(scheduleUrl);
+      const archivedRow = mobile.getByRole('button', { name: new RegExp(`${aircraft.registration} · Archiviato`) });
+      await expect(archivedRow).toBeVisible();
+      await archivedRow.click();
+      const sheet = mobile.getByTestId('mobile-booking-sheet');
+      await expect(sheet).toBeVisible();
+      await expect(sheet.getByText('Archiviato', { exact: true })).toBeVisible();
+    } finally {
+      await phone.close();
+    }
+  });
+
+  test('ignores a double click on archive confirmation, and accepts keyboard confirmation', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openFleetEditor(page, aircraft.registration);
+    await expect(page.getByTestId('archive-impact-preview')).toBeVisible();
+    const trigger = page.getByTestId('archive-toggle-button');
+    const confirm = page.getByTestId('archive-confirm');
+    await trigger.scrollIntoViewIfNeeded();
+    const posts: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith(`/api/v1/aircraft/${aircraft.id}/archive`)) posts.push(request.url());
+    });
+    await trigger.dblclick();
+    await expect(confirm).toBeVisible();
+    await confirm.dispatchEvent('click', { detail: 2 });
+    await expect(confirm).toBeVisible();
+    expect(posts).toHaveLength(0);
+    await confirm.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('archive-impact-banner')).toBeVisible();
+    expect(posts).toHaveLength(1);
+  });
+
+  test('does not archive on a rapid double tap; a deliberate tap still confirms', async ({ page, browser }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page);
+    const phone = await browser.newContext({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true, storageState: await page.context().storageState() });
+    try {
+      const mobile = await phone.newPage();
+      await mobile.goto(`/it/dashboard/fleet?q=${encodeURIComponent(aircraft.registration)}`);
+      await mobile.locator('[data-testid^="mobile-fleet-card-"]').first().tap();
+      await mobile.getByTestId('aircraft-edit-mobile').tap();
+      await expect(mobile.getByTestId('archive-impact-preview')).toBeVisible();
+      const trigger = mobile.getByTestId('archive-toggle-button');
+      const confirm = mobile.getByTestId('archive-confirm');
+      await trigger.scrollIntoViewIfNeeded();
+      const bounds = await trigger.boundingBox();
+      expect(bounds).not.toBeNull();
+      const posts: string[] = [];
+      mobile.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().endsWith(`/api/v1/aircraft/${aircraft.id}/archive`)) posts.push(request.url());
+      });
+      await mobile.touchscreen.tap(bounds!.x + 10, bounds!.y + bounds!.height / 2);
+      await mobile.touchscreen.tap(bounds!.x + 10, bounds!.y + bounds!.height / 2);
+      await expect(confirm).toBeVisible();
+      // Also cover the confirming control irrespective of device-dependent geometry.
+      await confirm.dispatchEvent('click', { detail: 2 });
+      await expect(confirm).toBeVisible();
+      expect(posts).toHaveLength(0);
+      await mobile.waitForTimeout(800);
+      await confirm.tap();
+      await expect(mobile.getByTestId('archive-impact-banner')).toBeVisible();
+      expect(posts).toHaveLength(1);
+    } finally {
+      await phone.close();
+    }
+  });
+});

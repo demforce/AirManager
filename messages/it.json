@@ -873,6 +873,7 @@
         "impactRow": "{count, plural, one {# prenotazione nel periodo} other {# prenotazioni nel periodo}}",
         "impactSplit": "In attesa (congelate): {pending} · Approvate (da gestire): {approved}",
         "impactWindowUntil": "conteggio fino al {date} compreso",
+        "archivedHint": "Velivolo archiviato: ripristinalo per metterlo fuori servizio o rimetterlo in servizio.",
         "impactWindowUndelimited": "rientro da definire: conteggio non delimitato",
         "impactWindowOverdue": "fuori servizio oltre il {date} previsto: conteggio non delimitato",
         "impactEstimate": "stima",
@@ -897,6 +898,9 @@
         "archive": "Archivia",
         "unarchive": "Ripristina",
         "confirmArchive": "Archiviare questo velivolo?",
+        "confirmQuestion": "Archiviare questo velivolo? {count, plural, =0 {Nessuna prenotazione coinvolta} one {# prenotazione coinvolta} other {# prenotazioni coinvolte}}",
+        "impactWindow": "tutte le prenotazioni future: conteggio non delimitato",
+        "impactBanner": "Velivolo archiviato: {count, plural, =0 {nessuna prenotazione coinvolta} one {# prenotazione coinvolta} other {# prenotazioni coinvolte}}.",
         "confirmUnarchive": "Ripristinare questo velivolo?",
         "confirmYes": "Conferma",
         "confirmCancel": "Annulla"
@@ -906,6 +910,7 @@
         "generic": "Si è verificato un errore. Riprova.",
         "conflictRegistration": "Esiste già un velivolo con queste marche.",
         "aircraftArchived": "Il velivolo è stato archiviato nel frattempo e non accetta nuove tariffe: nessuna modifica è stata salvata.",
+        "aircraftArchivedStatus": "Il velivolo è stato archiviato nel frattempo: lo stato non è cambiato.",
         "conflictStatus": "Lo stato del velivolo è già cambiato nel frattempo.",
         "invalidPrice": "Il prezzo deve essere un importo positivo (es. 160,00).",
         "invalidDate": "Inserisci una data valida.",
@@ -1284,6 +1289,7 @@
       "filtersAll": "Tutti",
       "filtersAircraft": "Velivolo",
       "filtersInstructor": "Istruttore",
+      "archived": "Archiviato",
       "aog": "Fuori servizio",
       "available": "Disponibile",
       "weekBookingsCount": "{count, plural, one {# prenotazione} other {# prenotazioni}}",
@@ -1755,6 +1761,10 @@
     "bookingDenied": {
       "subject": "Prenotazione rifiutata: {aircraftRegistration}",
       "body": "Ciao {firstName},\n\nLa tua prenotazione per {aircraftRegistration} del {when} è stata rifiutata.\n\nMotivo: {reason}"
+    },
+    "aircraftArchived": {
+      "subject": "Velivolo archiviato: {aircraftRegistration}",
+      "body": "Ciao {firstName},\n\nIl velivolo {aircraftRegistration}, su cui hai una prenotazione approvata, è stato archiviato: è uscito dalla flotta e non è più prenotabile.\n\nLa tua prima prenotazione interessata: {when}\n\nLa prenotazione NON è stata annullata: contatta l’aviosuperficie per concordare come procedere."
     },
     "aircraftGrounded": {
       "subject": "Velivolo fuori servizio: {aircraftRegistration}",

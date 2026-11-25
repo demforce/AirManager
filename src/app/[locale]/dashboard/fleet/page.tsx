@@ -182,6 +182,7 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
             availability: {
               sectionTitle: t('editor.availability.sectionTitle'),
               current: t('editor.availability.current'),
+              archivedHint: t('editor.availability.archivedHint'),
               setOutOfService: t('editor.availability.setOutOfService'),
               until: t('editor.availability.until'),
               untilHint: t('editor.availability.untilHint'),
@@ -227,6 +228,7 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               unarchive: t('editor.archive.unarchive'),
               confirmArchive: t('editor.archive.confirmArchive'),
               confirmUnarchive: t('editor.archive.confirmUnarchive'),
+              impactWindow: t('editor.archive.impactWindow'),
               confirmYes: t('editor.archive.confirmYes'),
               confirmCancel: t('editor.archive.confirmCancel'),
             },
@@ -235,6 +237,7 @@ export default async function FleetPage({ params, searchParams }: PageProps) {
               generic: t('editor.errors.generic'),
               conflictRegistration: t('editor.errors.conflictRegistration'),
               aircraftArchived: t('editor.errors.aircraftArchived'),
+              aircraftArchivedStatus: t('editor.errors.aircraftArchivedStatus'),
               conflictStatus: t('editor.errors.conflictStatus'),
               invalidPrice: t('editor.errors.invalidPrice'),
               invalidDate: t('editor.errors.invalidDate'),

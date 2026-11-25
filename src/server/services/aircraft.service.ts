@@ -10,7 +10,7 @@ import type {
   UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
 import { getMailSender } from '@/server/adapters/mail';
-import { buildAircraftGroundedEmail } from '@/server/adapters/mail/templates';
+import { buildAircraftArchivedEmail, buildAircraftGroundedEmail } from '@/server/adapters/mail/templates';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { computeAogImpact, type AogBookingImpact, type AogImpact, type ImpactedApprovedBooking } from './aog-impact';
@@ -45,6 +45,9 @@ export type SetOutOfServiceResult = {
   aircraft: AircraftListItem;
   impactedBookings: AogBookingImpact;
 };
+
+/** Archiving reports the same advisory counts, always without an upper bound. */
+export type ArchiveAircraftResult = SetOutOfServiceResult;
 
 const AIRCRAFT_SELECT = {
   id: true,
@@ -310,23 +313,30 @@ export async function updateAircraft(actor: Actor, id: string, patch: UpdateAirc
  * from new-operation pickers built on top of it (same pattern as
  * `archivePerson`, story 2.1).
  */
-export async function archiveAircraft(actor: Actor, id: string): Promise<AircraftListItem> {
+export async function archiveAircraft(actor: Actor, id: string): Promise<ArchiveAircraftResult> {
   authorize(actor, 'aircraft.manage');
 
-  const existing = await prisma.aircraft.findUnique({ where: { id } });
+  const existing = await prisma.aircraft.findUnique({ where: { id }, select: { id: true } });
   if (!existing) {
     throw new NotFoundError('Aircraft not found.');
   }
-  if (existing.archivedAt !== null) {
-    throw new ConflictError('Aircraft is already archived.');
-  }
 
-  const aircraft = await prisma.aircraft.update({
-    where: { id },
-    data: { archivedAt: new Date() },
-    select: AIRCRAFT_SELECT,
+  const now = new Date();
+  const { aircraft, impact } = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.aircraft.updateMany({ where: { id, archivedAt: null }, data: { archivedAt: now } });
+    if (count === 0) {
+      throw new ConflictError('Aircraft is already archived.');
+    }
+    const aircraft = await tx.aircraft.findUniqueOrThrow({ where: { id }, select: AIRCRAFT_SELECT });
+    const impact = await computeAogImpact(tx, { aircraftId: id, until: null, now });
+    return { aircraft, impact };
   });
-  return toListItem(aircraft);
+
+  const listItem = toListItem(aircraft);
+  await sendImpactedHolderEmails(impact, 'archiveAircraft', (locale, holder) =>
+    buildAircraftArchivedEmail(locale, { aircraftRegistration: listItem.registration, ...holder }),
+  );
+  return { aircraft: listItem, impactedBookings: { pending: impact.pending, approved: impact.approved, effectiveUntil: impact.effectiveUntil } };
 }
 
 /** Restores a previously archived aircraft (AC 2). */
@@ -374,7 +384,7 @@ export async function unarchiveAircraft(actor: Actor, id: string): Promise<Aircr
  * like `balanceAlert` on `RegisterFlightResult` (story 14.4, AC 3).
  *
  * The grounding email (R-AOG-i) goes out AFTER the commit, best-effort, and can
- * never fail the write — see {@link sendAircraftGroundedEmails}.
+ * never fail the write — see {@link sendImpactedHolderEmails}.
  */
 export async function setOutOfService(actor: Actor, id: string, input: SetOutOfServiceInput): Promise<SetOutOfServiceResult> {
   authorize(actor, 'aircraft.manage');
@@ -392,13 +402,11 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
     // zero rows and gets ConflictError instead of silently overwriting the
     // other caller's statusReason.
     const { count } = await tx.aircraft.updateMany({
-      where: { id, status: 'OPERATIONAL' },
+      where: { id, status: 'OPERATIONAL', archivedAt: null },
       data: {
         status: 'OUT_OF_SERVICE',
         statusReason: input.reason,
-        // Story AOG-1a: ONE extra key in the `data`; the `where` above is
-        // untouched, so the concurrency discipline of review 2.2 F1 is
-        // unchanged. `@db.Date` is bound as a UTC-midnight calendar date
+        // `@db.Date` is bound as a UTC-midnight calendar date
         // (`parseDateOnlyUtc`, review 3.5 F1's lesson) — never a timestamp.
         // `== null` covers BOTH an omitted key and an explicit `null` (review
         // MINOR-2, `.nullish()` on the schema): the two mean the same thing —
@@ -407,6 +415,8 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
       },
     });
     if (count === 0) {
+      const current = await tx.aircraft.findUnique({ where: { id }, select: { archivedAt: true } });
+      if (current?.archivedAt) throw new ConflictError('Aircraft is archived.', undefined, 'AIRCRAFT_ARCHIVED');
       throw new ConflictError('Aircraft is already out of service.');
     }
 
@@ -418,7 +428,16 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
   });
 
   const listItem = toListItem(aircraft);
-  await sendAircraftGroundedEmails(listItem, impact);
+  await sendImpactedHolderEmails(impact, 'setOutOfService', (locale, holder) =>
+    buildAircraftGroundedEmail(locale, {
+      ...holder,
+      aircraftRegistration: listItem.registration,
+      // This transaction just set the reason.
+      reason: listItem.statusReason!,
+      outOfServiceUntil: listItem.outOfServiceUntil,
+      effectiveUntil: impact.effectiveUntil,
+    }),
+  );
 
   // Story AOG-1b (review MAJOR-1): `effectiveUntil` travels with the two
   // numbers, so the sentence the admin reads describes the window the count
@@ -439,7 +458,8 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
  * single definition.
  *
  * The number is a STIMA and the UI says so: it is measured before the act, and
- * the authoritative one is the one {@link setOutOfService} returns.
+ * the authoritative count is returned by {@link setOutOfService} or
+ * {@link archiveAircraft}. Omitting `until` also previews archiving.
  */
 export async function previewOutOfServiceImpact(actor: Actor, id: string, query: OutOfServiceImpactQuery): Promise<AogBookingImpact> {
   authorize(actor, 'aircraft.manage');
@@ -458,29 +478,16 @@ export async function previewOutOfServiceImpact(actor: Actor, id: string, query:
 }
 
 /**
- * Best-effort grounding email to the holders of the impacted APPROVED bookings
- * (story AOG-1b, ratifica R-AOG-i / AD-6), fire-and-forget — called AFTER
- * `setOutOfService`'s transaction commits, same "a slow/broken SMTP server must
- * never hold a lock or fail an otherwise-valid write" rule as
- * `bookings.service.ts#sendBookingDeniedEmail`, which this is modelled on.
- *
- * Only APPROVED holders (R-AOG-i): a PENDING booking is ALREADY frozen — the
- * admin who tries to approve it gets the 422 with the reason — so its holder is
- * deliberately not written to. `returnToService` sends nothing at all.
- *
- * ONE email per HOLDER, not per booking: a person with several impacted
- * bookings on the same aircraft gets a single message naming their EARLIEST
- * one (`approvedBookings` arrives `startsAt`-ascending), which is also what
- * caps the fan-out at the number of distinct holders.
- *
- * Recipient locale is the holder's OWN `User.locale` (AD-7), resolved the same
- * way as `sendBookingDeniedEmail` (fallback `it` with no linked `User`); a
- * person with no email on file is a SILENT skip, distinct from an actual send
- * failure (`console.error`, still no throw). One failing recipient never stops
- * the others, and NOTHING in here can propagate: the write already committed
- * and stays valid.
+ * Best-effort after the grounding or archive transaction commits. Notify only
+ * holders of APPROVED bookings, once each, using their earliest booking and
+ * preferred language. Neither a lookup failure nor one failed delivery can
+ * undo the committed action.
  */
-async function sendAircraftGroundedEmails(aircraft: AircraftListItem, impact: AogImpact): Promise<void> {
+async function sendImpactedHolderEmails(
+  impact: AogImpact,
+  action: 'setOutOfService' | 'archiveAircraft',
+  buildEmail: (locale: AppLocale, holder: { firstName: string; startsAt: Date }) => Promise<{ subject: string; text: string }>,
+): Promise<void> {
   const approvedBookings = impact.approvedBookings;
   if (approvedBookings.length === 0) return;
 
@@ -506,25 +513,14 @@ async function sendAircraftGroundedEmails(aircraft: AircraftListItem, impact: Ao
 
       try {
         const locale: AppLocale = localeByPerson.get(person.id) === 'en' ? 'en' : 'it';
-        const { subject, text } = await buildAircraftGroundedEmail(locale, {
-          firstName: person.firstName,
-          aircraftRegistration: aircraft.registration,
-          startsAt: booking.startsAt,
-          // Just written by this function's own transaction — safe to assert.
-          reason: aircraft.statusReason!,
-          outOfServiceUntil: aircraft.outOfServiceUntil,
-          // Review MAJOR-1: the window the count was actually taken over. The
-          // recipient of a fermo whose expected day had already passed used to
-          // be told "fino al {ieri} compreso" about a booking 41 days later.
-          effectiveUntil: impact.effectiveUntil,
-        });
+        const { subject, text } = await buildEmail(locale, { firstName: person.firstName, startsAt: booking.startsAt });
         await getMailSender().send({ to: person.email, subject, text });
       } catch (error) {
-        console.error('setOutOfService: failed to send aircraft-grounded email', error);
+        console.error(action === 'setOutOfService' ? 'setOutOfService: failed to send aircraft-grounded email' : 'archiveAircraft: failed to send aircraft-archived email', error);
       }
     }
   } catch (error) {
-    console.error('setOutOfService: failed to resolve aircraft-grounded email recipients', error);
+    console.error(action === 'setOutOfService' ? 'setOutOfService: failed to resolve aircraft-grounded email recipients' : 'archiveAircraft: failed to resolve aircraft-archived email recipients', error);
   }
 }
 
@@ -545,10 +541,12 @@ export async function returnToService(actor: Actor, id: string): Promise<Aircraf
 
   // Same atomic guard as setOutOfService, mirrored for the opposite transition.
   const { count } = await prisma.aircraft.updateMany({
-    where: { id, status: 'OUT_OF_SERVICE' },
+    where: { id, status: 'OUT_OF_SERVICE', archivedAt: null },
     data: { status: 'OPERATIONAL', statusReason: null, outOfServiceUntil: null },
   });
   if (count === 0) {
+    const current = await prisma.aircraft.findUnique({ where: { id }, select: { archivedAt: true } });
+    if (current?.archivedAt) throw new ConflictError('Aircraft is archived.', undefined, 'AIRCRAFT_ARCHIVED');
     throw new ConflictError('Aircraft is already operational.');
   }
 

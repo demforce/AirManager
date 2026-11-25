@@ -26,6 +26,7 @@ import { dayPhaseOf, type DayPhase } from './booking-day-phase';
 /** The booking fields the ordering and the phase need — callers pass their own richer rows through the generic. */
 export type AgendaSourceBooking = {
   id: string;
+  aircraftId?: string;
   startsAt: Date;
   endsAt: Date;
 };
@@ -33,16 +34,17 @@ export type AgendaSourceBooking = {
 /** Ditto for the fleet: only "is this aircraft out of service" decides an AOG row. */
 export type AgendaSourceAircraft = {
   id: string;
-  status: 'OPERATIONAL' | 'OUT_OF_SERVICE';
+  status: 'OPERATIONAL' | 'OUT_OF_SERVICE' | 'ARCHIVED';
 };
 
 export type AgendaEntry<B extends AgendaSourceBooking, A extends AgendaSourceAircraft> =
-  | { kind: 'aog'; aircraft: A }
+  | { kind: 'aog' | 'archived'; aircraft: A }
   | { kind: 'booking'; booking: B; phase: DayPhase; startsAfterNow: boolean };
 
 /**
  * The agenda's rows, in the order they are rendered: the out-of-service
- * aircraft (input order), then the movements by `startsAt` ascending with `id`
+ * aircraft (input order), then archived aircraft with a booking that day, then
+ * movements by `startsAt` ascending with `id`
  * as the tie-break — the same total order `listCalendarBookings` already
  * applies server-side, restated here because this function must not depend on
  * its caller having preserved it.
@@ -56,6 +58,11 @@ export function buildAgendaEntries<B extends AgendaSourceBooking, A extends Agen
     .filter((item) => item.status === 'OUT_OF_SERVICE')
     .map((item) => ({ kind: 'aog', aircraft: item }));
 
+  const bookedAircraft = new Set(bookings.map(({ aircraftId }) => aircraftId));
+  const archivedRows: Array<AgendaEntry<B, A>> = aircraft
+    .filter((item) => item.status === 'ARCHIVED' && bookedAircraft.has(item.id))
+    .map((item) => ({ kind: 'archived', aircraft: item }));
+
   const movements: Array<AgendaEntry<B, A>> = [...bookings]
     .sort((left, right) => left.startsAt.getTime() - right.startsAt.getTime() || left.id.localeCompare(right.id))
     .map((booking) => ({
@@ -67,7 +74,7 @@ export function buildAgendaEntries<B extends AgendaSourceBooking, A extends Agen
       startsAfterNow: booking.startsAt.getTime() > now.getTime(),
     }));
 
-  return [...aogRows, ...movements];
+  return [...aogRows, ...archivedRows, ...movements];
 }
 
 /**
