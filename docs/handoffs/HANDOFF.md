@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.8 chiusa)
+# HANDOFF — AirManager (aggiornato: 2026-11-25 — 18.1 chiusa)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -8,6 +8,8 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **Fonte di verità**: `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Current Progress
+
+- **18.1 done** (`25149f3`): pavimento mobile 44 px nei pannelli, topbar e accesso; link AOG desktop preservato dopo riesame indipendente GPT 6 Sol xhigh. Gate 2.320 unit e build; browser 659 passati, tre flaky, due METAR saltati e documentati. Geometria invariata per 267 controlli editor su tre larghezze desktop.
 
 - **17.8 done** (`46e707c`): alert job con massimo 200 candidati per giro, retry e claim per ID; fan-out velivolo dopo la risposta. Revisione indipendente GPT 6 Sol xhigh approvata. Gate verdi con 2.320 unit; browser 621 passati, tre al retry, due saltati. Lotto sintetico di 200 in 12,4 s, 2.005 candidati esauriti in 11 giri. Limiti SMTP ambiguo e fan-out in memoria nel record.
 

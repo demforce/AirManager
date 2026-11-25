@@ -4,7 +4,7 @@ baseline_commit: 1f6ab3e
 
 # Story 18.1: Un pavimento mobile unico
 
-Status: **review** — sviluppo e gate della 18.1 completi sul ramo locale `story/18-1` dalla base `6fb17852b1c5b2f956ce47c35587ac468b413a4a`; il riesame indipendente della correzione AOG e la pubblicazione sono ancora pendenti. File creato il 2026-11-03 con ricognizione su `1f6ab3e`. Per istruzione permanente di Enrico, GPT 6 Sol sostituisce Opus 5 xhigh nello sviluppo e nella revisione ordinaria, che deve restare indipendente. **Ordine**: DOPO la 16.8 (riscrive l'`ArchiveSection` del velivolo; il pavimento d'insieme chiude il TD 16.8-f senza riga ancorata). L'altezza della topbar entra nel fold della 18.2. Le righe di `airops.css` qui sotto sono di HEAD all'epoca della ricognizione e non sono pin correnti.
+Status: **done** — sviluppo, gate e riesame indipendente approvato sulla base `6fb17852b1c5b2f956ce47c35587ac468b413a4a`. File creato il 2026-11-03 con ricognizione su `1f6ab3e`. Per istruzione permanente di Enrico, GPT 6 Sol sostituisce Opus 5 xhigh nello sviluppo e nella revisione ordinaria, che deve restare indipendente. **Ordine**: DOPO la 16.8 (riscrive l'`ArchiveSection` del velivolo; il pavimento d'insieme chiude il TD 16.8-f senza riga ancorata). L'altezza della topbar entra nel fold della 18.2. Le righe di `airops.css` qui sotto sono di HEAD all'epoca della ricognizione e non sono pin correnti.
 
 ## Story
 
@@ -107,3 +107,7 @@ Codex Sol, unico agente di sviluppo in questo ramo. La revisione indipendente re
 - `e2e/mobile-billing.spec.ts`
 - `e2e/aog-impact-email.spec.ts`
 - `docs/superpowers/plans/2026-11-25-mobile-touch-floor.md`
+
+### Riesame indipendente e chiusura — 2026-11-25
+
+Il revisore separato GPT 6 Sol xhigh ha inizialmente respinto `5d23219` per la geometria desktop del link AOG. Dopo la correzione in `25149f3f5df543962ca078983d3da4689c11c8e2`, ha verificato la parità del banner armato con la base a 641, 900 e 1280 px (27/27 proprietà, SHA-256 identico), il target telefonico, il CSSOM, i 38 casi 18.1, i gate finali (2.320 unit e build, exit 0) e la suite browser completa (`E2E_EXIT=0`, 659 passati, tre flaky, due saltati). Riesame **approvato**, nessun rilievo bloccante residuo. I due skip METAR restano non verificati nella suite, con cause distinte descritte sopra.
