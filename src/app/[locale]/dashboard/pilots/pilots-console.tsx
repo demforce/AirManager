@@ -40,7 +40,7 @@ import { avatarColorFor, initialsOf, pilotRowFlag, type BlockingDocument, type P
 import { formatCents, parseCents } from '@/lib/money';
 import { APP_TIMEZONE, formatDateOnly } from '@/lib/time';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
-import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { useIdempotentSubmission } from '@/lib/use-idempotent-submission';
 import { PilotEditor, type PilotEditorLabels } from './pilot-editor';
 
 export type PilotUser = { id: string; email: string; roles: Role[]; isActive: boolean; passwordSet: boolean } | null;
@@ -773,7 +773,7 @@ type TopUpSlideOverProps = {
 /** "Registra" row action (AC 3, `finance.manage`) — same top-up endpoint/Idempotency-Key flow as the legacy `AccountPanel`'s `TopUpForm`. */
 function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, successMessage }: TopUpSlideOverProps) {
   const toast = useToast();
-  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const { submitIdempotently, submissionError } = useIdempotentSubmission();
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
@@ -793,21 +793,16 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
 
     let response: Response;
     try {
-      response = await fetch(`/api/v1/people/${pilot.id}/account/top-ups`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-        body: JSON.stringify({
-          amountCents,
-          paymentMethod: values.paymentMethod,
-          effectiveDate: values.effectiveDate,
-          description: values.description.trim() === '' ? null : values.description.trim(),
-        }),
+      response = await submitIdempotently(`/api/v1/people/${pilot.id}/account/top-ups`, {
+        amountCents,
+        paymentMethod: values.paymentMethod,
+        effectiveDate: values.effectiveDate,
+        description: values.description.trim() === '' ? null : values.description.trim(),
       });
-    } catch {
-      setFormError(labels.genericError);
+    } catch (error) {
+      setFormError(submissionError(error, labels.genericError));
       return;
     }
-    regenerateIdempotencyKey();
 
     if (!response.ok) {
       const { code } = await parseApiError(response);

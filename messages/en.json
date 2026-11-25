@@ -1,4 +1,9 @@
 {
+  "IdempotentSubmission": {
+    "inProgress": "This operation is still in progress. Wait a few seconds, then retry without changing the details.",
+    "uncertain": "No confirmation arrived. The operation may already have been recorded. Retry without changing the details to check the outcome.",
+    "verifyFirst": "This attempt could not be confirmed. Check whether the operation was recorded before entering it again."
+  },
   "Metadata": {
     "title": "AirManager",
     "description": "Airfield management: pilots, aircraft, flights, bookings and finances in one place."

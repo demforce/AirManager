@@ -1,4 +1,9 @@
 {
+  "IdempotentSubmission": {
+    "inProgress": "Operazione in corso. Attendi qualche secondo, poi riprova senza cambiare i dati.",
+    "uncertain": "Non è arrivata la conferma. L’operazione potrebbe essere già stata registrata. Riprova senza cambiare i dati per verificarne l’esito.",
+    "verifyFirst": "Non è possibile confermare questo tentativo. Verifica se l’operazione è stata registrata prima di inserirla di nuovo."
+  },
   "Metadata": {
     "title": "AirManager",
     "description": "Gestionale per aviosuperficie: piloti, velivoli, voli, prenotazioni e finanze in un unico posto."

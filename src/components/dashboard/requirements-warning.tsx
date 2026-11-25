@@ -13,7 +13,7 @@
  * caller who cannot derogate; the flight form never uses it (only an admin
  * registers flights). `error` = the last «Procedi comunque» failed with
  * something the caller does not map itself (network, 5xx): the warning stays
- * open with a retry message — and «Procedi comunque» takes the focus back. On
+ * open with a default or caller-supplied retry message — and «Procedi comunque» takes the focus back. On
  * mount it takes the focus and scrolls into view — on the phone it sits under
  * the whole form. Giving the focus back when the warning CLOSES is the
  * caller's job (it owns the submit and the banner).
@@ -34,7 +34,7 @@ export type RequirementsWarningProps = {
   onProceed: () => void;
   onCancel: () => void;
   submitting: boolean;
-  error: boolean;
+  error: boolean | string;
   moneyLocale: 'it' | 'en';
   /** Defaults to `Requirements.title`. */
   title?: string;
@@ -87,7 +87,7 @@ export function RequirementsWarning({ failures, canProceed, onProceed, onCancel,
       </ul>
       {error ? (
         <p role="alert" data-testid="requirements-proceed-error" className="fld-error">
-          {t('proceedError')}
+          {typeof error === 'string' ? error : t('proceedError')}
         </p>
       ) : null}
       {canProceed ? (

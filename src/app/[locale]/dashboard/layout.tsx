@@ -3,6 +3,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Role } from '@/generated/prisma/client';
 import type { AvatarColor } from '@/components/ui/avatar';
 import { ToastProvider } from '@/components/ui/toast';
+import { IdempotentSubmissionProvider } from '@/lib/use-idempotent-submission';
 import { MobileNav, type MobileNavItemView } from '@/components/shell/mobile-nav';
 import { MobileTopBar } from '@/components/shell/mobile-top-bar';
 import { Sidebar, type FlightCategory, type SidebarMetar } from '@/components/shell/sidebar';
@@ -188,7 +189,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             logoutAction={logoutAction}
             logoutLabel={t('logout')}
           />
-          {children}
+          <IdempotentSubmissionProvider actorId={actor.userId}>{children}</IdempotentSubmissionProvider>
           <MobileNav
             tabs={mobileLayout.tabs.map(toMobileItem)}
             more={mobileLayout.more.map(toMobileItem)}

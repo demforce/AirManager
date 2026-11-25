@@ -1036,14 +1036,8 @@ test.describe('Registro voli mobile — form a tutto schermo (story 15.6, AC 6)'
     expect(keys.length, 'first submit + «Procedi comunque» re-send').toBe(2);
     expect(keys[0]).toBeTruthy();
     expect(keys[1]).toBeTruthy();
-    // CORRECTION to the story's own §a.5 n.6: the key is regenerated after ANY
-    // http response, the 422 included — `use-idempotency-key.ts`'s doc-comment
-    // (TD-2 AC 6) states it, `flight-editor.tsx` calls `regenerateIdempotency
-    // Key()` right after the fetch resolves, and it is the SAFE behaviour: the
-    // rejected attempt already owns the old key server-side, so reusing it
-    // could replay the rejection instead of registering the flight. Only a
-    // NETWORK failure (no response at all) keeps the key. Story 19.9: the
-    // resend after the 422 carries the NEW key — one record, one flight.
+    // The 422 is conclusive: «Procedi comunque» starts a new, explicit
+    // force request. Uncertain responses, in contrast, preserve the attempt (16.10).
     expect(keys[1]).not.toBe(keys[0]);
 
     // An edit is not an idempotent creation and must NOT carry one (story

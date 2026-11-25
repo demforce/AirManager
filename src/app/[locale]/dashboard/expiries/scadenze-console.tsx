@@ -31,7 +31,7 @@ import type { AppLocale } from '@/i18n/routing';
 import { tierOf } from '@/lib/expiry-status';
 import { expiryCardSubLine, expiryDaysLabel, expirySheetSub } from '@/lib/mobile-expiries';
 import { formatCents, parseCents } from '@/lib/money';
-import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { useIdempotentSubmission } from '@/lib/use-idempotent-submission';
 import type { ExpiryDashboardItemDto, ExpiryWindowDto, RegistryCategoryDto } from '@/lib/schemas/expiries';
 import type { RequirementFailure } from '@/lib/schemas/requirements';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
@@ -869,14 +869,13 @@ type MembershipFeeModalProps = {
  * 422 `REQUIREMENTS_NOT_MET` of flights and bookings, and the modal shows the
  * shared `RequirementsWarning` (the balance and the amount) — «Procedi
  * comunque» (`canForce`) resends the same body with `force: true` and a NEW
- * `Idempotency-Key` (the 422 was an HTTP response, so the key was already
- * regenerated); its «Annulla» goes back to the form with the values intact,
+ * `Idempotency-Key` (the 422 definitively refused the initial attempt); its «Annulla» goes back to the form with the values intact,
  * and a change to the pilot or the amount closes it (never derogate a body
  * other than the one listed).
  *
  * Story 16.6b (ledger MAJOR-6): the one route where the server REQUIRES the
- * key follows the `useIdempotencyKey` contract like the other six forms — the
- * key survives a network failure, so the operator's retry REPLAYS the charge
+ * key follows the shared submitter contract (16.10) like the other six forms — the
+ * key survives a network failure, an in-progress response and a same-tab reload, so the operator's retry REPLAYS the charge
  * a dropped connection may already have committed instead of charging (and
  * renewing the fee) twice.
  *
@@ -906,7 +905,7 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
   // Story 19.10 (AD-10): the failures of the 422 `REQUIREMENTS_NOT_MET` and
   // the body they refused; `null` while the warning is closed.
   const [requirements, setRequirements] = useState<{ failures: RequirementFailure[]; personId: string; amountCents: number } | null>(null);
-  const [proceedError, setProceedError] = useState(false);
+  const [proceedError, setProceedError] = useState<boolean | string>(false);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ balanceCents: number; expiresAt: string } | null>(null);
@@ -914,7 +913,7 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
   // both errors are DERIVED from submitAttempted + current value (clear on
   // correction is automatic), the `error` banner stays for SERVER failures only.
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const { submitIdempotently, submissionError } = useIdempotentSubmission();
   const pilotMissing = submitAttempted && !personId;
   const amountInvalid = submitAttempted && parseAmountCents(amount) === null;
 
@@ -923,19 +922,9 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
     setProceedError(false);
   }
 
-  /**
-   * The charge itself — `force` only from «Procedi comunque». The key is
-   * regenerated once ANY HTTP response arrives (TD-2, AC 6); a network
-   * failure throws before that line and keeps it, so the retry replays.
-   */
-  async function charge(targetPersonId: string, amountCents: number, force: boolean): Promise<Response> {
-    const response = await fetch(`/api/v1/people/${targetPersonId}/membership-fee`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      body: JSON.stringify(force ? { amountCents, force: true } : { amountCents }),
-    });
-    regenerateIdempotencyKey();
-    return response;
+  /** The charge itself. Only «Procedi comunque» starts an explicit override. */
+  function charge(targetPersonId: string, amountCents: number, force: boolean): Promise<Response> {
+    return submitIdempotently(`/api/v1/people/${targetPersonId}/membership-fee`, force ? { amountCents, force: true } : { amountCents });
   }
 
   async function charged(response: Response): Promise<void> {
@@ -955,10 +944,9 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
     let response: Response;
     try {
       response = await charge(personId, parsedAmount, false);
-    } catch {
-      // Network failure: the key is kept (see `charge`) and the button comes back for the retry.
+    } catch (failure) {
       setSubmitting(false);
-      setError(labels.genericError);
+      setError(submissionError(failure, labels.genericError));
       return;
     }
     setSubmitting(false);
@@ -975,7 +963,7 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
     await charged(response);
   }
 
-  /** «Procedi comunque» — the refused body plus `force: true`. Any refusal but a network error closes the warning with the generic message (as every other error of this modal). */
+  /** «Procedi comunque» — the refused body plus `force: true`. A definitive refusal closes the warning; an uncertain response keeps it open for a safe retry. */
   async function proceed(): Promise<void> {
     if (!requirements) return;
     setProceedError(false);
@@ -983,9 +971,9 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
     let response: Response;
     try {
       response = await charge(requirements.personId, requirements.amountCents, true);
-    } catch {
+    } catch (failure) {
       setSubmitting(false);
-      setProceedError(true);
+      setProceedError(submissionError(failure, labels.genericError));
       return;
     }
     setSubmitting(false);

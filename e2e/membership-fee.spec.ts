@@ -286,14 +286,7 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
     expect(fee?.expiresAt.slice(0, 4)).toBe(String(now.getFullYear() + 1));
   });
 
-  // Story 16.6b (ledger MAJOR-6): the panel keeps its Idempotency-Key across a
-  // NETWORK failure and regenerates it after any HTTP response. Attempt 1 gets
-  // a stubbed 500 (an HTTP response: the key must change); attempt 2 reaches
-  // the server, which COMMITS the charge, and the browser is then told the
-  // connection dropped (`route.fetch()` then `route.abort()`); attempt 3, the
-  // operator's retry, must carry attempt 2's key and be REPLAYED — one charge,
-  // and the fee renewed once (+12 months), not twice (+24).
-  test('a retry after a dropped connection replays the charge instead of charging and renewing twice; the key changes after an HTTP response (story 16.6b)', async ({ page }) => {
+  test('an uncertain fee charge can be retried after reloading without a second charge (story 16.10)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 3500 } });
 
@@ -311,40 +304,51 @@ test.describe('Quota associativa (Story 12.11, AC 7)', () => {
         committed.status = response.status();
         committed.expiresAt = ((await response.json()) as { expiresAt: string }).expiresAt;
         await route.abort('connectionreset');
+      } else if (keys.length === 3) {
+        // Exercise the client contract explicitly without timing a DB lock.
+        await route.fulfill({ status: 409, json: { error: { code: 'IDEMPOTENCY_IN_PROGRESS' } } });
       } else {
         await route.continue();
       }
     });
 
-    await page.goto('/it/dashboard/expiries');
-    await page.getByTestId('scadenze-membership-fee-button').click();
     const panel = page.getByTestId('membership-fee-panel');
-    const combobox = panel.getByRole('combobox', { name: 'Persona' });
-    await combobox.click();
-    await combobox.fill(pilot.lastName);
-    await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();
     const submit = panel.getByTestId('membership-fee-submit');
     const error = panel.getByTestId('membership-fee-error');
+    const openFeeForm = async () => {
+      await page.getByTestId('scadenze-membership-fee-button').click();
+      const combobox = panel.getByRole('combobox', { name: 'Persona' });
+      await combobox.click();
+      await combobox.fill(pilot.lastName);
+      await page.getByRole('option', { name: personOptionLabel(pilot), exact: true }).click();
+    };
+    await page.goto('/it/dashboard/expiries');
+    await openFeeForm();
 
-    await submit.click(); // attempt 1: HTTP 500
-    await expect(error).toHaveText('Impossibile addebitare la quota. Riprova.');
+    await submit.click(); // HTTP 500 cannot prove that the charge failed.
+    await expect(error).toContainText('L’operazione potrebbe essere già stata registrata');
     await expect(submit).toBeEnabled();
 
-    await submit.click(); // attempt 2: committed server-side, dropped client-side
+    await submit.click(); // The local service commits, but the browser loses the response.
     await expect.poll(() => committed.status).toBe(200);
-    await expect(error).toHaveText('Impossibile addebitare la quota. Riprova.');
+    await expect(error).toContainText('L’operazione potrebbe essere già stata registrata');
     await expect(submit).toBeEnabled();
+
+    await submit.click(); // A pending response must not throw the saved key away.
+    await expect(error).toContainText('Operazione in corso');
+    await page.reload();
+    await openFeeForm();
 
     const replayed = page.waitForResponse((response) => response.url().endsWith(`/people/${pilot.personId}/membership-fee`) && response.request().method() === 'POST');
-    await submit.click(); // attempt 3: the operator's retry
+    await submit.click();
     const retry = await replayed;
     expect(retry.status()).toBe(200);
     expect(retry.headers()['idempotency-replayed']).toBe('true');
     await expect(panel.getByTestId('membership-fee-success')).toBeVisible();
 
-    expect(keys).toHaveLength(3);
-    expect(keys[1]).not.toBe(keys[0]);
-    expect(keys[2]).toBe(keys[1]);
+    expect(keys).toHaveLength(4);
+    expect(keys[0]).toBeTruthy();
+    expect(new Set(keys).size).toBe(1);
 
     const movements = (await (await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`)).json()) as {
       items: { type: string; amountCents: number; description: string | null }[];

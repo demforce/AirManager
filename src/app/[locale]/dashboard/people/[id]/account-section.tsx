@@ -36,7 +36,7 @@ import { formatCents, formatSignedCents, parseCents } from '@/lib/money';
 import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
 import { APP_TIMEZONE, formatDateOnly } from '@/lib/time';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
-import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { useIdempotentSubmission } from '@/lib/use-idempotent-submission';
 
 export type AccountMovementRow = {
   id: string;
@@ -849,7 +849,7 @@ function TopUpForm({
   onCancel: () => void;
   onSuccess: () => void;
 }) {
-  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const { submitIdempotently, submissionError } = useIdempotentSubmission();
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
@@ -867,21 +867,16 @@ function TopUpForm({
 
     let response: Response;
     try {
-      response = await fetch(`/api/v1/people/${personId}/account/top-ups`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-        body: JSON.stringify({
-          amountCents,
-          paymentMethod: values.paymentMethod,
-          effectiveDate: values.effectiveDate,
-          description: values.description.trim() === '' ? null : values.description.trim(),
-        }),
+      response = await submitIdempotently(`/api/v1/people/${personId}/account/top-ups`, {
+        amountCents,
+        paymentMethod: values.paymentMethod,
+        effectiveDate: values.effectiveDate,
+        description: values.description.trim() === '' ? null : values.description.trim(),
       });
-    } catch {
-      setFormError(labels.genericError);
+    } catch (error) {
+      setFormError(submissionError(error, labels.genericError));
       return;
     }
-    regenerateIdempotencyKey();
 
     if (!response.ok) {
       const { code } = await parseApiError(response);
@@ -974,7 +969,7 @@ function AdjustmentForm({
   onSuccess: () => void;
 }) {
   const [formError, setFormError] = useState<string | null>(null);
-  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const { submitIdempotently, submissionError } = useIdempotentSubmission();
 
   const {
     register,
@@ -990,20 +985,15 @@ function AdjustmentForm({
     const amountCents = parseCents(values.amount);
     let response: Response;
     try {
-      response = await fetch(`/api/v1/people/${personId}/account/adjustments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-        body: JSON.stringify({
-          amountCents,
-          reason: values.reason.trim(),
-          originalMovementId: originalMovement?.id ?? null,
-        }),
+      response = await submitIdempotently(`/api/v1/people/${personId}/account/adjustments`, {
+        amountCents,
+        reason: values.reason.trim(),
+        originalMovementId: originalMovement?.id ?? null,
       });
-    } catch {
-      setFormError(labels.genericError);
+    } catch (error) {
+      setFormError(submissionError(error, labels.genericError));
       return;
     }
-    regenerateIdempotencyKey();
 
     if (!response.ok) {
       const { code } = await parseApiError(response);

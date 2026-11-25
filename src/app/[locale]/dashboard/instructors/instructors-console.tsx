@@ -40,7 +40,7 @@ import { avatarColorFor, initialsOf } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
 import { APP_TIMEZONE, formatDateOnly, formatMinutes } from '@/lib/time';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
-import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { useIdempotentSubmission } from '@/lib/use-idempotent-submission';
 import type { PersonListItemDto } from '@/lib/schemas/people';
 import { InstructorEditor, type InstructorEditorLabels } from './instructor-editor';
 import { InstructorProfile, fetchDetail, type InstructorDetail, type InstructorProfileLabels } from './instructor-profile';
@@ -586,7 +586,7 @@ type PaySlideOverProps = {
 /** "Paga" row action (AC 5, `payouts.manage`) — same Idempotency-Key flow as `pilots-console.tsx#TopUpSlideOver`, MANDATORY server-side here (route rejects a missing header, story 12.7 AC 3). */
 function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, successMessage }: PaySlideOverProps) {
   const toast = useToast();
-  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const { submitIdempotently, submissionError } = useIdempotentSubmission();
   const [formError, setFormError] = useState<string | null>(null);
 
   const today = todayDateOnlyInZone(APP_TIMEZONE);
@@ -614,23 +614,18 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
 
     let response: Response;
     try {
-      response = await fetch('/api/v1/instructor-payouts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-        body: JSON.stringify({
-          instructorPersonId: instructor.personId,
-          amountCents,
-          periodStart: formValues.periodStart,
-          periodEnd: formValues.periodEnd,
-          method: formValues.method,
-          notes: formValues.notes.trim() === '' ? null : formValues.notes.trim(),
-        }),
+      response = await submitIdempotently('/api/v1/instructor-payouts', {
+        instructorPersonId: instructor.personId,
+        amountCents,
+        periodStart: formValues.periodStart,
+        periodEnd: formValues.periodEnd,
+        method: formValues.method,
+        notes: formValues.notes.trim() === '' ? null : formValues.notes.trim(),
       });
-    } catch {
-      setFormError(labels.genericError);
+    } catch (error) {
+      setFormError(submissionError(error, labels.genericError));
       return;
     }
-    regenerateIdempotencyKey();
 
     if (!response.ok) {
       const { code } = await parseApiError(response);

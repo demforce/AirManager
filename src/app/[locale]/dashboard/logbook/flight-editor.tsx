@@ -46,7 +46,7 @@ import type { FlightListItemDto, FlightTypeDto, RegisterFlightResponseDto } from
 import type { RequirementFailure } from '@/lib/schemas/requirements';
 import { APP_TIMEZONE, formatDateOnly, formatMinutes } from '@/lib/time';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
-import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { useIdempotentSubmission } from '@/lib/use-idempotent-submission';
 
 export type FlightEditorTarget = { mode: 'new' } | { mode: 'correct'; flight: FlightListItemDto };
 
@@ -313,7 +313,7 @@ export function FlightEditor({
   const [aircraftError, setAircraftError] = useState(false);
   const [personError, setPersonError] = useState(false);
   const [lastResult, setLastResult] = useState<RegisterFlightResponseDto | null>(null);
-  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const { submitIdempotently, submissionError } = useIdempotentSubmission();
   const formRef = useRef<HTMLFormElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const formErrorRef = useRef<HTMLParagraphElement | null>(null);
@@ -325,7 +325,7 @@ export function FlightEditor({
   // re-fills the form, and never derogates a body other than the one listed.
   const [requirements, setRequirements] = useState<{ failures: RequirementFailure[]; body: Record<string, unknown> } | null>(null);
   const [proceedSubmitting, setProceedSubmitting] = useState(false);
-  const [proceedError, setProceedError] = useState(false);
+  const [proceedError, setProceedError] = useState<boolean | string>(false);
 
   /** Closes the warning and forgets its body — «Annulla», a new submit, and ANY change to the form (the stale-body guard, D-12). */
   function dismissRequirements(): void {
@@ -609,19 +609,17 @@ export function FlightEditor({
 
     let response: Response;
     try {
-      response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight!.id}` : '/api/v1/flights', {
-        method: isCorrecting ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
-        },
-        body: JSON.stringify(body),
-      });
-    } catch {
-      setFormError(labels.errors.generic);
+      response = await (isCorrecting
+        ? fetch(`/api/v1/flights/${correctingFlight!.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        : submitIdempotently('/api/v1/flights', body));
+    } catch (failure) {
+      setFormError(submissionError(failure, labels.errors.generic));
       return;
     }
-    if (!isCorrecting) regenerateIdempotencyKey();
 
     if (!response.ok) {
       // `response.clone()`: `parseApiError` below consumes the body via its
@@ -716,21 +714,19 @@ export function FlightEditor({
 
     let response: Response;
     try {
-      response = await fetch(isCorrecting ? `/api/v1/flights/${correctingFlight!.id}` : '/api/v1/flights', {
-        method: isCorrecting ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(isCorrecting ? {} : { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey }),
-        },
-        body: JSON.stringify({ ...requirements.body, force: true }),
-      });
-    } catch {
+      response = await (isCorrecting
+        ? fetch(`/api/v1/flights/${correctingFlight!.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...requirements.body, force: true }),
+        })
+        : submitIdempotently('/api/v1/flights', { ...requirements.body, force: true }));
+    } catch (failure) {
       setProceedSubmitting(false);
-      setProceedError(true);
+      setProceedError(isCorrecting ? true : submissionError(failure, labels.errors.generic));
       return;
     }
     setProceedSubmitting(false);
-    if (!isCorrecting) regenerateIdempotencyKey();
 
     if (!response.ok) {
       const errorBody = (await response.json().catch(() => null)) as {

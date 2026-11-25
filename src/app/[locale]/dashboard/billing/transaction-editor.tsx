@@ -22,7 +22,7 @@ import { SearchCombobox, type SearchComboboxOption } from '@/components/search-c
 import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents, parseCents } from '@/lib/money';
-import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { useIdempotentSubmission } from '@/lib/use-idempotent-submission';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type CategoryOption = { id: string; name: string };
@@ -107,7 +107,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
   const [categoryError, setCategoryError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ResultState | null>(null);
-  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const { submitIdempotently, submissionError } = useIdempotentSubmission();
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const personComboOptions = useMemo<SearchComboboxOption[]>(
@@ -176,18 +176,13 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     setSubmitting(true);
     let response: Response;
     try {
-      response = await fetch('/api/v1/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-        body: JSON.stringify(body),
-      });
-    } catch {
+      response = await submitIdempotently('/api/v1/transactions', body);
+    } catch (error) {
       setSubmitting(false);
-      setFormError(labels.genericError);
+      setFormError(submissionError(error, labels.genericError));
       return;
     }
     setSubmitting(false);
-    regenerateIdempotencyKey();
 
     if (!response.ok) {
       const { code } = await parseApiError(response);
