@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.5: Letture senza transazione interattiva, Panoramica con meno query
 
-Status: **review** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Sonnet 5 xhigh** (backend puro: `dashboard/page.tsx` cambia solo nella lettura dei dati, vincolo zero differenze di markup; se il dev deve toccare il JSX → Opus). Review: Opus 5 xhigh adversarial. **Ordine (decisione della sessione principale, è quello del piano)**: dopo 17.2 → 17.3 → 17.4 (l'AC del `Promise.all` dice «dopo 17.2-17.4»; i 3 s di Contabilità e Statistiche dipendono da 17.3 e 17.4; la 17.4 elimina `listAllActiveAircraft`, causa del P2028 di `stats?period=year`). Tutte le righe vanno rilette su HEAD al momento del dev.
+Status: **done** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Sonnet 5 xhigh** (backend puro: `dashboard/page.tsx` cambia solo nella lettura dei dati, vincolo zero differenze di markup; se il dev deve toccare il JSX → Opus). Review: Opus 5 xhigh adversarial. **Ordine (decisione della sessione principale, è quello del piano)**: dopo 17.2 → 17.3 → 17.4 (l'AC del `Promise.all` dice «dopo 17.2-17.4»; i 3 s di Contabilità e Statistiche dipendono da 17.3 e 17.4; la 17.4 elimina `listAllActiveAircraft`, causa del P2028 di `stats?period=year`). Tutte le righe vanno rilette su HEAD al momento del dev.
 
 ## Story
 
@@ -108,3 +108,11 @@ Lavoro su Codex Cloud, ramo locale `story/17-5`, base `151d51db7023cae8c1fa3f0df
 - OpenAPI: HTTP 200, 393.522 byte prima e dopo; confronto byte per byte riuscito, SHA-256 `ab19f90c7916940453aceebc019f84f71e1dbf13c883aa62aedd07b4cb20d537`.
 - Gate integrato `npm run gates` exit 0: lint, typecheck, 2293 test in 85 file e build production. Al primo ciclo i validator Next generati prima del checkout riferivano route eliminate; rigenerati i tipi e ripetuto l'intero gate.
 - Arbitro browser su database fresco sintetico, SMTP Mailpit e METAR da fixture: 624 casi, 617 passati al primo tentativo e 7 dopo retry, zero falliti o saltati. E2E_EXIT=0 in 28,9 minuti. Casi con retry: account-adjustments:94, bookings:1103 e :1208, mobile-logbook:1223 e :1266, mobile-reports:420, session-identity:138.
+
+### Revisione indipendente — 2026-11-25
+
+Il revisore Codex autorizzato dal PO ha esaminato in sola lettura il diff `151d51d..eb0cf2b` in un contesto separato dall’implementazione. **Approvato, zero rilievi bloccanti.** Ha verificato i confini delle transazioni di scrittura, i filtri delle due letture a READ COMMITTED, l’ordine, ACL e mascheramento, il contratto della Panoramica e il fallback METAR. Ha riscontrato nei log 82 → 53 statement, 5 → 0 BEGIN, 7 → 3 letture AppSetting e i cinque burst sotto soglia. L’arbitro sintetico registra 617 casi verdi al primo tentativo e 7 recuperati con **8 retry**: bookings:1208 al secondo retry, gli altri sei al primo. Il successivo esito positivo da solo non identifica la causa di ogni primo fallimento.
+
+Rilievi di gravità bassa, differiti:
+- L’e2e della Panoramica controlla l’etichetta del KPI ricavi. Il valore è coperto dal test di parità dei servizi; il revisore ha controllato il collegamento alla UI nel diff.
+- In `listPeople` l’ordinamento per cognome e nome non distingue gli omonimi con un tie-break su ID. Lo stesso comportamento è presente sulla base; la 17.5 conserva l’ordine esistente.
