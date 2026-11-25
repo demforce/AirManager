@@ -54,7 +54,7 @@ async function gotoBilling(page: Page, query: Record<string, string>): Promise<v
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', () => {
+test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', { tag: '@ledger-global' }, () => {
   test('the three riquadri (Risultato/Liquidità/Acconti) do NOT change when the table filters do (AC 1 — same invariant getBillingKpis had); DETERMINISTIC now that no concurrent worker touches the ledger (review F4)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await gotoBilling(page, {});

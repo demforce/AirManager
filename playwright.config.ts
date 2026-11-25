@@ -52,9 +52,9 @@ export default defineConfig({
         '**/mobile-settings.spec.ts',
         '**/aog-overview-count.spec.ts',
       ],
-      // The `@global-catalogue` tests of booking-requirements.spec.ts: the
-      // 'booking-requirements-catalogue' project below.
-      grepInvert: /@global-catalogue/,
+      // These tests read or write global settings/ledger state. Run them
+      // only in their serialized projects below.
+      grepInvert: /@global-catalogue|@ledger-global/,
       use: sharedUse,
     },
     {
@@ -114,7 +114,10 @@ export default defineConfig({
       // fixture (`prisma/seed.ts`) via a real write. Last in the chain —
       // nothing downstream reads either.
       name: 'billing-global',
-      testMatch: '**/billing-global.spec.ts',
+      testMatch: ['**/billing-global.spec.ts', '**/billing.spec.ts'],
+      grep: /@ledger-global/,
+      fullyParallel: false,
+      workers: 1,
       dependencies: ['treasury-settings'],
       use: sharedUse,
     },

@@ -317,7 +317,7 @@ test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType col
 });
 
 test.describe('Tre riquadri con numeri veri da scenario seminato (story Billing-2, AC 6)', () => {
-  test('ricarica + volo + payout, tutti dated today, move Risultato/Liquidità/Acconti by EXACTLY the expected deltas', async ({ page }) => {
+  test('ricarica + volo + payout, tutti dated today, move Risultato/Liquidità/Acconti by EXACTLY the expected deltas @ledger-global', async ({ page }) => {
     test.slow();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 

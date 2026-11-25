@@ -460,7 +460,7 @@ test.describe('The warning in the flight form (story 19.9, AC 13-15)', () => {
     const refused = posts[3]!;
     await page.route('**/api/v1/flights', (route) => (route.request().method() === 'POST' ? route.fulfill({ status: 500, body: '' }) : route.continue()), { times: 1 });
     await page.getByTestId('requirements-proceed').click();
-    await expect(page.getByTestId('requirements-proceed-error')).toHaveText('Impossibile completare l\'operazione. Riprova.');
+    await expect(page.getByTestId('requirements-proceed-error')).toContainText('L’operazione potrebbe essere già stata registrata');
     await expect(page.getByTestId('requirements-warning')).toBeVisible();
     // Review F3: disabled while it sent, the button had dropped the focus — it has it back for the retry.
     await expect(page.getByTestId('requirements-proceed')).toBeFocused();
@@ -470,6 +470,9 @@ test.describe('The warning in the flight form (story 19.9, AC 13-15)', () => {
     await expect(page.getByTestId('flight-result-panel')).toBeVisible();
     expect(posts).toHaveLength(6);
     expect(posts[5]!.postDataJSON()).toEqual({ ...refused.postDataJSON(), force: true });
+    const failedKey = posts[4]!.headers()['idempotency-key'];
+    expect(failedKey).toBeTruthy();
+    expect(posts[5]!.headers()['idempotency-key']).toBe(failedKey);
     await expect(page.getByTestId('flight-result-panel')).not.toContainText(/deroga/i);
   });
 
