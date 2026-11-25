@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.7 chiusa)
+# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.8 chiusa)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -8,6 +8,8 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **Fonte di verità**: `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Current Progress
+
+- **17.8 done** (`46e707c`): alert job con massimo 200 candidati per giro, retry e claim per ID; fan-out velivolo dopo la risposta. Revisione indipendente GPT 6 Sol xhigh approvata. Gate verdi con 2.320 unit; browser 621 passati, tre al retry, due saltati. Lotto sintetico di 200 in 12,4 s, 2.005 candidati esauriti in 11 giri. Limiti SMTP ambiguo e fan-out in memoria nel record.
 
 - **17.7 done** (`6326e7a`): pdfkit 0.20.2, PDF massimo 5.000 righe, messaggi UI oltre i tetti. Revisione indipendente GPT 6 Sol xhigh approvata dopo correzione della riga lunga. Gate 2.308 unit e build; 626 casi browser nella suite completa prima dell’ultima correzione, poi 9/9 export PDF sulla build finale. p50 endpoint voli 2.739 ms sul carico sintetico; parità testuale dei cinque report pagina per pagina.
 

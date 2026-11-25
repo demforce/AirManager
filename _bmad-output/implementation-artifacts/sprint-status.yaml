@@ -497,7 +497,7 @@ development_status:
   17-5-letture-senza-transazione-interattiva: done  # 2026-11-25: gate, 624 e2e e benchmark su dati sintetici nel record della story.
   17-6-typeahead-server-cap-dichiarati: done  # story file 2026-11-03 + ratifiche PO Q-17.6-a..f (Q-17.6-c supera la decisione PO del 2026-07-21 sul filtro velivolo del registro); dev Opus
   17-7-export-pdf-stream: done  # independent GPT 6 Sol xhigh review approved; pdfkit 0.20.2
-  17-8-alert-job-a-lotti: review  # sviluppo, benchmark e gate sintetici completati; revisione indipendente pendente
+  17-8-alert-job-a-lotti: done  # revisione indipendente GPT 6 Sol xhigh approvata; limiti SMTP/AOG documentati
   epic-17-retrospective: optional
   epic-18: backlog
   18-1-pavimento-mobile-unico: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.1-a..d; dev Opus DOPO 16.8 (chiude TD 16.8-f)

@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.8: L'alert job a lotti
 
-Status: **review** — 2026-11-25 (sviluppo, benchmark e gate completi; revisione indipendente non avviata). Ricognizione iniziale su `e951960`; implementazione dopo 16.8 e 16.9 sulla base `e13ff401`. Per istruzione permanente di Enrico, GPT 6 Sol sostituisce Opus 5 xhigh nello sviluppo e nella revisione ordinaria; la revisione deve restare indipendente.
+Status: **done** — 2026-11-25 (sviluppo, benchmark e gate completi; revisione indipendente approvata). Ricognizione iniziale su `e951960`; implementazione dopo 16.8 e 16.9 sulla base `e13ff401`. Per istruzione permanente di Enrico, GPT 6 Sol sostituisce Opus 5 xhigh nello sviluppo e nella revisione ordinaria; la revisione deve restare indipendente.
 
 ## Story
 
@@ -308,3 +308,9 @@ outside this measured, capped change.
   `e2e/mobile-expiries-movements.spec.ts`
 - `docs/operations/load-testing.md`,
   `docs/superpowers/plans/2026-11-25-expiry-alert-batches.md`, this record
+
+### Revisione indipendente e chiusura — 2026-11-25
+
+Un revisore GPT 6 Sol xhigh in contesto separato e di sola lettura ha approvato il diff `e13ff401..46e707c` senza rilievi bloccanti. Ha esaminato i criteri BMAD, la query con keyset, il tetto 200, la proprietà dei claim, P2002/P2003, retry, concorrenza, digest, AOG, UI, contratti, prove SQL e Mailpit, gate e suite browser. Gate exit 0 con 2.320 unit e build; E2E_EXIT=0, 621 passati, tre recuperati al retry e due saltati.
+
+Rischi residui: se SMTP accetta DATA e la conferma si perde, `send` può rigettare e il retry automatico può reinviare. Il protocollo non garantisce l’assenza universale di duplicati in questa situazione. Il fan-out velivolo è best-effort nel processo e può interrompersi a un riavvio. Il commento Prisma `SentAlert` che parla di righe consumate per sempre è obsoleto (rilievo minore). Questi limiti non sono stati dichiarati risolti.
