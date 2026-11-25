@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.2: La timeline di Pianificazione scala — righe scelte dal server, griglia in CSS, filtro server
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (UI: `schedule.tsx`, `airops.css`, due pagine, i18n; il backend è una funzione). Review: Opus 5 xhigh adversarial. **Ordine**: dopo la 16.8 (aggiunge la riga «Archiviato» desktop `schedule-archived-status` e mobile kind `archived`, `listArchivedAircraftByIds`, precedenza archiviato > fuori servizio, e un link gemello del banner sull'archivio che «la 17.2 aggiorna per entrambi») — se la 16.8 non fosse atterrata, la 17.2 la precede e la 16.8 adegua il suo AD-10 (T6). 18.7-D1 dipende da questa story. Righe da rileggere su HEAD al momento del dev.
+Status: **done** (2026-11-25) — pronta il 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (UI: `schedule.tsx`, `airops.css`, due pagine, i18n; il backend è una funzione). Review: Opus 5 xhigh adversarial. **Ordine**: dopo la 16.8 (aggiunge la riga «Archiviato» desktop `schedule-archived-status` e mobile kind `archived`, `listArchivedAircraftByIds`, precedenza archiviato > fuori servizio, e un link gemello del banner sull'archivio che «la 17.2 aggiorna per entrambi») — se la 16.8 non fosse atterrata, la 17.2 la precede e la 16.8 adegua il suo AD-10 (T6). 18.7-D1 dipende da questa story. Righe da rileggere su HEAD al momento del dev.
 
 ## Story
 
@@ -80,3 +80,24 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 ### Completion Notes List
 
 ### File List
+
+## Verifica — 2026-11-25
+
+- La Pianificazione seleziona lato server i velivoli con prenotazioni approvate nel periodo e quelli fuori servizio; conserva quelli archiviati con prenotazioni rilevanti. I velivoli liberi sono sintetizzati in una sola riga di conteggio. «Mostra / Nascondi» aggiunge o toglie le righe libere. Un filtro velivolo vale anche per elenco e collegamenti PDF/Excel, ed è mantenuto cambiando periodo, vista, pagina o stato. Un ID sconosciuto non genera errori. I link dei due avvisi della Flotta passano ora il singolo velivolo (TD AOG-1b-b).
+- Griglia a gradiente CSS con una variabile per il numero di ore; rimosse le linee individuali. Nessun cambiamento al DTO dei selettori di creazione. Gate (lint, tipi, **2291 unit**, build) passati; verifiche mirate sulle nuove righe, i link, la griglia, l’archivio e il filtro mobile.
+- Misura sintetica stessa installazione e stesso DB: 1501 velivoli, 40.000 prenotazioni, 60.018 voli. Giorno più carico nei prossimi sette: 30/11/2026, 136 approvate, **128 blocchi** disegnati in entrambe le versioni. Giorno predefinito 1.460 → 206 righe, 24.820 → 0 nodi di griglia. Panoramica misurata su oggi (senza blocchi); il giorno attivo di Pianificazione è il controllo indipendente.
+
+| Superficie | px | Nodi prima → dopo | HTML KB prima → dopo | domInteractive ms prima → dopo | Scroll fps prima → dopo |
+|---|---:|---:|---:|---:|---:|
+| Panoramica | 1280 | 41.562 → 2.965 | 2485 → 648 | 1279 → 495 | 42 → 62 |
+| Pianificazione, giorno | 1280 | 41.731 → 5.628 | 2491 → 851 | 1023 → 271 | 39 → 63 |
+| Pianificazione, settimana | 1280 | 2.319 → 1.525 | 885 → 976 | 298 → 281 | 63 → 62 |
+| Pianificazione, Mostra | 1280 | 41.731 → 15.660 | 2492 → 1420 | 958 → 564 | 44 → 60 |
+| Panoramica | 375 | 41.562 → 2.965 | 2485 → 648 | 828 → 465 | 62 → 62 |
+| Pianificazione, giorno | 375 | 41.731 → 5.628 | 2491 → 851 | 372 → 237 | 63 → 62 |
+| Pianificazione, settimana | 375 | 2.319 → 1.525 | 885 → 976 | 249 → 281 | 62 → 62 |
+| Pianificazione, Mostra | 375 | 41.731 → 15.660 | 2492 → 1420 | 400 → 336 | 63 → 62 |
+
+- Scomposizione giorno: 41.061 → 4.958 nodi sotto la scheda, agenda invariata a 2.180; payload RSC 512 → 564 kB. Le righe predefinite non crescono coi velivoli liberi, il payload dei selettori di creazione li contiene ancora (17.6). In settimana il maggiore payload spiega perché i byte complessivi crescono anche con meno nodi.
+- Parità visiva sullo stesso velivolo prenotato, stessa data: a 1280 l’immagine ha la stessa geometria (992×197), 0,896% di pixel diversi in chiaro e 0,913% in scuro; nessun pixel varia oltre 16 livelli per canale (griglia). Agenda a 375 identica pixel per pixel (317×62).
+- Commit `0ebfbc2`. Arbitro completo da DB sintetico fresco: **623/623 browser, exit 0**. Il primo giro mirato ha evidenziato due attese del nuovo comportamento asincrono (scroll al popover e via URL su mobile); fissate e riprovate prima dell’arbitro.

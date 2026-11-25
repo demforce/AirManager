@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-25 — Epic 16 chiuso, prossima 17.2)
+# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.2 chiusa, prossima 17.3)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -8,6 +8,9 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **Fonte di verità**: `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Current Progress
+
+- **17.2 done** (`0ebfbc2`): Pianificazione e Panoramica riducono le righe, con filtro velivolo lato server condiviso con elenco ed esportazioni. **2291 unit, 623/623 browser**. Nel giorno carico: 41.731 → 5.628 nodi, 1.023 → 271 ms a 1280 px; 128 blocchi preservati. Agenda mobile identica nel campione visivo.
+- **Pubblicazione in attesa di accesso**: GitHub ha rifiutato la scrittura; il bundle verificato di Epic 16 è stato consegnato. Rami remoti e PR #22 non modificati.
 
 - **16.10 done** (`482d9fc`, `35264e0`): i sette form mantengono la chiave quando l’esito è incerto, anche dopo ricarica della scheda con i medesimi dati. La prova della quota verifica un solo addebito e un solo rinnovo. **2289 unit**, gate verdi, **69 browser mirati**, **622 casi browser distinti verificati** (566 + volo corretto + 55 della catena).
 
@@ -64,7 +67,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 ## Next Steps
 
 1. Fine Epic 16: pubblicare il codice su `dev` senza force e aggiornare la PR #22. Non fare merge o deploy.
-2. Epic 17 (17.2 in lavorazione, verificare suite, misure e parità visiva), poi Epic 18 secondo stato e dipendenze dei file story.
+2. Epic 17 (17.3 in lavorazione: saldi paginati e verifiche), poi Epic 18 secondo stato e dipendenze dei file story.
 3. Correggere la corrispondenza delle tabelle in PDF/Excel. Poi iniziare le prove email con provider gratuiti, solo in sandbox e con dati fittizi.
 
 ## Suggested skills
