@@ -66,6 +66,20 @@ describe('renderReportPdf (story 17.7)', () => {
     expect(pages[0]).toContain('RIGA-001');
   });
 
+  it('preserves a 600-character value in an oversized eleven-column flight row', async () => {
+    const token = 'X'.repeat(600);
+    const widths = [1.4, 1.3, 1.1, 1.1, 1, 1.3, 1.1, 0.6, 0.7, 1.1, 1.1];
+    const columns: PdfColumn<{ name: string }>[] = widths.map((width, index) => ({
+      header: index === 2 ? 'Persona' : `Campo ${index}`,
+      width,
+      value: (row) => index === 2 ? row.name : `valore-${index}`,
+    }));
+    const pages = pageTexts(await renderReportPdf({ ...props([]), columns, rows: [{ name: token }] }));
+    expect((pages.join('').match(/X/g) ?? [])).toHaveLength(600);
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toContain('Pag. 1 di 1');
+  });
+
   it('moves a tall row intact when it reaches the bottom of a page', async () => {
     const token = 'BOUNDARYTOKEN'.repeat(14);
     const rows = [...Array.from({ length: 30 }, (_, id) => ({ id, status: 'ok' })), { id: 999, status: token }];

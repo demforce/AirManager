@@ -57,6 +57,7 @@ export async function renderReportPdf<T>(props: PdfReportDocumentProps<T>): Prom
   const widths = props.columns.map((col) => tableWidth * (col.width ?? 1) / weightSum);
   let y = PAGE_MARGIN;
   let continuationPage = false;
+  let rowsOnPage = 0;
 
   const measure = (text: string, width: number, bold: boolean, size: number): number => {
     doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size);
@@ -95,6 +96,7 @@ export async function renderReportPdf<T>(props: PdfReportDocumentProps<T>): Prom
     doc.addPage();
     y = PAGE_MARGIN;
     continuationPage = true;
+    rowsOnPage = 0;
     drawTableHeader();
     // pdfkit's drawing API is synchronous. Let other requests run per page.
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -123,22 +125,30 @@ export async function renderReportPdf<T>(props: PdfReportDocumentProps<T>): Prom
     // The repeated heading consumes the spare space of the base renderer's
     // continuation pages. Half a point per row keeps their cell breaks.
     const height = rowHeight(values) - (continuationPage ? CONTINUATION_ROW_ADJUSTMENT : 0);
-    if (y + height > contentBottom) await addPage();
-    // A pathological cell taller than a page cannot fit an indivisible row.
-    // Clip it within the page instead of letting pdfkit split the row.
-    const available = contentBottom - y;
-    if (height > available) {
-      let x = PAGE_MARGIN;
-      for (let i = 0; i < values.length; i++) {
-        doc.font('Helvetica').fontSize(9).fillColor(colors[i] ?? COLOR.text);
-        doc.text(values[i], x + CELL_PADDING, y + ROW_PADDING, { width: Math.max(1, widths[i] - CELL_PADDING * 2), height: available - ROW_PADDING * 2 - BORDER, ellipsis: true });
-        x += widths[i];
+    if (y + height > contentBottom && rowsOnPage > 0) await addPage();
+    if (y + height > contentBottom) {
+      // A very long value may be taller than a page in its narrow column.
+      // Render that row as full-width, labeled fields instead of truncating.
+      const lines = values.map((value, i) => `${props.columns[i].header}: ${value}`);
+      const heights = lines.map((line) => measure(line, tableWidth, false, 9));
+      const expandedHeight = ROW_PADDING * 2 + BORDER + heights.reduce((sum, h) => sum + h + 2, 0);
+      if (y + expandedHeight > contentBottom && !continuationPage) await addPage();
+      if (y + height > contentBottom) {
+        if (y + expandedHeight > contentBottom) throw new Error('PDF row exceeds one-page capacity even in expanded layout');
+        let lineY = y + ROW_PADDING;
+        for (let i = 0; i < lines.length; i++) {
+          doc.font('Helvetica').fontSize(9).fillColor(colors[i] ?? COLOR.text);
+          doc.text(lines[i], PAGE_MARGIN + CELL_PADDING, lineY, { width: tableWidth - CELL_PADDING * 2, lineGap: 0 });
+          lineY += heights[i] + 2;
+        }
+        y += expandedHeight;
+        doc.moveTo(PAGE_MARGIN, y - BORDER / 2).lineTo(PAGE_MARGIN + tableWidth, y - BORDER / 2).lineWidth(BORDER).strokeColor(COLOR.border).stroke();
+        rowsOnPage++;
+        continue;
       }
-      y += available;
-      doc.moveTo(PAGE_MARGIN, y - BORDER / 2).lineTo(PAGE_MARGIN + tableWidth, y - BORDER / 2).strokeColor(COLOR.border).stroke();
-    } else {
-      drawCells(values, colors, height, false);
     }
+    drawCells(values, colors, height, false);
+    rowsOnPage++;
   }
 
   if (props.totals?.length) {

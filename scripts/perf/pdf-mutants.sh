@@ -15,8 +15,8 @@ path, mutant = Path(sys.argv[1]), sys.argv[2]
 source = path.read_text()
 edits = {
   'footer': ('pageLabel(index + 1, pages)', 'pageLabel(index + 1, 1)'),
-  'header': ('continuationPage = true;\n    drawTableHeader();\n    // pdfkit', 'continuationPage = true;\n    // pdfkit'),
-  'row': ('if (y + height > contentBottom) await addPage();', 'if (false) await addPage();'),
+  'header': ('rowsOnPage = 0;\n    drawTableHeader();\n    // pdfkit', 'rowsOnPage = 0;\n    // pdfkit'),
+  'row': ('if (y + height > contentBottom && rowsOnPage > 0) await addPage();', 'if (false) await addPage();'),
 }
 old, new = edits[mutant]
 if source.count(old) != 1:
