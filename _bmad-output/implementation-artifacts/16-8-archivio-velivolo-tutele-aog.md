@@ -43,7 +43,7 @@ Il file è misurato su `3147683` (2026-09-26). Da allora: 19.2 (`b0d142c`) ha **
 
 **Stima**: ~18-22 file, ~+1600-2000/−100 (≈ AOG-1b + 15%), metà test (~25 unit + uno spec e2e nuovo da ~7 test). Nessuno split. Dev **Opus** (UI + backend).
 
-Status: **ready-for-dev** — 2026-09-26, **riperimetrata il 2026-11-03 (§R)**, **ratifiche Q-16.8-a e Q-16.8-b CHIUSE dal PO il 2026-09-26 (entrambe opzione A, la raccomandata — v. §0)**: gli AC sono già scritti su quelle opzioni. **Modello dev: Opus 5 xhigh (UI)** — la story scrive codice UI su tre superfici (`aircraft-editor.tsx`: anteprima, doppio passo, banner, faccia archiviata; `schedule.tsx`: riga «Archiviato» desktop e mobile; stringhe i18n) oltre al backend. Review: **Opus 5 xhigh adversarial**, come sempre.
+Status: **done** (2026-11-25, v. record finale) — pronta il 2026-09-26, **riperimetrata il 2026-11-03 (§R)**, **ratifiche Q-16.8-a e Q-16.8-b CHIUSE dal PO il 2026-09-26 (entrambe opzione A, la raccomandata — v. §0)**: gli AC sono già scritti su quelle opzioni. **Modello dev: Opus 5 xhigh (UI)** — la story scrive codice UI su tre superfici (`aircraft-editor.tsx`: anteprima, doppio passo, banner, faccia archiviata; `schedule.tsx`: riga «Archiviato» desktop e mobile; stringhe i18n) oltre al backend. Review: **Opus 5 xhigh adversarial**, come sempre.
 
 > ⚠️ **Baseline**: il frontmatter dichiara `3147683` (chiusura del fix cycle AOG-1b, decisione PO 6). Il HEAD al momento della ricognizione è **`09dd893`** = `3147683` + `fedb868` (4 righe di **solo commento** in `aircraft-editor.tsx:1088-1091`) + `09dd893` (docs). **Ogni `file:riga` di questo file è misurato su `09dd893`**: in `aircraft-editor.tsx` le righe ≥ 1089 stanno 4 più in basso che su `3147683`, ogni altro file è identico. Prima di scrivere una riga: `git log --oneline -3`, rileggere le righe citate sul HEAD corrente e **correggere questo file** dove sono slittate. File in comune con story ancora `ready-for-dev`: **16.9** (`aircraft-editor.tsx:239`, `todayDateOnly`), **16.3** e **16.7** (`bookings.service.ts`, `dashboard/bookings/**`) — se una di loro è stata committata prima, l'unico effetto atteso è lo slittamento delle righe.
 >
@@ -554,3 +554,11 @@ I **quattro verdi** provano che la probe non è degenere: C1 (archiviare senza p
 | **TD 16.8-f** | I controlli dell'Archivio restano a 34,84 px a ≤640 (R-15.10-f); con l'archiviazione diventata un atto con fan-out, la **18.1** («un pavimento mobile unico») è la casa naturale. |
 
 ---
+
+
+## Record finale — 2026-11-25
+
+- Implementazione `2266077`: anteprima e conteggi al momento dell’archiviazione dalla stessa funzione di impatto; update con guardia atomica, messaggio solo ai titolari toccati di prenotazioni approvate, stato e bozza di tariffa conservati. Disponibilità non modificabile quando il velivolo è archiviato. Prenotazioni approvate leggibili nel calendario desktop e nell’agenda mobile, distinte dallo stato fuori servizio. I selettori di nuove prenotazioni rimangono limitati alla flotta attiva.
+- Gate: lint, tipi, **2.278 unit** e build passati. I **28 browser mirati** comprendono le nuove prove su conteggi, una singola email acquisita da Mailpit, calendario desktop e mobile, doppio clic/tap e conferma da tastiera.
+- Copertura browser completa in due esecuzioni su DB sintetici: **567/567** nel progetto principale, poi **54/54** nella catena serializzata (exit 0), totale **621** test distinti. Il primo processo è stato interrotto durante la catena (nessun rosso prima dell’interruzione). Il primo tentativo della catena isolata rendeva visibili entrambi i movimenti fittizi di cassa; `b29ab38` distingue i due marker nel test senza cambiare il prodotto. Le due nuove esecuzioni sovrapposte sono state fermate per crash del browser e non contano come evidenza.
+- Meccanica nota: l’editor può richiedere la stessa anteprima già letta per la Disponibilità; il conteggio della scrittura resta quello in transazione. Il link si restringe al singolo velivolo nella 17.2, come previsto. Nessun deploy o invio esterno.
