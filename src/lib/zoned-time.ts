@@ -184,13 +184,9 @@ export function todayDateOnlyInZone(timeZone: string): string {
  * colonna `@db.Date` (invariante [I-d]) — calcolato sul calendario
  * WALL-CLOCK di `timeZone`, non su quello UTC.
  *
- * È il caso `instant = now` di {@link dateOnlyInZone}, legato in
- * `@db.Date` da `parseDateOnlyUtc`. Da NON confondere con
- * `date-only.ts#todayDateOnlyUtc`, che è "oggi" secondo il calendario
- * UTC: i due divergono di un giorno fra le 00:00 di Roma e le 00:00 UTC
- * (1h in CET, 2h in CEST), ed è esattamente quella divergenza che
- * `FLIGHT_DATE_IN_FUTURE` e le cinque `effectiveDate` UTC hanno pagato
- * (ops F1 / ledger MAJOR-3).
+ * È il caso `instant = now` di {@link dateOnlyInZone}, rappresentato a
+ * mezzanotte UTC da `parseDateOnlyUtc`. Il calendario civile di Roma e
+ * quello UTC divergono fra le rispettive mezzanotti (1h in CET, 2h in CEST).
  */
 export function todayDateOnlyUtcInZone(timeZone: string): Date {
   return parseDateOnlyUtc(todayDateOnlyInZone(timeZone));

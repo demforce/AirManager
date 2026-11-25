@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { addDaysIso, todayRome } from './helpers';
 
 /**
  * Story 15.7 — the phone faces of the Scadenze registry (admin) and of "Le mie
@@ -42,8 +43,8 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function addDaysUtc(days: number): string {
-  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+function addDaysRome(days: number): string {
+  return addDaysIso(todayRome(), days);
 }
 
 // --- fixtures: scadenze ----------------------------------------------------
@@ -68,7 +69,7 @@ async function createExpiryFixture(page: Page, daysFromNow: number, notes?: stri
   expect(profileResponse.status()).toBe(200);
 
   const expiryResponse = await page.request.post('/api/v1/expiries', {
-    data: { personId: person.id, expiryTypeId: type.id, expiresAt: addDaysUtc(daysFromNow), ...(notes ? { notes } : {}) },
+    data: { personId: person.id, expiryTypeId: type.id, expiresAt: addDaysRome(daysFromNow), ...(notes ? { notes } : {}) },
   });
   expect(expiryResponse.status()).toBe(201);
 
@@ -106,7 +107,7 @@ async function createPagedExpiryFixture(page: Page, count: number): Promise<stri
   await Promise.all(
     people.map(async (person, index) => {
       const response = await page.request.post('/api/v1/expiries', {
-        data: { personId: person.id, expiryTypeId: type.id, expiresAt: addDaysUtc(100 + index) },
+        data: { personId: person.id, expiryTypeId: type.id, expiresAt: addDaysRome(100 + index) },
       });
       expect(response.status()).toBe(201);
     }),
@@ -403,7 +404,7 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
     const people = (await peopleResponse.json()) as { items: { id: string; email: string | null }[] };
     const pilotPerson = people.items.find((item) => item.email === PILOT_EMAIL);
     if (!pilotPerson) throw new Error('seed pilot not found');
-    await page.request.post('/api/v1/expiries', { data: { personId: pilotPerson.id, expiryTypeId: type.id, expiresAt: addDaysUtc(25), notes: 'Nota della mia scadenza' } });
+    await page.request.post('/api/v1/expiries', { data: { personId: pilotPerson.id, expiryTypeId: type.id, expiresAt: addDaysRome(25), notes: 'Nota della mia scadenza' } });
 
     // --- pilota: the card list replaces the table at 375, the inverse at 1280
     await page.context().clearCookies();
@@ -545,7 +546,7 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
     const people = (await peopleResponse.json()) as { items: { id: string; email: string | null }[] };
     const pilotPerson = people.items.find((item) => item.email === PILOT_EMAIL);
     if (!pilotPerson) throw new Error('seed pilot not found');
-    await page.request.post('/api/v1/expiries', { data: { personId: pilotPerson.id, expiryTypeId: selfType.id, expiresAt: addDaysUtc(45) } });
+    await page.request.post('/api/v1/expiries', { data: { personId: pilotPerson.id, expiryTypeId: selfType.id, expiresAt: addDaysRome(45) } });
 
     await page.context().clearCookies();
     await login(page, PILOT_EMAIL);

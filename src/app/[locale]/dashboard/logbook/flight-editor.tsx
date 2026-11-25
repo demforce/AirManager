@@ -44,7 +44,8 @@ import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents } from '@/lib/money';
 import type { FlightListItemDto, FlightTypeDto, RegisterFlightResponseDto } from '@/lib/schemas/flights';
 import type { RequirementFailure } from '@/lib/schemas/requirements';
-import { formatDateOnly, formatMinutes } from '@/lib/time';
+import { APP_TIMEZONE, formatDateOnly, formatMinutes } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
 export type FlightEditorTarget = { mode: 'new' } | { mode: 'correct'; flight: FlightListItemDto };
@@ -198,10 +199,6 @@ function localTimeFromIso(iso: string): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 const flightFormSchema = z.object({
   flightDate: z.string().trim().min(1),
   departureAirfield: z.string().trim().min(1),
@@ -217,7 +214,7 @@ type FlightFormValues = z.infer<typeof flightFormSchema>;
 function flightFormDefaults(target: FlightEditorTarget, airfieldName: string): FlightFormValues {
   if (target.mode === 'new') {
     return {
-      flightDate: todayDateOnly(),
+      flightDate: todayDateOnlyInZone(APP_TIMEZONE),
       departureAirfield: airfieldName,
       arrivalAirfield: airfieldName,
       takeoffTime: '',

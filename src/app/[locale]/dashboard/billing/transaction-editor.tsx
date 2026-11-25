@@ -11,6 +11,8 @@
  * rettifica as today, server-side, no `effectiveDate` input exists on that
  * model (Dev Notes/`accounts.service.ts`).
  */
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { useMemo, useRef, useState } from 'react';
 import { DateInput } from '@/components/ui/date-input';
 import { Field, Input, InputGroup, Select } from '@/components/ui/field';
@@ -73,10 +75,6 @@ function personLabel(person: { firstName: string; lastName: string }): string {
   return `${person.lastName} ${person.firstName}`;
 }
 
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** Server-side pilot/student search (same profile-scoped picker as the logbook/billing filter). */
 async function searchPeople(query: string): Promise<SearchComboboxOption[]> {
   const params = new URLSearchParams({ q: query, pageSize: '50', profile: 'pilot-or-student' });
@@ -93,7 +91,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
   const [personId, setPersonId] = useState('');
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('CASH');
-  const [date, setDate] = useState(todayDateOnly());
+  const [date, setDate] = useState(() => todayDateOnlyInZone(APP_TIMEZONE));
   const [description, setDescription] = useState('');
   const [reason, setReason] = useState('');
   const [categoryId, setCategoryId] = useState(categoryOptions[0]?.id ?? '');
@@ -122,7 +120,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     setPersonId('');
     setAmount('');
     setMethod('CASH');
-    setDate(todayDateOnly());
+    setDate(todayDateOnlyInZone(APP_TIMEZONE));
     setDescription('');
     setReason('');
     setCategoryId(categoryOptions[0]?.id ?? '');
@@ -342,7 +340,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
               </Field>
             ) : (
               <Field label={labels.fields.date}>
-                <DateInput value={todayDateOnly()} disabled data-testid="transaction-date" />
+                <DateInput value={todayDateOnlyInZone(APP_TIMEZONE)} disabled data-testid="transaction-date" />
               </Field>
             )}
 

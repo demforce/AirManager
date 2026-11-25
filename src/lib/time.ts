@@ -94,3 +94,12 @@ export function formatDateOnly(dateOnly: string, locale: 'it' | 'en' = 'it'): st
     year: 'numeric',
   }).format(date);
 }
+
+/** Month and year of an instant in the airfield's calendar, not the process timezone. */
+export function formatMonthYear(date: Date, locale: 'it' | 'en' = 'it'): string {
+  return new Intl.DateTimeFormat(locale === 'it' ? 'it-IT' : 'en-IE', {
+    timeZone: APP_TIMEZONE,
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}

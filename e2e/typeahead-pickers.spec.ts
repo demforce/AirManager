@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureBookingRequirements, ensureValidSeedExpiries, selectFromCombobox, submitPastRequirements } from './helpers';
+import { ensureBookingRequirements, ensureValidSeedExpiries, selectFromCombobox, submitPastRequirements, todayRome } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -144,6 +144,7 @@ test.describe('Typeahead pickers find entries past the 100-option page cap (stor
     await page.goto('/it/dashboard/logbook');
     await page.getByTestId('logbook-new-button').click();
     await expect(page.getByTestId('flight-form')).toBeVisible();
+    await expect(page.getByTestId('flight-form').locator('input[name="flightDate"]')).toHaveValue(todayRome());
 
     // Velivolo: a fresh aircraft, not part of the >100 story but exercised
     // via the SAME typeahead pattern for a realistic full submit.

@@ -34,7 +34,8 @@ import { parseApiError } from '@/lib/api-field-errors';
 import { accountMovementSheetSub, accountMovementSubLine } from '@/lib/mobile-self';
 import { formatCents, formatSignedCents, parseCents } from '@/lib/money';
 import type { AccountMovementTypeDto } from '@/lib/schemas/accounts';
-import { formatDateOnly } from '@/lib/time';
+import { APP_TIMEZONE, formatDateOnly } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 
 export type AccountMovementRow = {
@@ -197,10 +198,6 @@ type AccountSectionProps = {
   headingRepeatsPageHead?: boolean;
   labels: AccountSectionLabels;
 };
-
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function movementTypeLabel(type: AccountMovementTypeDto, labels: AccountSectionLabels['movementType']): string {
   switch (type) {
@@ -861,7 +858,7 @@ function TopUpForm({
     formState: { errors, isSubmitting },
   } = useForm<TopUpFormValues>({
     resolver: zodResolver(topUpFormSchema),
-    defaultValues: { amount: '', paymentMethod: 'CASH', effectiveDate: todayDateOnly(), description: '' },
+    defaultValues: { amount: '', paymentMethod: 'CASH', effectiveDate: todayDateOnlyInZone(APP_TIMEZONE), description: '' },
   });
 
   async function onSubmit(values: TopUpFormValues): Promise<void> {

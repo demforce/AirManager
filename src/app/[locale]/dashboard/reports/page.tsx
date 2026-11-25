@@ -3,7 +3,8 @@ import { KPI } from '@/components/ui/kpi';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
-import { formatMinutes } from '@/lib/time';
+import { APP_TIMEZONE, formatMinutes, formatMonthYear } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getStats } from '@/server/services/stats.service';
@@ -55,8 +56,8 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
   const t = await getTranslations('ReportsPage');
 
   const now = new Date();
-  const monthLabel = new Intl.DateTimeFormat(intlLocale, { month: 'long', year: 'numeric' }).format(now);
-  const yearLabel = t('periodToggle.year', { year: now.getFullYear() });
+  const monthLabel = formatMonthYear(now, displayLocale);
+  const yearLabel = t('periodToggle.year', { year: Number(todayDateOnlyInZone(APP_TIMEZONE).slice(0, 4)) });
   const periodLabel = isYear ? yearLabel : monthLabel;
 
   const chartCount = isYear ? 12 : 6;

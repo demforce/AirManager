@@ -1,5 +1,6 @@
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { todayDateOnlyUtc } from '@/lib/date-only';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
@@ -55,7 +56,7 @@ function prismaError(code: string): unknown {
 function candidateFixture(overrides: Partial<Fixture> = {}): Fixture {
   return {
     id: 'exp_1',
-    expiresAt: addDaysUtc(todayDateOnlyUtc(), 60),
+    expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 60),
     person: { id: 'person_1', firstName: 'Mario', lastName: 'Rossi', email: 'mario@example.com' },
     expiryType: { name: 'Visita medica classe 2' },
     sentAlerts: [],
@@ -90,14 +91,27 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     await runExpiryAlertsJob();
 
     const call = expiryFindManyMock.mock.calls[0]?.[0] as { where: { expiresAt: { lte: Date } } };
-    expect(call.where.expiresAt.lte.getTime()).toBe(addDaysUtc(todayDateOnlyUtc(), 60).getTime());
+    expect(call.where.expiresAt.lte.getTime()).toBe(addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 60).getTime());
+  });
+
+  it('reaches the next expiry threshold just after Rome midnight while UTC is still yesterday', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z'));
+      expiryFindMany.mockResolvedValue([]);
+      await runExpiryAlertsJob();
+      const call = expiryFindManyMock.mock.calls[0]?.[0] as { where: { expiresAt: { lte: Date } } };
+      expect(call.where.expiresAt.lte.toISOString()).toBe('2026-10-31T00:00:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // --- Normal cadence: one threshold due at a time ------------------------
 
   describe('normal cadence (one threshold newly due per run)', () => {
     it('daysLeft 60, nothing consumed yet -> ONE holder email, threshold 60 consumed', async () => {
-      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtc(), 60), sentAlerts: [] })]);
+      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 60), sentAlerts: [] })]);
 
       const result = await runExpiryAlertsJob();
 
@@ -108,7 +122,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
     it('daysLeft 30, threshold 60 already consumed -> a SECOND holder email, only threshold 30 consumed this time', async () => {
       expiryFindMany.mockResolvedValue([
-        candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtc(), 30), sentAlerts: [{ threshold: 60 }] }),
+        candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 30), sentAlerts: [{ threshold: 60 }] }),
       ]);
 
       const result = await runExpiryAlertsJob();
@@ -123,7 +137,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
   describe('catch-up (several thresholds newly due at once -> ONE email, all consumed together)', () => {
     it('daysLeft 5, nothing consumed -> ONE holder email, thresholds 60/30/7 all consumed (not 0 — 5 <= 0 is false)', async () => {
-      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtc(), 5), sentAlerts: [] })]);
+      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 5), sentAlerts: [] })]);
 
       const result = await runExpiryAlertsJob();
 
@@ -139,7 +153,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     });
 
     it('daysLeft -3 (already expired, e.g. registered late) -> ONE holder email, ALL FOUR thresholds consumed', async () => {
-      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtc(), -3), sentAlerts: [] })]);
+      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), -3), sentAlerts: [] })]);
 
       const result = await runExpiryAlertsJob();
 
@@ -162,7 +176,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
   describe('idempotence (AC 2)', () => {
     it('every due threshold already consumed -> zero emails, zero SentAlert writes', async () => {
       expiryFindMany.mockResolvedValue([
-        candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtc(), 5), sentAlerts: [{ threshold: 60 }, { threshold: 30 }, { threshold: 7 }] }),
+        candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 5), sentAlerts: [{ threshold: 60 }, { threshold: 30 }, { threshold: 7 }] }),
       ]);
 
       const result = await runExpiryAlertsJob();
@@ -174,7 +188,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
     it('a second identical run (all thresholds already consumed from the first) -> zero new alerts, zero new emails', async () => {
       const consumed = candidateFixture({
-        expiresAt: addDaysUtc(todayDateOnlyUtc(), 0),
+        expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 0),
         sentAlerts: [{ threshold: 60 }, { threshold: 30 }, { threshold: 7 }, { threshold: 0 }],
       });
       expiryFindMany.mockResolvedValue([consumed]);
@@ -188,7 +202,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     });
 
     it('P2002 on createMany (a concurrent run already claimed it) -> skip silently, no email, no throw', async () => {
-      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtc(), 60), sentAlerts: [] })]);
+      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 60), sentAlerts: [] })]);
       sentAlertCreateMany.mockRejectedValueOnce(prismaError('P2002'));
 
       await expect(runExpiryAlertsJob()).resolves.toMatchObject({ alertsCreated: 0, holderEmailsSent: 0 });
@@ -196,7 +210,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     });
 
     it('a non-P2002 error from createMany propagates (not swallowed)', async () => {
-      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtc(), 60), sentAlerts: [] })]);
+      expiryFindMany.mockResolvedValue([candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 60), sentAlerts: [] })]);
       sentAlertCreateMany.mockRejectedValueOnce(new Error('connection lost'));
 
       await expect(runExpiryAlertsJob()).rejects.toThrow('connection lost');
@@ -290,7 +304,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
     it('run consumes ZERO alerts -> NO digest to anyone (this is what makes AC 2 true end-to-end)', async () => {
       expiryFindMany.mockResolvedValue([
-        candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtc(), 5), sentAlerts: [{ threshold: 60 }, { threshold: 30 }, { threshold: 7 }] }),
+        candidateFixture({ expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 5), sentAlerts: [{ threshold: 60 }, { threshold: 30 }, { threshold: 7 }] }),
       ]);
 
       const result = await runExpiryAlertsJob();

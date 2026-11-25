@@ -218,6 +218,23 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
   // --- listPersonExpiries: computed status + pending proposal ----------
 
   describe('listPersonExpiries', () => {
+    it('marks yesterday expired just after Rome midnight even when UTC is still yesterday', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z'));
+        personFindUnique.mockResolvedValue(personFixture());
+        expiryFindMany.mockResolvedValue([
+          expiryFixture({ expiresAt: parseDateOnlyUtc('2026-08-31') }),
+          expiryFixture({ expiresAt: parseDateOnlyUtc('2026-09-01') }),
+        ]);
+
+        const result = await listPersonExpiries(adminActor(), 'person_1');
+        expect(result.map(({ status }) => status)).toEqual(['expired', 'expiring']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('maps computed status and the pending-proposal summary onto each row', async () => {
       personFindUnique.mockResolvedValue(personFixture());
       expiryFindMany.mockResolvedValue([

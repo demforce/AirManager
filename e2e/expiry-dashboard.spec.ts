@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { addDaysIso, todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -31,8 +32,8 @@ function uniqueTypeName(prefix: string): string {
 }
 
 /** A day `days` from NOW (can be negative), `YYYY-MM-DD` UTC — same helper as `expiry-registration.spec.ts` (dates stay relative to actual test-run time, since computed status depends on real "today"). */
-function addDaysUtc(days: number): string {
-  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+function addDaysRome(days: number): string {
+  return addDaysIso(todayRome(), days);
 }
 
 /** Creates a run-unique, always-usable (scope `ALL`) expiry type via the admin API and returns its id/name. */
@@ -93,9 +94,9 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const within30PersonId = await createPilotPerson(page, within30Person);
     const expiredPersonId = await createPilotPerson(page, expiredPerson);
 
-    await registerExpiry(page, { personId: okPersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(120) });
-    await registerExpiry(page, { personId: within30PersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(20) });
-    await registerExpiry(page, { personId: expiredPersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(-10) });
+    await registerExpiry(page, { personId: okPersonId, expiryTypeId: type.id, expiresAt: addDaysRome(120) });
+    await registerExpiry(page, { personId: within30PersonId, expiryTypeId: type.id, expiresAt: addDaysRome(20) });
+    await registerExpiry(page, { personId: expiredPersonId, expiryTypeId: type.id, expiresAt: addDaysRome(-10) });
 
     // window=all (the default ≤60g window would exclude the +120d "ok" row) + the run-unique type filter (isolation on a dirty DB).
     await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${type.id}`);
@@ -128,7 +129,7 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const type = await createExpiryType(page, 'ALL');
     const person = uniquePerson('FarFuture');
     const personId = await createPilotPerson(page, person);
-    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysUtc(200) });
+    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysRome(200) });
 
     await page.goto(`/it/dashboard/expiries?expiryTypeId=${type.id}`);
     await expect(page.getByTestId('scadenze-row')).toHaveCount(0);
@@ -158,7 +159,7 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const type = await createExpiryType(page, 'ALL');
     const person = uniquePerson('StatCard');
     const personId = await createPilotPerson(page, person);
-    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysUtc(3) });
+    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysRome(3) });
 
     const within7 = async (url: string): Promise<string> => {
       await page.goto(url);
@@ -182,7 +183,7 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
 
     const pilotPersonId = await getSeedPilotPersonId(page);
     const type = await createExpiryType(page, 'ALL');
-    await registerExpiry(page, { personId: pilotPersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(30) });
+    await registerExpiry(page, { personId: pilotPersonId, expiryTypeId: type.id, expiresAt: addDaysRome(30) });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
@@ -216,8 +217,8 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const personB = uniquePerson('FiltroB');
     const personAId = await createPilotPerson(page, personA);
     const personBId = await createPilotPerson(page, personB);
-    await registerExpiry(page, { personId: personAId, expiryTypeId: type.id, expiresAt: addDaysUtc(20) });
-    await registerExpiry(page, { personId: personBId, expiryTypeId: type.id, expiresAt: addDaysUtc(20) });
+    await registerExpiry(page, { personId: personAId, expiryTypeId: type.id, expiresAt: addDaysRome(20) });
+    await registerExpiry(page, { personId: personBId, expiryTypeId: type.id, expiresAt: addDaysRome(20) });
 
     await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${type.id}`);
     await expect(page.getByTestId('scadenze-row')).toHaveCount(2);

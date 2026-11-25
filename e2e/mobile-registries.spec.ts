@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
+import { todayRome } from './helpers';
 
 /**
  * Story 15.5 — the phone faces of the four registry surfaces: the fleet as a
@@ -257,7 +258,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     // ("Tipo prenotazioni …", "Tipo voli …") and never remove them. This test
     // is about the hours BAR, not about the requirements (which
     // `flight-requirements.spec.ts` owns).
-    const today = addDaysUtc(0);
+    const today = todayRome();
     const flight = await page.request.post('/api/v1/flights', {
       data: {
         aircraftId: flown.id,

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { todayRome } from './helpers';
 
 /**
  * Story 15.8a — the phone face of the Contabilità (`/dashboard/billing`) and
@@ -55,10 +56,6 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 // --- fixtures --------------------------------------------------------------
 
 type PersonFixture = { personId: string; firstName: string; lastName: string };
@@ -89,7 +86,7 @@ async function createCategory(page: Page, tag: string): Promise<{ id: string; na
 /** An ACCOUNT row that is `actionable` (a TOP_UP) — the only kind "Rettifica" is offered on. */
 async function recordTopUp(page: Page, personId: string, amountCents: number): Promise<void> {
   const response = await page.request.post(`/api/v1/people/${personId}/account/top-ups`, {
-    data: { amountCents, paymentMethod: 'BANK_TRANSFER', effectiveDate: todayDateOnly() },
+    data: { amountCents, paymentMethod: 'BANK_TRANSFER', effectiveDate: todayRome() },
   });
   expect(response.status()).toBe(200);
 }
@@ -97,7 +94,7 @@ async function recordTopUp(page: Page, personId: string, amountCents: number): P
 /** A standalone CASH row — `actionable`, i.e. the only kind "Storna" is offered on. */
 async function recordCashMovement(page: Page, categoryId: string, amountCents: number, description: string): Promise<void> {
   const response = await page.request.post('/api/v1/cash-movements', {
-    data: { categoryId, amountCents, paymentMethod: 'CASH', effectiveDate: todayDateOnly(), description },
+    data: { categoryId, amountCents, paymentMethod: 'CASH', effectiveDate: todayRome(), description },
   });
   expect(response.status()).toBe(201);
 }
@@ -309,7 +306,7 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     const category = await createCategory(page, 'Sheet');
     // No description, no person, method CASH -> the sparsest ACCOUNT-less row.
     const response = await page.request.post('/api/v1/cash-movements', {
-      data: { categoryId: category.id, amountCents: 3300, paymentMethod: 'CASH', effectiveDate: todayDateOnly() },
+      data: { categoryId: category.id, amountCents: 3300, paymentMethod: 'CASH', effectiveDate: todayRome() },
     });
     expect(response.status()).toBe(201);
 

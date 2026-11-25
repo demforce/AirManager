@@ -71,6 +71,27 @@ function registerRows(page: Page) {
 }
 
 test.describe('Cash register with categories and reversals (Story 3.4 — port to billing, story 12.9; Entrate/Uscite columns story Billing-2)', () => {
+  test('the transaction form prefills the Rome date just after New Year in a UTC browser (story 16.9)', async ({ browser }) => {
+    const context = await browser.newContext({ timezoneId: 'UTC' });
+    try {
+      const page = await context.newPage();
+      await loginExpectingDashboard(page, ADMIN_EMAIL);
+      const hydrationErrors: string[] = [];
+      page.on('console', (message) => {
+        if (/hydrat/i.test(message.text()) && ['warning', 'error'].includes(message.type())) hydrationErrors.push(message.text());
+      });
+      await page.clock.setFixedTime(new Date('2026-12-31T23:30:00.000Z'));
+      await page.goto('/it/dashboard/billing');
+      await page.getByTestId('billing-new-transaction-button').click();
+      await expect(page.getByTestId('transaction-date')).toHaveValue('2027-01-01');
+      await page.getByTestId('transaction-kind').selectOption('adjustment');
+      await expect(page.getByTestId('transaction-date')).toHaveValue('2027-01-01');
+      expect(hydrationErrors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test('staff records a +50 € entrata and a −30 € uscita via "Nuova transazione"; each shows in its own Entrate/Uscite column and the category filter isolates them (AC 2)', async ({
     page,
   }) => {
@@ -169,6 +190,7 @@ test.describe('Cash register with categories and reversals (Story 3.4 — port t
     await page.goto('/it/dashboard/billing');
     await page.getByTestId('billing-new-transaction-button').click();
     await page.waitForSelector('[data-testid="transaction-form"]');
+    await expect(page.getByTestId('transaction-date')).toHaveValue(today);
     await page.getByTestId('transaction-kind').selectOption('cash');
     await page.getByTestId('transaction-category').selectOption({ label: categoryName });
     await page.getByTestId('transaction-direction').selectOption('in');

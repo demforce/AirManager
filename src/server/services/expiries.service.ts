@@ -1,12 +1,12 @@
 import { Prisma, type ExpiryProposalStatus, type ExpiryScope, type ExpiryTypeKind } from '@/generated/prisma/client';
 import { paginate, paginationOffset } from '@/lib/api/pagination';
 import type { CurrencySettings } from '@/lib/currency';
-import { parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
+import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import { computeExpiryStatus, daysUntilUtc, EXPIRY_WARNING_DAYS, type ExpiryStatus } from '@/lib/expiry-status';
 import { evaluateMedicalRequirement, type MedicalRequirementFailure } from '@/lib/medical-requirement';
 import type { ExpiryWindowDto, ListAllExpiriesQuery, RegisterExpiryInput, UpdateExpiryInput } from '@/lib/schemas/expiries';
 import { APP_TIMEZONE } from '@/lib/time';
-import { todayDateOnlyInZone } from '@/lib/zoned-time';
+import { todayDateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { getCurrencySettings } from './app-settings.service';
@@ -136,7 +136,7 @@ export async function listPersonExpiries(actor: Actor, personId: string): Promis
     }
   }
 
-  const today = todayDateOnlyUtc();
+  const today = todayDateOnlyUtcInZone(APP_TIMEZONE);
 
   const expiries = await prisma.expiry.findMany({
     where: { personId },
@@ -244,7 +244,7 @@ export async function registerExpiry(actor: Actor, input: RegisterExpiryInput): 
       },
       select: EXPIRY_SELECT,
     });
-    return toListItem(created, todayDateOnlyUtc());
+    return toListItem(created, todayDateOnlyUtcInZone(APP_TIMEZONE));
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw new ConflictError('An expiry of this type is already registered for this person — update it instead.');
@@ -293,7 +293,7 @@ export async function updateExpiry(actor: Actor, id: string, input: UpdateExpiry
     });
   });
 
-  return toListItem(updated, todayDateOnlyUtc());
+  return toListItem(updated, todayDateOnlyUtcInZone(APP_TIMEZONE));
 }
 
 /**

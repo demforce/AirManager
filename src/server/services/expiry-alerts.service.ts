@@ -1,5 +1,6 @@
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import type { AppLocale } from '@/i18n/routing';
-import { todayDateOnlyUtc } from '@/lib/date-only';
 import { daysUntilUtc, EXPIRY_ALERT_THRESHOLDS } from '@/lib/expiry-status';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildExpiryAlertEmail, buildExpiryDigestEmail, type ExpiryDigestItem } from '@/server/adapters/mail/templates';
@@ -107,7 +108,7 @@ function dueThresholds(daysLeft: number): number[] {
 }
 
 export async function runExpiryAlertsJob(): Promise<ExpiryAlertsJobResult> {
-  const today = todayDateOnlyUtc();
+  const today = todayDateOnlyUtcInZone(APP_TIMEZONE);
   const horizon = new Date(today.getTime() + MAX_ALERT_THRESHOLD_DAYS * MS_PER_DAY);
 
   const candidates: Candidate[] = await prisma.expiry.findMany({

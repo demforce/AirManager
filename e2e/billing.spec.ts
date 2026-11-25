@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { ensureValidSeedExpiries, todayRome } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -63,10 +63,6 @@ function uniquePastDateOnly(): string {
 }
 
 /** Today, `YYYY-MM-DD` (server clock, UTC) — the three riquadri (story Billing-2, AC 1) are ALWAYS the current calendar month, never date-filterable, so a scenario that verifies their arithmetic must be dated today. */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 async function createPilotPerson(page: Page, tag: string): Promise<{ personId: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const firstName = 'Billing';
@@ -328,7 +324,7 @@ test.describe('Tre riquadri con numeri veri da scenario seminato (story Billing-
     const pilot = await createPilotPerson(page, 'Riquadri');
     const instructor = await createInstructorPerson(page, 'Riquadri');
     const aircraft = await createAircraftWithRate(page, 10000); // 100,00 €/h
-    const today = todayDateOnly();
+    const today = todayRome();
 
     await gotoBilling(page, {});
     await page.waitForSelector('[data-testid="billing-panel-result"]');
@@ -400,6 +396,9 @@ test.describe('"Nuova transazione" — 3 branches (Story 12.9, AC 4)', () => {
     await page.getByTestId('billing-new-transaction-button').click();
     await page.waitForSelector('[data-testid="transaction-form"]');
     await page.getByTestId('transaction-kind').selectOption('adjustment');
+    const today = todayRome();
+    await expect(page.getByTestId('transaction-date')).toBeDisabled();
+    await expect(page.getByTestId('transaction-date')).toHaveValue(today);
     await selectFromCombobox(page.getByTestId('transaction-person'), pilot.lastName, personOptionLabel(pilot));
     await page.getByTestId('transaction-amount').fill('30');
     await page.getByTestId('transaction-reason').fill('Addebito di verifica e2e');
@@ -410,6 +409,10 @@ test.describe('"Nuova transazione" — 3 branches (Story 12.9, AC 4)', () => {
 
     const after = await accountBalance(page, pilot.personId);
     expect(after).toBe(before - 3000);
+    const response = await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`);
+    expect(response.ok()).toBe(true);
+    const movements = (await response.json()) as { items: Array<{ type: string; effectiveDate: string }> };
+    expect(movements.items).toContainEqual(expect.objectContaining({ type: 'ADJUSTMENT', effectiveDate: today }));
   });
 
   test('Movimento cassa: a new row appears in the ledger under the chosen category, in the Uscite column (story Billing-2)', async ({ page }) => {

@@ -206,7 +206,7 @@ test.describe('Instructor compensation (story 12.7)', () => {
 
     // Story 19.12b AC 20: the payout's own Contabilità row names it «Compenso istruttore {inizio} – {fine}».
     // Today's costs only, so the fresh row is on page 1; its period and amount single it out from the API payouts of other specs.
-    // `periodEnd` is the BROWSER's today, the movement is dated on Europe/Rome's: the window takes the day after too.
+    // Both dates follow Europe/Rome; include the following day in case the run crosses midnight.
     const dayAfter = new Date(`${periodEnd}T00:00:00Z`);
     dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
     await page.goto(`/it/dashboard/billing?${new URLSearchParams({ dateFrom: periodEnd!, dateTo: dayAfter.toISOString().slice(0, 10), bookType: 'COST' }).toString()}`);

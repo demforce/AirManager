@@ -21,10 +21,12 @@
  * that editor in ONE draft, so the two sections of the pilot editor merge
  * into one `expiries` block); `ExpiryDraftEditor` only renders one kind of it.
  */
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { DateInput } from '@/components/ui/date-input';
-import { addMonthsClampUtc, toDateOnlyString, todayDateOnlyUtc } from '@/lib/date-only';
+import { addMonthsClampUtc, toDateOnlyString } from '@/lib/date-only';
 import { isExpiryScopeCompatible, type ProfileFlags } from '@/lib/expiry-scope';
 import type { ExpiryScopeDto } from '@/lib/schemas/expiry-types';
 
@@ -35,7 +37,7 @@ export type ExpiryKind = 'RATING' | 'MEDICAL';
 /** `today + validityMonths`, clamped to the target month's real last day (story 13.8, AC 5 — F2, review 13.3: the pre-13.3 page-level form precompiled this). `null`/`0` both mean "no expiry" (same convention as `expiryTypeValidityMonthsSchema`) — no precompile for either. */
 function precompileExpiresAt(validityMonths: number | null): string {
   if (!validityMonths) return '';
-  return toDateOnlyString(addMonthsClampUtc(todayDateOnlyUtc(), validityMonths));
+  return toDateOnlyString(addMonthsClampUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), validityMonths));
 }
 
 type PersonExpiryItem = { id: string; expiryTypeId: string; typeName: string; expiresAt: string; status: 'ok' | 'expiring' | 'expired' };

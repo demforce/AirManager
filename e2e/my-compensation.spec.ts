@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { ensureValidSeedExpiries, todayRome } from './helpers';
 import { seedAircraftRate, seedInstructorPayouts, seedInstructorRate } from './db-fixtures';
 
 /**
@@ -122,10 +122,6 @@ async function recordPayoutForPeriod(page: Page, personId: string, amountCents: 
 }
 
 /** Today's date (server-clock UTC), same helper as `reports.spec.ts`/`billing.spec.ts` — used to log a SCHOOL flight inside the CURRENT mtd window (review F4). */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** Fresh STUDENT person — same helper shape as `instructor-compensation.spec.ts#createStudentPerson`. */
 async function createStudentPerson(page: Page, tag: string): Promise<{ personId: string }> {
   const suffix = uniqueSuffix();
@@ -274,7 +270,7 @@ test.describe('Own compensation only (AC 2/3/5/6)', () => {
     await createInstructorRate(page, instructor.personId, 3000); // student-charged rate — required for the flight to bill, unrelated to the payout rate below
     await setPayoutRate(page, instructor.personId, 6000); // 60,00 €/h payout rate
 
-    const today = todayDateOnly();
+    const today = todayRome();
     await registerSchoolFlight(page, { aircraftId: aircraft.id, personId: student.personId, instructorPersonId: instructor.personId, flightDate: today, minutes: 120 }); // 2:00h logged THIS month
     await recordPayoutForPeriod(page, instructor.personId, 3000, today, today); // 30,00 € advance, dated THIS month -> counts against the mtd window
 

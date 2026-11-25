@@ -199,6 +199,21 @@ describe('todayTomorrowRangeUtc (story 10.3, AC 1 — home dashboard "oggi/doman
 });
 
 describe('todayDateOnlyInZone', () => {
+  it.each([
+    ['2026-08-31T22:30:00.000Z', '2026-09-01'],
+    ['2026-01-31T23:30:00.000Z', '2026-02-01'],
+    ['2026-12-31T23:30:00.000Z', '2027-01-01'],
+  ])('returns %s on the Rome side of midnight as %s', (instant, expected) => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(instant));
+      expect(todayDateOnlyInZone(ROME)).toBe(expected);
+      expect(new Date().toISOString().slice(0, 10)).not.toBe(expected);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('returns a YYYY-MM-DD string', () => {
     expect(todayDateOnlyInZone(ROME)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });

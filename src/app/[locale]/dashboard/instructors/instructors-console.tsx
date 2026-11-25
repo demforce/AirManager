@@ -38,7 +38,8 @@ import type { AppLocale } from '@/i18n/routing';
 import { parseApiError } from '@/lib/api-field-errors';
 import { avatarColorFor, initialsOf } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
-import { formatDateOnly, formatMinutes } from '@/lib/time';
+import { APP_TIMEZONE, formatDateOnly, formatMinutes } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import type { PersonListItemDto } from '@/lib/schemas/people';
 import { InstructorEditor, type InstructorEditorLabels } from './instructor-editor';
@@ -573,16 +574,6 @@ const payFormSchema = z
 
 type PayFormValues = z.infer<typeof payFormSchema>;
 
-/** Browser-local `YYYY-MM-DD` — same convention as every other `<input type="date">` default in this codebase (`todayDateOnly` in `pilots-console.tsx`/`fleet/aircraft-editor.tsx`). */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** Default `periodStart` (AC 5: "inizio del periodo scoperto", editable) — the start of the current calendar year, a simple, always-available anchor since the summary API does not expose a precise "last paid up to" date. */
-function yearStartDateOnly(): string {
-  return `${todayDateOnly().slice(0, 4)}-01-01`;
-}
-
 type PaySlideOverProps = {
   instructor: InstructorRow | null;
   onClose: () => void;
@@ -598,12 +589,13 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
   const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
   const [formError, setFormError] = useState<string | null>(null);
 
+  const today = todayDateOnlyInZone(APP_TIMEZONE);
   const values: PayFormValues = instructor
     ? {
         amount: (Math.max(instructor.owedTotalCents, 0) / 100).toFixed(2).replace('.', ','),
         method: 'CASH',
-        periodStart: yearStartDateOnly(),
-        periodEnd: todayDateOnly(),
+        periodStart: `${today.slice(0, 4)}-01-01`,
+        periodEnd: today,
         notes: '',
       }
     : { amount: '', method: 'CASH', periodStart: '', periodEnd: '', notes: '' };

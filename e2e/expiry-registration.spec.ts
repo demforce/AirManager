@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -32,11 +33,6 @@ function uniqueTypeName(prefix: string): string {
 /** A day `days` from NOW (can be negative), `YYYY-MM-DD` UTC — dates stay relative to actual test-run time (Dev Notes: computed status depends on real "today"). Used for API payloads and `<input type="date">` values, which stay ISO (AC 1). */
 function addDaysUtc(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
-}
-
-/** `YYYY-MM-DD` for "now", UTC — story 13.8 (AC 5) precompile fixture's base date. */
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 /** Local mirror of `src/lib/date-only.ts#addMonthsClampUtc` (e2e specs never import server code, same convention as `addDaysUtc` above) — CLAMPS to the target month's real last day (e.g. 31 Jan + 1 month -> 28/29 Feb), matching `ExpiryDraftEditor`'s own precompile (story 13.8, AC 5). */
@@ -230,7 +226,7 @@ test.describe('Person expiries with computed status (Story 6.2, AC 1; editor-dri
 
     // validityMonths: 24 -> precompiled to today + 24 months.
     await ratingsEditor.getByTestId(`expiry-chip-${withValidity.id}`).click();
-    await expect(ratingsEditor.getByTestId(`expiry-date-${withValidity.id}`)).toHaveValue(addMonthsUtc(todayUtc(), 24));
+    await expect(ratingsEditor.getByTestId(`expiry-date-${withValidity.id}`)).toHaveValue(addMonthsUtc(todayRome(), 24));
 
     // Still EDITABLE: override it, save, and the PERSISTED value is the override, not the precompiled default.
     const overrideDate = addDaysUtc(500);

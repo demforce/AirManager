@@ -1,8 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
-import { todayDateOnlyUtc } from '@/lib/date-only';
 import { buildExportHref } from '@/lib/export-href';
 import { APP_TIMEZONE } from '@/lib/time';
-import { todayDateOnlyInZone } from '@/lib/zoned-time';
+import { todayDateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { redirect } from '@/i18n/navigation';
@@ -57,7 +56,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
   // (story 16.1, the Scadenze domain).
   const pageIds = result.items.map((item) => item.id);
   const [blockingDocumentsById, currencyById] = await Promise.all([
-    listBlockingExpiriesByPerson(actor, pageIds, todayDateOnlyUtc()),
+    listBlockingExpiriesByPerson(actor, pageIds, todayDateOnlyUtcInZone(APP_TIMEZONE)),
     listCurrencyByPerson(actor, pageIds, todayDateOnlyInZone(APP_TIMEZONE)),
   ]);
 

@@ -11,7 +11,7 @@
 // runs its `chromium`/`settings`/`booking-window` dependencies).
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { ensureValidSeedExpiries, todayRome } from './helpers';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 /**
@@ -54,10 +54,6 @@ function uniqueRegistration(prefix: string): string {
 }
 
 /** `YYYY-MM-DD` "today" in UTC — the same convention `flight-log.spec.ts#registerFlight` relies on (`T10:00:00.000Z`, comfortably clear of any midnight boundary). */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 async function createPilotPerson(page: Page, tag: string): Promise<{ personId: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const firstName = 'Reports';
@@ -115,7 +111,7 @@ type RegisterFlightParams = {
 
 /** Same `takeoffAt`/`landingAt` wire shape as `flight-log.spec.ts#registerFlight` — `flightDate` is TODAY (UTC, `T10:00Z`), so the flight always lands in the CURRENT Rome month (`getStats`'s default `ref`). Charges live under `flight.breakdown.*` (`flights.service.ts#toListItem`); `instructorAmountCents` is OMITTED (not `null`) when there is no instructor, normalized here to `0`. */
 async function registerFlight(page: Page, params: RegisterFlightParams): Promise<{ id: string; aircraftAmountCents: number; instructorAmountCents: number }> {
-  const takeoffAt = `${todayDateOnly()}T${params.takeoffTimeUtc ?? '10:00'}:00.000Z`;
+  const takeoffAt = `${todayRome()}T${params.takeoffTimeUtc ?? '10:00'}:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
     data: {

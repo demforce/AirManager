@@ -3,13 +3,13 @@
  * AC 1; Contesto: "lo stato NON si persiste MAI"). `Expiry.expiresAt` is the
  * only source of truth — this function derives `ok` / `expiring` / `expired`
  * from it against a given "today", never against `new Date()` implicitly,
- * so both server callers (which pass `todayDateOnlyUtc()`) and unit tests
+ * so both server callers (which bind the Rome calendar day as UTC midnight) and unit tests
  * (which pass an explicit date) get a deterministic result. Story 6.3's
  * alert job and 6.4's dashboard reuse this exact function — there must
  * never be a second implementation of the ok/expiring/expired boundary.
  *
  * Both `expiresAt` and `today` are expected to already be date-only UTC
- * values (`date-only.ts`'s `parseDateOnlyUtc`/`todayDateOnlyUtc` — UTC
+ * values (such as `parseDateOnlyUtc` or `todayDateOnlyUtcInZone` — UTC
  * midnight, no time-of-day component); the day-difference is computed on
  * the raw millisecond timestamps divided by a whole day, which is exact and
  * timezone-independent ONLY when both inputs already carry zero

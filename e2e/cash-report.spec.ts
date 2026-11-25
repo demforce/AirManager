@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -44,10 +45,6 @@ async function recordMovement(page: Page, categoryId: string, amountCents: numbe
 }
 
 /** Today, `YYYY-MM-DD`, server-clock UTC — same convention `getBillingKpis`'s Europe/Rome "current month" reads (both land in the same calendar month in practice for this suite's run window). */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 test.describe('Financial report over the cash ledger — per-category via billing + PDF export (Story 3.5, port to story 12.9; "Per categoria" panel story Billing-2)', () => {
   test('entrate/uscite/netto recorded TODAY show up in billing\'s "Per categoria" panel (ratifica utente 2: month-anchored, not a free period) — BOTH directions contribute, netted, never just the positive side (AC 1/2; story Billing-2, §2: la categoria dice di cosa, il movimento dice in che direzione)', async ({
     page,
@@ -55,7 +52,7 @@ test.describe('Financial report over the cash ledger — per-category via billin
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const categoryName = uniqueCategoryName('Report');
     const categoryId = await createCategory(page, categoryName);
-    const today = todayDateOnly();
+    const today = todayRome();
     await recordMovement(page, categoryId, 10000, today);
     await recordMovement(page, categoryId, -4000, today);
 

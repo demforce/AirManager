@@ -38,7 +38,8 @@ import { parseApiError } from '@/lib/api-field-errors';
 import { tierOf } from '@/lib/expiry-status';
 import { avatarColorFor, initialsOf, pilotRowFlag, type BlockingDocument, type PilotRowFlag } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
-import { formatDateOnly } from '@/lib/time';
+import { APP_TIMEZONE, formatDateOnly } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
 import { PilotEditor, type PilotEditorLabels } from './pilot-editor';
 
@@ -760,10 +761,6 @@ const topUpFormSchema = z
 
 type TopUpFormValues = z.infer<typeof topUpFormSchema>;
 
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 type TopUpSlideOverProps = {
   pilot: PilotRow | null;
   onClose: () => void;
@@ -786,7 +783,7 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
     formState: { errors, isSubmitting },
   } = useForm<TopUpFormValues>({
     resolver: zodResolver(topUpFormSchema),
-    defaultValues: { amount: '', paymentMethod: 'CASH', effectiveDate: todayDateOnly(), description: '' },
+    defaultValues: { amount: '', paymentMethod: 'CASH', effectiveDate: todayDateOnlyInZone(APP_TIMEZONE), description: '' },
   });
 
   async function onSubmit(values: TopUpFormValues): Promise<void> {
@@ -818,7 +815,7 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
       return;
     }
 
-    reset({ amount: '', paymentMethod: 'CASH', effectiveDate: todayDateOnly(), description: '' });
+    reset({ amount: '', paymentMethod: 'CASH', effectiveDate: todayDateOnlyInZone(APP_TIMEZONE), description: '' });
     toast.show(successMessage, 'ok');
     onClose();
     onMutated();

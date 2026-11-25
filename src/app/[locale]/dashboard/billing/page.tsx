@@ -3,7 +3,7 @@ import { redirect } from '@/i18n/navigation';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { currentMonthRange } from '@/lib/period-presets';
 import type { BookTypeDto } from '@/lib/schemas/transactions';
-import { formatDateOnly } from '@/lib/time';
+import { formatDateOnly, formatMonthYear } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { listNegativeBalances } from '@/server/services/accounts.service';
@@ -125,7 +125,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
         ? `${t('filters.dateTo')} ${formatDateOnly(dateTo, displayLocale)}`
         : t('periodAll');
 
-  const monthLabel = new Intl.DateTimeFormat(displayLocale === 'en' ? 'en-IE' : 'it-IT', { month: 'long', year: 'numeric' }).format(new Date());
+  const monthLabel = formatMonthYear(new Date(), displayLocale);
 
   const filters: BillingFilters = {
     dateFrom: dateFrom ?? '',
