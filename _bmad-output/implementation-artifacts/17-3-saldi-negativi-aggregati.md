@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.3: Saldi negativi aggregati
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (card, pagina nuova, link, i18n, misure a 375). Review: Opus 5 xhigh adversarial. **Ordine**: DOPO il commit della 16.5 (tocca `billing/page.tsx:192`, `billing-console.tsx:62`, `:1152`, vicine alla card) e della 16.6a (che vuole `billing-summary.service.ts` byte-identico per tutta la sua durata, e tocca `billing-panels*.tsx:105-114`, `billing/page.tsx:128`, `:150`). Il passo 0 di misura va fatto su quel HEAD; le righe qui sotto vanno rilette.
+Status: **in-review** (2026-11-25) — pronta il 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (card, pagina nuova, link, i18n, misure a 375). Review: Opus 5 xhigh adversarial. **Ordine**: DOPO il commit della 16.5 (tocca `billing/page.tsx:192`, `billing-console.tsx:62`, `:1152`, vicine alla card) e della 16.6a (che vuole `billing-summary.service.ts` byte-identico per tutta la sua durata, e tocca `billing-panels*.tsx:105-114`, `billing/page.tsx:128`, `:150`). Il passo 0 di misura va fatto su quel HEAD; le righe qui sotto vanno rilette.
 
 ## Story
 
@@ -79,3 +79,10 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 ### Completion Notes List
 
 ### File List
+
+
+## Record di sviluppo e verifiche iniziali — 2026-11-25
+
+- `d68647a`: un solo lettore paginato dei debitori, ordinato per saldo crescente e ID, con totali anche su pagine vuote. Archiviati inclusi, ricerca case-insensitive con wildcard letterali, guardia `finance.manage`. API paginata e nuova API riepilogo, OpenAPI aggiornato. Contabilità mostra i primi 20 con il totale dichiarato; la pagina completa è raggiungibile da Contabilità e Avvisi, senza perdere il conteggio oltre l’anteprima.
+- Gate del ramo isolato: lint, tipi, **2290 unit**, build. Verifica dedicata su 21 debitori sintetici: da SQL indipendente a riepilogo, card, lista a due pagine, debitori archiviati, wildcard letterali e permessi, **1/1**; regressioni pertinenti **37/37**. Il tentativo mirato più ampio non preparava le fixture di due controlli di contrasto Scadenze, non toccati dalla story; riesercitarli nell’arbitro completo. Le attese del nuovo link sono ora deterministiche.
+- Baseline e ramo isolato su stesso DB di carico, 4018 debitori: API paginata **646.945 → 3.261 byte**, p50 **88 → 44 ms**. Contabilità **15.268 → 3.275 nodi**, **2150 → 451 KB HTML**, a 375 px **1039 → 452 ms** di domInteractive. Il tetto di 300 KB era stato qualificato in Q-17.3-c per la card Compensi istruttori, che qui non è stata modificata. Non confrontare la Panoramica tra quei due eseguibili: il ramo di sviluppo isolato non conteneva la 17.2. Ripetizione Panoramica e arbitro sull’albero integrato restano parte della chiusura.
