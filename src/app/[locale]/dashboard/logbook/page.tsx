@@ -4,6 +4,7 @@ import { KPI } from '@/components/ui/kpi';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
+import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { formatCents } from '@/lib/money';
 import type { FlightTypeDto } from '@/lib/schemas/flights';
 import { formatMinutes } from '@/lib/time';
@@ -184,6 +185,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   const pdfExportHref = buildPdfExportHref('/api/v1/flights/pdf', exportFilters, locale);
 
   const t = await getTranslations('LogbookPage');
+  const tExport = await getTranslations('Export');
   // Story AOG-1a, AC 12 — only for `form.outOfServiceSuffix`, reused verbatim from the booking form.
   const tBookings = await getTranslations('BookingsPage');
 
@@ -245,6 +247,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
         locale={displayLocale}
         exportHref={exportHref}
         pdfExportHref={pdfExportHref}
+        exportPdfUnavailable={flightsResult.total > PDF_EXPORT_MAX_ROWS ? tExport('pdfRowsTooLarge', { max: PDF_EXPORT_MAX_ROWS }) : undefined}
+        exportXlsUnavailable={flightsResult.total > EXPORT_MAX_ROWS ? tExport('xlsRowsTooLarge', { max: EXPORT_MAX_ROWS }) : undefined}
         labels={{
           cardTitle: t('cardTitle'),
           newEntry: t('newEntry'),

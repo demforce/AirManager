@@ -8,13 +8,15 @@ const baseURL = `http://localhost:${PORT}`;
 // Preinstalled Chromium in the dev container; absent in CI, where Playwright's
 // own browser (npx playwright install) is used instead.
 const containerChromium = '/opt/pw-browsers/chromium';
+const systemChromium = '/usr/bin/chromium';
+const chromiumExecutable = fs.existsSync(containerChromium) ? containerChromium : fs.existsSync(systemChromium) ? systemChromium : undefined;
 
 // Shared browser config for every project below.
 const sharedUse = {
   ...devices['Desktop Chrome'],
   // In the dev container: never run `playwright install`, use the preinstalled binary.
-  ...(fs.existsSync(containerChromium)
-    ? { launchOptions: { executablePath: containerChromium } }
+  ...(chromiumExecutable
+    ? { launchOptions: { executablePath: chromiumExecutable } }
     : {}),
 };
 

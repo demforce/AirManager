@@ -100,7 +100,7 @@ Then export `PERSON=<id>` / `AIRCRAFT=<id>` before running `bench.mjs`.
 ## 5. Placeholders in `targets.json`/`targets-hot.json`
 
 A committed target list can never contain a literal date — a month from now
-it would measure an empty window and look like a win. Six placeholders are
+it would measure an empty window and look like a win. Six fixed placeholders and one parameterized family are
 substituted inside `bench.mjs` before any request is sent (nothing else may
 be added without updating this table):
 
@@ -112,6 +112,7 @@ be added without updating this table):
 | `{MONTH_START}` | first of the current UTC month, date-only | idem |
 | `{WEEK_FROM}` | UTC midnight, 3 days before run time | `api bookings calendar week` |
 | `{WEEK_TO}` | `{WEEK_FROM}` + 7 days | idem |
+| `{TODAY_MINUS_N}` | UTC date-only, N days before run time (N = 0–9999), e.g. `{TODAY_MINUS_41}` | filtered PDF benchmark |
 
 If a target's `path` still contains `{...}` after substitution, `bench.mjs`
 exits `2` naming the target and the unresolved placeholder — it never sends

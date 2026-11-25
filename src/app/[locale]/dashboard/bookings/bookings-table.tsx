@@ -142,6 +142,8 @@ type BookingsTableProps = {
   exportHref: string;
   /** Story 13.7, AC 2 — the PDF counterpart of `exportHref` (`GET /api/v1/bookings/pdf`, dedicated route, same filters). */
   exportPdfHref: string;
+  exportPdfUnavailable?: string;
+  exportXlsUnavailable?: string;
   /** Whether this actor could ever open a booking form at all (`bookings.manage.*`) — decides whether the two panels are MOUNTED. */
   canCreate: boolean;
   /**
@@ -193,6 +195,8 @@ export function BookingsTable({
   today,
   exportHref,
   exportPdfHref,
+  exportPdfUnavailable,
+  exportXlsUnavailable,
   canCreate,
   canCreateNew,
   status,
@@ -661,7 +665,7 @@ export function BookingsTable({
             : t('filteredSummary', { total })}
         </span>
         <div className="spacer" />
-        <ExportMenu label={labels.exportLabel} xlsLabel={labels.exportXls} xlsHref={exportHref} pdfLabel={labels.exportPdf} pdfHref={exportPdfHref} />
+        <ExportMenu label={labels.exportLabel} xlsLabel={labels.exportXls} xlsHref={exportHref} xlsUnavailable={exportXlsUnavailable} pdfLabel={labels.exportPdf} pdfHref={exportPdfHref} pdfUnavailable={exportPdfUnavailable} />
         {/* `canCreateNew`, not `canCreate` (ratifica R-15.4-f): the panels below
             stay mounted for anyone with a booking permission, but the CTA is
             hidden from whoever `createBooking` would answer 403 to. */}

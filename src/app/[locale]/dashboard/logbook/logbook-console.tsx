@@ -200,6 +200,8 @@ export type LogbookConsoleProps = {
   locale: 'it' | 'en';
   exportHref: string;
   pdfExportHref: string;
+  exportPdfUnavailable?: string;
+  exportXlsUnavailable?: string;
   labels: LogbookConsoleLabels;
 };
 
@@ -233,6 +235,8 @@ export function LogbookConsole({
   locale,
   exportHref,
   pdfExportHref,
+  exportPdfUnavailable,
+  exportXlsUnavailable,
   labels,
 }: LogbookConsoleProps) {
   const router = useRouter();
@@ -583,7 +587,7 @@ export function LogbookConsole({
           >
             {panelActiveCount === 0 ? labels.mobile.filters : labels.mobile.filtersCount.replace('{count}', String(panelActiveCount))}
           </button>
-          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={pdfExportHref} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} />
+          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={pdfExportHref} pdfUnavailable={exportPdfUnavailable} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} xlsUnavailable={exportXlsUnavailable} />
           {canManage ? (
             <button type="button" className="btn primary" onClick={() => setEditorTarget({ mode: 'new' })} data-testid="logbook-new-button">
               <Icon.plus /> {labels.newEntry}

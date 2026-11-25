@@ -14,6 +14,7 @@ import type { AppLocale } from '@/i18n/routing';
 import { dayPhaseOf, filterInProgress, type DayPhase } from '@/lib/booking-day-phase';
 import { clampToWindowPercent, formatWallClock, projectDayBlocks, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
+import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { formatCents } from '@/lib/money';
 import { buildOverviewAlerts } from '@/lib/overview-alerts';
 import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTimeOfDay } from '@/lib/time';
@@ -247,6 +248,7 @@ function bookingsHref(overrides: { view?: 'day' | 'week'; date?: string }, today
 async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocale: DisplayLocale): Promise<ReactElement> {
   const t = await getTranslations('DashboardPage');
   const tBookings = await getTranslations('BookingsPage');
+  const tExport = await getTranslations('Export');
   const tLogbook = await getTranslations('LogbookPage');
 
   const now = new Date();
@@ -698,6 +700,8 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         totalPages={embedTotalPages}
         exportHref={buildExportHref('/api/v1/bookings', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale)}
         exportPdfHref={buildPdfExportHref('/api/v1/bookings/pdf', { from: listFrom, status: ALL_BOOKING_STATUSES.join(',') }, locale)}
+        exportPdfUnavailable={embedTotal > PDF_EXPORT_MAX_ROWS ? tExport('pdfRowsTooLarge', { max: PDF_EXPORT_MAX_ROWS }) : undefined}
+        exportXlsUnavailable={embedTotal > EXPORT_MAX_ROWS ? tExport('xlsRowsTooLarge', { max: EXPORT_MAX_ROWS }) : undefined}
         canCreate
         // Staff-only surface (this is the admin Panoramica): a `bookings.manage.any`
         // actor books for OTHERS, so ratifica R-15.4-f's own-profile requirement

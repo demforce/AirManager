@@ -124,7 +124,7 @@ graph TD
 | zod | 4.4.x |
 | @asteasolutions/zod-to-openapi | 8.5.x |
 | exceljs | 4.4.x |
-| @react-pdf/renderer | 4.5.x |
+| pdfkit | 0.20.2 |
 | Vitest | 4.1.x |
 | @playwright/test | 1.61.x |
 

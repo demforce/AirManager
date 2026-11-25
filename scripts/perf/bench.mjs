@@ -126,6 +126,11 @@ function applyPlaceholders(target, values) {
   for (const [key, value] of Object.entries(values)) {
     path_ = path_.split(key).join(value);
   }
+  path_ = path_.replace(/\{TODAY_MINUS_(\d+)\}/g, (_, days) => {
+    const today = new Date(values['{TODAY}'] + 'T00:00:00.000Z');
+    today.setUTCDate(today.getUTCDate() - Number(days));
+    return today.toISOString().slice(0, 10);
+  });
   return { ...target, path: path_ };
 }
 
@@ -157,7 +162,7 @@ async function timeOne(t) {
   return { ms, status: res.status, bytes: buf.byteLength, count, ct: ct.split(';')[0] };
 }
 
-// The six keys `resolvePlaceholders()` always returns (AD-2's table) — used
+// The six fixed keys `resolvePlaceholders()` always returns (AD-2's table) — used
 // to validate target names BEFORE logging in, so an unknown placeholder
 // exits without sending a single request (AC 3).
 const KNOWN_PLACEHOLDERS = ['{PERSON}', '{AIRCRAFT}', '{TODAY}', '{MONTH_START}', '{WEEK_FROM}', '{WEEK_TO}'];
@@ -168,8 +173,8 @@ async function main() {
   // Fail-fast (AD-2), before any network call: an unknown placeholder name
   // is a typo in the target list, not something login or the API resolves.
   for (const t of rawTargets) {
-    const unresolved = t.path.match(/\{[A-Z_]+\}/);
-    if (unresolved && !KNOWN_PLACEHOLDERS.includes(unresolved[0])) {
+    const unresolved = t.path.match(/\{[A-Z_0-9]+\}/);
+    if (unresolved && !KNOWN_PLACEHOLDERS.includes(unresolved[0]) && !/^\{TODAY_MINUS_(?:0|[1-9]\d{0,3})\}$/.test(unresolved[0])) {
       console.error(`unknown placeholder ${unresolved[0]} in target "${t.name}" (${t.path})`);
       process.exit(2);
     }
@@ -190,7 +195,7 @@ async function main() {
 
   const targets = rawTargets.map((t) => applyPlaceholders(t, values));
   for (const t of targets) {
-    const stillOpen = t.path.match(/\{[A-Z_]+\}/);
+    const stillOpen = t.path.match(/\{[A-Z_0-9]+\}/);
     if (stillOpen) {
       console.error(`placeholder ${stillOpen[0]} did not resolve for target "${t.name}" (${t.path})`);
       process.exit(2);

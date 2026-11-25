@@ -1498,6 +1498,8 @@
   },
   "Export": {
     "button": "Esporta",
+    "pdfRowsTooLarge": "PDF non disponibile: più di {max, number} righe con questi filtri. Restringi i filtri o scarica l'Excel.",
+    "xlsRowsTooLarge": "Excel non disponibile: più di {max, number} righe con questi filtri. Restringi i filtri.",
     "pdfTooLarge": "PDF non disponibile: il periodo ha più di {max, number} movimenti. Restringi il periodo o scarica l'Excel.",
     "xlsTooLarge": "Excel non disponibile: il periodo ha più di {max, number} movimenti. Restringi il periodo."
   },

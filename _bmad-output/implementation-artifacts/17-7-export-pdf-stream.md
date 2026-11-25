@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.7: Export PDF a stream
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (Q-17.7-b = B ratificata: messaggio leggibile su 3 pagine). Review: Opus 5 xhigh adversarial. **Ordine**: dopo il commit della 16.5 (stessi file `exports.service.ts`, `exports.service.test.ts`, `registry.ts`) e della 16.6a (rinomina le intestazioni del Report di cassa): gli screenshot prima/dopo vanno presi sulla **stessa** base.
+Status: **in-progress** — implementation and synthetic verification on 2026-11-25; independent review pending. Original story created 2026-11-03 on `e951960`. **Dev/review model substitution:** per Enrico's permanent AirManager instruction, use GPT 6 Sol in place of Opus 5 xhigh. **Ordine**: dopo il commit della 16.5 (stessi file `exports.service.ts`, `exports.service.test.ts`, `registry.ts`) e della 16.6a (rinomina le intestazioni del Report di cassa): gli screenshot prima/dopo vanno presi sulla **stessa** base.
 
 ## Story
 
@@ -48,12 +48,12 @@ Fonte: `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md` §«Story 17.7»
 
 ## Tasks / Subtasks
 
-- [ ] Misura «prima» del motore (AC 4) allo sha di base, una volta sola; conteggi al momento del bench (AC 5).
-- [ ] Riscrittura `document.tsx` → `document.ts` su pdfkit (AC 1), altezza di riga calcolata prima di disegnare (massimo di `heightOfString`), totali che possono andare a pagina nuova, `bufferPages: true` per «Pag. k di N», una cessione dell'event loop per pagina (`await new Promise(setImmediate)`).
-- [ ] `next.config.ts`: `serverExternalPackages: ['pdfkit']`.
-- [ ] Sostituire `document.test.ts:69-75` (dipende da react-pdf) con gli unit dell'AC 3; mutanti su copia isolata.
-- [ ] Parità visiva e del testo (AC 2); misura «dopo» (AC 4, 5); tetto (AC 6); UI oltre il tetto se Q-17.7-b = B (AC 9).
-- [ ] Dipendenze e lockfile (AC 8); target ~2 000 righe in `scripts/perf/targets.json` (+ placeholder «oggi meno N giorni» con la sua riga in `README.md:100-115` se serve); Dev Agent Record.
+- [x] Misura «prima» del motore (AC 4) allo sha di base, una volta sola; conteggi al momento del bench (AC 5).
+- [x] Riscrittura `document.tsx` → `document.ts` su pdfkit (AC 1), altezza di riga calcolata prima di disegnare (massimo di `heightOfString`), totali che possono andare a pagina nuova, `bufferPages: true` per «Pag. k di N», una cessione dell'event loop per pagina (`await new Promise(setImmediate)`).
+- [x] `next.config.ts`: `serverExternalPackages: ['pdfkit']`.
+- [x] Sostituire `document.test.ts:69-75` (dipende da react-pdf) con gli unit dell'AC 3; mutanti su copia isolata.
+- [x] Parità visiva e del testo (AC 2); misura «dopo» (AC 4, 5); tetto (AC 6); UI oltre il tetto se Q-17.7-b = B (AC 9).
+- [x] Dipendenze e lockfile (AC 8); target ~2 000 righe in `scripts/perf/targets.json` (+ placeholder «oggi meno N giorni» con la sua riga in `README.md:100-115` se serve); Dev Agent Record.
 
 ## Dev Notes
 
@@ -83,6 +83,57 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 
 ### Agent Model Used
 
+Codex (single delegated development context). Independent review has not yet been performed.
+
 ### Completion Notes List
 
+- Implementation on `story/17-7` from `534d024127efa0798e3007091390f70a8d0cc16d`: `renderReportPdf` retains its TypeScript input and `Promise<Buffer>` result, while `pdfkit` 0.20.2 writes measured, indivisible rows and repeats the heading on every A4 page. The writer yields after adding a page, including a totals-only page, and buffers until the page count is available. `exports.service.ts` and route ACL were not changed. `rg -n '@react-pdf' src package.json` returned no matches (exit 1, expected for grep).
+- Dependency resolution (npm 10 lockfile): `pdfkit` 0.20.2 MIT, `@types/pdfkit` 0.17.7 MIT, `fflate` 0.8.3 MIT, `fontkit` 2.0.4 MIT, `linebreak` **1.1.0** MIT, `@noble/hashes` 1.8.0 MIT, `@noble/ciphers` 1.3.0 MIT. `png-js` 2.0.0 has no package metadata license field, but its installed LICENSE is MIT. The earlier Dev Notes' `linebreak` 2.0.0 expectation does not match pdfkit 0.20.2's declared `^1.1.0` dependency.
+- Baseline engine: `npx tsx scripts/perf/pdf-bench.ts flights 2000 1` (exit 0), 116,095 ms, 58.047 ms/row, 277,953 bytes, peak RSS 1,542,701,056 bytes. Load was below 1 at start, but the one-minute average rose to 1.5 during the long render. Synthetic fixture, no database.
+- Final quiet engine matrix **after page-parity tuning**: `for shape in flights expiries; do for n in 100 500 2000 5000 10000; do npx tsx scripts/perf/pdf-bench.ts "$shape" "$n" 3; done; done` (exit 0, `evidence/17-7/engine-matrix.jsonl`). Each point is the median of three renders; all load averages were <1. The earlier 2,000-row flight measurement at load average 1.94 was discarded. The pre-tuning quiet matrix is superseded by this one.
+
+  | Shape | Rows | Median ms | ms/row | Bytes | Pages | Peak RSS MiB | Load avg |
+  |---|---:|---:|---:|---:|---:|---:|---:|
+  | Flights | 100 | 88 | 0.882 | 15,055 | 5 | 114 | 0.63 |
+  | Flights | 500 | 330 | 0.660 | 67,695 | 22 | 190 | 0.63 |
+  | Flights | 2,000 | **644** | 0.322 | 268,062 | 88 | 377 | 0.74 |
+  | Flights | 5,000 | 1,592 | 0.318 | 667,224 | 218 | 455 | 0.84 |
+  | Flights | 10,000 | 3,524 | 0.352 | 1,333,183 | 435 | 1,200 | 0.88 |
+  | Expiries | 100 | 26 | 0.264 | 7,432 | 3 | 83 | 0.88 |
+  | Expiries | 500 | 112 | 0.225 | 32,947 | 15 | 124 | 0.88 |
+  | Expiries | 2,000 | **417** | 0.208 | 125,575 | 56 | 219 | 0.89 |
+  | Expiries | 5,000 | 632 | 0.126 | 312,783 | 140 | 382 | 0.89 |
+  | Expiries | 10,000 | 1,141 | 0.114 | 623,234 | 278 | 480 | 0.90 |
+
+  The highest round cap below 3 s for the widest shape is **5,000**; Excel remains 10,000.
+- Synthetic load DB `airmanager_load` was created from migrations and seeds only (`seed:load` exit 0; 60,018 flights, 40,000 bookings, 10,792 persisted expiries). At run time, filtered API totals were 1,594 flights for today−41…today, 4,216 registry rows for `window=7` (including computed currency rows), 45 movements for the selected account. An initial production `next start`/`bench.mjs` run (warm-up then five requests per target, exit 0) returned 200 with p50 **2,183 ms** flights, **2,300 ms** expiries, **64 ms** account. The base production build on the same DB and exact target filters (`evidence/17-7/base-endpoint-bench.json`, exit 0) needed **136,835 ms cold + 142,365 ms for the one post-warm flight sample** (200), **702 ms for the one post-warm account sample** (200), and returned 422 for `expiries?window=7` because its old 2,000-row cap rejected 4,216 rows; therefore no successful before-time exists for that expiry target. A separate below-cap expiry-type route with 384 rows returned 200 at 3,016 ms on the base and 181 ms on the new build (one post-warm sample each). **Final** production bundle endpoint run after layout tuning (`evidence/17-7/final-endpoint-bench.json`, warm-up + five samples each, exit 0): all 200, p50 **2,687 ms** flights, **1,551 ms** expiries, **44 ms** account; p95 2,889/2,365/63 ms and body sizes 400,814/294,815/6,990 bytes. The 1,594-flight p50 remains below the 3-second criterion; the old flight number is one post-warm sample only and must not be treated as a five-run median.
+- Phone browser check against the production bundle (synthetic load DB, exit 0): default Logbook and Bookings replace both PDF and Excel links with messages; default Expiries replaces PDF only and keeps Excel; the desktop overview Bookings export also gives both messages. At 375 px all three page messages remained inside the viewport. Filtered Logbook (41 days) and Expiries (7 days) restored both links. The first scratch browser run (exit 1) incorrectly attempted to click the overview's desktop-only export at phone width; rerunning it at 1280 px for that case passed, without a product change.
+- The 40-row visual parity fixtures for all five reports have the same page row distribution as the base renderer: flights 20+20, other four 31+9. Seven before/after raster pairs are in `evidence/17-7/` (page 1 of all five; page 2 of flights and expiries). The title top differs by −1.92 pt, column heading by +0.35 pt, footer by −0.01 pt; footer palette and A4 margins are otherwise visually aligned. The new repeated heading adds about 21 pt at the start of page 2. pdfkit wraps long unbroken tokens within their column where react-pdf allowed overlap; row line boxes were adjusted by 0.5 pt to preserve pagination on these fixtures. Text cells and row order match per page for the frozen fixtures; the newly repeated column headings are intentional. Standard Helvetica still cannot faithfully represent names with glyphs outside WinAnsi (e.g. ł/ș/ő), as on the base renderer.
+
+  A second comparison used **the five real PDF routes against the same frozen synthetic `airmanager_load` database**, with production builds of the base and story and identical filters. `bench.mjs` returned 200 for every route on both builds (exit 0). The first attempt at cash lacked mandatory `from`/`to` and returned 422; the corrected identical 2026-01-01…2026-11-25 filter returned 200 on both. Raster pairs for page 1 of each route and page 2 of flights, expiries, and account are [alongside the machine-readable page record](evidence/17-7/load-layout-parity.json): `load-{report}-page-{page}.png`. All five route page counts and **row identities by page** now agree: flights 8 pages with 9,10,10,10,10,10,10,2 rows; expiries 11 pages with 32,36×9,2; account 3 pages with 21,24,0; bookings and cash one page each. The expiry row strings (all five cells) matched on every page when grouped by y-coordinate, and the full whitespace-normalized text of the one-page bookings and cash reports matched after removing the generation timestamp. For flights/account, date identity and order matched on every page; their text wraps differ, so raw PDF text cannot be compared bytewise. The old renderer's English hyphenation creates six lines for the load flight route, while pdfkit's character wrap creates five. The row pagination now uses the old 9.9 pt line box and reserves one line for long words in multiline cells; continuation rows are 0.5 pt tighter to make room for the requested repeated heading. On page 2 the heading shifts the first expiry row by +19.6 pt and the first flight row by about +51.7 pt, while retaining the same row set. No report data or formatter was changed.
+
+  | Report | Page 1: base / pdfkit | Page 2: base / pdfkit |
+  |---|---|---|
+  | Flights | [side by side](evidence/17-7/flights-page-1.png) | [side by side](evidence/17-7/flights-page-2.png) |
+  | Expiries | [side by side](evidence/17-7/expiries-page-1.png) | [side by side](evidence/17-7/expiries-page-2.png) |
+  | Bookings | [side by side](evidence/17-7/bookings-page-1.png) | — |
+  | Account | [side by side](evidence/17-7/account-page-1.png) | — |
+  | Cash | [side by side](evidence/17-7/cash-page-1.png) | — |
+
+  | Route on frozen load DB | Page 1: base / pdfkit | Page 2: base / pdfkit |
+  |---|---|---|
+  | Flights | [side by side](evidence/17-7/load-flights-page-1.png) | [side by side](evidence/17-7/load-flights-page-2.png) |
+  | Expiries | [side by side](evidence/17-7/load-expiries-page-1.png) | [side by side](evidence/17-7/load-expiries-page-2.png) |
+  | Bookings | [side by side](evidence/17-7/load-bookings-page-1.png) | — |
+  | Account | [side by side](evidence/17-7/load-account-page-1.png) | [side by side](evidence/17-7/load-account-page-2.png) |
+  | Cash | [side by side](evidence/17-7/load-cash-page-1.png) | — |
+- Structural `document.test.ts` uses `node:zlib` to decode the PDF content streams and WinAnsi hex glyphs: footer `Pag. k di N` on every page, headings on each page, 120 unique rows kept intact, em dash for zero rows, long token, and a total carried to a new page. Final `bash scripts/perf/pdf-mutants.sh` (exit 0) copied writer/test into an isolated temporary directory and observed Vitest exit 1 for each mutant: footer total replaced (SHA256 `914f4a365362e3fd4fa323128de1c38fe3429096e1c831f3411365a003c996a6`), page heading removed (`909737eac784b91626d6f8492fdad3978e7bf9f4b4959659891a61e3f83053ce`), row page break removed (`fc862e7d862762ec54474f66132cd2ff7b87a912e54ff0980b520c9cd8884157`); temporary copies were deleted. An initial rerun after page-parity tuning exited 1 with `header: mutation anchor changed`; the harness anchor was updated to the new `continuationPage` line and all three mutant checks then ran. No ACL mutation was performed.
+- First `npm run gates` after engine/UI changes: exit 0, lint/typecheck, **2,306** unit tests, build. Second run after overview feedback: exit 0, same counts. **Final** `npm run gates` after all adapter/page-parity changes: **exit 0**, lint 42 s, typecheck 9 s, **2,307/2,307** unit tests 17 s, build 49 s. `env -u DATABASE_URL -u AUTH_SECRET npx vitest run src/server/adapters/pdf/document.test.ts src/server/services/exports.service.test.ts --reporter=dot`: exit 0, 43/43 tests, proving the adapter does not import eager environment validation.
+- `set -a && . ./.env && set +a && unset NODE_ENV && scripts/e2e.sh start`, followed by the `E2E_EXIT=0` sentinel: **619 passed, 4 flaky recovered, 3 skipped, 0 final failures** (626 distinct cases, 27.0 minutes). All nine `pdf-exports.spec.ts` cases passed: five PDFs from the production bundle, real downloads, ACL 401/403, invalid filters 422. The four first-attempt failures were outside 17.7: a 15 s Mailpit message wait (`account-adjustments.spec.ts:94`), a 30 s `waitForLoadState` (`bookings.spec.ts:1894`), a missing ranked-row locator on first pass (`mobile-reports.spec.ts:420`), and a 30 s POST setup timeout (`session-identity.spec.ts:138`). Each passed its retry. The raw Playwright log is retained in the local scratchpad, but contains session cookies and is not committed or quoted; these are the sanitized diagnostics.
+- **Verification ordering and limit:** the full suite above ran before the final adapter-only page-parity adjustment. After that adjustment, the final `npm run gates` above passed, then `set -a; . ./.env; set +a; unset NODE_ENV; scripts/e2e.sh start e2e/pdf-exports.spec.ts` rebuilt the production bundle and ended with `E2E_EXIT=0`, **9/9 passed in 1.4 min** (all five PDF routes and ACL/error/download cases). The detached runner process remained a zombie briefly after writing its completion sentinel; `scripts/e2e.sh stop` removed its stale lock. The entire 626-case browser suite was **not** rerun after this layout-only adapter change, and independent review remains pending.
+
 ### File List
+
+- `src/server/adapters/pdf/document.ts` (replaces `document.tsx`), `document.test.ts`; `next.config.ts`; `playwright.config.ts`; `package.json`, `package-lock.json`; `src/lib/export-caps.ts`, `src/lib/schemas/registry.ts`; `_bmad-output/planning-artifacts/architecture/architecture-AirManager-2026-07-04/ARCHITECTURE-SPINE.md`.
+- `src/app/[locale]/dashboard/{page.tsx,logbook/page.tsx,logbook/logbook-console.tsx,bookings/page.tsx,bookings/bookings-table.tsx,expiries/page.tsx,expiries/scadenze-console.tsx}`; `messages/{it,en}.json`; `e2e/account-statement-period.spec.ts`.
+- `scripts/perf/{pdf-bench.ts,pdf-mutants.sh,bench.mjs,targets.json,README.md}`; `docs/superpowers/plans/2026-11-25-story-17-7-pdf-stream.md`; fifteen side-by-side PNGs plus benchmark, parity, UI, and SHA-256 records under `_bmad-output/implementation-artifacts/evidence/17-7/`.

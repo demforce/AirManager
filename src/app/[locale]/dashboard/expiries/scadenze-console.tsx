@@ -164,6 +164,8 @@ export type ScadenzeConsoleProps = {
   membershipFeeCents: number;
   exportHref: string;
   exportPdfHref: string;
+  exportPdfUnavailable?: string;
+  exportXlsUnavailable?: string;
   locale: 'it' | 'en';
   labels: ScadenzeConsoleLabels;
 };
@@ -239,6 +241,8 @@ export function ScadenzeConsole({
   membershipFeeCents,
   exportHref,
   exportPdfHref,
+  exportPdfUnavailable,
+  exportXlsUnavailable,
   locale,
   labels,
 }: ScadenzeConsoleProps) {
@@ -521,7 +525,7 @@ export function ScadenzeConsole({
           <button type="button" className="btn scadenze-filters-trigger" onClick={openFilterPanel} data-testid="mobile-scadenze-filters-button">
             {panelActiveCount === 0 ? labels.mobile.filters : labels.mobile.filtersCount.replace('{count}', String(panelActiveCount))}
           </button>
-          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={exportPdfHref} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} />
+          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={exportPdfHref} pdfUnavailable={exportPdfUnavailable} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} xlsUnavailable={exportXlsUnavailable} />
           {canChargeMembershipFee ? (
             <button
               type="button"

@@ -4,6 +4,7 @@ import { redirect } from '@/i18n/navigation';
 import { clampToWindowPercent, formatWallClock, projectDayBlocks, projectWeekChips, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
 import { sanitizeBookingStatusFilter } from '@/lib/booking-status-filter';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
+import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { buildAgendaEntries } from '@/lib/mobile-agenda';
 import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc } from '@/lib/zoned-time';
@@ -375,6 +376,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   const weekDates = weekDatesOnly.map((dateOnly) => ({ dateOnly, href: hrefString({ date: dateOnly }) }));
 
   const t = await getTranslations('BookingsPage');
+  const tExport = await getTranslations('Export');
   const dateLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
 
   // Story 10.1 (AC 5): the export mirrors the SAME `from` + `status` filters
@@ -486,6 +488,8 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         totalPages={totalPages}
         exportHref={exportHref}
         exportPdfHref={exportPdfHref}
+        exportPdfUnavailable={bookingsResult.total > PDF_EXPORT_MAX_ROWS ? tExport('pdfRowsTooLarge', { max: PDF_EXPORT_MAX_ROWS }) : undefined}
+        exportXlsUnavailable={bookingsResult.total > EXPORT_MAX_ROWS ? tExport('xlsRowsTooLarge', { max: EXPORT_MAX_ROWS }) : undefined}
         canCreate={canCreate}
         canCreateNew={canCreateNew}
         status={statusFilter.param}

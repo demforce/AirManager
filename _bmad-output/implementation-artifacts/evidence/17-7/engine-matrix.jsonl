@@ -1,0 +1,10 @@
+{"kind":"flights","rows":100,"iterations":3,"medianMs":88,"msPerRow":0.882,"bytes":15055,"pages":5,"peakRssBytes":120025088,"loadAverage":0.63}
+{"kind":"flights","rows":500,"iterations":3,"medianMs":330,"msPerRow":0.66,"bytes":67695,"pages":22,"peakRssBytes":199254016,"loadAverage":0.63}
+{"kind":"flights","rows":2000,"iterations":3,"medianMs":644,"msPerRow":0.322,"bytes":268062,"pages":88,"peakRssBytes":395616256,"loadAverage":0.74}
+{"kind":"flights","rows":5000,"iterations":3,"medianMs":1592,"msPerRow":0.318,"bytes":667224,"pages":218,"peakRssBytes":476848128,"loadAverage":0.84}
+{"kind":"flights","rows":10000,"iterations":3,"medianMs":3524,"msPerRow":0.352,"bytes":1333183,"pages":435,"peakRssBytes":1258622976,"loadAverage":0.88}
+{"kind":"expiries","rows":100,"iterations":3,"medianMs":26,"msPerRow":0.264,"bytes":7432,"pages":3,"peakRssBytes":87502848,"loadAverage":0.88}
+{"kind":"expiries","rows":500,"iterations":3,"medianMs":112,"msPerRow":0.225,"bytes":32947,"pages":15,"peakRssBytes":129589248,"loadAverage":0.88}
+{"kind":"expiries","rows":2000,"iterations":3,"medianMs":417,"msPerRow":0.208,"bytes":125575,"pages":56,"peakRssBytes":229122048,"loadAverage":0.89}
+{"kind":"expiries","rows":5000,"iterations":3,"medianMs":632,"msPerRow":0.126,"bytes":312783,"pages":140,"peakRssBytes":400801792,"loadAverage":0.89}
+{"kind":"expiries","rows":10000,"iterations":3,"medianMs":1141,"msPerRow":0.114,"bytes":623234,"pages":278,"peakRssBytes":503291904,"loadAverage":0.9}

@@ -536,16 +536,16 @@ test.describe('Estratto conto by period — the scheda persona (story 19.11, AC 
 });
 
 test.describe('Estratto conto by period — the export cap and the self face (story 19.11, AC 21, 25)', () => {
-  test('over 2 000 movements in the period the PDF entry is a readable message, not a link — the Excel stays; under it both are links (AC 25)', async ({ page }) => {
+  test('over 5 000 movements in the period the PDF entry is a readable message, not a link — the Excel stays; under it both are links (AC 25)', async ({ page }) => {
     test.slow();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const heavy = await createPilotPerson(page, 'Tetto');
-    // 2 001 rettifiche of ±1 cent across 2010, net +1 cent (no negative balance for any list to pick up).
+    // 5 001 rettifiche of ±1 cent across 2010, net +1 cent (no negative balance for any list to pick up).
     await seedAccountAdjustments(
       heavy.personId,
-      Array.from({ length: 2001 }, (_, index) => ({
+      Array.from({ length: 5001 }, (_, index) => ({
         amountCents: index % 2 === 0 ? 1 : -1,
-        effectiveDate: new Date(Date.UTC(2010, 0, 1 + Math.floor(index / 6))).toISOString().slice(0, 10),
+        effectiveDate: new Date(Date.UTC(2010, 0, 1 + Math.floor(index / 14))).toISOString().slice(0, 10),
       })),
     );
     const light = await createPilotPerson(page, 'SottoTetto');
@@ -555,12 +555,12 @@ test.describe('Estratto conto by period — the export cap and the self face (st
     );
 
     await page.goto(`/it/dashboard/people/${heavy.personId}?from=2010-01-01&to=2010-12-31`);
-    await expect(page.getByTestId('account-statement-pagination-status')).toHaveText('1 / 101');
+    await expect(page.getByTestId('account-statement-pagination-status')).toHaveText('1 / 251');
     await page.getByTestId('export-menu-trigger').click();
     const unavailable = page.getByTestId('export-menu-pdf-unavailable');
     await expect(unavailable).toBeVisible();
-    // `{max, number}`: Italian CLDR groups from five digits, so the cap reads "2000" (the 10 000 of the Excel cap reads "10.000").
-    await expect(unavailable).toContainText("PDF non disponibile: il periodo ha più di 2000 movimenti. Restringi il periodo o scarica l'Excel.");
+    // `{max, number}`: Italian CLDR groups from five digits, so the cap reads "5000" (the 10 000 of the Excel cap reads "10.000").
+    await expect(unavailable).toContainText("PDF non disponibile: il periodo ha più di 5000 movimenti. Restringi il periodo o scarica l'Excel.");
     await expect(page.getByTestId('export-menu-pdf')).toHaveCount(0);
     await expect(page.getByTestId('export-menu-xls')).toHaveAttribute('href', `/api/v1/people/${heavy.personId}/account/movements?from=2010-01-01&to=2010-12-31&format=xlsx&locale=it`);
     // The server's own 422 stays the last line, unchanged.

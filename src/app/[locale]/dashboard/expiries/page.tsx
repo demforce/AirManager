@@ -2,6 +2,7 @@ import { PICKER_LIMIT } from '@/lib/picker';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
+import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import type { ExpiryItemDto, ExpiryWindowDto, RegistryCategoryDto } from '@/lib/schemas/expiries';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
@@ -71,6 +72,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
   }
 
   const t = await getTranslations('ExpiriesPage');
+  const tExport = await getTranslations('Export');
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
 
   if (canManage) {
@@ -154,6 +156,8 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           membershipFeeCents={membershipFeeCents}
           exportHref={exportHref}
           exportPdfHref={exportPdfHref}
+          exportPdfUnavailable={registryResult.total > PDF_EXPORT_MAX_ROWS ? tExport('pdfRowsTooLarge', { max: PDF_EXPORT_MAX_ROWS }) : undefined}
+          exportXlsUnavailable={registryResult.total > EXPORT_MAX_ROWS ? tExport('xlsRowsTooLarge', { max: EXPORT_MAX_ROWS }) : undefined}
           locale={displayLocale}
           labels={{
             cardTitle: t('registry.cardTitle'),

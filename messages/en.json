@@ -1498,6 +1498,8 @@
   },
   "Export": {
     "button": "Export",
+    "pdfRowsTooLarge": "PDF not available: more than {max, number} rows match these filters. Narrow the filters or use the Excel export.",
+    "xlsRowsTooLarge": "Excel not available: more than {max, number} rows match these filters. Narrow the filters.",
     "pdfTooLarge": "PDF not available: the period has more than {max, number} movements. Narrow the period or use the Excel export.",
     "xlsTooLarge": "Excel not available: the period has more than {max, number} movements. Narrow the period."
   },

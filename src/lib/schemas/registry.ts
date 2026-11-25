@@ -653,7 +653,7 @@ registry.registerPath({
   path: '/api/v1/people/{id}/account/pdf',
   summary: "PDF export of a person's account statement, optionally scoped to a period (story 10.2, AC 2; story 12.9, AC 5; story 19.11)",
   description:
-    'Dedicated PDF route (spine :105), NOT `?format=pdf` on the movements endpoint above. `from`/`to` are optional bounds (story 12.9), with the same rules as the movements endpoint (an inverted pair is a 422): absent means the COMPLETE history. The rows are the screen\'s (value date, most recent first) with a Saldo column, plus a closing "Saldo iniziale" line when `from` is given; the totals are the PERIOD\'s opening balance (when `from` is given) and closing balance (story 19.11). Same own/`people.read` access rule as `GET /api/v1/people/{id}/account/movements`. Above `2000` rows: 422 `EXPORT_TOO_LARGE` (use the xlsx export instead).',
+    'Dedicated PDF route (spine :105), NOT `?format=pdf` on the movements endpoint above. `from`/`to` are optional bounds (story 12.9), with the same rules as the movements endpoint (an inverted pair is a 422): absent means the COMPLETE history. The rows are the screen\'s (value date, most recent first) with a Saldo column, plus a closing "Saldo iniziale" line when `from` is given; the totals are the PERIOD\'s opening balance (when `from` is given) and closing balance (story 19.11). Same own/`people.read` access rule as `GET /api/v1/people/{id}/account/movements`. Above `5000` rows: 422 `EXPORT_TOO_LARGE` (use the xlsx export instead).',
   tags: ['Accounts'],
   security,
   request: { params: personIdParams, query: accountStatementPdfQuerySchema },
@@ -981,7 +981,7 @@ registry.registerPath({
   path: '/api/v1/flights/pdf',
   summary: 'PDF export of the flight log (story 10.2, AC 2)',
   description:
-    'Dedicated PDF route (spine :105), same query schema and own/admin scoping as `GET /api/v1/flights` above (`page`/`pageSize`/`format` are accepted but ignored — this always re-pages internally up to the PDF cap). Totals line: sum of `minutes` (`H:MM`) and sum of `breakdown.totalAmountCents`, computed here, never in `flights.service.ts`. Above `2000` filtered rows: 422 `EXPORT_TOO_LARGE`.',
+    'Dedicated PDF route (spine :105), same query schema and own/admin scoping as `GET /api/v1/flights` above (`page`/`pageSize`/`format` are accepted but ignored — this always re-pages internally up to the PDF cap). Totals line: sum of `minutes` (`H:MM`) and sum of `breakdown.totalAmountCents`, computed here, never in `flights.service.ts`. Above `5000` filtered rows: 422 `EXPORT_TOO_LARGE`.',
   tags: ['Flights'],
   security,
   request: { query: listFlightsQuerySchema },

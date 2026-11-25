@@ -19,6 +19,7 @@ const contentSecurityPolicy = [
 ].join('; ');
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ['pdfkit'],
   // Dev-only: Next 16 blocks /_next/* dev resources from non-localhost
   // origins, which silently prevents hydration when browsing the dev
   // server via LAN IP (VirtualBox host-only adapter).
