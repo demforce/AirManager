@@ -1130,6 +1130,16 @@ html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
 }
 .so-title{ font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
 .so-body{ flex: 1; overflow: auto; padding: 18px 20px; }
+/* Keep the AOG result link's original desktop block box; the phone panel
+   applies its shared 44px link floor farther below. */
+.aog-impact-bookings-link{ display: block; }
+
+/* Public access pages share a link affordance in both themes and at every
+   width. Phone geometry is defined with the rest of the <=640px floor. */
+.auth-page{ position: relative; }
+.auth-page a{ color: var(--ink); text-decoration: underline; }
+.auth-page a:hover{ color: var(--ink); }
+.auth-locale-switch{ position: absolute; top: 12px; right: 24px; }
 /* Review 15.10 MAJOR-3 (PO decision 2026-08-06): the safe-area inset the
    `.so-actions` bar it REPLACED already carried. Story 15.10 turned this foot
    into the primary action of the full-screen panel (R-15.10-f, 7 call-sites
@@ -1817,8 +1827,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      Review 15.10 MAJOR-3: `env(safe-area-inset-top)`, the other half of
      `viewport-fit=cover`. This bar is `sticky; top: 0`, so in standalone mode
      on a notched phone its content renders UNDER the status bar / notch
-     without it. Same non-regression as every other inset in this file: at
-     inset 0 the padding stays exactly 10px. */
+     without it. The base padding remains 10px; story 18.1 uses 4px at the
+     phone breakpoint so the 44px controls still fit a 53px bar. */
   .mobile-topbar{
     display: flex; align-items: center; gap: 10px;
     padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
@@ -2967,14 +2977,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      header and the anchored action; the body only needs the editors' own
      vertical rhythm on one column. */
   .scadenze-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
-  /* Every control of the panel is a control of the head that moved into it
-     (R4), so AC 5/6's 44px floor follows it there: measured without this,
-     the tipo select was 36px. Bounded by the panel class this story owns;
-     the `SlideOver` chassis is untouched. */
-  .scadenze-filter-panel .input{ min-height: 44px; }
-  /* The 36px trigger this story anchored here is now the app-wide 44px floor
-     of story 15.10 (R-15.10-d): the rule that replaced it is at the end of
-     this file, and the value went 36 -> 44 on this panel. */
+  /* Controls now inherit story 18.1's shared `.so-body` floor. Calendar
+     triggers remain covered by the shared rule from story 15.10. */
 
   /* --- the scadenza card (template 266-286) ---
      `.mobile-row` already IS this row (`1fr auto`, 11px 16px, border-top, an
@@ -3216,15 +3220,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
 
   /* --- the "Filtri" panel ---
      `SlideOver`'s full-screen mobile mode (15.2) already gives the fixed header
-     and the anchored action; the body only needs the editors' own vertical
-     rhythm on one column. Every control of a panel is a control of the head
-     that moved into it (R4), so the 44px floor follows it there: measured
-     without these, the categoria select was 35px and the two date fields
-     38.84px with a 24x24 calendar trigger. Bounded by the panel class this
-     story owns; the `SlideOver` chassis and `.date-input` elsewhere are
-     untouched. */
+     and the anchored action; the body keeps only the editors' own vertical
+     rhythm on one column. Controls inherit story 18.1's shared floor. */
   .billing-filter-panel{ display: flex; flex-direction: column; gap: 14px; }
-  .billing-filter-panel .input{ min-height: 44px; }
   /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
 
   /* --- the three writes, inside the sheet (R-15.8a-g) ---
@@ -3252,17 +3250,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
      card AC 6 had not named. Anchored to the card's own class. */
   .billing-negative-card > .card-head > a{ display: inline-flex; align-items: center; min-height: 44px; }
 
-  /* --- "Nuova transazione": the six fields of the full-screen form (TD (k), AC 15 b) ---
-     R3 was already satisfied by `SlideOver`'s mobile mode (measured: 0,0
-     375x812, `.so-foot` anchored at the bottom, `transaction-submit` 161.39x44),
-     but the fields inside it were 34.84-38.84px with a 24x24 calendar trigger.
-     Anchored to the form's OWN class, inside the phone query, so the desktop is
-     untouched by construction — and re-measured at 1280 to prove it. The ✕ of
-     the `SlideOver` chassis (32x32) and the typeahead's own 36px options are
-     NOT touched here: they belong to a primitive with eleven consumers (TD (k),
-     declared, not closed). */
-  .transaction-form .input{ min-height: 44px; }
-  /* 36px trigger replaced by the app-wide 44px floor of story 15.10 (R-15.10-d). */
+  /* The transaction form inherits story 18.1's shared panel floor, while
+     calendar triggers and typeahead options retain story 15.10's floor. */
 
   /* R-15.8a-f, the other half: the two secondary cards stop being two 151.5px
      columns with a horizontal scroller each. Stacking alone is not enough,
@@ -3704,6 +3693,34 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
 }
 
 @media (max-width: 640px){
+  /* Story 18.1: one shared form-panel floor, including secondary actions,
+     document pills and the effective hit area of native checkboxes. */
+  .so-body :is(.input, .btn, .expiry-chip, .segmented > button, .segmented > a){ min-height: 44px; }
+  .so-body :is(.btn, .expiry-chip, .segmented > button, .segmented > a){ min-width: 44px; }
+  .so-body .alert-box a[href]{ display: inline-flex; align-items: center; min-height: 44px; }
+  .so-body label:has(> input[type="checkbox"]){ min-height: 44px; }
+  .so-head > div{ min-width: 0; overflow-wrap: anywhere; }
+  .so-head .iconbtn{ flex-shrink: 0; }
+
+  /* Keep the topbar at 53px at zero inset: 44px controls + 4px on each side
+     + its existing 1px border. The tab bar remains untouched. */
+  .mobile-topbar{ padding-top: calc(4px + env(safe-area-inset-top)); padding-bottom: 4px; }
+  .mobile-topbar > .iconbtn,
+  .mobile-avatar-btn{ width: 44px; height: 44px; }
+
+  /* Date navigation and the PO's phone controls beyond SlideOvers. */
+  .date-nav .iconbtn{ width: 44px; height: 44px; }
+  .date-nav .date-pick-btn{ min-height: 44px; }
+  .page .segmented > :is(button, a){ min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .page .export-menu-trigger{ min-height: 44px; }
+  .booking-pagination > .btn{ min-width: 44px; min-height: 44px; justify-content: center; }
+  .recent-flights-view-all{ display: inline-flex; align-items: center; min-height: 44px; }
+
+  /* Public forms and links. The desktop box and spacing remain unchanged. */
+  .auth-page :is(.input, .btn, a[href]){ min-height: 44px; }
+  .auth-page a[href]{ display: inline-flex; align-items: center; }
+  .auth-locale-switch{ min-width: 44px; justify-content: center; }
+
   /* --- (4) the calendar trigger, five faces and ONE rule (R-15.10-d) ---
      `.date-input-btn` is 24x24 app-wide. Four stories raised it on their own
      surface (36px on billing/transaction/settings, 44px on the account
@@ -3752,29 +3769,8 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
      the card sets when `showActor === false`. -20.3px, self face only. */
   .account-head-self .card-title{ display: none; }
 
-  /* --- (10) the "Fuori servizio" submit (story AOG-1a, ratifica R-AOG-g) ---
-     `out-of-service-submit` is the ONE secondary section action this story
-     touches, and it touches it because the story ALSO pushes it further down
-     the panel (the Disponibilità section gains a date field above it). Measured
-     at 375x812 before this rule: 335 x 34.84, bottom edge at y 841 — 29px below
-     the fold. R-15.10-f deliberately left the secondary section actions
-     (tariffe, archivio) where they were and this rule does NOT
-     reopen that: it is anchored to THIS button's own testid, inside
-     `@media (max-width: 640px)`, so the desktop box stays identical to the
-     hundredth and no other action moves. Same `min-height: 44px` floor, and the
-     same "anchor on something this surface owns" discipline, as the nine rules
-     above. */
-  [data-testid="out-of-service-submit"]{ min-height: 44px; }
-
-  /* --- (11) the two controls of the double step (story AOG-1b, AC 3) ---
-     The armed state REPLACES the submit above with a Conferma/Annulla pair
-     (same idiom as the Archivio section). They are NEW controls on a surface
-     this story touches, so they take the same 44px floor rather than inheriting
-     the 34.84px the `.btn` base gives them — and rule (10) above is left
-     byte-identical instead of being widened, so story AOG-1a's own measure
-     still describes exactly what it measured. */
-  [data-testid="out-of-service-confirm"],
-  [data-testid="out-of-service-cancel"]{ min-height: 44px; }
+  /* The AOG submit and double-step buttons now inherit the same `.so-body`
+     floor as the other section actions (story 18.1). */
 }
 
 /* ---------- estratto conto a periodo (story 19.11, AD-5/AD-6/AD-8) ----------

@@ -450,7 +450,7 @@ export default async function PersonDetailPage({ params, searchParams }: PagePro
                 href={canManageFlights ? { pathname: '/dashboard/logbook', query: { personId: person.id } } : '/dashboard/logbook'}
                 locale={locale as AppLocale}
                 data-testid="recent-flights-view-all"
-                className="card-sub"
+                className="card-sub recent-flights-view-all"
                 style={{ textDecoration: 'underline' }}
               >
                 {t('recentFlightsPanel.viewAll')}

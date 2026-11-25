@@ -500,7 +500,7 @@ development_status:
   17-8-alert-job-a-lotti: done  # revisione indipendente GPT 6 Sol xhigh approvata; limiti SMTP/AOG documentati
   epic-17-retrospective: optional
   epic-18: backlog
-  18-1-pavimento-mobile-unico: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.1-a..d; dev Opus DOPO 16.8 (chiude TD 16.8-f)
+  18-1-pavimento-mobile-unico: review  # sviluppo e gate locali completati; revisione indipendente pendente, non done
   18-2-fold-liste: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.2-a..d; SPLIT 18.2a (fold) / 18.2b (stati vuoti), entrambe nel file; dev Opus DOPO 16.6a/16.6b/17.3/18.1
   18-3-indietro-chiude-navigazione-risponde: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.3-a..c; SPLIT 18.3a (Indietro chiude) / 18.3b (scheletro e pending, dopo l'Epic 17), entrambe nel file; dev Opus
   18-4-filtri-pianificazione-mobile: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.4-a..c; dev Opus DOPO 17.2 e 17.6 (rimisurare)

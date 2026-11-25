@@ -1090,7 +1090,7 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     expect(desktopFeedback.display).toBe('block');
   });
 
-  test('AC 12 viii/ix: i selettori nuovi non raggiungono gli overlay di questa pagina ne il resto dell\'app', async ({ page }) => {
+  test('AC 12 viii/ix, 18.1 PO: desktop invariato e pin telefonico di Pianificazione aggiornato', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
 
     // The `.mini-modal`s and the `SlideOver` keep their desktop geometry.
@@ -1098,10 +1098,9 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     await gotoBilling(page);
     await page.getByTestId('billing-new-transaction-button').click();
     await expect(page.getByTestId('transaction-form')).toBeVisible();
-    // The phone rule that puts a 44px floor under this form's fields is bounded
-    // by `@media (max-width: 640px)` AND by `.transaction-form`: at 1280 every
-    // control keeps its pre-fix height, all of them under 44. Heights are what
-    // the rule changes — widths depend on the label text and are not the guard.
+    // The shared 18.1 phone rule puts a 44px floor under this form's fields
+    // inside `.so-body`. At 1280 every control keeps its pre-fix height, all
+    // of them under 44. Widths depend on the label text and are not the guard.
     const editorHeights = await page.evaluate(() => {
       const out: Record<string, number> = {};
       for (const id of ['transaction-kind', 'transaction-person', 'transaction-amount', 'transaction-method', 'transaction-date', 'transaction-description', 'transaction-submit']) {
@@ -1156,7 +1155,10 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
       // from the DOM, so only the visible 281px bar width remains.
       '/it/dashboard/reports': { splits: [319, 319, 319], segmentedHeights: [46, 46, 46], utilBarWidths: [281], dateInputs: [] },
       '/it/dashboard/logbook': { splits: [], segmentedHeights: [], utilBarWidths: [], dateInputs: [0, 0, 335] },
-      '/it/dashboard/bookings': { splits: [], segmentedHeights: [33.39], utilBarWidths: [], dateInputs: [335, 335] },
+      // PO Q-18.1-a deliberately raises Giorno/Settimana: the container is
+      // now 50px after its 44px children plus padding/border, while the other
+      // neighbours below keep their original geometry.
+      '/it/dashboard/bookings': { splits: [], segmentedHeights: [50], utilBarWidths: [], dateInputs: [335, 335] },
     };
     for (const [path, expected] of Object.entries(neighbours)) {
       await page.goto(path);

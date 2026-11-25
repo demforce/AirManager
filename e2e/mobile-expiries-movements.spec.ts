@@ -654,10 +654,10 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
   });
 
   // -------------------------------------------------------------------------
-  // AC 12 — the rules that touch OTHER pages must not have moved them
+  // AC 12 — story 18.1 intentionally updates the phone segmented targets
   // -------------------------------------------------------------------------
 
-  test('AC 12/13: nessuna regola nuova tocca `.segmented` (Pianificazione, Statistiche, Panoramica) ne` `.date-input` fuori dal pannello Filtri Scadenze', async ({ page }) => {
+  test('AC 12/13 e 18.1 PO: `.segmented` telefonici a 44, `.date-input` fuori dai Filtri Scadenze invariati', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await login(page, ADMIN_EMAIL);
 
@@ -679,32 +679,25 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
       });
       if (segmented) {
         // The 15.7 rules hide the Scadenze finestra through a class of ITS OWN
-        // page; `.segmented` itself keeps the computed style it has had since
-        // 12.1 — asserted on the class, not on a rect (on `/dashboard` the
+        // page; the shared phone floor now reaches rendered controls. On `/dashboard` the
         // widget that carries it lives inside a `.home-desktop-surface` that
         // 15.3 already hides at this width, so its rect is legitimately 0).
         expect(segmented.display, `${url} .segmented display`).toBe('flex');
         if (url === '/it/dashboard/reports') {
           // Story 15.8b OWNS this page and its AC 1 raises both toggles to the
           // 44px floor — through the page-owned classes `.reports-period` /
-          // `.reports-rank-metrics`, never through `.segmented`, which is
-          // exactly what this guard exists to check. So here the assertion is
-          // on the OWNER *and on the post-15.8b VALUE*: the floor must be
-          // there, and it may only arrive with one of those classes. The class
-          // match alone is unconditional markup, i.e. an assertion nothing
-          // could ever fail (review 15.8b LOW-3); the height is what makes the
-          // reports branch discriminate in both directions.
-          // The "untouched" expectation below still runs on the two pages no
-          // story owns, where a rule written on `.segmented` itself would
-          // land anyway.
+          // `.reports-rank-metrics` still owns this face, while 18.1 extends
+          // the same phone floor to the other rendered consumers.
           expect(segmented.cls, `${url} .segmented owner class`).toMatch(/\breports-(period|rank-metrics)\b/);
           expect(segmented.btnMinHeight, `${url} .segmented child min-height`).toBe('44px');
           expect(segmented.btnH, `${url} .segmented button height`).toBeGreaterThanOrEqual(43.5);
         } else {
-          expect(segmented.btnMinHeight, `${url} .segmented child min-height`).not.toBe('44px');
+          // Story 18.1 PO Q-18.1-a: the shared phone floor now includes the
+          // Pianificazione, Scadenze and Panoramica segmented controls.
+          expect(segmented.btnMinHeight, `${url} .segmented child min-height`).toBe('44px');
           if (segmented.rendered) {
             expect(segmented.h, `${url} .segmented height`).toBeGreaterThan(20);
-            expect(segmented.btnH, `${url} .segmented button height`).toBeLessThan(43.5);
+            expect(segmented.btnH, `${url} .segmented button height`).toBeGreaterThanOrEqual(43.5);
           }
         }
       }

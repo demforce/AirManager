@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { addDaysIso, todayRome } from './helpers';
+import { addDaysIso, ensureValidSeedExpiries, registerFlightOn, todayRome } from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
+import { NAV_ITEMS } from '@/components/shell/route-registry';
 
 /**
  * Story 15.10 — the ink and the touch targets of the final sweep
@@ -13,7 +15,8 @@ import { addDaysIso, todayRome } from './helpers';
  * a `display: none` branch — which would otherwise report the colours of a
  * tree nobody sees (the method the whole epic has used since 15.3).
  *
- * Writes no global state: it reads pages and measures. Default project.
+ * Story 18.1 adds isolated, run-unique synthetic fixtures for edit and payment
+ * states; the earlier read-only sweeps below remain unchanged. Default project.
  */
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -33,7 +36,7 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Accedi' }).click();
-  await expect(page).toHaveURL(/\/it\/dashboard$/);
+  await expect(page).toHaveURL(/\/it\/dashboard$/, { timeout: 15_000 });
 }
 
 async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
@@ -78,6 +81,20 @@ async function installContrast(page: Page): Promise<void> {
   await page.evaluate(new Function(`return (${INSTALL_CONTRAST})()`) as () => boolean);
 }
 
+async function authLinksClearContrast(page: Page, face: string): Promise<void> {
+  await installContrast(page);
+  const links = await page.locator('main a[href]').evaluateAll((elements) => elements.filter((el) => el.getClientRects().length).map((el) => ({
+    text: el.textContent?.trim(),
+    ratio: (window as unknown as { __contrast: (el: Element) => number }).__contrast(el),
+    decoration: getComputedStyle(el).textDecorationLine,
+  })));
+  expect(links.length, `${face}: at least the locale switch remains reachable`).toBeGreaterThan(0);
+  for (const link of links) {
+    expect(link.ratio, `${face}: ${link.text}`).toBeGreaterThanOrEqual(4.5);
+    expect(link.decoration, `${face}: ${link.text}`).toBe('underline');
+  }
+}
+
 /** Every RENDERED interactive target under `root` whose smaller side is below the floor. */
 const SMALL_TARGETS = `(arg) => {
   const scope = document.querySelector(arg.root);
@@ -86,13 +103,26 @@ const SMALL_TARGETS = `(arg) => {
   const out = [];
   for (const el of scope.querySelectorAll(selector)) {
     if (!el.getClientRects().length) continue;
+    // A native checkbox is intentionally 13px; its containing label is the
+    // effective target. Calendar cells and the time field are the sole PO
+    // exemptions, and the popover is portalled outside a SlideOver anyway.
+    if (el.matches('input[type="checkbox"]') && el.parentElement?.tagName === 'LABEL') continue;
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
-    if (r.height >= arg.floor) continue;
+    if (Math.min(r.width, r.height) >= arg.floor) continue;
     out.push({
       tid: el.getAttribute('data-testid'),
       cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40),
       name: (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 24),
+      w: Math.round(r.width * 100) / 100, h: Math.round(r.height * 100) / 100,
+    });
+  }
+  for (const label of scope.querySelectorAll('label:has(> input[type="checkbox"])')) {
+    if (!label.getClientRects().length) continue;
+    const r = label.getBoundingClientRect();
+    if (Math.min(r.width, r.height) < arg.floor) out.push({
+      tid: label.querySelector('input')?.getAttribute('data-testid'), cls: 'checkbox-label',
+      name: (label.textContent || '').trim().slice(0, 24),
       w: Math.round(r.width * 100) / 100, h: Math.round(r.height * 100) / 100,
     });
   }
@@ -110,6 +140,20 @@ async function settledPanel(page: Page): Promise<void> {
   await expect(page.locator('.slideover.open .slideover-panel')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
 }
 
+/** Open a phone detail and its editor after the route has hydrated. */
+async function openMobileEditor(page: Page, card: string, edit: string): Promise<void> {
+  await expect(async () => {
+    if (await page.locator('.slideover.open').count()) return;
+    if (!await page.locator('.mobile-sheet-panel:visible').count()) {
+      await page.locator(card).first().click({ timeout: 2_000 });
+      await expect(page.locator('.mobile-sheet-panel')).toBeVisible({ timeout: 2_000 });
+    }
+    await page.getByTestId(edit).click({ timeout: 2_000 });
+    await expect(page.locator('.slideover.open')).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+  await settledPanel(page);
+}
+
 async function smallTargets(page: Page, root: string, floor = TARGET_FLOOR): Promise<Array<Record<string, unknown>>> {
   const result = (await page.evaluate(new Function('arg', `return (${SMALL_TARGETS})(arg)`) as (arg: unknown) => unknown, {
     root,
@@ -118,6 +162,474 @@ async function smallTargets(page: Page, root: string, floor = TARGET_FLOOR): Pro
   expect(result, `root not found: ${root}`).not.toBeNull();
   return result!;
 }
+
+const TOUCH_EDITORS = [
+  { name: 'flight', path: '/it/dashboard/logbook', trigger: 'logbook-new-button' },
+  { name: 'aircraft', path: '/it/dashboard/fleet', trigger: 'fleet-new-button' },
+  { name: 'pilot', path: '/it/dashboard/pilots', trigger: 'pilots-new-button' },
+  { name: 'instructor', path: '/it/dashboard/instructors', trigger: 'instructors-new-button' },
+  { name: 'booking', path: '/it/dashboard/bookings', trigger: 'new-booking-button' },
+] as const;
+
+/** Own rows for the edit sweep; never depend on another parallel spec's data. */
+async function createTouchEditRows(page: Page): Promise<{ personId: string; aircraftId: string }> {
+  const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
+  const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'Pavimento', lastName: `Touch${suffix}` } });
+  expect(personResponse.status()).toBe(201);
+  const { id: personId } = await personResponse.json() as { id: string };
+  expect((await page.request.put(`/api/v1/people/${personId}/profiles/pilot`, { data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' } })).status()).toBe(200);
+  await ensureValidSeedExpiries(page, personId, 'PILOTS');
+  const aircraftResponse = await page.request.post('/api/v1/aircraft', { data: { registration: `I-T${suffix}`.slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Story 18.1 synthetic' } });
+  expect(aircraftResponse.status()).toBe(201);
+  const { id: aircraftId } = await aircraftResponse.json() as { id: string };
+  await seedAircraftRate(aircraftId, { studentPriceCents: 10000, pilotPriceCents: 10000, validFrom: '2020-01-01' });
+  await registerFlightOn(page, { aircraftId, personId, flightType: 'TOURISM', date: todayRome(), noCharge: true });
+  const bookingDate = addDaysIso(todayRome(), 3);
+  const booking = await page.request.post('/api/v1/bookings', { data: { aircraftId, personId, startsAt: `${bookingDate}T10:00:00.000Z`, endsAt: `${bookingDate}T11:00:00.000Z`, force: true } });
+  expect(booking.status(), await booking.text()).toBe(201);
+  return { personId, aircraftId };
+}
+
+/** An owed row, created only for the Paga panel geometry test. */
+async function createTouchPayRow(page: Page): Promise<string> {
+  const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
+  const createPerson = async (firstName: string) => {
+    const response = await page.request.post('/api/v1/people', { data: { firstName, lastName: `Touch${suffix}${firstName}` } });
+    expect(response.status()).toBe(201);
+    return (await response.json() as { id: string }).id;
+  };
+  const instructorId = await createPerson('Istruttore');
+  expect((await page.request.put(`/api/v1/people/${instructorId}/profiles/instructor`, { data: { ratings: 'FI(A)' } })).status()).toBe(200);
+  const studentId = await createPerson('Allievo');
+  expect((await page.request.put(`/api/v1/people/${studentId}/profiles/student`, { data: { courseStartDate: '2020-01-01' } })).status()).toBe(200);
+  await ensureValidSeedExpiries(page, instructorId, 'INSTRUCTORS');
+  await ensureValidSeedExpiries(page, studentId, 'STUDENTS');
+  const aircraft = await page.request.post('/api/v1/aircraft', { data: { registration: `I-P${suffix}`.slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Story 18.1 synthetic' } });
+  expect(aircraft.status()).toBe(201);
+  const { id: aircraftId } = await aircraft.json() as { id: string };
+  await seedAircraftRate(aircraftId, { studentPriceCents: 10000, pilotPriceCents: 10000, validFrom: '2020-01-01' });
+  await seedInstructorRate(instructorId, { priceCentsPerHour: 10000, validFrom: '2020-01-01' });
+  expect((await page.request.put(`/api/v1/instructor-compensation/${instructorId}/rate`, { data: { payoutRateCents: 3000 } })).status()).toBe(200);
+  await registerFlightOn(page, { aircraftId, personId: studentId, instructorPersonId: instructorId, flightType: 'SCHOOL', date: todayRome() });
+  return instructorId;
+}
+
+test.describe('story 18.1 — one phone touch floor', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    test(`public auth pages: phone targets, return paths and ${theme} link contrast`, async ({ page }) => {
+      await setTheme(page, theme);
+      await page.setViewportSize(PHONE);
+      await page.goto('/it/login?callbackUrl=%2Fit%2Fdashboard%2Fbookings%3Fview%3Dweek');
+      expect(await smallTargets(page, 'main'), 'login').toEqual([]);
+      await authLinksClearContrast(page, 'login');
+      const forgot = page.getByRole('link', { name: 'Password dimenticata?' });
+      await expect(forgot).toBeVisible();
+      expect(await forgot.evaluate((el) => (window as unknown as { __contrast: (el: Element) => number }).__contrast(el))).toBeGreaterThanOrEqual(4.5);
+      await expect(forgot).toHaveCSS('text-decoration-line', 'underline');
+      await expect(page.getByTestId('auth-locale-switch')).toHaveText('English');
+      await page.getByTestId('auth-locale-switch').click();
+      await expect(page).toHaveURL(/\/en\/login\?/);
+      expect(new URL(page.url()).searchParams.get('callbackUrl')).toBe('/en/dashboard/bookings?view=week');
+      await expect(page.getByTestId('auth-locale-switch')).toHaveText('Italiano');
+
+      await page.goto('/it/forgot-password');
+      expect(await smallTargets(page, 'main'), 'forgot form').toEqual([]);
+      await authLinksClearContrast(page, 'forgot form');
+      await page.route('**/api/v1/auth/forgot-password', (route) => route.fulfill({ status: 200, body: '{}' }));
+      await page.getByLabel('Email').fill('synthetic-181@example.invalid');
+      await page.getByRole('button', { name: 'Invia link di reimpostazione' }).click();
+      await expect(page.getByTestId('forgot-password-confirmation')).toBeVisible();
+      expect(await smallTargets(page, 'main'), 'forgot confirmation').toEqual([]);
+      await authLinksClearContrast(page, 'forgot confirmation');
+      const back = page.getByRole('link', { name: "Torna all'accesso" });
+      expect(await back.evaluate((el) => (window as unknown as { __contrast: (el: Element) => number }).__contrast(el))).toBeGreaterThanOrEqual(4.5);
+
+      await page.goto('/it/set-password');
+      await expect(page.getByTestId('set-password-missing-token')).toBeVisible();
+      expect(await smallTargets(page, 'main'), 'missing token').toEqual([]);
+      await authLinksClearContrast(page, 'missing token');
+      await expect(page.getByRole('link', { name: "Torna all'accesso" })).toHaveAttribute('href', '/it/login');
+      await page.goto('/it/set-password?token=synthetic-181-token');
+      expect(await smallTargets(page, 'main'), 'set form').toEqual([]);
+      await authLinksClearContrast(page, 'set form');
+      await expect(page.getByTestId('auth-locale-switch')).toHaveAttribute('href', '/en/set-password?token=synthetic-181-token');
+      await page.route('**/api/v1/auth/set-password', (route) => route.fulfill({ status: 200, body: '{}' }));
+      await page.getByLabel('Nuova password').fill('synthetic-pass-181');
+      await page.getByLabel('Conferma password').fill('synthetic-pass-181');
+      await page.getByRole('button', { name: 'Imposta password' }).click();
+      await expect(page.getByTestId('set-password-success')).toBeVisible();
+      expect(await smallTargets(page, 'main'), 'set success').toEqual([]);
+      await authLinksClearContrast(page, 'set success');
+    });
+
+    test(`auth desktop stays dense and links clear 4.5:1 in ${theme}`, async ({ page }) => {
+      await setTheme(page, theme);
+      await page.setViewportSize(DESKTOP);
+      for (const path of ['/it/login', '/it/forgot-password', '/it/set-password?token=synthetic-181-token', '/it/set-password']) {
+        await page.goto(path);
+        await installContrast(page);
+        const values = await page.locator('main').evaluate((root) => [...root.querySelectorAll('input, button, a[href]')].filter((el) => el.getClientRects().length).map((el) => ({
+          tag: el.tagName,
+          className: typeof el.className === 'string' ? el.className : '',
+          h: Number(el.getBoundingClientRect().height.toFixed(2)),
+          ratio: el.tagName === 'A' ? (window as unknown as { __contrast: (el: Element) => number }).__contrast(el) : 0,
+          decoration: getComputedStyle(el).textDecorationLine,
+        })));
+        expect(values.filter((v) => v.tag === 'INPUT').every((v) => v.h === 36.84), path).toBe(true);
+        expect(values.filter((v) => v.tag === 'BUTTON').every((v) => v.h === 34.84), path).toBe(true);
+        for (const link of values.filter((v) => v.tag === 'A')) {
+          expect(link.ratio, `${path} ${link.className}`).toBeGreaterThanOrEqual(4.5);
+          expect(link.decoration).toBe('underline');
+        }
+      }
+    });
+  }
+
+  for (const width of [320, 375]) {
+    for (const theme of ['light', 'dark'] as const) {
+      test(`new editors at ${width}px / ${theme}: no undersized targets, including checkbox labels`, async ({ page }) => {
+        test.setTimeout(90_000);
+        await setTheme(page, theme);
+        await loginExpectingDashboard(page, ADMIN_EMAIL);
+        await page.setViewportSize({ width, height: 812 });
+        for (const editor of TOUCH_EDITORS) {
+          await page.goto(editor.path);
+          await page.getByTestId(editor.trigger).click();
+          await expect(page.locator('.slideover.open .slideover-panel')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+          const small = await smallTargets(page, '.slideover.open');
+          expect(small, `${editor.name} ${width}px ${theme}: ${JSON.stringify(small)}`).toEqual([]);
+          if (editor.name === 'pilot') {
+            await page.getByTestId('new-person-grant-access').check();
+            expect(await smallTargets(page, '.slideover.open'), 'pilot access expanded').toEqual([]);
+            await page.getByTestId('new-person-activate-pilot').check();
+            const chip = page.locator('[data-testid^="rating-chip-"]').first();
+            await expect(chip).toBeVisible();
+            await chip.click();
+            expect(await smallTargets(page, '.slideover.open'), 'pilot document date expanded').toEqual([]);
+          }
+        }
+      });
+    }
+  }
+
+  for (const width of [320, 375]) {
+    for (const theme of ['light', 'dark'] as const) {
+      test(`edit editors, three filters, money and instructor panels clear the floor at ${width}px in ${theme}`, async ({ page }) => {
+        test.setTimeout(180_000);
+        await setTheme(page, theme);
+        await loginExpectingDashboard(page, ADMIN_EMAIL);
+        const own = await createTouchEditRows(page);
+        await page.setViewportSize({ width, height: 812 });
+
+        const checkPanel = async (name: string) => {
+          await expect(page.locator('.slideover.open .slideover-panel')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+          expect(await smallTargets(page, '.slideover.open'), `${name}: undersized controls`).toEqual([]);
+        };
+        const simple = [
+          ['/it/dashboard/logbook', 'mobile-flight-filters-button', 'flight filters'],
+          ['/it/dashboard/expiries', 'mobile-scadenze-filters-button', 'expiry filters'],
+          ['/it/dashboard/billing', 'mobile-billing-filters-button', 'billing filters'],
+          ['/it/dashboard/billing', 'billing-new-transaction-button', 'new transaction'],
+          ['/it/dashboard/instructors', 'instructors-payment-cycle-button', 'payment cycle'],
+          ['/it/dashboard/instructors', 'instructors-new-button', 'add instructor'],
+        ] as const;
+        for (const [path, button, name] of simple) {
+          await page.goto(path);
+          // A cold client hydration can leave the server-rendered button visible
+          // a moment before React has attached its handler. Retrying the open
+          // gesture is safe: the assertion still fails if the panel never opens.
+          await expect(async () => {
+            if (await page.locator('.slideover.open').count() === 0) await page.getByTestId(button).click();
+            await expect(page.locator('.slideover.open')).toBeVisible({ timeout: 2_000 });
+          }).toPass({ timeout: 10_000 });
+          await checkPanel(name);
+        }
+
+        for (const editor of [
+          { path: '/it/dashboard/fleet', card: '[data-testid^="mobile-fleet-card-"]', action: 'aircraft-edit-mobile', name: 'aircraft edit' },
+          { path: '/it/dashboard/pilots', card: '[data-testid^="mobile-pilot-row-"]', action: 'pilot-edit-mobile', name: 'pilot edit' },
+          { path: '/it/dashboard/instructors', card: '[data-testid^="mobile-instructor-row-"]', action: 'instructor-edit-mobile', name: 'instructor edit' },
+        ]) {
+          await page.goto(editor.path);
+          await page.locator(editor.card).first().click();
+          await expect(page.locator('.mobile-sheet-panel')).toBeVisible();
+          expect(await smallTargets(page, '.mobile-sheet-panel'), `${editor.name} detail sheet`).toEqual([]);
+          await page.getByTestId(editor.action).click();
+          await checkPanel(editor.name);
+        }
+
+        await page.goto(`/it/dashboard/logbook?personId=${own.personId}`);
+        await page.locator('[data-testid^="flight-row-mobile"]').first().click();
+        await page.getByTestId('flight-correct-action-mobile').click();
+        await checkPanel('flight correction');
+
+        await page.goto(`/it/dashboard/bookings?aircraft=${own.aircraftId}`);
+        await page.getByTestId('booking-row-mobile').first().click();
+        await page.getByTestId('booking-move-action-mobile').click();
+        await checkPanel('booking edit');
+      });
+    }
+  }
+
+  for (const width of [320, 375]) {
+    for (const theme of ['light', 'dark'] as const) {
+      test(`a run-unique owed instructor opens Paga at ${width}px in ${theme}`, async ({ page }) => {
+        await setTheme(page, theme);
+        await loginExpectingDashboard(page, ADMIN_EMAIL);
+        const instructorId = await createTouchPayRow(page);
+        await page.setViewportSize({ width, height: 812 });
+        await page.goto('/it/dashboard/instructors');
+        await page.getByTestId('instructors-payment-cycle-button').click();
+        await expect(page.getByTestId(`payment-cycle-row-${instructorId}`)).toBeVisible();
+        expect(await smallTargets(page, '.slideover.open'), 'payment cycle').toEqual([]);
+        await page.getByTestId(`payment-cycle-pay-${instructorId}`).click();
+        await expect(page.getByTestId('instructor-pay-form')).toBeVisible();
+        expect(await smallTargets(page, '.slideover.open'), 'pay instructor').toEqual([]);
+      });
+    }
+  }
+
+  test('the PO phone controls outside panels are wide and tall enough', async ({ page }) => {
+    test.setTimeout(180_000);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const own = await createTouchEditRows(page);
+    // The pagination controls render only when there are >20 rows. Own the
+    // entire second page instead of relying on another spec's bookings.
+    for (let day = 4; day <= 23; day += 1) {
+      const date = addDaysIso(todayRome(), day);
+      const response = await page.request.post('/api/v1/bookings', { data: { aircraftId: own.aircraftId, personId: own.personId, startsAt: `${date}T10:00:00.000Z`, endsAt: `${date}T11:00:00.000Z`, force: true } });
+      expect(response.status(), await response.text()).toBe(201);
+    }
+    for (const width of [320, 375]) {
+      for (const theme of ['light', 'dark'] as const) {
+        await setTheme(page, theme);
+        await page.setViewportSize({ width, height: 812 });
+        for (const [path, selectors] of [
+          [`/it/dashboard/bookings?aircraft=${own.aircraftId}`, ['[data-testid="schedule-date-pick"]', '[data-testid="calendar-view-day"]', '[data-testid="calendar-view-week"]', '[data-testid="export-menu-trigger"]', '[data-testid="booking-page-prev"]', '[data-testid="booking-page-next"]']],
+          ['/it/dashboard/reports', ['.reports-rank-metrics > button']],
+        ] as const) {
+          await page.goto(path);
+          for (const selector of selectors) {
+            const boxes = await page.locator(selector).evaluateAll((els) => els.filter((el) => el.getClientRects().length).map((el) => {
+              const r = el.getBoundingClientRect(); return Math.min(r.width, r.height);
+            }));
+            expect(boxes.length, `${path} ${selector} ${width}px ${theme}`).toBeGreaterThan(0);
+            expect(Math.min(...boxes), `${path} ${selector} ${width}px ${theme}`).toBeGreaterThanOrEqual(TARGET_FLOOR);
+          }
+        }
+        await page.goto('/it/dashboard/pilots');
+        const personId = (await page.locator('[data-testid^="mobile-pilot-row-"]').first().getAttribute('data-testid'))!.replace('mobile-pilot-row-', '');
+        await page.goto(`/it/dashboard/people/${personId}`);
+        const link = page.getByTestId('recent-flights-view-all');
+        await expect(link).toBeVisible();
+        const box = await link.boundingBox();
+        expect(Math.min(box!.width, box!.height), `${width}px ${theme} recent flights`).toBeGreaterThanOrEqual(TARGET_FLOOR);
+      }
+    }
+  });
+
+  for (const width of [320, 375]) {
+    for (const theme of ['light', 'dark'] as const) {
+      test(`a run-unique two-line person title cannot squeeze the close button at ${width}px in ${theme}`, async ({ page }) => {
+        await setTheme(page, theme);
+        await loginExpectingDashboard(page, ADMIN_EMAIL);
+        const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
+        const lastName = `LunghissimoCognome${suffix}`;
+        const created = await page.request.post('/api/v1/people', { data: { firstName: 'Alessandro Riccardo', lastName } });
+        expect(created.status()).toBe(201);
+        const { id } = await created.json() as { id: string };
+        const profile = await page.request.put(`/api/v1/people/${id}/profiles/pilot`, { data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' } });
+        expect(profile.status()).toBe(200);
+
+        await page.setViewportSize({ width, height: 812 });
+        await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(lastName)}`);
+        await openMobileEditor(page, `[data-testid="mobile-pilot-row-${id}"]`, 'pilot-edit-mobile');
+        await expect(page.locator('.slideover.open .so-title')).toBeVisible();
+        const heading = await page.locator('.slideover.open .so-head').evaluate((head) => {
+          const title = head.querySelector('.so-title')!;
+          const close = head.querySelector('.iconbtn')!;
+          const range = document.createRange(); range.selectNodeContents(title);
+          const r = close.getBoundingClientRect();
+          return {
+            titleLines: [...range.getClientRects()].filter((rect) => rect.width > 0).length,
+            closeWidth: r.width, closeHeight: r.height,
+            overflow: head.scrollWidth - head.clientWidth,
+          };
+        });
+        expect(heading.titleLines).toBeGreaterThanOrEqual(2);
+        expect(Math.min(heading.closeWidth, heading.closeHeight)).toBeGreaterThanOrEqual(TARGET_FLOOR);
+        expect(heading.overflow).toBeLessThanOrEqual(1);
+      });
+    }
+  }
+
+  for (const width of [320, 375]) {
+    for (const theme of ['light', 'dark'] as const) {
+      test(`aircraft AOG and archive armed controls at ${width}px in ${theme}`, async ({ page }) => {
+        await setTheme(page, theme);
+        await loginExpectingDashboard(page, ADMIN_EMAIL);
+        const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
+        const registration = `I-TOUCH${suffix}`.slice(0, 20);
+        const response = await page.request.post('/api/v1/aircraft', { data: { registration, type: 'Ultraleggero 3 assi', model: 'Story 18.1 synthetic' } });
+        expect(response.status()).toBe(201);
+        const { id } = await response.json() as { id: string };
+        await page.setViewportSize({ width, height: 812 });
+        await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(registration)}`);
+        await openMobileEditor(page, `[data-testid="mobile-fleet-card-${id}"]`, 'aircraft-edit-mobile');
+        await page.getByTestId('out-of-service-reason').fill('Solo prova sintetica');
+        await expect(async () => {
+          if (!await page.getByTestId('out-of-service-confirm').count()) await page.getByTestId('out-of-service-submit').click({ timeout: 2_000 });
+          await expect(page.getByTestId('out-of-service-confirm')).toBeVisible({ timeout: 2_000 });
+        }).toPass({ timeout: 10_000 });
+        expect(await smallTargets(page, '.slideover.open'), 'armed AOG').toEqual([]);
+        await page.getByTestId('out-of-service-cancel').click();
+        await page.getByTestId('archive-toggle-button').click();
+        await expect(page.getByTestId('archive-confirm')).toBeVisible();
+        expect(await smallTargets(page, '.slideover.open'), 'armed archive').toEqual([]);
+      });
+    }
+  }
+
+  for (const width of [320, 375]) {
+    test(`calendars in long aircraft and pilot editors stay inside ${width}px after scrolling`, async ({ page }) => {
+      await loginExpectingDashboard(page, ADMIN_EMAIL);
+      await page.setViewportSize({ width, height: 812 });
+      for (const name of ['aircraft', 'pilot'] as const) {
+        await page.goto(name === 'aircraft' ? '/it/dashboard/fleet' : '/it/dashboard/pilots');
+        if (name === 'aircraft') {
+          await openMobileEditor(page, '[data-testid^="mobile-fleet-card-"]', 'aircraft-edit-mobile');
+        } else {
+          await expect(async () => {
+            if (!await page.locator('.slideover.open').count()) await page.getByTestId('pilots-new-button').click({ timeout: 2_000 });
+            await expect(page.locator('.slideover.open')).toBeVisible({ timeout: 2_000 });
+          }).toPass({ timeout: 10_000 });
+          await page.getByTestId('new-person-activate-pilot').check();
+          const chip = page.locator('[data-testid^="rating-chip-"]').first();
+          await expect(chip).toBeVisible();
+          await chip.click();
+        }
+        const trigger = page.locator('.slideover.open .so-body .date-input-btn').last();
+        await expect(trigger, name).toBeVisible();
+        await trigger.scrollIntoViewIfNeeded();
+        const before = await page.locator('.slideover.open .so-body').evaluate((body) => body.scrollTop);
+        expect(before, `${name} scrolls to its calendar`).toBeGreaterThan(0);
+        await trigger.click();
+        const popover = page.locator('.cal-popover');
+        await expect(popover).toBeVisible();
+        const box = await popover.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(-0.5);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width + 0.5);
+        expect(box!.y).toBeGreaterThanOrEqual(-0.5);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(812.5);
+      }
+    });
+  }
+
+  for (const width of [320, 375]) {
+    for (const theme of ['light', 'dark'] as const) {
+      test(`topbar remains 53px, 44px controls on every allowed route and role at ${width}px in ${theme}`, async ({ page }) => {
+        test.setTimeout(180_000);
+        for (const [email, role] of [
+          ['admin@airmanager.local', 'ADMIN'],
+          ['pilot@airmanager.local', 'PILOT'],
+          ['student@airmanager.local', 'STUDENT'],
+          ['instructor@airmanager.local', 'INSTRUCTOR'],
+        ] as const) {
+          await page.context().clearCookies();
+          await setTheme(page, theme);
+          await loginExpectingDashboard(page, email);
+          await page.setViewportSize({ width, height: 812 });
+          const routes = NAV_ITEMS.filter((item) => item.enabled && item.roles.includes(role));
+          for (const route of routes) {
+            await page.goto(`/it${route.href}`);
+            await expect(page.getByTestId('mobile-topbar')).toBeVisible();
+            const boxes = await page.locator('.mobile-topbar').evaluate((bar) => ({
+              h: bar.getBoundingClientRect().height,
+              buttons: [...bar.querySelectorAll('button')].map((button) => {
+                const r = button.getBoundingClientRect(); return Math.min(r.width, r.height);
+              }),
+            }));
+            expect(boxes.h, `${role} ${route.href} ${width}px ${theme} bar`).toBeCloseTo(53, 1);
+            expect(boxes.buttons.length).toBe(2);
+            expect(Math.min(...boxes.buttons), `${role} ${route.href} ${width}px ${theme} controls`).toBeGreaterThanOrEqual(TARGET_FLOOR);
+          }
+        }
+      });
+    }
+  }
+
+  for (const width of [320, 375, 390]) {
+    for (const theme of ['light', 'dark'] as const) {
+      test(`planning date arrows and heading fit at ${width}px in ${theme}`, async ({ page }) => {
+        await setTheme(page, theme);
+        await loginExpectingDashboard(page, ADMIN_EMAIL);
+        await page.setViewportSize({ width, height: 812 });
+        await page.goto('/it/dashboard/bookings');
+        const data = await page.locator('[data-testid="schedule-section"]').evaluate((section) => {
+          const heading = section.querySelector('.card-head')!;
+          const arrows = [...section.querySelectorAll('.date-nav .iconbtn')].map((el) => {
+            const r = el.getBoundingClientRect(); return Math.min(r.width, r.height);
+          });
+          return { arrows, scroll: heading.scrollWidth, client: heading.clientWidth };
+        });
+        expect(data.arrows).toHaveLength(2);
+        expect(Math.min(...data.arrows)).toBeGreaterThanOrEqual(TARGET_FLOOR);
+        expect(data.scroll).toBeLessThanOrEqual(data.client + 1);
+      });
+    }
+  }
+
+  test('the five removed page exceptions stay absent and every new geometry declaration is phone scoped', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const rules = await page.evaluate(() => {
+      const rows: Array<{ selector: string; media: string; style: string }> = [];
+      function walk(list: CSSRuleList, media = '') {
+        for (const rule of list) {
+          if (rule instanceof CSSStyleRule) rows.push({ selector: rule.selectorText, media, style: rule.style.cssText });
+          const nested = (rule as CSSGroupingRule).cssRules;
+          if (nested?.length) walk(nested, rule instanceof CSSMediaRule ? rule.conditionText : media);
+        }
+      }
+      for (const sheet of document.styleSheets) { try { walk(sheet.cssRules); } catch { /* no cross-origin app styles */ } }
+      return rows;
+    });
+    for (const selector of ['.scadenze-filter-panel .input', '.billing-filter-panel .input', '.transaction-form .input', '[data-testid="out-of-service-submit"]', '[data-testid="out-of-service-confirm"], [data-testid="out-of-service-cancel"]']) {
+      expect(rules.filter((r) => r.selector === selector && r.style.includes('min-height: 44px')), selector).toEqual([]);
+    }
+    // The AOG result link was a block on desktop before this story. Moving
+    // its inline display into a class preserves that box while the phone
+    // panel's more specific rule supplies the shared touch target.
+    expect(rules.some((r) => r.selector === '.aog-impact-bookings-link' && r.media === '' && r.style.includes('display: block'))).toBe(true);
+    // Every new geometric declaration has an exact source selector here. A
+    // Turbopack stylesheet may coalesce adjacent selectors, hence includes().
+    for (const [selector, declaration] of [
+      ['.so-body :is(.input, .btn, .expiry-chip, .segmented > button, .segmented > a)', /min-height:\s*44px/],
+      ['.so-body :is(.btn, .expiry-chip, .segmented > button, .segmented > a)', /min-width:\s*44px/],
+      ['.so-body .alert-box a[href]', /min-height:\s*44px/],
+      ['.so-body label:has(> input[type="checkbox"])', /min-height:\s*44px/],
+      ['.so-head > div', /min-width:\s*0px/],
+      ['.so-head .iconbtn', /flex-shrink:\s*0/],
+      ['.mobile-topbar', /padding-top:\s*calc\(4px/],
+      ['.mobile-topbar > .iconbtn, .mobile-avatar-btn', /width:\s*44px/],
+      ['.date-nav .iconbtn', /width:\s*44px/],
+      ['.date-nav .date-pick-btn', /min-height:\s*44px/],
+      ['.page .segmented > :is(button, a)', /min-height:\s*44px/],
+      ['.page .export-menu-trigger', /min-height:\s*44px/],
+      ['.booking-pagination > .btn', /min-height:\s*44px/],
+      ['.recent-flights-view-all', /min-height:\s*44px/],
+      ['.auth-page :is(.input, .btn, a[href])', /min-height:\s*44px/],
+      ['.auth-page a[href]', /display:\s*inline-flex/],
+      ['.auth-locale-switch', /min-width:\s*44px/],
+    ] as const) {
+      // Turbopack may merge adjacent rules with identical declarations, so
+      // match the selector text inside the resulting selector list.
+      const declarations = rules.filter((r) => r.selector.includes(selector) && declaration.test(r.style));
+      expect(declarations.length, selector).toBeGreaterThan(0);
+      expect(declarations.every((r) => /max-width:\s*640px/.test(r.media)), selector).toBe(true);
+    }
+  });
+});
 
 test.describe('story 15.10 — `--ink-4` stops being used as TEXT (AC 4)', () => {
   /**
@@ -721,9 +1233,10 @@ test.describe('story 15.10 — the two minors (R-15.10-h, R-15.10-l)', () => {
     // is its own box plus its content, with no inset added at inset 0.
     expect(phone.footHeight).toBeCloseTo(phone.footContent + 25, 1);
     expect(phone.footBottom).toBe(phone.innerHeight);
-    expect(phone.barPaddingTop).toBe('10px');
-    // 10 + 10 of padding, 1 of border-bottom.
-    expect(phone.barHeight).toBeCloseTo(phone.barContent + 21, 1);
+    expect(phone.barPaddingTop).toBe('4px');
+    // Story 18.1: 4 + 4 of padding, 1 of border-bottom. The 44px controls
+    // keep the zero-inset topbar at its previous 53px height.
+    expect(phone.barHeight).toBeCloseTo(phone.barContent + 9, 1);
 
     await page.setViewportSize(DESKTOP);
     await page.goto('/it/dashboard/logbook');

@@ -4,6 +4,7 @@ import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { getSessionActor } from '@/server/auth/session';
 import { LoginForm } from './login-form';
+import { AuthLanguageSwitch } from '../auth-language-switch';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -28,9 +29,11 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
   }
 
   const t = await getTranslations('auth.login');
+  const safeCallbackUrl = callbackUrl && /^\/(?![/\\])/.test(callbackUrl) ? callbackUrl : undefined;
 
   return (
     <main
+      className="auth-page"
       style={{
         display: 'flex',
         minHeight: '100vh',
@@ -41,6 +44,7 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
         color: 'var(--ink)',
       }}
     >
+      <AuthLanguageSwitch locale={locale as AppLocale} pathname="/login" callbackUrl={safeCallbackUrl} />
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 28 }}>
           <div className="brand-mark">
@@ -62,8 +66,8 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
             callbackUrl={
               // Internal paths only: "//evil.com" and "/\evil.com" are
               // protocol-relative external URLs, not local paths.
-              callbackUrl && /^\/(?![/\\])/.test(callbackUrl)
-                ? callbackUrl
+              safeCallbackUrl
+                ? safeCallbackUrl
                 : `/${locale}/dashboard`
             }
             labels={{

@@ -304,19 +304,19 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
     expect(typeof firstAfter).toBe('string');
   });
 
-  test('AC 1/AC 11 ix: nessuna regola di questa pagina tocca `.segmented` fuori di qui', async ({ page }) => {
+  test('AC 1/AC 11 ix, 18.1 PO: gli altri `.segmented` visibili seguono il pavimento telefonico', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
 
-    // The three other consumers of `.segmented` (Pianificazione, Scadenze,
-    // Panoramica). A rule written on `.segmented` instead of on the two
-    // page-owned classes would move these numbers — it is the defect 15.3 F1
-    // and 15.5 F5 measured, and the reason the story forbids that selector.
+    // Story 18.1 PO Q-18.1-a deliberately raises these other phone consumers
+    // to 44px as well; the earlier 15.8b anti-leak pin is superseded here.
     for (const url of ['/it/dashboard/bookings', '/it/dashboard/expiries', '/it/dashboard']) {
       await page.goto(url);
       await page.waitForSelector('.page');
-      const heights = await page.locator('.segmented > *').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height * 100) / 100));
-      for (const height of heights) expect(height).toBeLessThan(TARGET_FLOOR);
+      // Panoramica retains a desktop-only segmented tree in the DOM; a 0px
+      // rect there is hidden content, not a phone target.
+      const heights = await page.locator('.segmented > *').evaluateAll((els) => els.filter((el) => el.getClientRects().length > 0).map((el) => Math.round(el.getBoundingClientRect().height * 100) / 100));
+      for (const height of heights) expect(height).toBeGreaterThanOrEqual(TARGET_FLOOR);
     }
   });
 

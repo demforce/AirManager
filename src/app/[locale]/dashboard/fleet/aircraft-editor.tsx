@@ -884,7 +884,7 @@ function AvailabilitySection({
                 </span>
                 <span style={{ display: 'block' }}>{splitText}</span>
                 <span style={{ display: 'block' }}>{windowText}</span>
-                <a style={{ display: 'inline-block', marginTop: 4 }} href={`/${locale}/dashboard/bookings?status=PENDING,APPROVED&aircraft=${encodeURIComponent(aircraft.id)}`} data-testid="aog-impact-bookings-link">
+                <a className="aog-impact-bookings-link" style={{ marginTop: 4 }} href={`/${locale}/dashboard/bookings?status=PENDING,APPROVED&aircraft=${encodeURIComponent(aircraft.id)}`} data-testid="aog-impact-bookings-link">
                   {labels.availability.impactBookingsLink}
                 </a>
               </p>

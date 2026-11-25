@@ -57,7 +57,7 @@ export function ExportMenu({ label, pdfLabel, pdfHref, pdfUnavailable, xlsLabel,
 
   return (
     <div style={{ position: 'relative' }}>
-      <button type="button" className="btn" onClick={() => setOpen((current) => !current)} data-testid="export-menu-trigger">
+      <button type="button" className="btn export-menu-trigger" onClick={() => setOpen((current) => !current)} data-testid="export-menu-trigger">
         <Icon.doc /> {label} <span style={{ fontSize: 10, marginLeft: 2, opacity: 0.6 }}>▾</span>
       </button>
       <MobileSheet

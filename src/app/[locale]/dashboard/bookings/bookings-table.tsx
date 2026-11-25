@@ -881,7 +881,7 @@ export function BookingsTable({
       </div>
 
       {totalPages > 1 ? (
-        <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        <div className="card-body booking-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
           <Link
             href={pageHref(page - 1)}
             locale={locale as AppLocale}

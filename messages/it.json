@@ -77,6 +77,7 @@
     }
   },
   "auth": {
+    "otherLanguage": "English",
     "login": {
       "kicker": "Accesso",
       "title": "Accedi ad AirManager",
@@ -99,6 +100,7 @@
       "submitting": "Impostazione in corso…",
       "success": "Password impostata. Ora puoi accedere.",
       "goToLogin": "Vai all'accesso",
+      "backToLogin": "Torna all'accesso",
       "errorMismatch": "Le password non coincidono.",
       "errorTooShort": "La password deve avere almeno 10 caratteri.",
       "errorGeneric": "Il link non è valido o è scaduto. Richiedine uno nuovo.",
