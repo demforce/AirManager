@@ -22,6 +22,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+const DESKTOP_UNATTRIBUTED_MARKER = 'Movimento storico pre-Billing-1 (seed)';
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
@@ -85,10 +86,11 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', ()
 
   test('the seeded unattributed historical movement is reachable via the Liquidità riquadro\'s link; reclassifying it via the inline select PATCHes the method and drops it out of the secchiello', async ({ page }) => {
     // Every LIVE writer now requires a paymentMethod (Billing-1 AC2 + review
-    // F8/D2 closed the last gap) — the ONLY reachable
-    // unattributed row on a test DB is the ONE seeded directly via Prisma in
+    // F8/D2 closed the last gap) — the reachable
+    // historical unattributed rows on a fresh test DB are seeded directly via Prisma in
     // `prisma/seed.ts` (simulating a genuinely pre-migration historical
-    // entry, exactly what this feature exists for).
+    // entry, exactly what this feature exists for). This test uses the desktop
+    // marker only, whether or not the separate mobile fixture has been consumed.
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     // Guard rewritten on the SEEDED ROW itself (review F4/F5) — the OLD
@@ -101,7 +103,7 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', ()
     // reads it again.
     const seedCheckResponse = await page.request.get('/api/v1/transactions?unattributed=true&pageSize=100');
     const seedCheckBody = (await seedCheckResponse.json()) as { items: Array<{ description: string | null }> };
-    const seedStillPresent = seedCheckBody.items.some((item) => item.description === 'Movimento storico pre-Billing-1 (seed)');
+    const seedStillPresent = seedCheckBody.items.some((item) => item.description === DESKTOP_UNATTRIBUTED_MARKER);
     if (!seedStillPresent) {
       test.skip(true, 'The seeded unattributed movement was already reclassified by a previous run against the same DB (no reset in between) — consuming this fixture without restore is accepted (review F4/F5).');
     }
@@ -114,7 +116,7 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', ()
     await unattributedLink.click();
     await expect(page).toHaveURL(/unattributed=true/);
 
-    const row = billingRows(page).filter({ hasText: 'Movimento storico pre-Billing-1' });
+    const row = billingRows(page).filter({ hasText: DESKTOP_UNATTRIBUTED_MARKER });
     await expect(row).toHaveCount(1);
     await expect(row).toContainText(/5,00\s€/);
 
@@ -124,11 +126,11 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', ()
     await expect(page.getByTestId('billing-reclassify-feedback')).toHaveText('Metodo assegnato.');
 
     // `router.refresh()` re-runs the server-side `unattributed=true` filter — the row, now attributed, drops out on its own.
-    await expect(billingRows(page).filter({ hasText: 'Movimento storico pre-Billing-1' })).toHaveCount(0);
+    await expect(billingRows(page).filter({ hasText: DESKTOP_UNATTRIBUTED_MARKER })).toHaveCount(0);
 
     // A direct API check closes the loop independently of the UI's own filtered view.
     const stillUnattributedResponse = await page.request.get('/api/v1/transactions?unattributed=true&pageSize=100');
     const stillUnattributed = (await stillUnattributedResponse.json()) as { items: Array<{ description: string | null }> };
-    expect(stillUnattributed.items.some((item) => item.description === 'Movimento storico pre-Billing-1 (seed)')).toBe(false);
+    expect(stillUnattributed.items.some((item) => item.description === DESKTOP_UNATTRIBUTED_MARKER)).toBe(false);
   });
 });
