@@ -2001,6 +2001,27 @@
       "depositsSub": "Owed to pilots"
     }
   },
+  "StatsRankingsPage": {
+    "titles": {
+      "fleet-hours": "Aircraft by flight hours",
+      "fleet-revenue": "Aircraft by revenue",
+      "instructor-hours": "Instructors by flight hours",
+      "pilot-hours": "Pilots by flight hours",
+      "pilot-spent": "Pilots by spending"
+    },
+    "count": "{count, plural, one {# entry} other {# entries}}",
+    "back": "Back to Statistics",
+    "empty": "There are no entries for this period.",
+    "label": "Name or registration",
+    "hours": "Hours",
+    "owed": "Owed",
+    "revenue": "Revenue",
+    "spent": "Spending",
+    "pages": "Ranking pages",
+    "page": "Page {page} of {total}",
+    "previous": "Previous",
+    "next": "Next"
+  },
   "ReportsPage": {
     "title": "Reports",
     "sub": "Airfield analytics · {period}",
@@ -2054,14 +2075,14 @@
     },
     "rankPilots": {
       "title": "By pilot",
-      "sub": "top 10 · {period}",
+      "sub": "first 8 · {period}",
       "metrics": {
         "hours": "Hours",
         "spent": "Spent"
       },
       "empty": "No pilot flew in this period."
     },
-    "mobile": {
+    "rankingPreview": {
       "capNote": "First {shown} of {total}",
       "showAll": "Show all ({count})"
     }

@@ -3324,8 +3324,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    (review 15.8a LOW-3). */
 
 .expiry-types-mobile,
-.cash-categories-mobile,
-.ranked-cap-foot{ display: none; }
+.cash-categories-mobile{ display: none; }
+.ranked-cap-foot{ display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
 /* --- Impostazioni: one form, one Salva (story 19.8, AD-6, D-4) ---
    The nine sections live in ONE `<form>`, so the column rhythm `.page` gave
@@ -3409,14 +3409,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .ranked-rows > .util-row > .util-value{ flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
   .ranked-rows > .util-row > .util-bar{ flex: 0 0 100%; order: 3; }
 
-  /* The cap itself (R-15.8b-b, pattern 13.4). CSS, not JS: every row is
-     rendered at every width — `reports.spec.ts` reads `reports-fleet-row-*`
-     and `reports-rank-*-row-*` page-level at 1280px, and AC 9 wants exactly
-     one node per testid at BOTH widths — and only the phone hides the rows
-     past the limit. `.ranked-row-overflow` is put on the rows by the callers
-     from the ONE constant in `src/lib/mobile-reports.ts`, so the limit is
-     never written twice. */
-  .ranked-rows-capped .ranked-row-overflow{ display: none; }
+  /* Server-bounded ranking previews still need a full-width touch target on phones. */
   .ranked-cap-foot{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .ranked-cap-foot > .btn{ flex: 1 0 100%; justify-content: center; min-height: 44px; }
 
@@ -3878,3 +3871,11 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
 .negative-balances-table :is(th, td){ text-align: start; border-bottom: 1px solid var(--border); padding: 4px 8px; }
 .negative-balances-table :is(th, td):last-child{ text-align: end; white-space: nowrap; }
 .negative-balances-person{ display: inline-flex; min-height: 44px; align-items: center; color: var(--ink); text-decoration: underline; overflow-wrap: anywhere; }
+
+/* 17.4: full rankings, same compact table at both widths. */
+.stats-rankings-table{ width: 100%; border-collapse: collapse; }
+.stats-rankings-table :is(th, td){ border-bottom: 1px solid var(--border); padding: 8px; text-align: start; }
+.stats-rankings-table :is(th, td):not(:first-child){ text-align: end; white-space: nowrap; }
+.stats-rankings-table td:first-child{ overflow-wrap: anywhere; }
+.stats-rankings-pagination{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.stats-rankings-pagination .btn{ min-height: 44px; }

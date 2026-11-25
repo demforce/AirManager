@@ -457,32 +457,39 @@ export async function listTransactions(actor: Actor, query: ListTransactionsQuer
  *    (`billing-summary.service.ts`), never revenue.
  */
 async function computeRevenueCents(from: string, to: string): Promise<number> {
-  const fromDate = parseDateOnlyUtc(from);
-  const toDate = parseDateOnlyUtc(to);
+  const { accountWhere, cashWhere } = revenueLedgerFilters(from, to);
+  const [debitAggregate, cashAggregate] = await Promise.all([
+    prisma.accountMovement.aggregate({ where: accountWhere, _sum: { amountCents: true } }),
+    prisma.cashMovement.aggregate({ where: cashWhere, _sum: { amountCents: true } }),
+  ]);
+  return (cashAggregate._sum.amountCents ?? 0) - (debitAggregate._sum.amountCents ?? 0);
+}
 
-  const debitAggregate = await prisma.accountMovement.aggregate({
-    where: {
-      effectiveDate: { gte: fromDate, lte: toDate },
-      OR: ACCOUNT_REVENUE_OR,
-    },
-    _sum: { amountCents: true },
-  });
-  // These are all raw NEGATIVE-for-a-debit amounts (a positive reversal
-  // `ADJUSTMENT` in the same period cancels its original charge back to 0) — negate the sum to get a positive "ricavi"
-  // figure.
-  const accountRevenueCents = -(debitAggregate._sum.amountCents ?? 0);
+function revenueLedgerFilters(from: string, to: string) {
+  const effectiveDate = { gte: parseDateOnlyUtc(from), lte: parseDateOnlyUtc(to) };
+  return {
+    accountWhere: { effectiveDate, OR: ACCOUNT_REVENUE_OR },
+    cashWhere: { effectiveDate, OR: CASH_REVENUE_OR, ...CASH_NOT_ALREADY_ON_ACCOUNT },
+  };
+}
 
-  const cashAggregate = await prisma.cashMovement.aggregate({
-    where: {
-      effectiveDate: { gte: fromDate, lte: toDate },
-      OR: CASH_REVENUE_OR,
-      ...CASH_NOT_ALREADY_ON_ACCOUNT,
-    },
-    _sum: { amountCents: true },
-  });
-  const cashRevenueCents = cashAggregate._sum.amountCents ?? 0;
-
-  return accountRevenueCents + cashRevenueCents;
+/** One date-only aggregate per ledger, using the same classification as the total. */
+export async function getLedgerRevenueByDay(actor: Actor, from: string, to: string): Promise<Map<string, number>> {
+  authorize(actor, 'finance.manage');
+  const { accountWhere, cashWhere } = revenueLedgerFilters(from, to);
+  const [account, cash] = await Promise.all([
+    prisma.accountMovement.groupBy({ by: ['effectiveDate'], where: accountWhere, _sum: { amountCents: true } }),
+    prisma.cashMovement.groupBy({ by: ['effectiveDate'], where: cashWhere, _sum: { amountCents: true } }),
+  ]);
+  const result = new Map<string, number>();
+  for (const row of account) {
+    result.set(toDateOnlyString(row.effectiveDate), -(row._sum.amountCents ?? 0));
+  }
+  for (const row of cash) {
+    const day = toDateOnlyString(row.effectiveDate);
+    result.set(day, (result.get(day) ?? 0) + (row._sum.amountCents ?? 0));
+  }
+  return result;
 }
 
 /**
@@ -490,11 +497,9 @@ async function computeRevenueCents(from: string, to: string): Promise<number> {
  * (story Billing-1, AC 5/6) — addebiti conto netti degli storni PLUS cash
  * entrate non già contate lato conto (see `computeRevenueCents`'s own
  * doc-comment for the exact rule and the same-period-storno bug it fixes
- * over the old Σ-positivi definition). Story 12.10's stats API reuses this
- * so its "Ricavi" KPI/series can NEVER drift from
- * `billing-summary.service.ts#getBillingSummary`'s own definition (ratifica
- * utente 4: "MAI reimplementarle") — both readers share this ONE
- * implementation. Self-authorizes (`finance.manage`) — the
+ * over the old Σ-positivi definition). The daily reader for Statistiche
+ * and this total for Contabilità share the same predicates and signs.
+ * Self-authorizes (`finance.manage`) — the
  * "coarser-permission" cross-service call convention
  * `flights.service.ts#registerFlight`'s own doc-comment documents.
  */

@@ -138,11 +138,22 @@ async function registerFlight(page: Page, params: RegisterFlightParams): Promise
 type StatsDto = {
   kpis: { revenueCents: number; flightMinutes: number; movements: number; fleetUtilization: number | null };
   series: { months: string[]; revenueCents: number[]; flightMinutes: number[] };
-  fleet: { registration: string; minutes: number; revenueCents: number }[];
   movementMix: { key: 'SCHOOL' | 'TOURISM'; count: number }[];
-  instructors: { name: string; minutes: number; owedCents: number | null }[];
-  topPilots: { name: string; minutes: number; spentCents: number }[];
+  rankings: Record<string, { items: RankItem[]; total: number }>;
+
 };
+
+type RankItem = { key: string; label: string; minutes: number; cents: number | null };
+
+async function findRankItem(page: Page, rank: string, key: string): Promise<RankItem | undefined> {
+  for (let pageNumber = 1; ; pageNumber++) {
+    const response = await page.request.get(`/api/v1/stats/rankings?period=month&rank=${rank}&pageSize=100&page=${pageNumber}`);
+    expect(response.status()).toBe(200);
+    const result = (await response.json()) as { items: RankItem[]; total: number };
+    const item = result.items.find((row) => row.key === key);
+    if (item || !result.items.length || pageNumber * 100 >= result.total) return item;
+  }
+}
 
 async function fetchStats(page: Page, period: 'month' | 'year'): Promise<StatsDto> {
   const response = await page.request.get(`/api/v1/stats?period=${period}`);
@@ -218,17 +229,17 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
     expect(after.movementMix.map((mix) => mix.key)).toEqual(['SCHOOL', 'TOURISM']);
 
     // Uniquely-identified rows: exact assertions, no delta needed.
-    const fleetRow = after.fleet.find((row) => row.registration === aircraft.registration);
-    expect(fleetRow).toEqual({ registration: aircraft.registration, minutes: 90, revenueCents: schoolFlight.aircraftAmountCents + tourismFlight.aircraftAmountCents });
+    const fleetRow = await findRankItem(page, 'fleet-hours', aircraft.id);
+    expect(fleetRow).toEqual({ key: aircraft.id, label: aircraft.registration, minutes: 90, cents: schoolFlight.aircraftAmountCents + tourismFlight.aircraftAmountCents });
 
     const instructorName = `${instructor.firstName} ${instructor.lastName}`;
-    const instructorRow = after.instructors.find((row) => row.name === instructorName);
+    const instructorRow = await findRankItem(page, 'instructor-hours', instructor.personId);
     // Story 16.5 (R-16-k): this instructor has no payout rate, so the flight froze 0 — an owed of 0, never null.
-    expect(instructorRow).toEqual({ name: instructorName, minutes: 60, owedCents: 0 });
+    expect(instructorRow).toEqual({ key: instructor.personId, label: instructorName, minutes: 60, cents: 0 });
 
     const pilotName = `${pilot.firstName} ${pilot.lastName}`;
-    const topPilotRow = after.topPilots.find((row) => row.name === pilotName);
-    expect(topPilotRow).toEqual({ name: pilotName, minutes: 90, spentCents: expectedFlightRevenue });
+    const topPilotRow = await findRankItem(page, 'pilot-spent', pilot.personId);
+    expect(topPilotRow).toEqual({ key: pilot.personId, label: pilotName, minutes: 90, cents: expectedFlightRevenue });
 
     // The page itself (period=month) renders these SAME `after` numbers.
     await page.goto('/it/dashboard/reports?period=month');
@@ -241,14 +252,12 @@ test.describe('Reports / Statistiche (story 12.10)', () => {
     await expect(kpiValues.nth(1)).toContainText(formatMinutesHm(after.kpis.flightMinutes));
     await expect(kpiValues.nth(2)).toContainText(String(after.kpis.movements));
 
-    // H:MM app-wide (PO ratification, review 12.10): 90min -> 1:30, 60min -> 1:00.
-    await expect(page.getByTestId(`reports-fleet-row-${aircraft.registration}`)).toContainText(formatMinutesHm(90));
-    await expect(page.getByTestId(`reports-instructor-row-${instructorName}`)).toContainText(formatMinutesHm(60));
-    await expect(page.getByTestId(`reports-instructor-row-${instructorName}`)).toContainText(formatCentsIt(0)); // story 16.5: owed 0, no longer "—"
-    // "Per pilota" RankBars defaults to the "Ore" metric — switch to "Spesa" to check the money column.
-    await expect(page.getByTestId(`reports-rank-pilot-row-${pilotName}`)).toContainText(formatMinutesHm(90));
-    await page.getByTestId('reports-rank-pilots').getByRole('button', { name: 'Spesa' }).click();
-    await expect(page.getByTestId(`reports-rank-pilot-row-${pilotName}`)).toContainText(formatCentsIt(expectedFlightRevenue));
+    const renderedFleet = page.locator('[data-testid^="reports-fleet-row-"] .util-value');
+    await expect(renderedFleet).toHaveText(after.rankings.fleetHours!.items.map((item) => formatMinutesHm(item.minutes)));
+    const pilots = page.getByTestId('reports-rank-pilots');
+    await pilots.getByRole('button', { name: 'Spesa' }).click();
+    await expect(pilots.locator('.util-value')).toHaveText(after.rankings.pilotSpent!.items.map((item) => formatCentsIt(item.cents ?? 0)));
+
   });
 
   test('toggling month/year switches the chart series length (6 vs 12 points) and the active segmented button (AC 3/4)', async ({ page }) => {

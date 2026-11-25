@@ -2,11 +2,10 @@
 
 import { BarChart } from '@/components/charts/bar-chart';
 import { LineChart } from '@/components/charts/line-chart';
-import { RankBars, type RankBarsRow } from '@/components/charts/rank-bars';
-import { RankedCapFoot, useRankedExpansion, type RankedCapFootLabels } from '@/components/charts/ranked-cap-foot';
-import { RANKED_MOBILE_LIMIT, rankedCap, rankedTopIndexes } from '@/lib/mobile-reports';
+import { RankBars } from '@/components/charts/rank-bars';
+import { RankedCapFoot } from '@/components/charts/ranked-cap-foot';
 import { formatCents } from '@/lib/money';
-import type { StatsResponseDto } from '@/lib/schemas/stats';
+import type { StatsQuery, StatsResponseDto } from '@/lib/schemas/stats';
 import { formatMinutes } from '@/lib/time';
 
 type MixKey = 'SCHOOL' | 'TOURISM';
@@ -40,12 +39,11 @@ export type ReportsLabels = {
   instructors: { title: string; sub: string; empty: string; owedUnknown: string };
   rankAircraft: { title: string; sub: string; metrics: { hours: string; revenue: string }; empty: string };
   rankPilots: { title: string; sub: string; metrics: { hours: string; spent: string }; empty: string };
-  /** Wording of the phone cap, shared by the four ranked lists (story 15.8b, R-15.8b-b). */
-  cap: RankedCapFootLabels;
 };
 
 export type ReportsConsoleProps = {
   stats: StatsResponseDto;
+  period: StatsQuery['period'];
   seriesLabels: string[];
   moneyLocale: 'it' | 'en';
   labels: ReportsLabels;
@@ -57,48 +55,13 @@ export type ReportsConsoleProps = {
  * for `RankBars`' own metric-toggle state; `BarChart`/`LineChart` are pure
  * presentational and simply render inside this tree.
  */
-export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: ReportsConsoleProps) {
-  // Story 15.8b: one expansion flag per ranked list of THIS component (the two
-  // `RankBars` own theirs). This console is mounted without a `key`, so the
-  // flags survive a `?period=` navigation exactly as `RankBars`' own
-  // `metricIndex` already does — measured, not assumed (AD-3).
-  const { expanded: fleetExpanded, showAll: showAllFleet, rowsRef: fleetRowsRef } = useRankedExpansion();
-  const { expanded: instructorsExpanded, showAll: showAllInstructors, rowsRef: instructorsRowsRef } = useRankedExpansion();
-
+export function ReportsConsole({ stats, period, seriesLabels, moneyLocale, labels }: ReportsConsoleProps) {
   const revenueData = stats.series.revenueCents.map((cents) => cents / 100);
   const hoursData = stats.series.flightMinutes.map((minutes) => minutes / 60);
-
-  const fleetMax = Math.max(1, ...stats.fleet.map((aircraft) => aircraft.minutes));
-  const instructorsMax = Math.max(1, ...stats.instructors.map((instructor) => instructor.minutes));
+  const { fleetHours, fleetRevenue, instructorHours, pilotHours, pilotSpent } = stats.rankings;
+  const fleetMax = Math.max(1, ...fleetHours.items.map((aircraft) => aircraft.minutes));
+  const instructorsMax = Math.max(1, ...instructorHours.items.map((instructor) => instructor.minutes));
   const mixTotal = stats.movementMix.reduce((sum, mix) => sum + mix.count, 0);
-
-  const rankAircraftRows: RankBarsRow[] = stats.fleet.map((aircraft) => ({
-    label: aircraft.registration,
-    values: { hours: aircraft.minutes, revenue: aircraft.revenueCents },
-    testId: `reports-rank-aircraft-row-${aircraft.registration}`,
-  }));
-  const rankPilotRows: RankBarsRow[] = stats.topPilots.map((pilot) => ({
-    label: pilot.name,
-    values: { hours: pilot.minutes, spent: pilot.spentCents },
-    testId: `reports-rank-pilot-row-${pilot.name}`,
-  }));
-
-  const fleetCap = rankedCap(stats.fleet.length);
-  const instructorsCap = rankedCap(stats.instructors.length);
-  /**
-   * WHICH rows the phone keeps (review MAJOR-1). `stats.fleet` arrives in
-   * `registration asc` (`stats.service.ts:230`), so a cap by DOM position
-   * showed the eight alphabetically-first aircraft — on a real fleet, eight
-   * rows of `0:00` — instead of the eight most flown ones the AC asks for.
-   * The DOM order is left exactly as it is: only the marking changes, so the
-   * desktop (where nothing is hidden) is untouched.
-   *
-   * "Ore istruttori" is NOT in the same situation and is left alone: the
-   * server sorts it `minutes desc, name asc` (`stats.service.ts:272`), i.e. by
-   * the very metric its bar and its value are drawn from, so there position IS
-   * rank — verified, not assumed.
-   */
-  const fleetTop = rankedTopIndexes(stats.fleet.map((aircraft) => aircraft.minutes));
 
   return (
     <>
@@ -128,21 +91,21 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
           <div className="card-title">{labels.charts.fleet.title}</div>
           <span className="card-sub">{labels.charts.fleet.sub}</span>
         </div>
-        {stats.fleet.length === 0 ? (
+        {fleetHours.items.length === 0 ? (
           <div className="card-body">
             <p style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{labels.charts.fleet.empty}</p>
           </div>
         ) : (
           <>
-            <div className={`util-rows ranked-rows${fleetExpanded ? '' : ' ranked-rows-capped'}`} ref={fleetRowsRef} tabIndex={-1}>
-              {stats.fleet.map((aircraft, i) => (
+            <div className="util-rows ranked-rows">
+              {fleetHours.items.map((aircraft) => (
                 <div
-                  className={fleetTop.has(i) ? 'util-row' : 'util-row ranked-row-overflow'}
-                  key={aircraft.registration}
-                  data-testid={`reports-fleet-row-${aircraft.registration}`}
+                  className="util-row"
+                  key={aircraft.key}
+                  data-testid={`reports-fleet-row-${aircraft.label}`}
                   style={{ gridTemplateColumns: '90px 1fr 80px' }}
                 >
-                  <div className="util-tail mono">{aircraft.registration}</div>
+                  <div className="util-tail mono">{aircraft.label}</div>
                   <div className="util-bar">
                     <div className="seg flown" style={{ left: 0, width: `${(aircraft.minutes / fleetMax) * 100}%` }} />
                   </div>
@@ -150,9 +113,7 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
                 </div>
               ))}
             </div>
-            {fleetExpanded ? null : (
-              <RankedCapFoot cap={fleetCap} total={stats.fleet.length} labels={labels.cap} onShowAll={showAllFleet} testId="mobile-reports-fleet-cap" />
-            )}
+            <RankedCapFoot shown={fleetHours.items.length} total={fleetHours.total} rank="fleet-hours" period={period} reference={stats.referenceMonth} testId="reports-fleet-cap" />
           </>
         )}
       </div>
@@ -194,39 +155,31 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
             <div className="card-title">{labels.instructors.title}</div>
             <span className="card-sub">{labels.instructors.sub}</span>
           </div>
-          {stats.instructors.length === 0 ? (
+          {instructorHours.items.length === 0 ? (
             <div className="card-body">
               <p style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>{labels.instructors.empty}</p>
             </div>
           ) : (
             <>
-              <div className={`util-rows ranked-rows${instructorsExpanded ? '' : ' ranked-rows-capped'}`} ref={instructorsRowsRef} tabIndex={-1}>
-                {stats.instructors.map((instructor, i) => (
+              <div className="util-rows ranked-rows">
+                {instructorHours.items.map((instructor) => (
                   <div
-                    className={i >= RANKED_MOBILE_LIMIT ? 'util-row ranked-row-overflow' : 'util-row'}
-                    key={i}
-                    data-testid={`reports-instructor-row-${instructor.name}`}
+                    className="util-row"
+                    key={instructor.key}
+                    data-testid={`reports-instructor-row-${instructor.label}`}
                     style={{ gridTemplateColumns: '160px 1fr 100px' }}
                   >
-                    <div style={{ fontSize: 12.5, fontWeight: 500 }}>{instructor.name}</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 500 }}>{instructor.label}</div>
                     <div className="util-bar">
                       <div className="seg flown" style={{ left: 0, width: `${(instructor.minutes / instructorsMax) * 100}%` }} />
                     </div>
                     <div className="util-value mono">
-                      {formatMinutes(instructor.minutes)} · {instructor.owedCents === null ? labels.instructors.owedUnknown : formatCents(instructor.owedCents, moneyLocale)}
+                      {formatMinutes(instructor.minutes)} · {instructor.cents === null ? labels.instructors.owedUnknown : formatCents(instructor.cents, moneyLocale)}
                     </div>
                   </div>
                 ))}
               </div>
-              {instructorsExpanded ? null : (
-                <RankedCapFoot
-                  cap={instructorsCap}
-                  total={stats.instructors.length}
-                  labels={labels.cap}
-                  onShowAll={showAllInstructors}
-                  testId="mobile-reports-instructors-cap"
-                />
-              )}
+              <RankedCapFoot shown={instructorHours.items.length} total={instructorHours.total} rank="instructor-hours" period={period} reference={stats.referenceMonth} testId="reports-instructors-cap" />
             </>
           )}
         </div>
@@ -236,32 +189,32 @@ export function ReportsConsole({ stats, seriesLabels, moneyLocale, labels }: Rep
         <RankBars
           title={labels.rankAircraft.title}
           sub={labels.rankAircraft.sub}
-          rows={rankAircraftRows}
+          period={period}
+          reference={stats.referenceMonth}
           monoLabel
           labelCol={80}
           testId="reports-rank-aircraft"
           emptyLabel={labels.rankAircraft.empty}
-          capLabels={labels.cap}
-          capTestId="mobile-reports-rank-aircraft-cap"
+          capTestId="reports-rank-aircraft-cap"
           metricsClassName="reports-rank-metrics"
           metrics={[
-            { key: 'hours', label: labels.rankAircraft.metrics.hours, barClass: 'flow-bar-in', format: (v) => formatMinutes(v) },
-            { key: 'revenue', label: labels.rankAircraft.metrics.revenue, barClass: 'flow-bar-accent', format: (v) => formatCents(v, moneyLocale) },
+            { rank: 'fleet-hours', rows: fleetHours, value: 'minutes', testIdPrefix: 'reports-rank-aircraft-row-', label: labels.rankAircraft.metrics.hours, barClass: 'flow-bar-in', format: (v) => formatMinutes(v) },
+            { rank: 'fleet-revenue', rows: fleetRevenue, value: 'cents', testIdPrefix: 'reports-rank-aircraft-row-', label: labels.rankAircraft.metrics.revenue, barClass: 'flow-bar-accent', format: (v) => formatCents(v, moneyLocale) },
           ]}
         />
         <RankBars
           title={labels.rankPilots.title}
           sub={labels.rankPilots.sub}
-          rows={rankPilotRows}
+          period={period}
+          reference={stats.referenceMonth}
           labelCol={140}
           testId="reports-rank-pilots"
           emptyLabel={labels.rankPilots.empty}
-          capLabels={labels.cap}
-          capTestId="mobile-reports-rank-pilots-cap"
+          capTestId="reports-rank-pilots-cap"
           metricsClassName="reports-rank-metrics"
           metrics={[
-            { key: 'hours', label: labels.rankPilots.metrics.hours, barClass: 'flow-bar-in', format: (v) => formatMinutes(v) },
-            { key: 'spent', label: labels.rankPilots.metrics.spent, barClass: 'flow-bar-accent', format: (v) => formatCents(v, moneyLocale) },
+            { rank: 'pilot-hours', rows: pilotHours, value: 'minutes', testIdPrefix: 'reports-rank-pilot-row-', label: labels.rankPilots.metrics.hours, barClass: 'flow-bar-in', format: (v) => formatMinutes(v) },
+            { rank: 'pilot-spent', rows: pilotSpent, value: 'cents', testIdPrefix: 'reports-rank-pilot-row-', label: labels.rankPilots.metrics.spent, barClass: 'flow-bar-accent', format: (v) => formatCents(v, moneyLocale) },
           ]}
         />
       </div>

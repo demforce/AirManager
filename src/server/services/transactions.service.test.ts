@@ -5,8 +5,8 @@ import { ForbiddenError, ValidationError } from './errors';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
-    accountMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
-    cashMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
+    accountMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn(), groupBy: vi.fn() },
+    cashMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn(), groupBy: vi.fn() },
   },
 }));
 
@@ -20,7 +20,7 @@ vi.mock('./accounts.service', () => ({ recordTopUp: vi.fn(), recordAdjustment: v
 vi.mock('./cash.service', () => ({ recordCashMovement: vi.fn() }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { getLedgerRevenueCents, listTransactions, recordTransaction } = await import('./transactions.service');
+const { getLedgerRevenueByDay, getLedgerRevenueCents, listTransactions, recordTransaction } = await import('./transactions.service');
 const { recordTopUp, recordAdjustment } = await import('./accounts.service');
 const { recordCashMovement } = await import('./cash.service');
 
@@ -774,5 +774,34 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
 
     await expect(recordTransaction(adminActor(), input)).rejects.toBe(futureDate);
     expect(delegate.mock.calls[0]?.at(-1)).toMatchObject({ effectiveDate: '2099-01-01' });
+  });
+});
+
+
+describe('daily ledger revenue (17.4)', () => {
+  it('aggregates each book once and uses the same date bounds, sign and ledger classification as totals', async () => {
+    const from = new Date('2026-01-01T00:00:00.000Z');
+    const to = new Date('2026-02-28T00:00:00.000Z');
+    const feb = new Date('2026-02-01T00:00:00.000Z');
+    const cashOnly = new Date('2026-02-02T00:00:00.000Z');
+    const account = vi.mocked(prisma.accountMovement.groupBy);
+    const cash = vi.mocked(prisma.cashMovement.groupBy);
+    account.mockResolvedValue([{ effectiveDate: from, _sum: { amountCents: -1750 } }, { effectiveDate: feb, _sum: { amountCents: 250 } }] as never);
+    cash.mockResolvedValue([{ effectiveDate: from, _sum: { amountCents: 300 } }, { effectiveDate: cashOnly, _sum: { amountCents: -500 } }] as never);
+
+    const rows = await getLedgerRevenueByDay(adminActor(), '2026-01-01', '2026-02-28');
+    expect(Object.fromEntries(rows)).toEqual({ '2026-01-01': 2050, '2026-02-01': -250, '2026-02-02': -500 });
+    expect(account).toHaveBeenCalledTimes(1);
+    expect(cash).toHaveBeenCalledTimes(1);
+    await getLedgerRevenueCents(adminActor(), '2026-01-01', '2026-02-28');
+    expect(account.mock.calls[0]?.[0]).toMatchObject({ by: ['effectiveDate'], where: accountAggregateMock.mock.calls[0]?.[0]?.where });
+    expect(cash.mock.calls[0]?.[0]).toMatchObject({ by: ['effectiveDate'], where: cashAggregateMock.mock.calls[0]?.[0]?.where });
+    expect(account.mock.calls[0]?.[0].where).toMatchObject({ effectiveDate: { gte: from, lte: to } });
+  });
+
+  it('does not query either ledger without finance.manage', async () => {
+    await expect(getLedgerRevenueByDay(pilotActor(), '2026-01-01', '2026-02-28')).rejects.toThrow(ForbiddenError);
+    expect(prisma.accountMovement.groupBy).not.toHaveBeenCalled();
+    expect(prisma.cashMovement.groupBy).not.toHaveBeenCalled();
   });
 });

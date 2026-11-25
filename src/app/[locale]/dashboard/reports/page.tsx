@@ -3,8 +3,9 @@ import { KPI } from '@/components/ui/kpi';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
-import { APP_TIMEZONE, formatMinutes, formatMonthYear } from '@/lib/time';
-import { todayDateOnlyInZone } from '@/lib/zoned-time';
+import { formatMinutes, formatMonthYear } from '@/lib/time';
+import { statsQuerySchema } from '@/lib/schemas/stats';
+import { resolveStatsPeriod } from '@/server/services/stats-period';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getStats } from '@/server/services/stats.service';
@@ -12,7 +13,7 @@ import { ReportsConsole, type ReportsLabels } from './reports-console';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; ref?: string }>;
 };
 
 /** `YYYY-MM` -> a locale-appropriate short month label (e.g. "Lug"/"Jul") for the chart x-axis, UTC-parsed (a series bucket is already a Rome CALENDAR month, no further timezone conversion needed to just NAME it). */
@@ -27,9 +28,7 @@ function shortMonthLabel(yyyymm: string, locale: 'it' | 'en'): string {
  * Statistiche / reports (epic 12, story 12.10) — AirOps-native, port of
  * `docs/design-reference/airops/src/ReportsView.jsx`. `finance.manage` only
  * (ADMIN-only, same perimeter as `/dashboard/billing`). The page itself
- * only ever requests the CURRENT period (`ref` defaults server-side) — the
- * `?ref=` history support lives in the API for now (ratifica utente 3), no
- * UI picker for it in this story.
+ * preserves the resolved period when returning from a ranking. It has no historical month picker.
  */
 export default async function ReportsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
@@ -49,15 +48,18 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
   const isYear = sp.period !== 'month';
   const period: 'month' | 'year' = isYear ? 'year' : 'month';
 
-  const stats = await getStats(actor, { period });
+  const now = new Date();
+  const parsed = statsQuerySchema.safeParse({ period, ref: sp.ref });
+  const latestRef = resolveStatsPeriod({ period }, now).ref;
+  const ref = parsed.success && parsed.data.ref && parsed.data.ref <= latestRef ? parsed.data.ref : undefined;
+  const stats = await getStats(actor, { period, ref }, now);
 
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const intlLocale = displayLocale === 'en' ? 'en-IE' : 'it-IT';
   const t = await getTranslations('ReportsPage');
 
-  const now = new Date();
-  const monthLabel = formatMonthYear(now, displayLocale);
-  const yearLabel = t('periodToggle.year', { year: Number(todayDateOnlyInZone(APP_TIMEZONE).slice(0, 4)) });
+  const monthLabel = formatMonthYear(new Date(`${stats.referenceMonth}-15T12:00:00Z`), displayLocale);
+  const yearLabel = t('periodToggle.year', { year: Number(stats.referenceMonth.slice(0, 4)) });
   const periodLabel = isYear ? yearLabel : monthLabel;
 
   const chartCount = isYear ? 12 : 6;
@@ -95,10 +97,6 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
       metrics: { hours: t('rankPilots.metrics.hours'), spent: t('rankPilots.metrics.spent') },
       empty: t('rankPilots.empty'),
     },
-    // `t.raw` (not `t`): both carry ICU placeholders (`{shown}`/`{total}`,
-    // `{count}`) interpolated CLIENT-SIDE from the list's own length, so `t()`
-    // would try to resolve them here and throw `FORMATTING_ERROR`.
-    cap: { note: t.raw('mobile.capNote') as string, showAll: t.raw('mobile.showAll') as string },
   };
 
   return (
@@ -114,7 +112,7 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
             `.segmented` itself (lesson 15.3 F1, reconfirmed 15.5 F5 / 15.7). */}
         <div className="segmented reports-period" title={t('periodToggle.title')}>
           <Link
-            href={{ pathname: '/dashboard/reports', query: { period: 'month' } }}
+            href={{ pathname: '/dashboard/reports', query: ref ? { period: 'month', ref } : { period: 'month' } }}
             locale={locale as AppLocale}
             className={!isYear ? 'on' : ''}
             data-testid="reports-period-month"
@@ -122,7 +120,7 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
             {monthLabel}
           </Link>
           <Link
-            href={{ pathname: '/dashboard/reports', query: { period: 'year' } }}
+            href={{ pathname: '/dashboard/reports', query: ref ? { period: 'year', ref } : { period: 'year' } }}
             locale={locale as AppLocale}
             className={isYear ? 'on' : ''}
             data-testid="reports-period-year"
@@ -145,7 +143,7 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
         ) : null}
       </div>
 
-      <ReportsConsole stats={stats} seriesLabels={seriesLabels} moneyLocale={displayLocale} labels={labels} />
+      <ReportsConsole stats={stats} period={period} seriesLabels={seriesLabels} moneyLocale={displayLocale} labels={labels} />
     </main>
   );
 }

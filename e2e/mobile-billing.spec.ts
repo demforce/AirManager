@@ -1152,8 +1152,9 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
       // sweep — a rule leaking from THIS story would still move `.split`, the
       // bar width of the visible rows or the date inputs — with the numbers
       // updated to what 15.8b measures, never weakened away.
-      // Story 19.1: one `.split` fewer — "Utilizzo flotta" is a full-width row of its own.
-      '/it/dashboard/reports': { splits: [319, 319, 319], segmentedHeights: [46, 46, 46], utilBarWidths: [281, 0], dateInputs: [] },
+      // Story 19.1: one fewer `.split`; story 17.4: overflow rows are absent
+      // from the DOM, so only the visible 281px bar width remains.
+      '/it/dashboard/reports': { splits: [319, 319, 319], segmentedHeights: [46, 46, 46], utilBarWidths: [281], dateInputs: [] },
       '/it/dashboard/logbook': { splits: [], segmentedHeights: [], utilBarWidths: [], dateInputs: [0, 0, 335] },
       '/it/dashboard/bookings': { splits: [], segmentedHeights: [33.39], utilBarWidths: [], dateInputs: [335, 335] },
     };

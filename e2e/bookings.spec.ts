@@ -776,10 +776,13 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // aircraft filter scopes the count to just the two run-unique bookings
     // created above, regardless of anything else landing on the same day.
     await page.getByTestId('calendar-view-week').click();
+    const targetDayCell = page.locator('[data-testid="schedule-week-day"].selected');
+    // Wait for the week view to replace the day view before clicking a filter
+    // whose link is built from the currently rendered view.
+    await expect(targetDayCell).toBeVisible();
     await page.getByTestId('schedule-filter-toggle').click();
     await page.getByTestId(`schedule-filter-aircraft-${aircraft.id}`).click();
-    const targetDayCell = page.locator('[data-testid="schedule-week-day"].selected');
-    await expect(targetDayCell).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`[?&]aircraft=${aircraft.id}(&|$)`));
     await expect(targetDayCell.getByTestId('schedule-week-day-count')).toContainText('2');
   });
 

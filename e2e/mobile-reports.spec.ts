@@ -62,7 +62,6 @@ async function gotoReports(page: Page, query = ''): Promise<void> {
 
 // --- in-page probes --------------------------------------------------------
 
-const VISIBLE_COUNT = (selector: string): number => [...document.querySelectorAll(selector)].filter((el) => el.getClientRects().length > 0).length;
 
 /**
  * Every chart's own geometry: the SVG's rendered width and the glyph-level
@@ -261,17 +260,6 @@ async function createFlownAircraft(page: Page, minutes: number): Promise<{ id: s
   return aircraft;
 }
 
-/** Every fleet row with its metric, read from the DOM: `H:MM` back to minutes, plus whether the cap is hiding it. */
-const FLEET_ROWS = (): { testid: string; visible: boolean; minutes: number }[] =>
-  [...document.querySelectorAll('[data-testid^="reports-fleet-row-"]')].map((el) => {
-    const [hours, mins] = (el.querySelector('.util-value')?.textContent ?? '0:00').split(':');
-    return {
-      testid: el.getAttribute('data-testid') ?? '',
-      visible: el.getClientRects().length > 0,
-      minutes: Number(hours) * 60 + Number(mins),
-    };
-  });
-
 test.describe('Statistiche mobile (story 15.8b)', () => {
   test('AC 1: la KPI strip resta UN solo nodo e la stessa strip a 375 e a 1280, e i sei controlli passano il pavimento dei 44px', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
@@ -281,9 +269,10 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
     const desktopKpi = await page.locator('.kpi-row .kpi .kpi-value').count();
     const desktopSmall = await page.evaluate(SMALL_TARGETS);
     const desktopHead = await page.locator('.page-head').evaluate((el) => Math.round(el.getBoundingClientRect().height * 100) / 100);
-    // The desktop is the "before": its six controls are still 27.39px, which is
-    // what makes the phone assertion below discriminating rather than tautological.
-    expect(desktopSmall.length).toBe(6);
+    // The six original desktop controls remain compact. Story 17.4 can also
+    // render compact ranking CTAs when previews have more rows, so exclude
+    // only those links here; the phone sweep still checks every control.
+    expect(desktopSmall.filter(({ testid }) => !testid?.endsWith('-cap-button'))).toHaveLength(6);
     expect(desktopHead).toBe(51.44);
 
     await page.setViewportSize(PHONE);
@@ -369,98 +358,60 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
     for (const chart of desktopCharts) expect(chart.visible).toBe(12);
   });
 
-  test('AC 3: le liste ranked mostrano le prime N con un cap DICHIARATO, "Mostra tutte" le espande davvero, e a 1280 ci sono TUTTE', async ({ page }) => {
+  test('AC 3: il server limita le classifiche e il link apre la lista paginata per la metrica attiva', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
-
-    // The cap only exists above the limit, so the fixture builds a fleet that
-    // exceeds it. Archived in `afterAll` below, so `getStats().fleet` — a
-    // GLOBAL list — goes back to what it was.
+    const currentRanks = async () => {
+      const response = await page.request.get('/api/v1/stats?period=year');
+      expect(response.status()).toBe(200);
+      return (await response.json()) as { referenceMonth: string; rankings: Record<string, { total: number; items: { key: string; label: string; minutes: number }[] }> };
+    };
     const created: string[] = [];
-    const flown = await createFlownAircraft(page, 600);
-    created.push(flown.id);
-    const before = ((await (await page.request.get('/api/v1/stats?period=year')).json()) as { fleet: unknown[] }).fleet.length;
-    // Idle aircraft, all sorting BEFORE the flown one (`I-CAP…` < `I-ZZ…`).
-    for (let i = before; i <= RANKED_LIMIT + 1; i++) created.push((await createAircraft(page, 'CAP')).id);
-
     try {
-      await page.setViewportSize(PHONE);
-      await gotoReports(page);
+      const flown = await createFlownAircraft(page, 600);
+      created.push(flown.id);
+      const before = (await currentRanks()).rankings.fleetHours!.total;
+      for (let i = before; i <= RANKED_LIMIT + 1; i++) created.push((await createAircraft(page, 'CAP')).id);
+      const { referenceMonth: ref, rankings } = await currentRanks();
+      const hours = rankings.fleetHours!;
+      expect(hours.total).toBeGreaterThan(RANKED_LIMIT);
+      expect(hours.items).toHaveLength(RANKED_LIMIT);
+      expect(hours.items.map(({ minutes }) => minutes)).toEqual(hours.items.map(({ minutes }) => minutes).sort((a, b) => b - a));
 
-      const total = await page.locator('[data-testid^="reports-fleet-row-"]').count();
-      expect(total).toBeGreaterThan(RANKED_LIMIT);
+      for (const viewport of [PHONE, DESKTOP]) {
+        await page.setViewportSize(viewport);
+        await gotoReports(page);
+        const fleetRows = page.locator('[data-testid^="reports-fleet-row-"]');
+        await expect(fleetRows).toHaveCount(RANKED_LIMIT);
+        await expect(fleetRows.locator('.util-tail')).toHaveText(hours.items.map(({ label }) => label));
+        await expect(page.locator('.ranked-row-overflow')).toHaveCount(0);
+        const foot = page.getByTestId('reports-fleet-cap');
+        await expect(foot).toContainText(`Primi ${RANKED_LIMIT} di ${hours.total}`);
+        await expect(foot.getByRole('link')).toBeVisible();
+        if (viewport.width === PHONE.width) {
+          expect(await foot.getByRole('link').evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(TARGET_FLOOR);
+        }
 
-      // The guard is the number of rows RENDERED, in both states, not "the
-      // final row exists" (piano di test).
-      const visibleCapped = await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-fleet-row-"]');
-      expect(visibleCapped).toBe(RANKED_LIMIT);
-      const rankVisibleCapped = await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-rank-aircraft-row-"]');
-      expect(rankVisibleCapped).toBe(RANKED_LIMIT);
+        const rank = page.getByTestId('reports-rank-aircraft');
+        await rank.getByRole('button', { name: 'Ricavo' }).click();
+        await expect(rank.locator('.util-tail')).toHaveText(rankings.fleetRevenue!.items.map(({ label }) => label));
+        await expect(rank.getByRole('link')).toHaveAttribute('href', /rank=fleet-revenue/);
+      }
 
-      // ...and they are the first N BY THE METRIC, which is what AC 3 asks for
-      // and what a cap by DOM position does NOT give on a list the server
-      // returns in `registration asc` (review MAJOR-1: eight rows of 0:00 while
-      // the only flown aircraft sat behind "Mostra tutte"). The property is
-      // asserted on the data the page itself renders, so it holds on any DB:
-      // no hidden row may beat a visible one.
-      const fleetRows = await page.evaluate(FLEET_ROWS);
-      const visibleRows = fleetRows.filter((row) => row.visible);
-      const hiddenRows = fleetRows.filter((row) => !row.visible);
-      expect(visibleRows).toHaveLength(RANKED_LIMIT);
-      expect(Math.max(...hiddenRows.map((row) => row.minutes))).toBeLessThanOrEqual(Math.min(...visibleRows.map((row) => row.minutes)));
-      // The concrete case, with the fixture built for it: the aircraft with the
-      // hours is on screen even though it sorts last alphabetically.
-      expect(visibleRows.map((row) => row.testid)).toContain(`reports-fleet-row-${flown.registration}`);
-      expect(visibleRows.find((row) => row.testid === `reports-fleet-row-${flown.registration}`)?.minutes).toBe(600);
-
-      // ...and the row that declares it does not lie: it names both numbers.
-      const foot = page.getByTestId('mobile-reports-fleet-cap');
-      await expect(foot).toBeVisible();
-      await expect(foot).toContainText(`Primi ${RANKED_LIMIT} di ${total}`);
-      await expect(foot).toContainText(`Mostra tutti (${total - RANKED_LIMIT})`);
-      expect(await page.getByTestId('mobile-reports-fleet-cap-button').evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(TARGET_FLOOR);
-
-      // Expanded FROM THE KEYBOARD, because that is where the defect lives: the
-      // foot is rendered only while collapsed, so the click destroys the button
-      // that holds the focus. Pre-fix `document.activeElement` fell back to
-      // `<body>` and the next Tab restarted from the top of a document the
-      // expansion had just made thousands of pixels taller (review MINOR-1,
-      // third occurrence of the 15.2 F1 class). The declared destination is the
-      // rows container of THAT list, read literally.
-      await page.getByTestId('mobile-reports-fleet-cap-button').focus();
-      await page.keyboard.press('Enter');
-      await expect(page.getByTestId('mobile-reports-fleet-cap')).toHaveCount(0);
-      expect(
-        await page.evaluate(() => {
-          const el = document.activeElement;
-          return {
-            tag: el ? el.tagName : 'NONE',
-            rankedRows: !!el && el.classList.contains('ranked-rows'),
-            ownsFleetRows: !!el && !!el.querySelector('[data-testid^="reports-fleet-row-"]'),
-          };
-        }),
-      ).toEqual({ tag: 'DIV', rankedRows: true, ownsFleetRows: true });
-      expect(await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-fleet-row-"]')).toBe(total);
-
-      // The expansion of ONE list is not the expansion of the others.
-      expect(await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-rank-aircraft-row-"]')).toBe(RANKED_LIMIT);
-
-      // AD-3, decided and declared: changing the metric re-sorts but does NOT
-      // re-hide what the reader asked to see.
-      await page.getByTestId('mobile-reports-rank-aircraft-cap-button').click();
-      expect(await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-rank-aircraft-row-"]')).toBe(total);
-      await page.locator('[data-testid="reports-rank-aircraft"] .card-head .segmented button').nth(1).click();
-      expect(await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-rank-aircraft-row-"]')).toBe(total);
-
-      // 1280: the cap is mobile-only. Every row is rendered AND visible, and
-      // the cap foot — which IS in the DOM at every width, hidden by the
-      // out-of-query `display: none` — shows nothing. `reports.spec.ts` reads
-      // these testids page-level at this width.
-      await page.setViewportSize(DESKTOP);
-      await gotoReports(page);
-      expect(await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-fleet-row-"]')).toBe(total);
-      expect(await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-rank-aircraft-row-"]')).toBe(total);
-      await expect(page.getByTestId('mobile-reports-fleet-cap')).toBeHidden();
-      await expect(page.getByTestId('mobile-reports-rank-aircraft-cap')).toBeHidden();
+      const full = await page.request.get(`/api/v1/stats/rankings?period=year&rank=fleet-hours&ref=${ref}`);
+      expect(full.status()).toBe(200);
+      expect((await full.json()).items).toEqual(hours.items);
+      await page.getByTestId('reports-fleet-cap-button').press('Enter');
+      await expect(page).toHaveURL(/reports\/rankings/);
+      await expect(page.getByTestId('stats-rankings-item')).toHaveCount(RANKED_LIMIT);
+      const first = await page.getByTestId('stats-rankings-item').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-key')));
+      expect(first).toEqual(hours.items.map(({ key }) => key));
+      await page.getByRole('link', { name: 'Successiva' }).click();
+      await expect(page).toHaveURL(/page=2/);
+      const second = await page.getByTestId('stats-rankings-item').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-key')));
+      expect(second.length).toBeGreaterThan(0);
+      expect(second.some((key) => first.includes(key))).toBe(false);
+      await page.getByRole('link', { name: 'Torna a Statistiche' }).click();
+      await expect(page).toHaveURL(new RegExp(`/dashboard/reports\\?period=year&ref=${ref}`));
     } finally {
       for (const id of created) await page.request.post(`/api/v1/aircraft/${id}/archive`);
     }
@@ -468,8 +419,8 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
 
   test('AC 3: ogni riga ranked conserva label, barra proporzionale e valore, e ogni testid resta UN nodo a 375 e a 1280', async ({ page }) => {
     await login(page, ADMIN_EMAIL);
-    const stats = (await (await page.request.get('/api/v1/stats?period=year')).json()) as { fleet: { registration: string }[] };
-    const registration = stats.fleet[0]!.registration;
+    const stats = (await (await page.request.get('/api/v1/stats?period=year')).json()) as { rankings: { fleetHours: { items: { label: string }[] } } };
+    const registration = stats.rankings.fleetHours.items[0]!.label;
 
     for (const viewport of [PHONE, DESKTOP]) {
       await page.setViewportSize(viewport);
@@ -563,18 +514,6 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
     await page.reload();
     await expect(page.locator('.kpi-row')).toHaveCount(1);
 
-    // (viii) the cap: undo the hiding rule and every row comes back — i.e. the
-    // "8 visible" assertion above is measuring the rule, not the data.
-    const cappedBefore = await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-fleet-row-"]');
-    const totalRows = await page.locator('[data-testid^="reports-fleet-row-"]').count();
-    await page.addStyleTag({ content: '.ranked-rows-capped .ranked-row-overflow{ display: flex !important; }' });
-    const cappedAfter = await page.evaluate(VISIBLE_COUNT, '[data-testid^="reports-fleet-row-"]');
-    expect(cappedAfter).toBe(totalRows);
-    if (totalRows > RANKED_LIMIT) expect(cappedBefore).toBeLessThan(cappedAfter);
-
-    await page.reload();
-    await expect(page.locator('.kpi-row')).toHaveCount(1);
-
     // (iv) the ellipsis guard: take `text-overflow` away and the sweep, which
     // is otherwise blind to a clipped ranked label, reports it.
     // `flex: 0 0` so the injected width actually holds — a `flex-grow: 1` item
@@ -585,18 +524,7 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
     await page.reload();
     await expect(page.locator('.kpi-row')).toHaveCount(1);
 
-    // (ii) the desktop side of the switch: the cap foot is in the DOM at 1280
-    // and hidden by the out-of-query `display: none`. Undo that rule and it
-    // becomes visible — i.e. the "hidden at 1280" assertion of AC 3 measures
-    // the rule, not the absence of the node.
-    await page.setViewportSize(DESKTOP);
-    await gotoReports(page);
-    const footAt1280 = page.getByTestId('mobile-reports-fleet-cap');
-    if ((await footAt1280.count()) > 0) {
-      await expect(footAt1280).toBeHidden();
-      await page.addStyleTag({ content: '.ranked-cap-foot{ display: flex !important; }' });
-      await expect(footAt1280).toBeVisible();
-    }
+
   });
 
   test('AC 9: la matrice dei testid — un nodo per singleton a 375 e a 1280', async ({ page }) => {

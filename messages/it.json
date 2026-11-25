@@ -2001,6 +2001,27 @@
       "depositsSub": "Debito verso i piloti"
     }
   },
+  "StatsRankingsPage": {
+    "titles": {
+      "fleet-hours": "Velivoli per ore di volo",
+      "fleet-revenue": "Velivoli per ricavo",
+      "instructor-hours": "Istruttori per ore di volo",
+      "pilot-hours": "Piloti per ore di volo",
+      "pilot-spent": "Piloti per spesa"
+    },
+    "count": "{count, plural, one {# voce} other {# voci}}",
+    "back": "Torna a Statistiche",
+    "empty": "Nessuna voce per questo periodo.",
+    "label": "Nome o marca",
+    "hours": "Ore",
+    "owed": "Da pagare",
+    "revenue": "Ricavo",
+    "spent": "Spesa",
+    "pages": "Pagine della classifica",
+    "page": "Pagina {page} di {total}",
+    "previous": "Precedente",
+    "next": "Successiva"
+  },
   "ReportsPage": {
     "title": "Statistiche",
     "sub": "Analisi dell'aviosuperficie · {period}",
@@ -2054,14 +2075,14 @@
     },
     "rankPilots": {
       "title": "Per pilota",
-      "sub": "primi 10 · {period}",
+      "sub": "primi 8 · {period}",
       "metrics": {
         "hours": "Ore",
         "spent": "Spesa"
       },
       "empty": "Nessun pilota con voli nel periodo."
     },
-    "mobile": {
+    "rankingPreview": {
       "capNote": "Primi {shown} di {total}",
       "showAll": "Mostra tutti ({count})"
     }

@@ -1,6 +1,9 @@
 [
   { "name": "api stats month", "path": "/api/v1/stats?period=month", "burst": true },
-  { "name": "api stats year", "path": "/api/v1/stats?period=year" },
+  { "name": "api stats year", "path": "/api/v1/stats?period=year", "burst": true },
+  { "name": "api stats rankings pilot spent p2", "path": "/api/v1/stats/rankings?rank=pilot-spent&period=year&page=2" },
+  { "name": "page stats complete ranking", "path": "/it/dashboard/reports/rankings?rank=pilot-spent&period=year&page=2" },
+  { "name": "api transactions date filtered", "path": "/api/v1/transactions?from={MONTH_START}&to={TODAY}" },
   { "name": "api transactions", "path": "/api/v1/transactions" },
   { "name": "api negative balances", "path": "/api/v1/accounts/negative-balances" },
   { "name": "api instructor compensation", "path": "/api/v1/instructor-compensation" },

@@ -124,7 +124,7 @@ import {
   treasurySettingsSchema,
   updateSettingsSchema,
 } from './settings';
-import { statsQuerySchema, statsResponseSchema } from './stats';
+import { statsQuerySchema, statsRankingQuerySchema, statsRankingResponseSchema, statsResponseSchema } from './stats';
 import {
   listTransactionsQuerySchema,
   recordTransactionResponseSchema,
@@ -308,6 +308,7 @@ registry.register('AirfieldBranding', airfieldBrandingSchema);
 registry.register('UpdateSettingsRequest', updateSettingsSchema);
 registry.register('SettingsSnapshot', settingsSnapshotSchema);
 registry.register('Stats', statsResponseSchema);
+registry.register('StatsRanking', statsRankingResponseSchema);
 // Story 12.13 (F5, review 12.11 action item) — the 9 routes story 12.11
 // shipped without ever registering: settings sub-resources, METAR, the
 // manual expiry-alerts trigger, and the per-person membership-fee charge.
@@ -1922,12 +1923,26 @@ registry.registerPath({
   path: '/api/v1/stats',
   summary: 'Aggregated statistics (KPIs, monthly series, fleet/movement/instructor/pilot breakdowns)',
   description:
-    "Read-only aggregation over flights/ledger/compensation, no new model. `period` (`month`|`year`, REQUIRED) picks the KPI window's granularity; `ref` (`YYYY-MM`, optional, defaults to the current Europe/Rome month) anchors it — full history is supported, a FUTURE `ref` answers 422. The chart series is always a ROLLING window ending at `ref` (6 points for `period=month`, 12 for `period=year`), independent of the KPI window's own calendar alignment. `kpis.revenueCents`/`series.revenueCents` are the club-centric ledger total (`transactions.service.ts#getLedgerRevenueCents`, same sign-normalization as `GET /api/v1/transactions`'s KPIs); `fleet[].revenueCents`/`topPilots[].spentCents` are FLIGHT-charge totals instead (a deliberately different notion). `instructors[].owedCents` is `null` unless `ref` is the CURRENT period. Requires `finance.manage` (ADMIN-only).",
+    "Read-only aggregation over flights/ledger/compensation, no new model. `period` (`month`|`year`, REQUIRED) picks the KPI window's granularity; `ref` (`YYYY-MM`, optional, defaults to the current Europe/Rome month) anchors it — full history is supported, a FUTURE `ref` answers 422. The chart series is always a ROLLING window ending at `ref` (6 points for `period=month`, 12 for `period=year`), independent of the KPI window's own calendar alignment. `kpis.revenueCents`/`series.revenueCents` are the club-centric ledger total (`transactions.service.ts#getLedgerRevenueCents`, same sign-normalization as `GET /api/v1/transactions`'s KPIs); `rankings` contains the first eight entries and the total for each metric; use `/api/v1/stats/rankings` for the rest. Fleet revenue and pilot spend are flight-charge totals. Instructor compensation is only included for the current period. Requires `finance.manage` (ADMIN-only).",
   tags: ['Stats'],
   security,
   request: { query: statsQuerySchema },
   responses: {
     200: { description: 'The aggregated statistics for the requested period.', content: jsonContent(statsResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/stats/rankings',
+  summary: 'Paginated statistics ranking, sorted by the selected metric',
+  description: 'Story 17.4. Uses the requested month/year window in the Rome calendar. Sorts by the selected metric, then binary label and ID. Compensation values are only available for the current period. Requires `finance.manage`.',
+  tags: ['Stats'],
+  security,
+  request: { query: statsRankingQuerySchema },
+  responses: {
+    200: { description: 'The requested ranking page, total and resolved period.', content: jsonContent(statsRankingResponseSchema) },
     ...errorResponses(401, 403, 422),
   },
 });

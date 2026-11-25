@@ -1,3 +1,4 @@
+import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { z } from './zod-with-openapi';
 
 /**
@@ -57,20 +58,6 @@ export const statsSeriesSchema = z.object({
   flightMinutes: z.array(z.number().int()),
 });
 
-/**
- * Per-aircraft utilization/revenue row (AC 1) — one entry per OPERATIONAL,
- * non-archived aircraft (ratifica utente 2's definition), REGARDLESS of
- * whether it flew in the window (`minutes`/`revenueCents` default to `0`).
- * `revenueCents` is the AIRCRAFT-component charge only (never the
- * instructor's), the "doppia nozione" the ratifica calls out versus the
- * ledger-based `kpis.revenueCents`.
- */
-export const statsFleetItemSchema = z.object({
-  registration: z.string(),
-  minutes: z.number().int(),
-  revenueCents: z.number().int(),
-});
-
 /** Movement composition key (ratifica utente 1) — the 2 real `FlightType` values (story 19.5). */
 export const statsMovementMixKeySchema = z.enum(['SCHOOL', 'TOURISM']);
 
@@ -79,32 +66,50 @@ export const statsMovementMixItemSchema = z.object({
   count: z.number().int(),
 });
 
-/**
- * Per-instructor row (AC 1) — `minutes` = SUM over SCHOOL flights in the
- * window, computed for ANY period (ratifica utente 3). `owedCents` is
- * `null` unless `ref` is the CURRENT period (the compensation summary's
- * `owedMtd`/`owedYtd` are only meaningful "as of now") — the UI renders "—".
- */
-export const statsInstructorItemSchema = z.object({
-  name: z.string(),
-  minutes: z.number().int(),
-  owedCents: z.number().int().nullable(),
+export const STATS_RANKING_PREVIEW_SIZE = 8;
+
+export const statsRankingKeySchema = z.enum(['fleet-hours', 'fleet-revenue', 'instructor-hours', 'pilot-hours', 'pilot-spent']);
+export type StatsRankingKey = z.infer<typeof statsRankingKeySchema>;
+
+export const statsRankingQuerySchema = statsQuerySchema.extend(paginationQuerySchema.shape).extend({
+  rank: statsRankingKeySchema,
+  pageSize: paginationQuerySchema.shape.pageSize.default(STATS_RANKING_PREVIEW_SIZE),
 });
 
-/** Top-10-by-minutes pilot row (AC 1) — `spentCents` is the FLIGHT-charge total (aircraft + instructor component), the pilot's real spend, distinct from the ledger-based `kpis.revenueCents`. */
-export const statsTopPilotItemSchema = z.object({
-  name: z.string(),
+export type StatsRankingQuery = z.infer<typeof statsRankingQuerySchema>;
+
+export const statsRankingItemSchema = z.object({
+  key: z.string(),
+  label: z.string(),
   minutes: z.number().int(),
-  spentCents: z.number().int(),
+  /** Fleet revenue, pilot spend, or currently owed compensation, depending on the ranking. */
+  cents: z.number().int().nullable(),
+});
+
+export const statsRankingResponseSchema = paginatedResponseSchema(statsRankingItemSchema).extend({
+  ref: z.string(),
+  period: statsQuerySchema.shape.period,
+});
+
+export type StatsRankingResponseDto = z.infer<typeof statsRankingResponseSchema>;
+
+export const statsRankingPreviewSchema = z.object({
+  items: z.array(statsRankingItemSchema).max(STATS_RANKING_PREVIEW_SIZE),
+  total: z.number().int().nonnegative(),
 });
 
 export const statsResponseSchema = z.object({
+  referenceMonth: z.string(),
   kpis: statsKpisSchema,
   series: statsSeriesSchema,
-  fleet: z.array(statsFleetItemSchema),
   movementMix: z.array(statsMovementMixItemSchema),
-  instructors: z.array(statsInstructorItemSchema),
-  topPilots: z.array(statsTopPilotItemSchema),
+  rankings: z.object({
+    fleetHours: statsRankingPreviewSchema,
+    fleetRevenue: statsRankingPreviewSchema,
+    instructorHours: statsRankingPreviewSchema,
+    pilotHours: statsRankingPreviewSchema,
+    pilotSpent: statsRankingPreviewSchema,
+  }),
 });
 
 export type StatsResponseDto = z.infer<typeof statsResponseSchema>;
