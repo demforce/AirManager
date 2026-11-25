@@ -1,3 +1,4 @@
+import { PICKER_LIMIT } from '@/lib/picker';
 import type { ReactElement } from 'react';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +26,9 @@ import { getAdminOverviewSettings, getMetarStation } from '@/server/services/app
 import {
   getOwnInstructorProfileId,
   listActiveInstructors,
-  listBookableAircraft,
+  searchBookingAircraft,
+  searchBookingPeople,
+  searchBookingInstructors,
   listScheduleAircraft,
   listBookings,
   listCalendarBookings,
@@ -62,10 +65,8 @@ type PageProps = {
 type DisplayLocale = 'it' | 'en';
 
 // --- Shared small constants (AC 1/4/5) --------------------------------------
-// Same "small admin-managed list" convention as `bookings/page.tsx`'s own
-// `OPTIONS_PAGE_SIZE`/`fleet/page.tsx`'s fleet-wide reads — a real airfield's
-// roster/fleet comfortably fits in one page.
-const OPTIONS_PAGE_SIZE = 100;
+// The fleet widget links to the full list when this preview is truncated.
+const FLEET_WIDGET_LIMIT = 100;
 /** The embedded "Prenotazioni" card shows a handful of rows — "next page" deep-links into the full `/dashboard/bookings` list (`bookings-table.tsx#pageHref` is hardcoded to that route regardless of caller). */
 const EMBED_BOOKINGS_PAGE_SIZE = 8;
 /** Same set `bookings/page.tsx#ALL_BOOKING_STATUSES` shows — the embedded table is the SAME "Prenotazioni" card, same `startsAt`-ascending order, just row-capped. */
@@ -255,8 +256,12 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const listFrom = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
 
   const month = currentMonthRange(now);
-  const aircraftResult = await listAircraft(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: false });
-  const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: false });
+  const aircraftResult = await listAircraft(actor, { page: 1, pageSize: FLEET_WIDGET_LIMIT, includeArchived: false });
+  const [staffPeople, pilotStudents, instructors] = await Promise.all([
+    searchBookingPeople(actor, 'people', undefined, PICKER_LIMIT + 1),
+    listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'pilot-or-student', includeArchived: false }),
+    listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'instructor', includeArchived: false }),
+  ]);
 
   const allAircraftIds = aircraftResult.items.map((aircraft) => aircraft.id);
   const operationalIds = aircraftResult.items.filter((aircraft) => aircraft.status === 'OPERATIONAL').map((aircraft) => aircraft.id);
@@ -268,12 +273,13 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     pendingBookingsResult,
     revenueCents,
     flightsTodayTotals,
-    calendarBookingsToday,
+    { items: calendarBookingsToday, truncated: calendarTruncated },
     embedPendingResult,
     embedBookingsResult,
     expiriesResult,
-    scheduleAircraftOptions,
-    instructorOptions,
+    { items: scheduleAircraftOptions },
+    roster,
+    { items: instructorOptions },
     negativeBalances,
     metarCard,
     outOfServiceAircraft,
@@ -295,8 +301,9 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     // ordering — two concatenated queries made the dates look unsorted).
     listBookings(actor, { from: listFrom, status: [...ALL_BOOKING_STATUSES], page: 1, pageSize: EMBED_BOOKINGS_PAGE_SIZE }),
     settings.then(({ currencySettings }) => listAllExpiries(actor, { window: '60', page: 1, pageSize: EXPIRIES_WIDGET_SCAN_LIMIT }, currencySettings)),
-    listBookableAircraft(actor),
+    searchBookingAircraft(actor, undefined, PICKER_LIMIT + 1),
     listActiveInstructors(actor),
+    searchBookingInstructors(actor, undefined, PICKER_LIMIT + 1),
     // Story 15.3 (ratifica R-15.3-e): the ONE new query the mobile "Avvisi"
     // feed needed — a `groupBy` with a `having` on the aggregate plus one name
     // lookup, `finance.manage`-gated exactly like this face. Not
@@ -315,12 +322,12 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
 
   // --- .sub: ICAO (D3) + AOG ---------------------------------------------
   // Story AOG-1a, AC 13 — was `aircraftResult.items.length - operationalIds.length`,
-  // i.e. the grounded aircraft among the FIRST `OPTIONS_PAGE_SIZE` (100) by
+  // i.e. the grounded aircraft among the FIRST `FLEET_WIDGET_LIMIT` (100) by
   // registration only: measured on a post-suite DB (148 active aircraft) the
   // Panoramica announced "1 AOG" while the Flotta announced the true "3 AOG",
   // same instant, same data. `listOutOfServiceAircraft` is unpaginated, filters
   // on `status`, and is already gated on the same `aircraft.manage` — the two
-  // pages now count with ONE reader. (The wider `OPTIONS_PAGE_SIZE` TD on the
+  // pages now count with ONE reader. (The wider `FLEET_WIDGET_LIMIT` TD on the
   // other three pages stays open, out of this story's perimeter.)
   const aogCount = outOfServiceAircraft.length;
   // Review MINOR-1 (PO decision 2026-08-07) — the SAME fleet-wide partition
@@ -329,7 +336,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   // unpaginated count of non-archived aircraft the query above ALREADY
   // returned, so this costs no new query. Without it the AOG count was
   // fleet-wide while the KPI denominator and the Flotta card stayed capped at
-  // the first `OPTIONS_PAGE_SIZE`, and the same screen announced two
+  // the first `FLEET_WIDGET_LIMIT`, and the same screen announced two
   // incompatible fleets (measured: "24 AOG" beside "87 / 88", 88 + 24 = 112 —
   // neither 100 nor the 175 aircraft actually active).
   const fleetTotalCount = aircraftResult.total;
@@ -343,10 +350,10 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   // "Flotta disponibile" keeps its ratified meaning (story 12.12, AC 1:
   // OPERATIONAL, non archiviati, non riservati ORA) and its fleet-wide base
   // (review MINOR-1): the "Riservato" overlay is still read over the first
-  // `OPTIONS_PAGE_SIZE` ids — it is a live, per-aircraft concept that
+  // `FLEET_WIDGET_LIMIT` ids — it is a live, per-aircraft concept that
   // `/dashboard/fleet` deliberately does not subtract from its own summary at
   // all, and widening it would need the query this fix is not allowed to add
-  // (the `OPTIONS_PAGE_SIZE` TD stays open). On a fleet within that page the
+  // (the `FLEET_WIDGET_LIMIT` TD stays open). On a fleet within that page the
   // number is exactly the one this KPI has always shown.
   const reservedOperationalCount = operationalIds.filter((id) => reservedIds.has(id)).length;
   const trulyAvailableCount = Math.max(0, fleetOperationalCount - reservedOperationalCount);
@@ -394,19 +401,17 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const embedTotal = embedBookingsResult.total;
   const embedTotalPages = Math.max(1, Math.ceil(embedTotal / EMBED_BOOKINGS_PAGE_SIZE));
 
-  const staffPersonOptions: PersonOption[] = peopleResult.items
-    .filter((person) => person.archivedAt === null && (person.profiles.pilot || person.profiles.student || person.profiles.instructor))
-    .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
+  const staffPersonOptions: PersonOption[] = staffPeople.items;
 
   // --- "Pianifica volo" CTA — the real `flights.manage` FlightEditor (story 12.8), reused as-is ---
   // Story AOG-1a, AC 12 — same option shape (and same suffix language) as the registro voli' own picker.
-  const dispatchAircraftOptions = aircraftResult.items.map((aircraft) => ({
+  const dispatchAircraftOptions = scheduleAircraftOptions.map((aircraft) => ({
     id: aircraft.id,
     registration: aircraft.registration,
     status: aircraft.status,
     statusReason: aircraft.statusReason,
   }));
-  const dispatchPersonOptions = peopleResult.items
+  const dispatchPersonOptions = pilotStudents.items
     .filter((person) => person.profiles.pilot || person.profiles.student)
     .map((person) => ({
       id: person.id,
@@ -414,7 +419,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
       lastName: person.lastName,
       profiles: { pilot: person.profiles.pilot, student: person.profiles.student },
     }));
-  const dispatchInstructorOptions = peopleResult.items
+  const dispatchInstructorOptions = instructors.items
     .filter((person) => person.profiles.instructor)
     .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
 
@@ -506,6 +511,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
 
   return (
     <main className="page">
+      {calendarTruncated && <p role="status">{tBookings('calendarTruncated')}</p>}
       <div className="page-head">
         <div className="page-title-block">
           <h1>{t('overview.title')}</h1>
@@ -648,7 +654,8 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           hasAircraft={scheduleAircraft.activeCount > 0 || scheduleAircraft.rows.length > 0}
           aircraftFilters={scheduleAircraft.filterOptions}
           freeAircraftCount={scheduleAircraft.freeCount}
-          instructors={instructorOptions}
+          instructors={roster.items}
+          rosterNotice={roster.truncated ? tBookings('rosterTruncated') : undefined}
           dayBlocks={dayBlocks}
           weekChips={[]}
           nowLinePercent={nowLinePercent}
@@ -850,7 +857,7 @@ async function renderInstructorLanding(
   const todayStart = zonedMidnightUtc(today, APP_TIMEZONE);
   const tomorrowStart = zonedMidnightUtc(addDaysDateOnly(today, 1), APP_TIMEZONE);
 
-  const [compensation, flightsTodayTotals, calendarBookingsToday, metarCard] = await Promise.all([
+  const [compensation, flightsTodayTotals, { items: calendarBookingsToday, truncated: calendarTruncated }, metarCard] = await Promise.all([
     getOwnCompensationSummary(actor),
     me.person
       ? getFlightTotals(actor, { dateFrom: today, dateTo: today, instructorPersonId: me.person.id, page: 1, pageSize: 1 })
@@ -903,6 +910,7 @@ async function renderInstructorLanding(
   });
   return (
     <main className="page">
+      {calendarTruncated && <p role="status">{t('calendarTruncated')}</p>}
       <div className="page-head">
         <div className="page-title-block">
           <h1>{t('instructorLanding.greeting', { name: displayName })}</h1>

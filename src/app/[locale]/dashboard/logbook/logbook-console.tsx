@@ -1,5 +1,7 @@
 'use client';
 
+import { SearchCombobox } from '@/components/search-combobox';
+
 /**
  * Logbook table console (story 12.8, AC 2/4/5) — port of
  * `docs/design-reference/airops/src/LogbookView.jsx` onto real,
@@ -325,10 +327,6 @@ export function LogbookConsole({
 
   const hasActiveFilter = Object.values(filters).some((value) => value !== '');
 
-  // Plain-select option list (user decision 2026-07-21: the velivolo filter
-  // uses the SAME control as the tipo one, no typeahead) — the server
-  // page already loads the full candidate list (`OPTIONS_PAGE_SIZE`). The
-  // persona filter is now free-text (story 13.5, AC 7), no options list needed.
   const aircraftSelectOptions: { id: string; label: string }[] = [
     { id: '', label: labels.filters.allAircraft },
     ...aircraftFilterOptions.map((aircraft) => ({
@@ -336,6 +334,16 @@ export function LogbookConsole({
       label: aircraft.registration + (aircraft.archived ? labels.filters.archivedSuffix : ''),
     })),
   ];
+
+  async function searchFilterAircraft(q: string) {
+    const params = new URLSearchParams({ q, includeArchived: 'true', picker: 'true' });
+    const response = await fetch('/api/v1/aircraft?' + params);
+    if (!response.ok) throw new Error('Picker search failed');
+    const body = await response.json() as { items: { id: string; registration: string; archivedAt: string | null }[]; truncated: boolean };
+    return { truncated: body.truncated, items: body.items.map((ac) => ({
+      id: ac.id, label: ac.registration + (ac.archivedAt ? labels.filters.archivedSuffix : ''),
+    })) };
+  }
 
   /** The card's mono sub-line and the desktop's own second line under the pilot share this: «Istruttore: ⟨nome⟩». */
   function instructorLabel(flight: FlightListItemDto): string | null {
@@ -524,20 +532,11 @@ export function LogbookConsole({
             />
           </div>
           {canManage ? (
-            <select
-              className="input logbook-filter-inpanel"
-              style={{ width: 'auto', minWidth: 130, fontSize: 12 }}
-              value={filters.aircraftId}
-              onChange={(event) => handleFilterChange({ aircraftId: event.target.value })}
-              data-testid="flight-filter-aircraft"
-              aria-label={labels.filters.aircraft}
-            >
-              {aircraftSelectOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <div className="logbook-filter-inpanel"><SearchCombobox
+              id="flight-filter-aircraft" label={labels.filters.aircraft} hideLabel
+              initialOptions={aircraftSelectOptions} value={filters.aircraftId}
+              fetchOptions={searchFilterAircraft} onChange={(aircraftId) => handleFilterChange({ aircraftId })}
+            /></div>
           ) : null}
           {/* Width moved out of the inline style into `.logbook-search` for the
               same reason as the date pair above: the phone head gives this box
@@ -926,24 +925,11 @@ export function LogbookConsole({
               />
             </div>
             {canManage ? (
-              <div className="fld">
-                <label className="fld-label" htmlFor="flight-filter-aircraft-mobile">
-                  {labels.filters.aircraft}
-                </label>
-                <select
-                  id="flight-filter-aircraft-mobile"
-                  className="input"
-                  value={filterDraft.aircraftId}
-                  onChange={(event) => setFilterDraft({ ...filterDraft, aircraftId: event.target.value })}
-                  data-testid="flight-filter-aircraft-mobile"
-                >
-                  {aircraftSelectOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SearchCombobox
+                id="flight-filter-aircraft-mobile" label={labels.filters.aircraft}
+                initialOptions={aircraftSelectOptions} value={filterDraft.aircraftId}
+                fetchOptions={searchFilterAircraft} onChange={(aircraftId) => setFilterDraft({ ...filterDraft, aircraftId })}
+              />
             ) : null}
             <div className="fld">
               <label className="fld-label" htmlFor="flight-filter-type-mobile">

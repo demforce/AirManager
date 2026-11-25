@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { useTranslations } from 'next-intl';
+import { browsePicker, canSearchPicker, PICKER_LIMIT, type OptionPage } from '@/lib/picker';
 import { createPortal } from 'react-dom';
 import { anchorPositionStyle, computeFixedPopoverAnchor, POPOVER_PORTAL_Z_INDEX, type FixedPopoverAnchor } from './ui/fixed-popover';
 
@@ -58,27 +60,17 @@ export type SearchComboboxProps = {
    * STATIC mode — the client-side filter of `initialOptions` is the final
    * result, no debounce, no network.
    */
-  fetchOptions?: (query: string) => Promise<SearchComboboxOption[]>;
+  fetchOptions?: (query: string) => Promise<SearchComboboxOption[] | OptionPage<SearchComboboxOption>>;
   /**
-   * The page's server-rendered first page of candidates (≤100, story 5.4's
-   * `OPTIONS_PAGE_SIZE`/AC 1) — shown verbatim on focus (browse mode, no
-   * fetch: the ≤100 case works with ZERO extra network calls) and filtered
-   * client-side as an optimistic placeholder the instant the user starts
-   * typing, replaced by `fetchOptions`'s authoritative results once they
-   * resolve. In static mode (no `fetchOptions`, story 19.5) it is instead the
-   * COMPLETE list — a short fixed one (Tipo di volo) or a list the server has
-   * already scoped to what the actor may pick (the booking forms, whose
-   * actors cannot call the search APIs). A caller that needs a "no
-   * selection" choice reachable from the keyboard (the flight filter bar's
-   * "Tutti i velivoli", the optional
-   * istruttore's "Nessun istruttore") prepends a `{ id: '', label: ... }`
-   * entry here — this component has no built-in "clear" affordance by
-   * design (exact prop contract, story TD-3).
+   * Server-rendered browse options. Remote pickers may carry one overflow
+   * row to signal more matches without a network request on focus.
    */
   initialOptions: SearchComboboxOption[];
+  selectedLabel?: string;
+  hideLabel?: boolean;
   placeholder?: string;
   /** Shown as a non-selectable row when a search yields zero matches. */
-  emptyText: string;
+  emptyText?: string;
   disabled?: boolean;
   /** Story 14.2, AC 1: same contract as `Field`'s own `error` prop (this component renders its OWN `.fld`, see the doc-comment above) — sets `aria-invalid` on the input and an inline `.fld-error` message right below it. */
   error?: string;
@@ -108,16 +100,9 @@ function findLabel(id: string, options: SearchComboboxOption[]): string {
  * the popup is closed (after a pick or an Escape), Escape closes and
  * reverts the visible text to the committed selection.
  *
- * FOCUS = browse (`initialOptions` verbatim, zero fetch, text pre-selected
- * so typing replaces it — same "click a select, see everything" UX as
- * before), and so is a click on the already-focused field while the popup
- * is closed (review 19.5 F4). TYPING = search: an immediate client-side
- * filter of `initialOptions` as a placeholder, superseded ~250ms later by
- * `fetchOptions`'s server-authoritative results (a monotonic sequence
- * counter discards a stale response that resolves after a newer one — no
- * `AbortController` needed for a same-origin JSON fetch this small). With
- * no `fetchOptions` (static mode, story 19.5) the client-side filter is the
- * final result.
+ * Focusing shows the first page with the current selection. Remote searches
+ * start after two characters and a debounce. The sequence number discards
+ * results from superseded searches. Static pickers filter locally.
  *
  * Escape with the popup OPEN closes only the popup (story 19.5, AD-3) — the
  * event stops there, so the surrounding `SlideOver`/`MobileSheet` (which
@@ -138,13 +123,17 @@ export function SearchCombobox({
   onChange,
   fetchOptions,
   initialOptions,
+  selectedLabel,
+  hideLabel,
   placeholder,
   emptyText,
   disabled = false,
   error,
   hint,
 }: SearchComboboxProps) {
-  const [committedLabel, setCommittedLabel] = useState<string>(() => findLabel(value, initialOptions));
+  const t = useTranslations('Picker');
+  const [notice, setNotice] = useState<'more' | 'minimum' | 'loading' | 'failed' | null>(null);
+  const [committedLabel, setCommittedLabel] = useState<string>(() => (findLabel(value, initialOptions) || selectedLabel || ''));
   const [query, setQuery] = useState<string>(committedLabel);
   const [options, setOptions] = useState<SearchComboboxOption[]>(initialOptions);
   const [open, setOpen] = useState(false);
@@ -178,7 +167,7 @@ export function SearchCombobox({
   // `false` re-evaluates this and reconciles then.
   if (value !== reconciledValue && !open) {
     setReconciledValue(value);
-    const label = findLabel(value, initialOptions);
+    const label = (findLabel(value, initialOptions) || selectedLabel || '');
     setCommittedLabel(label);
     setQuery(label);
   }
@@ -255,27 +244,37 @@ export function SearchCombobox({
    * `<select>` would — instead of replacing it with the first row.
    */
   function openBrowseMode(): void {
-    const selectedIndex = initialOptions.findIndex((option) => option.id === value);
-    openWithOptions(initialOptions, selectedIndex >= 0 ? selectedIndex : undefined);
+    const browse = browsePicker(initialOptions, { id: value, label: committedLabel }, fetchOptions ? PICKER_LIMIT : Infinity);
+    setNotice(browse.truncated ? 'more' : null);
+    openWithOptions(browse.items, browse.active >= 0 ? browse.active : undefined);
   }
 
-  /** Search mode (typing) — optimistic client filter now, server-authoritative results ~250ms later. */
+  /** Search mode defers the remote request until typing pauses. */
   function runSearch(q: string): void {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (q.trim() === '') {
-      openWithOptions(initialOptions);
+      openBrowseMode();
       return;
     }
     const clientMatches = initialOptions.filter((option) => option.label.toLowerCase().includes(q.toLowerCase()));
-    openWithOptions(clientMatches);
+    openWithOptions(fetchOptions ? [] : clientMatches);
+    if (fetchOptions && !canSearchPicker(q)) {
+      setNotice('minimum');
+      return;
+    }
     if (!fetchOptions) return; // static mode (story 19.5): the client filter is final
 
+    setNotice('loading');
     const seq = ++seqRef.current;
     debounceRef.current = setTimeout(() => {
       void fetchOptions(q).then((results) => {
         if (seqRef.current !== seq) return; // superseded by a newer search — discard
-        setOptions(results);
-        setActiveIndex(results.length > 0 ? 0 : -1);
+        const items = Array.isArray(results) ? results : results.items;
+        setNotice(!Array.isArray(results) && results.truncated ? 'more' : null);
+        setOptions(items.slice(0, PICKER_LIMIT));
+        setActiveIndex(items.length > 0 ? 0 : -1);
+      }).catch(() => {
+        if (seq === seqRef.current) setNotice('failed');
       });
     }, DEBOUNCE_MS);
   }
@@ -382,10 +381,11 @@ export function SearchCombobox({
     // No `position: relative` needed (story 14.1): the listbox below is
     // `position: fixed` + portaled, measured off `wrapperRef` directly
     // rather than relying on this box as its containing block.
-    <div className="fld" style={{ minWidth: 200 }} ref={wrapperRef}>
-      <label htmlFor={id} className="fld-label">
+    <div className="fld" style={{ minWidth: hideLabel ? 130 : 200 }} ref={wrapperRef}>
+      <label htmlFor={id} className={hideLabel ? 'sr-only' : 'fld-label'}>
         {label}
       </label>
+      <span className="sr-only" aria-live="polite">{open && notice ? t(notice) : ''}</span>
       <input
         id={id}
         type="text"
@@ -466,7 +466,7 @@ export function SearchCombobox({
             >
               {options.length === 0 ? (
                 <li role="option" aria-disabled="true" aria-selected="false" className="combo-option combo-option-empty">
-                  {emptyText}
+                  {notice ? t(notice) : (emptyText ?? t('empty'))}
                 </li>
               ) : (
                 options.map((option, index) => (
@@ -492,6 +492,7 @@ export function SearchCombobox({
                   </li>
                 ))
               )}
+              {notice === 'more' && <li role="presentation" className="combo-option">{t('more')}</li>}
             </ul>,
             document.body,
           )

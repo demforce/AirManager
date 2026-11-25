@@ -1,3 +1,4 @@
+import { PICKER_LIMIT } from '@/lib/picker';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
@@ -23,7 +24,6 @@ type PageProps = {
 };
 
 const REGISTRY_PAGE_SIZE = 20;
-const OPTIONS_PAGE_SIZE = 100;
 const WINDOWS: readonly ExpiryWindowDto[] = ['60', '30', '7', 'expired'];
 
 function sanitizeWindow(value: string | undefined): ExpiryWindowDto | 'all' {
@@ -82,7 +82,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     const expiryTypeId = sp.expiryTypeId || undefined;
     const personQuery = sp.personQuery || undefined;
 
-    const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
+    const peopleResult = await listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'pilot-or-student', includeArchived: false });
     const personOptions = peopleResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
 
     const allTypes = await listExpiryTypes(actor, { includeInactive: false });

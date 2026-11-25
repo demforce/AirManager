@@ -275,15 +275,8 @@ test.describe('Aircraft out-of-service expected return date (story AOG-1a, AC 1/
 
 test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC 7)', () => {
   test('creating and moving a booking onto a grounded aircraft both say "fermo fino al {data} compreso", in IT and EN', async ({ page, browser }) => {
-    // TWO contexts on purpose. `page` stays ADMIN, because only `aircraft.manage`
-    // can create and ground an airframe — and the grounding has to happen with
-    // the booking form ALREADY on screen. The form itself is driven by the SEED
-    // pilot in its own context, in `pilot` mode: that mode has NO person picker,
-    // and the staff one is capped at `OPTIONS_PAGE_SIZE = 100` people (open TD)
-    // — a brand-new person falls off it on a post-suite DB, which is a property
-    // of everyone else's fixtures, not of this story. Measured: on a DB with
-    // ~160 aircraft and hundreds of people the staff picker no longer contains a
-    // freshly created person at all.
+    // The pilot selects an operational aircraft. The administrator grounds it
+    // in a second context before submission, so the service must recheck.
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const target = await createAircraft(page);
@@ -332,8 +325,8 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
     const row = await findBookingRow(pilotPage, target.registration);
     await row.getByTestId('booking-move-action').click();
     const moveForm = pilotPage.getByTestId('move-booking-form');
-    await ground(page, moveTargetAog.id, reason, until);
     await selectFromCombobox(moveForm.getByLabel('Velivolo'), moveTargetAog.registration, moveTargetAog.registration);
+    await ground(page, moveTargetAog.id, reason, until);
     await moveForm.getByTestId('move-booking-save').click();
     const moveError = pilotPage.getByTestId('move-booking-form-error');
     await expect(moveError).toContainText(reason);
@@ -357,8 +350,7 @@ test.describe('The three enriched AIRCRAFT_OUT_OF_SERVICE 422s (story AOG-1a, AC
   });
 
   test('with NO expected return date the booking message is exactly the one this app has always shown (invariant [b])', async ({ page, browser }) => {
-    // Same two-context split as the sibling above, and for the same measured
-    // reason (the staff person picker's `OPTIONS_PAGE_SIZE` cap).
+    // A separate administrator grounds the aircraft after the pilot selects it.
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
     const reason = `Attesa pezzo ${uniqueSuffix()}`;

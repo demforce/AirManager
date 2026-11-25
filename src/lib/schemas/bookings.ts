@@ -1,3 +1,4 @@
+import { PICKER_MIN_QUERY } from '@/lib/picker';
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
@@ -233,8 +234,8 @@ export const calendarBookingsQuerySchema = z
 
 export type CalendarBookingsQuery = z.infer<typeof calendarBookingsQuerySchema>;
 
-/** `GET /api/v1/bookings/calendar` response — a bare array (Contesto: "un calendario non si pagina"), never the paginated envelope `bookingListResponseSchema` uses. */
-export const calendarBookingsResponseSchema = z.array(bookingItemSchema);
+/** A bounded calendar window includes a flag when additional bookings overlap it. */
+export const calendarBookingsResponseSchema = z.object({ items: z.array(bookingItemSchema), truncated: z.boolean() });
 
 export type CalendarBookingsResponseDto = z.infer<typeof calendarBookingsResponseSchema>;
 
@@ -264,3 +265,5 @@ export const transitionBookingSchema = z
   .refine((value) => !value.force || value.to === 'APPROVED', { message: 'force is only valid on an approval', path: ['force'] });
 
 export type TransitionBookingInput = z.infer<typeof transitionBookingSchema>;
+
+export const bookingOptionQuerySchema = z.object({ q: z.string().trim().min(PICKER_MIN_QUERY).max(200).optional() });

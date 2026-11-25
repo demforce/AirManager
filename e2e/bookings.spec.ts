@@ -1,3 +1,4 @@
+import { seedPickerAircraft, seedPickerStudents } from './db-fixtures';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
@@ -499,9 +500,20 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(page.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toHaveCount(2);
   });
 
-  test('staff books for another (run-unique) pilot from the "Pilota o allievo" picker', async ({ page }) => {
+  test('@picker-cap staff books for another (run-unique) pilot from the "Pilota o allievo" picker', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
+    test.setTimeout(120_000);
+    const bookingDay = addDaysIso(todayRome(), 3);
+    const buffer = uniqueSuffix();
+    await seedPickerStudents(buffer);
+    const counted = await page.request.get('/api/v1/people?' + new URLSearchParams({ q: 'N176-' + buffer, pageSize: '1', profile: 'pilot-or-student' }));
+    expect(counted.status()).toBe(200);
+    expect((await counted.json()).total).toBeGreaterThan(100);
     const aircraft = await createAircraft(page);
+    await seedPickerAircraft('0' + Date.now().toString(36));
+    const aircraftBrowse = await page.request.get('/api/v1/bookings/options/aircraft');
+    expect(aircraftBrowse.status()).toBe(200);
+    expect((await aircraftBrowse.json()).items.map((item: { id: string }) => item.id)).not.toContain(aircraft.id);
     const pilot = await createPilotPerson(page);
     // Story 19.10 (AD-9 rule 2): a staff UI flow that is not about the requirements.
     await ensureBookingRequirements(page, { personId: pilot.personId, scope: 'PILOTS', solo: true });
@@ -510,15 +522,38 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.getByTestId('new-booking-button').click();
     const form = page.getByTestId('new-booking-form');
     await selectFromCombobox(form.getByLabel('Velivolo'), aircraft.registration, aircraft.registration);
+    const searched = page.waitForResponse((res) =>
+      new URL(res.url()).pathname === '/api/v1/bookings/options/people' && res.status() === 200
+    );
     await selectFromCombobox(form.getByLabel('Pilota o allievo'), `${pilot.lastName} ${pilot.firstName}`, `${pilot.lastName} ${pilot.firstName}`);
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T13:00`);
-    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T14:00`);
+    expect((await (await searched).json()).items.map((p: { id: string }) => p.id)).toContain(pilot.personId);
+
+    await form.getByLabel('Inizio').fill(`${bookingDay}T13:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${bookingDay}T14:00`);
+    const created = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/bookings' && response.request().method() === 'POST');
     await form.getByRole('button', { name: 'Prenota' }).click();
+    expect((await created).status()).toBe(201);
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
     const row = await findBookingRow(page, aircraft.registration);
     // `personName` is "Nome Cognome" (Contesto's DTO spec) — firstName first, unlike the picker's "Cognome Nome" option labels above.
     await expect(row).toContainText(`${pilot.firstName} ${pilot.lastName}`);
+    // A fresh SSR response supplies the registration even if the edited aircraft
+    // sorts after every initially rendered option.
+    await page.reload();
+    const reloaded = await findBookingRow(page, aircraft.registration);
+    await reloaded.getByTestId('booking-move-action').click();
+    const moved = page.getByTestId('move-booking-aircraft');
+    await expect(moved).toHaveValue(aircraft.registration);
+    await moved.focus();
+    await moved.press('Enter');
+    await expect(moved).toHaveValue(aircraft.registration);
+    const lookup = page.waitForResponse((res) => new URL(res.url()).pathname === '/api/v1/bookings/options/aircraft');
+    await moved.fill('I-');
+    const matches = await lookup;
+    expect(matches.status()).toBe(200);
+    expect((await matches.json()).truncated).toBe(true);
+    await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(20);
   });
 
   test('a run-unique aircraft OUT_OF_SERVICE shows a disabled option (click and Enter pick nothing) and rejects a direct API attempt with the reason (422)', async ({
@@ -575,8 +610,15 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     expect(body.error.message).toContain(reason);
   });
 
-  test('an instructor books for an allievo (toggle "Per un allievo") — 201, row shows both names', async ({ page }) => {
+  test('@picker-cap an instructor books for an allievo (toggle "Per un allievo") — 201, row shows both names', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
+    test.setTimeout(120_000);
+    const bookingDay = addDaysIso(todayRome(), 3);
+    const buffer = uniqueSuffix();
+    await seedPickerStudents(buffer);
+    const counted = await page.request.get('/api/v1/people?' + new URLSearchParams({ q: 'N176-' + buffer, pageSize: '1', profile: 'pilot-or-student' }));
+    expect(counted.status()).toBe(200);
+    expect((await counted.json()).total).toBeGreaterThan(100);
     const aircraft = await createAircraft(page);
     const student = await createStudentWithLogin(page, 'AllievoBookings123!', { inRegola: true });
     const instructorPassword = 'IstruttoreBookings123!';
@@ -595,10 +637,17 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // Story 19.5 (AC 22): the combobox's `<label htmlFor>` is a SIBLING of the
     // input, so its accessible name is exactly "Allievo" — `exact: true` keeps
     // it from also matching "Pilota o allievo" elsewhere on the page.
+    const searched = page.waitForResponse((res) =>
+      new URL(res.url()).pathname === '/api/v1/bookings/options/students' && res.status() === 200
+    );
     await selectFromCombobox(form.getByLabel('Allievo', { exact: true }), `${student.lastName} ${student.firstName}`, `${student.lastName} ${student.firstName}`);
-    await form.getByLabel('Inizio').fill(`${FUTURE_DAY}T15:00`);
-    await form.getByLabel('Fine', { exact: true }).fill(`${FUTURE_DAY}T16:00`);
+    expect((await (await searched).json()).items.map((p: { id: string }) => p.id)).toContain(student.personId);
+
+    await form.getByLabel('Inizio').fill(`${bookingDay}T15:00`);
+    await form.getByLabel('Fine', { exact: true }).fill(`${bookingDay}T16:00`);
+    const created = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/bookings' && response.request().method() === 'POST');
     await form.getByRole('button', { name: 'Prenota' }).click();
+    expect((await created).status()).toBe(201);
 
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
     const row = await findBookingRow(page, aircraft.registration);
@@ -678,6 +727,11 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, student.email, 'AllievoForbidden123!');
+    for (const domain of ['students', 'instructors']) {
+      const response = await page.request.get('/api/v1/bookings/options/' + domain + '?q=Ma');
+      expect(response.status()).toBe(403);
+    }
+
 
     // Story 12.12: the legacy in-page "Aree operative" nav died with the
     // widget-grid home — same landmark name, now the AirOps Sidebar, whose
@@ -704,7 +758,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     const calendarTo = `${tomorrow}T23:59:59.000Z`;
     const rawResponse = await page.request.get(`/api/v1/bookings/calendar?from=${calendarFrom}&to=${calendarTo}`);
     expect(rawResponse.status()).toBe(200);
-    const rawBookings = (await rawResponse.json()) as Array<{ aircraftId: string; personName: string | null; personId: string | null }>;
+    const rawBookings = (await rawResponse.json()).items as Array<{ aircraftId: string; personName: string | null; personId: string | null }>;
     const rawBlock = rawBookings.find((item) => item.aircraftId === aircraft.id);
     expect(rawBlock?.personName).toBeNull();
     // Story 16.7 (ops F6): nor the holder's id.

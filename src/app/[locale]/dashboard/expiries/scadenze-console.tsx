@@ -1,5 +1,7 @@
 'use client';
 
+import { PICKER_LIMIT, type OptionPage } from '@/lib/picker';
+
 /**
  * Scadenze registry (story 12.11, AC 3) — port of
  * `docs/design-reference/airops/src/ScadenzeView.jsx` onto real data.
@@ -213,12 +215,12 @@ function personLabel(person: PersonOption): string {
   return `${person.lastName} ${person.firstName}`;
 }
 
-async function searchPersonFilter(query: string): Promise<SearchComboboxOption[]> {
-  const params = new URLSearchParams({ q: query, pageSize: '50' });
+async function searchPersonFilter(query: string): Promise<OptionPage<SearchComboboxOption>> {
+  const params = new URLSearchParams({ q: query, pageSize: String(PICKER_LIMIT), picker: 'true', profile: 'pilot-or-student' });
   const response = await fetch(`/api/v1/people?${params.toString()}`);
-  if (!response.ok) return [];
-  const body = (await response.json()) as { items: { id: string; firstName: string; lastName: string }[] };
-  return body.items.map((person) => ({ id: person.id, label: personLabel(person) }));
+  if (!response.ok) throw new Error('Picker search failed');
+  const body = (await response.json()) as { truncated: boolean; items: { id: string; firstName: string; lastName: string }[] };
+  return { truncated: body.truncated, items: body.items.map((person) => ({ id: person.id, label: personLabel(person) })) };
 }
 
 export function ScadenzeConsole({
@@ -1012,7 +1014,6 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
               fetchOptions={searchPersonFilter}
               initialOptions={personOptions.filter((option) => option.id !== '')}
               placeholder=""
-              emptyText=""
               error={pilotMissing ? labels.requiredPilot : undefined}
             />
             <label htmlFor="membership-fee-amount" className="fld-label" style={{ display: 'block', marginTop: 10 }}>

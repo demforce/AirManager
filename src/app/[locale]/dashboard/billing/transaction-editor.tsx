@@ -1,5 +1,7 @@
 'use client';
 
+import { PICKER_LIMIT, type OptionPage } from '@/lib/picker';
+
 /**
  * "Nuova transazione" SlideOver (story 12.9, AC 4 — D13) — port of
  * `docs/design-reference/airops/src/Forms.jsx#NewTransactionForm` onto the
@@ -76,12 +78,12 @@ function personLabel(person: { firstName: string; lastName: string }): string {
 }
 
 /** Server-side pilot/student search (same profile-scoped picker as the logbook/billing filter). */
-async function searchPeople(query: string): Promise<SearchComboboxOption[]> {
-  const params = new URLSearchParams({ q: query, pageSize: '50', profile: 'pilot-or-student' });
+async function searchPeople(query: string): Promise<OptionPage<SearchComboboxOption>> {
+  const params = new URLSearchParams({ q: query, pageSize: String(PICKER_LIMIT), picker: 'true', profile: 'pilot-or-student' });
   const response = await fetch(`/api/v1/people?${params.toString()}`);
-  if (!response.ok) return [];
-  const body = (await response.json()) as { items: { id: string; firstName: string; lastName: string }[] };
-  return body.items.map((person) => ({ id: person.id, label: personLabel(person) }));
+  if (!response.ok) throw new Error('Picker search failed');
+  const body = (await response.json()) as { truncated: boolean; items: { id: string; firstName: string; lastName: string }[] };
+  return { truncated: body.truncated, items: body.items.map((person) => ({ id: person.id, label: personLabel(person) })) };
 }
 
 type ResultState = { kind: 'TOP_UP' | 'ADJUSTMENT'; balanceCents: number } | { kind: 'CASH' };

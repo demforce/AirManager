@@ -119,3 +119,49 @@ export async function negativeBalanceControl(): Promise<{ count: number; exposur
     top: result.rows.slice(0, 20).map(({ personId, balance }) => ({ personId, balanceCents: Number(balance) })),
   };
 }
+
+/** A run-unique set of active students whose surname sorts before the booking-test targets. */
+export async function seedPickerStudents(stamp: string): Promise<void> {
+  await pool.query(
+    `WITH people AS (
+       INSERT INTO "Person" (id, "firstName", "lastName", "updatedAt")
+       SELECT gen_random_uuid()::text, 'Buffer', 'N176-' || $1 || '-' || i, now()
+       FROM generate_series(1, 101) i RETURNING id
+     )
+     INSERT INTO "StudentProfile" (id, "personId", "courseStartDate", "updatedAt")
+     SELECT gen_random_uuid()::text, id, CURRENT_DATE, now() FROM people`,
+    [stamp],
+  );
+}
+
+export async function seedPickerAircraft(stamp: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO "Aircraft" (id, registration, type, model, "updatedAt")
+     SELECT gen_random_uuid()::text, 'I-' || $1 || '-' || i, 'Test', 'Typeahead', now()
+     FROM generate_series(1, 51) i`,
+    [stamp],
+  );
+}
+
+/** Non-overlapping short slots on fixture-only rows exercise the calendar cap in one day. */
+export async function seedBoundedCalendar(day: string): Promise<string[]> {
+  const result = await pool.query<{ id: string }>(
+    `WITH ac AS (
+       INSERT INTO "Aircraft" (id, registration, type, model, "updatedAt")
+       VALUES (gen_random_uuid()::text, 'I-' || gen_random_uuid(), 'Test', 'Calendar', now()) RETURNING id
+     ), p AS (
+       INSERT INTO "Person" (id, "firstName", "lastName", "updatedAt")
+       VALUES (gen_random_uuid()::text, 'Calendar', 'Test', now()) RETURNING id
+     )
+     INSERT INTO "Booking" (id, "aircraftId", "personId", "startsAt", "endsAt", status, "actorUserId", "updatedAt")
+     SELECT gen_random_uuid()::text, ac.id, p.id, $1::date + time '10:00' + i * interval '1 second',
+            $1::date + time '10:00' + i * interval '1 second' + interval '900 milliseconds',
+            'APPROVED', ${ADMIN_USER}, now()
+     FROM ac, p, generate_series(1, 1001) i RETURNING id`, [day],
+  );
+  return result.rows.map(({ id }) => id);
+}
+
+export async function removeCalendarFixtures(ids: string[]): Promise<void> {
+  await pool.query('DELETE FROM "Booking" WHERE id = ANY($1::text[])', [ids]);
+}

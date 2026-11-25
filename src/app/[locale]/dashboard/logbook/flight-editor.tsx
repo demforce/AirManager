@@ -1,5 +1,7 @@
 'use client';
 
+import { PICKER_LIMIT, type OptionPage } from '@/lib/picker';
+
 /**
  * "Nuova voce" / "Correggi volo" slide-over (story 12.8, AC 3/4 — D13) —
  * port of `docs/design-reference/airops/src/Forms.jsx#NewLogbookForm` onto
@@ -166,12 +168,12 @@ function aircraftOptionLabel(aircraft: AircraftOption, outOfServiceSuffix: strin
 }
 
 /** Server-side people search, profile-scoped (story TD-3) — active only, same domain rule as the aircraft picker above. */
-async function searchPeople(query: string, profile: 'pilot-or-student' | 'instructor'): Promise<SearchComboboxOption[]> {
-  const params = new URLSearchParams({ q: query, pageSize: '50', profile });
+async function searchPeople(query: string, profile: 'pilot-or-student' | 'instructor'): Promise<OptionPage<SearchComboboxOption>> {
+  const params = new URLSearchParams({ q: query, pageSize: String(PICKER_LIMIT), picker: 'true', profile });
   const response = await fetch(`/api/v1/people?${params.toString()}`);
-  if (!response.ok) return [];
-  const body = (await response.json()) as { items: { id: string; firstName: string; lastName: string }[] };
-  return body.items.map((person) => ({ id: person.id, label: personLabel(person) }));
+  if (!response.ok) throw new Error('Picker search failed');
+  const body = (await response.json()) as { truncated: boolean; items: { id: string; firstName: string; lastName: string }[] };
+  return { truncated: body.truncated, items: body.items.map((person) => ({ id: person.id, label: personLabel(person) })) };
 }
 
 /** Composes `takeoffAt`/`landingAt` `Date`s from the date + two `type="time"` fields — same convention as the legacy `flights-manager.tsx#composeFlightTimes`. Landing at/before takeoff rolls to the FOLLOWING day (attraversamento mezzanotte). */
@@ -489,12 +491,12 @@ export function FlightEditor({
   }, [aircraftOptions, correctingFlight, labels.outOfServiceSuffix]);
 
   /** Server-side aircraft search (active only — the form's own domain rule, story TD-3), labelled exactly like the server-rendered options above (AC 12). */
-  async function searchAircraft(query: string): Promise<SearchComboboxOption[]> {
-    const params = new URLSearchParams({ q: query, pageSize: '50' });
+  async function searchAircraft(query: string): Promise<OptionPage<SearchComboboxOption>> {
+    const params = new URLSearchParams({ q: query, pageSize: String(PICKER_LIMIT), picker: 'true' });
     const response = await fetch(`/api/v1/aircraft?${params.toString()}`);
-    if (!response.ok) return [];
-    const body = (await response.json()) as { items: AircraftOption[] };
-    return body.items.map((aircraft) => ({ id: aircraft.id, label: aircraftOptionLabel(aircraft, labels.outOfServiceSuffix) }));
+    if (!response.ok) throw new Error('Picker search failed');
+    const body = (await response.json()) as { truncated: boolean; items: AircraftOption[] };
+    return { truncated: body.truncated, items: body.items.map((aircraft) => ({ id: aircraft.id, label: aircraftOptionLabel(aircraft, labels.outOfServiceSuffix) })) };
   }
   const personComboOptions = useMemo<SearchComboboxOption[]>(() => {
     const base = personOptions.map((person) => ({ id: person.id, label: personLabel(person) }));
@@ -523,17 +525,17 @@ export function FlightEditor({
    * found via search rather than already present in the server-rendered
    * `personOptions` page.
    */
-  async function searchPilotStudent(query: string): Promise<SearchComboboxOption[]> {
-    const params = new URLSearchParams({ q: query, pageSize: '50', profile: 'pilot-or-student' });
+  async function searchPilotStudent(query: string): Promise<OptionPage<SearchComboboxOption>> {
+    const params = new URLSearchParams({ q: query, pageSize: String(PICKER_LIMIT), picker: 'true', profile: 'pilot-or-student' });
     const response = await fetch(`/api/v1/people?${params.toString()}`);
-    if (!response.ok) return [];
-    const body = (await response.json()) as { items: PilotStudentOption[] };
+    if (!response.ok) throw new Error('Picker search failed');
+    const body = (await response.json()) as { truncated: boolean; items: PilotStudentOption[] };
     setPersonProfiles((previous) => {
       const next = new Map(previous);
       for (const person of body.items) next.set(person.id, person.profiles);
       return next;
     });
-    return body.items.map((person) => ({ id: person.id, label: personLabel(person) }));
+    return { truncated: body.truncated, items: body.items.map((person) => ({ id: person.id, label: personLabel(person) })) };
   }
 
   /**

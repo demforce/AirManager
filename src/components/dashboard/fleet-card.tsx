@@ -136,7 +136,10 @@ export function FleetCard({ items, totalCount, availableCount, aogCount, locale,
           {labels.empty}
         </p>
       ) : (
-        <FleetCardGrid items={items} badgeLabels={labels.badge} />
+        <>
+          <FleetCardGrid items={items} badgeLabels={labels.badge} />
+          {items.length < totalCount && <Link href={addHref} locale={locale}>{t('firstHundred')}</Link>}
+        </>
       )}
     </div>
   );

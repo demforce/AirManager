@@ -1,3 +1,4 @@
+import { PICKER_LIMIT } from '@/lib/picker';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import { clampToWindowPercent, formatWallClock, projectDayBlocks, projectWeekChips, resolveWindowMinutes, wallMinutesOfDay } from '@/lib/booking-schedule';
@@ -12,14 +13,14 @@ import { getSchedulingSettings } from '@/server/services/app-settings.service';
 import {
   getOwnInstructorProfileId,
   listActiveInstructors,
-  listBookableAircraft,
+  searchBookingAircraft,
+  searchBookingPeople,
+  searchBookingInstructors,
   listScheduleAircraft,
-  listBookableStudents,
   listBookings,
   listCalendarBookings,
 } from '@/server/services/bookings.service';
 import { getMe } from '@/server/services/me.service';
-import { listPeople } from '@/server/services/people.service';
 import { buildBookingsTableLabels, buildEditBookingFormLabels, buildNewBookingFormLabels, buildScheduleLabels, buildSchedulingWindowSummary } from './booking-labels';
 import type { BookingRowDto, BookingsTableLabels, BookingStatusDto } from './bookings-table';
 import { BookingsTable } from './bookings-table';
@@ -38,8 +39,6 @@ type PageProps = {
   searchParams: Promise<{ page?: string; view?: string; date?: string; status?: string | string[]; aircraft?: string | string[]; showAircraft?: string | string[] }>;
 };
 
-/** Staff/instructor picker candidate cap — same "small admin-managed list" convention as `flights/page.tsx`'s `OPTIONS_PAGE_SIZE`. */
-const OPTIONS_PAGE_SIZE = 100;
 
 /** "Prenotazioni" table page size. */
 const BOOKINGS_PAGE_SIZE = 20;
@@ -140,7 +139,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   const canCreate = canManageAny || canManageOwn;
 
   // Unchanged picker DTO. The timeline has its own bounded read (17.2).
-  const aircraftOptions: AircraftOption[] = await listBookableAircraft(actor);
+  const aircraftOptions: AircraftOption[] = (await searchBookingAircraft(actor, undefined, PICKER_LIMIT + 1)).items;
 
   // Story 7.3/12.3: needed for the create form's instructor toggle, the
   // list's row-ownership check, AND (new, story 12.3 AC 2) the timeline's
@@ -155,7 +154,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   // actor who already holds `bookings.read.names` — for everyone else the
   // timeline's instructor filter has nothing to filter BY.
   const canReadNames = hasPermission(actor, 'bookings.read.names');
-  const instructorOptions: InstructorOption[] = canReadNames ? await listActiveInstructors(actor) : [];
+  const roster = canReadNames ? await listActiveInstructors(actor) : { items: [], truncated: false };
 
   let formMode: NewBookingFormMode = 'pilot';
   let personOptions: PersonOption[] = [];
@@ -165,14 +164,11 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   if (canCreate) {
     if (canManageAny) {
       formMode = 'staff';
-      const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: false });
-      personOptions = peopleResult.items
-        .filter((person) => person.archivedAt === null && (person.profiles.pilot || person.profiles.student || person.profiles.instructor))
-        .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
-      staffInstructorOptions = instructorOptions;
-    } else if (ownInstructorProfileId) {
+      personOptions = (await searchBookingPeople(actor, 'people', undefined, PICKER_LIMIT + 1)).items;
+      staffInstructorOptions = (await searchBookingInstructors(actor, undefined, PICKER_LIMIT + 1)).items;
+    } else if (canReadNames && ownInstructorProfileId) {
       formMode = 'instructor';
-      studentOptions = await listBookableStudents(actor);
+      studentOptions = (await searchBookingPeople(actor, 'students', undefined, PICKER_LIMIT + 1)).items;
     } else {
       formMode = 'pilot';
     }
@@ -229,7 +225,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   // Story 12.11, AC 4: the day-view axis reads `sched.openTime`/`closeTime`
   // when configured, falling back to the original 06:00-22:00 default.
-  const [schedulingSettings, calendarBookings] = await Promise.all([
+  const [schedulingSettings, { items: calendarBookings, truncated: calendarTruncated }] = await Promise.all([
     getSchedulingSettings(),
     listCalendarBookings(actor, { from: calendarFrom.toISOString(), to: calendarTo.toISOString() }),
   ]);
@@ -439,6 +435,7 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         </div>
       </div>
 
+      {calendarTruncated && <p role="status">{t('calendarTruncated')}</p>}
       <Schedule
         view={view}
         date={date}
@@ -451,7 +448,8 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         aircraftFilters={schedule.filterOptions}
         showAllAircraft={schedule.showAll}
         freeAircraftCount={schedule.aircraftId ? 0 : schedule.freeCount}
-        instructors={instructorOptions}
+        instructors={roster.items}
+        rosterNotice={roster.truncated ? t('rosterTruncated') : undefined}
         dayBlocks={dayBlocks}
         weekChips={weekChips}
         nowLinePercent={nowLinePercent}

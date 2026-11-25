@@ -387,7 +387,7 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
     await expect(openPanels).toHaveCount(0);
   });
 
-  test('a pilot books through the static velivolo combobox: focus on the first invalid field, the filtered option survives the debounce, 201, ZERO calls to the aircraft/people search APIs, the picker empty again after the success (AC 19/21)', async ({
+  test('a pilot books through the booking aircraft search: focus on the first invalid field, the filtered option survives the debounce, 201, one debounced booking-domain request, the picker empty again after the success (AC 19/21)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -401,7 +401,8 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
 
     const searchCalls: string[] = [];
     page.on('request', (request) => {
-      if (/^\/api\/v1\/(aircraft|people)/.test(new URL(request.url()).pathname)) searchCalls.push(request.url());
+      const path = new URL(request.url()).pathname;
+      if (/^\/api\/v1\/(?:aircraft|people|bookings\/options)\b/.test(path)) searchCalls.push(path);
     });
 
     await page.goto('/it/dashboard/bookings');
@@ -417,13 +418,11 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
     await expect(aircraftCombobox).toHaveAttribute('aria-invalid', 'true');
     await expect(aircraftCombobox).toBeFocused();
 
+    await aircraftCombobox.fill('I');
+    await page.waitForTimeout(400);
+    expect(searchCalls).toEqual([]);
     await aircraftCombobox.fill(aircraft.registration);
     const option = page.getByRole('listbox').getByRole('option', { name: aircraft.registration, exact: true });
-    await expect(option).toBeVisible();
-    // Past the 250ms debounce a `fetchOptions` would have fired: for a pilot
-    // the search API answers 403, and the list would collapse to «Nessun
-    // risultato.» — the client-filtered option must still be there.
-    await page.waitForTimeout(600);
     await expect(option).toBeVisible();
     await option.click();
     // Picking an option clears that field's own error.
@@ -438,7 +437,11 @@ test.describe('SearchCombobox in the booking forms: static mode, Escape, focus (
     await expect(page.getByTestId('booking-form-success')).toBeVisible();
     // AC 19: `reset` after the success empties the combobox too.
     await expect(aircraftCombobox).toHaveValue('');
-    expect(searchCalls).toEqual([]);
+    expect(searchCalls).toEqual(['/api/v1/bookings/options/aircraft']);
+    for (const domain of ['students', 'instructors']) {
+      const response = await page.request.get('/api/v1/bookings/options/' + domain + '?q=Ma');
+      expect(response.status()).toBe(403);
+    }
   });
 
   test('staff: an empty submit focuses the person picker, and closing the panel resets every picker (velivolo empty, istruttore «Nessuno») (AC 19)', async ({ page }) => {

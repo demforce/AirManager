@@ -1,3 +1,4 @@
+import { boundedOptions, PICKER_LIMIT, type OptionPage } from '@/lib/picker';
 import { Prisma, type AircraftPriceCategory, type AircraftStatus, type BookingStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
@@ -1038,7 +1039,7 @@ const MAX_CALENDAR_RANGE_MS = 8 * 24 * 60 * 60 * 1000;
  * masking. No `personId` filter on this endpoint (Contesto/F3), so the
  * linkability guard `listBookings` needs does not apply here.
  */
-export async function listCalendarBookings(actor: Actor, query: CalendarBookingsQuery): Promise<BookingListItem[]> {
+export async function listCalendarBookings(actor: Actor, query: CalendarBookingsQuery): Promise<OptionPage<BookingListItem>> {
   authorize(actor, 'self.read');
   const canReadNames = hasPermission(actor, 'bookings.read.names');
 
@@ -1062,10 +1063,11 @@ export async function listCalendarBookings(actor: Actor, query: CalendarBookings
     // not-yet-approved booking has no slot to show here.
     where: { status: 'APPROVED', startsAt: { lt: to }, endsAt: { gt: from } },
     orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
-    take: 1000,
+    take: 1001,
   });
 
-  return bookings.map((booking) => maskBookingNames(actor, canReadNames, ownInstructorProfileId, toListItem(booking)));
+  const page = boundedOptions(bookings, 1000);
+  return { ...page, items: page.items.map((booking) => maskBookingNames(actor, canReadNames, ownInstructorProfileId, toListItem(booking))) };
 }
 
 // --- Booking edit/cancel (story 7.3, AC 1/2) --------------------------------
@@ -1679,15 +1681,7 @@ async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
 }
 
 // --- Booking-form picker data (Task 5) --------------------------------------
-// Minimal, `self.read`-gated data sources for the "Nuova prenotazione" form's
-// pickers. None of these reuse the staff-only `aircraft.service.ts#listAircraft`
-// (`aircraft.manage`) or `people.service.ts#listPeople` (`people.read`) —
-// story 7.1 is the first to let a NON-staff actor (pilot/instructor) see a
-// bare slice of the fleet/allievi at all (`aircraft.service.ts`'s own
-// doc-comment already anticipated this: "pilots see the fleet via the future
-// bookings epic" — this is that epic). The staff/`bookings.manage.any` form
-// still reuses `listPeople` directly (page.tsx) since staff already holds
-// `people.read`.
+// The aircraft browse and the person domains have distinct authorization gates.
 
 export type BookableAircraftOption = { id: string; registration: string; model: string; status: AircraftStatus; statusReason: string | null };
 
@@ -1761,33 +1755,63 @@ export async function listScheduleAircraft(
 
 export type BookablePersonOption = { id: string; firstName: string; lastName: string };
 
-/**
- * Active allievi, for an instructor's "book for a student" picker (AC 1).
- * `self.read` (every role) — an instructor holds neither `people.read` nor
- * `bookings.manage.any`, so it cannot reuse `listPeople` (staff-only) here.
- */
-export async function listBookableStudents(actor: Actor): Promise<BookablePersonOption[]> {
+export async function searchBookingAircraft(actor: Actor, q?: string, limit = PICKER_LIMIT) {
   authorize(actor, 'self.read');
+  const match = { contains: q, mode: 'insensitive' as const };
+  return boundedOptions(await prisma.aircraft.findMany({
+    where: { archivedAt: null, ...(q ? { OR: [{ registration: match }, { model: match }] } : {}) },
+    select: { id: true, registration: true, model: true, status: true, statusReason: true },
+    orderBy: [{ registration: 'asc' }, { id: 'asc' }],
+    take: limit + 1,
+  }), limit);
+}
 
-  return prisma.person.findMany({
-    where: { archivedAt: null, studentProfile: { deactivatedAt: null } },
-    select: { id: true, firstName: true, lastName: true },
-    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+function personWords(q?: string): Prisma.PersonWhereInput[] {
+  return (q?.trim().split(/\s+/).filter(Boolean) ?? []).map((word) => {
+    const match = { contains: word, mode: 'insensitive' as const };
+    return { OR: [{ firstName: match }, { lastName: match }, { email: match }] };
   });
+}
+
+export async function searchBookingPeople(actor: Actor, domain: 'students' | 'people', q?: string, limit = PICKER_LIMIT) {
+  if (domain === 'people') {
+    authorize(actor, 'bookings.manage.any');
+  } else {
+    authorize(actor, 'bookings.read.names');
+    if (!hasPermission(actor, 'bookings.manage.any') && !(await getOwnInstructorProfileId(actor))) {
+      throw new ForbiddenError('An active instructor profile is required.');
+    }
+  }
+  const active = { deactivatedAt: null };
+  const profiles = domain === 'students' ? { studentProfile: active } :
+    { OR: [{ pilotProfile: active }, { studentProfile: active }, { instructorProfile: active }] };
+  return boundedOptions(await prisma.person.findMany({
+    where: { archivedAt: null, ...profiles, AND: personWords(q) },
+    select: { id: true, firstName: true, lastName: true },
+    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }, { id: 'asc' }],
+    take: limit + 1,
+  }), limit);
 }
 
 export type InstructorOption = { instructorProfileId: string; firstName: string; lastName: string };
 
-/** Active instructors, for the staff form's optional instructor picker (AC 1). `self.read` (every role, same rationale as the pickers above). */
-export async function listActiveInstructors(actor: Actor): Promise<InstructorOption[]> {
-  authorize(actor, 'self.read');
-
+async function instructorOptions(actor: Actor, limit: number, q?: string) {
+  authorize(actor, 'bookings.read.names');
   const rows = await prisma.instructorProfile.findMany({
-    where: { deactivatedAt: null },
+    where: { deactivatedAt: null, person: { archivedAt: null, AND: personWords(q) } },
     select: { id: true, person: { select: { firstName: true, lastName: true } } },
-    orderBy: [{ person: { lastName: 'asc' } }, { person: { firstName: 'asc' } }],
+    orderBy: [{ person: { lastName: 'asc' } }, { person: { firstName: 'asc' } }, { id: 'asc' }],
+    take: limit + 1,
   });
-  return rows.map((row) => ({ instructorProfileId: row.id, firstName: row.person.firstName, lastName: row.person.lastName }));
+  return boundedOptions(rows.map(({ id, person }) => ({ instructorProfileId: id, ...person })), limit);
+}
+
+export function searchBookingInstructors(actor: Actor, q?: string, limit = PICKER_LIMIT) {
+  return instructorOptions(actor, limit, q);
+}
+
+export function listActiveInstructors(actor: Actor) {
+  return instructorOptions(actor, 100);
 }
 
 /**

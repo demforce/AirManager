@@ -303,17 +303,18 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await registerFlight(page, { aircraftId: aircraftA.id, personId: personA.personId, flightDate: '2020-05-01', flightType: 'TOURISM', minutes: 30 });
     await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'TOURISM', minutes: 45 });
 
-    // Velivolo filter: only aircraftA's flight. Set through the URL, not the
-    // native select: its options stop at the first 100 registrations
-    // (`OPTIONS_PAGE_SIZE`), fewer than a full suite creates (review 19.3 F1).
-    // The select's change handler is the one the Tipo select below exercises.
-    await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftA.id}`);
+    await page.goto('/it/dashboard/logbook');
+    const aircraftFilter = page.getByTestId('flight-filter-aircraft');
+    await aircraftFilter.fill(aircraftA.registration);
+    await page.getByRole('listbox').getByRole('option', { name: aircraftA.registration, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp('aircraftId=' + aircraftA.id));
+    await expect(aircraftFilter).toHaveValue(aircraftA.registration);
     let rows = page.getByTestId('flight-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(aircraftA.registration);
     await expect(rows.first()).toContainText(personA.lastName);
 
-    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-aircraft'), aircraftA.id);
+    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-aircraft'), aircraftA.registration);
 
     // Persona filter: free-text like Piloti (story 13.5, AC 7) — only personB's flight.
     await page.getByTestId('flight-filter-person').fill(personB.lastName);
@@ -361,7 +362,7 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftA.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
     await expect(page.getByTestId('flight-row').first()).toContainText(aircraftA.registration);
-    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-aircraft'), aircraftA.id);
+    await resetFiltersAndSettle(page, page.getByTestId('flight-filter-aircraft'), aircraftA.registration);
     await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftB.id}`);
     await expect(page.getByTestId('flight-row')).toHaveCount(1);
     await expect(page.getByTestId('flight-row').first()).toContainText(aircraftB.registration);

@@ -1,3 +1,4 @@
+import { PICKER_LIMIT } from '@/lib/picker';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { KPI } from '@/components/ui/kpi';
 import { Link, redirect } from '@/i18n/navigation';
@@ -8,7 +9,8 @@ import type { FlightTypeDto } from '@/lib/schemas/flights';
 import { formatMinutes } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import { listAircraft } from '@/server/services/aircraft.service';
+import { NotFoundError } from '@/server/services/errors';
+import { getAircraft, listAircraft } from '@/server/services/aircraft.service';
 import { getAirfieldBranding } from '@/server/services/app-settings.service';
 import { getFlightTotals, listFlights } from '@/server/services/flights.service';
 import { listPeople } from '@/server/services/people.service';
@@ -28,8 +30,6 @@ type PageProps = {
   }>;
 };
 
-/** Form pickers' seed candidates (story TD-3) — same convention as the legacy `flights/page.tsx#OPTIONS_PAGE_SIZE`. */
-const OPTIONS_PAGE_SIZE = 100;
 
 /** The registry's own page size (story 5.4, NFR-6; unchanged by story 12.8). */
 const FLIGHTS_PAGE_SIZE = 20;
@@ -106,11 +106,12 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   let aircraftFilterOptions: { id: string; registration: string; archived: boolean }[] = [];
 
   if (canManage) {
-    const aircraftResult = await listAircraft(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, includeArchived: true });
-    const pilotStudentResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
-    const instructorResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'instructor', includeArchived: false });
+    const aircraftResult = await listAircraft(actor, { page: 1, pageSize: PICKER_LIMIT + 1, includeArchived: true });
+    const pilotStudentResult = await listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'pilot-or-student', includeArchived: false });
+    const instructorResult = await listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'instructor', includeArchived: false });
 
-    aircraftOptions = aircraftResult.items
+    const activeAircraft = await listAircraft(actor, { page: 1, pageSize: PICKER_LIMIT + 1, includeArchived: false });
+    aircraftOptions = activeAircraft.items
       .filter((aircraft) => aircraft.archivedAt === null)
       // Story AOG-1a, AC 12: `status`/`statusReason` travel so the picker can NAME a grounded aircraft (still selectable — the deroga exists).
       .map((aircraft) => ({ id: aircraft.id, registration: aircraft.registration, status: aircraft.status, statusReason: aircraft.statusReason }));
@@ -119,6 +120,14 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
       registration: aircraft.registration,
       archived: aircraft.archivedAt !== null,
     }));
+    if (aircraftId && !aircraftFilterOptions.some((option) => option.id === aircraftId)) {
+      try {
+        const current = await getAircraft(actor, aircraftId);
+        aircraftFilterOptions.push({ id: current.id, registration: current.registration, archived: current.archivedAt !== null });
+      } catch (error) {
+        if (!(error instanceof NotFoundError)) throw error;
+      }
+    }
     personOptions = pilotStudentResult.items.map((person) => ({
       id: person.id,
       firstName: person.firstName,

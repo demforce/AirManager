@@ -1,3 +1,4 @@
+import { boundedOptions, PICKER_LIMIT } from '@/lib/picker';
 import { apiRoute } from '@/lib/api/handler';
 import { createPersonSchema, listPeopleQuerySchema } from '@/lib/schemas/people';
 import { xlsxResponse } from '@/server/adapters/excel/response';
@@ -18,6 +19,10 @@ export const GET = apiRoute({
     if (query.format === 'xlsx') {
       const { buffer, filename } = await exportPeopleXlsx(actor, query);
       return xlsxResponse(buffer, filename);
+    }
+    if (query.picker) {
+      const result = await listPeople(actor, { ...query, page: 1, pageSize: PICKER_LIMIT + 1 });
+      return boundedOptions(result.items.map(({ id, firstName, lastName, profiles }) => ({ id, firstName, lastName, profiles })));
     }
     return listPeople(actor, query);
   },

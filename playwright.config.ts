@@ -51,10 +51,11 @@ export default defineConfig({
         '**/mobile-membership-fee.spec.ts',
         '**/mobile-settings.spec.ts',
         '**/aog-overview-count.spec.ts',
+        '**/picker-cap.spec.ts',
       ],
       // These tests read or write global settings/ledger state. Run them
       // only in their serialized projects below.
-      grepInvert: /@global-catalogue|@ledger-global/,
+      grepInvert: /@global-catalogue|@ledger-global|@picker-cap/,
       use: sharedUse,
     },
     {
@@ -186,18 +187,18 @@ export default defineConfig({
       use: sharedUse,
     },
     {
-      // Story AOG-1a, AC 13 — the Panoramica's fleet-wide AOG count. TWO
-      // independent reasons this cannot live in the main `fullyParallel`
-      // project: it asserts an EQUALITY between two GLOBAL aggregates read from
-      // two page loads (the class that flaked 2/2 in review Billing-2 F4), and
-      // to DISCRIMINATE at all it must push the active fleet past
-      // `OPTIONS_PAGE_SIZE = 100`, which degrades every `<select>` picker in the
-      // suite (the open `OPTIONS_PAGE_SIZE` TD). ABSOLUTE LAST in the chain for
-      // that second reason — nothing downstream inherits the inflated fleet.
-      // Running it alone locally: `npx playwright test aog-overview-count.spec.ts --no-deps`.
+      // Verify the fleet-wide counts after other global-state tests.
       name: 'aog-overview-count',
       testMatch: '**/aog-overview-count.spec.ts',
       dependencies: ['booking-requirements-catalogue'],
+      use: sharedUse,
+    },
+    {
+      name: 'picker-cap',
+      testMatch: ['**/picker-cap.spec.ts', '**/bookings.spec.ts'],
+      grep: /@picker-cap/,
+      workers: 1,
+      dependencies: ['aog-overview-count'],
       use: sharedUse,
     },
   ],

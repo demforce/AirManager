@@ -44,6 +44,7 @@ export type UpdatePersonInput = z.infer<typeof updatePersonSchema>;
  * toggle (AC 2 — archived persons are hidden from the default list).
  */
 export const listPeopleQuerySchema = paginationQuerySchema.extend({
+  picker: z.literal('true').optional(),
   q: z.string().trim().min(1).optional(),
   // `z.coerce.boolean()` would treat the *string* `"false"` as truthy
   // (`Boolean("false")` is `true`) — a real footgun for a query-string

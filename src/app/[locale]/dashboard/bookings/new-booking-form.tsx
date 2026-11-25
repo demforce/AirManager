@@ -186,6 +186,23 @@ export function aircraftOptionLabel(aircraft: AircraftOption, outOfServiceSuffix
   return `${aircraft.registration} — ${outOfServiceSuffix.replace('{reason}', aircraft.statusReason ?? '')}`;
 }
 
+export async function fetchBookingOptions<T>(
+  domain: 'aircraft' | 'students' | 'people' | 'instructors',
+  query: string,
+  map: (item: T) => SearchComboboxOption,
+) {
+  const response = await fetch('/api/v1/bookings/options/' + domain + '?' + new URLSearchParams({ q: query }));
+  if (!response.ok) throw new Error('Picker search failed');
+  const body = await response.json() as { items: T[]; truncated: boolean };
+  return { items: body.items.map(map), truncated: body.truncated };
+}
+
+export function bookingAircraftSearch(q: string, suffix: string) {
+  return fetchBookingOptions<AircraftOption>('aircraft', q, (ac) => ({
+    id: ac.id, label: aircraftOptionLabel(ac, suffix), disabled: ac.status === 'OUT_OF_SERVICE',
+  }));
+}
+
 /**
  * "Nuova prenotazione" (story 12.3, AC 4) — the SAME 7.1/7.3/7.4 mechanics
  * (mode-scoped picker, success/warning banners) as the legacy
@@ -298,10 +315,7 @@ export function NewBookingForm({
     formErrorRef.current?.focus();
   }
 
-  // Story 19.5 (D-4): static mode — the comboboxes filter these server-rendered
-  // lists locally (no `fetchOptions`): a pilot or an instructor cannot call the
-  // people/aircraft search APIs, and the lists are exactly what each actor may
-  // pick today.
+  // Browse uses server-rendered options. Typing queries the same booking domain.
   const personComboOptions = useMemo<SearchComboboxOption[]>(
     () => personOptions.map((person) => ({ id: person.id, label: `${person.lastName} ${person.firstName}` })),
     [personOptions],
@@ -503,6 +517,7 @@ export function NewBookingForm({
                 render={({ field, fieldState }) => (
                   <SearchCombobox
                     id="booking-person"
+                    fetchOptions={(q) => fetchBookingOptions<PersonOption>('people', q, (p) => ({ id: p.id, label: p.lastName + ' ' + p.firstName }))}
                     label={labels.person}
                     value={field.value}
                     onChange={field.onChange}
@@ -524,6 +539,7 @@ export function NewBookingForm({
               render={({ field, fieldState }) => (
                 <SearchCombobox
                   id="booking-aircraft"
+                    fetchOptions={(q) => bookingAircraftSearch(q, labels.outOfServiceSuffix)}
                   label={labels.aircraft}
                   value={field.value}
                   onChange={field.onChange}
@@ -544,6 +560,7 @@ export function NewBookingForm({
                 render={({ field }) => (
                   <SearchCombobox
                     id="booking-instructor"
+                    fetchOptions={(q) => fetchBookingOptions<InstructorOption>('instructors', q, (p) => ({ id: p.instructorProfileId, label: p.lastName + ' ' + p.firstName }))}
                     label={labels.instructorOptional}
                     value={field.value}
                     onChange={field.onChange}
@@ -607,6 +624,7 @@ export function NewBookingForm({
                 render={({ field, fieldState }) => (
                   <SearchCombobox
                     id="booking-student"
+                    fetchOptions={(q) => fetchBookingOptions<PersonOption>('students', q, (p) => ({ id: p.id, label: p.lastName + ' ' + p.firstName }))}
                     label={labels.student}
                     value={field.value}
                     onChange={field.onChange}

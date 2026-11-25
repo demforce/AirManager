@@ -33,6 +33,7 @@ import {
   bookingListResponseSchema,
   calendarBookingsQuerySchema,
   calendarBookingsResponseSchema,
+  bookingOptionQuerySchema,
   createBookingResponseSchema,
   createBookingSchema,
   listBookingsQuerySchema,
@@ -427,7 +428,7 @@ registry.registerPath({
   security,
   request: { query: listPeopleQuerySchema },
   responses: {
-    200: { description: 'A page of persons, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).', content: { ...jsonContent(personListResponseSchema), ...xlsxContent() } },
+    200: { description: 'A page of persons, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).', content: { ...jsonContent(z.union([personListResponseSchema, z.object({ items: z.array(personListItemSchema.pick({ id: true, firstName: true, lastName: true, profiles: true })), truncated: z.boolean() })])), ...xlsxContent() } },
     ...errorResponses(401, 403, 422),
   },
 });
@@ -1047,7 +1048,7 @@ registry.registerPath({
   responses: {
     200: {
       description: 'A page of aircraft, or (`?format=xlsx`) the same rows as an Excel workbook (story 10.1).',
-      content: { ...jsonContent(aircraftListResponseSchema), ...xlsxContent() },
+      content: { ...jsonContent(z.union([aircraftListResponseSchema, z.object({ items: z.array(aircraftListItemSchema.pick({ id: true, registration: true, model: true, status: true, statusReason: true, archivedAt: true })), truncated: z.boolean() })])), ...xlsxContent() },
     },
     ...errorResponses(401, 403, 422),
   },
@@ -1499,10 +1500,29 @@ registry.registerPath({
   security,
   request: { query: calendarBookingsQuerySchema },
   responses: {
-    200: { description: 'Every booking overlapping the range.', content: jsonContent(calendarBookingsResponseSchema) },
+    200: { description: 'First 1000 overlapping approved bookings and whether the range was truncated.', content: jsonContent(calendarBookingsResponseSchema) },
     ...errorResponses(401, 403, 422),
   },
 });
+
+const optionNameFields = { firstName: z.string(), lastName: z.string() };
+const bookingOptions = {
+  aircraft: z.object({ id: z.string(), registration: z.string(), model: z.string(), status: z.enum(['OPERATIONAL', 'OUT_OF_SERVICE']), statusReason: z.string().nullable() }),
+  people: z.object({ id: z.string(), ...optionNameFields }),
+  students: z.object({ id: z.string(), ...optionNameFields }),
+  instructors: z.object({ instructorProfileId: z.string(), ...optionNameFields }),
+};
+for (const [domain, item] of Object.entries(bookingOptions)) {
+  registry.registerPath({
+    method: 'get', path: '/api/v1/bookings/options/' + domain,
+    summary: 'Search booking options: ' + domain, tags: ['Bookings'], security,
+    request: { query: bookingOptionQuerySchema },
+    responses: {
+      200: { description: 'Up to 20 matching options.', content: jsonContent(z.object({ items: z.array(item), truncated: z.boolean() })) },
+      ...errorResponses(401, 403, 422),
+    },
+  });
+}
 
 // --- Booking edit/cancel (epic 7, story 7.3, FR-20) -------------------------
 // Soft-cancel + tracked edit — see `bookings.service.ts#updateBooking`/

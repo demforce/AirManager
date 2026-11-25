@@ -153,6 +153,7 @@ export type ScheduleProps = {
   showAllAircraft?: boolean;
   freeAircraftCount: number;
   instructors: InstructorOption[];
+  rosterNotice?: string;
   dayBlocks: CalendarDayBlock[];
   weekChips: CalendarWeekChip[];
   /** Day view only — the "now" vertical line's `left%`, `null` when `!isToday`. */
@@ -266,6 +267,7 @@ export function Schedule({
   freeAircraftCount,
   showAllAircraft = false,
   instructors,
+  rosterNotice,
   dayBlocks,
   weekChips,
   nowLinePercent,
@@ -544,6 +546,7 @@ export function Schedule({
                 {instructors.length > 0 ? (
                   <div className="pop-row">
                     <div className="fld-label">{labels.filtersInstructor}</div>
+                    {rosterNotice && <p>{rosterNotice}</p>}
                     <div className="segmented" style={{ flexWrap: 'wrap' }}>
                       <button type="button" className={filterInstructorId === 'all' ? 'on' : ''} onClick={() => setFilterInstructorId('all')}>
                         {labels.filtersAll}

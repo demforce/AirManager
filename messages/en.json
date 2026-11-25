@@ -1,4 +1,11 @@
 {
+  "Picker": {
+    "more": "More results: keep typing",
+    "loading": "Searching…",
+    "minimum": "Enter at least 2 characters",
+    "empty": "No results.",
+    "failed": "Search failed. Try again."
+  },
   "IdempotentSubmission": {
     "inProgress": "This operation is still in progress. Wait a few seconds, then retry without changing the details.",
     "uncertain": "No confirmation arrived. The operation may already have been recorded. Retry without changing the details to check the outcome.",
@@ -110,6 +117,7 @@
     }
   },
   "DashboardPage": {
+    "calendarTruncated": "Showing the first 1,000 bookings.",
     "fallback": {
       "title": "Overview",
       "sub": "No view is available for your role."
@@ -206,6 +214,7 @@
       "currency": "Currency"
     },
     "fleetCard": {
+    "firstHundred": "Showing the first 100 · View all",
       "cardTitle": "Aircraft",
       "summary": "{total} total · {available} available · {aog} AOG",
       "addAircraft": "Add aircraft",
@@ -1280,6 +1289,8 @@
     }
   },
   "BookingsPage": {
+    "rosterTruncated": "Showing the first 100 instructors.",
+    "calendarTruncated": "Showing the first 1,000 bookings.",
     "title": "Scheduling",
     "sub": "Aircraft timeline and bookings awaiting approval.",
     "occupied": "Booked",

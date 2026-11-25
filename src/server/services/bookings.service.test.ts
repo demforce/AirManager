@@ -91,7 +91,9 @@ const {
   transitionBooking,
   listBookableAircraft,
   listScheduleAircraft,
-  listBookableStudents,
+  searchBookingPeople,
+  searchBookingInstructors,
+  searchBookingAircraft,
   listActiveInstructors,
   getOwnInstructorProfileId,
   listReservedAircraftIds,
@@ -926,7 +928,7 @@ describe('masked rows carry no id of their holder (Story 16.7, ops F6, Q-16.7-a)
   it('listCalendarBookings: personId and forcedAt are null on a row that is not the STUDENT actor own', async () => {
     bookingFindMany.mockResolvedValue([OTHERS_FORCED_ROW]);
 
-    const result = await listCalendarBookings(studentActor(), { from: '2026-08-03T00:00:00.000Z', to: '2026-08-04T00:00:00.000Z' });
+    const { items: result } = await listCalendarBookings(studentActor(), { from: '2026-08-03T00:00:00.000Z', to: '2026-08-04T00:00:00.000Z' });
 
     expect(result[0]?.personId).toBeNull();
     expect(result[0]?.forcedAt).toBeNull();
@@ -1001,7 +1003,7 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
   it('any authenticated role (self.read) can list — a student succeeds', async () => {
     bookingFindMany.mockResolvedValue([CREATED_BOOKING_ROW]);
 
-    const result = await listCalendarBookings(studentActor(), { from: FROM, to: TO });
+    const { items: result } = await listCalendarBookings(studentActor(), { from: FROM, to: TO });
 
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('booking_1');
@@ -1031,7 +1033,7 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
     bookingFindMany.mockResolvedValue([]);
     await expect(
       listCalendarBookings(adminActor(), { from: '2026-08-01T00:00:00.000Z', to: '2026-08-09T00:00:00.000Z' }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ items: [], truncated: false });
   });
 
   it('uses the semi-open overlap predicate (startsAt < to AND endsAt > from)', async () => {
@@ -1066,13 +1068,20 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
     expect(new Date(FROM).getTime()).not.toBeGreaterThan(where.endsAt.gt.getTime());
   });
 
+  it.each([[1000, false], [1001, true]])('declares the 1000-booking bound at %i rows', async (count, truncated) => {
+    bookingFindMany.mockResolvedValue(Array.from({ length: Number(count) }, () => CREATED_BOOKING_ROW));
+    const page = await listCalendarBookings(adminActor(), { from: FROM, to: TO });
+    expect(page.items).toHaveLength(1000);
+    expect(page.truncated).toBe(truncated);
+  });
+
   it('orders by startsAt asc, id asc, with a take: 1000 safety bound (not pagination)', async () => {
     bookingFindMany.mockResolvedValue([]);
 
     await listCalendarBookings(adminActor(), { from: FROM, to: TO });
 
     expect(bookingFindManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({ orderBy: [{ startsAt: 'asc' }, { id: 'asc' }], take: 1000 }),
+      expect.objectContaining({ orderBy: [{ startsAt: 'asc' }, { id: 'asc' }], take: 1001 }),
     );
     // No `skip`/pagination args at all (Contesto: "un calendario non si pagina").
     expect(bookingFindManyMock.mock.calls[0]?.[0]).not.toHaveProperty('skip');
@@ -1083,7 +1092,7 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
       { ...CREATED_BOOKING_ROW, instructorProfileId: 'instr_profile_1', instructorProfile: { person: { firstName: 'Livia', lastName: 'Bernasconi' } } },
     ]);
 
-    const result = await listCalendarBookings(adminActor(), { from: FROM, to: TO });
+    const { items: result } = await listCalendarBookings(adminActor(), { from: FROM, to: TO });
 
     expect(result[0]).toMatchObject({ personName: 'Mario Rossi', instructorName: 'Livia Bernasconi', aircraftRegistration: 'I-ABCD' });
   });
@@ -1095,7 +1104,7 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
       { ...CREATED_BOOKING_ROW, instructorProfileId: 'instr_profile_1', instructorProfile: { person: { firstName: 'Livia', lastName: 'Bernasconi' } } },
     ]);
 
-    const result = await listCalendarBookings(pilotActor('someone_else'), { from: FROM, to: TO });
+    const { items: result } = await listCalendarBookings(pilotActor('someone_else'), { from: FROM, to: TO });
 
     // Review F1: `instructorProfileId` masked too — this is the field
     // `schedule.tsx`'s client-side instructor filter matched against the
@@ -1106,7 +1115,7 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
   it("does NOT mask the pilot's own booking on the timeline", async () => {
     bookingFindMany.mockResolvedValue([CREATED_BOOKING_ROW]); // personId: 'person_pilot'
 
-    const result = await listCalendarBookings(pilotActor('person_pilot'), { from: FROM, to: TO });
+    const { items: result } = await listCalendarBookings(pilotActor('person_pilot'), { from: FROM, to: TO });
 
     expect(result[0]?.personName).toBe('Mario Rossi');
   });
@@ -1117,7 +1126,7 @@ describe('listCalendarBookings (Story 7.2, Task 2, AC 1)', () => {
     ]);
     instructorProfileFindUnique.mockResolvedValue(instructorProfileRow());
 
-    const result = await listCalendarBookings(pilotActor('someone_else'), { from: FROM, to: TO });
+    const { items: result } = await listCalendarBookings(pilotActor('someone_else'), { from: FROM, to: TO });
 
     expect(result[0]?.personName).toBe('Mario Rossi');
     expect(result[0]?.instructorName).toBe('Livia Bernasconi');
@@ -2829,14 +2838,73 @@ describe('booking-form picker helpers (Task 5)', () => {
     expect(result.rows.map(({ id }) => id)).toEqual(['reserved']);
   });
 
-  it('listBookableStudents returns only active students, requires only self.read', async () => {
+  it.each([pilotActor(), studentActor()])('denies roster searches before reading any target', async (actor) => {
+    await expect(searchBookingPeople(actor, 'students', 'Ma')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(searchBookingInstructors(actor, 'Ma')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(personFindManyMock).not.toHaveBeenCalled();
+    expect(instructorProfileFindMany).not.toHaveBeenCalled();
+  });
+
+  it('denies a deactivated instructor before querying students', async () => {
+    instructorProfileFindUnique.mockResolvedValue({ id: 'ip1', deactivatedAt: new Date() });
+    await expect(searchBookingPeople(instructorActor(), 'students', 'Ma')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(personFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps staff-only search out of the instructor role', async () => {
+    await expect(searchBookingPeople(instructorActor(), 'people', 'Ma')).rejects.toBeInstanceOf(ForbiddenError);
+    expect(personFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it('limits the people search to active profiles and matches every word', async () => {
+    personFindMany.mockResolvedValue([]);
+    await searchBookingPeople(adminActor(), 'people', 'Rossi Mario');
+    const term = (word: string) => {
+      const match = { contains: word, mode: 'insensitive' };
+      return { OR: [{ firstName: match }, { lastName: match }, { email: match }] };
+    };
+    expect(personFindManyMock.mock.calls[0]?.[0]).toMatchObject({
+      where: {
+        archivedAt: null,
+        OR: [{ pilotProfile: { deactivatedAt: null } }, { studentProfile: { deactivatedAt: null } }, { instructorProfile: { deactivatedAt: null } }],
+        AND: [term('Rossi'), term('Mario')],
+      },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }, { id: 'asc' }],
+      take: 21,
+    });
+  });
+
+  it('limits the planning roster independently of the instructor picker', async () => {
+    const rows = Array.from({ length: 101 }, (_, i) => ({ id: String(i), person: { firstName: 'Test', lastName: String(i) } }));
+    instructorProfileFindMany.mockResolvedValue(rows);
+    const roster = await listActiveInstructors(adminActor());
+    expect(roster.items).toHaveLength(100);
+    expect(roster.truncated).toBe(true);
+    expect(vi.mocked(prisma.instructorProfile.findMany).mock.calls[0]?.[0]?.take).toBe(101);
+    instructorProfileFindMany.mockResolvedValue(rows.slice(0, 21));
+    const picker = await searchBookingInstructors(instructorActor(), 'Te');
+    expect(picker.items).toHaveLength(20);
+    expect(picker.truncated).toBe(true);
+    expect(vi.mocked(prisma.instructorProfile.findMany).mock.calls[1]?.[0]?.take).toBe(21);
+  });
+
+  it('signals the extra aircraft row while exposing just 20 results', async () => {
+    aircraftFindMany.mockResolvedValue(Array.from({ length: 21 }, (_, i) => ({ id: String(i) })));
+    const result = await searchBookingAircraft(studentActor(), 'I-');
+    expect(result.truncated).toBe(true);
+    expect(result.items).toHaveLength(20);
+    expect(aircraftFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 21 }));
+  });
+
+  it('the student picker returns active students for an administrator', async () => {
     personFindMany.mockResolvedValue([{ id: 'p1', firstName: 'Marco', lastName: 'Ferraris' }]);
 
-    const result = await listBookableStudents(instructorActor());
+    const result = await searchBookingPeople(adminActor(), 'students');
 
-    expect(result).toEqual([{ id: 'p1', firstName: 'Marco', lastName: 'Ferraris' }]);
+    expect(result.items).toEqual([{ id: 'p1', firstName: 'Marco', lastName: 'Ferraris' }]);
     expect(personFindManyMock).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { archivedAt: null, studentProfile: { deactivatedAt: null } } }),
+      expect.objectContaining({ where: { archivedAt: null, studentProfile: { deactivatedAt: null }, AND: [] } }),
     );
   });
 
@@ -2845,7 +2913,7 @@ describe('booking-form picker helpers (Task 5)', () => {
 
     const result = await listActiveInstructors(adminActor());
 
-    expect(result).toEqual([{ instructorProfileId: 'ip1', firstName: 'Livia', lastName: 'Bernasconi' }]);
+    expect(result.items).toEqual([{ instructorProfileId: 'ip1', firstName: 'Livia', lastName: 'Bernasconi' }]);
   });
 
   it('getOwnInstructorProfileId returns null for an actor with no linked person', async () => {

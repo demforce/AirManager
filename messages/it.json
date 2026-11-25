@@ -1,4 +1,11 @@
 {
+  "Picker": {
+    "more": "Altri risultati: continua a digitare",
+    "loading": "Ricerca in corso…",
+    "minimum": "Digita almeno 2 caratteri",
+    "empty": "Nessun risultato.",
+    "failed": "Ricerca non riuscita. Riprova."
+  },
   "IdempotentSubmission": {
     "inProgress": "Operazione in corso. Attendi qualche secondo, poi riprova senza cambiare i dati.",
     "uncertain": "Non è arrivata la conferma. L’operazione potrebbe essere già stata registrata. Riprova senza cambiare i dati per verificarne l’esito.",
@@ -110,6 +117,7 @@
     }
   },
   "DashboardPage": {
+    "calendarTruncated": "Mostrate le prime 1.000 prenotazioni.",
     "fallback": {
       "title": "Panoramica",
       "sub": "Nessuna vista disponibile per il tuo ruolo."
@@ -206,6 +214,7 @@
       "currency": "Currency"
     },
     "fleetCard": {
+    "firstHundred": "Mostrati i primi 100 · Vedi tutti",
       "cardTitle": "Velivoli",
       "summary": "{total, plural, one {# velivolo} other {# velivoli}} · {available, plural, one {# disponibile} other {# disponibili}} · {aog} fuori servizio",
       "addAircraft": "Aggiungi velivolo",
@@ -1280,6 +1289,8 @@
     }
   },
   "BookingsPage": {
+    "rosterTruncated": "Mostrati i primi 100 istruttori.",
+    "calendarTruncated": "Mostrate le prime 1.000 prenotazioni.",
     "title": "Pianificazione",
     "sub": "Calendario dei velivoli e prenotazioni da approvare.",
     "occupied": "Occupato",

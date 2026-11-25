@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.6: Typeahead server-side per persone e velivoli, cap dichiarati ovunque restino
 
-Status: **in-progress** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (UI: `SearchCombobox`, form prenotazione, filtro del Registro voli, avvisi; skill `design-taste-frontend` + `ui-ux-pro-max`). Review: Opus 5 xhigh adversarial. **Ordine**: dopo l'Epic 16 (16.5 tocca `bookings.service.ts`, `registry.ts`, `messages`, `instructors-console.tsx`; 16.7 estende `maskBookingNames` a `personId` e TD-16.7-a diventa vivo con T1; 16.8 aggiunge `listArchivedAircraftByIds`; 16.9 tocca `transaction-editor.tsx` e `flight-editor.tsx`) e dopo 17.2 (il suo filtro per URL userà la ricerca di T1) e 17.5 (riscrive la lettura di `listPeople`/`listAircraft`). 18.4 consuma da T1 la ricerca velivolo e istruttore. Righe da rileggere su HEAD al momento del dev.
+Status: **review** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (UI: `SearchCombobox`, form prenotazione, filtro del Registro voli, avvisi; skill `design-taste-frontend` + `ui-ux-pro-max`). Review: Opus 5 xhigh adversarial. **Ordine**: dopo l'Epic 16 (16.5 tocca `bookings.service.ts`, `registry.ts`, `messages`, `instructors-console.tsx`; 16.7 estende `maskBookingNames` a `personId` e TD-16.7-a diventa vivo con T1; 16.8 aggiunge `listArchivedAircraftByIds`; 16.9 tocca `transaction-editor.tsx` e `flight-editor.tsx`) e dopo 17.2 (il suo filtro per URL userà la ricerca di T1) e 17.5 (riscrive la lettura di `listPeople`/`listAircraft`). 18.4 consuma da T1 la ricerca velivolo e istruttore. Righe da rileggere su HEAD al momento del dev.
 
 ## Story
 
@@ -59,9 +59,9 @@ Fonte: `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md` §«Story 17.6»
 
 ## Tasks / Subtasks
 
-- [ ] Backend: ricerche «opzioni di prenotazione» (T1), costante (T2), parole multiple in `listPeople` (T4), busta del calendario (T5), OpenAPI.
-- [ ] `SearchCombobox`: soglia 2, riga «altri», selezione sempre nel browse, label opzionalmente nascosta per la barra filtri (oggi label sempre visibile, `minWidth: 200` `:378`), stato «Ricerca in corso…».
-- [ ] Form prenotazione (nuova, modifica, sposta), form volo/transazione/quota, filtro Registro voli, avvisi del calendario, widget Panoramica.
+- [x] Backend: ricerche «opzioni di prenotazione» (T1), costante (T2), parole multiple in `listPeople` (T4), busta del calendario (T5), OpenAPI.
+- [x] `SearchCombobox`: soglia 2, riga «altri», selezione sempre nel browse, label opzionalmente nascosta per la barra filtri (oggi label sempre visibile, `minWidth: 200` `:378`), stato «Ricerca in corso…».
+- [x] Form prenotazione (nuova, modifica, sposta), form volo/transazione/quota, filtro Registro voli, avvisi del calendario, widget Panoramica.
 - [ ] Unit (la logica del combobox da provare va estratta in `src/lib/`: vitest è `node`, non jsdom), e2e (AC 3, 7, 9), mutanti su copia isolata, misure, Dev Agent Record.
 
 ## Dev Notes
@@ -98,10 +98,44 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 
 ### Agent Model Used
 
+Codex Cloud, un solo agente di sviluppo. Revisione indipendente Opus 5 xhigh in attesa.
+
 ### Completion Notes List
 
+Suite Chromium completa su dati sintetici: 625 casi passati al primo tentativo, uno passato al retry (attesa Mailpit in `account-adjustments.spec.ts:94`), zero fallimenti finali, 28,1 minuti, exit 0. Le prove del rifiuto 403 sono passate. La mutazione che amplia i permessi non è stata eseguita.
+
 ### File List
+
+Il diff rispetto a `f375b3e` comprende servizio prenotazioni, servizio persone, route delle opzioni, schemi OpenAPI, componenti dashboard e combobox, traduzioni, fixture e test. L’elenco completo è riproducibile con `git diff --name-only f375b3e...story/17-6`.
 
 ### Checkpoint backend — ricerca per parole (AC 11)
 
 Base verificata `f375b3ebcacf988bda84dc3e1f0cf5a861e98ee5`. Il servizio persone applica una condizione per ogni parola su nome, cognome o email. Due casi sintetici verificano le due sequenze del nome, spazi multipli e filtro identico per elenco e totale. Sul codice iniziale il comando `vitest run src/server/services/people.service.test.ts -t 'matches every name token'` è uscito con codice 1 (due asserzioni sul filtro AND fallite). Dopo la modifica: 94/94 test del servizio, typecheck, lint dei due file e controllo del diff con esito positivo. Il checkpoint riguarda il servizio; restano l’integrazione nei picker, i gate completi, le misure e la revisione della story.
+
+### Verifiche integrate su dati sintetici — 2026-11-25
+
+Il benchmark usa lo stesso snapshot PostgreSQL 16 di `airmanager_load` per il prima e il dopo. `render.mjs 1280 375` ha misurato la build production della 17.5 e quella della 17.6. Per queste schermate il numero di nodi e i KiB di HTML serializzato coincidono alle due larghezze. Le misure includono l’intera pagina.
+
+| Pagina e ruolo | KiB prima → dopo | Nodi DOM prima → dopo |
+|---|---:|---:|
+| Panoramica admin | 648 → 373 | 2962 → 2970 |
+| Prenotazioni admin | 578 → 320 | 2687 → 2690 |
+| Registro voli admin | 211 → 169 | 998 → 905 |
+| Contabilità admin | 451 → 444 | 3275 → 3276 |
+| Scadenze admin | 144 → 137 | 649 → 649 |
+| Prenotazioni istruttore | 683 → 313 | 2644 → 2645 |
+
+Su 4.757 persone attive, la vecchia prima pagina offriva 86 persone prenotabili. La ricerca staff applica il filtro ai 4.364 profili prenotabili prima del limite di pagina. Il dominio allievi conta 1.202 persone, quello istruttori 374 e la flotta prenotabile 1.460. Nella sonda UI su carico una persona oltre le prime 100 passa da assente a selezionabile. Il più grande select nativo del Registro passa da 101 a 3 opzioni. Nel form staff la larghezza del campo resta 479 px a 1280 e 335 px a 375; l’altezza dell’opzione su telefono è 44 px, con overflow orizzontale zero in entrambe le build.
+
+| Ricerca | Query di 2 / 4 caratteri | p50 prima ricerca / seconda (ms) | Durata burst 10 (ms) |
+|---|---|---:|---:|
+| Velivoli | I- / I-AF | 16 / 11 | 115 / 106 |
+| Persone | Fe / Ferr | 21 / 18 | 105 / 79 |
+| Allievi | Fe / Ferr | 15 / 16 | 79 / 79 |
+| Istruttori | Fe / Ferr | 17 / 17 | 100 / 93 |
+
+Otto target di `bench.mjs`, cinque iterazioni e dieci richieste concorrenti per target: HTTP 200 su tutti, zero errori nei burst. Sono valori p50 di richieste singole e tempi complessivi dei burst.
+
+**Prove discriminanti e diagnostica.** Su copia della base, i due unit del calendario (1.000 e 1.001 righe) falliscono sul vecchio array senza `items` (Vitest exit 1). Sul browser pre-fix la selezione staff oltre 100 va in timeout e la guardia nativa legge 55 opzioni contro un massimo di 50 (Playwright exit 1). Su copie isolate del codice modificato i test falliscono (exit 1) togliendo rispettivamente la lettura della riga 21, la soglia di due caratteri o il reinserimento della selezione. I test di autorizzazione controllano il rifiuto esplicito per ruolo, il profilo istruttore disattivato e l’assenza di letture della rosa quando l’accesso viene negato.
+
+**Gate e recuperi.** La build esplorativa con `next build --webpack` è uscita con 1 per il tipo del contesto GET della route preesistente `accounts/negative-balances`. Il comando di build del repository usa Turbopack ed è passato. Il primo `npm run gates` è uscito con 1 per TS2339 nel nuovo test browser (proprietà DOM `options`). Corretto il conteggio degli elementi e ripetuto il gate completo: exit 0, lint, typecheck, 2.306 unit e build production. Nel primo run integrato browser, il test del velivolo fuori servizio metteva a terra il velivolo prima della ricerca: il nuovo picker lo mostrava correttamente disabilitato. Il test è stato corretto selezionando prima il velivolo operativo e mettendolo a terra prima del salvataggio, per verificare la 422 prevista.

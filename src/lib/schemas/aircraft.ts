@@ -163,6 +163,7 @@ export type OutOfServiceImpactQuery = z.infer<typeof outOfServiceImpactQuerySche
  * (AC 2 — archived aircraft are hidden from the default list).
  */
 export const listAircraftQuerySchema = paginationQuerySchema.extend({
+  picker: z.literal('true').optional(),
   q: z.string().trim().min(1).optional(),
   // `z.coerce.boolean()` would treat the *string* `"false"` as truthy
   // (`Boolean("false")` is `true`) — same footgun avoided in `listPeopleQuerySchema`.

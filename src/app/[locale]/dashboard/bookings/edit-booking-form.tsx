@@ -14,7 +14,7 @@ import { focusFirstInvalid } from '@/lib/dom-focus';
 import type { RequirementFailure } from '@/lib/schemas/requirements';
 import { formatDateOnly } from '@/lib/time';
 import { SlideOver } from '@/components/ui/slide-over';
-import { aircraftOptionLabel, type AircraftOption } from './new-booking-form';
+import { bookingAircraftSearch, aircraftOptionLabel, type AircraftOption } from './new-booking-form';
 import type { BookingRowDto } from './bookings-table';
 
 export type EditBookingFormLabels = {
@@ -179,8 +179,7 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
     formErrorRef.current?.focus();
   }
 
-  // Static mode (story 19.5, D-4/D-5): the server-rendered list, out-of-service
-  // aircraft listed with their reason but not selectable.
+  // Grounded aircraft are visible in browse and search with their reason.
   const aircraftComboOptions = useMemo<SearchComboboxOption[]>(
     () =>
       aircraftOptions.map((aircraft) => ({
@@ -337,6 +336,8 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
                 render={({ field, fieldState }) => (
                   <SearchCombobox
                     id="move-booking-aircraft"
+                    selectedLabel={booking?.aircraftRegistration}
+                    fetchOptions={(q) => bookingAircraftSearch(q, labels.outOfServiceSuffix)}
                     label={labels.aircraft}
                     value={field.value}
                     onChange={field.onChange}

@@ -1,3 +1,4 @@
+import { PICKER_LIMIT } from '@/lib/picker';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
@@ -19,9 +20,6 @@ type PageProps = {
   params: Promise<{ locale: string }>;
   searchParams: Promise<{ page?: string; dateFrom?: string; dateTo?: string; bookType?: string; categoryId?: string; personQuery?: string; unattributed?: string }>;
 };
-
-/** Form pickers' seed candidates (story TD-3 convention, same as logbook/fleet/pilots). */
-const OPTIONS_PAGE_SIZE = 100;
 
 /** The ledger's own page size. */
 const TX_PAGE_SIZE = 20;
@@ -78,7 +76,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const personQuery = sp.personQuery || undefined;
   const unattributed = sp.unattributed === 'true';
 
-  const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
+  const peopleResult = await listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'pilot-or-student', includeArchived: false });
   const personOptions = peopleResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
 
   const cashCategories = await listCashCategories(actor, { includeInactive: false });
