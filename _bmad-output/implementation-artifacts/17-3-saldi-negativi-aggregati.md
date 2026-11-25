@@ -4,7 +4,7 @@ baseline_commit: e951960
 
 # Story 17.3: Saldi negativi aggregati
 
-Status: **in-review** (2026-11-25) — pronta il 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (card, pagina nuova, link, i18n, misure a 375). Review: Opus 5 xhigh adversarial. **Ordine**: DOPO il commit della 16.5 (tocca `billing/page.tsx:192`, `billing-console.tsx:62`, `:1152`, vicine alla card) e della 16.6a (che vuole `billing-summary.service.ts` byte-identico per tutta la sua durata, e tocca `billing-panels*.tsx:105-114`, `billing/page.tsx:128`, `:150`). Il passo 0 di misura va fatto su quel HEAD; le righe qui sotto vanno rilette.
+Status: **done** (2026-11-25) — pronta il 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `e951960`). **Dev: Opus 5 xhigh** (card, pagina nuova, link, i18n, misure a 375). Review: Opus 5 xhigh adversarial. **Ordine**: DOPO il commit della 16.5 (tocca `billing/page.tsx:192`, `billing-console.tsx:62`, `:1152`, vicine alla card) e della 16.6a (che vuole `billing-summary.service.ts` byte-identico per tutta la sua durata, e tocca `billing-panels*.tsx:105-114`, `billing/page.tsx:128`, `:150`). Il passo 0 di misura va fatto su quel HEAD; le righe qui sotto vanno rilette.
 
 ## Story
 
@@ -34,10 +34,10 @@ Fonte: `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md` §«Story 17.3»
 
 ## Tasks / Subtasks
 
-- [ ] Passo 0 su HEAD (dopo 16.5/16.6a): build una volta, `next start -p 3001` (verificare `ss -ltnp`), `PERSON=`/`AIRCRAFT=` espliciti, `bench.mjs targets-hot.json 5 10` anche con `DUMP=1`; nel dump di `page billing` contare `negative-balance-row` (atteso 4 002) e `billing-instructor-compensation-row` (atteso 374) e attribuire i byte; `PAGES=/it/dashboard/billing,/it/dashboard render.mjs 1280 375`; estrarre il blocco `mobile-overview-alerts` per il diff dell'AC 4. **Se il passo 0 conferma i > 300 KB per i Compensi, segnalarlo alla sessione principale prima di procedere** (§PO Q-17.3-c).
-- [ ] Lettore paginato unico + riepilogo (AC 1, 2), route, OpenAPI.
-- [ ] Card di Contabilità, Panoramica, `overview-alerts`, collegamenti (AC 3, 4); elenco completo secondo §PO.
-- [ ] Unit, e2e (AC 6, 8), discriminanze, misura «dopo», Dev Agent Record.
+- [x] Passo 0 su HEAD (dopo 16.5/16.6a): build una volta, `next start -p 3001` (verificare `ss -ltnp`), `PERSON=`/`AIRCRAFT=` espliciti, `bench.mjs targets-hot.json 5 10` anche con `DUMP=1`; nel dump di `page billing` contare `negative-balance-row` (atteso 4 002) e `billing-instructor-compensation-row` (atteso 374) e attribuire i byte; `PAGES=/it/dashboard/billing,/it/dashboard render.mjs 1280 375`; estrarre il blocco `mobile-overview-alerts` per il diff dell'AC 4. **Se il passo 0 conferma i > 300 KB per i Compensi, segnalarlo alla sessione principale prima di procedere** (§PO Q-17.3-c).
+- [x] Lettore paginato unico + riepilogo (AC 1, 2), route, OpenAPI.
+- [x] Card di Contabilità, Panoramica, `overview-alerts`, collegamenti (AC 3, 4); elenco completo secondo §PO.
+- [x] Unit, e2e (AC 6, 8), discriminanze, misura «dopo», Dev Agent Record.
 
 ## Dev Notes
 
@@ -86,3 +86,10 @@ Ratificate dal PO il 2026-11-03 in un solo giro (AskUserQuestion: «Sì, tutte»
 - `d68647a`: un solo lettore paginato dei debitori, ordinato per saldo crescente e ID, con totali anche su pagine vuote. Archiviati inclusi, ricerca case-insensitive con wildcard letterali, guardia `finance.manage`. API paginata e nuova API riepilogo, OpenAPI aggiornato. Contabilità mostra i primi 20 con il totale dichiarato; la pagina completa è raggiungibile da Contabilità e Avvisi, senza perdere il conteggio oltre l’anteprima.
 - Gate del ramo isolato: lint, tipi, **2290 unit**, build. Verifica dedicata su 21 debitori sintetici: da SQL indipendente a riepilogo, card, lista a due pagine, debitori archiviati, wildcard letterali e permessi, **1/1**; regressioni pertinenti **37/37**. Il tentativo mirato più ampio non preparava le fixture di due controlli di contrasto Scadenze, non toccati dalla story; riesercitarli nell’arbitro completo. Le attese del nuovo link sono ora deterministiche.
 - Baseline e ramo isolato su stesso DB di carico, 4018 debitori: API paginata **646.945 → 3.261 byte**, p50 **88 → 44 ms**. Contabilità **15.268 → 3.275 nodi**, **2150 → 451 KB HTML**, a 375 px **1039 → 452 ms** di domInteractive. Il tetto di 300 KB era stato qualificato in Q-17.3-c per la card Compensi istruttori, che qui non è stata modificata. Non confrontare la Panoramica tra quei due eseguibili: il ramo di sviluppo isolato non conteneva la 17.2. Ripetizione Panoramica e arbitro sull’albero integrato restano parte della chiusura.
+
+## Verifica finale sull’albero integrato — 2026-11-25
+
+- Gate: lint, tipi, build e **2.292 test unitari**. Arbitro Playwright sull’albero con 17.2 e 17.3: **621 passati, 3 saltati, 0 falliti**, exit 0. I tre test METAR richiedono il servizio esterno e non fanno parte di questa story. Tutti i test contabili eseguiti usano dati sintetici.
+- Stesso carico prima/dopo: righe dei debitori a DOM **4.018 → 20**, nodi della pagina Contabilità **15.268 → 3.275**, `domInteractive` a 375 px **1.102 → 392 ms**. L’API elenco scende da **646.945 a 3.261 byte**. La card Compensi mantiene il peso già annotato in Q-17.3-c.
+- Panoramica a 375 px: voci, link, conteggio e destinazione «Vedi tutti» verificati sullo stesso snapshot. `page overview`: p50 **278 → 301 ms**, senza obiettivo in KB e senza rivendicare un miglioramento di latenza per questa misura.
+- Verifica conclusa in cloud; nessun push.

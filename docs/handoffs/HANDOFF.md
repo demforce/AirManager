@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.2 chiusa, 17.3 in verifica)
+# HANDOFF — AirManager (aggiornato: 2026-11-25 — 17.3 chiusa, 17.4 in sviluppo)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -9,7 +9,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 ## Current Progress
 
-- **17.3 in review** (`d68647a`): primi 20 saldi, elenco paginato e ricerca, API riepilogo, conteggio Avvisi mantenuto. Prove mirate verdi (21 debitori sintetici, SQL indipendente), payload API 647 → 3,3 KB; resta l’arbitro dell’albero integrato.
+- **17.3 done** (`d68647a`): primi 20 saldi, elenco paginato e ricerca, API riepilogo, conteggio Avvisi mantenuto. SQL indipendente verificata su dati sintetici. **2292 unit, 621 browser passati, 3 METAR saltati, 0 falliti**. Contabilità mobile 1.102 → 392 ms; payload API 647 → 3,3 KB. Nessun push.
 
 - **17.2 done** (`0ebfbc2`): Pianificazione e Panoramica riducono le righe, con filtro velivolo lato server condiviso con elenco ed esportazioni. **2291 unit, 623/623 browser**. Nel giorno carico: 41.731 → 5.628 nodi, 1.023 → 271 ms a 1280 px; 128 blocchi preservati. Agenda mobile identica nel campione visivo.
 - **Pubblicazione in attesa di accesso**: GitHub ha rifiutato la scrittura; il bundle verificato di Epic 16 è stato consegnato. Rami remoti e PR #22 non modificati.
