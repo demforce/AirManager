@@ -49,6 +49,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
+import { NEGATIVE_BALANCES_HREF } from '@/lib/negative-balance-links';
 import type { AppLocale } from '@/i18n/routing';
 import type { PaymentMethodDto } from '@/lib/schemas/accounts';
 import { ledgerSide, transactionCardSubLine, transactionCardTitle, transactionSheetSub, transactionStatusIsAnomalous } from '@/lib/mobile-billing';
@@ -106,7 +107,7 @@ export type BillingConsoleLabels = {
   newTransaction: string;
   byCategory: { title: string; sub: string; empty: string; in: string; out: string; net: string };
   instructorCompensation: { title: string; sub: string; noRate: string; empty: string };
-  negativeBalances: { title: string; empty: string; link: string };
+  negativeBalances: { title: string; count: string; preview: string; link: string };
   exportMenu: { label: string; xlsLabel: string; pdfLabel: string };
   table: {
     cardTitle: string;
@@ -202,6 +203,7 @@ export type BillingConsoleProps = {
   byCategory: CategoryTotal[];
   compensation: CompensationRow[];
   negativeBalances: NegativeBalanceRow[];
+  negativeBalanceCount: number;
   exportHref: string;
   cashReportPdfHref: string;
   moneyLocale: 'it' | 'en';
@@ -259,6 +261,7 @@ export function BillingConsole({
   byCategory,
   compensation,
   negativeBalances,
+  negativeBalanceCount,
   exportHref,
   cashReportPdfHref,
   moneyLocale,
@@ -1161,16 +1164,19 @@ export function BillingConsole({
         </div>
       </div>
 
-      {negativeBalances.length > 0 ? (
+      {negativeBalanceCount > 0 ? (
         <div className="card billing-negative-card" style={{ marginTop: 16 }} data-testid="billing-negative-balances-card">
           <div className="card-head">
             <div className="card-title">{labels.negativeBalances.title}</div>
-            <span className="card-sub">{negativeBalances.length}</span>
+            <span className="card-sub" data-testid="negative-balances-count" data-count={negativeBalanceCount}>{labels.negativeBalances.count}</span>
             <div className="spacer" />
-            <Link href="/dashboard/pilots" locale={locale as AppLocale} className="card-sub" style={{ textDecoration: 'underline' }}>
+            <Link href={NEGATIVE_BALANCES_HREF} locale={locale as AppLocale} className="card-sub" style={{ textDecoration: 'underline' }}>
               {labels.negativeBalances.link}
             </Link>
           </div>
+          {negativeBalanceCount > negativeBalances.length ? (
+            <p className="card-sub" style={{ margin: '4px 18px' }}>{labels.negativeBalances.preview}</p>
+          ) : null}
           {/* The `max-height`/`overflow-y` this node used to carry inline moved
               into `.billing-negative-list` (identical computed style above 640px,
               measured): an inline `max-height` cannot be overridden by a media
@@ -1178,12 +1184,12 @@ export function BillingConsole({
               four names. */}
           <div className="card-body billing-negative-list">
             {negativeBalances.map((item) => (
-              <div key={item.personId} className="billing-negative-row" data-testid="negative-balance-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
+              <div key={item.personId} className="billing-negative-row" data-testid="negative-balance-row" data-person-id={item.personId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
                 <Link href={`/dashboard/people/${item.personId}`} locale={locale as AppLocale}>
                   {item.lastName} {item.firstName}
                 </Link>
                 {/* R-15.8a-i: measured 3.96:1 as body-sized text on `--panel` in the light theme. */}
-                <span className="mono num stat-tone-bad">{formatCents(item.balanceCents, moneyLocale)}</span>
+                <span className="mono num stat-tone-bad" data-balance-cents={item.balanceCents}>{formatCents(item.balanceCents, moneyLocale)}</span>
               </div>
             ))}
           </div>

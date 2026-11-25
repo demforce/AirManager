@@ -93,7 +93,18 @@ describe('buildOverviewAlerts — cap and "Vedi tutte" (the case no e2e can fabr
 
     expect(result.items).toHaveLength(5);
     expect(result.hiddenCount).toBe(1);
-    expect(result.moreHref).toBe('/dashboard/billing');
+    expect(result.moreHref).toBe('/dashboard/billing/negative-balances');
+  });
+
+  it('counts balances outside the preview without making them visible', () => {
+    const result = buildOverviewAlerts({
+      ...EMPTY,
+      negativeBalances: Array.from({ length: 20 }, (_, i) => balance(`debtor-${i}`, -1000 + i)),
+      negativeBalancesTotal: 4002,
+    });
+    expect(result.items).toHaveLength(5);
+    expect(result.hiddenCount).toBe(3997);
+    expect(result.moreHref).toBe('/dashboard/billing/negative-balances');
   });
 
   it('points at Scadenze when the hidden tail starts with a scadenza', () => {

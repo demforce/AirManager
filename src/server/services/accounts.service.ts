@@ -1,8 +1,9 @@
 import { Prisma, type AccountMovementRootBook, type AccountMovementType, type PaymentMethod } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { AppLocale } from '@/i18n/routing';
-import type { RecordAdjustmentInput, RecordTopUpInput } from '@/lib/schemas/accounts';
+import type { NegativeBalancesQuery, RecordAdjustmentInput, RecordTopUpInput } from '@/lib/schemas/accounts';
 import { rootBookType } from '@/lib/schemas/transactions';
+import { escapeLikePattern } from '@/lib/sql-like';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { getMailSender } from '@/server/adapters/mail';
@@ -830,56 +831,67 @@ export type NegativeBalanceItem = {
   lastMovementAt: Date | null;
 };
 
+export const NEGATIVE_BALANCE_PREVIEW_SIZE = 20;
+
+type NegativeBalanceSqlRow = Omit<NegativeBalanceItem, 'balanceCents' | 'personId'> & {
+  personId: string | null;
+  balanceCents: bigint | null;
+  total: bigint;
+  exposureCents: bigint;
+};
+
 /**
- * Lists every account with a negative balance, most-negative first (AC 2,
- * Task 2) — the staff-facing "saldi negativi" list, shown on `/dashboard/billing`
- * since story 12.9 (the legacy `/dashboard/finance` it originally lived on is gone).
- * `finance.manage` only.
- *
- * Balance is ALWAYS the `SUM(AccountMovement.amountCents)` computation
- * (AD-3) — implemented here as a Prisma `groupBy` with a `having` filter on
- * the aggregate (pushes the "< 0" filter and the ordering into Postgres,
- * rather than fetching every account and filtering in JS) followed by one
- * `Account`+`Person` lookup to enrich the surviving groups with a display
- * name — `groupBy` cannot itself join across relations.
- *
- * ARCHIVED people are deliberately NOT filtered out (review 3.3 F1,
- * conscious deviation from the people/aircraft list convention): a debtor
- * who left the airfield is exactly who staff must still see here —
- * archiving must never hide money owed.
+ * Read the bounded rows and the matching ledger totals from one snapshot.
+ * Archived people are deliberately included: archiving never hides debt.
  */
-export async function listNegativeBalances(actor: Actor): Promise<NegativeBalanceItem[]> {
+async function readNegativeBalances(actor: Actor, query: NegativeBalancesQuery) {
   authorize(actor, 'finance.manage');
+  const offset = BigInt(query.page - 1) * BigInt(query.pageSize);
+  const search = query.q ? `%${escapeLikePattern(query.q)}%` : null;
+  const nameFilter = search
+    ? Prisma.sql`WHERE concat_ws(' ', p."firstName", p."lastName") ILIKE ${search} ESCAPE '\\'
+        OR concat_ws(' ', p."lastName", p."firstName") ILIKE ${search} ESCAPE '\\'`
+    : Prisma.empty;
+  const rows = await prisma.$queryRaw<NegativeBalanceSqlRow[]>(Prisma.sql`
+    WITH balances AS (
+      SELECT "accountId", SUM("amountCents")::bigint AS "balanceCents", MAX("createdAt") AS "lastMovementAt"
+      FROM "AccountMovement"
+      GROUP BY "accountId"
+      HAVING SUM("amountCents") < 0
+    ), matching AS (
+      SELECT p.id AS "personId", p."firstName", p."lastName", b."balanceCents", b."lastMovementAt"
+      FROM balances b
+      JOIN "Account" a ON a.id = b."accountId"
+      JOIN "Person" p ON p.id = a."personId"
+      ${nameFilter}
+    ), totals AS (
+      SELECT COUNT(*) AS total, COALESCE(-SUM("balanceCents"), 0)::bigint AS "exposureCents"
+      FROM matching
+    ), page_rows AS (
+      SELECT * FROM matching
+      ORDER BY "balanceCents", "personId"
+      LIMIT ${query.pageSize} OFFSET ${offset}
+    )
+    SELECT pr.*, totals.total, totals."exposureCents"
+    FROM totals LEFT JOIN page_rows pr ON true
+    ORDER BY pr."balanceCents", pr."personId"
+  `);
 
-  const grouped = await prisma.accountMovement.groupBy({
-    by: ['accountId'],
-    _sum: { amountCents: true },
-    _max: { createdAt: true },
-    having: { amountCents: { _sum: { lt: 0 } } },
-    orderBy: { _sum: { amountCents: 'asc' } },
-  });
+  return {
+    items: rows.flatMap(({ personId, firstName, lastName, balanceCents, lastMovementAt }): NegativeBalanceItem[] =>
+      personId === null || balanceCents === null ? [] : [{ personId, firstName, lastName, balanceCents: Number(balanceCents), lastMovementAt }],
+    ),
+    total: Number(rows[0]?.total ?? BigInt(0)),
+    exposureCents: Number(rows[0]?.exposureCents ?? BigInt(0)),
+  };
+}
 
-  if (grouped.length === 0) return [];
+export async function listNegativeBalances(actor: Actor, query: NegativeBalancesQuery): Promise<PaginatedResult<NegativeBalanceItem>> {
+  const { items, total } = await readNegativeBalances(actor, query);
+  return paginate(items, total, query);
+}
 
-  const accounts = await prisma.account.findMany({
-    where: { id: { in: grouped.map((group) => group.accountId) } },
-    select: { id: true, person: { select: { id: true, firstName: true, lastName: true } } },
-  });
-  const accountById = new Map(accounts.map((account) => [account.id, account]));
-
-  const items: NegativeBalanceItem[] = [];
-  for (const group of grouped) {
-    const account = accountById.get(group.accountId);
-    // Cannot happen (every AccountMovement.accountId is FK-backed) — skip
-    // defensively rather than throw on a display-only listing.
-    if (!account) continue;
-    items.push({
-      personId: account.person.id,
-      firstName: account.person.firstName,
-      lastName: account.person.lastName,
-      balanceCents: group._sum.amountCents ?? 0,
-      lastMovementAt: group._max.createdAt,
-    });
-  }
-  return items;
+export async function getNegativeBalanceSummary(actor: Actor) {
+  const { items, total, exposureCents } = await readNegativeBalances(actor, { page: 1, pageSize: NEGATIVE_BALANCE_PREVIEW_SIZE });
+  return { count: total, exposureCents, top: items };
 }

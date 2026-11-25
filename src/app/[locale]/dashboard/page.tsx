@@ -19,7 +19,7 @@ import { APP_TIMEZONE, formatDateOnly, formatDateTime, formatMinutes, formatTime
 import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, zonedMidnightUtc } from '@/lib/zoned-time';
 import { hasPermission, type Actor } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import { getAccountOverview, listNegativeBalances } from '@/server/services/accounts.service';
+import { getAccountOverview, getNegativeBalanceSummary } from '@/server/services/accounts.service';
 import { listAircraft, listOutOfServiceAircraft } from '@/server/services/aircraft.service';
 import { getAirfieldBranding, getAirfieldIcao, getMetarStation, getSchedulingSettings } from '@/server/services/app-settings.service';
 import {
@@ -305,7 +305,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     // feed needed — a `groupBy` with a `having` on the aggregate plus one name
     // lookup, `finance.manage`-gated exactly like this face. Not
     // `hasNegativeBalanceAlert`, which is the per-charge point check, not a list.
-    listNegativeBalances(actor),
+    getNegativeBalanceSummary(actor),
     // IN the Promise.all, not awaited after it (review 15.3 F6): the card costs
     // a settings read plus an upstream HTTP fetch, and serializing it added
     // that latency to every render of the home — including at 1280px, where the
@@ -437,7 +437,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   // Same DOM, one CSS switch: `.overview-mobile` is `display: none` above
   // 640px and the five desktop surfaces it replaces (`.home-desktop-surface`)
   // are `display: none` below it. No query here is new except
-  // `listNegativeBalances` above: the rows below are derivations of data the
+  // `getNegativeBalanceSummary` above: the rows below are derivations of data the
   // desktop face already had on the page.
   const mobileDetailLabels = buildMobileDetailLabels(t);
   const mobileNoValue = t('pilotLanding.noValue');
@@ -476,7 +476,8 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   // pure function (AD-4); here only the wording is added.
   const alerts = buildOverviewAlerts({
     expiries: expiriesResult.items,
-    negativeBalances,
+    negativeBalances: negativeBalances.top,
+    negativeBalancesTotal: negativeBalances.count,
     // The same cap the fetch above used: when the scan comes back full, the
     // feed's "+N" is a floor and says so (review 15.3 F7).
     expiriesScanLimit: EXPIRIES_WIDGET_SCAN_LIMIT,

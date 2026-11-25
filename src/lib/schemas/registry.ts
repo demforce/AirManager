@@ -6,6 +6,8 @@ import {
   accountStatementPdfQuerySchema,
   accountStatementResponseSchema,
   listAccountMovementsQuerySchema,
+  negativeBalanceSummarySchema,
+  negativeBalancesQuerySchema,
   negativeBalancesResponseSchema,
   recordAdjustmentSchema,
   recordTopUpSchema,
@@ -264,6 +266,7 @@ registry.register('RecordTopUpRequest', recordTopUpSchema);
 registry.register('AccountStatement', accountStatementResponseSchema);
 registry.register('RecordAdjustmentRequest', recordAdjustmentSchema);
 registry.register('NegativeBalancesList', negativeBalancesResponseSchema);
+registry.register('NegativeBalanceSummary', negativeBalanceSummarySchema);
 registry.register('CashCategory', cashCategoryItemSchema);
 registry.register('CashCategoryList', cashCategoryListResponseSchema);
 registry.register('CreateCashCategoryRequest', createCashCategorySchema);
@@ -706,13 +709,27 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/v1/accounts/negative-balances',
-  summary: 'List every account with a negative balance, most negative first',
+  summary: 'List accounts with a negative balance, most negative first',
   description:
-    'The staff-facing "saldi negativi" list (story 3.3, AC 2) shown on `/dashboard/billing` since story 12.9. Balance is always `SUM(AccountMovement.amountCents)` (AD-3). Requires `finance.manage`.',
+    'Story 17.3: now returns the standard paginated envelope instead of the previous plain array. Optional case-insensitive name search treats wildcard characters literally. Sorted by balance then person ID; archived debtors remain included. Requires `finance.manage`.',
+  tags: ['Accounts'],
+  security,
+  request: { query: negativeBalancesQuerySchema },
+  responses: {
+    200: { description: 'A page of accounts with a negative balance and the matching total.', content: jsonContent(negativeBalancesResponseSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/accounts/negative-balances/summary',
+  summary: 'Summarize all negative balances and preview the twenty lowest',
+  description: 'Total number of debtors, positive exposure in cents, and the twenty most negative balances. Includes archived debtors. Requires `finance.manage`.',
   tags: ['Accounts'],
   security,
   responses: {
-    200: { description: 'Every account with a negative balance.', content: jsonContent(negativeBalancesResponseSchema) },
+    200: { description: 'Totals and bounded preview.', content: jsonContent(negativeBalanceSummarySchema) },
     ...errorResponses(401, 403),
   },
 });

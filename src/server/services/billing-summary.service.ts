@@ -125,7 +125,7 @@ async function computeTreasuryTotals(): Promise<TreasuryTotals> {
   };
 }
 
-/** Acconti (AC 5's `deposits`) — every `Account`'s balance (Σ `AccountMovement.amountCents`, AD-3), split into the positive ("debito verso i piloti") and negative ("esposizione") buckets. One `groupBy`, never N+1 (same aggregation shape as `accounts.service.ts#listNegativeBalances`, extended here to also keep the positive side instead of filtering it out). */
+/** Acconti (AC 5's `deposits`) — every `Account`'s balance (Σ `AccountMovement.amountCents`, AD-3), split into the positive ("debito verso i piloti") and negative ("esposizione") buckets. One `groupBy`, never N+1; its negative side matches `accounts.service.ts#getNegativeBalanceSummary`. */
 async function computeDeposits(): Promise<BillingSummaryDeposits> {
   const grouped = await prisma.accountMovement.groupBy({
     by: ['accountId'],

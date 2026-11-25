@@ -23,6 +23,7 @@
  * already shows the same figure per-instructor, in more detail.
  */
 import { Link } from '@/i18n/navigation';
+import { NEGATIVE_BALANCES_HREF } from '@/lib/negative-balance-links';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
 import type { BillingSummary } from '@/server/services/billing-summary.service';
@@ -151,7 +152,7 @@ export function BillingPanels({ summary, monthLabel, moneyLocale, locale, unattr
             <StatRow label={labels.deposits.inRed} value={String(deposits.inRedCount)} testId="billing-panel-deposits-inred" />
             {deposits.inRedCount > 0 ? (
               <Link
-                href="/dashboard/pilots"
+                href={NEGATIVE_BALANCES_HREF}
                 locale={locale as AppLocale}
                 data-testid="billing-panel-deposits-link"
                 style={{ fontSize: 11.5, marginTop: 2, textDecoration: 'underline', color: 'var(--ink-2)' }}

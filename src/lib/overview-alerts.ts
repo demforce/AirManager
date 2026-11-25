@@ -25,6 +25,7 @@
  * No i18n, no formatting, no `Date`: the caller renders. `tierOf` is imported
  * rather than re-derived (single implementation of the day boundaries).
  */
+import { NEGATIVE_BALANCES_HREF } from './negative-balance-links';
 import { tierOf } from './expiry-status';
 
 /** Every voice is verifiable at its source (AC 4): the kind says which source produced it. */
@@ -55,6 +56,8 @@ export type OverviewAlertNegativeBalance = {
 export type OverviewAlertsInput = {
   expiries: readonly OverviewAlertExpiry[];
   negativeBalances: readonly OverviewAlertNegativeBalance[];
+  /** The uncapped count, when the caller supplies only the lowest balances. */
+  negativeBalancesTotal?: number;
   /**
    * The cap the caller applied when FETCHING `expiries`
    * (`EXPIRIES_WIDGET_SCAN_LIMIT`). When the fetch came back full, this feed
@@ -96,12 +99,10 @@ export type OverviewAlerts = {
 export const OVERVIEW_ALERTS_LIMIT = 5;
 
 const EXPIRIES_HREF = '/dashboard/expiries';
-/** Where the negative-balance LIST lives (`listNegativeBalances`' only other caller today). A single voice deep-links to its person instead. */
-const BALANCES_HREF = '/dashboard/billing';
 
 const DOMAIN_HREF: Record<OverviewAlertKind, string> = {
   expiry: EXPIRIES_HREF,
-  negativeBalance: BALANCES_HREF,
+  negativeBalance: NEGATIVE_BALANCES_HREF,
 };
 
 /** Lower = more urgent. See the ratified order in the module doc-comment. */
@@ -161,15 +162,19 @@ export function buildOverviewAlerts(input: OverviewAlertsInput, limit: number = 
 
   const items = ordered.slice(0, Math.max(0, limit));
   const hidden = ordered.slice(items.length);
+  const omittedBalances = Math.max(0, (input.negativeBalancesTotal ?? input.negativeBalances.length) - input.negativeBalances.length);
+  const hiddenCount = hidden.length + omittedBalances;
+  const firstHidden = hidden[0];
+  const moreKind = omittedBalances > 0 && (!firstHidden || rankOf(firstHidden) > 1) ? 'negativeBalance' : firstHidden?.kind;
 
   const expiriesWereCapped = input.expiriesScanLimit !== undefined && input.expiries.length >= input.expiriesScanLimit;
 
   return {
     items,
-    hiddenCount: hidden.length,
+    hiddenCount,
     // Only meaningful when something IS hidden: a full scan that still fits
     // under the limit hides nothing and needs no caveat.
-    hiddenCountIsFloor: hidden.length > 0 && expiriesWereCapped,
-    moreHref: hidden.length > 0 ? DOMAIN_HREF[hidden[0]!.kind] : null,
+    hiddenCountIsFloor: hiddenCount > 0 && expiriesWereCapped,
+    moreHref: moreKind ? DOMAIN_HREF[moreKind] : null,
   };
 }

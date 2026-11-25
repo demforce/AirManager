@@ -53,6 +53,7 @@ const { buildNegativeBalanceAlertEmail } = await import('@/server/adapters/mail/
 const {
   balanceBand,
   getAccountOverview,
+  getNegativeBalanceSummary,
   getOwnAccountOverview,
   listAccountMovements,
   listOwnAccountMovements,
@@ -82,7 +83,6 @@ const queryRawMock = vi.mocked(prisma.$queryRaw);
 // fixtures ambiguous (same workaround as aircraft.service.test.ts / people.service.test.ts).
 type Fixture = Record<string, unknown> | null;
 const accountFindUnique = accountFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const accountFindMany = accountFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const accountUpsert = accountUpsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const accountMovementAggregate = accountMovementAggregateMock as unknown as {
   mockResolvedValue: (v: { _sum: { amountCents: number | null } }) => void;
@@ -100,7 +100,6 @@ const accountMovementCreate = accountMovementCreateMock as unknown as {
   mockResolvedValue: (v: Fixture) => void;
   mockRejectedValue: (v: unknown) => void;
 };
-const accountMovementGroupBy = accountMovementGroupByMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const personFindUnique = personFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const userFindUnique = userFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const appSettingFindUnique = appSettingFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
@@ -1144,54 +1143,50 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     });
   });
 
-  describe('listNegativeBalances (story 3.3, AC 2 — the staff "saldi negativi" list)', () => {
-    it('rejects an actor without finance.manage', async () => {
-      await expect(listNegativeBalances(pilotActor())).rejects.toThrow(ForbiddenError);
+  describe('negative balance pages and summary (17.3)', () => {
+    const lastMovementAt = new Date('2026-07-01T10:00:00.000Z');
+    const pageQuery = { page: 1, pageSize: 20 };
+
+    it('does not read the ledger without finance.manage', async () => {
+      await expect(listNegativeBalances(pilotActor(), pageQuery)).rejects.toThrow(ForbiddenError);
+      expect(queryRawMock).not.toHaveBeenCalled();
+    });
+
+    it('takes the totals and bounded rows from one query and represents bigint sums as cents', async () => {
+      queryRawMock.mockResolvedValue([
+        { personId: 'a', firstName: 'Aldo', lastName: 'Neri', balanceCents: BigInt(-4000000000), lastMovementAt, total: BigInt(3000), exposureCents: BigInt(5000000000) },
+        { personId: 'b', firstName: 'Bruna', lastName: 'Bianchi', balanceCents: BigInt(-500), lastMovementAt, total: BigInt(3000), exposureCents: BigInt(5000000000) },
+      ]);
+      const summary = await getNegativeBalanceSummary(adminActor());
+      expect(summary).toEqual({
+        count: 3000,
+        exposureCents: 5000000000,
+        top: [
+          { personId: 'a', firstName: 'Aldo', lastName: 'Neri', balanceCents: -4000000000, lastMovementAt },
+          { personId: 'b', firstName: 'Bruna', lastName: 'Bianchi', balanceCents: -500, lastMovementAt },
+        ],
+      });
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
       expect(accountMovementGroupByMock).not.toHaveBeenCalled();
-    });
-
-    it('returns [] when no account is negative (without the enrichment lookup)', async () => {
-      accountMovementGroupBy.mockResolvedValue([]);
-
-      const result = await listNegativeBalances(adminActor());
-
-      expect(result).toEqual([]);
       expect(accountFindManyMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    it('queries only negative SUMs, most-negative first (the DB orders — SUM, never a stored column, AD-3)', async () => {
-      accountMovementGroupBy.mockResolvedValue([]);
-
-      await listNegativeBalances(adminActor());
-
-      expect(accountMovementGroupByMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          by: ['accountId'],
-          _sum: { amountCents: true },
-          having: { amountCents: { _sum: { lt: 0 } } },
-          orderBy: { _sum: { amountCents: 'asc' } },
-        }),
-      );
+    it('does not lose total on an empty page beyond the end', async () => {
+      queryRawMock.mockResolvedValue([{ personId: null, total: BigInt(29), exposureCents: BigInt(5000) }]);
+      const result = await listNegativeBalances(adminActor(), { page: 99, pageSize: 20, q: 'R%_\\' });
+      expect(result).toEqual({ items: [], total: 29, page: 99, pageSize: 20 });
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      const [sql] = queryRawMock.mock.calls[0]!;
+      expect((sql as Prisma.Sql).text).toMatch(/HAVING SUM\("amountCents"\) < 0/);
+      expect((sql as Prisma.Sql).text).toContain('ORDER BY "balanceCents", "personId"');
+      expect((sql as Prisma.Sql).text).not.toContain('"archivedAt"');
+      expect((sql as Prisma.Sql).values).toContain('%R\\%\\_\\\\%');
     });
 
-    it('maps groups to person names + balance + last movement date, preserving the DB order', async () => {
-      const lastA = new Date('2026-07-01T10:00:00.000Z');
-      const lastB = new Date('2026-07-02T10:00:00.000Z');
-      accountMovementGroupBy.mockResolvedValue([
-        { accountId: 'account_a', _sum: { amountCents: -30000 }, _max: { createdAt: lastA } },
-        { accountId: 'account_b', _sum: { amountCents: -500 }, _max: { createdAt: lastB } },
-      ]);
-      accountFindMany.mockResolvedValue([
-        { id: 'account_b', person: { id: 'person_b', firstName: 'Bruna', lastName: 'Bianchi' } },
-        { id: 'account_a', person: { id: 'person_a', firstName: 'Aldo', lastName: 'Neri' } },
-      ]);
-
-      const result = await listNegativeBalances(adminActor());
-
-      expect(result).toEqual([
-        { personId: 'person_a', firstName: 'Aldo', lastName: 'Neri', balanceCents: -30000, lastMovementAt: lastA },
-        { personId: 'person_b', firstName: 'Bruna', lastName: 'Bianchi', balanceCents: -500, lastMovementAt: lastB },
-      ]);
+    it('reports zero for an empty ledger', async () => {
+      queryRawMock.mockResolvedValue([{ personId: null, total: BigInt(0), exposureCents: BigInt(0) }]);
+      await expect(getNegativeBalanceSummary(adminActor())).resolves.toEqual({ count: 0, exposureCents: 0, top: [] });
     });
   });
 });

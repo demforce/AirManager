@@ -1782,6 +1782,20 @@
       "windowOverdue": "oltre il {date} previsto, rientro da definire"
     }
   },
+  "NegativeBalancesPage": {
+    "title": "Saldi negativi",
+    "count": "{count, plural, one {# conto in negativo} other {# conti in negativo}}",
+    "person": "Persona",
+    "balance": "Saldo",
+    "search": "Cerca",
+    "clear": "Azzera ricerca",
+    "empty": "Nessun conto in negativo corrisponde alla ricerca.",
+    "pages": "Pagine dei saldi negativi",
+    "page": "Pagina {page} di {total}",
+    "previous": "Precedente",
+    "next": "Successiva",
+    "back": "Torna a Contabilità"
+  },
   "BillingPage": {
     "title": "Contabilità",
     "sub": "{count, plural, one {# transazione} other {# transazioni}} · {period}",
@@ -1882,7 +1896,8 @@
     },
     "negativeBalances": {
       "title": "Saldi negativi",
-      "empty": "Nessun conto in negativo.",
+      "count": "{count, plural, one {# conto in negativo} other {# conti in negativo}}",
+      "preview": "{count, plural, one {Mostrato il primo conto} other {Mostrati i primi # conti}}",
       "link": "Vedi tutte le persone"
     },
     "actions": {

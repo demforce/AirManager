@@ -3870,3 +3870,11 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
 
   .export-menu-unavailable{ width: auto; min-height: 44px; padding: 10px 12px; }
 }
+
+
+/* 17.3: one compact balances table on desktop and phone. */
+.negative-balances-table-wrap{ max-width: 100%; }
+.negative-balances-table{ width: 100%; border-collapse: collapse; }
+.negative-balances-table :is(th, td){ text-align: start; border-bottom: 1px solid var(--border); padding: 4px 8px; }
+.negative-balances-table :is(th, td):last-child{ text-align: end; white-space: nowrap; }
+.negative-balances-person{ display: inline-flex; min-height: 44px; align-items: center; color: var(--ink); text-decoration: underline; overflow-wrap: anywhere; }

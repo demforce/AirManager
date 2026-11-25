@@ -254,12 +254,18 @@ export const negativeBalanceItemSchema = z.object({
 
 export type NegativeBalanceItemDto = z.infer<typeof negativeBalanceItemSchema>;
 
-/**
- * `GET /api/v1/accounts/negative-balances` response — a plain array, not the
- * AD-8 paginated envelope: the list is expected to stay small (Dev Notes) and
- * the UI (dashboard finance landing) always renders it in full, most-negative
- * first.
- */
-export const negativeBalancesResponseSchema = z.array(negativeBalanceItemSchema);
+/** Search balances by name, using the same page limits as other list routes. */
+export const negativeBalancesQuerySchema = paginationQuerySchema.extend({
+  q: z.string().trim().max(120).optional(),
+});
+
+export type NegativeBalancesQuery = z.infer<typeof negativeBalancesQuerySchema>;
+
+export const negativeBalancesResponseSchema = paginatedResponseSchema(negativeBalanceItemSchema);
+export const negativeBalanceSummarySchema = z.object({
+  count: z.number().int().min(0),
+  exposureCents: z.number().int().min(0),
+  top: z.array(negativeBalanceItemSchema).max(20),
+});
 
 export type NegativeBalancesResponseDto = z.infer<typeof negativeBalancesResponseSchema>;

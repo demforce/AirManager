@@ -22,6 +22,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+import { negativeBalanceControl, seedAccountAdjustments } from './db-fixtures';
+
 const DESKTOP_UNATTRIBUTED_MARKER = 'Movimento storico pre-Billing-1 (seed)';
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -132,5 +134,71 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', { 
     const stillUnattributedResponse = await page.request.get('/api/v1/transactions?unattributed=true&pageSize=100');
     const stillUnattributed = (await stillUnattributedResponse.json()) as { items: Array<{ description: string | null }> };
     expect(stillUnattributed.items.some((item) => item.description === DESKTOP_UNATTRIBUTED_MARKER)).toBe(false);
+  });
+
+  test('17.3: preview is bounded while summary, list search and paging retain every debtor', async ({ page }) => {
+    test.setTimeout(60_000);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const token = `Saldo${crypto.randomUUID().slice(0, 8)}`;
+    const ids: string[] = [];
+    for (let index = 0; index < 21; index++) {
+      const person = await page.request.post('/api/v1/people', {
+        data: {
+          firstName: 'Prova', lastName: `${token}${index === 0 ? '%_' : ''}`,
+          profiles: { pilot: { licenseNumber: `TEST-${token}-${index}`, licenseType: 'PPL(A)' } },
+        },
+      });
+      expect(person.status()).toBe(201);
+      const { id } = await person.json() as { id: string };
+      ids.push(id);
+      await seedAccountAdjustments(id, [{ amountCents: -900_000, effectiveDate: '2026-01-01' }]);
+    }
+    expect((await page.request.post(`/api/v1/people/${ids[0]}/archive`)).status()).toBe(200);
+
+    const control = await negativeBalanceControl();
+    expect(control.count).toBeGreaterThanOrEqual(21);
+    const summary = await page.request.get('/api/v1/accounts/negative-balances/summary');
+    expect(summary.status()).toBe(200);
+    const data = await summary.json() as { count: number; exposureCents: number; top: Array<{ personId: string; balanceCents: number }> };
+    expect(data.count).toBe(control.count);
+    expect(data.exposureCents).toBe(control.exposureCents);
+    expect(data.top.map(({ personId, balanceCents }) => ({ personId, balanceCents }))).toEqual(control.top);
+
+    await page.goto('/it/dashboard/billing');
+    const card = page.getByTestId('billing-negative-balances-card');
+    await expect(card.getByTestId('negative-balance-row')).toHaveCount(20);
+    await expect(card.getByTestId('negative-balances-count')).toHaveAttribute('data-count', String(control.count));
+    await expect(page.getByTestId('billing-panel-deposits-inred')).toHaveText(String(control.count));
+    const shown = await card.getByTestId('negative-balance-row').evaluateAll((rows) => rows.map((row) => ({
+      personId: row.getAttribute('data-person-id'),
+      balanceCents: Number(row.querySelector('[data-balance-cents]')?.getAttribute('data-balance-cents')),
+    })));
+    expect(shown).toEqual(control.top);
+
+    await expect(page.getByTestId('billing-panel-deposits-link')).toHaveAttribute('href', '/it/dashboard/billing/negative-balances');
+    await card.getByRole('link', { name: 'Vedi tutte le persone' }).click();
+    await expect(page).toHaveURL(/\/dashboard\/billing\/negative-balances$/);
+    await page.locator('#negative-balance-search').fill(token.toLowerCase());
+    await page.getByRole('button', { name: 'Cerca', exact: true }).click();
+    await expect(page.getByTestId('negative-balances-total')).toContainText('21 conti');
+    await expect(page.getByTestId('negative-balances-item')).toHaveCount(20);
+    await page.getByRole('link', { name: 'Successiva' }).click();
+    await expect(page.getByTestId('negative-balances-item')).toHaveCount(1);
+    await expect(page.getByTestId('negative-balances-page')).toHaveText('Pagina 2 di 2');
+    const literal = await page.request.get('/api/v1/accounts/negative-balances?' + new URLSearchParams({ q: token + '%_' }));
+    expect(literal.status()).toBe(200);
+    expect((await page.request.get('/api/v1/accounts/negative-balances?pageSize=101')).status()).toBe(422);
+    expect(await literal.json()).toMatchObject({ total: 1, page: 1, items: [{ personId: ids[0] }] });
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.getByTestId('negative-balances-item')).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, 'pilot@airmanager.local');
+    expect((await page.request.get('/api/v1/accounts/negative-balances')).status()).toBe(403);
+    expect((await page.request.get('/api/v1/accounts/negative-balances/summary')).status()).toBe(403);
+    await page.goto('/it/dashboard/billing/negative-balances');
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 });

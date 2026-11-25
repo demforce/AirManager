@@ -103,3 +103,19 @@ export async function seedInstructorPayouts(personId: string, count: number, pay
     throw new Error(`seedInstructorPayouts: person ${personId} has no instructor profile.`);
   }
 }
+
+/** Independent cross-check for the balances count, exposure and preview. */
+export async function negativeBalanceControl(): Promise<{ count: number; exposureCents: number; top: Array<{ personId: string; balanceCents: number }> }> {
+  const result = await pool.query<{ personId: string; balance: string }>(`
+    SELECT a."personId", SUM(m."amountCents") AS balance
+    FROM "Account" a JOIN "AccountMovement" m ON m."accountId" = a.id
+    GROUP BY a."personId"
+    HAVING SUM(m."amountCents") < 0
+    ORDER BY balance, a."personId"
+  `);
+  return {
+    count: result.rows.length,
+    exposureCents: -result.rows.reduce((sum, row) => sum + Number(row.balance), 0),
+    top: result.rows.slice(0, 20).map(({ personId, balance }) => ({ personId, balanceCents: Number(balance) })),
+  };
+}

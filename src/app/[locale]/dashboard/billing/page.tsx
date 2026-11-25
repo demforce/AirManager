@@ -6,7 +6,7 @@ import type { BookTypeDto } from '@/lib/schemas/transactions';
 import { formatDateOnly, formatMonthYear } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import { listNegativeBalances } from '@/server/services/accounts.service';
+import { getNegativeBalanceSummary } from '@/server/services/accounts.service';
 import { getBillingSummary } from '@/server/services/billing-summary.service';
 import { listCashCategories } from '@/server/services/cash.service';
 import { getCompensationSummary } from '@/server/services/instructor-compensation.service';
@@ -90,7 +90,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
 
   const summary = await getBillingSummary(actor);
   const compensation = await getCompensationSummary(actor);
-  const negativeBalances = await listNegativeBalances(actor);
+  const negativeBalances = await getNegativeBalanceSummary(actor);
 
   const txQuery = { pageSize: TX_PAGE_SIZE, from: dateFrom, to: dateTo, personQuery, bookType: bookTypeParam, categoryId, unattributed };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
@@ -200,7 +200,8 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
           payoutRateCents: row.payoutRateCents,
           owedMtdCents: row.owedMtdCents,
         }))}
-        negativeBalances={negativeBalances.map((item) => ({ personId: item.personId, firstName: item.firstName, lastName: item.lastName, balanceCents: item.balanceCents }))}
+        negativeBalances={negativeBalances.top.map((item) => ({ personId: item.personId, firstName: item.firstName, lastName: item.lastName, balanceCents: item.balanceCents }))}
+        negativeBalanceCount={negativeBalances.count}
         exportHref={exportHref}
         cashReportPdfHref={cashReportPdfHref}
         moneyLocale={displayLocale}
@@ -216,7 +217,12 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             net: t('byCategory.net'),
           },
           instructorCompensation: { title: t('instructorCompensation.title'), sub: t('instructorCompensation.sub'), noRate: t('instructorCompensation.noRate'), empty: t('instructorCompensation.empty') },
-          negativeBalances: { title: t('negativeBalances.title'), empty: t('negativeBalances.empty'), link: t('negativeBalances.link') },
+          negativeBalances: {
+            title: t('negativeBalances.title'),
+            count: t('negativeBalances.count', { count: negativeBalances.count }),
+            preview: t('negativeBalances.preview', { count: negativeBalances.top.length }),
+            link: t('negativeBalances.link'),
+          },
           exportMenu: { label: t('exportMenu.label'), xlsLabel: t('exportMenu.xlsLabel'), pdfLabel: t('exportMenu.pdfLabel') },
           table: {
             cardTitle: t('table.cardTitle'),

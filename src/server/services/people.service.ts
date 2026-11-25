@@ -276,7 +276,7 @@ export type PilotsPageResult = {
  * single batched `groupBy`/`findMany` over the page's ids — NEVER a per-row
  * loop calling `getAccountOverview`/`listFlights` (that would be N+1, the
  * exact thing this composite exists to avoid). The pattern mirrors
- * `accounts.service.ts#listNegativeBalances`'s own two-step groupBy-then-join
+ * `accounts.service.ts#listNegativeBalances`'s ledger aggregation
  * (here scoped to the page's ids instead of a `having` filter).
  */
 export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): Promise<PilotsPageResult> {

@@ -1782,6 +1782,20 @@
       "windowOverdue": "past the expected {date}, return date not yet known"
     }
   },
+  "NegativeBalancesPage": {
+    "title": "Negative balances",
+    "count": "{count, plural, one {# account with a negative balance} other {# accounts with negative balances}}",
+    "person": "Person",
+    "balance": "Balance",
+    "search": "Search",
+    "clear": "Clear search",
+    "empty": "No matching accounts have a negative balance.",
+    "pages": "Negative balance pages",
+    "page": "Page {page} of {total}",
+    "previous": "Previous",
+    "next": "Next",
+    "back": "Back to Accounting"
+  },
   "BillingPage": {
     "title": "Billing",
     "sub": "{count, plural, one {# transaction} other {# transactions}} · {period}",
@@ -1882,7 +1896,8 @@
     },
     "negativeBalances": {
       "title": "Negative balances",
-      "empty": "No account in the red.",
+      "count": "{count, plural, one {# account with a negative balance} other {# accounts with negative balances}}",
+      "preview": "{count, plural, one {Showing the first account} other {Showing the first # accounts}}",
       "link": "See all people"
     },
     "actions": {

@@ -20,6 +20,7 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { Link } from '@/i18n/navigation';
+import { NEGATIVE_BALANCES_HREF } from '@/lib/negative-balance-links';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
 import type { BillingSummary } from '@/server/services/billing-summary.service';
@@ -105,7 +106,7 @@ export function BillingPanelsMobile({ summary, monthLabel, moneyLocale, locale, 
       ],
       actions:
         deposits.inRedCount > 0 ? (
-          <Link href="/dashboard/pilots" locale={locale as AppLocale} className="btn" onClick={close} data-testid="billing-panel-deposits-link-mobile">
+          <Link href={NEGATIVE_BALANCES_HREF} locale={locale as AppLocale} className="btn" onClick={close} data-testid="billing-panel-deposits-link-mobile">
             {labels.deposits.detailLink}
           </Link>
         ) : undefined,

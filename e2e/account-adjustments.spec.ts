@@ -125,7 +125,12 @@ test.describe('Account adjustments and negative-balance alerts (Story 3.3)', () 
     await page.goto('/it/dashboard');
     await page.getByRole('navigation', { name: 'Aree operative' }).getByRole('link', { name: 'Contabilità', exact: true }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/billing$/);
-    const negativeRow = page.getByTestId('negative-balance-row').filter({ hasText: person.lastName });
+    const debtors = page.getByTestId('billing-negative-balances-card').getByRole('link', { name: 'Vedi tutte le persone' });
+    await debtors.click();
+    await expect(page).toHaveURL(/\/dashboard\/billing\/negative-balances$/);
+    await page.locator('#negative-balance-search').fill(person.lastName);
+    await page.getByRole('button', { name: 'Cerca', exact: true }).click();
+    const negativeRow = page.getByTestId('negative-balances-item').filter({ hasText: person.lastName });
     await expect(negativeRow).toHaveCount(1);
     await expect(negativeRow).toContainText(/-250,00\s€/);
 

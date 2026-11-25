@@ -61,7 +61,7 @@ export type CashCategoryItemDto = z.infer<typeof cashCategoryItemSchema>;
  * `GET /api/v1/cash-categories` response — a plain array, not the AD-8
  * paginated envelope: the category list is expected to stay small (seeded
  * with 8, admin-managed) and every consumer (picker, admin page) renders it
- * in full — same choice as `negativeBalancesResponseSchema` (story 3.3).
+ * in full.
  */
 export const cashCategoryListResponseSchema = z.array(cashCategoryItemSchema);
 

@@ -5,6 +5,7 @@ import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import { computeExpiryStatus, daysUntilUtc, EXPIRY_WARNING_DAYS, type ExpiryStatus } from '@/lib/expiry-status';
 import { evaluateMedicalRequirement, type MedicalRequirementFailure } from '@/lib/medical-requirement';
 import type { ExpiryWindowDto, ListAllExpiriesQuery, RegisterExpiryInput, UpdateExpiryInput } from '@/lib/schemas/expiries';
+import { escapeLikePattern } from '@/lib/sql-like';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -442,11 +443,6 @@ function registryRowsSql(today: string, settings: CurrencySettings): Prisma.Sql 
       FROM "currencySubjects" s JOIN "currency" c ON c."personId" = s."id"
       WHERE c."xthFlightDate" IS NOT NULL
     )`;
-}
-
-/** `%`, `_` and `\` matched literally by `ILIKE … ESCAPE '\'` — the parity with Prisma's `contains`, which escaped them on its own. */
-function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
 /**
