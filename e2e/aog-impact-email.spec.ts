@@ -609,6 +609,39 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
     });
     expect(link.color).toBe(link.boxColor);
     expect(link.decoration).toBe('underline');
+
+    // Story 18.1 review blocker: the base link is an intrinsic-width
+    // inline-block, NOT a full-width block. Measured on the exact pre-18.1
+    // build after the same synthetic AOG transition at 641/900/1280. Pin the
+    // whole desktop box and computed geometry to catch an escaped phone rule.
+    for (const [width, x] of [[641, 156], [900, 415], [1280, 795]] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(page.locator('.slideover.open .slideover-panel')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+      await page.evaluate(() => document.fonts.ready);
+      const desktopLink = await page.getByTestId('aog-impact-bookings-link').evaluate((anchor) => {
+        const rect = anchor.getBoundingClientRect();
+        const style = getComputedStyle(anchor);
+        return {
+          x: Number(rect.x.toFixed(2)), y: Number(rect.y.toFixed(2)),
+          w: Number(rect.width.toFixed(2)), h: Number(rect.height.toFixed(2)),
+          display: style.display, marginTop: style.marginTop,
+          minHeight: style.minHeight, height: style.height, padding: style.padding,
+        };
+      });
+      expect(desktopLink, `${width}px desktop AOG link vs exact base`).toEqual({
+        x, y: 620.44, w: 102.92, h: 19.38,
+        display: 'inline-block', marginTop: '4px',
+        minHeight: '0px', height: '19.375px', padding: '0px',
+      });
+    }
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    const phoneLink = await page.getByTestId('aog-impact-bookings-link').evaluate((anchor) => {
+      const rect = anchor.getBoundingClientRect();
+      return { width: rect.width, height: rect.height, display: getComputedStyle(anchor).display };
+    });
+    expect(Math.min(phoneLink.width, phoneLink.height)).toBeGreaterThanOrEqual(43.5);
+    expect(phoneLink.display).toBe('inline-flex');
   });
 });
 

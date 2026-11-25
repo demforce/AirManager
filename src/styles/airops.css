@@ -1130,9 +1130,9 @@ html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
 }
 .so-title{ font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
 .so-body{ flex: 1; overflow: auto; padding: 18px 20px; }
-/* Keep the AOG result link's original desktop block box; the phone panel
-   applies its shared 44px link floor farther below. */
-.aog-impact-bookings-link{ display: block; }
+/* Keep the AOG result link's original desktop inline-block box; the phone
+   panel applies its shared 44px link floor farther below. */
+.aog-impact-bookings-link{ display: inline-block; }
 
 /* Public access pages share a link affordance in both themes and at every
    width. Phone geometry is defined with the rest of the <=640px floor. */

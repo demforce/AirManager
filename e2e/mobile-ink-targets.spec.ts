@@ -597,10 +597,10 @@ test.describe('story 18.1 — one phone touch floor', () => {
     for (const selector of ['.scadenze-filter-panel .input', '.billing-filter-panel .input', '.transaction-form .input', '[data-testid="out-of-service-submit"]', '[data-testid="out-of-service-confirm"], [data-testid="out-of-service-cancel"]']) {
       expect(rules.filter((r) => r.selector === selector && r.style.includes('min-height: 44px')), selector).toEqual([]);
     }
-    // The AOG result link was a block on desktop before this story. Moving
+    // The AOG result link was inline-block on desktop before this story. Moving
     // its inline display into a class preserves that box while the phone
     // panel's more specific rule supplies the shared touch target.
-    expect(rules.some((r) => r.selector === '.aog-impact-bookings-link' && r.media === '' && r.style.includes('display: block'))).toBe(true);
+    expect(rules.some((r) => r.selector === '.aog-impact-bookings-link' && r.media === '' && r.style.includes('display: inline-block'))).toBe(true);
     // Every new geometric declaration has an exact source selector here. A
     // Turbopack stylesheet may coalesce adjacent selectors, hence includes().
     for (const [selector, declaration] of [
