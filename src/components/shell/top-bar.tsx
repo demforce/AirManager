@@ -14,7 +14,7 @@ import type { AvatarColor } from '@/components/ui/avatar';
 import { Avatar } from '@/components/ui/avatar';
 import { Link, usePathname } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
-import { ThemeToggle, type Theme } from './theme-toggle';
+import { ThemeToggle } from './theme-toggle';
 import { findNavItemByPathname, type NavItemId } from './route-registry';
 
 export type TopBarUserChip = {
@@ -29,7 +29,6 @@ export type TopBarProps = {
   icao: string;
   pageTitles: Record<NavItemId, string>;
   fallbackTitle: string;
-  initialTheme: Theme;
   themeToggleLabel: string;
   /** Aria-label/title for the IT/EN switcher (AC 1, house convention: resolved server-side, never `useTranslations` in a client component) — the visible chip text is the target locale's own ISO code (`otherLocale.toUpperCase()`), not a translated string. */
   localeSwitchLabel: string;
@@ -50,7 +49,6 @@ export function TopBar({
   icao,
   pageTitles,
   fallbackTitle,
-  initialTheme,
   themeToggleLabel,
   localeSwitchLabel,
   userChip,
@@ -104,7 +102,7 @@ export function TopBar({
       >
         {otherLocale.toUpperCase()}
       </Link>
-      <ThemeToggle initialTheme={initialTheme} label={themeToggleLabel} />
+      <ThemeToggle label={themeToggleLabel} />
       <div className="user-chip" title={userChip.fullLabel}>
         <Avatar init={userChip.initials} color={userChip.color} />
         <span className="user-chip-name" style={{ fontSize: 12.5, fontWeight: 500 }}>{userChip.displayName}</span>

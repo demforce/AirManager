@@ -12,7 +12,8 @@
   --t: 160ms cubic-bezier(.2,.7,.2,1);
 }
 
-html[data-theme="light"]{
+html:not([data-theme="dark"]){
+  color-scheme: light;
   --bg: oklch(0.985 0.003 250);
   --bg-sunken: oklch(0.965 0.004 250);
   --panel: #ffffff;
@@ -39,6 +40,7 @@ html[data-theme="light"]{
 }
 
 html[data-theme="dark"]{
+  color-scheme: dark;
   --bg: oklch(0.17 0.012 250);
   --bg-sunken: oklch(0.14 0.012 250);
   --panel: oklch(0.21 0.013 250);
@@ -294,6 +296,8 @@ button{ font: inherit; color: inherit; }
 }
 .iconbtn:hover{ background: var(--bg-sunken); color: var(--ink); }
 .iconbtn svg{ width: 15px; height: 15px; }
+html:not([data-theme="dark"]) .theme-sun,
+html[data-theme="dark"] .theme-moon{ display: none; }
 .user-chip{
   display:flex; align-items: center; gap: 8px;
   padding: 4px 10px 4px 4px;

@@ -27,7 +27,7 @@ import { prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { Link, usePathname } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { findNavItemByPathname, type NavItemId } from './route-registry';
-import { ThemeToggle, type Theme } from './theme-toggle';
+import { ThemeToggle } from './theme-toggle';
 import type { TopBarUserChip } from './top-bar';
 
 export type MobileTopBarProps = {
@@ -35,7 +35,6 @@ export type MobileTopBarProps = {
   icao: string;
   pageTitles: Record<NavItemId, string>;
   fallbackTitle: string;
-  initialTheme: Theme;
   themeToggleLabel: string;
   /** Aria-label/title of the IT/EN switch — same string the desktop `TopBar` uses; the visible chip is the target locale's own ISO code. */
   localeSwitchLabel: string;
@@ -54,7 +53,6 @@ export function MobileTopBar({
   icao,
   pageTitles,
   fallbackTitle,
-  initialTheme,
   themeToggleLabel,
   localeSwitchLabel,
   userChip,
@@ -88,7 +86,7 @@ export function MobileTopBar({
           <div className="mobile-topbar-title">{currentTitle}</div>
           <div className="mobile-topbar-sub">{icao ? `${brandName} · ${icao}` : brandName}</div>
         </div>
-        <ThemeToggle initialTheme={initialTheme} label={themeToggleLabel} />
+        <ThemeToggle label={themeToggleLabel} />
         <button
           type="button"
           className="mobile-avatar-btn"

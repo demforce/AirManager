@@ -621,15 +621,18 @@ test.describe('Impacted-booking count and grounding email (story AOG-1b)', () =>
       const desktopLink = await page.getByTestId('aog-impact-bookings-link').evaluate((anchor) => {
         const rect = anchor.getBoundingClientRect();
         const style = getComputedStyle(anchor);
+        // Clicking confirm can leave the scrollable body at 0 or 2px. Compare
+        // the link's position at scroll origin, measured on the same base.
+        const scrollTop = anchor.closest('.so-body')!.scrollTop;
         return {
-          x: Number(rect.x.toFixed(2)), y: Number(rect.y.toFixed(2)),
+          x: Number(rect.x.toFixed(2)), unscrolledY: Number((rect.y + scrollTop).toFixed(2)),
           w: Number(rect.width.toFixed(2)), h: Number(rect.height.toFixed(2)),
           display: style.display, marginTop: style.marginTop,
           minHeight: style.minHeight, height: style.height, padding: style.padding,
         };
       });
       expect(desktopLink, `${width}px desktop AOG link vs exact base`).toEqual({
-        x, y: 620.44, w: 102.92, h: 19.38,
+        x, unscrolledY: 622.44, w: 102.92, h: 19.38,
         display: 'inline-block', marginTop: '4px',
         minHeight: '0px', height: '19.375px', padding: '0px',
       });

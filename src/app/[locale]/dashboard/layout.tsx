@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import type { Role } from '@/generated/prisma/client';
 import type { AvatarColor } from '@/components/ui/avatar';
@@ -8,7 +7,6 @@ import { MobileNav, type MobileNavItemView } from '@/components/shell/mobile-nav
 import { MobileTopBar } from '@/components/shell/mobile-top-bar';
 import { Sidebar, type FlightCategory, type SidebarMetar } from '@/components/shell/sidebar';
 import { NAV_GROUPS, mobileNavLayout, visibleNavItems, type NavItem, type NavItemId, NAV_ITEMS } from '@/components/shell/route-registry';
-import type { Theme } from '@/components/shell/theme-toggle';
 import { TopBar } from '@/components/shell/top-bar';
 import { redirect } from '@/i18n/navigation';
 import { signOut } from '@/server/auth/auth';
@@ -28,8 +26,6 @@ function formatWeatherRow(metar: NonNullable<Awaited<ReturnType<typeof getMetar>
     qnhLabel: `QNH ${Math.round(metar.qnh)}`,
   };
 }
-
-const THEME_COOKIE = 'am-theme';
 
 // Most-privileged-first — decides which role's label/avatar color the user
 // chip shows for a multi-role actor (e.g. pilot+instructor sees "Istruttore").
@@ -79,11 +75,10 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
     return null;
   }
 
-  const [me, branding, icao, theme, metarStation, ownInstructorProfileId] = await Promise.all([
+  const [me, branding, icao, metarStation, ownInstructorProfileId] = await Promise.all([
     getMe(actor),
     getAirfieldBranding(),
     getAirfieldIcao(),
-    (async (): Promise<Theme> => ((await cookies()).get(THEME_COOKIE)?.value === 'dark' ? 'dark' : 'light'))(),
     getMetarStation(),
     // Story 14.7, AC 4: only queried for an INSTRUCTOR-role actor (`getOwnInstructorProfileId`'s
     // own gate is `self.read`, granted to every role, so this would otherwise run one extra query
@@ -168,7 +163,6 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             icao={icao}
             pageTitles={pageTitles}
             fallbackTitle={t('breadcrumb.fallback')}
-            initialTheme={theme}
             themeToggleLabel={t('themeToggle.label')}
             localeSwitchLabel={t('localeSwitch.label')}
             userChip={userChip}
@@ -180,7 +174,6 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             icao={icao}
             pageTitles={pageTitles}
             fallbackTitle={t('breadcrumb.fallback')}
-            initialTheme={theme}
             themeToggleLabel={t('themeToggle.label')}
             localeSwitchLabel={t('localeSwitch.label')}
             userChip={userChip}

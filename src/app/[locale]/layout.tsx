@@ -13,9 +13,8 @@ import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/600.css';
 import '@fontsource/instrument-serif/400.css';
 import { routing } from '@/i18n/routing';
+import { SYSTEM_THEME_SCRIPT, THEME_COOKIE } from '@/lib/theme';
 import '../globals.css';
-
-const THEME_COOKIE = 'am-theme';
 
 export function generateStaticParams(): Array<{ locale: string }> {
   return routing.locales.map((locale) => ({ locale }));
@@ -68,13 +67,14 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
   // Enables static rendering for this locale (see next-intl docs).
   setRequestLocale(locale);
 
-  // AirOps theme (story 12.1, AC 2): read server-side and stamp on <html>
-  // BEFORE hydration — no flash, no client/server mismatch. Cookie-only
-  // (never localStorage, which can't be read during SSR).
-  const theme = (await cookies()).get(THEME_COOKIE)?.value === 'dark' ? 'dark' : 'light';
+  const preference = (await cookies()).get(THEME_COOKIE)?.value;
+  const theme = preference === 'light' || preference === 'dark' ? preference : undefined;
 
   return (
-    <html lang={locale} data-theme={theme}>
+    <html lang={locale} data-theme={theme} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: SYSTEM_THEME_SCRIPT }} />
+      </head>
       {/* Story 13.9 fix (mechanism corrected in review F3): the light-mode pin came
           from globals.css's own `body{ background/color }` rule — unlayered and later
           in the cascade than airops.css's @import, so it beat the theme-aware
