@@ -238,7 +238,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
         </div>
       ) : null}
 
-      <div className="kpi-row">
+      <div className="kpi-row kpi-row-four">
         <KPI label={t('kpi.entries')} value={totals.count} />
         <KPI label={t('kpi.hours')} value={formatMinutes(totals.minutes)} />
         <KPI label={t('kpi.movements')} value={`${totals.takeoffs} / ${totals.landings}`} />

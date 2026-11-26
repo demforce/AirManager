@@ -165,3 +165,40 @@ export async function seedBoundedCalendar(day: string): Promise<string[]> {
 export async function removeCalendarFixtures(ids: string[]): Promise<void> {
   await pool.query('DELETE FROM "Booking" WHERE id = ANY($1::text[])', [ids]);
 }
+
+/** One full registry page. The unique filter avoids depending on the order of other tests' data. */
+export async function seedDesktopRegistries(stamp: string): Promise<void> {
+  await pool.query(
+    `WITH people AS (
+       INSERT INTO "Person" (id, "firstName", "lastName", "updatedAt")
+       SELECT gen_random_uuid()::text, 'Pilota', $1 || '-' || i, now()
+       FROM generate_series(1, 20) i RETURNING id
+     ), aircraft AS (
+       INSERT INTO "Aircraft" (id, registration, type, model, "updatedAt")
+       VALUES (gen_random_uuid()::text, $1, 'Test', 'Registro', now()) RETURNING id
+     ), profiles AS (
+       INSERT INTO "PilotProfile" (id, "personId", "licenseType", "licenseNumber", "updatedAt")
+       SELECT gen_random_uuid()::text, id, 'PPL', id, now() FROM people
+     ), users AS (
+       INSERT INTO "User" (id, "personId", email, roles, "updatedAt")
+       SELECT gen_random_uuid()::text, id, id || '@example.invalid', ARRAY['PILOT']::"Role"[], now() FROM people
+     )
+     INSERT INTO "Flight" (id, "aircraftId", "personId", "actorUserId", "flightDate", "flightType",
+       minutes, "aircraftRateCentsPerHour", "aircraftPriceCategory", "aircraftAmountCents", "noCharge",
+       "departureAirfield", "arrivalAirfield", "updatedAt")
+     SELECT gen_random_uuid()::text, aircraft.id, people.id, ${ADMIN_USER}, DATE '2001-01-01', 'TOURISM',
+       30, 10000, 'PILOT', 0, true, 'Aviosuperficie Campo di Addestramento Nord',
+       'Aviosuperficie Campo di Addestramento Sud', now() FROM people, aircraft`, [stamp],
+  );
+}
+
+export async function removeDesktopRegistries(stamp: string): Promise<void> {
+  await pool.query(
+    `WITH people AS (SELECT id FROM "Person" WHERE starts_with("lastName", $1 || '-')),
+     flights AS (DELETE FROM "Flight" WHERE "personId" IN (SELECT id FROM people)),
+     users AS (DELETE FROM "User" WHERE "personId" IN (SELECT id FROM people)),
+     profiles AS (DELETE FROM "PilotProfile" WHERE "personId" IN (SELECT id FROM people)),
+     aircraft AS (DELETE FROM "Aircraft" WHERE registration = $1)
+     DELETE FROM "Person" WHERE id IN (SELECT id FROM people)`, [stamp],
+  );
+}

@@ -18,6 +18,8 @@ test('18.2b: filtered admin registries explain no results and clear the filters,
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), `${locale}/${route} @320`).toBeLessThanOrEqual(0);
       await page.setViewportSize({ width: 1280, height: 812 });
       const box = await page.locator('.page-head').evaluate((node) => {
+        // After resizing the filtered mobile page, Chromium can retain 6px of document scroll.
+        window.scrollTo(0, 0);
         const rect = node.getBoundingClientRect();
         return [rect.x, rect.y, rect.width, rect.height].map((value) => Math.round(value * 100) / 100);
       });

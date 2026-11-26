@@ -1114,6 +1114,60 @@ html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
 }
 .lb-row:hover:not(.header):not(.total){ background: var(--panel-2); }
 
+/* The logbook and pilot list share tracks across the whole page of results.
+   Subgrid keeps header, body and totals aligned even beyond the scrollport. */
+@media (min-width: 641px){
+  .registry-scroll{
+    display: grid;
+    align-content: start;
+    column-gap: 14px;
+    overflow: auto;
+    isolation: isolate;
+    max-height: calc(100dvh - 72px - env(safe-area-inset-top));
+    scroll-margin-block-start: calc(72px + env(safe-area-inset-top));
+    scroll-padding-block-start: 44px;
+  }
+  .registry-scroll > *{
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    padding: 0;
+    background: var(--panel);
+  }
+  .registry-scroll > .header{
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 0;
+  }
+  .registry-scroll > * > *{ padding-block: 10px; }
+  .registry-scroll > .student-row:not(.header) > *{ padding-block: 12px; }
+  .registry-scroll > * > :first-child{ padding-inline-start: 12px; }
+  .registry-scroll[data-sticky-actions] > * > :last-child{
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    align-self: stretch;
+    align-content: center;
+    padding-inline: 8px;
+    background: inherit;
+    border-inline-start: 1px solid var(--border);
+  }
+  .registry-scroll:focus-visible{ outline: 2px solid var(--ink); outline-offset: -2px; }
+}
+
+/* Four-card dashboards; reports can also omit fleet utilization. Phone KPI
+   strips and grids, and the five compensation cards, keep their own rules. */
+@media (min-width: 901px){
+  .kpi-row.kpi-row-four{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-row-four .kpi-value{ overflow-wrap: anywhere; }
+}
+@media (min-width: 1201px){
+  .kpi-row.kpi-row-four{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (min-width: 901px){
+  .kpi-row-four:has(> :nth-child(3):last-child){ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 /* ---------- sidebar ---------- */
 .ac-card{ /* already defined above, no-op anchor */ }
 ::-webkit-scrollbar{ width: 10px; height: 10px; }

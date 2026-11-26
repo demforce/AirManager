@@ -541,7 +541,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
         </div>
       </div>
 
-      <div className="kpi-row">
+      <div className="kpi-row kpi-row-four">
         <div data-testid="kpi-flights-today">
           <KPI label={t('overview.kpis.flightsToday')} value={flightsToday} />
         </div>
@@ -935,7 +935,7 @@ async function renderInstructorLanding(
           the template's grid (439-446) instead of the 15.2 scroll strip that
           hid half of them behind a swipe. A modifier on the SAME row, never a
           second tree (AD-3). */}
-      <div className="kpi-row kpi-row-grid">
+      <div className="kpi-row kpi-row-four kpi-row-grid">
         <div data-testid="kpi-hours-month">
           <KPI label={t('instructorLanding.kpis.hoursMonth')} value={hoursMonthValue} />
         </div>
@@ -1080,7 +1080,7 @@ async function renderPilotLanding(actor: Actor, me: MeResult, locale: AppLocale,
 
       {/* Ratifica R-15.3-c, same as the instructor face: 4 KPIs, so the phone
           gets the template's 2x2 grid (407-414) rather than the 15.2 strip. */}
-      <div className="kpi-row kpi-row-grid">
+      <div className="kpi-row kpi-row-four kpi-row-grid">
         <Link
           /* Review 14.6 F5: the pilot's own statement now lives at the
              self-service page (story 14.6); the staff-shaped scheda persona

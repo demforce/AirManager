@@ -393,8 +393,15 @@ export function PilotsConsole({
             {labels.empty}
           </p>
         ) : (
-          <div className="students pilots-desktop-body">
-            <div className="student-row header" style={{ gridTemplateColumns: cols }}>
+          <div
+            className="students pilots-desktop-body registry-scroll"
+            style={{ gridTemplateColumns: cols }}
+            data-sticky-actions={canManagePeople || canManageFinance || canManageUsers || undefined}
+            role="region"
+            aria-label={labels.cardTitle}
+            tabIndex={0}
+          >
+            <div className="student-row header">
               <div>{labels.table.name}</div>
               <div>{labels.table.email}</div>
               <div>{labels.table.balance}</div>
@@ -408,7 +415,7 @@ export function PilotsConsole({
               const hasUser = pilot.user !== null;
               const currencyBadge = currencyBadgeOf(pilot);
               return (
-                <div key={pilot.id} className="student-row" data-testid={`pilot-row-${pilot.id}`} style={{ gridTemplateColumns: cols }}>
+                <div key={pilot.id} className="student-row" data-testid={`pilot-row-${pilot.id}`}>
                   <div>
                     <Link
                       href={`/dashboard/people/${pilot.id}`}

@@ -612,8 +612,15 @@ export function LogbookConsole({
             {labels.empty}
           </p>
         ) : (
-          <div className="logbook logbook-desktop-body">
-            <div className="lb-row header" style={{ gridTemplateColumns: COLS }}>
+          <div
+            className="logbook logbook-desktop-body registry-scroll"
+            style={{ gridTemplateColumns: COLS }}
+            data-sticky-actions={canManage || undefined}
+            role="region"
+            aria-label={labels.cardTitle}
+            tabIndex={0}
+          >
+            <div className="lb-row header">
               <div>{labels.table.date}</div>
               <div>{labels.table.route}</div>
               <div>{labels.table.pilot}</div>
@@ -637,7 +644,7 @@ export function LogbookConsole({
               const pic = flightPicPerson(flight);
               const typeTone: BadgeTone = flight.flightType === 'SCHOOL' ? 'info' : '';
               return (
-                <div key={flight.id} className="lb-row" data-testid="flight-row" style={{ gridTemplateColumns: COLS }}>
+                <div key={flight.id} className="lb-row" data-testid="flight-row">
                   <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)' }}>
                     {formatDateOnly(flight.flightDate, moneyLocale)}
                   </div>
@@ -707,7 +714,7 @@ export function LogbookConsole({
                 </div>
               );
             })}
-            <div className="lb-row total" style={{ gridTemplateColumns: COLS }} data-testid="logbook-totals-row">
+            <div className="lb-row total" data-testid="logbook-totals-row">
               <div />
               <div />
               <div />

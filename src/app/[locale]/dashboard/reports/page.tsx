@@ -130,7 +130,7 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
         </div>
       </div>
 
-      <div className="kpi-row">
+      <div className="kpi-row kpi-row-four">
         <KPI label={t('kpi.revenue')} value={formatCents(stats.kpis.revenueCents, displayLocale)} />
         <KPI label={t('kpi.hours')} value={formatMinutes(stats.kpis.flightMinutes)} />
         <KPI label={t('kpi.movements')} value={stats.kpis.movements} />

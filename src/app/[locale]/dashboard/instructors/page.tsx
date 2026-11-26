@@ -96,7 +96,7 @@ export default async function InstructorsPage({ params }: PageProps) {
         </div>
       </div>
 
-      <div className="kpi-row">
+      <div className="kpi-row kpi-row-four">
         <KPI label={t('kpi.active')} value={activeCount} />
         <KPI label={t('kpi.hours')} value={formatMinutes(totalMinutes)} />
         <KPI label={t('kpi.owed')} value={formatCents(totalOwedCents, displayLocale)} />
