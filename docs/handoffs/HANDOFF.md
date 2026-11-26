@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.2 completata)
+# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.3a completata)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -8,6 +8,8 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **Fonte di verità**: `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Current Progress
+
+- **18.3a done** (`55c8601`): Indietro chiude sheet e pannelli senza perdere navigazione o focus; Avanti attraversa correttamente le voci consumate. Inclusi filtri invariati, ricerca pendente, link attivo filtrato e handoff quota positiva da Scadenze, senza invio. Revisione indipendente GPT 6 Sol xhigh approvata, nessun bloccante. Gate 2.329 unit e build; browser su DB sintetico nuovo 682 passati, un flaky e due saltati. Le tre UI METAR non sono verificate; gesti iOS/Android non provati headless. **18.3b AC 8–10 resta ready-for-dev e l'umbrella 18.3 in-progress.** Nessun intervento su `main`.
 
 - **Epic 17 done**: le otto story 17.1–17.8 sono `done` in sprint-status; la retrospettiva resta `optional`. Il rollup prima rimasto `in-progress` è stato allineato. Il database sintetico `airmanager_load` è ancora presente per eventuali misure successive e va eliminato quando non serve più; non è un gate BMAD di chiusura.
 
