@@ -4,7 +4,7 @@ baseline_commit: 1f6ab3e
 
 # Story 18.5: Righe, tab e lessico (riperimetrata il 2026-11-03: il lessico è passato alla 19.12b)
 
-Status: **in-progress** — **18.5a done**, AC 1–5 approvati il 2026-11-26 sul commit `450ac94`. **18.5b ready-for-dev**, AC 6 da avviare.
+Status: **done** — **18.5a done** (AC 1–5, `450ac94`) e **18.5b done** (AC 6, `9732247`), approvate in revisioni indipendenti il 2026-11-26.
 
 Piano originario del 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e` con modelli statici calibrati sulle misure documentate). **Dev: Opus 5 xhigh** (UI). Review: Opus 5 xhigh adversarial. **Split** (v. §PO): **18.5a** (M4, M6, M13d, TD-19.12b-a, card Piloti) indipendente dall'Epic 17, può partire subito dopo l'Epic 16; **18.5b** (M11) DOPO la 18.4 (condivide `schedule.tsx`, la pagina e il filtro) e coordinata con la 18.2 (stessa testata di Pianificazione).
 
@@ -119,3 +119,63 @@ Il revisore GPT 6 Sol xhigh ha approvato gli AC 1–5 senza rilievi sul tree `57
 - `src/app/[locale]/dashboard/layout.tsx`, `src/components/shell/mobile-nav.tsx`, `src/styles/airops.css`
 - `messages/it.json`, `messages/en.json`
 - `e2e/mobile-rows-tabs.spec.ts`, `_bmad-output/implementation-artifacts/evidence/18-5a/sheet-*.png`
+
+## Dev Agent Record — 18.5b (AC 6)
+
+La 18.5a e la 18.4 erano integrate su `dev` a `0c07fc668d4ad6d20eca7744f8643d02f1faf117`. La 18.5b riguarda la prima schermata di Pianificazione per pilota e allievo. Il calendario condiviso, il filtro velivolo e il pannello per creare una prenotazione sono quelli già in uso.
+
+### AC 6 — prenotazioni personali e azione per ruolo
+
+- Il lettore server usa il `personId` della sessione e il permesso `self.read`. Se manca la persona collegata restituisce una lista vuota senza interrogare le prenotazioni. Interroga le partenze da adesso in avanti negli stati In attesa e Approvata, ordinate per partenza e ID. Legge al massimo quattro righe per mostrarne tre e segnalare quando ce ne sono altre. La proiezione contiene ID, partenza, stato e marche. La ricerca rimane personale anche se l'utente cambia giorno, pagina, velivolo o stato nella vista generale.
+- Pilota abilitato e allievo vedono la lista prima del calendario a una larghezza fino a 640 px. «Prenota» apre lo stesso modulo della lista generale e alla chiusura il focus torna al pulsante. La vista usa l'eligibilità di creazione della 18.2b. Per il solo allievo il sottotitolo indica che un istruttore o un amministratore può prenotare per lui. Un pilota con profilo disattivato conserva la lista e non ha l'azione di creazione. Per admin e istruttore la pagina evita anche la lettura personale. Il rendering server per pilota/allievo prepara la medesima anteprima limitata anche se il CSS desktop la nasconde.
+- Prova browser in IT e EN attraverso la seconda tab. Fixture run-unique con utenti pilota e allievo, marche distinte, prenotazioni create fuori ordine, in corso, annullata e in attesa. Il filtro sul velivolo dell'altra persona, lo stato Rifiutata e `page=9` lasciano nella lista personale le tre partenze giuste, comprese le richieste in attesa. La riga altrui in agenda mostra «Occupato». Verificati anche lista vuota, sottotitolo, assenza della CTA per il solo allievo e dopo la disattivazione del profilo pilota, modulo e ripristino del focus, ritorno alla presentazione desktop.
+- I due test unitari del nuovo lettore verificano il vincolo sulla persona, l'istante di partenza, gli stati, l'ordine stabile, la proiezione, il limite con quarta riga sentinella e il caso senza persona. Restano in suite i test di eligibilità multi-ruolo della 18.2b.
+
+### Prima schermata e confronto con la base
+
+Chromium, 375 × 812 in italiano, tema chiaro. Su DB fresco in entrambe le build sono state ricreate nove prenotazioni sintetiche approvate per il giorno successivo, sullo stesso velivolo. Due appartenevano al pilota, due all'allievo e cinque a un'altra persona. Le coordinate sono letture di `getBoundingClientRect()` dopo il caricamento di pagina e font. La barra delle tab inizia a 743,94 px. [Pilota prima](evidence/18-5b/before-pilot.png), [pilota dopo](evidence/18-5b/after-pilot.png), [allievo dopo](evidence/18-5b/after-student.png).
+
+| Ruolo e superficie a 375 px | Base | 18.5b |
+| --- | --- | --- |
+| Pilota, prima riga personale | Nessun riepilogo | y 182,84, altezza 58,14 px |
+| Pilota, prima azione di creazione | y 1.005,00 | y 128,84, altezza 44 px |
+| Allievo, prima riga personale | Nessun riepilogo | y 177,25, altezza 58,14 px |
+| Allievo, indicazioni per prenotare | Sottotitolo dello staff | Sottotitolo a y 75,00, altezza 37,69 px |
+| Admin e istruttore, calendario | x 28, y 115,84, 319 × 771,86 | Identico |
+| Admin e istruttore, lista | y 909,70 | y 909,70 |
+
+A 375 px gli screenshot di admin e istruttore coincidono byte per byte tra le due build (SHA-256 admin `bb49cff89bb36ebac76ea838880521c47b7c9d643dbfe2e7d23ea912c71bd176`, istruttore `db3d3e1aef7e177ccd816199c81bd2f13d6926ca3b4db791cde5c173a741cfe5`). A 1280 × 812 i quattro ruoli conservano testo del sottotitolo e geometria di testata, calendario, lista e relativo pulsante, dove previsto. La testata misura 992 × 51,44 px a (260, 85,84) e il calendario 992 × 196,39 a (260, 159,28). Overflow orizzontale di pagina pari a zero per ogni misura.
+
+### Prove di discriminazione e gate
+
+| Comando | Exit | Riscontro |
+| --- | --- | --- |
+| `npx vitest run src/server/services/bookings.service.test.ts -t listOwnUpcomingBookings` prima del lettore | 1 | `TypeError: listOwnUpcomingBookings is not a function`, 2 test rossi |
+| Stesso comando dopo l'implementazione | 0 | 2 test passati, 358 test esclusi dal filtro nominale |
+| `node /tmp/am185b/red-browser.cjs` sulla base, dopo il click su Pianificazione | 1 | `getByRole('heading', { name: 'Le mie prossime prenotazioni' })`, `Timeout: 3000ms`, `element(s) not found` |
+| Primo mirato sulla base, `scripts/e2e.sh start e2e/personal-planning.spec.ts --project=chromium --workers=1 --retries=0 --max-failures=1` | 1 | Selettore preparatorio errato, `waiting for getByTestId('mobile-tab-bookings')`, timeout 120.000 ms. Corretto in `mobile-tab-schedule`. La prova browser della riga sopra isola il criterio. |
+| `npm run gates` | 0 | Lint 40 s, typecheck 16 s, 2.351 test unitari in 17 s, build 54 s |
+| `E2E_REUSE_SERVER=1 scripts/e2e.sh start e2e/personal-planning.spec.ts --project=chromium --workers=2 --retries=0` | 0 | Due casi passati al primo tentativo in 35,2 s |
+
+Il candidato applicativo e di test è il tree `ab8e07a2494b96a8b0dfaa5767a4a1813593c7ad`. Dopo il mirato, `npm run db:reset:test` (exit 0) ha ricreato il solo database disposable `airmanager_e2e` su loopback alla porta 55484. Il server della build verificata è stato riavviato con SMTP/Mailpit su localhost, fixture METAR LIML locale e keep-alive di 75 s.
+
+`E2E_REUSE_SERVER=1 TMPDIR=/tmp/am185b/final scripts/e2e.sh start --workers=2`, esito letto da `TMPDIR=/tmp/am185b/final scripts/e2e.sh status`: **702 casi in 27,5 minuti, E2E_EXIT=0**. 699 passati al primo tentativo e tre recuperati in quattro retry. Zero saltati e zero fallimenti finali. Entrambi i nuovi casi, tutti e tre i test 18.5a e i tre casi METAR sono passati al primo tentativo. A 360–414 px la barra della regressione 18.5a misura ancora 68,0625 px. A 320 px resta il ritorno a capo documentato di «Registro voli» in italiano per istruttore, pilota e allievo. I test 18.2b sugli stati vuoti e il test 18.4 della ricerca del velivolo sui due breakpoint sono passati al primo tentativo.
+
+| Tentativo del full | Riga diagnostica sanitizzata | Esito |
+| --- | --- | --- |
+| `account-adjustments.spec.ts:94` | `Expected 1 Mailpit message(s) to [indirizzo sintetico] within 15000ms` | Passato al primo retry |
+| `aog-impact-email.spec.ts:564` | `641px desktop AOG link vs exact base`, y attesa 620,44 px, rilevata 622,44 px sia nel primo tentativo sia al primo retry | Passato al secondo retry |
+| `mobile-expiries-movements.spec.ts:666` | `/it/dashboard/reports .segmented button height`, valore atteso ≥ 43,5 px, rilevato 0 px | Passato al primo retry |
+
+Il runner riporta l'exit della suite e l'esito dei singoli tentativi. Le righe sopra documentano l'asserzione fallita; il log non stabilisce la causa dei tre comportamenti intermittenti. La fixture LIML esercita l'interfaccia con dati locali. Per la 18.5b le misure sono state effettuate con Chromium, senza prova su un telefono fisico.
+
+### Revisione indipendente e chiusura 18.5b
+
+Per l’unico agente di sviluppo è stata selezionata la configurazione GPT 6.2 Astra xhigh. Il revisore indipendente GPT 6 Sol xhigh ha approvato il tree applicativo `ab8e07a2494b96a8b0dfaa5767a4a1813593c7ad`, pubblicabile come commit `9732247`, senza rilievi. Ha verificato l’AC 6 in una build e su un database sintetico separati, inclusi ruoli combinati, focus, Indietro, calendario condiviso e filtri. La chiusura di 18.5b completa i sei criteri della story 18.5. [Rapporto di revisione](evidence/18-5b/review.md).
+
+### File della 18.5b
+
+- `src/app/[locale]/dashboard/bookings/page.tsx`, `new-booking-form.tsx`, `schedule.tsx`, `src/styles/airops.css`, `messages/{it,en}.json`
+- `src/server/services/bookings.service.ts`, `bookings.service.test.ts`
+- `e2e/personal-planning.spec.ts`, `e2e/booking-actors.ts`, `e2e/empty-18-2b.spec.ts`
+- Screenshot prima/dopo in `_bmad-output/implementation-artifacts/evidence/18-5b/`
