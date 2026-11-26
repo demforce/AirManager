@@ -1,4 +1,5 @@
 'use client';
+import { useTranslations } from 'next-intl';
 
 /**
  * Fleet card-grid console (story 12.5, AC 2/3) — port of
@@ -135,6 +136,7 @@ export function FleetConsole({
   labels,
 }: FleetConsoleProps) {
   const router = useRouter();
+  const tEmpty = useTranslations('EmptyState');
   const [queryInput, setQueryInput] = useState(initialQuery);
   const [includeArchived, setIncludeArchived] = useState(initialIncludeArchived);
   const [target, setTarget] = useState<EditorTarget | null>(null);
@@ -178,7 +180,7 @@ export function FleetConsole({
 
   return (
     <>
-      <div className="card">
+      <div className={`card ${items.length === 0 && !queryInput && !includeArchived ? 'mobile-empty-unfiltered' : ''}`}>
         {/* ONE head at every width (AD-3): the four controls keep their testids
             and their state, and ratifica R-15.5-g's phone layout (search
             full-width, "Archiviati" as a chip, CTA full-width) is CSS on the
@@ -245,9 +247,14 @@ export function FleetConsole({
             app's own `.ac-card.aog` recipe, not the template's `color-mix`. */}
         <div className="fleet-mobile" data-testid="mobile-fleet-grid">
           {items.length === 0 ? (
-            <p className="mobile-card-empty" data-testid="mobile-fleet-empty">
-              {labels.empty}
-            </p>
+            <div className="mobile-empty-state">
+              <p className="mobile-card-empty" data-testid="mobile-fleet-empty">{queryInput || includeArchived ? tEmpty('filtered') : labels.empty}</p>
+              {queryInput || includeArchived ? (
+                <button type="button" className="btn" onClick={() => { setQueryInput(''); setIncludeArchived(false); navigate({ q: '', includeArchived: false }); }} data-testid="mobile-fleet-clear-filters">{tEmpty('clearFilters')}</button>
+              ) : (
+                <button type="button" className="btn primary" onClick={() => setTarget({ mode: 'new' })} data-testid="mobile-fleet-new">{labels.newAircraft}</button>
+              )}
+            </div>
           ) : (
             items.map((aircraft) => {
               const minutes = monthMinutesById[aircraft.id] ?? 0;

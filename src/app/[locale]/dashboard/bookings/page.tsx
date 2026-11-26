@@ -7,6 +7,7 @@ import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { buildAgendaEntries } from '@/lib/mobile-agenda';
 import { APP_TIMEZONE } from '@/lib/time';
+import { canOfferBookingCreate } from '@/lib/booking-create-eligibility';
 import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
@@ -197,7 +198,12 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   // instructor profile (`getOwnInstructorProfileId` above is already that check).
   const ownActivePilotLicense =
     needsOwnProfileCheck && ownInstructorProfileId === null ? ((await getMe(actor)).person?.activePilotLicenseType ?? null) : null;
-  const canCreateNew = canManageAny || (needsOwnProfileCheck && (ownInstructorProfileId !== null || ownActivePilotLicense !== null));
+  const canCreateNew = canOfferBookingCreate({
+    canManageAny,
+    canManageOwn,
+    hasActivePilotProfile: ownActivePilotLicense !== null,
+    hasActiveInstructorProfile: ownInstructorProfileId !== null,
+  });
 
   const now = new Date();
   const nowIso = now.toISOString();
@@ -469,6 +475,9 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         windowStartHour={Math.round(windowStartMinutes / 60)}
         windowEndHour={Math.round(windowEndMinutes / 60)}
         labels={scheduleLabels}
+        canCreateNew={canCreateNew}
+        studentOnly={actor.roles.includes('STUDENT') && !canCreateNew}
+        compactEmpty
       />
 
       <BookingsTable

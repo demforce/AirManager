@@ -213,9 +213,16 @@ export function BookingsTable({
 }: BookingsTableProps) {
   // Story 19.12a: the filtered total inflects (ICU plural), so it is formatted here.
   const t = useTranslations('BookingsPage.list');
+  const tEmpty = useTranslations('EmptyState');
   const router = useRouter();
   const toast = useToast();
   const [showNew, setShowNew] = useState(false);
+  useEffect(() => {
+    if (!canCreateNew) return;
+    const openNewBooking = () => setShowNew(true);
+    window.addEventListener('airmanager:new-booking', openNewBooking);
+    return () => window.removeEventListener('airmanager:new-booking', openNewBooking);
+  }, [canCreateNew]);
   const [editingBooking, setEditingBooking] = useState<BookingRowDto | null>(null);
   const [denyForId, setDenyForId] = useState<string | null>(null);
   const [denyReason, setDenyReason] = useState('');
@@ -653,7 +660,7 @@ export function BookingsTable({
 
   return (
     <>
-    <div className="card" data-testid="bookings-list-section">
+    <div className={`card ${items.length === 0 && status === null && !aircraftFilterId ? 'mobile-empty-unfiltered' : ''}`} data-testid="bookings-list-section">
       <div className="card-head bookings-head">
         <div className="card-title">{labels.cardTitle}</div>
         <span className="card-sub" data-testid="bookings-pending-summary">
@@ -847,9 +854,14 @@ export function BookingsTable({
 
         <div data-testid="mobile-bookings-list">
           {items.length === 0 ? (
-            <p className="mobile-card-empty" data-testid="mobile-bookings-empty">
-              {labels.empty}
-            </p>
+            <div className="mobile-empty-state">
+              <p className="mobile-card-empty" data-testid="mobile-bookings-empty">{status !== null || aircraftFilterId ? tEmpty('filtered') : labels.empty}</p>
+              {status !== null || aircraftFilterId ? (
+                <Link href={{ pathname: '/dashboard/bookings', query: { ...(view !== 'day' ? { view } : {}), ...(date !== today ? { date } : {}) } }} locale={locale as AppLocale} className="btn" data-testid="mobile-bookings-clear-filters">{tEmpty('clearFilters')}</Link>
+              ) : canCreateNew ? (
+                <button type="button" className="btn primary" onClick={() => setShowNew(true)} data-testid="mobile-bookings-new">{tEmpty('bookFlight')}</button>
+              ) : !canManageOwn && !canManageAny ? <p className="mobile-empty-hint">{tEmpty('scheduleStudentInfo')}</p> : null}
+            </div>
           ) : (
             items.map((booking) => {
               const subLine = `${formatDateOnly(booking.startsAtDateOnly, locale)} · ${formatTimeOfDay(new Date(booking.startsAt), locale)}`;

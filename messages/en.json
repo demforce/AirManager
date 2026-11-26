@@ -1,4 +1,12 @@
 {
+  "EmptyState": {
+    "filtered": "No results with these filters.",
+    "clearFilters": "Clear filters",
+    "bookFlight": "Book a flight",
+    "viewSchedule": "Go to Schedule",
+    "studentBookingInfo": "An instructor or administrator can book the flight for you.",
+    "scheduleStudentInfo": "Ask an instructor or administrator to book a flight for you."
+  },
   "Picker": {
     "more": "More results: keep typing",
     "loading": "Searching…",

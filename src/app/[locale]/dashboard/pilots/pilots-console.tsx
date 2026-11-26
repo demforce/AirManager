@@ -1,4 +1,5 @@
 'use client';
+import { useTranslations } from 'next-intl';
 
 /**
  * Pilots table console (story 12.6, AC 2/3) — port of
@@ -180,6 +181,7 @@ export function PilotsConsole({
   labels,
 }: PilotsConsoleProps) {
   const router = useRouter();
+  const tEmpty = useTranslations('EmptyState');
   const toast = useToast();
   const [queryInput, setQueryInput] = useState(initialQuery);
   const [archivedOnly, setArchivedOnly] = useState(initialArchivedOnly);
@@ -350,7 +352,7 @@ export function PilotsConsole({
 
   return (
     <>
-      <div className="card">
+      <div className={`card ${items.length === 0 && !queryInput && !archivedOnly ? 'mobile-empty-unfiltered' : ''}`}>
         {/* ONE head at every width (AD-3) — see `fleet-console.tsx`'s own note:
             the four controls keep their testids and their state, and ratifica
             R-15.5-g's phone layout is CSS on `.registry-head`. */}
@@ -504,9 +506,14 @@ export function PilotsConsole({
             no nested interactive element and the touch target IS the row. */}
         <div className="pilots-mobile" data-testid="mobile-pilots-list">
           {items.length === 0 ? (
-            <p className="mobile-card-empty" data-testid="mobile-pilots-empty">
-              {labels.empty}
-            </p>
+            <div className="mobile-empty-state">
+              <p className="mobile-card-empty" data-testid="mobile-pilots-empty">{queryInput || archivedOnly ? tEmpty('filtered') : labels.empty}</p>
+              {queryInput || archivedOnly ? (
+                <button type="button" className="btn" onClick={() => { setQueryInput(''); setArchivedOnly(false); navigate({ q: '', archivedOnly: false }); }} data-testid="mobile-pilots-clear-filters">{tEmpty('clearFilters')}</button>
+              ) : (
+                <button type="button" className="btn primary" onClick={() => setEditorTarget({ mode: 'new' })} data-testid="mobile-pilots-new">{labels.newPilot}</button>
+              )}
+            </div>
           ) : (
             items.map((pilot) => {
               const flag = flagOf(pilot);

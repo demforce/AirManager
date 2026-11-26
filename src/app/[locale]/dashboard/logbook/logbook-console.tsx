@@ -26,6 +26,7 @@ import { SearchCombobox } from '@/components/search-combobox';
  * (flights.spec.ts).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
@@ -182,6 +183,8 @@ export type LogbookTotals = {
 
 export type LogbookConsoleProps = {
   canManage: boolean;
+  canBookFlight: boolean;
+  studentOnly: boolean;
   /** Story 19.9 — `requirements.force` (ADMIN-only); forwarded to `FlightEditor` as its own `canForce`. */
   canForce: boolean;
   items: FlightListItemDto[];
@@ -220,6 +223,8 @@ const COLS = '92px 150px minmax(200px,1.5fr) 110px 130px 64px 55px 55px 100px mi
 
 export function LogbookConsole({
   canManage,
+  canBookFlight,
+  studentOnly,
   canForce,
   items,
   totals,
@@ -241,6 +246,7 @@ export function LogbookConsole({
   labels,
 }: LogbookConsoleProps) {
   const router = useRouter();
+  const tEmpty = useTranslations('EmptyState');
   const toast = useToast();
   const [filters, setFilters] = useState<LogbookFilters>(initialFilters);
   const [personQueryInput, setPersonQueryInput] = useState(initialFilters.personQuery);
@@ -496,7 +502,7 @@ export function LogbookConsole({
 
   return (
     <>
-      <div className="card">
+      <div className={`card ${items.length === 0 && !hasActiveFilter && !instructorPersonId ? 'mobile-empty-unfiltered' : ''}`}>
         {/* ONE head at every width (AD-2/AD-3): every control keeps its testid
             and its state. On a phone the five filters that ratifica R-15.6-e
             moves into the "Filtri" panel are hidden here (`.logbook-filter-
@@ -731,9 +737,20 @@ export function LogbookConsole({
         <div className="logbook-mobile">
           <div data-testid="mobile-flights-list">
             {items.length === 0 ? (
-              <p className="mobile-card-empty" data-testid="mobile-flights-empty">
-                {labels.empty}
-              </p>
+              <div className="mobile-empty-state">
+                <p className="mobile-card-empty" data-testid="mobile-flights-empty">
+                  {hasActiveFilter || instructorPersonId ? tEmpty('filtered') : labels.empty}
+                </p>
+                {hasActiveFilter || instructorPersonId ? (
+                  <button type="button" className="btn" onClick={handleReset} data-testid="mobile-flights-clear-filters">{tEmpty('clearFilters')}</button>
+                ) : canManage ? (
+                  <button type="button" className="btn primary" onClick={() => setEditorTarget({ mode: 'new' })} data-testid="mobile-flights-new">{labels.newEntry}</button>
+                ) : canBookFlight ? (
+                  <Link href="/dashboard/bookings" className="btn primary" data-testid="mobile-flights-book-flight">{tEmpty('bookFlight')}</Link>
+                ) : studentOnly ? (
+                  <><p className="mobile-empty-hint">{tEmpty('studentBookingInfo')}</p><Link href="/dashboard/bookings" className="btn" data-testid="mobile-flights-view-schedule">{tEmpty('viewSchedule')}</Link></>
+                ) : null}
+              </div>
             ) : (
               items.map((flight) => {
                 const pilotName = personLabel(flight.person);

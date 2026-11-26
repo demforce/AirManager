@@ -252,6 +252,7 @@ export function ScadenzeConsole({
   // Story 19.12a: the "N mostrate" count inflects (ICU plural) and changes
   // with the client-only filters, so it is formatted here.
   const t = useTranslations('ExpiriesPage.registry');
+  const tEmpty = useTranslations('EmptyState');
   const router = useRouter();
   const toast = useToast();
   const [filters, setFilters] = useState(initialFilters);
@@ -309,6 +310,13 @@ export function ScadenzeConsole({
    */
   function handleReset(): void {
     const cleared: ScadenzeFilters = { window: '60', category: '', expiryTypeId: '', personQuery: '' };
+    setFilters(cleared);
+    setPersonQueryInput('');
+    navigate(cleared);
+  }
+
+  function clearEmptyFilters(): void {
+    const cleared: ScadenzeFilters = { window: 'all', category: '', expiryTypeId: '', personQuery: '' };
     setFilters(cleared);
     setPersonQueryInput('');
     navigate(cleared);
@@ -451,7 +459,7 @@ export function ScadenzeConsole({
         <StatCard label={labels.statCards.within60} value={tierCounts.within60} ink="var(--info)" tone="stat-tone-info" note={labels.statCards.within60Note} testId="scadenze-stat-within60" />
       </div>
 
-      <div className="card">
+      <div className={`card ${items.length === 0 && filters.window === 'all' && !filters.category && !filters.expiryTypeId && !filters.personQuery ? 'mobile-empty-unfiltered' : ''}`}>
         {/* ONE head at every width (AD-2/AD-5): every control keeps its testid
             and its state, only the placement changes in CSS. The single
             exception is the tipo filter, which the phone re-renders inside the
@@ -641,9 +649,14 @@ export function ScadenzeConsole({
               // Deliberately NOT the desktop's own "Nulla in questa finestra.":
               // `expiry-dashboard.spec.ts:135` reads that string PAGE-LEVEL, and
               // a second node carrying it would break strict mode at 1280px.
-              <p className="mobile-card-empty" data-testid="mobile-scadenze-empty">
-                {labels.mobile.empty}
-              </p>
+              <div className="mobile-empty-state">
+                <p className="mobile-card-empty" data-testid="mobile-scadenze-empty">
+                  {filters.window !== 'all' || filters.category || filters.expiryTypeId || filters.personQuery ? tEmpty('filtered') : labels.mobile.empty}
+                </p>
+                {filters.window !== 'all' || filters.category || filters.expiryTypeId || filters.personQuery ? (
+                  <button type="button" className="btn" onClick={clearEmptyFilters} data-testid="mobile-scadenze-clear-filters">{tEmpty('clearFilters')}</button>
+                ) : null}
+              </div>
             ) : (
               items.map((item) => {
                 const view = viewOf(item);

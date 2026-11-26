@@ -184,6 +184,9 @@ export type ScheduleProps = {
   windowStartHour: number;
   windowEndHour: number;
   labels: ScheduleLabels;
+  canCreateNew?: boolean;
+  studentOnly?: boolean;
+  compactEmpty?: boolean;
 };
 
 function intlLocale(locale: 'it' | 'en'): string {
@@ -280,11 +283,15 @@ export function Schedule({
   windowStartHour,
   windowEndHour,
   labels,
+  canCreateNew,
+  studentOnly,
+  compactEmpty = false,
 }: ScheduleProps) {
   // Story 19.12a: the per-day and agenda booking counts change with the
   // aircraft and instructor filters and inflect (ICU plural), so they
   // are formatted here rather than pre-formatted server-side.
   const t = useTranslations('BookingsPage.schedule');
+  const tEmpty = useTranslations('EmptyState');
   const router = useRouter();
   const HOURS = Array.from({ length: windowEndHour - windowStartHour + 1 }, (_, i) => windowStartHour + i);
   const trackStyle = { '--sched-hours': Math.max(1, HOURS.length - 1) } as CSSProperties;
@@ -392,7 +399,7 @@ export function Schedule({
 
   return (
     <>
-    <div className="card" data-testid="schedule-section">
+    <div className={`card ${compactEmpty && view === 'day' && visibleAgendaRows.length === 0 && filterCount === 0 ? 'mobile-empty-unfiltered' : ''}`} data-testid="schedule-section">
       <div className="card-head">
         <div className="card-title">{isToday ? labels.cardTitleToday : labels.cardTitle}</div>
         <span className="card-sub" data-testid="calendar-heading">
@@ -785,9 +792,20 @@ export function Schedule({
         {view === 'day' ? (
           <div data-testid="mobile-agenda">
             {visibleAgendaRows.length === 0 ? (
-              <p className="mobile-card-empty" data-testid="mobile-agenda-empty">
-                {hasAircraft ? labels.dayEmpty : labels.noAircraft}
-              </p>
+              compactEmpty ? <div className="mobile-empty-state">
+                <p className="mobile-card-empty" data-testid="mobile-agenda-empty">
+                  {filterCount > 0 ? tEmpty('filtered') : hasAircraft ? labels.dayEmpty : labels.noAircraft}
+                </p>
+                {filterCount > 0 ? (
+                  <button type="button" className="btn" onClick={() => { setFilterInstructorId('all'); router.push(filterHref(null)); }} data-testid="mobile-agenda-clear-filters">
+                    {tEmpty('clearFilters')}
+                  </button>
+                ) : canCreateNew ? (
+                  <button type="button" className="btn primary" onClick={() => window.dispatchEvent(new Event('airmanager:new-booking'))} data-testid="mobile-agenda-book-flight">
+                    {tEmpty('bookFlight')}
+                  </button>
+                ) : studentOnly ? <p className="mobile-empty-hint">{tEmpty('scheduleStudentInfo')}</p> : null}
+              </div> : <p className="mobile-card-empty" data-testid="mobile-agenda-empty">{hasAircraft ? labels.dayEmpty : labels.noAircraft}</p>
             ) : (
               visibleAgendaRows.map((row, index) => (
                 <Fragment key={row.id}>

@@ -135,7 +135,7 @@ export function InstructorsConsole({ items, inactiveItems, canManagePeople, canM
 
   return (
     <>
-      <div className="card">
+      <div className={`card ${items.length === 0 ? 'mobile-empty-unfiltered' : ''}`}>
         {/* ONE head at every width (AD-3) — this page has no search and no
             pagination, so only the CTA changes shape at <=640px. */}
         <div className="card-head registry-head">
@@ -206,9 +206,10 @@ export function InstructorsConsole({ items, inactiveItems, canManagePeople, canM
             IS what R3 prescribes for a row detail. */}
         <div className="instructors-mobile" data-testid="mobile-instructors-list">
           {items.length === 0 ? (
-            <p className="mobile-card-empty" data-testid="mobile-instructors-empty">
-              {labels.empty}
-            </p>
+            <div className="mobile-empty-state">
+              <p className="mobile-card-empty" data-testid="mobile-instructors-empty">{labels.empty}</p>
+              {canManagePeople ? <button type="button" className="btn primary" onClick={() => setAddInstructorOpen(true)} data-testid="mobile-instructors-new">{labels.newInstructor}</button> : null}
+            </div>
           ) : (
             items.map((instructor) => {
               const name = `${instructor.lastName} ${instructor.firstName}`;

@@ -8,6 +8,7 @@ import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { formatCents } from '@/lib/money';
 import type { FlightTypeDto } from '@/lib/schemas/flights';
 import { formatMinutes } from '@/lib/time';
+import { canOfferBookingCreate } from '@/lib/booking-create-eligibility';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { NotFoundError } from '@/server/services/errors';
@@ -15,6 +16,8 @@ import { getAircraft, listAircraft } from '@/server/services/aircraft.service';
 import { getAirfieldBranding } from '@/server/services/app-settings.service';
 import { getFlightTotals, listFlights } from '@/server/services/flights.service';
 import { listPeople } from '@/server/services/people.service';
+import { getOwnInstructorProfileId } from '@/server/services/bookings.service';
+import { getMe } from '@/server/services/me.service';
 import { LogbookConsole, type LogbookFilters } from './logbook-console';
 
 type PageProps = {
@@ -161,6 +164,20 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
     forcedAt: flight.forcedAt ? flight.forcedAt.toISOString() : null,
   }));
 
+  // The CTA is rendered only for an unfiltered empty registry. Keep its own
+  // profile reads off the normal, populated Logbook path.
+  const needsBookingOffer = items.length === 0 && !dateFrom && !dateTo && !aircraftId && !personId && !personQuery && !flightType && !instructorPersonId;
+  const canManageAnyBooking = hasPermission(actor, 'bookings.manage.any');
+  const canManageOwnBooking = hasPermission(actor, 'bookings.manage.own');
+  const ownInstructorProfileId = needsBookingOffer && !canManageAnyBooking && canManageOwnBooking ? await getOwnInstructorProfileId(actor) : null;
+  const ownMe = needsBookingOffer && !canManageAnyBooking && canManageOwnBooking && ownInstructorProfileId === null ? await getMe(actor) : null;
+  const canBookFlight = canOfferBookingCreate({
+    canManageAny: canManageAnyBooking,
+    canManageOwn: canManageOwnBooking && needsBookingOffer,
+    hasActivePilotProfile: ownMe?.person?.activePilotLicenseType != null,
+    hasActiveInstructorProfile: ownInstructorProfileId !== null,
+  });
+
   const filters: LogbookFilters = {
     dateFrom: dateFrom ?? '',
     dateTo: dateTo ?? '',
@@ -231,6 +248,8 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
       <LogbookConsole
         key={JSON.stringify({ page, ...exportFilters })}
         canManage={canManage}
+        canBookFlight={canBookFlight}
+        studentOnly={actor.roles.includes('STUDENT') && !canBookFlight}
         canForce={canForce}
         items={items}
         totals={totals}

@@ -1,4 +1,12 @@
 {
+  "EmptyState": {
+    "filtered": "Nessun risultato con questi filtri.",
+    "clearFilters": "Azzera filtri",
+    "bookFlight": "Prenota un volo",
+    "viewSchedule": "Vai alla Pianificazione",
+    "studentBookingInfo": "Un istruttore o un amministratore può prenotare il volo per te.",
+    "scheduleStudentInfo": "Per prenotare un volo, rivolgiti a un istruttore o a un amministratore."
+  },
   "Picker": {
     "more": "Altri risultati: continua a digitare",
     "loading": "Ricerca in corso…",

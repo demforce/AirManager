@@ -3926,3 +3926,22 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
   .billing-head{ padding-block: 11px; }
   .billing-mobile > .mobile-chip-strip{ padding-block: 0; }
 }
+
+/* Story 18.2b: mobile empty lists keep a heading, one sentence and one way forward. */
+@media (max-width: 640px){
+  .page:has(.mobile-empty-unfiltered) > .page-head{ position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .page:has(.mobile-empty-unfiltered) > .kpi-row{ display: none; }
+  .card.mobile-empty-unfiltered:not([data-testid="schedule-section"]) > .card-head > :not(.card-title){ display: none; }
+  .card.mobile-empty-unfiltered:not([data-testid="schedule-section"]) > .card-head{ padding-block: 12px; }
+  .mobile-empty-state{ display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 16px 18px; min-width: 0; }
+  .mobile-empty-state .mobile-card-empty{ border: 0; padding: 0; margin: 0; }
+  .mobile-empty-state > .btn{ min-height: 44px; max-width: 100%; white-space: normal; text-align: center; }
+  .mobile-empty-hint{ margin: 0; color: var(--ink-3); font-size: 12.5px; line-height: 1.5; }
+  .fleet-mobile > .mobile-empty-state{ grid-column: 1 / -1; }
+  .card.mobile-empty-unfiltered[data-testid="schedule-section"] .schedule-mobile > .mobile-chip-strip{ display: none; }
+  .card.mobile-empty-unfiltered[data-testid="schedule-section"] [data-testid="schedule-filter-toggle"]{ display: none; }
+  .card.mobile-empty-unfiltered[data-testid="bookings-list-section"] .bookings-mobile > .mobile-chip-strip{ display: none; }
+  .card.mobile-empty-unfiltered .scadenze-mobile > .mobile-chip-strip,
+  .card.mobile-empty-unfiltered .billing-mobile > .mobile-chip-strip{ display: none; }
+  .page.fold-billing:has(.mobile-empty-unfiltered) [data-testid="mobile-billing-kpis"]{ display: none; }
+}

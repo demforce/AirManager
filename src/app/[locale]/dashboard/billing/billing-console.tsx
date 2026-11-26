@@ -1,4 +1,5 @@
 'use client';
+import { useTranslations } from 'next-intl';
 
 /**
  * Billing (Contabilità) console (story 12.9, story Billing-2) — port of
@@ -270,6 +271,7 @@ export function BillingConsole({
   labels,
 }: BillingConsoleProps) {
   const router = useRouter();
+  const tEmpty = useTranslations('EmptyState');
   const toast = useToast();
   const [filters, setFilters] = useState<BillingFilters>(initialFilters);
   const [personQueryInput, setPersonQueryInput] = useState(initialFilters.personQuery);
@@ -716,7 +718,7 @@ export function BillingConsole({
 
   return (
     <>
-      <div className="card">
+      <div className={`card ${items.length === 0 && !hasActiveFilter ? 'mobile-empty-unfiltered' : ''}`}>
         {/* ONE head at every width (AD-2): every control keeps its testid and
             its state. On a phone the two filters ratifica R-15.8a-e moves into
             the "Filtri" panel are hidden here (`.billing-filter-inpanel`) and
@@ -989,9 +991,10 @@ export function BillingConsole({
 
           <div data-testid="mobile-billing-list">
             {items.length === 0 ? (
-              <p className="mobile-card-empty" data-testid="mobile-billing-empty">
-                {labels.mobile.empty}
-              </p>
+              <div className="mobile-empty-state">
+                <p className="mobile-card-empty" data-testid="mobile-billing-empty">{hasActiveFilter ? tEmpty('filtered') : labels.mobile.empty}</p>
+                {hasActiveFilter ? <button type="button" className="btn" onClick={handleReset} data-testid="mobile-billing-clear-filters">{tEmpty('clearFilters')}</button> : null}
+              </div>
             ) : (
               items.map((row) => {
                 // Review F7 again, on the phone: club perspective, from the ONE
