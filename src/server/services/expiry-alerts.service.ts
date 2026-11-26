@@ -36,6 +36,12 @@ import { prisma } from '@/server/db/prisma';
  * releases only this attempt's claim IDs so the next run can retry. A process
  * crash between claim and send can still lose one reminder, the ratified
  * trade-off that prevents duplicate emails without a durable queue.
+ * When permanent recipient rejections fill the 200-candidate cap, a small
+ * AppSetting cursor advances the next run past them, then resets at the end
+ * of the ordered queue. This narrow exception to story 17.8's stateless
+ * cursor preserves the cap and eventual retry; rejected addresses and new
+ * earlier expiries may wait until the queue wraps. The setting is updated
+ * with a compare-and-swap; it never owns or consumes SentAlert claims.
  *
  * **Titolare without an email** (`Person.email === null`): thresholds are
  * consumed anyway (`SentAlert` created — the job must not re-evaluate this
@@ -74,6 +80,7 @@ function hasPrismaCode(error: unknown, code: string): boolean {
 const MS_PER_DAY = 86_400_000;
 export const EXPIRY_ALERTS_MAX_PER_RUN = 200;
 const PAGE_SIZE = 50;
+const RETRY_CURSOR_KEY = 'expiry-alerts.retry-cursor';
 
 /** Recipient locale, same fallback rule as `sendNegativeBalanceAlert` (story 3.3): `User.locale === 'en'` -> `en`, everything else (including no linked `User`) -> `it`. */
 function resolveLocale(locale: string | null | undefined): AppLocale {
@@ -101,11 +108,11 @@ function dueThresholds(daysLeft: number): number[] {
   return EXPIRY_ALERT_THRESHOLDS.filter((threshold) => daysLeft <= threshold);
 }
 
-/** A concrete SMTP reply to RCPT TO rejects this address, not the transport as a whole. */
+/** Mailbox/address RCPT replies are per-recipient; other SMTP failures may affect the channel. */
 function isRecipientRejection(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const { command, responseCode } = error as { command?: unknown; responseCode?: unknown };
-  return command === 'RCPT TO' && typeof responseCode === 'number' && responseCode >= 400 && responseCode < 600;
+  return command === 'RCPT TO' && typeof responseCode === 'number' && [450, 550, 551, 552, 553].includes(responseCode);
 }
 
 export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN): Promise<ExpiryAlertsJobResult> {
@@ -125,16 +132,29 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
   let holdersWithoutEmail = 0;
   let candidatesProcessed = 0;
   let transportFailures = 0;
+  let recipientRejections = 0;
   const digestItems: ExpiryDigestItem[] = [];
+  const storedCursor = await prisma.appSetting.findUnique({ where: { key: RETRY_CURSOR_KEY }, select: { value: true, updatedAt: true } });
   let cursor: { expiresAt: Date; id: string } | null = null;
+  if (storedCursor?.value) {
+    try {
+      const saved = JSON.parse(storedCursor.value) as { expiresAt: string; id: string };
+      if (typeof saved.id === 'string' && !Number.isNaN(new Date(saved.expiresAt).getTime())) {
+        cursor = { expiresAt: new Date(saved.expiresAt), id: saved.id };
+      }
+    } catch { /* Invalid old cursor: start from the first due candidate. */ }
+  }
+  const rotating = cursor !== null;
+  let reachedEnd = false;
+  const after = (position: { expiresAt: Date; id: string }) => ({
+    AND: [pendingWhere, { OR: [
+      { expiresAt: { gt: position.expiresAt } },
+      { expiresAt: position.expiresAt, id: { gt: position.id } },
+    ] }],
+  });
 
   while (candidatesProcessed < limit) {
-    const where = cursor === null ? pendingWhere : {
-      AND: [pendingWhere, { OR: [
-        { expiresAt: { gt: cursor.expiresAt } },
-        { expiresAt: cursor.expiresAt, id: { gt: cursor.id } },
-      ] }],
-    };
+    const where = cursor === null ? pendingWhere : after(cursor);
     const take = Math.min(PAGE_SIZE, limit - candidatesProcessed);
     const page: Candidate[] = await prisma.expiry.findMany({
       where,
@@ -142,7 +162,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
       take,
       select: CANDIDATE_SELECT,
     });
-    if (page.length === 0) break;
+    if (page.length === 0) { reachedEnd = true; break; }
     const locales = await prisma.user.findMany({
       where: { personId: { in: page.map((candidate) => candidate.person.id) } },
       select: { personId: true, locale: true },
@@ -204,7 +224,10 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
         } catch (error) {
           console.error('runExpiryAlertsJob: failed to send holder alert email', error);
           await prisma.sentAlert.deleteMany({ where: { id: { in: claims.map((claim) => claim.id) } } });
-          if (sendAttempted) transportFailures = isRecipientRejection(error) ? 0 : transportFailures + 1;
+          if (sendAttempted) {
+            if (isRecipientRejection(error)) { recipientRejections += 1; transportFailures = 0; }
+            else transportFailures += 1;
+          }
           holderStatus = 'SEND_FAILED';
         }
       } else {
@@ -222,7 +245,8 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
       });
       if (transportFailures >= 3) break;
     }
-    if (transportFailures >= 3 || page.length < take) break;
+    if (transportFailures >= 3) break;
+    if (page.length < take) { reachedEnd = true; break; }
   }
 
   let digestEmailsSent = 0;
@@ -244,12 +268,26 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
     }
   }
 
+  const remaining = await prisma.expiry.count({ where: pendingWhere });
+  // Rotate only when rejected addresses consume the whole batch. A stored cursor
+  // is conditional (CAS) so an overlapping job cannot move it backwards.
+  if (transportFailures < 3 && cursor && (rotating || (candidatesProcessed === limit && recipientRejections > 0 && remaining > 0))) {
+    const hasLater = !reachedEnd && (await prisma.expiry.findMany({ where: after(cursor), orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }], take: 1, select: { id: true } })).length > 0;
+    const nextValue = hasLater ? JSON.stringify({ expiresAt: cursor.expiresAt.toISOString(), id: cursor.id }) : '';
+    if (storedCursor) {
+      await prisma.appSetting.updateMany({ where: { key: RETRY_CURSOR_KEY, value: storedCursor.value, updatedAt: storedCursor.updatedAt }, data: { value: nextValue } });
+    } else if (hasLater) {
+      try { await prisma.appSetting.create({ data: { key: RETRY_CURSOR_KEY, value: nextValue } }); }
+      catch (error) { if (!hasPrismaCode(error, 'P2002')) throw error; }
+    }
+  }
+
   return {
     candidates: candidatesProcessed,
     alertsCreated,
     holderEmailsSent,
     holdersWithoutEmail,
     digestEmailsSent,
-    remaining: await prisma.expiry.count({ where: pendingWhere }),
+    remaining,
   };
 }

@@ -8,6 +8,7 @@ vi.mock('@/server/db/prisma', () => ({
       findMany: vi.fn(),
       count: vi.fn(),
     },
+    appSetting: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     sentAlert: {
       createMany: vi.fn(),
       deleteMany: vi.fn(),
@@ -71,6 +72,10 @@ function adminUserFixture(overrides: Partial<Fixture> = {}): Fixture {
 
 describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, idempotent job, FR-37, AD-9)', () => {
   beforeEach(() => {
+    vi.mocked(prisma.appSetting.findUnique).mockReset();
+    vi.mocked(prisma.appSetting.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.appSetting.create).mockReset();
+    vi.mocked(prisma.appSetting.updateMany).mockReset();
     expiryFindManyMock.mockReset();
     expiryCountMock.mockReset();
     sentAlertCreateManyMock.mockReset();

@@ -4,6 +4,7 @@ import { EXPIRY_ALERT_THRESHOLDS } from '@/lib/expiry-status';
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
     expiry: { findMany: vi.fn(), count: vi.fn() },
+    appSetting: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     sentAlert: { createMany: vi.fn(), deleteMany: vi.fn() },
     user: { findMany: vi.fn(), findUnique: vi.fn() },
   },
@@ -24,6 +25,9 @@ const claim = vi.mocked(prisma.sentAlert.createMany);
 const release = vi.mocked(prisma.sentAlert.deleteMany);
 const users = vi.mocked(prisma.user.findMany);
 const unique = vi.mocked(prisma.user.findUnique);
+const settingFind = vi.mocked(prisma.appSetting.findUnique);
+const settingCreate = vi.mocked(prisma.appSetting.create);
+const settingUpdate = vi.mocked(prisma.appSetting.updateMany);
 
 function candidate(id: string, days = 60) {
   const date = new Date();
@@ -46,6 +50,9 @@ describe('story 17.8 alert batches', () => {
     release.mockResolvedValue({ count: 1 });
     users.mockResolvedValue([] as never);
     send.mockResolvedValue(undefined);
+    settingFind.mockResolvedValue(null);
+    settingCreate.mockResolvedValue({ key: 'expiry-alerts.retry-cursor', value: '' } as never);
+    settingUpdate.mockResolvedValue({ count: 1 });
   });
 
   it('D1 caps a run at two urgent candidates and reports the pending remainder', async () => {
@@ -151,6 +158,17 @@ describe('story 17.8 alert batches', () => {
     } finally { error.mockRestore(); }
   });
 
+  it('treats SMTP 421 during RCPT TO as a transport failure and stops after three', async () => {
+    find.mockResolvedValueOnce(['a', 'b', 'c', 'd'].map((id) => candidate(id)) as never);
+    count.mockResolvedValue(4);
+    send.mockRejectedValue(Object.assign(new Error('synthetic channel closing'), { code: 'EENVELOPE', command: 'RCPT TO', responseCode: 421 }));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await runExpiryAlertsJob(4);
+      expect(result).toMatchObject({ candidates: 3, holderEmailsSent: 0, remaining: 4 });
+    } finally { error.mockRestore(); }
+  });
+
   it('a recipient rejection interrupts a sequence of transport failures', async () => {
     find.mockResolvedValueOnce(['a', 'b', 'c', 'd', 'e'].map((id) => candidate(id)) as never);
     count.mockResolvedValue(4);
@@ -164,6 +182,65 @@ describe('story 17.8 alert batches', () => {
     try {
       const result = await runExpiryAlertsJob(5);
       expect(result).toMatchObject({ candidates: 5, holderEmailsSent: 1, remaining: 4 });
+    } finally { error.mockRestore(); }
+  });
+
+  it('rotates after 200 rejected recipients so a later valid candidate is reached on the next run', async () => {
+    const rows = Array.from({ length: 201 }, (_, i) => candidate(`a${String(i).padStart(3, '0')}`));
+    let storedCursor: string | null = null;
+    let storedUpdatedAt = new Date('2026-01-01T00:00:00.000Z');
+    settingFind.mockImplementation((async () => storedCursor === null ? null : { value: storedCursor, updatedAt: storedUpdatedAt }) as never);
+    settingCreate.mockImplementation((async ({ data }: { data: { value: string } }) => {
+      storedCursor = data.value;
+      return data;
+    }) as never);
+    settingUpdate.mockImplementation((async ({ where, data }: { where: { value: string; updatedAt: Date }; data: { value: string } }) => {
+      if (storedCursor !== where.value || storedUpdatedAt.getTime() !== where.updatedAt?.getTime()) return { count: 0 };
+      storedCursor = data.value;
+      storedUpdatedAt = new Date(storedUpdatedAt.getTime() + 1000);
+      return { count: 1 };
+    }) as never);
+    find.mockImplementation((async ({ where, take }: { where: { AND?: [unknown, { OR: [unknown, { expiresAt: Date; id: { gt: string } }] }] }; take: number }) => {
+      const after = where.AND?.[1]?.OR?.[1]?.id.gt;
+      const remaining = after ? rows.filter((row) => row.id > after) : rows;
+      return remaining.slice(0, take);
+    }) as never);
+    count.mockResolvedValue(201);
+    send.mockImplementation(async ({ to }: { to: string }) => {
+      if (to !== 'a200@example.test') throw Object.assign(new Error('synthetic recipient rejection'), { command: 'RCPT TO', responseCode: 550 });
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const first = await runExpiryAlertsJob();
+      expect(release).toHaveBeenCalledTimes(200);
+      const second = await runExpiryAlertsJob();
+      expect(first.candidates).toBe(200);
+      expect(second.holderEmailsSent).toBe(1);
+      expect(storedCursor).toBe('');
+      expect(send.mock.calls.some(([message]) => message.to === 'a200@example.test')).toBe(true);
+      send.mockImplementation(async ({ to }: { to: string }) => {
+        if (to !== 'a000@example.test') throw Object.assign(new Error('synthetic recipient rejection'), { command: 'RCPT TO', responseCode: 550 });
+      });
+      const third = await runExpiryAlertsJob();
+      expect(third.holderEmailsSent).toBe(1);
+      expect(send.mock.calls.filter(([message]) => message.to === 'a000@example.test')).toHaveLength(2);
+    } finally { error.mockRestore(); }
+  });
+
+  it('keeps immediate next-run retry when 200 rejected recipients exhaust the whole queue', async () => {
+    const rows = Array.from({ length: 200 }, (_, i) => candidate(`a${String(i).padStart(3, '0')}`));
+    find.mockImplementation((async ({ where, take }: { where: { AND?: [unknown, { OR: [unknown, { id: { gt: string } }] }] }; take: number }) => {
+      const after = where.AND?.[1]?.OR?.[1]?.id.gt;
+      return (after ? rows.filter((row) => row.id > after) : rows).slice(0, take);
+    }) as never);
+    count.mockResolvedValue(200);
+    send.mockRejectedValue(Object.assign(new Error('synthetic recipient rejection'), { command: 'RCPT TO', responseCode: 550 }));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await runExpiryAlertsJob();
+      await runExpiryAlertsJob();
+      expect(settingCreate).not.toHaveBeenCalled();
+      expect(send.mock.calls.filter(([message]) => message.to === 'a000@example.test')).toHaveLength(2);
     } finally { error.mockRestore(); }
   });
 
