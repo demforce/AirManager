@@ -4,7 +4,7 @@ baseline_commit: 1f6ab3e
 
 # Story 18.4: I filtri di Pianificazione nella grammatica mobile
 
-Status: **review** — candidato `142e81b` verificato sulla base `c74143e`. Revisione indipendente in attesa di verdetto.
+Status: **done** — il 2026-11-26 GPT 6 Sol xhigh ha approvato in revisione indipendente il candidato `142e81b` sulla base `c74143e`.
 
 Piano originario del 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e` con modelli statici). **Dev: Opus 5 xhigh** (UI). Review: Opus 5 xhigh adversarial. **Dipende da 17.2** (gruppo Velivolo = link `?aircraft=` sui velivoli del periodo + quello scelto, Q-17.2-c) **e 17.6** (ricerche «opzioni di prenotazione»: velivolo `self.read`, istruttore `bookings.read.names`; `SearchCombobox` con soglia 2, 20 risultati, riga «Altri risultati», label nascondibile). Va rimisurata e riletta su HEAD dopo che entrambe sono atterrate.
 
@@ -111,6 +111,10 @@ Candidato applicativo `142e81bdbcb46ea937f413fe0843010654f864d5` (tree `5b8e96a8
 | Scadenze mobile, bersagli condivisi, `mobile-expiries-movements.spec.ts:666` | Su `/it/dashboard/reports`, `.segmented button height`: attesa ≥43,5 px, lettura 0 px (riga 699). | Retry 1 passato |
 
 Il log identifica le due asserzioni fallite; la causa dei valori intermittenti non è stata stabilita. Nessun esito delle storie precedenti è stato usato per sostituire un gate del candidato.
+
+### Revisione indipendente del 2026-11-26
+
+GPT 6 Sol xhigh ha esaminato in sola lettura il diff da `c74143e` a `142e81b` (albero `5b8e96a`), i log dei gate, le misure prima e dopo e le prove browser. Ha approvato gli AC 1–9 e le tre decisioni PO senza rilievi. Il candidato approvato conserva il rifiuto 409 del salvataggio obsoleto. La controprova per il pilota misura la sensibilità del test alla comparsa di un campo nel DOM. Il controllo server delle autorizzazioni è rimasto attivo. I tre casi METAR sono stati verificati con la fixture LIML locale.
 
 ### File interessati
 

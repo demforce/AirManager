@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.3 e audit follow-up verificati)
+# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.4 completata)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -8,6 +8,8 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **Fonte di verità**: `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Current Progress
+
+- **18.4 done** (`142e81b`, evidenze in `5bff520`). In Pianificazione il pannello mobile applica insieme le scelte. Anche su desktop la ricerca velivoli raggiunge mezzi fuori dal periodo. La ricerca nominativa degli istruttori segue il permesso esistente. Sul carico sintetico, per l’admin a 375 px, il pannello passa da 297 azioni a tre pulsanti e due campi. Il payload RSC di Pianificazione scende da 253,03 a 242,71 KiB. Confermato il 409 per una prenotazione modificata dopo l’apertura del modulo. Revisione indipendente GPT 6 Sol xhigh approvata senza rilievi. Gate verdi con 2.349 unit. Su database sintetico appena azzerato e SMTP locale la suite browser ha completato 697 casi, 695 al primo tentativo e due al retry (volo Scuola con istruttore, geometria di Statistiche). Tutti e tre i casi METAR hanno usato la fixture LIML. Misure per ruolo, controprove e diagnostica nel [record 18.4](../../_bmad-output/implementation-artifacts/18-4-filtri-pianificazione-mobile.md). La prossima story prevista è la 18.5.
 
 - **Audit follow-up verificato sul candidato da `36f6745`**: cleanup dell'handoff/backlog e reset del solo DB di test; tre fix separati per storno del compenso istruttore, conflitti tra modifiche della stessa prenotazione e progressione degli avvisi oltre destinatari SMTP rifiutati. Record con criteri e prove: `_bmad-output/implementation-artifacts/audit-followup-2026-11-26.md`. Gate: 2.349 unit, lint/typecheck/build verdi. Browser su PostgreSQL disposable: 687 passati, due flaky passati al retry (`mobile-reports`, navigazione 18.3b), tre METAR saltati per upstream indisponibile. Il rerun mirato ha passato tre volte Quota associativa con Indietro/Avanti e navigazione 18.3b; `mobile-reports` ha richiesto ancora un retry. Prove UI/API separate su DB sintetico e SMTP mock locale verdi. Revisione indipendente GPT 6 Sol xhigh approvata senza bloccanti. Nessuna nuova story o modifica a `main`.
 
