@@ -134,6 +134,39 @@ describe('story 17.8 alert batches', () => {
     } finally { error.mockRestore(); }
   });
 
+  it('continues past three rejected recipients and sends to the next valid address', async () => {
+    find.mockResolvedValueOnce(['a', 'b', 'c', 'd'].map((id) => candidate(id)) as never);
+    count.mockResolvedValue(3);
+    send.mockImplementation(async ({ to }: { to: string }) => {
+      if (to !== 'd@example.test') {
+        throw Object.assign(new Error('synthetic recipient rejection'), { code: 'EENVELOPE', command: 'RCPT TO', responseCode: 550 });
+      }
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await runExpiryAlertsJob(4);
+      expect(result).toMatchObject({ candidates: 4, alertsCreated: 1, holderEmailsSent: 1, remaining: 3 });
+      expect(send.mock.calls.map(([message]) => message.to)).toEqual(['a', 'b', 'c', 'd'].map((id) => `${id}@example.test`));
+      expect(release).toHaveBeenCalledTimes(3);
+    } finally { error.mockRestore(); }
+  });
+
+  it('a recipient rejection interrupts a sequence of transport failures', async () => {
+    find.mockResolvedValueOnce(['a', 'b', 'c', 'd', 'e'].map((id) => candidate(id)) as never);
+    count.mockResolvedValue(4);
+    send.mockImplementation(async ({ to }: { to: string }) => {
+      if (to === 'c@example.test') {
+        throw Object.assign(new Error('synthetic recipient rejection'), { code: 'EENVELOPE', command: 'RCPT TO', responseCode: 550 });
+      }
+      if (to !== 'e@example.test') throw new Error('synthetic transport outage');
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await runExpiryAlertsJob(5);
+      expect(result).toMatchObject({ candidates: 5, holderEmailsSent: 1, remaining: 4 });
+    } finally { error.mockRestore(); }
+  });
+
   it('D6 treats a concurrently deleted expiry P2003 as skipped', async () => {
     find.mockResolvedValueOnce([candidate('a')] as never).mockResolvedValue([] as never);
     claim.mockRejectedValueOnce({ code: 'P2003' });

@@ -101,6 +101,13 @@ function dueThresholds(daysLeft: number): number[] {
   return EXPIRY_ALERT_THRESHOLDS.filter((threshold) => daysLeft <= threshold);
 }
 
+/** A concrete SMTP reply to RCPT TO rejects this address, not the transport as a whole. */
+function isRecipientRejection(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const { command, responseCode } = error as { command?: unknown; responseCode?: unknown };
+  return command === 'RCPT TO' && typeof responseCode === 'number' && responseCode >= 400 && responseCode < 600;
+}
+
 export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN): Promise<ExpiryAlertsJobResult> {
   const today = todayDateOnlyUtcInZone(APP_TIMEZONE);
   const limit = Math.max(1, Math.min(maxPerRun, EXPIRY_ALERTS_MAX_PER_RUN));
@@ -197,7 +204,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
         } catch (error) {
           console.error('runExpiryAlertsJob: failed to send holder alert email', error);
           await prisma.sentAlert.deleteMany({ where: { id: { in: claims.map((claim) => claim.id) } } });
-          if (sendAttempted) transportFailures += 1;
+          if (sendAttempted) transportFailures = isRecipientRejection(error) ? 0 : transportFailures + 1;
           holderStatus = 'SEND_FAILED';
         }
       } else {
