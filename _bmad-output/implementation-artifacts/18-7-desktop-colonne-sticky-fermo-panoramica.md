@@ -4,7 +4,9 @@ baseline_commit: 1f6ab3e
 
 # Story 18.7: Desktop — colonne, intestazioni, fermo velivolo, Panoramica
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e` con modelli statici da riconfermare al passo 0). **Dev: Opus 5 xhigh** (UI). Review: Opus 5 xhigh adversarial. **Split per dipendenze** (v. §PO): **18.7a** (D2, D3, TD-19.1-d) indipendente dall'Epic 17; **18.7b** (M8 dopo la 16.8; D1 dopo 17.2 e 17.6).
+Status: **in-progress** — **18.7a done** (AC 1–4, `c09f2b8`), **18.7b ready-for-dev** (AC 5–6).
+
+Piano originario del 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e` con modelli statici da riconfermare al passo 0). **Dev: Opus 5 xhigh** (UI). Review: Opus 5 xhigh adversarial. **Split per dipendenze** (v. §PO): **18.7a** (D2, D3, TD-19.1-d) indipendente dall'Epic 17; **18.7b** (M8 dopo la 16.8; D1 dopo 17.2 e 17.6).
 
 ## Story
 
@@ -62,6 +64,37 @@ Ratificate dal PO il 2026-11-03/04 in un solo giro (AskUserQuestion: «Sì, tutt
 
 ### Agent Model Used
 
+Per lo sviluppo della 18.7a è stata selezionata la configurazione GPT 6.2 Astra xhigh. Il processo di sviluppo non espone una misura indipendente del modello effettivo.
+
 ### Completion Notes List
 
+**18.7a, AC 1–4 (2026-11-26).** Base `a7dff74c6572308632901ee7a0776cfa720892cd`. Tree finale di codice e test `7c73be797f1fe3e3826ae00fc478d062b3b50580`. Le misure iniziali e finali sono state prese sulle pagine italiane in Chromium con database sintetici e SMTP locale. L'implementazione lascia alla 18.7b gli AC 5–6.
+
+| AC | Riscontro dall'interfaccia |
+|---|---|
+| 1 | A 1280 px, sulla base il centro di entrambi i pulsanti del Registro e quello del secondo pulsante dei Piloti erano irraggiungibili senza scroll orizzontale. Sul candidato entrambi i pulsanti ricevono il puntatore, anche su righe successive dopo lo scroll nei due assi. I test aprono Modifica e provano l'altra azione senza confermare scritture. |
+| 2 | Prova con 20 voli e 20 persone filtrati per esecuzione. Nei due temi e a otto larghezze desktop da 641 a 1440 px, dopo 800 px reali di scroll interno l'intestazione è visibile sotto la topbar. A 1280×400 sul carico il suo top è 65,73 px e la topbar termina a 63,84 px. La regione ha nome accessibile, si attraversa da tastiera e risponde alle frecce in entrambi gli assi. A 375 px si apre lo sheet mobile. |
+| 3 | Le quattro KPI occupano tutta la riga a 1280 px su Panoramica admin, home istruttore e pilota, Statistiche, Registro e Istruttori. A 1000 px sono due per riga. Verificati anche Statistiche con tre KPI quando manca l'orario di apertura e Compensi con cinque. Sul DB di carico con 60.018 voli il Registro mostra integralmente «15.589.074,93 €». A 1280 px il simbolo va a capo. |
+| 4 | In chiaro e scuro l'alpha di intestazione, angolo e celle Azioni è 255. I punti effettivamente sovrapposti dal pannello o dal popover Export ricevono l'interazione dell'overlay. |
+
+Le [264 misure prima/dopo](evidence/18-7a/misure.csv) e il [registro delle prove](evidence/18-7a/riscontri.md) includono i database usati, le misure sul carico, i confronti CSS su copia isolata, i comandi e gli errori dei tentativi precedenti. Screenshot a 1280 px in chiaro [prima](evidence/18-7a/registro-prima-light.png) e [dopo](evidence/18-7a/registro-dopo-light.png), in scuro [prima](evidence/18-7a/registro-prima-dark.png) e [dopo](evidence/18-7a/registro-dopo-dark.png).
+
+Gate finale `npm run gates`, exit 0: lint, typecheck, 2.351 unit e build. Dopo `npm run db:reset:test` su DB locale dedicato, `scripts/e2e.sh start --workers=2` ha restituito `E2E_EXIT=0`. Dei 713 casi, 710 sono passati al primo tentativo e tre al primo retry, nessuno saltato. I cinque casi nuovi, il controllo desktop di Billing e i tre casi METAR sono passati al primo tentativo. I tre flaky riguardano Mailpit, la controprova mobile Statistiche e lo sheet transazioni personali. Comandi, codici, righe sanitizzate e diagnostica della prima suite interrotta sono nel [registro delle prove](evidence/18-7a/riscontri.md).
+
+### Revisione indipendente 18.7a
+
+Il 2026-11-26 il revisore GPT 6 Sol xhigh ha approvato gli AC 1–4 sul tree `7c73be797f1fe3e3826ae00fc478d062b3b50580`, commit `c09f2b8`. Ha verificato su un database sintetico separato la raggiungibilità delle azioni prima e dopo lo scroll, l’ordine di sovrapposizione, la tastiera, il nome accessibile delle regioni e la griglia KPI. Il full finale ha completato 713 casi con tre retry e zero skip. Chiuso il TD-19.1-d relativo alla disposizione dei quattro KPI. [Rapporto del revisore](evidence/18-7a/review.md).
+
 ### File List
+
+- `src/styles/airops.css`
+- `src/app/[locale]/dashboard/(home)/page.tsx`
+- `src/app/[locale]/dashboard/instructors/page.tsx`
+- `src/app/[locale]/dashboard/logbook/logbook-console.tsx`
+- `src/app/[locale]/dashboard/logbook/page.tsx`
+- `src/app/[locale]/dashboard/pilots/pilots-console.tsx`
+- `src/app/[locale]/dashboard/reports/page.tsx`
+- `e2e/db-fixtures.ts`
+- `e2e/desktop-registries.spec.ts`
+- `e2e/empty-18-2b.spec.ts`
+- `_bmad-output/implementation-artifacts/evidence/18-7a/`

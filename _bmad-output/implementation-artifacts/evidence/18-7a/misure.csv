@@ -1,0 +1,265 @@
+phase,dataset,role,surface,theme,viewport,documentOverflow,kpiCount,cardsPerLine,fourthRightGapPx,maxValuePastCardRightPx,revenueText,rows,hiddenWidth,internalScrollRange,firstTwoActionsHit,topbarBottom,headerStart,internalScrollY,headerEnd,internalScrollX,laterTwoActionsHit,headerColor,actionColor
+before,e2e,admin,logbook,light,375,0,4,4,-313.89,-17,"22.306,69 €",,,,,,,,,,,,
+before,e2e,admin,logbook,light,768,0,4,2+2,0,-145.08,"22.306,69 €",20,748,0,"[False, False]",63.84,66.11,0,-627.89,400,"[False, False]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,logbook,light,1000,0,4,3+1,482.67,-56.41,"22.306,69 €",20,684,0,"[False, False]",63.84,66.11,0,-627.89,400,"[False, False]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,logbook,light,1100,0,4,3+1,549.34,-89.73,"22.306,69 €",20,584,0,"[False, False]",63.84,66.11,0,-627.89,400,"[False, False]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,logbook,light,1280,0,4,4,200.81,-15.87,"22.306,69 €",20,404,0,"[False, False]",63.84,65.73,0,-627.27,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,logbook,light,1440,0,4,4,232.81,-47.87,"22.306,69 €",20,244,0,"[False, False]",63.84,65.73,0,-627.27,244,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,logbook,dark,375,0,4,4,-313.89,-17,"22.306,69 €",,,,,,,,,,,,
+before,e2e,admin,logbook,dark,768,0,4,2+2,0,-145.08,"22.306,69 €",20,748,0,"[False, False]",63.84,66.11,0,-627.89,400,"[False, False]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,logbook,dark,1000,0,4,3+1,482.67,-56.41,"22.306,69 €",20,684,0,"[False, False]",63.84,66.11,0,-627.89,400,"[False, False]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,logbook,dark,1100,0,4,3+1,549.34,-89.73,"22.306,69 €",20,584,0,"[False, False]",63.84,66.11,0,-627.89,400,"[False, False]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,logbook,dark,1280,0,4,4,200.81,-15.87,"22.306,69 €",20,404,0,"[False, False]",63.84,65.73,0,-627.27,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,logbook,dark,1440,0,4,4,232.81,-47.87,"22.306,69 €",20,244,0,"[False, False]",63.84,65.73,0,-627.27,244,"[True, True]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,light,375,0,0,,,,,,,,,,,,,,,,
+before,e2e,admin,pilots,light,768,0,0,,,,,20,474,0,"[False, False]",63.84,65.97,0,-597.03,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,light,1000,0,0,,,,,20,410,0,"[False, False]",63.84,65.97,0,-597.03,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,light,1100,0,0,,,,,20,310,0,"[False, False]",63.84,66.13,0,-596.87,310,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,light,1280,0,0,,,,,20,130,0,"[True, False]",63.84,66.13,0,-596.87,130,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,light,1440,0,0,,,,,20,0,0,"[True, True]",63.84,66.13,0,-596.87,0,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,dark,375,0,0,,,,,,,,,,,,,,,,
+before,e2e,admin,pilots,dark,768,0,0,,,,,20,474,0,"[False, False]",63.84,65.97,0,-597.03,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,dark,1000,0,0,,,,,20,410,0,"[False, False]",63.84,65.97,0,-597.03,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,dark,1100,0,0,,,,,20,310,0,"[False, False]",63.84,66.13,0,-596.87,310,"[True, True]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,dark,1280,0,0,,,,,20,130,0,"[True, False]",63.84,66.13,0,-596.87,130,"[True, True]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,pilots,dark,1440,0,0,,,,,20,0,0,"[True, True]",63.84,66.13,0,-596.87,0,"[True, True]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,e2e,admin,home,light,375,0,4,4,-330.58,-17,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,light,768,0,4,2+2,0,-162.27,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,light,1000,0,4,3+1,482.67,-73.59,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,light,1100,0,4,3+1,549.34,-106.92,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,light,1280,0,4,4,200.81,-33.06,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,light,1440,0,4,4,232.81,-65.06,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,dark,375,0,4,4,-330.58,-17,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,dark,768,0,4,2+2,0,-162.27,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,dark,1000,0,4,3+1,482.67,-73.59,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,dark,1100,0,4,3+1,549.34,-106.92,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,dark,1280,0,4,4,200.81,-33.06,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,home,dark,1440,0,4,4,232.81,-65.06,"8.224,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,light,375,0,4,4,-297.14,-17,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,light,768,0,4,2+2,0,-127.95,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,light,1000,0,4,3+1,482.67,-39.28,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,light,1100,0,4,3+1,549.34,-72.61,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,light,1280,0,4,4,200.81,1.25,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,light,1440,0,4,4,232.81,-30.75,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,dark,375,0,4,4,-297.14,-17,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,dark,768,0,4,2+2,0,-127.95,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,dark,1000,0,4,3+1,482.67,-39.28,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,dark,1100,0,4,3+1,549.34,-72.61,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,dark,1280,0,4,4,200.81,1.25,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,reports,dark,1440,0,4,4,232.81,-30.75,"197.964,82 €",,,,,,,,,,,,
+before,e2e,admin,instructors,light,375,0,4,4,-335.09,-17,,,,,,,,,,,,,
+before,e2e,admin,instructors,light,768,0,4,2+2,0,-150.83,,,,,,,,,,,,,
+before,e2e,admin,instructors,light,1000,0,4,3+1,482.67,-62.16,,,,,,,,,,,,,
+before,e2e,admin,instructors,light,1100,0,4,3+1,549.34,-95.48,,,,,,,,,,,,,
+before,e2e,admin,instructors,light,1280,0,4,4,200.81,-21.62,,,,,,,,,,,,,
+before,e2e,admin,instructors,light,1440,0,4,4,232.81,-53.62,,,,,,,,,,,,,
+before,e2e,admin,instructors,dark,375,0,4,4,-335.09,-17,,,,,,,,,,,,,
+before,e2e,admin,instructors,dark,768,0,4,2+2,0,-150.83,,,,,,,,,,,,,
+before,e2e,admin,instructors,dark,1000,0,4,3+1,482.67,-62.16,,,,,,,,,,,,,
+before,e2e,admin,instructors,dark,1100,0,4,3+1,549.34,-95.48,,,,,,,,,,,,,
+before,e2e,admin,instructors,dark,1280,0,4,4,200.81,-21.62,,,,,,,,,,,,,
+before,e2e,admin,instructors,dark,1440,0,4,4,232.81,-53.62,,,,,,,,,,,,,
+before,e2e,pilot,home,light,375,0,4,2+2,0.0,-21.06,,,,,,,,,,,,,
+before,e2e,pilot,home,light,768,0,4,2+2,0,-65.92,,,,,,,,,,,,,
+before,e2e,pilot,home,light,1000,0,4,3+1,443.55,-17,,,,,,,,,,,,,
+before,e2e,pilot,home,light,1100,0,4,3+1,543.55,-17,,,,,,,,,,,,,
+before,e2e,pilot,home,light,1280,0,4,4,174.1,-17,,,,,,,,,,,,,
+before,e2e,pilot,home,light,1440,0,4,4,220.89,-17,,,,,,,,,,,,,
+before,e2e,pilot,home,dark,375,0,4,2+2,0.0,-21.06,,,,,,,,,,,,,
+before,e2e,pilot,home,dark,768,0,4,2+2,0,-65.92,,,,,,,,,,,,,
+before,e2e,pilot,home,dark,1000,0,4,3+1,443.55,-17,,,,,,,,,,,,,
+before,e2e,pilot,home,dark,1100,0,4,3+1,543.55,-17,,,,,,,,,,,,,
+before,e2e,pilot,home,dark,1280,0,4,4,174.1,-17,,,,,,,,,,,,,
+before,e2e,pilot,home,dark,1440,0,4,4,220.89,-17,,,,,,,,,,,,,
+before,e2e,instructor,home,light,375,0,4,2+2,0.0,-82.7,,,,,,,,,,,,,
+before,e2e,instructor,home,light,768,0,4,2+2,0,-220.25,,,,,,,,,,,,,
+before,e2e,instructor,home,light,1000,0,4,3+1,482.67,-131.58,,,,,,,,,,,,,
+before,e2e,instructor,home,light,1100,0,4,3+1,549.34,-164.91,,,,,,,,,,,,,
+before,e2e,instructor,home,light,1280,0,4,4,200.81,-91.05,,,,,,,,,,,,,
+before,e2e,instructor,home,light,1440,0,4,4,232.81,-123.05,,,,,,,,,,,,,
+before,e2e,instructor,home,light,375,0,4,2+2,0.0,-82.7,,,,,,,,,,,,,
+before,e2e,instructor,home,dark,768,0,4,2+2,0,-220.25,,,,,,,,,,,,,
+before,e2e,instructor,home,dark,1000,0,4,3+1,482.67,-131.58,,,,,,,,,,,,,
+before,e2e,instructor,home,dark,1100,0,4,3+1,549.34,-164.91,,,,,,,,,,,,,
+before,e2e,instructor,home,dark,1280,0,4,4,200.81,-91.05,,,,,,,,,,,,,
+before,e2e,instructor,home,dark,1440,0,4,4,232.81,-123.05,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,light,375,0,5,2+2+1,,-83.7,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,light,768,0,5,2+2+1,,-220.25,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,light,1000,0,5,3+2,,-131.58,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,light,1100,0,5,3+2,,-164.91,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,light,1280,0,5,5,,-91.05,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,light,1440,0,5,5,,-123.05,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,dark,375,0,5,2+2+1,,-83.7,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,dark,768,0,5,2+2+1,,-220.25,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,dark,1000,0,5,3+2,,-131.58,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,dark,1100,0,5,3+2,,-164.91,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,dark,1280,0,5,5,,-91.05,,,,,,,,,,,,,
+before,e2e,instructor,my-compensation,dark,1440,0,5,5,,-123.05,,,,,,,,,,,,,
+before,carico,admin,home,light,375,0,4,4,-358.77,-17,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,light,768,0,4,2+2,0,-127.95,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,light,1000,0,4,3+1,482.67,-39.28,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,light,1100,0,4,3+1,549.34,-72.61,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,light,1280,0,4,4,196.25,-17,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,light,1440,0,4,4,232.81,-30.75,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,dark,375,0,4,4,-358.77,-17,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,dark,768,0,4,2+2,0,-127.95,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,dark,1000,0,4,3+1,482.67,-39.28,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,dark,1100,0,4,3+1,549.34,-72.61,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,dark,1280,0,4,4,196.25,-17,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,home,dark,1440,0,4,4,232.81,-30.75,"259.248,98 €",,,,,,,,,,,,
+before,carico,admin,reports,light,375,0,3,3,,-17,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,light,768,0,3,2+1,,-104.3,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,light,1000,0,3,3,,-15.62,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,light,1100,0,3,3,,-48.95,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,light,1280,0,3,3,,24.91,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,light,1440,0,3,3,,-7.09,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,dark,375,0,3,3,,-17,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,dark,768,0,3,2+1,,-104.3,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,dark,1000,0,3,3,,-15.62,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,dark,1100,0,3,3,,-48.95,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,dark,1280,0,3,3,,24.91,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,reports,dark,1440,0,3,3,,-7.09,"5.047.865,46 €",,,,,,,,,,,,
+before,carico,admin,logbook,light,375,0,4,4,-375.82,-17,"15.589.074,93 €",,,,,,,,,,,,
+before,carico,admin,logbook,light,768,0,4,2+2,0,-87.11,"15.589.074,93 €",20,748,0,"[False, False]",63.84,66.11,0,-733.89,400,"[False, False]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,carico,admin,logbook,light,1000,0,4,3+1,482.67,1.56,"15.589.074,93 €",20,684,0,"[False, False]",63.84,66.11,0,-733.89,400,"[False, False]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,carico,admin,logbook,light,1100,0,4,3+1,549.34,-31.77,"15.589.074,93 €",20,584,0,"[False, False]",63.84,66.11,0,-733.89,400,"[False, False]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,carico,admin,logbook,light,1280,0,4,4,200.81,42.09,"15.589.074,93 €",20,404,0,"[False, False]",63.84,65.73,0,-734.27,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,carico,admin,logbook,light,1440,0,4,4,232.81,10.09,"15.589.074,93 €",20,244,0,"[False, False]",63.84,65.73,0,-734.27,244,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgba(0, 0, 0, 0)"
+before,carico,admin,logbook,dark,375,0,4,4,-375.82,-17,"15.589.074,93 €",,,,,,,,,,,,
+before,carico,admin,logbook,dark,768,0,4,2+2,0,-87.11,"15.589.074,93 €",20,748,0,"[False, False]",63.84,66.11,0,-733.89,400,"[False, False]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,carico,admin,logbook,dark,1000,0,4,3+1,482.67,1.56,"15.589.074,93 €",20,684,0,"[False, False]",63.84,66.11,0,-733.89,400,"[False, False]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,carico,admin,logbook,dark,1100,0,4,3+1,549.34,-31.77,"15.589.074,93 €",20,584,0,"[False, False]",63.84,66.11,0,-733.89,400,"[False, False]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,carico,admin,logbook,dark,1280,0,4,4,200.81,42.09,"15.589.074,93 €",20,404,0,"[False, False]",63.84,65.73,0,-734.27,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+before,carico,admin,logbook,dark,1440,0,4,4,232.81,10.09,"15.589.074,93 €",20,244,0,"[False, False]",63.84,65.73,0,-734.27,244,"[True, True]",lab(11.2401 -1.24634 -4.55935),"rgba(0, 0, 0, 0)"
+after,e2e,admin,logbook,light,375,0,4,4,-313.89,-17,"22.306,69 €",,,,,,,,,,,,
+after,e2e,admin,logbook,light,768,0,4,2+2,0,-145.08,"22.306,69 €",20,730,576,"[True, True]",63.84,66.11,576,66.11,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,logbook,light,1000,0,4,2+2,0,-177.08,"22.306,69 €",20,666,576,"[True, True]",63.84,66.11,576,66.11,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,logbook,light,1100,0,4,2+2,0,-227.08,"22.306,69 €",20,566,576,"[True, True]",63.84,66.11,576,66.11,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,logbook,light,1280,0,4,4,0,-66.08,"22.306,69 €",20,386,576,"[True, True]",63.84,65.73,576,65.73,386,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,logbook,light,1440,0,4,4,0,-106.08,"22.306,69 €",20,226,576,"[True, True]",63.84,65.73,576,65.73,226,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,logbook,dark,375,0,4,4,-313.89,-17,"22.306,69 €",,,,,,,,,,,,
+after,e2e,admin,logbook,dark,768,0,4,2+2,0,-145.08,"22.306,69 €",20,730,576,"[True, True]",63.84,66.11,576,66.11,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,logbook,dark,1000,0,4,2+2,0,-177.08,"22.306,69 €",20,666,576,"[True, True]",63.84,66.11,576,66.11,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,logbook,dark,1100,0,4,2+2,0,-227.08,"22.306,69 €",20,566,576,"[True, True]",63.84,66.11,576,66.11,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,logbook,dark,1280,0,4,4,0,-66.08,"22.306,69 €",20,386,576,"[True, True]",63.84,65.73,576,65.73,386,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,logbook,dark,1440,0,4,4,0,-106.08,"22.306,69 €",20,226,576,"[True, True]",63.84,65.73,576,65.73,226,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,pilots,light,375,0,0,,,,,,,,,,,,,,,,
+after,e2e,admin,pilots,light,768,0,0,,,,,20,456,545,"[True, True]",63.84,65.97,545,65.97,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,pilots,light,1000,0,0,,,,,20,392,545,"[True, True]",63.84,65.97,545,65.97,392,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,pilots,light,1100,0,0,,,,,20,292,545,"[True, True]",63.84,66.13,545,66.13,292,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,pilots,light,1280,0,0,,,,,20,112,545,"[True, True]",63.84,66.13,545,66.13,112,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,pilots,light,1440,0,0,,,,,20,0,545,"[True, True]",63.84,66.13,545,66.13,0,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,e2e,admin,pilots,dark,375,0,0,,,,,,,,,,,,,,,,
+after,e2e,admin,pilots,dark,768,0,0,,,,,20,456,545,"[True, True]",63.84,65.97,545,65.97,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,pilots,dark,1000,0,0,,,,,20,392,545,"[True, True]",63.84,65.97,545,65.97,392,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,pilots,dark,1100,0,0,,,,,20,292,545,"[True, True]",63.84,66.13,545,66.13,292,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,pilots,dark,1280,0,0,,,,,20,112,545,"[True, True]",63.84,66.13,545,66.13,112,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,pilots,dark,1440,0,0,,,,,20,0,545,"[True, True]",63.84,66.13,545,66.13,0,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,e2e,admin,home,light,375,0,4,4,-330.58,-17,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,light,768,0,4,2+2,0,-162.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,light,1000,0,4,2+2,0,-194.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,light,1100,0,4,2+2,0,-244.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,light,1280,0,4,4,0,-83.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,light,1440,0,4,4,0,-123.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,dark,375,0,4,4,-330.58,-17,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,dark,768,0,4,2+2,0,-162.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,dark,1000,0,4,2+2,0,-194.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,dark,1100,0,4,2+2,0,-244.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,dark,1280,0,4,4,0,-83.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,home,dark,1440,0,4,4,0,-123.27,"8.224,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,light,375,0,4,4,-297.14,-17,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,light,768,0,4,2+2,0,-127.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,light,1000,0,4,2+2,0,-159.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,light,1100,0,4,2+2,0,-209.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,light,1280,0,4,4,0,-48.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,light,1440,0,4,4,0,-88.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,dark,375,0,4,4,-297.14,-17,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,dark,768,0,4,2+2,0,-127.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,dark,1000,0,4,2+2,0,-159.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,dark,1100,0,4,2+2,0,-209.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,dark,1280,0,4,4,0,-48.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,reports,dark,1440,0,4,4,0,-88.95,"197.964,82 €",,,,,,,,,,,,
+after,e2e,admin,instructors,light,375,0,4,4,-335.09,-17,,,,,,,,,,,,,
+after,e2e,admin,instructors,light,768,0,4,2+2,0,-150.83,,,,,,,,,,,,,
+after,e2e,admin,instructors,light,1000,0,4,2+2,0,-182.83,,,,,,,,,,,,,
+after,e2e,admin,instructors,light,1100,0,4,2+2,0,-232.83,,,,,,,,,,,,,
+after,e2e,admin,instructors,light,1280,0,4,4,0,-71.83,,,,,,,,,,,,,
+after,e2e,admin,instructors,light,1440,0,4,4,0,-111.83,,,,,,,,,,,,,
+after,e2e,admin,instructors,dark,375,0,4,4,-335.09,-17,,,,,,,,,,,,,
+after,e2e,admin,instructors,dark,768,0,4,2+2,0,-150.83,,,,,,,,,,,,,
+after,e2e,admin,instructors,dark,1000,0,4,2+2,0,-182.83,,,,,,,,,,,,,
+after,e2e,admin,instructors,dark,1100,0,4,2+2,0,-232.83,,,,,,,,,,,,,
+after,e2e,admin,instructors,dark,1280,0,4,4,0,-71.83,,,,,,,,,,,,,
+after,e2e,admin,instructors,dark,1440,0,4,4,0,-111.83,,,,,,,,,,,,,
+after,e2e,pilot,home,light,375,0,4,2+2,0.0,-21.06,,,,,,,,,,,,,
+after,e2e,pilot,home,light,768,0,4,2+2,0,-65.92,,,,,,,,,,,,,
+after,e2e,pilot,home,light,1000,0,4,2+2,0,-32.59,,,,,,,,,,,,,
+after,e2e,pilot,home,light,1100,0,4,2+2,0,-19.14,,,,,,,,,,,,,
+after,e2e,pilot,home,light,1280,0,4,4,0,-32.55,,,,,,,,,,,,,
+after,e2e,pilot,home,light,1440,0,4,4,0,-26.92,,,,,,,,,,,,,
+after,e2e,pilot,home,dark,375,0,4,2+2,0.0,-21.06,,,,,,,,,,,,,
+after,e2e,pilot,home,dark,768,0,4,2+2,0,-65.92,,,,,,,,,,,,,
+after,e2e,pilot,home,dark,1000,0,4,2+2,0,-32.59,,,,,,,,,,,,,
+after,e2e,pilot,home,dark,1100,0,4,2+2,0,-19.14,,,,,,,,,,,,,
+after,e2e,pilot,home,dark,1280,0,4,4,0,-32.55,,,,,,,,,,,,,
+after,e2e,pilot,home,dark,1440,0,4,4,0,-26.92,,,,,,,,,,,,,
+after,e2e,instructor,home,light,375,0,4,2+2,0.0,-82.7,,,,,,,,,,,,,
+after,e2e,instructor,home,light,768,0,4,2+2,0,-220.25,,,,,,,,,,,,,
+after,e2e,instructor,home,light,1000,0,4,2+2,0,-252.25,,,,,,,,,,,,,
+after,e2e,instructor,home,light,1100,0,4,2+2,0,-302.25,,,,,,,,,,,,,
+after,e2e,instructor,home,light,1280,0,4,4,0,-141.25,,,,,,,,,,,,,
+after,e2e,instructor,home,light,1440,0,4,4,0,-181.25,,,,,,,,,,,,,
+after,e2e,instructor,home,dark,375,0,4,2+2,0.0,-82.7,,,,,,,,,,,,,
+after,e2e,instructor,home,dark,768,0,4,2+2,0,-220.25,,,,,,,,,,,,,
+after,e2e,instructor,home,dark,1000,0,4,2+2,0,-252.25,,,,,,,,,,,,,
+after,e2e,instructor,home,dark,1100,0,4,2+2,0,-302.25,,,,,,,,,,,,,
+after,e2e,instructor,home,dark,1280,0,4,4,0,-141.25,,,,,,,,,,,,,
+after,e2e,instructor,home,dark,1440,0,4,4,0,-181.25,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,light,375,0,5,2+2+1,,-83.7,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,light,768,0,5,2+2+1,,-220.25,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,light,1000,0,5,3+2,,-131.58,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,light,1100,0,5,3+2,,-164.91,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,light,1280,0,5,5,,-91.05,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,light,1440,0,5,5,,-123.05,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,dark,375,0,5,2+2+1,,-83.7,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,dark,768,0,5,2+2+1,,-220.25,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,dark,1000,0,5,3+2,,-131.58,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,dark,1100,0,5,3+2,,-164.91,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,dark,1280,0,5,5,,-91.05,,,,,,,,,,,,,
+after,e2e,instructor,my-compensation,dark,1440,0,5,5,,-123.05,,,,,,,,,,,,,
+after,carico,admin,home,light,375,0,4,4,-358.77,-17,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,light,768,0,4,2+2,0,-127.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,light,1000,0,4,2+2,0,-159.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,light,1100,0,4,2+2,0,-209.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,light,1280,0,4,4,0,-48.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,light,1440,0,4,4,0,-88.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,dark,375,0,4,4,-358.77,-17,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,dark,768,0,4,2+2,0,-127.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,dark,1000,0,4,2+2,0,-159.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,dark,1100,0,4,2+2,0,-209.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,dark,1280,0,4,4,0,-48.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,home,dark,1440,0,4,4,0,-88.95,"259.248,98 €",,,,,,,,,,,,
+after,carico,admin,reports,light,375,0,3,3,,-17,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,light,768,0,3,2+1,,-104.3,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,light,1000,0,3,3,,-33.03,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,light,1100,0,3,3,,-48.95,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,light,1280,0,3,3,,-108.95,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,light,1440,0,3,3,,-162.3,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,dark,375,0,3,3,,-17,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,dark,768,0,3,2+1,,-104.3,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,dark,1000,0,3,3,,-33.03,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,dark,1100,0,3,3,,-48.95,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,dark,1280,0,3,3,,-108.95,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,reports,dark,1440,0,3,3,,-162.3,"5.047.865,46 €",,,,,,,,,,,,
+after,carico,admin,logbook,light,375,0,4,4,-375.82,-17,"15.589.074,93 €",,,,,,,,,,,,
+after,carico,admin,logbook,light,768,0,4,2+2,0,-87.11,"15.589.074,93 €",20,730,1001,"[True, True]",63.84,66.11,800,66.11,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),lab(97.6778 -0.333875 -1.07461)
+after,carico,admin,logbook,light,1000,0,4,2+2,0,-119.11,"15.589.074,93 €",20,666,1001,"[True, True]",63.84,66.11,800,66.11,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),lab(97.6778 -0.333875 -1.07461)
+after,carico,admin,logbook,light,1100,0,4,2+2,0,-169.11,"15.589.074,93 €",20,566,1001,"[True, True]",63.84,66.11,800,66.11,400,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,carico,admin,logbook,light,1280,0,4,4,0,-25.52,"15.589.074,93 €",20,386,1001,"[True, True]",63.84,65.73,800,65.73,386,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,carico,admin,logbook,light,1440,0,4,4,0,-48.11,"15.589.074,93 €",20,226,1001,"[True, True]",63.84,65.73,800,65.73,226,"[True, True]",lab(97.6778 -0.333875 -1.07461),"rgb(255, 255, 255)"
+after,carico,admin,logbook,dark,375,0,4,4,-375.82,-17,"15.589.074,93 €",,,,,,,,,,,,
+after,carico,admin,logbook,dark,768,0,4,2+2,0,-87.11,"15.589.074,93 €",20,730,1001,"[True, True]",63.84,66.11,800,66.11,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(11.2401 -1.24634 -4.55935)
+after,carico,admin,logbook,dark,1000,0,4,2+2,0,-119.11,"15.589.074,93 €",20,666,1001,"[True, True]",63.84,66.11,800,66.11,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,carico,admin,logbook,dark,1100,0,4,2+2,0,-169.11,"15.589.074,93 €",20,566,1001,"[True, True]",63.84,66.11,800,66.11,400,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,carico,admin,logbook,dark,1280,0,4,4,0,-25.52,"15.589.074,93 €",20,386,1001,"[True, True]",63.84,65.73,800,65.73,386,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)
+after,carico,admin,logbook,dark,1440,0,4,4,0,-48.11,"15.589.074,93 €",20,226,1001,"[True, True]",63.84,65.73,800,65.73,226,"[True, True]",lab(11.2401 -1.24634 -4.55935),lab(8.33874 -1.22015 -4.54902)

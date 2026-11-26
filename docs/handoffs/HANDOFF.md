@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.6 completata)
+# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.7a completata)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -9,7 +9,9 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 ## Current Progress
 
-- **18.6 done** nel commit `475b3f1`. Senza una preferenza salvata, AirManager apre con il tema del sistema e ne segue i cambi mentre la pagina è aperta. La scelta manuale ha precedenza e si conserva nel browser. Verificati 48 primi paint con chunk applicativi bloccati e 48 schermate interattive a 375 e 1280 px. Chiuso il TD sullo schema dei colori dei controlli nativi della 15.10. Revisione indipendente approvata dopo la correzione del riferimento allo scroll nel test Flotta. Gate verdi, 2.351 unit e suite browser di 708 casi con 706 passed, due flaky recuperati e zero skip finali. [Misure, screenshot e diagnostica](../../_bmad-output/implementation-artifacts/18-6-tema-di-sistema.md). Il prossimo sotto-step è **18.7a**, colonne e intestazioni desktop.
+- **18.7a done**, commit `c09f2b8`. Nel Registro voli e in Piloti intestazione e azioni restano visibili mentre scorre la tabella. Il riquadro espone un nome accessibile e si può attraversare da tastiera. A 1280 px le quattro card KPI occupano l’intera riga, a 1000 px formano due coppie. Ricavi è leggibile anche sul DB sintetico di carico. Chiuso TD-19.1-d. Gate verdi con 2.351 unit, 710 casi browser al primo tentativo e tre recuperati al primo retry, zero saltati. Approvazione indipendente per AC 1–4. [Misure, screenshot e diagnostica](../../_bmad-output/implementation-artifacts/evidence/18-7a/riscontri.md). Resta da avviare **18.7b** (AC 5–6, fuori servizio dal telefono e widget Velivoli in Panoramica).
+
+- **18.6 done** nel commit `475b3f1`. Senza una preferenza salvata, AirManager apre con il tema del sistema e ne segue i cambi mentre la pagina è aperta. La scelta manuale ha precedenza e si conserva nel browser. Verificati 48 primi paint con chunk applicativi bloccati e 48 schermate interattive a 375 e 1280 px. Chiuso il TD sullo schema dei colori dei controlli nativi della 15.10. Revisione indipendente approvata dopo la correzione del riferimento allo scroll nel test Flotta. Gate verdi, 2.351 unit e suite browser di 708 casi con 706 passed, due flaky recuperati e zero skip finali. [Misure, screenshot e diagnostica](../../_bmad-output/implementation-artifacts/18-6-tema-di-sistema.md). Il lavoro sulle colonne desktop è documentato sopra.
 
 - **18.5 done** con il completamento della **18.5b**, commit `9732247`. Dalla seconda tab mobile pilota e allievo vedono le proprie prossime prenotazioni prima del calendario condiviso. «Prenota» compare con l’eligibilità già prevista. Il solo allievo legge chi può prenotare per lui. A 375 px la CTA del pilota sale da 1.005 a 129 px. Gli screenshot di admin e istruttore coincidono con la base. Revisione indipendente approvata, 2.351 unit verdi, 699 casi browser al primo tentativo e tre recuperati in quattro retry su 702, nessuno skip. [Record 18.5](../../_bmad-output/implementation-artifacts/18-5-righe-tab-lessico.md). La 18.6 è documentata sopra.
 
