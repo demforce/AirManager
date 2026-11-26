@@ -1302,7 +1302,6 @@
     }
   },
   "BookingsPage": {
-    "rosterTruncated": "Showing the first 100 instructors.",
     "calendarTruncated": "Showing the first 1,000 bookings.",
     "title": "Scheduling",
     "sub": "Aircraft timeline and bookings awaiting approval.",
@@ -1316,6 +1315,8 @@
       "prevMonth": "Previous month",
       "nextMonth": "Next month",
       "filters": "Filters",
+      "applyFilters": "Apply",
+      "activeFilters": "{count, plural, one {# filter} other {# filters}}",
       "filtersDone": "Done",
       "filtersReset": "Reset",
       "filtersAll": "All",

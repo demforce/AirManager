@@ -26,7 +26,6 @@ import { listAircraft, listOutOfServiceAircraft } from '@/server/services/aircra
 import { getAdminOverviewSettings, getMetarStation } from '@/server/services/app-settings.service';
 import {
   getOwnInstructorProfileId,
-  listActiveInstructors,
   searchBookingAircraft,
   searchBookingPeople,
   searchBookingInstructors,
@@ -280,7 +279,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     embedBookingsResult,
     expiriesResult,
     { items: scheduleAircraftOptions },
-    roster,
     { items: instructorOptions },
     negativeBalances,
     metarCard,
@@ -304,7 +302,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     listBookings(actor, { from: listFrom, status: [...ALL_BOOKING_STATUSES], page: 1, pageSize: EMBED_BOOKINGS_PAGE_SIZE }),
     settings.then(({ currencySettings }) => listAllExpiries(actor, { window: '60', page: 1, pageSize: EXPIRIES_WIDGET_SCAN_LIMIT }, currencySettings)),
     searchBookingAircraft(actor, undefined, PICKER_LIMIT + 1),
-    listActiveInstructors(actor),
     searchBookingInstructors(actor, undefined, PICKER_LIMIT + 1),
     // Story 15.3 (ratifica R-15.3-e): the ONE new query the mobile "Avvisi"
     // feed needed — a `groupBy` with a `having` on the aggregate plus one name
@@ -654,10 +651,9 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           weekDates={[]}
           aircraft={scheduleAircraft.rows}
           hasAircraft={scheduleAircraft.activeCount > 0 || scheduleAircraft.rows.length > 0}
-          aircraftFilters={scheduleAircraft.filterOptions}
+          dayAircraft={[]}
           freeAircraftCount={scheduleAircraft.freeCount}
-          instructors={roster.items}
-          rosterNotice={roster.truncated ? tBookings('rosterTruncated') : undefined}
+          canFilterInstructor={hasPermission(actor, 'bookings.read.names')}
           dayBlocks={dayBlocks}
           weekChips={[]}
           nowLinePercent={nowLinePercent}

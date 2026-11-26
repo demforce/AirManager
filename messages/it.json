@@ -1302,7 +1302,6 @@
     }
   },
   "BookingsPage": {
-    "rosterTruncated": "Mostrati i primi 100 istruttori.",
     "calendarTruncated": "Mostrate le prime 1.000 prenotazioni.",
     "title": "Pianificazione",
     "sub": "Calendario dei velivoli e prenotazioni da approvare.",
@@ -1316,6 +1315,8 @@
       "prevMonth": "Mese precedente",
       "nextMonth": "Mese successivo",
       "filters": "Filtri",
+      "applyFilters": "Applica",
+      "activeFilters": "{count, plural, one {# filtro} other {# filtri}}",
       "filtersDone": "Fatto",
       "filtersReset": "Reimposta",
       "filtersAll": "Tutti",

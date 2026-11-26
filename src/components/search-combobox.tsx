@@ -53,7 +53,7 @@ export type SearchComboboxProps = {
   label: string;
   /** Selected option's `id`, or `''` for "nothing selected". */
   value: string;
-  onChange: (id: string) => void;
+  onChange: (id: string, option: SearchComboboxOption) => void;
   /**
    * Server-side search, called debounced while the user types a non-empty
    * query. Optional (story 19.5, AD-2a): without it the combobox runs in
@@ -285,7 +285,7 @@ export function SearchCombobox({
     setQuery(option.label);
     setOpen(false);
     setActiveIndex(-1);
-    onChange(option.id);
+    onChange(option.id, option);
   }
 
   function handleFocus(event: FocusEvent<HTMLInputElement>): void {

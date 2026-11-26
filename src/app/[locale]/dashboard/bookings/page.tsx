@@ -14,7 +14,6 @@ import { getSessionActor } from '@/server/auth/session';
 import { getSchedulingSettings } from '@/server/services/app-settings.service';
 import {
   getOwnInstructorProfileId,
-  listActiveInstructors,
   searchBookingAircraft,
   searchBookingPeople,
   searchBookingInstructors,
@@ -143,20 +142,8 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   // Unchanged picker DTO. The timeline has its own bounded read (17.2).
   const aircraftOptions: AircraftOption[] = (await searchBookingAircraft(actor, undefined, PICKER_LIMIT + 1)).items;
 
-  // Story 7.3/12.3: needed for the create form's instructor toggle, the
-  // list's row-ownership check, AND (new, story 12.3 AC 2) the timeline's
-  // own instructor filter — `self.read` (every role), called unconditionally.
   const ownInstructorProfileId = await getOwnInstructorProfileId(actor);
-  // Review F1 (story 14.5): the FULL instructor roster (id -> name) is
-  // exactly the anagrafica a PILOT/STUDENT actor must never receive — the
-  // masked booking blocks still carry a real `instructorProfileId` when the
-  // booking IS the actor's own, so handing them the whole roster let a
-  // client-side filter join id -> surname and de-anonymize every OTHER
-  // masked block too. Fetched (and passed to `Schedule` below) ONLY for an
-  // actor who already holds `bookings.read.names` — for everyone else the
-  // timeline's instructor filter has nothing to filter BY.
   const canReadNames = hasPermission(actor, 'bookings.read.names');
-  const roster = canReadNames ? await listActiveInstructors(actor) : { items: [], truncated: false };
 
   let formMode: NewBookingFormMode = 'pilot';
   let personOptions: PersonOption[] = [];
@@ -453,11 +440,10 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
         aircraft={schedule.rows}
         hasAircraft={schedule.activeCount > 0 || schedule.rows.length > 0}
         aircraftFilterId={schedule.aircraftId}
-        aircraftFilters={schedule.filterOptions}
+        dayAircraft={view === 'day' ? schedule.filterOptions : []}
         showAllAircraft={schedule.showAll}
         freeAircraftCount={schedule.aircraftId ? 0 : schedule.freeCount}
-        instructors={roster.items}
-        rosterNotice={roster.truncated ? t('rosterTruncated') : undefined}
+        canFilterInstructor={canReadNames}
         dayBlocks={dayBlocks}
         weekChips={weekChips}
         nowLinePercent={nowLinePercent}

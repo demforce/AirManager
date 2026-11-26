@@ -23,9 +23,10 @@
  * projection already computes are reused verbatim as `left`/`width` here,
  * since both are just "how far through the 06:00-22:00 window" percentages.
  */
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Fragment, useCallback, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
-import { getPathname, Link, useRouter } from '@/i18n/navigation';
+import { getPathname, Link, usePathname, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
@@ -40,7 +41,10 @@ import { nowMarkerIndex } from '@/lib/mobile-agenda';
 // below) so no consumer of THIS module needs to change its own import.
 import type { CalendarDayBlock, CalendarWeekChip } from '@/lib/booking-schedule';
 import { parseDateOnlyUtc } from '@/lib/date-only';
-import type { InstructorOption } from './new-booking-form';
+import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer, prepareHistoryNavigation } from '@/components/ui/history-layer';
+import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
+import { fetchBookingOptions, type AircraftOption, type InstructorOption } from './new-booking-form';
 
 export type { CalendarDayBlock, CalendarWeekChip } from '@/lib/booking-schedule';
 
@@ -148,12 +152,11 @@ export type ScheduleProps = {
   weekDates: Array<{ dateOnly: string; href: string }>;
   aircraft: readonly ScheduleAircraftRow[];
   hasAircraft: boolean;
-  aircraftFilters: readonly { id: string; registration: string }[];
+  dayAircraft: readonly { id: string; registration: string }[];
   aircraftFilterId?: string | null;
   showAllAircraft?: boolean;
   freeAircraftCount: number;
-  instructors: InstructorOption[];
-  rosterNotice?: string;
+  canFilterInstructor: boolean;
   dayBlocks: CalendarDayBlock[];
   weekChips: CalendarWeekChip[];
   /** Day view only — the "now" vertical line's `left%`, `null` when `!isToday`. */
@@ -228,8 +231,19 @@ function localDateToDateOnly(date: Date): string {
 
 /** `.popover`'s explicit `width` (review F3, story 13.7) — pinned here so the clamp math below (story 13.10) and the inline style share one source instead of a literal drifting out of sync. `CAL_POPOVER_WIDTH`, `clampPopoverLeft` and `useFixedPopover` used to be duplicated verbatim here; they now come from `@/components/ui/fixed-popover` (story TD-7 review F6, PO decision 2026-07-26: dedup, so this file also inherits the F1 flip/clamp fix instead of the two copies silently diverging). */
 const FILTER_POPOVER_WIDTH = 320;
-/** Rough estimate of the filter popover's own rendered height (two `.pop-row` segmented-button groups) — same "decide whether to flip, never a hard cap" role as `CAL_POPOVER_HEIGHT_DATE_ONLY` (`calendar-popover.tsx`); both of this file's triggers sit near the TOP of the card, so `useFixedPopover#toggle` never actually needs to flip either popover in practice. */
-const FILTER_POPOVER_HEIGHT = 320;
+const FILTER_POPOVER_HEIGHT = 240;
+
+type ScheduleFilters = { aircraft: SearchComboboxOption; instructor: SearchComboboxOption };
+
+function searchAircraft(q: string) {
+  return fetchBookingOptions<AircraftOption>('aircraft', q, (ac) => ({ id: ac.id, label: ac.registration }));
+}
+
+function searchInstructors(q: string) {
+  return fetchBookingOptions<InstructorOption>('instructors', q, (person) => ({
+    id: person.instructorProfileId, label: person.lastName + ' ' + person.firstName,
+  }));
+}
 
 /** Small client-only duplicate of `page.tsx#calendarHref`'s day-view case — see module doc-comment. */
 function buildDateHref(
@@ -265,12 +279,11 @@ export function Schedule({
   weekDates,
   aircraft,
   hasAircraft,
-  aircraftFilters,
+  dayAircraft,
   aircraftFilterId = null,
   freeAircraftCount,
   showAllAircraft = false,
-  instructors,
-  rosterNotice,
+  canFilterInstructor,
   dayBlocks,
   weekChips,
   nowLinePercent,
@@ -297,7 +310,12 @@ export function Schedule({
   const trackStyle = { '--sched-hours': Math.max(1, HOURS.length - 1) } as CSSProperties;
   const [calCursor, setCalCursor] = useState(() => dateOnlyToLocalDate(date));
   const filterAircraftId = aircraftFilterId ?? 'all';
-  const [filterInstructorId, setFilterInstructorId] = useState('all');
+  const all = { id: '', label: labels.filtersAll };
+  const selectedAircraft = aircraftFilterId ? { id: aircraftFilterId, label: aircraft[0]?.registration ?? '' } : all;
+  const [instructor, setInstructor] = useState<SearchComboboxOption>(all);
+  const [draft, setDraft] = useState<ScheduleFilters | null>(null);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   // AC 1 fix (+ review F1: the SAME fix extended to the calendar popover,
   // its twin — see `useFixedPopover` above): both popovers are
   // `position: fixed` (viewport-anchored, coordinates computed from their
@@ -314,13 +332,60 @@ export function Schedule({
   const calPopover = useFixedPopover(calTriggerRef, calPopoverRef);
   const filterPopover = useFixedPopover(filterTriggerRef, filterPopoverRef);
 
-  const filterCount = (filterAircraftId !== 'all' ? 1 : 0) + (filterInstructorId !== 'all' ? 1 : 0);
+  const filterCount = Number(Boolean(aircraftFilterId)) + Number(Boolean(instructor.id));
+  const filterLabel = filterCount ? t('activeFilters', { count: filterCount }) : labels.filters;
+
   function filterHref(id: string | null, showAll = showAllAircraft): string {
-    return buildDateHref(date, view, listPage, today, listStatus, id, showAll);
+    if (pathname !== '/dashboard/bookings') return buildDateHref(date, view, listPage, today, listStatus, id, showAll);
+    const params = new URLSearchParams(searchParams);
+    if (id) params.set('aircraft', id);
+    else params.delete('aircraft');
+    if (showAll) params.set('showAircraft', 'all');
+    else params.delete('showAircraft');
+    const query = params.toString();
+    return query ? pathname + '?' + query : pathname;
   }
 
   function matchesInstructorFilter(instructorProfileId: string | null): boolean {
-    return filterInstructorId === 'all' || instructorProfileId === filterInstructorId;
+    return !instructor.id || instructorProfileId === instructor.id;
+  }
+
+  function applyMobileFilters(next: ScheduleFilters) {
+    setInstructor(next.instructor);
+    if (next.aircraft.id === (aircraftFilterId ?? '')) {
+      dismissHistoryLayer(() => setDraft(null));
+      return;
+    }
+    // The SlideOver has its own same-URL history entry. Replace that entry
+    // with the applied filter so one Back restores the previous schedule.
+    prepareHistoryNavigation();
+    setDraft(null);
+    router.replace(filterHref(next.aircraft.id), { scroll: false });
+  }
+
+  function filterFields(mobile: boolean) {
+    const filters = mobile && draft ? draft : { aircraft: selectedAircraft, instructor };
+    const suffix = mobile ? '-mobile' : '';
+    return (
+      <div className="schedule-filter-fields">
+        <SearchCombobox
+          id={'schedule-aircraft-search' + suffix} label={labels.filtersAircraft}
+          value={filters.aircraft.id} selectedLabel={filters.aircraft.label} initialOptions={[all]} fetchOptions={searchAircraft}
+          onChange={(id, option) => {
+            if (mobile) setDraft({ ...filters, aircraft: option });
+            else if (id !== (aircraftFilterId ?? '')) router.push(filterHref(id), { scroll: false });
+          }}
+        />
+        {canFilterInstructor && <SearchCombobox
+          id={'schedule-instructor-search' + suffix} label={labels.filtersInstructor}
+          value={filters.instructor.id} selectedLabel={filters.instructor.label} initialOptions={[all]} fetchOptions={searchInstructors}
+          onChange={(_id, option) => {
+            if (mobile) setDraft({ ...filters, instructor: option });
+            else setInstructor(option);
+          }}
+        />}
+      </div>
+    );
   }
 
   function navigateToDate(dateOnly: string) {
@@ -479,7 +544,15 @@ export function Schedule({
           )}
         </div>
 
-        <div style={{ position: 'relative' }}>
+        <button
+          type="button" className={`btn schedule-filters-mobile ${filterCount ? 'primary' : ''}`}
+          aria-haspopup="dialog" aria-expanded={draft !== null}
+          onClick={() => { calPopover.setOpen(false); setDraft({ aircraft: selectedAircraft, instructor }); }}
+          data-testid="mobile-schedule-filters-button"
+        >
+          <Icon.filter /> {filterLabel}
+        </button>
+        <div className="schedule-filters-desktop" style={{ position: 'relative' }}>
           <button
             ref={filterTriggerRef}
             type="button"
@@ -487,8 +560,7 @@ export function Schedule({
             onClick={toggleFilterPopover}
             data-testid="schedule-filter-toggle"
           >
-            <Icon.filter /> {labels.filters}
-            {filterCount ? ` · ${filterCount}` : ''}
+            <Icon.filter /> {filterLabel}
           </button>
           {filterPopover.open && filterPopover.anchor && (
             <>
@@ -522,63 +594,14 @@ export function Schedule({
                   overflowY: 'auto',
                 }}
               >
-                <div className="pop-row">
-                  <div className="fld-label">{labels.filtersAircraft}</div>
-                  <div className="segmented" style={{ flexWrap: 'wrap' }}>
-                    <Link href={filterHref(null)} scroll={false} prefetch={false} className={aircraftFilterId === null ? 'on' : ''} aria-current={aircraftFilterId === null ? 'true' : undefined}>
-                      {labels.filtersAll}
-                    </Link>
-                    {aircraftFilters.map((ac) => (
-                      <Link
-                        key={ac.id}
-                        href={filterHref(ac.id)}
-                        scroll={false}
-                        prefetch={false}
-                        className={aircraftFilterId === ac.id ? 'on' : ''}
-                        aria-current={aircraftFilterId === ac.id ? 'true' : undefined}
-                        data-testid={`schedule-filter-aircraft-${ac.id}`}
-                      >
-                        {ac.registration}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-                {/* Review F1 (story 14.5): `instructors` arrives EMPTY for an
-                    actor without `bookings.read.names` (`page.tsx` gates the
-                    fetch) — rendering this group off of that, rather than
-                    unconditionally, means a masked actor never sees an
-                    instructor roster (a filter that would match against
-                    masked blocks' now-nulled `instructorProfileId` and so
-                    "filter" nothing anyway) — no anagrafica reaches the DOM. */}
-                {instructors.length > 0 ? (
-                  <div className="pop-row">
-                    <div className="fld-label">{labels.filtersInstructor}</div>
-                    {rosterNotice && <p>{rosterNotice}</p>}
-                    <div className="segmented" style={{ flexWrap: 'wrap' }}>
-                      <button type="button" className={filterInstructorId === 'all' ? 'on' : ''} onClick={() => setFilterInstructorId('all')}>
-                        {labels.filtersAll}
-                      </button>
-                      {instructors.map((instructor) => (
-                        <button
-                          key={instructor.instructorProfileId}
-                          type="button"
-                          className={filterInstructorId === instructor.instructorProfileId ? 'on' : ''}
-                          onClick={() => setFilterInstructorId(instructor.instructorProfileId)}
-                          data-testid={`schedule-filter-instructor-${instructor.instructorProfileId}`}
-                        >
-                          {instructor.lastName}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
+                {filterFields(false)}
                 <div className="pop-foot">
                   <button
                     type="button"
                     className="btn"
                     onClick={() => {
                       if (aircraftFilterId) router.push(filterHref(null), { scroll: false });
-                      setFilterInstructorId('all');
+                      setInstructor(all);
                     }}
                   >
                     {labels.filtersReset}
@@ -761,7 +784,7 @@ export function Schedule({
           view the vertical list of seven days ratified in R-15.4-a — neither
           is a 1000px grid inside a horizontal scroller. */}
       <div className="schedule-mobile">
-        {aircraftFilters.length > 0 ? (
+        {view === 'day' && dayAircraft.length > 0 ? (
           <div className="mobile-chip-strip" data-testid="mobile-tail-chips">
             <Link
               href={filterHref(null)}
@@ -773,7 +796,7 @@ export function Schedule({
             >
               {labels.filtersAll}
             </Link>
-            {aircraftFilters.map((ac) => (
+            {dayAircraft.map((ac) => (
               <Link
                 key={ac.id}
                 href={filterHref(ac.id)}
@@ -797,7 +820,7 @@ export function Schedule({
                   {filterCount > 0 ? tEmpty('filtered') : hasAircraft ? labels.dayEmpty : labels.noAircraft}
                 </p>
                 {filterCount > 0 ? (
-                  <button type="button" className="btn" onClick={() => { setFilterInstructorId('all'); router.push(filterHref(null)); }} data-testid="mobile-agenda-clear-filters">
+                  <button type="button" className="btn" onClick={() => { setInstructor(all); router.push(filterHref(null), { scroll: false }); }} data-testid="mobile-agenda-clear-filters">
                     {tEmpty('clearFilters')}
                   </button>
                 ) : canCreateNew ? (
@@ -897,6 +920,19 @@ export function Schedule({
         )}
       </div>
     </div>
+
+    {draft && (
+      <SlideOver open title={labels.filters} closeLabel={labels.mobile.close} onClose={() => setDraft(null)}
+        footer={<>
+          <button type="button" className="btn" onClick={() => applyMobileFilters({ aircraft: all, instructor: all })}>
+            {labels.filtersReset}
+          </button>
+          <button type="button" className="btn primary" onClick={() => applyMobileFilters(draft)}>{t('applyFilters')}</button>
+        </>}
+      >
+        {filterFields(true)}
+      </SlideOver>
+    )}
 
     {/* Read-only by construction (ratifica R-15.4-i): the agenda shows what is
         APPROVED, the list below is where decisions are taken. Rendered

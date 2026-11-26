@@ -94,7 +94,6 @@ const {
   searchBookingPeople,
   searchBookingInstructors,
   searchBookingAircraft,
-  listActiveInstructors,
   getOwnInstructorProfileId,
   listReservedAircraftIds,
 } = await import('./bookings.service');
@@ -2825,7 +2824,7 @@ describe('booking-form picker helpers (Task 5)', () => {
     expect(result.rows[0]).not.toHaveProperty('archivedAt');
   });
 
-  it('a selected free aircraft narrows the rows but remains in the filter options; other free aircraft are not fetched', async () => {
+  it('a selected free aircraft narrows the rows without joining the period shortcuts; other free aircraft are not fetched', async () => {
     aircraftFindMany.mockResolvedValue([reserved, grounded, available, archived]);
     vi.mocked(prisma.aircraft.count).mockResolvedValue(1002);
 
@@ -2833,7 +2832,7 @@ describe('booking-form picker helpers (Task 5)', () => {
 
     expect(result.aircraftId).toBe('free');
     expect(result.rows.map(({ id }) => id)).toEqual(['free']);
-    expect(result.filterOptions.map(({ id }) => id)).toEqual(['reserved', 'grounded', 'free', 'archived']);
+    expect(result.filterOptions.map(({ id }) => id)).toEqual(['reserved', 'grounded', 'archived']);
     expect(aircraftFindManyMock).toHaveBeenCalledWith(expect.objectContaining({
       where: { OR: [
         { id: { in: ['reserved', 'archived'] } },
@@ -2904,18 +2903,13 @@ describe('booking-form picker helpers (Task 5)', () => {
     });
   });
 
-  it('limits the planning roster independently of the instructor picker', async () => {
-    const rows = Array.from({ length: 101 }, (_, i) => ({ id: String(i), person: { firstName: 'Test', lastName: String(i) } }));
+  it('bounds the instructor picker and signals additional matches', async () => {
+    const rows = Array.from({ length: 21 }, (_, i) => ({ id: String(i), person: { firstName: 'Test', lastName: String(i) } }));
     instructorProfileFindMany.mockResolvedValue(rows);
-    const roster = await listActiveInstructors(adminActor());
-    expect(roster.items).toHaveLength(100);
-    expect(roster.truncated).toBe(true);
-    expect(vi.mocked(prisma.instructorProfile.findMany).mock.calls[0]?.[0]?.take).toBe(101);
-    instructorProfileFindMany.mockResolvedValue(rows.slice(0, 21));
     const picker = await searchBookingInstructors(instructorActor(), 'Te');
     expect(picker.items).toHaveLength(20);
     expect(picker.truncated).toBe(true);
-    expect(vi.mocked(prisma.instructorProfile.findMany).mock.calls[1]?.[0]?.take).toBe(21);
+    expect(vi.mocked(prisma.instructorProfile.findMany).mock.calls[0]?.[0]?.take).toBe(21);
   });
 
   it('signals the extra aircraft row while exposing just 20 results', async () => {
@@ -2937,10 +2931,10 @@ describe('booking-form picker helpers (Task 5)', () => {
     );
   });
 
-  it('listActiveInstructors returns only active instructors, mapped to instructorProfileId', async () => {
+  it('searchBookingInstructors returns only active instructors, mapped to instructorProfileId', async () => {
     instructorProfileFindMany.mockResolvedValue([{ id: 'ip1', person: { firstName: 'Livia', lastName: 'Bernasconi' } }]);
 
-    const result = await listActiveInstructors(adminActor());
+    const result = await searchBookingInstructors(adminActor());
 
     expect(result.items).toEqual([{ instructorProfileId: 'ip1', firstName: 'Livia', lastName: 'Bernasconi' }]);
   });

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureBookingRequirements, waitForDashboardContent } from './helpers';
+import { ensureBookingRequirements, selectFromCombobox, waitForDashboardContent } from './helpers';
 
 /**
  * Story 15.4 — the phone faces of `/dashboard/bookings`: the agenda of "Voli
@@ -371,6 +371,114 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     await expect(page.getByTestId('mobile-agenda-now')).toHaveCount(0);
   });
 
+  test('18.4: mobile drafts, searches outside the day and preserves history and parameters', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const aircraft = await createAircraft(page, 'SF');
+    await page.setViewportSize(PHONE);
+    const path = '/it/dashboard/bookings?date=2031-03-11&status=APPROVED&page=2';
+    await page.goto(path);
+    const trigger = page.getByTestId('mobile-schedule-filters-button');
+    const panel = page.getByRole('dialog', { name: 'Filtri', exact: true });
+    const picker = page.getByTestId('schedule-aircraft-search-mobile');
+    const instructor = page.getByTestId('schedule-instructor-search-mobile');
+    const apply = page.getByRole('button', { name: 'Applica', exact: true });
+    await expect(page.getByTestId('schedule-aircraft-row').filter({ hasText: aircraft.registration })).toHaveCount(0);
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    await expect(panel).toBeFocused();
+    await expect(panel.locator('.segmented')).toHaveCount(0);
+    await expect(panel.getByRole('combobox')).toHaveCount(2);
+    await expect.poll(async () => {
+      const rect = await panel.boundingBox();
+      return rect && [Math.round(rect.x), Math.round(rect.y), Math.round(rect.width), Math.round(rect.height)];
+    }).toEqual([0, 0, 375, 812]);
+    const sizes = await panel.locator('button,input').evaluateAll((nodes) => nodes.map((node) => {
+      const box = node.getBoundingClientRect();
+      return Math.min(box.width, box.height);
+    }));
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(44);
+    await apply.focus();
+    await page.keyboard.press('Tab');
+    await expect(panel.getByRole('button', { name: 'Chiudi' })).toBeFocused();
+
+    await picker.fill(aircraft.registration);
+    await expect(page.getByRole('option', { name: aircraft.registration })).toBeVisible();
+    await picker.press('Escape');
+    await expect(page.getByRole('listbox')).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    await selectFromCombobox(picker, aircraft.registration, aircraft.registration);
+    await instructor.fill('Istruttrice');
+    const chosen = page.getByRole('option', { name: /Istruttrice/ }).first();
+    await expect(chosen).toBeVisible();
+    const instructorName = await chosen.innerText();
+    await chosen.click();
+    await expect(page).toHaveURL(new URL(path, page.url()).href);
+    await apply.click();
+    await expect(panel).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp('aircraft=' + aircraft.id));
+    await expect(trigger).toContainText('2');
+    const params = new URL(page.url()).searchParams;
+    expect(params.get('date')).toBe('2031-03-11');
+    expect(params.get('status')).toBe('APPROVED');
+    expect(params.get('page')).toBe('2');
+    await expect(page.getByTestId('schedule-aircraft-row')).toHaveCount(1);
+    await expect(page.getByTestId('schedule-aircraft-row')).toContainText(aircraft.registration);
+    await expect(page.getByTestId('mobile-agenda-empty')).toBeVisible();
+    await expect(page.getByTestId('mobile-agenda-row')).toHaveCount(0);
+    await expect(page.getByTestId(`mobile-tail-chip-${aircraft.id}`)).toHaveCount(0);
+    await trigger.click();
+    await expect(picker).toHaveValue(aircraft.registration);
+    await expect(instructor).toHaveValue(instructorName);
+    await page.goBack();
+    await expect(panel).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await panel.getByRole('button', { name: 'Reimposta' }).click();
+    await expect(page).toHaveURL(new URL(path, page.url()).href);
+    await expect(trigger).toHaveText('Filtri');
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp('aircraft=' + aircraft.id));
+    await expect(trigger).toContainText('1');
+  });
+
+  for (const role of ['instructor', 'pilot', 'student']) {
+    test(`18.4: ${role} receives only permitted planning filters`, async ({ page }) => {
+      await loginExpectingDashboard(page, ADMIN_EMAIL);
+      const marker = 'Probe' + uniqueSuffix();
+      const created = await page.request.post('/api/v1/people', { data: { firstName: 'Test', lastName: marker } });
+      expect(created.status()).toBe(201);
+      const profile = await page.request.put('/api/v1/people/' + (await created.json()).id + '/profiles/instructor', { data: { ratings: 'FI(A)' } });
+      expect(profile.status()).toBe(200);
+      const allowed = await page.request.get('/api/v1/bookings/options/instructors?q=' + marker);
+      expect(allowed.status()).toBe(200);
+      expect((await allowed.json()).items.map((item: { lastName: string }) => item.lastName)).toContain(marker);
+      await page.context().clearCookies();
+      await loginExpectingDashboard(page, role + '@airmanager.local');
+      await page.setViewportSize(PHONE);
+      await page.goto('/it/dashboard/bookings?view=week');
+      await page.getByTestId('mobile-schedule-filters-button').click();
+      const mayReadNames = role === 'instructor';
+      await expect(page.getByTestId('schedule-instructor-search-mobile')).toHaveCount(mayReadNames ? 1 : 0);
+      const aircraft = page.getByTestId('schedule-aircraft-search-mobile');
+      const response = page.waitForResponse((res) => new URL(res.url()).pathname === '/api/v1/bookings/options/aircraft');
+      await aircraft.fill('I-');
+      expect((await response).status()).toBe(200);
+      const rsc = await page.request.get('/it/dashboard/bookings?view=week', { headers: { RSC: '1' } });
+      expect(rsc.headers()['content-type']).toContain('text/x-component');
+      const payload = await rsc.text();
+      expect(payload.includes('"canFilterInstructor":' + mayReadNames)).toBe(true);
+      expect(payload.includes('"instructors":[')).toBe(false);
+      if (mayReadNames) {
+        await page.getByTestId('schedule-instructor-search-mobile').fill(marker);
+        await expect(page.getByRole('option', { name: marker + ' Test' })).toBeVisible();
+      } else {
+        expect(payload.includes(marker)).toBe(false);
+        expect(payload.includes('"instructorOptions":[{')).toBe(false);
+      }
+      await expect(page.getByTestId('mobile-tail-chips')).toHaveCount(0);
+    });
+  }
+
   test('tail chips drive the SAME filter as the popover, are 44px, and the last one is reachable after a real horizontal scroll', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page, 'CH');
@@ -391,14 +499,10 @@ test.describe('story 15.4 — pianificazione mobile', () => {
 
     const strip = page.getByTestId('mobile-tail-chips');
     await expect(strip).toBeVisible();
-    // "Tutti" plus one chip per bookable aircraft — asserted as a RELATION to
-    // the popover's own list, never as an absolute count (shared DB).
-    const chipCount = await page.locator('[data-testid^="mobile-tail-chip-"]').count();
-    await page.getByTestId('schedule-filter-toggle').click();
-    const popoverCount = await page.locator('[data-testid^="schedule-filter-aircraft-"]').count();
-    await page.getByTestId('schedule-filter-done').click();
-    expect(chipCount).toBe(popoverCount + 1);
-
+    // Only aircraft relevant to this day are shortcuts, even when free
+    // aircraft elsewhere in the fleet are searchable.
+    await expect(page.getByTestId('mobile-tail-chip-all')).toBeVisible();
+    await expect(page.getByTestId(`mobile-tail-chip-${other.id}`)).toHaveCount(0);
     expect(await page.getByTestId(`mobile-tail-chip-${aircraft.id}`).evaluate((el) => Math.round(el.getBoundingClientRect().height))).toBeGreaterThanOrEqual(
       44,
     );
@@ -410,11 +514,9 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     await expect(page.getByTestId(`mobile-tail-chip-${aircraft.id}`)).toHaveAttribute('aria-current', 'true');
     await expect(page.getByTestId('mobile-agenda-row').filter({ hasText: pilot.lastName })).toHaveCount(1);
     await expect(page.getByTestId('mobile-agenda-row').filter({ hasText: other.registration })).toHaveCount(0);
-    await page.getByTestId('schedule-filter-toggle').click();
-    await expect(page.getByTestId(`schedule-filter-aircraft-${aircraft.id}`)).toHaveClass(/on/);
-    // NEVER Escape here: it would close the whole panel/popover chain (review
-    // 14.3 F1) — the popover has its own "Fatto".
-    await page.getByTestId('schedule-filter-done').click();
+    await page.getByTestId('mobile-schedule-filters-button').click();
+    await expect(page.getByTestId('schedule-aircraft-search-mobile')).toHaveValue(aircraft.registration);
+    await page.getByRole('button', { name: 'Applica' }).click();
 
     // With a long fleet the strip scrolls INSIDE itself: the page never does.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -770,7 +872,7 @@ test.describe('story 15.4 — pianificazione mobile', () => {
     // can be booked on it, and the AOG rows the shared DB carries belong to
     // OTHER aircraft (they are date-independent by design, R-15.4-h).
     await page.goto(`/it/dashboard/bookings?date=2031-03-11&aircraft=${aircraft.id}`);
-    await expect(page.getByTestId(`mobile-tail-chip-${aircraft.id}`)).toHaveAttribute('aria-current', 'true');
+    await expect(page.getByTestId(`mobile-tail-chip-${aircraft.id}`)).toHaveCount(0);
     await expect(page.getByTestId('mobile-agenda-row')).toHaveCount(0);
     await expect(page.getByTestId('mobile-agenda-empty')).toHaveCount(1);
     await expect(page.getByTestId('mobile-agenda-now')).toHaveCount(0);

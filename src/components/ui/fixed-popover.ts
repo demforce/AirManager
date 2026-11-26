@@ -193,6 +193,11 @@ export function useFixedPopover(triggerRef: RefObject<HTMLElement | null>, popov
     if (!open) return;
     function close(event: Event) {
       if (event.target instanceof Node && popoverRef.current?.contains(event.target)) return;
+      // A nested combobox portals its listbox outside the popover. Scrolling its
+      // results leaves the trigger in place, just like scrolling the popover itself.
+      const listbox = event.target instanceof Element ? event.target.closest('[role="listbox"]') : null;
+      const owner = popoverRef.current?.querySelector('[role="combobox"][aria-expanded="true"]');
+      if (listbox && owner?.getAttribute('aria-controls') === listbox.id) return;
       setOpen(false);
     }
     window.addEventListener('scroll', close, true);
@@ -217,12 +222,14 @@ export function useFixedPopover(triggerRef: RefObject<HTMLElement | null>, popov
     if (!open) return;
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== 'Escape') return;
+      if (event.target instanceof Element && popoverRef.current?.contains(event.target) &&
+          event.target.matches('[role="combobox"][aria-expanded="true"]')) return;
       event.stopPropagation();
       setOpen(false);
     }
     window.addEventListener('keydown', handleEscape, true);
     return () => window.removeEventListener('keydown', handleEscape, true);
-  }, [open]);
+  }, [open, popoverRef]);
 
   // Story TD-7 review F5 (minor): portaled to the end of `<body>`, the
   // popover no longer sits right after its trigger button in DOM/tab order —

@@ -835,7 +835,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // whose link is built from the currently rendered view.
     await expect(targetDayCell).toBeVisible();
     await page.getByTestId('schedule-filter-toggle').click();
-    await page.getByTestId(`schedule-filter-aircraft-${aircraft.id}`).click();
+    await selectFromCombobox(page.getByTestId('schedule-aircraft-search'), aircraft.registration, aircraft.registration);
     await expect(page).toHaveURL(new RegExp(`[?&]aircraft=${aircraft.id}(&|$)`));
     await expect(targetDayCell.getByTestId('schedule-week-day-count')).toContainText('2');
   });
@@ -875,9 +875,9 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
     await filterTrigger.click();
     await expect(page.getByTestId('schedule-filter-done')).toBeVisible();
-    const chosen = page.getByTestId(`schedule-filter-aircraft-${booked.id}`);
-    await chosen.click();
-    await expect(chosen).toHaveAttribute('aria-current', 'true');
+    const chosen = page.getByTestId('schedule-aircraft-search');
+    await selectFromCombobox(chosen, booked.registration, booked.registration);
+    await expect(page).toHaveURL(new RegExp('aircraft=' + booked.id));
     await page.getByTestId('schedule-filter-done').click();
     await expect(rows).toHaveCount(1);
     await expect(page.getByTestId('schedule-free-aircraft')).toHaveCount(0);
@@ -905,65 +905,31 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(page.getByTestId('schedule-free-aircraft')).toBeVisible();
   });
 
-  test('story 13.7 AC 1 (review F2/F3/F5): the filter popover escapes the card clip and its bottom-most control ("Fatto") is genuinely hit-testable — not just present in the DOM or reachable via Playwright\'s own auto-scroll', async ({
-    page,
-  }) => {
+  test('18.4: desktop planning and overview offer a bounded, hit-testable search popover', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    // A tall filter popover (many wrapped aircraft badges) against the
-    // week-grid's fixed, roughly constant card height (`.week-grid` cells
-    // are `min-height: 200px`, unlike the day view where each aircraft adds
-    // its OWN row and the card grows to match) is the scenario ricognizione
-    // found clipped. Review F5: 6 run-unique aircraft (long registrations,
-    // 2/row at the fixed 320px popover width, review F3) already give a
-    // comfortable margin over the card's ~268px height (measured: ~356px of
-    // content vs. ~214px of room below the trigger) — down from the
-    // original 20, and archived in `finally` so they don't accumulate in
-    // the shared dev DB across runs (review F5).
-    const created: Array<{ id: string }> = [];
+    const free = await createAircraft(page);
     try {
-      for (let i = 0; i < 6; i++) {
-        const aircraft = await createAircraft(page);
-        created.push(aircraft);
-        // 17.2 intentionally excludes free rows from the filter.
-        const grounded = await page.request.post(`/api/v1/aircraft/${aircraft.id}/out-of-service`, { data: { reason: 'Popovers e2e' } });
-        expect(grounded.status()).toBe(200);
+      for (const path of ['/it/dashboard', '/it/dashboard/bookings?view=week']) {
+        await page.goto(path);
+        const trigger = page.getByTestId('schedule-filter-toggle');
+        await waitForDashboardContent(page, trigger);
+        await trigger.click();
+        const popover = page.locator('.popover');
+        await expect(popover.locator('.segmented')).toHaveCount(0);
+        await expect(popover.getByRole('combobox')).toHaveCount(2);
+        await expect(popover).toHaveCSS('position', 'fixed');
+        const picker = page.getByTestId('schedule-aircraft-search');
+        await picker.fill(free.registration);
+        await expect(page.getByRole('option', { name: free.registration })).toBeVisible();
+        await picker.press('Escape');
+        await expect(page.getByRole('listbox')).toHaveCount(0);
+        await expect(popover).toBeVisible();
+        expect(await hitTestsOwnControl(page, '.popover', '[data-testid="schedule-filter-done"]')).toBe(true);
+        await selectFromCombobox(picker, free.registration, free.registration);
+        await expect(page).toHaveURL(new RegExp('/dashboard/bookings[?].*aircraft=' + free.id));
       }
-
-      await page.goto('/it/dashboard/bookings?view=week');
-      await waitForDashboardContent(page, page.getByTestId('schedule-section'));
-      await page.getByTestId('schedule-filter-toggle').click();
-
-      // Review F2: a plain `.click()` on "Fatto" is NOT a valid regression
-      // guard — Playwright's `scrollIntoViewIfNeeded` scrolls the CARD's
-      // `overflow: hidden` box too (still a scroll container), so the click
-      // succeeds even against the PRE-fix, still-clipped rendering (proven
-      // empirically by the review). The three assertions below are geometry/
-      // hit-testability, not falsifiable by that auto-scroll.
-      const geometry = await page.evaluate(() => {
-        const card = document.querySelector('[data-testid="schedule-section"]');
-        const popover = document.querySelector('.popover');
-        if (!card || !popover) return null;
-        return {
-          position: getComputedStyle(popover).position,
-          escapesCard: popover.getBoundingClientRect().bottom > card.getBoundingClientRect().bottom,
-        };
-      });
-      expect(geometry?.position).toBe('fixed');
-      expect(geometry?.escapesCard).toBe(true);
-      expect(await hitTestsOwnControl(page, '.popover', '[data-testid="schedule-filter-done"]')).toBe(true);
-
-      // Functional sanity check (not the regression guard above): the
-      // control is still a real, working button — clicking it closes the
-      // popover, same behavior as before the fix.
-      const doneButton = page.getByTestId('schedule-filter-done');
-      await doneButton.click();
-      await expect(page.getByTestId('schedule-filter-toggle')).toBeVisible();
-      await expect(doneButton).toHaveCount(0);
     } finally {
-      for (const aircraft of created) {
-        await archiveAircraft(page, aircraft.id);
-      }
+      await archiveAircraft(page, free.id);
     }
   });
 
@@ -1014,26 +980,11 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await expect(page.locator('.cal-popover')).toHaveCount(0);
   });
 
-  test('story 13.10 (F4-13.7): at 375px both popovers stay clamped inside the viewport (no left/right edge overflow)', async ({ page }) => {
+  test('story 13.10 (F4-13.7): at 375px the calendar popover stays clamped inside the viewport (no left/right edge overflow)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/it/dashboard/bookings?view=week');
     await waitForDashboardContent(page, page.getByTestId('schedule-section'));
-
-    // Filter popover: pre-fix, its `right`-anchored math (no clamp) pushed the
-    // popover's LEFT edge 139px past the viewport's left edge at this width
-    // (measured, review 13.7 F4).
-    await page.getByTestId('schedule-filter-toggle').click();
-    const filterGeometry = await page.evaluate(() => {
-      const popover = document.querySelector('.popover');
-      const rect = popover?.getBoundingClientRect();
-      return rect ? { left: rect.left, right: rect.right } : null;
-    });
-    expect(filterGeometry?.left).toBeGreaterThanOrEqual(0);
-    expect(filterGeometry?.right).toBeLessThanOrEqual(375);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    expect(await hitTestsOwnControl(page, '.popover', '[data-testid="schedule-filter-done"]')).toBe(true);
-    await page.getByTestId('schedule-filter-done').click();
 
     // Calendar popover: pre-fix, its center-under-trigger math (no clamp)
     // pushed the popover's RIGHT edge 12px past the viewport's right edge at
@@ -2107,7 +2058,8 @@ test.describe('Booking privacy masking (Story 14.5, AC 1-6, ratifica R3)', () =>
     // join id -> surname against the masked blocks' `instructorProfileId`
     // and de-anonymize every one of them.
     await page.getByTestId('schedule-filter-toggle').click();
-    await expect(page.locator('[data-testid^="schedule-filter-instructor-"]')).toHaveCount(0);
+    await expect(page.getByTestId('schedule-aircraft-search')).toBeVisible();
+    await expect(page.getByTestId('schedule-instructor-search')).toHaveCount(0);
 
     // --- Pilot: table ("Prenotazioni") ------------------------------------
     // Review F2: NEVER assume page 1 — `FUTURE_DAY`'s own accumulated volume

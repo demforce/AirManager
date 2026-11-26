@@ -1758,7 +1758,7 @@ export async function listScheduleAircraft(
     .map(({ archivedAt, ...option }) => archivedAt ? { ...option, status: 'ARCHIVED', statusReason: null } : option);
   return {
     rows,
-    filterOptions: aircraft.filter((option) => relevant(option) || option.id === selected).map(({ id, registration }) => ({ id, registration })),
+    filterOptions: aircraft.filter(relevant).map(({ id, registration }) => ({ id, registration })),
     aircraftId: selected,
     showAll: selected ? showAll : includeFree,
     // The count and the rows are concurrent reads, so a just-archived row
@@ -1810,7 +1810,7 @@ export async function searchBookingPeople(actor: Actor, domain: 'students' | 'pe
 
 export type InstructorOption = { instructorProfileId: string; firstName: string; lastName: string };
 
-async function instructorOptions(actor: Actor, limit: number, q?: string) {
+export async function searchBookingInstructors(actor: Actor, q?: string, limit = PICKER_LIMIT) {
   authorize(actor, 'bookings.read.names');
   const rows = await prisma.instructorProfile.findMany({
     where: { deactivatedAt: null, person: { archivedAt: null, AND: personWords(q) } },
@@ -1819,14 +1819,6 @@ async function instructorOptions(actor: Actor, limit: number, q?: string) {
     take: limit + 1,
   });
   return boundedOptions(rows.map(({ id, person }) => ({ instructorProfileId: id, ...person })), limit);
-}
-
-export function searchBookingInstructors(actor: Actor, q?: string, limit = PICKER_LIMIT) {
-  return instructorOptions(actor, limit, q);
-}
-
-export function listActiveInstructors(actor: Actor) {
-  return instructorOptions(actor, 100);
 }
 
 /**

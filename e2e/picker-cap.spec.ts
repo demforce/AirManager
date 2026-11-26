@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { NAV_ITEMS } from '../src/components/shell/route-registry';
 import { removeCalendarFixtures, seedBoundedCalendar, seedPickerAircraft, seedPickerStudents } from './db-fixtures';
-import { todayRome } from './helpers';
+import { todayRome, waitForDashboardContent } from './helpers';
 
 async function login(page: Page, role = 'admin') {
   await page.goto('/it/login');
@@ -11,7 +11,7 @@ async function login(page: Page, role = 'admin') {
   await expect(page).toHaveURL(/\/it\/dashboard$/);
 }
 
-async function checkPicker(page: Page, id: string, domain: string, query: string) {
+async function checkPicker(page: Page, id: string, domain: string, query: string, expectOverflow = false) {
   const input = page.getByTestId(id);
   const path = '/api/v1/' + domain;
   const calls: string[] = [];
@@ -36,6 +36,12 @@ async function checkPicker(page: Page, id: string, domain: string, query: string
     const list = page.locator('#' + id + '-listbox');
     await expect(list.getByRole('option').filter({ hasNotText: /Nessun risultato/ })).toHaveCount(body.items.length);
     expect(calls, id).toEqual([query]);
+    if (expectOverflow) {
+      expect(body.items, id).toHaveLength(20);
+      expect(body.truncated, id).toBe(true);
+      await list.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+      await expect(list.getByRole('option').last()).toBeInViewport();
+    }
     if (body.truncated) await expect(list.getByText('Altri risultati: continua a digitare')).toBeVisible();
     if (page.viewportSize()?.width === 375 && body.items.length) {
       expect((await list.getByRole('option').first().boundingBox())!.height).toBeGreaterThanOrEqual(44);
@@ -45,6 +51,19 @@ async function checkPicker(page: Page, id: string, domain: string, query: string
     page.off('request', track);
   }
 }
+
+test('@picker-cap 18.4: the planning aircraft search waits for two characters and caps both breakpoints', async ({ page }) => {
+  await seedPickerAircraft(Date.now().toString(36));
+  await login(page);
+  for (const width of [1280, 375]) {
+    await page.setViewportSize({ width, height: 812 });
+    await page.goto('/it/dashboard/bookings?view=week');
+    const trigger = page.getByTestId(width === 375 ? 'mobile-schedule-filters-button' : 'schedule-filter-toggle');
+    await waitForDashboardContent(page, trigger);
+    await trigger.click();
+    await checkPicker(page, width === 375 ? 'schedule-aircraft-search-mobile' : 'schedule-aircraft-search', 'bookings/options/aircraft', 'I-', true);
+  }
+});
 
 test('@picker-cap bounds native selects across admin navigation and bounds search results at both breakpoints', async ({ page }) => {
   test.setTimeout(240_000);

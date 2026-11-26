@@ -2366,13 +2366,17 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
    they must be `display: none` OUTSIDE the query too — otherwise the desktop
    suite finds two matches for every registration on this page. Same for the
    agenda's count, which shares `.card-sub` with the desktop heading beside it. */
+.schedule-filter-fields{ display: grid; gap: 14px; }
+.schedule-filters-mobile,
 .schedule-mobile,
 .bookings-mobile,
 .mobile-agenda-count{ display: none; }
 
 @media (max-width: 640px){
-  .schedule-desktop-body,
-  .bookings-desktop-body{ display: none; }
+  .schedule-filters-mobile{ display: inline-flex; min-height: 44px; }
+  .schedule-filter-fields .input{ min-height: 44px; }
+  .schedule-filters-desktop,
+  .schedule-desktop-body,  .bookings-desktop-body{ display: none; }
   .schedule-mobile,
   .bookings-mobile{ display: block; }
   .mobile-agenda-count{ display: inline; }
@@ -3963,7 +3967,6 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
   .mobile-empty-hint{ margin: 0; color: var(--ink-3); font-size: 12.5px; line-height: 1.5; }
   .fleet-mobile > .mobile-empty-state{ grid-column: 1 / -1; }
   .card.mobile-empty-unfiltered[data-testid="schedule-section"] .schedule-mobile > .mobile-chip-strip{ display: none; }
-  .card.mobile-empty-unfiltered[data-testid="schedule-section"] [data-testid="schedule-filter-toggle"]{ display: none; }
   .card.mobile-empty-unfiltered[data-testid="bookings-list-section"] .bookings-mobile > .mobile-chip-strip{ display: none; }
   .card.mobile-empty-unfiltered .scadenze-mobile > .mobile-chip-strip,
   .card.mobile-empty-unfiltered .billing-mobile > .mobile-chip-strip{ display: none; }
