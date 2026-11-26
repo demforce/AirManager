@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.2a verificata, review pendente)
+# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.2a approvata)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -9,7 +9,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 ## Current Progress
 
-- **18.2a in review locale** (`story/18-2a`, base `ba1ffdedd46fef8e3757b0d970cc01cd7e47ca7e`): AC 1–5 e 7–8 implementati; titolo mobile accessibile ma visivamente nascosto, pillole Scadenze con conteggi cumulativi filtrati, «Altre azioni» su tre liste e KPI Contabilità su una riga. Fold a 375 px: Scadenze 289,84; Contabilità 348,33; Registro voli 310,81. Box `.page-head` desktop invariato `[260, 85,84, 992, 51,44]`. Gate 2.322 unit e build verdi. Browser finale **exit 0: 662 passati, 3 flaky, 2 saltati**; picker cap, nuovi tre test 18.2a e regressione desktop verdi. Due flaky di posta locale sono passati al retry; il terzo (METAR) ha fallito il login iniziale e al retry è stato saltato per `raw` assente, quindi **METAR non verificato** insieme agli altri due skip. Evidenze nel record `_bmad-output/implementation-artifacts/18-2-fold-liste.md`. Revisione indipendente ancora da eseguire; **18.2b/AC 6** resta da sviluppare e l'umbrella 18.2 resta `in-progress`. Nessun push o intervento su `main`.
+- **18.2a done** (`story/18-2a`, base `ba1ffdedd46fef8e3757b0d970cc01cd7e47ca7e`): AC 1–5 e 7–8 implementati; titolo mobile accessibile ma visivamente nascosto, pillole Scadenze con conteggi cumulativi filtrati, «Altre azioni» su tre liste e KPI Contabilità su una riga. Fold a 375 px: Scadenze 289,84; Contabilità 348,33; Registro voli 310,81. Box `.page-head` desktop invariato `[260, 85,84, 992, 51,44]`. Gate 2.322 unit e build verdi. Browser finale **exit 0: 662 passati, 3 flaky, 2 saltati**; picker cap, nuovi tre test 18.2a e regressione desktop verdi. Due flaky di posta locale sono passati al retry; il terzo (METAR) ha fallito il login iniziale e al retry è stato saltato per `raw` assente, quindi **METAR non verificato** insieme agli altri due skip. Evidenze nel record `_bmad-output/implementation-artifacts/18-2-fold-liste.md`. Revisione indipendente GPT 6 Sol xhigh approvata; rilievo basso sul nome del dialog desktop nel record; **18.2b/AC 6** resta da sviluppare e l'umbrella 18.2 resta `in-progress`. Nessun intervento su `main`.
 
 - **18.1 done** (`25149f3`): pavimento mobile 44 px nei pannelli, topbar e accesso; link AOG desktop preservato dopo riesame indipendente GPT 6 Sol xhigh. Gate 2.320 unit e build; browser 659 passati, tre flaky, due METAR saltati e documentati. Geometria invariata per 267 controlli editor su tre larghezze desktop.
 
@@ -44,7 +44,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **16.5 done** (`caeb973` feat, `be11075` record, `2d012ab` decisioni PO sulla review, `c635b34` fix, `f23ca47` Fix Record): compenso istruttore congelato sul volo, ex istruttori visibili e pagabili, pagamenti concorrenti bloccati sotto lock. Arbitro finale 607 + 3 flaky = **610**, exit 0. **Conteggi**: e2e **610**, unit **2242**.
 - **16.6a done** (`a6be2da`, `76c7eba`, `d543c1a`, `dea21d5`, `7a9ec4e`, `c5c1efa`, `dcad37e`, `c47ec70`): data valuta futura rifiutata (422 `EFFECTIVE_DATE_IN_FUTURE`), errori dei pannelli leggibili (`.fld-error`, ≥ 4,5:1), «Cassa per categoria» e «Ricavi maturati» ovunque, **keep-alive 75 s del server e2e** (TD-19.10-g chiuso: 0 ECONNRESET da allora). Durante la chiusura trovato e corretto un bug di prodotto della 16.5 (`6c19915`: remount della console Istruttori che chiudeva il pannello «Paga»). Arbitro finale **615/615**, exit 0. **Conteggi**: e2e **615**, unit **2252**.
 - **16.6b done** (`6e76e20`, `91a70b0`, `c453b22`, `25ef34d`, `470d4ca`): chiave di idempotenza stabile nel pannello quota; catene di rettifica classificate dal **libro della radice** (`reversalRootBook`, enum DEPOSIT/REVENUE/TRANSFER) — la correzione di un giroconto resta giroconto (decisione PO). Arbitro finale 614 + 2 flaky = **616**, exit 0. **Conteggi**: e2e **616**, unit **2261**. Nuova story **16.10** (doppi addebiti dopo un guasto di rete nei 7 form con `Idempotency-Key`) in coda all'Epic 16, file da creare dopo la 16.9.
-- **Prossima**: review indipendente della 18.2a con GPT 6 Sol xhigh in contesto separato; risolvere i rilievi e riesaminare le correzioni prima di pubblicare. Poi 18.2b (AC 6). Verificare lo stato di `dev` prima di ogni pubblicazione.
+- **Prossima**: 18.2b (AC 6) dopo la pubblicazione verificata della 18.2a. Verificare lo stato di `dev` prima di ogni pubblicazione.
 
 ## Key Decisions di oggi
 

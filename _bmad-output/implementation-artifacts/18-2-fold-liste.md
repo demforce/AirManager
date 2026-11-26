@@ -4,7 +4,7 @@ baseline_commit: 1f6ab3e
 
 # Story 18.2: Il fold torna alle liste
 
-Status: **in-progress** — 18.2a (AC 1–5, 7–8) verificata sul ramo locale `story/18-2a` e pronta per la revisione indipendente; 18.2b (AC 6) resta da sviluppare. L'umbrella 18.2 non è done. File creato il 2026-11-03 con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e`. Dev/review secondo la sostituzione permanente autorizzata dal PO: GPT 6 Sol per lo sviluppo ordinario e revisore indipendente separato. **Ordine**: DOPO 16.6a, 16.6b, 17.3 e 18.1. Split: v. §PO.
+Status: **in-progress** — 18.2a (AC 1–5, 7–8) completata e approvata da revisione indipendente; 18.2b (AC 6) resta da sviluppare. L'umbrella 18.2 non è done. File creato il 2026-11-03 con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e`. Dev/review secondo la sostituzione permanente autorizzata dal PO: GPT 6 Sol per lo sviluppo ordinario e revisore indipendente separato. **Ordine**: DOPO 16.6a, 16.6b, 17.3 e 18.1. Split: v. §PO.
 
 ## Story
 
@@ -95,3 +95,7 @@ Ratificate dal PO il 2026-11-03/04 in un solo giro (AskUserQuestion: «Sì, tutt
 - Servizio Scadenze e unit: `src/server/services/expiries.service.ts`, `src/server/services/expiries.service.test.ts`.
 - Testate, console e menu: `src/app/[locale]/dashboard/{page.tsx,bookings,expiries,billing,logbook,fleet,pilots,instructors,my-account,my-compensation,reports}`, `src/components/ui/export-menu.tsx`, `src/styles/airops.css`, `messages/{it,en}.json`.
 - Browser: `e2e/fold-18-2a.spec.ts` e aggiornamenti mirati a `e2e/{home-dashboard,mobile-billing,mobile-expiries-movements,mobile-ink-targets,mobile-logbook,mobile-membership-fee,mobile-registries,mobile-reports,mobile-self-public,pdf-exports,picker-cap}.spec.ts`.
+
+### Chiusura 18.2a — 2026-11-26
+
+Il revisore indipendente GPT 6 Sol xhigh ha approvato il diff `ba1ffdedd46fef8e3757b0d970cc01cd7e47ca7e..5d8164cbdcf39514bd70841746df2efdf33d27fa` per AC 1–5, 7–8, senza rilievi bloccanti. Ha verificato query e conteggi cumulativi filtrati, autorizzazione, azioni mobili, fold, desktop e log dei gate (2.322 unit e build, exit 0) e della suite browser (E2E_EXIT=0, 662 passati, tre segnalati flaky, due saltati). I tre casi METAR :61, :167 e :208 non sono verificati: :167 ha fallito il login iniziale e al retry è stato saltato per assenza di `raw`. Rilievo basso differito: il dialog desktop di `export-menu.tsx` ha nome accessibile «Altre azioni» mentre il pulsante visibile è «Esporta». Nessun file è stato modificato dal revisore. **18.2a è done; 18.2b/AC 6 e la story ombrello 18.2 restano in-progress.**
