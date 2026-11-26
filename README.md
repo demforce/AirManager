@@ -14,10 +14,10 @@ Vedi `CLAUDE.md` per le convenzioni di progetto e `_bmad-output/planning-artifac
 
    ```bash
    nvm use  # Node 22, vedi .nvmrc
-   npm ci   # npm 10.9.11, vedi packageManager in package.json
+   npx --yes npm@10.9.11 ci
    ```
 
-   Se l'ambiente ha npm 11, eseguire `npx --yes npm@10.9.11 ci`: il lockfile attuale non viene accettato da npm 11 per alcuni pacchetti opzionali di altre piattaforme.
+   Il lockfile attuale non viene accettato da npm 11 per alcuni pacchetti opzionali di altre piattaforme.
 
 2. **Variabili d'ambiente**
 
@@ -62,7 +62,7 @@ Vedi `CLAUDE.md` per le convenzioni di progetto e `_bmad-output/planning-artifac
 | `npm run typecheck` | Type-check TypeScript (`tsc --noEmit`) |
 | `npm run test` | Unit test (Vitest) |
 | `npm run test:e2e` | End-to-end test (Playwright); richiede l'app raggiungibile (viene avviata automaticamente in dev) |
-| `npm run db:reset:test` | Ricrea solo `airmanager_test` o `airmanager_e2e` su localhost, poi applica migrazioni e seed; richiede `TEST_DATABASE_URL` esplicito e un ruolo PostgreSQL con diritto di creare DB. Non usa `sudo` né il `DATABASE_URL` ambientale. |
+| `npm run db:reset:test` | Ricrea solo `airmanager_test` o `airmanager_e2e` su localhost e su una porta dedicata diversa da 5432, poi applica migrazioni e seed; richiede `TEST_DATABASE_URL` esplicito e un ruolo PostgreSQL con diritto di creare DB. Usa il driver `pg`, senza `sudo` o client `psql`. |
 | `npm run seed:load` | Popola un DB dedicato con migliaia di righe per i test di carico — mai in CI. Vedi `docs/operations/load-testing.md`. |
 
 ## Note
