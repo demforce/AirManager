@@ -4,7 +4,7 @@ baseline_commit: 1f6ab3e
 
 # Story 18.7: Desktop — colonne, intestazioni, fermo velivolo, Panoramica
 
-Status: **in-progress** — **18.7a done** (AC 1–4, `c09f2b8`), **18.7b ready-for-dev** (AC 5–6).
+Status: **done** — **18.7a done** (AC 1–4, `c09f2b8`) e **18.7b done** (AC 5–6, `d675dd332c`).
 
 Piano originario del 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e` con modelli statici da riconfermare al passo 0). **Dev: Opus 5 xhigh** (UI). Review: Opus 5 xhigh adversarial. **Split per dipendenze** (v. §PO): **18.7a** (D2, D3, TD-19.1-d) indipendente dall'Epic 17; **18.7b** (M8 dopo la 16.8; D1 dopo 17.2 e 17.6).
 
@@ -98,3 +98,28 @@ Il 2026-11-26 il revisore GPT 6 Sol xhigh ha approvato gli AC 1–4 sul tree `7c
 - `e2e/desktop-registries.spec.ts`
 - `e2e/empty-18-2b.spec.ts`
 - `_bmad-output/implementation-artifacts/evidence/18-7a/`
+
+### 18.7b — Sviluppo e prove degli AC 5–6
+
+Base `cdd819daa8dd33320bde4795c09caa248800eb7c`. Tree finale di codice e test `ec72d87fe283df6e054712df0c82a71273641a84`. Per lo sviluppo è stata selezionata la configurazione GPT 6.2 Astra xhigh. Il processo non espone telemetria indipendente sul modello effettivo.
+
+| Criterio | Esito osservato |
+|---|---|
+| AC 5, fuori servizio dal telefono | A 375 × 812, l'admin passa dallo sheet al campo del motivo con un tocco. In chiaro e scuro l'azione misura 166,5 × 44 px e il campo a fuoco è interamente visibile, da y 385,98 a 441,67. Verificati riapertura dello stesso velivolo, motivo obbligatorio, annullamento e conferma, anteprima e conteggio autorevole, email acquisita da Mailpit. Con Back il focus torna alla tessera, con un altro Back si torna alla pagina precedente. Già fuori servizio e archiviato conservano le rispettive operazioni in «Modifica». Le home di pilota, allievo e istruttore mantengono i propri contenuti e il normale reindirizzamento da Flotta. |
+| AC 6, Velivoli in Panoramica | La selezione sull'intera flotta attiva mostra al massimo otto schede ordinate per fuori servizio, attività del giorno e marche. Conta come attività sia un volo registrato nel giorno di Roma sia una prenotazione approvata che lo interseca. Nella fixture da 127 attivi tutti gli otto mostrati si trovano oltre la posizione 100 per marche. Il KPI conta 116 disponibili ora su 125 operativi e il sottotitolo 2 fuori servizio. Aggiungendo 110 velivoli liberi ai 17 iniziali la pagina resta a 3.437 px a 1280, con delta misurato di 0 px in entrambi i temi a tutte e cinque le larghezze. Le 13 righe operative restano visibili nella timeline. Sul carico sintetico (1.460 attivi) restano tutte le 185 righe della giornata, mentre il widget passa da 12.943 a 1.238 px a 1280. |
+
+Le [60 misure](evidence/18-7b/misure.csv) coprono 375, 768, 1100, 1280 e 1440 px, in chiaro e in scuro. Il [registro con comandi e diagnostica](evidence/18-7b/riscontri.md) comprende i due bordi della giornata di Roma, la prova touch in Chromium, le soglie 0/1/8/9 attivi in italiano e inglese, la controprova del focus su copia isolata con SHA-256 e il confronto del delta di altezza sulla base. [Schermata iniziale](evidence/18-7b/motivo-prima.png) e [schermata finale](evidence/18-7b/motivo-dopo.png). Non è stata misurata la tastiera virtuale di un dispositivo fisico.
+
+**File di codice e test della 18.7b.** `src/server/services/overview-fleet.service.ts`, `src/app/[locale]/dashboard/(home)/page.tsx`, `src/components/dashboard/fleet-card.tsx`, `src/app/[locale]/dashboard/fleet/fleet-console.tsx`, `src/app/[locale]/dashboard/fleet/aircraft-editor.tsx`, `src/components/ui/slide-over.tsx`, `messages/it.json`, `messages/en.json`, `e2e/aog-impact-email.spec.ts`, `e2e/aog-overview-count.spec.ts`, `e2e/db-fixtures.ts`, `e2e/mobile-reports.spec.ts` (sincronizzazione della controprova), `playwright.config.ts` (isolamento delle due prove sulla flotta).
+
+Sul tree intermedio `9473997e`, `npm run gates` ha dato exit 0 (lint, typecheck, 2.351 unit, build). Nel precedente run completo, la controprova di clipping di Statistiche misurava durante il caricamento: 649 passati al primo tentativo, 2 recuperati al retry, 1 fallito e 63 non eseguiti, `E2E_EXIT=1`. Il test finale aspetta il contenuto reale e verifica lo stile calcolato prima delle asserzioni geometriche. Nelle ripetizioni isolate del filtro «AC 11» sono passati 16/16, senza retry.
+
+Il run completo `9473997e` ha avuto exit 0 con 708 passati al primo tentativo e 7 al primo retry. Due retry erano dovuti ai test della flotta globale che si eseguivano contemporaneamente e si modificavano i dati a vicenda. Sul candidato finale il progetto dedicato li esegue uno per volta, preservando i due worker globali e tutte le asserzioni.
+
+Sul tree finale `ec72d87f`, `npm run gates` ha dato exit 0, con 2.351 unit e build. Le tre ripetizioni dei due test della flotta con due worker globali hanno riprodotto un fallimento di 68 px nella configurazione precedente. Nel progetto isolato finale entrambi i test sono passati in tutte e tre le ripetizioni senza retry, 6/6.
+
+La suite browser finale (`E2E_REUSE_SERVER=1 scripts/e2e.sh start --workers=2`) ha concluso in 29,7 minuti con `E2E_EXIT=0`. Su 715 casi Playwright ne riporta 712 passati e 3 flaky recuperati al primo retry, con zero skip definitivi. AC 5 (7,5 s), AC 6 (4,4 s) e conteggio storico della flotta (2,6 s) sono passati al primo tentativo, così come i cinque casi desktop 18.7a, i tre METAR e i cinque del progetto picker-cap. I retry riguardano la preparazione del pilota per l'estratto conto, l'attesa della riga di un volo registrato e il feedback SMTP locale nelle Impostazioni. Nel gruppo seriale Impostazioni sono stati ripetuti sedici casi già verdi e recuperati due sospesi al primo giro. Il [registro conclusivo](evidence/18-7b/riscontri.md#suite-completa-sul-candidato-finale) conserva i tre errori sanitizzati, le durate dei retry e il comando esatto.
+
+### Revisione indipendente 18.7b
+
+Il revisore in un contesto separato, configurato con GPT 6 Sol xhigh, ha approvato il tree `ec72d87fe283df6e054712df0c82a71273641a84`, commit `d675dd332c`. Ha verificato il percorso mobile per stato del velivolo e ruolo, il rango delle otto schede, i bordi della giornata di Roma nei cambi di ora e l’isolamento delle due prove sulla flotta. Nessun rilievo bloccante. Gli AC 1–6 della 18.7 risultano completati. [Verdetto ed evidenze](evidence/18-7b/revisione.md)

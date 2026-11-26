@@ -1,109 +1,21 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.7a completata)
+# Handoff AirManager · 26 novembre 2026
 
-Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
+## Stato del progetto
 
-## Goal
+AirManager gestisce voli, flotta, prenotazioni e contabilità dell’aviosuperficie. L’Epic 18 ha completato i miglioramenti dell’interfaccia mobile e desktop. Le sette story risultano concluse. Per lo stato delle altre iniziative fa fede lo [sprint BMAD](../../_bmad-output/implementation-artifacts/sprint-status.yaml). Lo [storico fino alla 18.7a](HANDOFF-2026-11-26-1827.md) conserva esiti e limiti delle singole story.
 
-- **Mandato del PO (2026-11-03 22:35)**: «usando bmad chiudiamo tutte le epic incomplete» → Epic **16 → 17 → 18 di fila** in questa sessione. A ogni fine epic: handoff committato, **push di `dev`** e aggiornamento della **PR #22** (il merge resta al PO), poi si prosegue (la regola «fermarsi a fine epic» di `CLAUDE.md` è sospesa solo per questo mandato). **Reset del DB e2e autorizzato** per tutta la sessione. Story scritte dalla sessione principale (Opus 5.5).
-- **Fonte di verità**: `_bmad-output/implementation-artifacts/sprint-status.yaml`.
+## Ultima consegna
 
-## Current Progress
+La prima parte della 18.7 ha sistemato colonne e intestazioni desktop, commit `c09f2b8`. La 18.7b, commit `d675dd332c`, completa gli AC 5 e 6. Dal telefono un amministratore può aprire «Metti fuori servizio» per un velivolo operativo e trova subito il cursore nel motivo. Conteggio, conferma e notifica seguono il flusso esistente. Il widget desktop mostra fino a otto velivoli, privilegiando quelli fuori servizio e quelli con attività oggi. Il registro completo si raggiunge dal widget. I conteggi comprendono tutta la flotta attiva e la timeline presenta tutte le righe di attività del giorno. [Record 18.7](../../_bmad-output/implementation-artifacts/18-7-desktop-colonne-sticky-fermo-panoramica.md)
 
-- **18.7a done**, commit `c09f2b8`. Nel Registro voli e in Piloti intestazione e azioni restano visibili mentre scorre la tabella. Il riquadro espone un nome accessibile e si può attraversare da tastiera. A 1280 px le quattro card KPI occupano l’intera riga, a 1000 px formano due coppie. Ricavi è leggibile anche sul DB sintetico di carico. Chiuso TD-19.1-d. Gate verdi con 2.351 unit, 710 casi browser al primo tentativo e tre recuperati al primo retry, zero saltati. Approvazione indipendente per AC 1–4. [Misure, screenshot e diagnostica](../../_bmad-output/implementation-artifacts/evidence/18-7a/riscontri.md). Resta da avviare **18.7b** (AC 5–6, fuori servizio dal telefono e widget Velivoli in Panoramica).
+## Prove e problemi risolti
 
-- **18.6 done** nel commit `475b3f1`. Senza una preferenza salvata, AirManager apre con il tema del sistema e ne segue i cambi mentre la pagina è aperta. La scelta manuale ha precedenza e si conserva nel browser. Verificati 48 primi paint con chunk applicativi bloccati e 48 schermate interattive a 375 e 1280 px. Chiuso il TD sullo schema dei colori dei controlli nativi della 15.10. Revisione indipendente approvata dopo la correzione del riferimento allo scroll nel test Flotta. Gate verdi, 2.351 unit e suite browser di 708 casi con 706 passed, due flaky recuperati e zero skip finali. [Misure, screenshot e diagnostica](../../_bmad-output/implementation-artifacts/18-6-tema-di-sistema.md). Il lavoro sulle colonne desktop è documentato sopra.
+Su dati sintetici, aggiungendo 110 velivoli liberi ai 17 iniziali, a 1280 px la pagina resta alta 3.437 px e conserva 13 righe della giornata. I due temi hanno dato le stesse misure. Sul database di carico sono rimaste visibili 185 righe operative. L’interfaccia mobile è stata verificata con Chromium touch emulato a 375 px. La tastiera di un telefono fisico resta fuori dalla prova. [Misure e diagnostica](../../_bmad-output/implementation-artifacts/evidence/18-7b/riscontri.md)
 
-- **18.5 done** con il completamento della **18.5b**, commit `9732247`. Dalla seconda tab mobile pilota e allievo vedono le proprie prossime prenotazioni prima del calendario condiviso. «Prenota» compare con l’eligibilità già prevista. Il solo allievo legge chi può prenotare per lui. A 375 px la CTA del pilota sale da 1.005 a 129 px. Gli screenshot di admin e istruttore coincidono con la base. Revisione indipendente approvata, 2.351 unit verdi, 699 casi browser al primo tentativo e tre recuperati in quattro retry su 702, nessuno skip. [Record 18.5](../../_bmad-output/implementation-artifacts/18-5-righe-tab-lessico.md). La 18.6 è documentata sopra.
+Il primo tentativo browser aveva riutilizzato un vecchio processo sulla porta 3000. La ripetizione sul server del candidato ha superato entrambi i test mirati. La fixture distingueva inizialmente in modo errato il bordo del giorno di Roma. Dopo la correzione, le prenotazioni a cavallo della mezzanotte e quelle appena fuori dalla finestra danno esiti distinti. Un test di Statistiche mobile intercettava la schermata di caricamento durante la controprova di testo troncato. Il test ora attende un’etichetta visibile e controlla lo stile effettivo prima di misurarla. In un altro run, i due test che misurano lo stato globale della flotta si sovrapponevano. L’aggiunta dei 110 velivoli da parte di un caso alterava la lettura dell’altro. Il loro progetto Playwright ora li esegue in sequenza. Il revisore ha inoltre provato le giornate locali di 23 e 25 ore. [Revisione indipendente](../../_bmad-output/implementation-artifacts/evidence/18-7b/revisione.md)
 
-- **18.5a done** nel commit `450ac94`. Le righe di Pianificazione e «In corso ora» mostrano il nome per intero e le marche accanto a data e ora. I tab mobili stanno su una riga a 360–414 px per tutti i ruoli in IT e EN. A 320 px «Registro voli» occupa due righe per istruttore, pilota e allievo in italiano. Il dettaglio prenotazione evidenzia l’azione per lo stato corrente e le restituisce il focus. Verificati anche il contenimento dello scroll del Registro e la card Anagrafica. Revisione indipendente approvata, 2.349 unit verdi. Suite browser di 700 casi su dati sintetici, 697 passati al primo tentativo e tre recuperati in quattro retry. [Misure, screenshot e diagnostica](../../_bmad-output/implementation-artifacts/18-5-righe-tab-lessico.md). La 18.5b ha poi completato la Pianificazione per pilota e allievo.
+Sul tree di codice e test `ec72d87fe283df6e054712df0c82a71273641a84`, `npm run gates` ha superato lint, typecheck, 2.351 unit test e build. La suite Chromium da 715 casi ha restituito exit 0. Playwright ha classificato 712 casi come passati e tre come intermittenti, tutti recuperati al primo retry. I due casi flotta e i tre METAR sono passati subito. Nessuno skip definitivo. Il database di test e Mailpit erano locali.
 
-- **18.4 done** (`142e81b`, evidenze in `5bff520`). In Pianificazione il pannello mobile applica insieme le scelte. Anche su desktop la ricerca velivoli raggiunge mezzi fuori dal periodo. La ricerca nominativa degli istruttori segue il permesso esistente. Sul carico sintetico, per l’admin a 375 px, il pannello passa da 297 azioni a tre pulsanti e due campi. Il payload RSC di Pianificazione scende da 253,03 a 242,71 KiB. Confermato il 409 per una prenotazione modificata dopo l’apertura del modulo. Revisione indipendente GPT 6 Sol xhigh approvata senza rilievi. Gate verdi con 2.349 unit. Su database sintetico appena azzerato e SMTP locale la suite browser ha completato 697 casi, 695 al primo tentativo e due al retry (volo Scuola con istruttore, geometria di Statistiche). Tutti e tre i casi METAR hanno usato la fixture LIML. Misure per ruolo, controprove e diagnostica nel [record 18.4](../../_bmad-output/implementation-artifacts/18-4-filtri-pianificazione-mobile.md). Alla chiusura della 18.4, la prossima story prevista era la 18.5.
+## Prossimo lavoro
 
-- **Audit follow-up verificato sul candidato da `36f6745`**: cleanup dell'handoff/backlog e reset del solo DB di test; tre fix separati per storno del compenso istruttore, conflitti tra modifiche della stessa prenotazione e progressione degli avvisi oltre destinatari SMTP rifiutati. Record con criteri e prove: `_bmad-output/implementation-artifacts/audit-followup-2026-11-26.md`. Gate: 2.349 unit, lint/typecheck/build verdi. Browser su PostgreSQL disposable: 687 passati, due flaky passati al retry (`mobile-reports`, navigazione 18.3b), tre METAR saltati per upstream indisponibile. Il rerun mirato ha passato tre volte Quota associativa con Indietro/Avanti e navigazione 18.3b; `mobile-reports` ha richiesto ancora un retry. Prove UI/API separate su DB sintetico e SMTP mock locale verdi. Revisione indipendente GPT 6 Sol xhigh approvata senza bloccanti. Nessuna nuova story o modifica a `main`.
-
-- **18.3 done** (`1c23687` per 18.3b; `55c8601` per 18.3a): Indietro/Avanti chiudono e attraversano i pannelli senza perdere focus; la tab mostra subito il pending e il percorso lento mostra uno scheletro AirOps. Fast 3G/CPU 4×, dal pointerdown al marker: 10,5–24,4 ms in 15 prove finali, con ordine degli eventi verificato separatamente e barre ferme. Prefetch su carico sintetico: Panoramica 12–15 richieste contro 17 sulla base, Flotta/Pianificazione 7 contro 7. Il boundary conserva la 404 diretta di una persona inesistente; Contabilità riconcilia righe e KPI tramite reader canonici dopo le scritture. Revisioni indipendenti GPT 6 Sol xhigh approvate. Gate finali 2.331 unit e build; browser su DB sintetico nuovo `E2E_EXIT=0`: 688 passati, un Mailpit locale recuperato al retry, tre METAR saltati e non verificati. Handoff quota positiva e regressioni 18.3a verdi. Epic 18 resta in-progress; nessun intervento su `main`.
-
-- **Epic 17 done**: le otto story 17.1–17.8 sono `done` in sprint-status; la retrospettiva resta `optional`. Il rollup prima rimasto `in-progress` è stato allineato. Il database sintetico `airmanager_load` è ancora presente per eventuali misure successive e va eliminato quando non serve più; non è un gate BMAD di chiusura.
-
-- **18.2 done** (`4a6642d`): 18.2a fold e conteggi filtrati; 18.2b stati vuoti, azioni per ruolo e azzeramento filtri. Revisione indipendente GPT 6 Sol xhigh approvata dopo correzione della CTA Contabilità vuota. Gate 2.329 unit e build; browser 667 passati, un METAR segnalato flaky e due saltati. Tre comportamenti METAR non attestati.
-
-- **18.2a done** (`story/18-2a`, base `ba1ffdedd46fef8e3757b0d970cc01cd7e47ca7e`): AC 1–5 e 7–8 implementati; titolo mobile accessibile ma visivamente nascosto, pillole Scadenze con conteggi cumulativi filtrati, «Altre azioni» su tre liste e KPI Contabilità su una riga. Fold a 375 px: Scadenze 289,84; Contabilità 348,33; Registro voli 310,81. Box `.page-head` desktop invariato `[260, 85,84, 992, 51,44]`. Gate 2.322 unit e build verdi. Browser finale **exit 0: 662 passati, 3 flaky, 2 saltati**; picker cap, nuovi tre test 18.2a e regressione desktop verdi. Due flaky di posta locale sono passati al retry; il terzo (METAR) ha fallito il login iniziale e al retry è stato saltato per `raw` assente, quindi **METAR non verificato** insieme agli altri due skip. Evidenze nel record `_bmad-output/implementation-artifacts/18-2-fold-liste.md`. Revisione indipendente GPT 6 Sol xhigh approvata; rilievo basso sul nome del dialog desktop nel record; **18.2b/AC 6** è stata completata e approvata nel commit successivo. Nessun intervento su `main`.
-
-- **18.1 done** (`25149f3`): pavimento mobile 44 px nei pannelli, topbar e accesso; link AOG desktop preservato dopo riesame indipendente GPT 6 Sol xhigh. Gate 2.320 unit e build; browser 659 passati, tre flaky, due METAR saltati e documentati. Geometria invariata per 267 controlli editor su tre larghezze desktop.
-
-- **17.8 done** (`46e707c`): alert job con massimo 200 candidati per giro, retry e claim per ID; fan-out velivolo dopo la risposta. Revisione indipendente GPT 6 Sol xhigh approvata. Gate verdi con 2.320 unit; browser 621 passati, tre al retry, due saltati. Lotto sintetico di 200 in 12,4 s, 2.005 candidati esauriti in 11 giri. Limiti SMTP ambiguo e fan-out in memoria nel record.
-
-- **17.7 done** (`6326e7a`): pdfkit 0.20.2, PDF massimo 5.000 righe, messaggi UI oltre i tetti. Revisione indipendente GPT 6 Sol xhigh approvata dopo correzione della riga lunga. Gate 2.308 unit e build; 626 casi browser nella suite completa prima dell’ultima correzione, poi 9/9 export PDF sulla build finale. p50 endpoint voli 2.739 ms sul carico sintetico; parità testuale dei cinque report pagina per pagina.
-
-- **17.6 done** (`a85f77c`). Revisione indipendente GPT 6 Sol xhigh approvata. Gate verdi con 2.306 unit e 626 casi browser su dati sintetici, uno recuperato al retry. Limite della prova ACL documentato nel record della story.
-
-- **17.5 done** (`eb0cf2b`): revisione indipendente Codex approvata, due rilievi bassi nel record. Gate 2.293 unit e build; 624 browser su dati sintetici, sette casi recuperati dopo retry. Panoramica da 82 a 53 statement e da 5 a 0 BEGIN.
-
-- **17.4 done** (`0f6cc37`): Statistiche e ricavi aggregati, classifiche con anteprima 8 e pagina separata; indici del registro verificati. Statistiche a 375 px: 1.214 → 122 KiB e 348 → 128 ms; parità a 10 finestre e su catene sintetiche. 2.283 unit, browser: 624 passati, 0 saltati, 0 flaky, 0 falliti. Push su `dev` previsto con soli commit verificati e senza modificare `main`.
-
-- **17.3 done** (`d68647a`): primi 20 saldi, elenco paginato e ricerca, API riepilogo, conteggio Avvisi mantenuto. SQL indipendente verificata su dati sintetici. **2292 unit, 621 browser passati, 3 METAR saltati, 0 falliti**. Contabilità mobile 1.102 → 392 ms; payload API 647 → 3,3 KB. Nessun push.
-
-- **17.2 done** (`0ebfbc2`): Pianificazione e Panoramica riducono le righe, con filtro velivolo lato server condiviso con elenco ed esportazioni. **2291 unit, 623/623 browser**. Nel giorno carico: 41.731 → 5.628 nodi, 1.023 → 271 ms a 1280 px; 128 blocchi preservati. Agenda mobile identica nel campione visivo.
-- **Epic 16 pubblicato**: `dev` verificato a `0855a20`; da questa base partono le story 17.2–17.4. Merge e deploy esclusi.
-
-- **16.10 done** (`482d9fc`, `35264e0`): i sette form mantengono la chiave quando l’esito è incerto, anche dopo ricarica della scheda con i medesimi dati. La prova della quota verifica un solo addebito e un solo rinnovo. **2289 unit**, gate verdi, **69 browser mirati**, **622 casi browser distinti verificati** (566 + volo corretto + 55 della catena).
-
-- **16.9 done** (`d45d308`): prefill dei form, calendario Scadenze e avvisi a Roma; etichette di Contabilità/Statistiche su Roma; Capodanno provato con browser in UTC. Gate verdi, **2282 unit** e **621 passed + 1 flaky, 0 failed, exit 0**.
-
-- **16.8 done** (`2266077`): conteggio in anteprima e in transazione, email acquisita in Mailpit, prenotazioni approvate visibili per i velivoli archiviati su desktop e mobile. Gate verdi, **2278 unit**, **621 browser distinti** (567 nel progetto principale, 54 nella catena seriale; due DB di prova). Fix di selettore nella fixture cassa `b29ab38` per eseguire la catena anche senza la reclassifica della fixture mobile.
-
-- **16.7 done**: fix review F1 in `ff43e17` (disconnessione al recheck se la persona non coincide), correzioni del record F2/F3 nella story. Gate verdi, **2272 unit** e **618/618 e2e**, exit 0, su dati sintetici. Nessun push di questa ripresa, merge o deploy.
-
-- **Tutte le story degli Epic 16-18 sono pronte e ratificate**:
-  - Epic 16: 16.5-16.9 riallineate su HEAD (sezione **§R** in testa a ogni file, PREVALE sul resto) + ratifiche **§R-PO**; 16.8 riperimetrata (via contaore e tariffe già chiuse dalla 19.3).
-  - Epic 17: file 17.2-17.8 creati il 2026-11-03 (ricognizione su `e951960`) + **§PO** (21 raccomandazioni accettate in un giro).
-  - Epic 18: file 18.1-18.7 creati il 2026-11-04 (su `1f6ab3e`) + **§PO** (24 raccomandazioni); **split a/b dentro il file** per 18.2, 18.3, 18.5, 18.7.
-  - Epic 15 corretto a `done` (era rimasto `in-progress`).
-- **16.5 done** (`caeb973` feat, `be11075` record, `2d012ab` decisioni PO sulla review, `c635b34` fix, `f23ca47` Fix Record): compenso istruttore congelato sul volo, ex istruttori visibili e pagabili, pagamenti concorrenti bloccati sotto lock. Arbitro finale 607 + 3 flaky = **610**, exit 0. **Conteggi**: e2e **610**, unit **2242**.
-- **16.6a done** (`a6be2da`, `76c7eba`, `d543c1a`, `dea21d5`, `7a9ec4e`, `c5c1efa`, `dcad37e`, `c47ec70`): data valuta futura rifiutata (422 `EFFECTIVE_DATE_IN_FUTURE`), errori dei pannelli leggibili (`.fld-error`, ≥ 4,5:1), «Cassa per categoria» e «Ricavi maturati» ovunque, **keep-alive 75 s del server e2e** (TD-19.10-g chiuso: 0 ECONNRESET da allora). Durante la chiusura trovato e corretto un bug di prodotto della 16.5 (`6c19915`: remount della console Istruttori che chiudeva il pannello «Paga»). Arbitro finale **615/615**, exit 0. **Conteggi**: e2e **615**, unit **2252**.
-- **16.6b done** (`6e76e20`, `91a70b0`, `c453b22`, `25ef34d`, `470d4ca`): chiave di idempotenza stabile nel pannello quota; catene di rettifica classificate dal **libro della radice** (`reversalRootBook`, enum DEPOSIT/REVENUE/TRANSFER) — la correzione di un giroconto resta giroconto (decisione PO). Arbitro finale 614 + 2 flaky = **616**, exit 0. **Conteggi**: e2e **616**, unit **2261**. Nuova story **16.10** (doppi addebiti dopo un guasto di rete nei 7 form con `Idempotency-Key`) in coda all'Epic 16, file da creare dopo la 16.9.
-- **Nota storica**: il precedente handoff indicava 18.3 come prossima; ora 18.3 è conclusa. Verificare lo stato di `dev` prima di ogni pubblicazione.
-
-## Key Decisions di oggi
-
-- Le ratifiche al PO si fanno **in linguaggio semplice** (cosa vede a schermo prima/dopo): una domanda scritta dal punto di vista del codice è stata respinta come «ai slop» (memoria `feedback-plain-ratification-questions`). Le scelte tecniche o vincolate da un precedente le decide la sessione principale e le riporta.
-- 16.5, review: il PO ha **ribaltato** «pagamenti concorrenti: basta dichiararlo» in «bloccare» dopo che la sessione principale ha corretto la propria descrizione («nessun soldo va perso» era impreciso: la cassa pagava due volte).
-
-## What Worked
-
-- Ricognizioni in sola lettura **in parallelo** (un subagent per story, report ≤ 200-250 righe) → la sessione principale scrive §R/§PO nel file story. Le domande al PO raccolte in un solo giro per epic.
-- Ciclo per story: reset DB → UN dev (Opus per UI) → reset → review Opus (arbitro per primo) → decisioni PO → fix → reset → **arbitro finale della sessione principale** (`CI=1 scripts/e2e.sh start` con `JOBS_SECRET` esportato, poll in background fino a `E2E_EXIT=`) → `docs(N)` con Review Record + sprint-status + questo file.
-
-## What Didn't Work / trappole
-
-- **Mai mandare un SendMessage a un subagent mentre gira un arbitro**: il messaggio lo risveglia e lui può lanciare `npm run gates`, che ricostruisce `.next` sotto il server dell'arbitro (successo nella 16.6a: arbitro scartato). Se serve, scrivere esplicitamente «niente build/gate/e2e».
-- **Salvare subito il log di ogni arbitro** (`cp /tmp/airmanager-e2e/last-run.log` nello scratchpad): ogni `scripts/e2e.sh start` successivo (anche di un subagent) ruota `last-run.log` in `.prev` e due run bastano a perderlo.
-- **Login-timeout** (`toHaveURL(/dashboard$/)` scaduto a 5 s dopo il submit del login) resta l'unica classe di flaky ricorrente dopo il keep-alive: 2 nell'arbitro della 16.6b. Candidato TD se cresce.
-- Un flaky su un test della story precedente non si archivia come «classe nota» senza leggerne il messaggio: nella 16.6a era un bug di prodotto della 16.5.
-
-- **Fascia 23:40-01:00 di Roma**: il reviewer ha programmato l'arbitro alle 01:06; la macchina poi è rimasta ferma fino alle 09:39 e il reviewer non si è risvegliato da solo → riprenderlo con SendMessage quando il run è finito.
-- **Disco di sistema al 99%** (2026-11-03 23:55): liberati 3,8 GB cancellando `.next/dev` (cache di `next dev`, non in uso). Controllare `df -h /` prima delle build.
-- Il **Workflow tool** va usato solo con opt-in esplicito dell'utente: lanciato per errore per le ricognizioni dell'Epic 17, fermato e sostituito da Agent normali.
-- Un run `--no-deps` di uno spec della **catena serializzata** lascia AppSettings globali sporchi (`maxAdvanceDays: 3650` → 17 fallimenti `BOOKING_OUTSIDE_WINDOW` nella suite del dev 16.5). Arbitri sempre su DB fresco.
-- Un dev che avvia `next start` su :3000 può non riuscire a fermarlo (classifier): la sessione principale chiede al PO e lo ferma prima dell'arbitro.
-- **ECONNRESET** (TD-19.10-g): CHIUSO con `7a9ec4e` (`--keepAliveTimeout 75000` nel `webServer.command`; la ricetta di `CLAUDE.md` per il server riusato porta lo stesso flag).
-- `scripts/e2e.sh status` mostra l'ULTIMO run: dopo i run di mutanti dei subagent può dire `E2E_EXIT=1` per costruzione.
-- Restano valide le trappole degli handoff precedenti (subagent senza reset DB, `getMetar` senza timeout TD-19.7b-e, ricetta di reset sotto).
-- Ricetta di reset: `docker compose exec -T postgres psql -U airmanager -d postgres -Atc 'DROP DATABASE airmanager WITH (FORCE)' && docker compose exec -T postgres createdb -U airmanager airmanager && set -a && . ./.env && set +a && npx prisma migrate deploy && npx prisma db seed` (controllare prima `ss -ltnp | grep :3000`).
-
-## Stato dell'ambiente lasciato
-
-- **DB**: `airmanager` (e2e, post-arbitro) e **`airmanager_load`** (DB di carico rigenerato il 2026-11-03 con `seed:load`, migrazione della 16.5 applicata) — gemello per le misure dell'Epic 17, **da cancellare a fine Epic 17**.
-- Porte 3000/3100 libere. Nessun subagent attivo.
-- File untracked/modificati non nostri, da non committare: `.agents/`, `.claude/skills/*` (compresa la cancellazione di `.claude/skills/design-taste-frontend/SKILL.md`), `.claude/workflows/`, `.github/hooks/`, `.github/skills/`, `skills-lock.json`, `q.txt`, `_bmad-output/planning-artifacts/audit-2026-11-02/`.
-- Nota storica: prima della pubblicazione 17.2–17.4 era richiesto ricontrollare `origin/dev` e usare un push fast-forward. Le story sono concluse; per i reset sintetici locali usare `TEST_DATABASE_URL` con `npm run db:reset:test` (solo `airmanager_test` o `airmanager_e2e`).
-
-## Next Steps
-
-1. Per le prossime integrazioni, ricontrollare `origin/dev` e pubblicare solo in fast-forward dopo i gate richiesti. Non fare merge o deploy senza mandato.
-2. Per il prossimo lavoro consultare `development_status` in `sprint-status.yaml` e lo stato delle story dell'Epic 18: la 17.5 e l'Epic 17 sono già conclusi. Questa voce sostituisce l'istruzione rimasta dal precedente handoff; lo storico sopra resta valido.
-3. Correggere la corrispondenza delle tabelle in PDF/Excel. Poi iniziare le prove email con provider gratuiti, solo in sandbox e con dati fittizi.
-
-## Suggested skills
-
-`karpathy-guidelines` in ogni prompt; agent `dev-story` con `model: opus` per le story con UI (+ `design-taste-frontend`, `ui-ux-pro-max`), `sonnet` per il backend puro (17.5); `adversarial-reviewer`; `handoff` a fine epic.
+La retrospettiva dell’Epic 18 resta facoltativa. Il prossimo intervento concordato è verificare e correggere la corrispondenza delle tabelle negli export PDF ed Excel. Seguono le prove di login ed email su dati fittizi e provider sandbox. Prima di riprendere, leggere la punta remota di `dev` e verificare il record BMAD pertinente.
