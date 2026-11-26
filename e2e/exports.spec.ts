@@ -291,3 +291,49 @@ test.describe('Excel exports (Story 10.1, FR-39)', () => {
     expect(sheet.rowCount).toBe(2);
   });
 });
+
+test('Transazioni (Excel) exports the visible ledger with inclusive and open-ended date filters', async ({ page }) => {
+  await loginExpectingDashboard(page, ADMIN_EMAIL);
+  const category = `Export ${uniqueSuffix()}`;
+  const created = await page.request.post('/api/v1/cash-categories', { data: { name: category } });
+  expect(created.status()).toBe(201);
+  const { id: categoryId } = await created.json() as { id: string };
+  const amounts = [101, 202, -303, 404, 505];
+  for (const [index, amountCents] of amounts.entries()) {
+    const day = index + 1;
+    const response = await page.request.post('/api/v1/cash-movements', {
+      data: { categoryId, effectiveDate: `2004-03-0${day}`, description: `Movimento ${day}`, amountCents, paymentMethod: 'CASH' },
+    });
+    expect(response.status()).toBe(201);
+  }
+
+  const cases: { filters: Record<string, string>; days: number[] }[] = [
+    { filters: { dateFrom: '2004-03-02', dateTo: '2004-03-04' }, days: [4, 3, 2] },
+    { filters: { dateFrom: '2004-03-03' }, days: [5, 4, 3] },
+    { filters: { dateTo: '2004-03-03' }, days: [3, 2, 1] },
+    { filters: { dateFrom: '2004-03-02', dateTo: '2004-03-04', bookType: 'REVENUE' }, days: [4, 2] },
+  ];
+  for (const { filters, days } of cases) {
+    const query = new URLSearchParams({ categoryId, ...filters });
+    await page.goto(`/it/dashboard/billing?${query}`);
+    const rows = page.getByTestId('transaction-row');
+    await expect(rows).toHaveCount(days.length);
+    const expected = days.map((day) => {
+      const cents = amounts[day - 1]!;
+      return [`0${day}/03/2004`, null, cents > 0 ? 'Ricavo' : 'Costo', `${category} — Movimento ${day}`, 'Contanti',
+        cents > 0 ? cents / 100 : null, cents < 0 ? -cents / 100 : null, 'Registrata'];
+    });
+    const visible = await rows.evaluateAll((elements) => elements.map((row) =>
+      Array.from(row.children).slice(0, 8).map((cell) => (cell as HTMLElement).innerText.trim().replaceAll('\u00a0', ' '))));
+    const money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+    expect(visible).toEqual(expected.map((row) => row.map((value) =>
+      typeof value === 'number' ? money.format(value).replaceAll('\u00a0', ' ') : value ?? '—')));
+
+    await page.getByTestId('export-menu-trigger').click();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-menu-xls').click()]);
+    const sheet = (await loadWorkbook(await readFile((await download.path())!))).worksheets[0]!;
+    const actual = Array.from({ length: sheet.rowCount - 1 }, (_, index) =>
+      Array.from({ length: 8 }, (_, col) => sheet.getRow(index + 2).getCell(col + 1).value));
+    expect(actual, query.toString()).toEqual(expected);
+  }
+});

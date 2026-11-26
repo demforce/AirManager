@@ -88,7 +88,8 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const compensation = await getCompensationSummary(actor);
   const negativeBalances = await getNegativeBalanceSummary(actor);
 
-  const txQuery = { pageSize: TX_PAGE_SIZE, from: dateFrom, to: dateTo, personQuery, bookType: bookTypeParam, categoryId, unattributed };
+  const transactionFilters = { from: dateFrom, to: dateTo, personQuery, bookType: bookTypeParam, categoryId };
+  const txQuery = { ...transactionFilters, pageSize: TX_PAGE_SIZE, unattributed };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   let result = await listTransactions(actor, { ...txQuery, page });
   const lastPage = Math.max(1, Math.ceil(result.total / TX_PAGE_SIZE));
@@ -100,15 +101,10 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const t = await getTranslations('BillingPage');
 
-  const filterQuery = {
-    ...(dateFrom ? { dateFrom } : {}),
-    ...(dateTo ? { dateTo } : {}),
-    ...(bookTypeParam ? { bookType: bookTypeParam } : {}),
-    ...(categoryId ? { categoryId } : {}),
-    ...(personQuery ? { personQuery } : {}),
-    ...(unattributed ? { unattributed: 'true' } : {}),
-  };
-  const exportHref = buildExportHref('/api/v1/transactions', filterQuery, locale);
+  const exportHref = buildExportHref('/api/v1/transactions', {
+    ...transactionFilters,
+    unattributed: unattributed ? 'true' : undefined,
+  }, locale);
 
   const periodLabel = dateFrom && dateTo
     ? `${formatDateOnly(dateFrom, displayLocale)} – ${formatDateOnly(dateTo, displayLocale)}`
@@ -131,7 +127,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   return (
     <main className="page fold-billing">
       <BillingLiveProvider
-        key={JSON.stringify({ page, ...filterQuery })}
+        key={JSON.stringify({ page, ...transactionFilters, unattributed })}
         initial={{ asOf: asOf.toISOString(), transactions: result, summary, compensation: projectBillingCompensation(compensation), negativeBalances: { count: negativeBalances.count, top: projectBillingNegativeBalances(negativeBalances.top) } }}
         filters={filters}
       >

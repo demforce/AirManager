@@ -265,27 +265,25 @@ test.describe('Story 19.7b — the derived rows in the API, the export and in En
     const patch = await page.request.patch(`/api/v1/expiries/currency:${a.id}`, { data: { notes: 'no' } });
     expect(patch.status()).toBe(404);
 
-    // --- the export of the «Currency» view (no `window`: «Tutte» is the ABSENCE of the filter): the same rows, no document (AC 7).
-    const xlsx = await page.request.get(`/api/v1/expiries?format=xlsx&locale=it&category=CURRENCY&personQuery=${search}`);
-    expect(xlsx.status()).toBe(200);
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load((await xlsx.body()) as unknown as Parameters<typeof workbook.xlsx.load>[0]);
-    const sheet = workbook.worksheets[0]!;
-    const exported: string[][] = [];
-    sheet.eachRow((row, index) => {
-      if (index > 1) exported.push([1, 2, 3, 4, 5].map((cell) => String(row.getCell(cell).value)));
-    });
-    expect(exported.map((row) => row[0]).sort()).toEqual([a, b, d, f, h].map((person) => person.name).sort());
-    // The currency has no type scope («—»); every row has a date.
-    expect(exported.every((row) => row[1] === 'Currency' && row[2] === DASH && row[3] !== DASH)).toBe(true);
-    expect(exported.find((row) => row[0] === a.name)).toEqual([a.name, 'Currency', DASH, formatDateOnly(TODAY), 'In scadenza']);
-
-    // --- the page's own export link carries the Categoria (D-11).
+    // Read the actual file offered by the registry in the same order as its visible rows.
     await page.setViewportSize(DESKTOP);
     await page.goto(`/it/dashboard/expiries?window=all&category=CURRENCY&personQuery=${search}`);
+    const visible = await readRows(page);
+    expect(visible.map((row) => row[0]).sort()).toEqual([a, b, d, f, h].map((person) => person.name).sort());
     await page.getByTestId('export-menu-trigger').click();
-    await expect(page.getByTestId('export-menu-xls')).toHaveAttribute('href', /[?&]category=CURRENCY(&|$)/);
     await expect(page.getByTestId('export-menu-pdf')).toHaveAttribute('href', /[?&]category=CURRENCY(&|$)/);
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-menu-xls').click()]);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile((await download.path())!);
+    const sheet = workbook.worksheets[0]!;
+    const exported: string[][] = [];
+    sheet.eachRow((row) => exported.push([1, 2, 3, 4, 5].map((cell) => row.getCell(cell).text)));
+    // AD-4's compact document groups all three warning bands under «In scadenza».
+    expect(sheet.columnCount).toBe(5);
+    expect(exported).toEqual([
+      ['Persona', 'Tipo', 'Ambito', 'Scadenza', 'Stato'],
+      ...visible.map(([person, category, , date, , tier]) => [person, category, DASH, date, tier.startsWith('≤') ? 'In scadenza' : tier]),
+    ]);
 
     // --- English (AC 10): the badge, the ICU plural of the detail, the status.
     await page.goto(`/en/dashboard/expiries?window=all&category=CURRENCY&personQuery=${search}`);
