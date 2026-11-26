@@ -4,7 +4,7 @@ baseline_commit: 1f6ab3e
 
 # Story 18.3: Indietro chiude, la navigazione risponde
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e`). **Dev: Opus 5 xhigh** (UI). Review: Opus 5 xhigh adversarial. **Split** in **18.3a «Indietro chiude»** e **18.3b «La navigazione risponde»** (due meccanismi indipendenti con rischi diversi, ognuno col suo arbitro sulla suite completa): v. §PO. La 18.3b va dopo l'Epic 17 (che cambia i tempi delle stesse pagine).
+Status: **in-progress** — 18.3a «Indietro chiude» implementata e in attesa di revisione indipendente; 18.3b «La navigazione risponde» resta ready-for-dev. File creato il 2026-11-03 con `bmad-create-story` e ricognizione su `1f6ab3e`. Per la 18.3a, Dev: GPT 6 Sol secondo la sostituzione permanente approvata da Enrico; revisione indipendente ancora da eseguire. **Split** in due meccanismi indipendenti con gate separati: v. §PO.
 
 ## Story
 
@@ -41,7 +41,7 @@ Fonte: `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md` §«Story 18.3»
 
 ## Tasks / Subtasks
 
-- [ ] 18.3a: NEW `src/components/ui/history-layer.ts` (gemello di `focus-trap.ts`), UPDATE `slide-over.tsx` e `mobile-sheet.tsx`, i 3 «Applica», i 6 link con `close`, i 2 passaggi sheet → pannello; e2e nuovo; aggiornare la riga «Escape e i pannelli» di CLAUDE.md.
+- [x] 18.3a: NEW `src/components/ui/history-layer.ts` (gemello di `focus-trap.ts`), UPDATE `slide-over.tsx` e `mobile-sheet.tsx`, i 3 «Applica», i link con `close`, i passaggi sheet → pannello; e2e nuovo; aggiornare la riga «Escape e i pannelli» di CLAUDE.md. Implementazione e prove locali completate; review indipendente pendente.
 - [ ] 18.3b: NEW `src/app/[locale]/dashboard/loading.tsx` + CSS dello scheletro; `mobile-nav.tsx` (indicatore in un figlio del `Link` con `useLinkStatus`); `sidebar.tsx` se §PO Q-18.3-b = A; 1-2 chiavi «Caricamento…»; e2e con throttling; audit dei 195 `toHaveURL`.
 
 ## Dev Notes
@@ -72,6 +72,25 @@ Ratificate dal PO il 2026-11-03/04 in un solo giro (AskUserQuestion: «Sì, tutt
 
 ### Agent Model Used
 
+GPT 6 Sol (sviluppo, un solo agente). Revisione indipendente ancora pendente.
+
 ### Completion Notes List
 
+- AC 1/2/7: `SlideOver` e `MobileSheet` creano una voce history allo stesso URL; Indietro, ✕, scrim, Escape e Chiudi convergono sulla stessa chiusura. Il focus torna al trigger e il focus trap rimane nella primitiva. Il comportamento vale anche per il pannello desktop e il menu Esporta desktop. `MiniModal` e il modale Quota associativa restano esclusi.
+- AC 3/4/5: i tre pannelli Filtri applicano con `router.replace` dalla voce del layer; i link interni usano `replace` e preparano la navigazione; sheet → editor trasferisce la voce al pannello. I test contano le navigazioni del frame principale e verificano il secondo Indietro.
+- AC 6: la chiusura dopo salvataggio non invoca `back()` prima del `router.refresh()`. Next può rimpiazzare il custom `history.state` nel refresh: il cleanup riconosce la stessa URL e il token attivo, marca la voce consumata e la salta al prossimo Indietro. Una prova diagnostica su build precedente mostrava token presente all'apertura e assente dopo il refresh, con Back bloccato sulla stessa URL; dopo la correzione `e2e/flights.spec.ts` passa 8/8 ripetizioni seriali senza retry (`scripts/e2e.sh start e2e/flights.spec.ts -g 'admin registers a flight with takeoff/landing times' --repeat-each=8 --workers=1`, `E2E_EXIT=0`).
+- Handoff 18.2a: su database sintetico con quota annuale positiva, da Panoramica si entra in Scadenze e si apre Altre azioni → Quota associativa. Il test verifica sheet chiuso, modale aperto e focalizzato allo stesso URL, annullamento senza POST di addebito, poi un solo Indietro verso Panoramica. Il modale non riceve alcun comportamento Back.
+- Browser headless usa `page.goBack()`; il gesto iOS e il tasto hardware Android non sono verificati direttamente. Avanti dopo una chiusura può rivisitare lo stesso URL senza riaprire il layer né ripristinare i campi del form: comportamento dichiarato in `CLAUDE.md`.
+- Gate sul candidato finale: `npm run gates` exit 0 — lint 41 s, typecheck 5 s, 2.329 unit test in 16 s, build 53 s. Preflight `.env`: DB `localhost`, SMTP `localhost:1025`; ricreazione DB, 60 migrazioni e seed sintetico exit 0. `scripts/e2e.sh start` sul DB nuovo: `E2E_EXIT=0`, 676 passed, 2 flaky, 2 skipped in 26,4 min. I 9 test `history-layers.spec.ts`, il salvataggio di `flights.spec.ts:227` e l'handoff quota sono passati al primo tentativo.
+- Misura AC 3: nel test Registro voli l'URL filtrato è raggiunto con al massimo un evento `framenavigated` del frame principale; la prova Scadenze esistente ne richiede esattamente uno e quella Contabilità al massimo uno. Un Indietro torna all'URL non filtrato. La soglia di latenza 100 ms e il costo di prefetch appartengono alla 18.3b (AC 8–10), non sono dichiarati verificati qui.
+- Flaky finali fuori 18.3a: `e2e/mobile-reports.spec.ts:422` ha visto 0 invece di 1 riga classificata per 5 s, poi è passato al retry #1. `e2e/mobile-metar.spec.ts:167` è rimasto su `/it/login` per 5 s al primo tentativo; al retry #1 è stato **saltato** perché il METAR upstream era nullo, quindi la sua UI non è verificata. Anche `mobile-metar.spec.ts:61` e `:208` sono saltati per risposta nulla di `aviationweather.gov`; nessuno dei tre casi METAR viene contato come prova positiva. Nel primo run integrato, prima della correzione del refresh, AC 6 era fallito due volte (URL ancora `/it/dashboard/logbook`) e il test Mailpit locale aveva atteso invano 1 messaggio sintetico per 15 s; il run finale non ha riprodotto quel timeout Mailpit.
+- Mutanti, solo su quattro copie isolate `/tmp` create dall'albero finale: SHA-256 di `history-layer.ts` originale e copia baseline `d25aca7c47bbe6f3d9e6e8a8a7aef95e2a079ca6c8a5d1db87e37c26deb29f99`. Baseline sulla copia: 10/10 test pertinenti verdi, exit 0. `back()` in Applica → AC 3 rosso, URL `/it/dashboard` anziché `?flightType=TOURISM`, test exit 1; `back()` nel trasferimento → AC 5 rosso, `identity-form` assente, exit 1; `back()` dopo save → AC 6 rosso già sul pannello risultato assente (prima della verifica della riga), exit 1; `pushState` con `?__history_mutant=1` → AC 1 rosso sull'URL identico all'apertura, exit 1. Ogni mutante è stato provato separatamente contro la stessa baseline.
+- Harness mutanti: il primo `CI=1 npx playwright test` nella copia è uscito 1 durante il build Turbopack (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`), senza eseguire test. Il build isolato `next build --webpack` ha poi richiesto `typescript.ignoreBuildErrors` **solo nella configurazione della copia** per un errore di tipo preesistente su `negative-balances/route.ts`; i cinque build webpack baseline/mutanti e i test browser indicati sopra sono stati eseguiti. Il gate canonico ha verificato typecheck e build senza queste deroghe. Nessuna modifica del harness è stata copiata nel repository.
+
 ### File List
+
+- `src/components/ui/history-layer.ts`, `slide-over.tsx`, `mobile-sheet.tsx`, `bottom-sheet.tsx`
+- `src/components/shell/mobile-nav.tsx`, `mobile-top-bar.tsx`
+- console/editor in `src/app/[locale]/dashboard/{billing,bookings,expiries,fleet,instructors,logbook,pilots}`
+- `e2e/history-layers.spec.ts`, `e2e/flights.spec.ts`, `e2e/mobile-membership-fee.spec.ts`
+- `CLAUDE.md`, questo record, `sprint-status.yaml`, piano `docs/superpowers/plans/2026-11-26-story-18-3a-history.md`

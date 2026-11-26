@@ -28,6 +28,7 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Field, Input } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { useToast } from '@/components/ui/toast';
 import {
   ExpiryDraftEditor,
@@ -158,7 +159,7 @@ export function PilotEditor({ target, onClose, onMutated, canManageUsers, locale
     !isNew && current ? (
       <>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn" onClick={onClose}>
+        <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
           {labels.cancel}
         </button>
         <button
@@ -1176,7 +1177,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
           returning null, i.e. not hit-testable without scrolling. `so-actions`
           pins it; above 640px the rule does not exist. */}
       <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-        <button type="button" className="btn" onClick={onClose}>
+        <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
           {labels.cancel}
         </button>
         <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="pilot-identity-submit">

@@ -27,6 +27,7 @@ import { z } from 'zod';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
+import { dismissHistoryLayer, prepareHistoryNavigation, transferHistoryLayer } from '@/components/ui/history-layer';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Field, Input, Select } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
@@ -294,6 +295,7 @@ export function InstructorsConsole({ items, inactiveItems, canManagePeople, canM
         locale={locale}
         labels={labels.paymentCycle}
         onPay={(instructor) => {
+          transferHistoryLayer();
           setPaymentCycleOpen(false);
           setPayTarget(instructor);
         }}
@@ -313,10 +315,12 @@ export function InstructorsConsole({ items, inactiveItems, canManagePeople, canM
           instructor={sheetInstructor}
           onClose={closeSheet}
           onEdit={(instructor) => {
+            transferHistoryLayer();
             closeSheet();
             setEditorTarget(instructor);
           }}
           onPay={(instructor) => {
+            transferHistoryLayer();
             closeSheet();
             setPayTarget(instructor);
           }}
@@ -429,9 +433,10 @@ function InstructorSheet({ instructor, onClose, onEdit, onPay, canManagePayouts,
           ) : null}
           <Link
             href={`/dashboard/people/${instructor.personId}`}
+            replace
             locale={locale as AppLocale}
             className="btn"
-            onClick={onClose}
+            onClick={() => { prepareHistoryNavigation(); onClose(); }}
             data-testid="instructor-open-profile-mobile"
           >
             {labels.mobile.openProfile}
@@ -677,7 +682,7 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
             </p>
           ) : null}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-            <button type="button" className="btn" onClick={onClose}>
+            <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
               {labels.cancel}
             </button>
             <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="instructor-pay-submit">
@@ -871,7 +876,7 @@ function AddInstructorSlideOver({ open, onClose, onMutated, labels, successMessa
             </p>
           ) : null}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-            <button type="button" className="btn" onClick={handleClose}>
+            <button type="button" className="btn" onClick={() => dismissHistoryLayer(handleClose)}>
               {labels.cancel}
             </button>
             <button type="button" disabled={submitting} className="btn primary" onClick={() => void handleConfirm()} data-testid="add-instructor-submit">

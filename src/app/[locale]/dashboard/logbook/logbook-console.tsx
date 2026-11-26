@@ -33,6 +33,7 @@ import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { DateInput } from '@/components/ui/date-input';
 import { SlideOver } from '@/components/ui/slide-over';
+import { prepareHistoryNavigation, transferHistoryLayer } from '@/components/ui/history-layer';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
@@ -302,10 +303,12 @@ export function LogbookConsole({
     return query;
   }
 
-  function navigate(next: LogbookFilters): void {
+  function navigate(next: LogbookFilters, replace = false): void {
     const params = new URLSearchParams(buildFilterQuery(next));
     const search = params.toString();
-    router.push(`/dashboard/logbook${search ? `?${search}` : ''}`);
+    const href = `/dashboard/logbook${search ? `?${search}` : ''}`;
+    if (replace) router.replace(href);
+    else router.push(href);
   }
 
   function handleFilterChange(patch: Partial<LogbookFilters>): void {
@@ -323,11 +326,11 @@ export function LogbookConsole({
     personQueryDebounce.run(value);
   }
 
-  function handleReset(): void {
+  function handleReset(replace = false): void {
     const cleared: LogbookFilters = { dateFrom: '', dateTo: '', aircraftId: '', personId: '', personQuery: '', flightType: '' };
     setFilters(cleared);
     setPersonQueryInput('');
-    navigate(cleared);
+    navigate(cleared, replace);
   }
 
   function pageHref(targetPage: number) {
@@ -446,10 +449,11 @@ export function LogbookConsole({
   /** ONE navigation on "Applica" (AD-4) — navigating per `onChange`, as the desktop head does, would remount the console and close the panel under the reader's thumb. */
   function applyFilterDraft(): void {
     if (filterDraft === null) return;
+    prepareHistoryNavigation();
     const next = filterDraft;
     setFilterDraft(null);
     setFilters(next);
-    navigate(next);
+    navigate(next, true);
   }
 
   /**
@@ -579,7 +583,7 @@ export function LogbookConsole({
             <option value="SCHOOL">{labels.flightTypes.school}</option>
           </select>
           {hasActiveFilter ? (
-            <button type="button" className="btn logbook-filter-inpanel" onClick={handleReset} data-testid="flight-filter-reset">
+            <button type="button" className="btn logbook-filter-inpanel" onClick={() => handleReset()} data-testid="flight-filter-reset">
               {labels.filters.reset}
             </button>
           ) : null}
@@ -742,7 +746,7 @@ export function LogbookConsole({
                   {hasActiveFilter || instructorPersonId ? tEmpty('filtered') : labels.empty}
                 </p>
                 {hasActiveFilter || instructorPersonId ? (
-                  <button type="button" className="btn" onClick={handleReset} data-testid="mobile-flights-clear-filters">{tEmpty('clearFilters')}</button>
+                  <button type="button" className="btn" onClick={() => handleReset()} data-testid="mobile-flights-clear-filters">{tEmpty('clearFilters')}</button>
                 ) : canManage ? (
                   <button type="button" className="btn primary" onClick={() => setEditorTarget({ mode: 'new' })} data-testid="mobile-flights-new">{labels.newEntry}</button>
                 ) : canBookFlight ? (
@@ -909,8 +913,9 @@ export function LogbookConsole({
                 type="button"
                 className="btn"
                 onClick={() => {
+                  prepareHistoryNavigation();
                   setFilterDraft(null);
-                  handleReset();
+                  handleReset(true);
                 }}
                 data-testid="flight-filter-reset-mobile"
               >
@@ -1005,6 +1010,7 @@ export function LogbookConsole({
                   ref={sheetPrimaryRef}
                   onClick={() => {
                     const flight = sheetFlight;
+                    transferHistoryLayer();
                     closeSheet();
                     setEditorTarget({ mode: 'correct', flight });
                   }}

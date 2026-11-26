@@ -233,6 +233,9 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const aircraft = await createAircraftWithRate(page, 15000);
     const pilot = await createPilotWithLogin(page, 'PilotFlights123!');
 
+    // The fixture creates the pilot through the set-password route. Establish
+    // a known previous page before testing the next Back from Registro voli.
+    await page.goto('/it/dashboard');
     await page.goto('/it/dashboard/logbook');
     await openNewEntryForm(page);
     // Story 19.2 (AC 18): the three removed fields are gone from the form.
@@ -259,6 +262,11 @@ test.describe('Flight logging with automatic charges (Story 5.1, AC 1/2/3/4; Sto
     const row = page.getByTestId('flight-row').filter({ hasText: aircraft.registration });
     await expect(row).toContainText('1:20');
     await expect(row).toContainText(/200,00\s€/);
+    // 18.3a AC 6: the save's refresh has landed, and the consumed panel entry
+    // must not require a second Back to leave Registro voli.
+    await expect(page.locator('.slideover.open')).toHaveCount(0);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
 
     // The aircraft's total hours are the sum of its registered flights (story
     // 19.2, R-19-b): this one alone, 1:20.

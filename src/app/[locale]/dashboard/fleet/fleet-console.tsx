@@ -27,6 +27,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FleetCardGrid, badgeFor, type FleetCardItem } from '@/components/dashboard/fleet-card';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
+import { transferHistoryLayer } from '@/components/ui/history-layer';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { Link, useRouter } from '@/i18n/navigation';
@@ -346,6 +347,7 @@ export function FleetConsole({
               className="btn primary"
               onClick={() => {
                 const aircraft = sheetAircraft;
+                transferHistoryLayer();
                 closeSheet();
                 setTarget({ mode: 'edit', aircraft });
               }}

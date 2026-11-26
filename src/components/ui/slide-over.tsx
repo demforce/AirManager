@@ -25,6 +25,7 @@
  */
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { useFocusTrap } from './focus-trap';
+import { useHistoryLayer } from './history-layer';
 
 // Story 12.1 review finding F3, fixed here (story 12.3, its first real
 // consumer): the Esc listener is mounted unconditionally for the component's
@@ -46,15 +47,16 @@ export type SlideOverProps = {
 export function SlideOver({ title, subtitle, open, onClose, children, footer, closeLabel }: SlideOverProps) {
   const panelRef = useRef<HTMLElement>(null);
   const headingId = useId();
+  const dismiss = useHistoryLayer(open, onClose);
 
   useEffect(() => {
     const handleKeydown = (event: KeyboardEvent) => {
       if (!open) return;
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') dismiss();
     };
     window.addEventListener('keydown', handleKeydown);
     return () => window.removeEventListener('keydown', handleKeydown);
-  }, [open, onClose]);
+  }, [open, dismiss]);
 
   useEffect(() => {
     if (!open) return;
@@ -73,7 +75,7 @@ export function SlideOver({ title, subtitle, open, onClose, children, footer, cl
     // state, and the suite reads content that mounts with the panel), but it
     // leaves the tab order and the accessibility tree entirely.
     <div className={`slideover ${open ? 'open' : ''}`} aria-hidden={!open} inert={!open}>
-      <div className="slideover-scrim" onClick={onClose} />
+      <div className="slideover-scrim" onClick={dismiss} />
       <aside
         className="slideover-panel"
         role="dialog"
@@ -90,7 +92,7 @@ export function SlideOver({ title, subtitle, open, onClose, children, footer, cl
             <div className="so-sub">{subtitle}</div>
             <div className="so-title">{title}</div>
           </div>
-          <button type="button" className="iconbtn" onClick={onClose} title={closeLabel} aria-label={closeLabel}>
+          <button type="button" className="iconbtn" onClick={dismiss} title={closeLabel} aria-label={closeLabel}>
             ✕
           </button>
         </header>

@@ -30,6 +30,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { Field, Input, InputGroup } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { ExpiryDraftEditor, usePersonExpiryDraft, type ExpiryDraftEditorLabels, type ExpiryKind } from '@/components/dashboard/expiry-editor';
 import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
@@ -160,7 +161,7 @@ export function InstructorEditor({
   const footer = formState.ready ? (
     <>
       <div style={{ flex: 1 }} />
-      <button type="button" className="btn" onClick={onClose}>
+      <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
         {labels.cancel}
       </button>
       <button

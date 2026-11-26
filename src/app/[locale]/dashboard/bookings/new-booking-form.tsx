@@ -11,6 +11,7 @@ import { RequirementsWarning } from '@/components/dashboard/requirements-warning
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { DateTimeInput } from '@/components/ui/datetime-input';
 import { Field, Input } from '@/components/ui/field';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { Icon } from '@/components/ui/icons';
 import { Segmented } from '@/components/ui/segmented';
 import { SlideOver } from '@/components/ui/slide-over';
@@ -702,7 +703,7 @@ export function NewBookingForm({
             with its own amber panel, because two stacked sticky bars are the
             defect review 15.2 F3 deferred to story 15.5. */}
         <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-          <button type="button" className="btn" onClick={handleClose}>
+          <button type="button" className="btn" onClick={() => dismissHistoryLayer(handleClose)}>
             {labels.cancel}
           </button>
           <button ref={submitButtonRef} type="submit" disabled={isSubmitting} className="btn primary">

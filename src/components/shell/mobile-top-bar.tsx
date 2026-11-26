@@ -23,6 +23,7 @@ import { useCallback, useState } from 'react';
 import { Avatar } from '@/components/ui/avatar';
 import { Icon } from '@/components/ui/icons';
 import { MobileSheet } from '@/components/ui/mobile-sheet';
+import { prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { Link, usePathname } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { findNavItemByPathname, type NavItemId } from './route-registry';
@@ -112,10 +113,11 @@ export function MobileTopBar({
         <div className="mobile-sheet-rows">
           <Link
             href={{ pathname, query }}
+            replace
             locale={otherLocale}
             className="mobile-sheet-row"
             title={localeSwitchLabel}
-            onClick={closeProfile}
+            onClick={() => { prepareHistoryNavigation(); closeProfile(); }}
             data-testid="locale-switch-mobile"
           >
             {localeSwitchLabel}

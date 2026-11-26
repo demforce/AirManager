@@ -19,6 +19,7 @@ import { RequirementsWarning } from '@/components/dashboard/requirements-warning
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
+import { transferHistoryLayer } from '@/components/ui/history-layer';
 import { MiniModal } from '@/components/ui/mini-modal';
 import { useToast } from '@/components/ui/toast';
 import { BOOKING_STATUS_VALUES } from '@/lib/booking-status-filter';
@@ -590,6 +591,7 @@ export function BookingsTable({
           onClick={() => {
             // Ratifica R-15.4-d: the sheet goes away FIRST, then the panel
             // opens from the list — no z-50 panel stacked on a z-40 sheet.
+            transferHistoryLayer();
             closeSheet();
             setEditingBooking(booking);
           }}

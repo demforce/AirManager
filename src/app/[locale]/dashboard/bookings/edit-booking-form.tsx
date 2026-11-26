@@ -14,6 +14,7 @@ import { focusFirstInvalid } from '@/lib/dom-focus';
 import type { RequirementFailure } from '@/lib/schemas/requirements';
 import { formatDateOnly } from '@/lib/time';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { bookingAircraftSearch, aircraftOptionLabel, type AircraftOption } from './new-booking-form';
 import type { BookingRowDto } from './bookings-table';
 
@@ -386,7 +387,7 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
               class is inert above 640px and pins "Salva" to the bottom of the
               full-screen panel below it. */}
           <div className="so-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-            <button type="button" className="btn" onClick={handleClose}>
+            <button type="button" className="btn" onClick={() => dismissHistoryLayer(handleClose)}>
               {labels.cancel}
             </button>
             <button ref={submitButtonRef} type="submit" disabled={isSubmitting} className="btn primary" data-testid="move-booking-save">

@@ -17,6 +17,7 @@
  */
 import { useEffect, useState } from 'react';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { formatCents } from '@/lib/money';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
 import type { InstructorRow } from './instructors-console';
@@ -82,7 +83,7 @@ export function InstructorProfile({ instructor, onClose, onEdit, locale, labels 
       closeLabel={labels.closeLabel}
       footer={
         <>
-          <button type="button" className="btn" onClick={onClose}>
+          <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
             {labels.closeLabel}
           </button>
           <div style={{ flex: 1 }} />

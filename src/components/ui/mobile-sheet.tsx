@@ -36,6 +36,7 @@
  */
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useFocusTrap } from './focus-trap';
+import { useHistoryLayer } from './history-layer';
 
 /**
  * The sheet currently claiming the screen, if any — module-level on purpose.
@@ -91,6 +92,7 @@ function classes(...names: (string | undefined)[]): string {
 export function MobileSheet({ open, onClose, label, testId, className, scrimClassName, panelClassName, children }: MobileSheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const tokenRef = useRef<object>({});
+  const dismiss = useHistoryLayer(open, onClose);
 
   useEffect(() => {
     if (!open) return;
@@ -109,7 +111,7 @@ export function MobileSheet({ open, onClose, label, testId, className, scrimClas
     // desktop this story declares invariant does not jump when a menu opens.
     panelRef.current?.focus({ preventScroll: true });
     const handleKeydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') dismiss();
     };
     window.addEventListener('keydown', handleKeydown);
     return () => {
@@ -117,7 +119,7 @@ export function MobileSheet({ open, onClose, label, testId, className, scrimClas
       window.removeEventListener('keydown', handleKeydown);
       previouslyFocused?.focus();
     };
-  }, [open, onClose]);
+  }, [open, onClose, dismiss]);
 
   useFocusTrap(open, panelRef);
 
@@ -125,7 +127,7 @@ export function MobileSheet({ open, onClose, label, testId, className, scrimClas
 
   return (
     <div className={classes('mobile-sheet', className)} data-testid={testId}>
-      <div className={classes('mobile-sheet-scrim', scrimClassName)} onClick={onClose} data-testid={`${testId}-scrim`} />
+      <div className={classes('mobile-sheet-scrim', scrimClassName)} onClick={dismiss} data-testid={`${testId}-scrim`} />
       <div className={classes('mobile-sheet-panel', panelClassName)} role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} ref={panelRef}>
         <div className="mobile-sheet-grabber" />
         {children}

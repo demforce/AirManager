@@ -27,6 +27,7 @@ import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
+import { prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
@@ -282,10 +283,12 @@ export function ScadenzeConsole({
     return query;
   }
 
-  function navigate(next: ScadenzeFilters): void {
+  function navigate(next: ScadenzeFilters, replace = false): void {
     const params = new URLSearchParams(buildQuery(next));
     const search = params.toString();
-    router.push(`/dashboard/expiries${search ? `?${search}` : ''}`);
+    const href = `/dashboard/expiries${search ? `?${search}` : ''}`;
+    if (replace) router.replace(href);
+    else router.push(href);
   }
 
   function handleFilterChange(patch: Partial<ScadenzeFilters>): void {
@@ -308,11 +311,11 @@ export function ScadenzeConsole({
    * story 13.5 (§a.5 asimmetria 1); ratifica R-15.7-k(2) gives it the phone
    * panel as its home and leaves the desktop head without it, as today.
    */
-  function handleReset(): void {
+  function handleReset(replace = false): void {
     const cleared: ScadenzeFilters = { window: '60', category: '', expiryTypeId: '', personQuery: '' };
     setFilters(cleared);
     setPersonQueryInput('');
-    navigate(cleared);
+    navigate(cleared, replace);
   }
 
   function clearEmptyFilters(): void {
@@ -348,11 +351,12 @@ export function ScadenzeConsole({
   /** ONE navigation on "Applica" (AD-4), carrying the panel filter AND the typed search together. */
   function applyFilterDraft(): void {
     if (filterDraft === null) return;
+    prepareHistoryNavigation();
     const next = filterDraft;
     setFilterDraft(null);
     setFilters(next);
     setPersonQueryInput(next.personQuery);
-    navigate(next);
+    navigate(next, true);
   }
 
   /** How many of the filters the phone HIDES inside the panel are active — the count on its trigger. A filter one cannot see is a filter one forgets; finestra and pilota are not counted because they are in plain sight (chips and search box). Categoria and tipo both live in the panel (story 19.7b). */
@@ -749,8 +753,9 @@ export function ScadenzeConsole({
                 type="button"
                 className="btn"
                 onClick={() => {
+                  prepareHistoryNavigation();
                   setFilterDraft(null);
-                  handleReset();
+                  handleReset(true);
                 }}
                 data-testid="mobile-scadenze-filter-reset"
               >
@@ -828,9 +833,10 @@ export function ScadenzeConsole({
           actions={
             <Link
               href={`/dashboard/people/${sheetItem.personId}`}
+              replace
               locale={locale as AppLocale}
               className="btn primary"
-              onClick={closeSheet}
+              onClick={() => { prepareHistoryNavigation(); closeSheet(); }}
               data-testid="mobile-scadenze-person-link"
             >
               {labels.mobile.openPerson}
@@ -921,6 +927,8 @@ function parseAmountCents(value: string): number | null {
 }
 
 function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, labels, canForce, onClose, onCharged }: MembershipFeeModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { panelRef.current?.focus({ preventScroll: true }); }, []);
   const [personId, setPersonId] = useState('');
   const [amount, setAmount] = useState(() => (defaultAmountCents / 100).toFixed(2));
   const [submitting, setSubmitting] = useState(false);
@@ -1009,7 +1017,7 @@ function MembershipFeeModal({ personOptions, defaultAmountCents, moneyLocale, la
 
   return (
     <div className="mini-modal membership-fee-modal">
-      <div className="mini-modal-card" data-testid="membership-fee-panel">
+      <div className="mini-modal-card" data-testid="membership-fee-panel" ref={panelRef} tabIndex={-1}>
         <div className="so-title" style={{ fontSize: 16 }}>
           {labels.modalTitle}
         </div>

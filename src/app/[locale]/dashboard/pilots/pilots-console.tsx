@@ -27,11 +27,13 @@ import type { Role } from '@/generated/prisma/client';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
+import { prepareHistoryNavigation, transferHistoryLayer } from '@/components/ui/history-layer';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Field, Input, Select } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
@@ -635,6 +637,7 @@ export function PilotsConsole({
                   className="btn primary"
                   onClick={() => {
                     const pilot = sheetPilot;
+                    transferHistoryLayer();
                     closeSheet();
                     setEditorTarget({ mode: 'edit', pilot });
                   }}
@@ -649,6 +652,7 @@ export function PilotsConsole({
                   className="btn"
                   onClick={() => {
                     const pilot = sheetPilot;
+                    transferHistoryLayer();
                     closeSheet();
                     setTopUpTarget(pilot);
                   }}
@@ -671,9 +675,10 @@ export function PilotsConsole({
               ) : null}
               <Link
                 href={`/dashboard/people/${sheetPilot.id}`}
+                replace
                 locale={locale as AppLocale}
                 className="btn"
-                onClick={closeSheet}
+                onClick={() => { prepareHistoryNavigation(); closeSheet(); }}
                 data-testid="pilot-open-profile-mobile"
               >
                 {labels.mobile.openProfile}
@@ -851,7 +856,7 @@ function TopUpSlideOver({ pilot, onClose, onMutated, labels, closeLabel, success
             </p>
           ) : null}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-            <button type="button" className="btn" onClick={onClose}>
+            <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
               {labels.cancel}
             </button>
             <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="topup-submit">

@@ -20,6 +20,7 @@ import { DateInput } from '@/components/ui/date-input';
 import { Field, Input, InputGroup, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
@@ -208,7 +209,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     ) : (
       <>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn" onClick={handleClose}>
+        <button type="button" className="btn" onClick={() => dismissHistoryLayer(handleClose)}>
           {labels.cancel}
         </button>
         <button type="submit" form="transaction-form" className="btn primary" disabled={submitting} data-testid="transaction-submit">

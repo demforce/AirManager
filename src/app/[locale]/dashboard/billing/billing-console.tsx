@@ -48,6 +48,7 @@ import { Icon } from '@/components/ui/icons';
 import { DateInput } from '@/components/ui/date-input';
 import { Avatar } from '@/components/ui/avatar';
 import { SlideOver } from '@/components/ui/slide-over';
+import { prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import { NEGATIVE_BALANCES_HREF } from '@/lib/negative-balance-links';
@@ -340,10 +341,12 @@ export function BillingConsole({
     return query;
   }
 
-  function navigate(next: BillingFilters): void {
+  function navigate(next: BillingFilters, replace = false): void {
     const params = new URLSearchParams(buildFilterQuery(next));
     const search = params.toString();
-    router.push(`/dashboard/billing${search ? `?${search}` : ''}`);
+    const href = `/dashboard/billing${search ? `?${search}` : ''}`;
+    if (replace) router.replace(href);
+    else router.push(href);
   }
 
   function handleFilterChange(patch: Partial<BillingFilters>): void {
@@ -361,11 +364,11 @@ export function BillingConsole({
     debouncedPersonQuery.run(value);
   }
 
-  function handleReset(): void {
+  function handleReset(replace = false): void {
     const cleared: BillingFilters = { dateFrom: '', dateTo: '', bookType: '', categoryId: '', personQuery: '', unattributed: false };
     setFilters(cleared);
     setPersonQueryInput('');
-    navigate(cleared);
+    navigate(cleared, replace);
   }
 
   function pageHref(targetPage: number) {
@@ -686,10 +689,11 @@ export function BillingConsole({
   /** ONE navigation on "Applica" (AD-3) — navigating per `onChange`, as the desktop head does, would remount the console and close the panel under the reader's thumb. */
   function applyFilterDraft(): void {
     if (filterDraft === null) return;
+    prepareHistoryNavigation();
     const next = filterDraft;
     setFilterDraft(null);
     setFilters(next);
-    navigate(next);
+    navigate(next, true);
   }
 
   /** Parity of the sheet with the desktop row (AC 2, lesson 15.5 F2): the nine columns, plus the three things the DTO carries that the table has no room for (`source`, `reference`, `id`). */
@@ -839,7 +843,7 @@ export function BillingConsole({
             </span>
           ) : null}
           {hasActiveFilter ? (
-            <button type="button" className="btn billing-filter-inpanel" onClick={handleReset} data-testid="billing-filter-reset">
+            <button type="button" className="btn billing-filter-inpanel" onClick={() => handleReset()} data-testid="billing-filter-reset">
               {labels.filters.reset}
             </button>
           ) : null}
@@ -993,7 +997,7 @@ export function BillingConsole({
             {items.length === 0 ? (
               <div className="mobile-empty-state">
                 <p className="mobile-card-empty" data-testid="mobile-billing-empty">{hasActiveFilter ? tEmpty('filtered') : labels.mobile.empty}</p>
-                {hasActiveFilter ? <button type="button" className="btn" onClick={handleReset} data-testid="mobile-billing-clear-filters">{tEmpty('clearFilters')}</button> : null}
+                {hasActiveFilter ? <button type="button" className="btn" onClick={() => handleReset()} data-testid="mobile-billing-clear-filters">{tEmpty('clearFilters')}</button> : null}
               </div>
             ) : (
               items.map((row) => {
@@ -1322,8 +1326,9 @@ export function BillingConsole({
                 type="button"
                 className="btn"
                 onClick={() => {
+                  prepareHistoryNavigation();
                   setFilterDraft(null);
-                  handleReset();
+                  handleReset(true);
                 }}
                 data-testid="billing-filter-reset-mobile"
               >

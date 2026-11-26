@@ -24,6 +24,7 @@
  */
 import type { ReactNode } from 'react';
 import { MobileSheet } from './mobile-sheet';
+import { dismissHistoryLayer } from './history-layer';
 
 export type BottomSheetRow = {
   /** Key: rendered mono/uppercase on the left. */
@@ -76,7 +77,7 @@ export function BottomSheet({ open, onClose, testId, sub, title, badge, rows, ac
             </div>
           ))}
           {actions ? <div className="bottom-sheet-actions">{actions}</div> : null}
-          <button type="button" className="btn bottom-sheet-close" onClick={onClose}>
+          <button type="button" className="btn bottom-sheet-close" onClick={() => dismissHistoryLayer(onClose)}>
             {closeLabel}
           </button>
         </>

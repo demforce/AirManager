@@ -30,6 +30,7 @@
 import { useCallback, useState } from 'react';
 import { Icon } from '@/components/ui/icons';
 import { MobileSheet } from '@/components/ui/mobile-sheet';
+import { prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { Link, usePathname } from '@/i18n/navigation';
 import type { NavIconKey, NavItemId } from './route-registry';
 
@@ -109,9 +110,10 @@ export function MobileNav({ tabs, more, navLabel, moreLabel, moreSheetLabel }: M
               <Link
                 key={item.id}
                 href={item.href}
+                replace
                 className={`mobile-sheet-item ${active ? 'active' : ''}`}
                 aria-current={active ? 'page' : undefined}
-                onClick={closeMore}
+                onClick={() => { prepareHistoryNavigation(); closeMore(); }}
                 data-testid={`mobile-more-${item.id}`}
               >
                 <ItemIcon />

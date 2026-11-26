@@ -75,6 +75,34 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     await context.close();
   });
 
+  test('18.3a handoff: quota from Altre azioni closes the sheet, keeps the modal and one Back leaves Scadenze', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await login(page, ADMIN_EMAIL);
+    const configured = await page.request.put('/api/v1/settings/membership-fee', { data: { annualFeeCents: 5000 } });
+    expect(configured.status()).toBe(200);
+    const previousUrl = page.url();
+    await page.getByTestId('mobile-tab-more').click();
+    await page.getByTestId('mobile-more-scadenze').click();
+    await expect(page).toHaveURL(/\/it\/dashboard\/expiries$/);
+    const expiriesUrl = page.url();
+    await page.getByTestId('export-menu-trigger').click();
+    await page.getByTestId('scadenze-membership-fee-button-mobile').click();
+    await expect(page.getByTestId('export-menu-sheet')).toHaveCount(0);
+    const modal = page.getByTestId('membership-fee-panel');
+    await expect(modal).toBeVisible();
+    await expect(modal).toBeFocused();
+    expect(page.url()).toBe(expiriesUrl);
+    let feePosts = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/membership-fee')) feePosts += 1;
+    });
+    await modal.getByRole('button', { name: 'Chiudi' }).click();
+    await expect(modal).toHaveCount(0);
+    expect(feePosts).toBe(0);
+    await page.goBack();
+    await expect(page).toHaveURL(previousUrl);
+  });
+
   test('il pannello e` a tutto schermo, i suoi target sono >=44px, e l\'addebito riuscito resta quello di oggi (Idempotency-Key, saldo e scadenza nel messaggio)', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await login(page, ADMIN_EMAIL);

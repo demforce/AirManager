@@ -21,6 +21,7 @@ import type { z } from 'zod';
 import { Field, Input } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { useToast } from '@/components/ui/toast';
 import { parseApiError } from '@/lib/api-field-errors';
 import { focusFirstInvalid } from '@/lib/dom-focus';
@@ -276,7 +277,7 @@ export function AircraftEditor({ target, onClose, onMutated, totalMinutes, local
   const identityFooter = (
     <>
       <div style={{ flex: 1 }} />
-      <button type="button" className="btn" onClick={onClose}>
+      <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
         {labels.cancel}
       </button>
       <button type="submit" form="identity-form" disabled={identityBusy} className="btn primary" data-testid="identity-submit">

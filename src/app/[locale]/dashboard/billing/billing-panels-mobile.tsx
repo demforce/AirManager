@@ -19,6 +19,7 @@
  */
 import { useCallback, useState, type ReactNode } from 'react';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
+import { prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { Link } from '@/i18n/navigation';
 import { NEGATIVE_BALANCES_HREF } from '@/lib/negative-balance-links';
 import type { AppLocale } from '@/i18n/routing';
@@ -87,9 +88,10 @@ export function BillingPanelsMobile({ summary, monthLabel, moneyLocale, locale, 
         treasury.unattributedCount > 0 ? (
           <Link
             href={unattributedHref}
+            replace
             locale={locale as AppLocale}
             className="btn"
-            onClick={close}
+            onClick={() => { prepareHistoryNavigation(); close(); }}
             data-testid="billing-panel-unattributed-link-mobile"
           >
             {labels.treasury.unattributed} · {formatCents(treasury.unattributedCents, moneyLocale)}
@@ -106,7 +108,7 @@ export function BillingPanelsMobile({ summary, monthLabel, moneyLocale, locale, 
       ],
       actions:
         deposits.inRedCount > 0 ? (
-          <Link href={NEGATIVE_BALANCES_HREF} locale={locale as AppLocale} className="btn" onClick={close} data-testid="billing-panel-deposits-link-mobile">
+          <Link href={NEGATIVE_BALANCES_HREF} replace locale={locale as AppLocale} className="btn" onClick={() => { prepareHistoryNavigation(); close(); }} data-testid="billing-panel-deposits-link-mobile">
             {labels.deposits.detailLink}
           </Link>
         ) : undefined,

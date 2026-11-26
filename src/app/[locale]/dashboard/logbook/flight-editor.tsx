@@ -39,6 +39,7 @@ import { Field, Input } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { Toggle } from '@/components/ui/toggle';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
 import { parseApiError } from '@/lib/api-field-errors';
@@ -777,7 +778,7 @@ export function FlightEditor({
           </span>
         </div>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn" onClick={onClose}>
+        <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
           {labels.cancel}
         </button>
         <button ref={submitButtonRef} type="submit" form="flight-editor-form" className="btn primary" disabled={isSubmitting || noAircraft || noPerson} data-testid="flight-form-submit">
