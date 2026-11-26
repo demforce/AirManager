@@ -778,3 +778,56 @@ test.describe('Aircraft archive (story 16.8)', () => {
     }
   });
 });
+
+test('18.7b the phone shortcut focuses the reason and preserves confirmation, impact and history', async ({ page }) => {
+  test.slow(); // Includes delivery to the local mail sink after confirmation.
+  await page.setViewportSize({ width: 375, height: 812 });
+  await loginExpectingDashboard(page, ADMIN_EMAIL);
+  const aircraft = await createAircraft(page);
+  const holder = await createPilotPerson(page, 'mobile');
+  await book(page, aircraft.id, holder.personId, dateOnlyFromToday(2));
+  await page.goto('/it/dashboard/fleet?q=' + aircraft.registration);
+
+  const card = page.getByTestId('mobile-fleet-card-' + aircraft.id);
+  const shortcut = page.getByTestId('aircraft-out-of-service-mobile');
+  const reason = page.getByTestId('out-of-service-reason');
+  for (const theme of ['dark', 'light'] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await card.click();
+    await shortcut.click();
+    await expect(page.getByTestId('mobile-fleet-sheet')).toHaveCount(0);
+    await expect(reason).toBeFocused();
+    await expect(reason).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId('aog-impact-preview')).toContainText('1 prenotazione');
+    await expect(reason).toBeInViewport({ ratio: 1 });
+    if (theme === 'dark') {
+      await page.goBack();
+      await expect(card).toBeFocused();
+      await expect(page).toHaveURL(/\/fleet\?q=/);
+    }
+  }
+  await page.getByTestId('out-of-service-submit').click();
+  await expect(reason).toHaveAttribute('aria-invalid', 'true');
+  await reason.fill('Ispezione sintetica');
+  await page.getByTestId('out-of-service-submit').click();
+  await page.getByTestId('out-of-service-cancel').click();
+  await expect(page.getByTestId('out-of-service-confirm')).toHaveCount(0);
+  await page.getByTestId('out-of-service-submit').click();
+  await page.getByTestId('out-of-service-confirm').click();
+  await expect(page.getByTestId('aog-impact-banner')).toContainText('1 prenotazione coinvolta');
+  await waitForMailpitMessage(holder.email, groundingSubjects(aircraft.registration)[0]!);
+  await page.goBack();
+  await card.click();
+  await expect(shortcut).toHaveCount(0);
+  await page.getByTestId('aircraft-edit-mobile').click();
+  await expect(page.getByTestId('return-to-service-button')).toBeVisible();
+  await page.goBack();
+
+  const archived = await page.request.post(`/api/v1/aircraft/${aircraft.id}/archive`);
+  expect(archived.status()).toBe(200);
+  await page.goto('/it/dashboard/fleet?includeArchived=true&q=' + aircraft.registration);
+  await card.click();
+  await expect(shortcut).toHaveCount(0);
+  await page.getByTestId('aircraft-edit-mobile').click();
+  await expect(page.getByTestId('availability-archived-hint')).toBeVisible();
+});

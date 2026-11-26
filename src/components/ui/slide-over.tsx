@@ -23,7 +23,7 @@
  * listener closes the WHOLE panel — never a popup inside it (CLAUDE.md) — and
  * the panel is rendered, not unmounted, when closed.
  */
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react';
 import { useFocusTrap } from './focus-trap';
 import { useHistoryLayer } from './history-layer';
 
@@ -42,9 +42,10 @@ export type SlideOverProps = {
   children: ReactNode;
   footer?: ReactNode;
   closeLabel: string;
+  initialFocusRef?: RefObject<HTMLElement | null>;
 };
 
-export function SlideOver({ title, subtitle, open, onClose, children, footer, closeLabel }: SlideOverProps) {
+export function SlideOver({ title, subtitle, open, onClose, children, footer, closeLabel, initialFocusRef }: SlideOverProps) {
   const panelRef = useRef<HTMLElement>(null);
   const headingId = useId();
   const dismiss = useHistoryLayer(open, onClose);
@@ -64,9 +65,11 @@ export function SlideOver({ title, subtitle, open, onClose, children, footer, cl
     // `preventScroll` for the same reason `MobileSheet` uses it: the panel is
     // `position: fixed`, so it is in view by construction and the browser's
     // scroll-into-view would only move the page BEHIND it.
-    panelRef.current?.focus({ preventScroll: true });
+    const initial = initialFocusRef?.current;
+    (initial ?? panelRef.current)?.focus({ preventScroll: true });
+    initial?.scrollIntoView({ block: 'center', inline: 'nearest' });
     return () => previouslyFocused?.focus();
-  }, [open]);
+  }, [open, initialFocusRef]);
 
   useFocusTrap(open, panelRef);
 

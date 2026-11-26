@@ -15,7 +15,7 @@
  */
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
 import { Field, Input } from '@/components/ui/field';
@@ -138,7 +138,7 @@ type ToastLabels = {
   returnedToService: string;
 };
 
-type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetConsoleItem };
+export type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetConsoleItem; focusReason?: boolean };
 
 type AircraftEditorProps = {
   target: EditorTarget | null;
@@ -219,6 +219,7 @@ function typableCents(cents: number): string {
 }
 
 export function AircraftEditor({ target, onClose, onMutated, totalMinutes, locale, labels, toastLabels }: AircraftEditorProps) {
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
   const toast = useToast();
   const isNew = target?.mode === 'new';
   const [current, setCurrent] = useState<EditableAircraft | null>(target?.mode === 'edit' ? target.aircraft : null);
@@ -287,7 +288,7 @@ export function AircraftEditor({ target, onClose, onMutated, totalMinutes, local
   );
 
   return (
-    <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel} footer={identityFooter}>
+    <SlideOver open={open} onClose={onClose} title={title} subtitle={subtitle} closeLabel={labels.closeLabel} footer={identityFooter} initialFocusRef={target?.mode === 'edit' && target.focusReason ? reasonRef : undefined}>
       {isNew ? (
         <IdentitySection
           mode="new"
@@ -316,7 +317,7 @@ export function AircraftEditor({ target, onClose, onMutated, totalMinutes, local
           />
 
           <Section title={labels.availability.sectionTitle}>
-            <AvailabilitySection aircraft={current} locale={locale} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
+            <AvailabilitySection reasonRef={reasonRef} aircraft={current} locale={locale} labels={labels} toastLabels={toastLabels} toast={toast} onMutated={handleMutated} />
           </Section>
 
           <Section title={labels.flightHours.sectionTitle}>
@@ -657,6 +658,7 @@ const IMPACT_DEBOUNCE_MS = 300;
 type ShownImpact = AogBookingImpactDto & { askedUntil: string | null };
 
 function AvailabilitySection({
+  reasonRef,
   aircraft,
   locale,
   labels,
@@ -664,6 +666,7 @@ function AvailabilitySection({
   toast,
   onMutated,
 }: {
+  reasonRef: RefObject<HTMLTextAreaElement | null>;
   aircraft: EditableAircraft;
   /** Story AOG-1a — needed only to format the fermo date in "Stato attuale" (the same `formatDateOnly` + locale pair the Tariffe block uses). */
   locale: 'it' | 'en';
@@ -930,6 +933,7 @@ function AvailabilitySection({
           ) : null}
           <Field label={labels.availability.reason} wide error={reasonError ?? undefined}>
             <textarea
+              ref={reasonRef}
               className="input"
               rows={2}
               aria-invalid={Boolean(reasonError)}

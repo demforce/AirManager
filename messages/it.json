@@ -227,7 +227,7 @@
       "currency": "Currency"
     },
     "fleetCard": {
-    "firstHundred": "Mostrati i primi 100 · Vedi tutti",
+      "viewAll": "{count, plural, one {Vedi il velivolo} other {Vedi tutti e # i velivoli}}",
       "cardTitle": "Velivoli",
       "summary": "{total, plural, one {# velivolo} other {# velivoli}} · {available, plural, one {# disponibile} other {# disponibili}} · {aog} fuori servizio",
       "addAircraft": "Aggiungi velivolo",

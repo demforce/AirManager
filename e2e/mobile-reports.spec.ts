@@ -514,20 +514,19 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
     const smallAfterInjection = await page.evaluate(SMALL_TARGETS);
     expect(smallAfterInjection.length).toBe(6);
 
-    await page.reload();
-    await expect(page.locator('.kpi-row')).toHaveCount(1);
+    // A streamed navigation can still show the loading fallback while a KPI
+    // node already exists. Measure an actual visible label after hydration.
+    await gotoReports(page);
+    const label = page.locator('.ranked-rows > .util-row:visible > :first-child').first();
+    await expect(label).toBeVisible();
 
     // (iv) the ellipsis guard: take `text-overflow` away and the sweep, which
     // is otherwise blind to a clipped ranked label, reports it.
     // `flex: 0 0` so the injected width actually holds — a `flex-grow: 1` item
     // simply grows back and nothing gets clipped.
     await page.addStyleTag({ content: '.ranked-rows > .util-row > :first-child{ text-overflow: clip !important; flex: 0 0 40px !important; }' });
+    await expect(label).toHaveCSS('text-overflow', 'clip');
     expect((await page.evaluate(CLIPPED_WITHOUT_ELLIPSIS)).length).toBeGreaterThan(0);
-
-    await page.reload();
-    await expect(page.locator('.kpi-row')).toHaveCount(1);
-
-
   });
 
   test('AC 9: la matrice dei testid — un nodo per singleton a 375 e a 1280', async ({ page }) => {

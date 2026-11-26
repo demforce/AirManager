@@ -34,7 +34,7 @@ import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { hoursBarPercent } from '@/lib/mobile-registries';
 import { formatMinutes } from '@/lib/time';
-import { AircraftEditor, type AircraftEditorLabels } from './aircraft-editor';
+import { AircraftEditor, type AircraftEditorLabels, type EditorTarget } from './aircraft-editor';
 
 export type { FleetCardItem } from '@/components/dashboard/fleet-card';
 
@@ -122,8 +122,6 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
   };
 }
 
-type EditorTarget = { mode: 'new' } | { mode: 'edit'; aircraft: FleetConsoleItem };
-
 export function FleetConsole({
   items,
   page,
@@ -149,6 +147,12 @@ export function FleetConsole({
   const sheetAircraft = items.find((item) => item.id === sheetId) ?? null;
   /** The page's busiest aircraft — the bar's 100% (see `hoursBarPercent`'s doc-comment). */
   const maxMonthMinutes = items.reduce((max, item) => Math.max(max, monthMinutesById[item.id] ?? 0), 0);
+
+  function editFromSheet(aircraft: FleetConsoleItem, focusReason = false): void {
+    transferHistoryLayer();
+    closeSheet();
+    setTarget({ mode: 'edit', aircraft, focusReason });
+  }
 
   function navigate(next: { q: string; includeArchived: boolean }): void {
     const params = new URLSearchParams();
@@ -316,7 +320,7 @@ export function FleetConsole({
         // Remounts per target (same rationale as the legacy `key={panel.aircraft.id}`
         // trick): a fresh internal copy of the aircraft's fields every time a
         // DIFFERENT card (or "new") is opened, so no stale state bleeds across.
-        key={target === null ? 'closed' : target.mode === 'new' ? 'new' : target.aircraft.id}
+        key={target === null ? 'closed' : target.mode === 'new' ? 'new' : `${target.aircraft.id}-${target.focusReason ? 'availability' : 'identity'}`}
         target={target}
         onClose={() => setTarget(null)}
         onMutated={() => router.refresh()}
@@ -342,19 +346,16 @@ export function FleetConsole({
           rows={fleetSheetRows(sheetAircraft, totalMinutesById[sheetAircraft.id] ?? 0, monthMinutesById[sheetAircraft.id] ?? 0, labels)}
           closeLabel={labels.mobile.close}
           actions={
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => {
-                const aircraft = sheetAircraft;
-                transferHistoryLayer();
-                closeSheet();
-                setTarget({ mode: 'edit', aircraft });
-              }}
-              data-testid="aircraft-edit-mobile"
-            >
-              {labels.mobile.edit}
-            </button>
+            <>
+              <button type="button" className="btn primary" onClick={() => editFromSheet(sheetAircraft)} data-testid="aircraft-edit-mobile">
+                {labels.mobile.edit}
+              </button>
+              {sheetAircraft.archivedAt === null && sheetAircraft.status === 'OPERATIONAL' && (
+                <button type="button" className="btn" onClick={() => editFromSheet(sheetAircraft, true)} data-testid="aircraft-out-of-service-mobile">
+                  {labels.editor.availability.setOutOfService}
+                </button>
+              )}
+            </>
           }
         />
       ) : null}

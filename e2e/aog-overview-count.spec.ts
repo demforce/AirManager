@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { addOverviewFreeAircraft, expectedOverviewFleet, removeOverviewFixtures, seedOverviewActivity } from './db-fixtures';
+import { waitForDashboardContent } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -140,4 +142,36 @@ test.describe('Panoramica fleet-wide AOG count (story AOG-1a, AC 13)', () => {
     expect(availableCountIn(overviewFleetWidget)).toBe(availableCountIn(fleetSub));
     expect(kpiDenominator(overviewKpi)).toBe(availableCountIn(fleetSub));
   });
+});
+
+test('18.7b ranks the whole active fleet before limiting eight cards and keeps every operational timeline row', async ({ page }) => {
+  const stamp = 'W' + Date.now().toString(36).toUpperCase();
+  await loginExpectingDashboard(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const widget = page.getByTestId('fleet-card-widget');
+  try {
+    await seedOverviewActivity(stamp);
+    await page.goto('/it/dashboard');
+    await waitForDashboardContent(page, widget);
+    const initialHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+    await addOverviewFreeAircraft(stamp);
+    await page.reload();
+    await waitForDashboardContent(page, widget);
+    const expected = await expectedOverviewFleet();
+    expect(await widget.locator('.ac-card').evaluateAll((cards) => cards.map((c) => c.getAttribute('data-testid')?.slice(8)))).toEqual(expected.ids);
+    await expect(widget.getByRole('link', { name: `Vedi tutti e ${expected.total} i velivoli` })).toHaveAttribute('href', /\/dashboard\/fleet$/);
+    await expect(page.getByTestId('kpi-fleet-available')).toContainText(`${expected.availableNow}/ ${expected.operational}`);
+    for (let i = 2; i <= 12; i++) {
+      await expect(page.getByTestId('schedule-aircraft-row').filter({ hasText: 'Z' + stamp + String(i).padStart(2, '0') })).toHaveCount(1);
+    }
+    // One slot ends at Rome midnight, the other starts at the following midnight.
+    // Neither occupies today; the two slots straddling those boundaries do.
+    for (const i of [13, 14]) {
+      await expect(page.getByTestId('schedule-aircraft-row').filter({ hasText: '0' + stamp + i })).toHaveCount(0);
+    }
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
+    expect(Math.abs(height - initialHeight)).toBeLessThan(8);
+  } finally {
+    await removeOverviewFixtures(stamp);
+  }
 });

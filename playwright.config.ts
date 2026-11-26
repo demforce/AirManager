@@ -191,6 +191,10 @@ export default defineConfig({
     {
       // Verify the fleet-wide counts after other global-state tests.
       name: 'aog-overview-count',
+      // Both cases compare global fleet snapshots while the other would add
+      // or ground aircraft. Keep the measurements isolated from each other.
+      fullyParallel: false,
+      workers: 1,
       testMatch: '**/aog-overview-count.spec.ts',
       dependencies: ['booking-requirements-catalogue'],
       use: sharedUse,

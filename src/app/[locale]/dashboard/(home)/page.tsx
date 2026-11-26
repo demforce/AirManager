@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import type { BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { Icon } from '@/components/ui/icons';
 import { KPI } from '@/components/ui/kpi';
-import { FleetCard, type FleetCardItem } from '@/components/dashboard/fleet-card';
+import { FleetCard } from '@/components/dashboard/fleet-card';
 import { MobileAlertsCard, type MobileAlertsCardItem } from '@/components/dashboard/mobile-alerts-card';
 import { MobileMetarCard } from '@/components/dashboard/mobile-metar-card';
 import { ScadenzeWidget } from '@/components/dashboard/scadenze-widget';
@@ -22,7 +22,7 @@ import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, zonedMidnightUtc 
 import { hasPermission, type Actor } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getAccountOverview, getNegativeBalanceSummary } from '@/server/services/accounts.service';
-import { listAircraft, listOutOfServiceAircraft } from '@/server/services/aircraft.service';
+import { getOverviewFleet } from '@/server/services/overview-fleet.service';
 import { getAdminOverviewSettings, getMetarStation } from '@/server/services/app-settings.service';
 import {
   getOwnInstructorProfileId,
@@ -32,7 +32,6 @@ import {
   listScheduleAircraft,
   listBookings,
   listCalendarBookings,
-  listReservedAircraftIds,
   type BookingListItem,
 } from '@/server/services/bookings.service';
 import { listAllExpiries, listPersonExpiries } from '@/server/services/expiries.service';
@@ -65,8 +64,6 @@ type PageProps = {
 type DisplayLocale = 'it' | 'en';
 
 // --- Shared small constants (AC 1/4/5) --------------------------------------
-// The fleet widget links to the full list when this preview is truncated.
-const FLEET_WIDGET_LIMIT = 100;
 /** The embedded "Prenotazioni" card shows a handful of rows — "next page" deep-links into the full `/dashboard/bookings` list (`bookings-table.tsx#pageHref` is hardcoded to that route regardless of caller). */
 const EMBED_BOOKINGS_PAGE_SIZE = 8;
 /** Same set `bookings/page.tsx#ALL_BOOKING_STATUSES` shows — the embedded table is the SAME "Prenotazioni" card, same `startsAt`-ascending order, just row-capped. */
@@ -251,26 +248,22 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const tLogbook = await getTranslations('LogbookPage');
 
   const now = new Date();
-  const today = todayDateOnlyInZone(APP_TIMEZONE);
+  const today = dateOnlyInZone(now, APP_TIMEZONE);
   const todayStart = zonedMidnightUtc(today, APP_TIMEZONE);
   const tomorrowStart = zonedMidnightUtc(addDaysDateOnly(today, 1), APP_TIMEZONE);
   const listFrom = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
 
   const month = currentMonthRange(now);
-  const aircraftResult = await listAircraft(actor, { page: 1, pageSize: FLEET_WIDGET_LIMIT, includeArchived: false });
   const [staffPeople, pilotStudents, instructors] = await Promise.all([
     searchBookingPeople(actor, 'people', undefined, PICKER_LIMIT + 1),
     listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'pilot-or-student', includeArchived: false }),
     listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'instructor', includeArchived: false }),
   ]);
 
-  const allAircraftIds = aircraftResult.items.map((aircraft) => aircraft.id);
-  const operationalIds = aircraftResult.items.filter((aircraft) => aircraft.status === 'OPERATIONAL').map((aircraft) => aircraft.id);
-
   const settings = getAdminOverviewSettings();
   const [
     { icao, branding, schedulingSettings },
-    reservedIds,
+    fleet,
     pendingBookingsResult,
     revenueCents,
     flightsTodayTotals,
@@ -282,10 +275,9 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     { items: instructorOptions },
     negativeBalances,
     metarCard,
-    outOfServiceAircraft,
   ] = await Promise.all([
     settings,
-    listReservedAircraftIds(actor, allAircraftIds, now),
+    getOverviewFleet(actor, today, todayStart, tomorrowStart, now),
     listBookings(actor, { status: ['PENDING'], page: 1, pageSize: 1 }),
     getLedgerRevenueCents(actor, month.from, month.to),
     getFlightTotals(actor, { dateFrom: today, dateTo: today, page: 1, pageSize: 1 }),
@@ -313,49 +305,16 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
     // that latency to every render of the home — including at 1280px, where the
     // card has a 0x0 box. R-15.3-f ratified the double fetch, not the wait.
     settings.then(({ metarStation }) => renderMobileMetarCard(t('mobile.metarTitle'), metarStation)),
-    // Story AOG-1a, AC 13 (ratifica R-AOG-f): the FLEET-WIDE grounded set, the
-    // very same unpaginated reader `/dashboard/fleet` uses for its own "N AOG".
-    // See `aogCount` below for the defect this closes.
-    listOutOfServiceAircraft(actor),
   ]);
 
-  // --- .sub: ICAO (D3) + AOG ---------------------------------------------
-  // Story AOG-1a, AC 13 — was `aircraftResult.items.length - operationalIds.length`,
-  // i.e. the grounded aircraft among the FIRST `FLEET_WIDGET_LIMIT` (100) by
-  // registration only: measured on a post-suite DB (148 active aircraft) the
-  // Panoramica announced "1 AOG" while the Flotta announced the true "3 AOG",
-  // same instant, same data. `listOutOfServiceAircraft` is unpaginated, filters
-  // on `status`, and is already gated on the same `aircraft.manage` — the two
-  // pages now count with ONE reader. (The wider `FLEET_WIDGET_LIMIT` TD on the
-  // other three pages stays open, out of this story's perimeter.)
-  const aogCount = outOfServiceAircraft.length;
-  // Review MINOR-1 (PO decision 2026-08-07) — the SAME fleet-wide partition
-  // `/dashboard/fleet` states in its own page head ("total non-archived =
-  // available + AOG", that page's doc-comment): `aircraftResult.total` is the
-  // unpaginated count of non-archived aircraft the query above ALREADY
-  // returned, so this costs no new query. Without it the AOG count was
-  // fleet-wide while the KPI denominator and the Flotta card stayed capped at
-  // the first `FLEET_WIDGET_LIMIT`, and the same screen announced two
-  // incompatible fleets (measured: "24 AOG" beside "87 / 88", 88 + 24 = 112 —
-  // neither 100 nor the 175 aircraft actually active).
-  const fleetTotalCount = aircraftResult.total;
-  const fleetOperationalCount = Math.max(0, fleetTotalCount - aogCount);
+  const { items: fleetItems, total: fleetTotalCount, grounded: aogCount, availableNow: trulyAvailableCount } = fleet;
+  const fleetOperationalCount = fleetTotalCount - aogCount;
   const subParts = [
     icao || null,
     t('overview.aogCount', { count: aogCount }),
   ].filter((part): part is string => Boolean(part));
 
   // --- KPI row (AC 1) ------------------------------------------------------
-  // "Flotta disponibile" keeps its ratified meaning (story 12.12, AC 1:
-  // OPERATIONAL, non archiviati, non riservati ORA) and its fleet-wide base
-  // (review MINOR-1): the "Riservato" overlay is still read over the first
-  // `FLEET_WIDGET_LIMIT` ids — it is a live, per-aircraft concept that
-  // `/dashboard/fleet` deliberately does not subtract from its own summary at
-  // all, and widening it would need the query this fix is not allowed to add
-  // (the `FLEET_WIDGET_LIMIT` TD stays open). On a fleet within that page the
-  // number is exactly the one this KPI has always shown.
-  const reservedOperationalCount = operationalIds.filter((id) => reservedIds.has(id)).length;
-  const trulyAvailableCount = Math.max(0, fleetOperationalCount - reservedOperationalCount);
   // Review 12.12 F2, PO-ratified overcount 2026-07-19: planned + flown; a
   // today APPROVED booking keeps counting after its flight is registered —
   // FLOWN is a separate manual step.
@@ -421,17 +380,6 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const dispatchInstructorOptions = instructors.items
     .filter((person) => person.profiles.instructor)
     .map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
-
-  const fleetItems: FleetCardItem[] = aircraftResult.items.map((aircraft) => ({
-    id: aircraft.id,
-    registration: aircraft.registration,
-    type: aircraft.type,
-    model: aircraft.model,
-    status: aircraft.status,
-    statusReason: aircraft.statusReason,
-    archivedAt: null,
-    reserved: reservedIds.has(aircraft.id),
-  }));
 
   // --- Mobile Panoramica (story 15.3) -------------------------------------
   // Same DOM, one CSS switch: `.overview-mobile` is `display: none` above
