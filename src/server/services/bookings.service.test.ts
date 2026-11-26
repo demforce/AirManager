@@ -1453,6 +1453,21 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
     expect(bookingUpdateManyMock).not.toHaveBeenCalled();
   });
 
+  it('rejects a form opened on an old slot even when its PATCH starts after another edit committed', async () => {
+    bookingFindUnique.mockResolvedValue({ ...EXISTING_OWN_BOOKING, startsAt: new Date('2099-06-01T12:00:00.000Z'), endsAt: new Date('2099-06-01T13:00:00.000Z') });
+    const expected = {
+      aircraftId: EXISTING_OWN_BOOKING.aircraftId,
+      startsAt: EXISTING_OWN_BOOKING.startsAt.toISOString(),
+      endsAt: EXISTING_OWN_BOOKING.endsAt.toISOString(),
+      notes: EXISTING_OWN_BOOKING.notes,
+      status: EXISTING_OWN_BOOKING.status,
+    };
+
+    const error = await updateBooking(adminActor(), 'booking_1', { notes: 'Old form', expected } as never).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConflictError);
+    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
+  });
+
   // --- PENDING/APPROVED editable set (Story 12.2, AC 4) -------------------
 
   it('a PENDING booking is also editable (was ACTIVE-only) — the atomic guard keys off the CURRENT status', async () => {
@@ -3007,6 +3022,11 @@ describe('createBookingSchema (Story 7.1, Task 4)', () => {
 });
 
 describe('updateBookingSchema (Story 7.3, Task 3)', () => {
+  it('accepts an optional complete form snapshot and rejects an incomplete one', () => {
+    const expected = { aircraftId: 'aircraft_1', startsAt: FUTURE_STARTS_AT, endsAt: FUTURE_ENDS_AT, notes: null, status: 'APPROVED' };
+    expect(updateBookingSchema.safeParse({ notes: 'x', expected }).success).toBe(true);
+    expect(updateBookingSchema.safeParse({ notes: 'x', expected: { aircraftId: 'aircraft_1' } }).success).toBe(false);
+  });
   it('accepts a single-field patch (aircraftId only)', () => {
     expect(updateBookingSchema.safeParse({ aircraftId: 'aircraft_2' }).success).toBe(true);
   });

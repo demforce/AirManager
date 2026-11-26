@@ -46,6 +46,8 @@ export const createBookingSchema = z
 
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 
+export const bookingStatusSchema = z.enum(['PENDING', 'APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED']);
+
 /**
  * `PATCH /api/v1/bookings/{id}` body (story 7.3, AC 1/2). Every field is
  * OPTIONAL (partial PATCH) — the refine below only rejects a completely
@@ -56,6 +58,9 @@ export type CreateBookingInput = z.infer<typeof createBookingSchema>;
  * (`z.iso.datetime()`, same N1-lesson caveat as `createBookingSchema`).
  * `notes` is nullable (explicit `null` clears it, `undefined`/absent leaves
  * it untouched) — same convention as `updateExpirySchema`'s `notes`.
+ * `expected` is an optional snapshot of the form's opening state. The
+ * service compares it after locking the row and returns 409 if another edit
+ * committed before the user submitted. Older API clients may omit it.
  *
  * There is deliberately NO cross-field refine here (e.g. "if both startsAt
  * and endsAt are given, endsAt > startsAt"): a partial PATCH can change just
@@ -75,6 +80,14 @@ export const updateBookingSchema = z
     startsAt: z.iso.datetime().optional(),
     endsAt: z.iso.datetime().optional(),
     notes: z.string().trim().max(500).nullable().optional(),
+    /** Optional precondition for a form opened before another edit. Older API clients remain compatible. */
+    expected: z.object({
+      aircraftId: z.string().min(1),
+      startsAt: z.iso.datetime(),
+      endsAt: z.iso.datetime(),
+      notes: z.string().nullable(),
+      status: bookingStatusSchema,
+    }).optional(),
     force: z.boolean().optional(),
   })
   .refine(
@@ -92,8 +105,6 @@ export type UpdateBookingInput = z.infer<typeof updateBookingSchema>;
  * state AND the only state that occupies a slot for the overlap invariant.
  * Declared BEFORE `listBookingsQuerySchema` (below), which references it.
  */
-export const bookingStatusSchema = z.enum(['PENDING', 'APPROVED', 'DENIED', 'FLOWN', 'NO_SHOW', 'CANCELLED']);
-
 export type BookingStatusDto = z.infer<typeof bookingStatusSchema>;
 
 /**

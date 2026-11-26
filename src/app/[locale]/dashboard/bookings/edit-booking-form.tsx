@@ -259,6 +259,13 @@ export function EditBookingForm({ open, booking, aircraftOptions, onClose, onSuc
       startsAt: new Date(values.startsAt).toISOString(),
       endsAt: new Date(values.endsAt).toISOString(),
       notes: values.notes.trim() === '' ? null : values.notes.trim(),
+      expected: {
+        aircraftId: booking.aircraftId,
+        startsAt: booking.startsAt,
+        endsAt: booking.endsAt,
+        notes: booking.notes,
+        status: booking.status,
+      },
     };
     const response = await fetch(`/api/v1/bookings/${booking.id}`, {
       method: 'PATCH',

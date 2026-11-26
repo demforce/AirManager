@@ -1289,6 +1289,15 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     if (current.status !== existing.status || !isSameSlot(existing, current) || current.notes !== existing.notes) {
       throw new ConflictError('This booking has changed; please retry.');
     }
+    if (input.expected && (
+      current.aircraftId !== input.expected.aircraftId ||
+      current.startsAt.getTime() !== new Date(input.expected.startsAt).getTime() ||
+      current.endsAt.getTime() !== new Date(input.expected.endsAt).getTime() ||
+      current.notes !== input.expected.notes ||
+      current.status !== input.expected.status
+    )) {
+      throw new ConflictError('This booking has changed; please retry.');
+    }
 
     // ALL Aircraft ids next, ONE query, ORDER BY id FOR UPDATE — same
     // multi-lock pattern as `flights.service.ts#updateFlight` (module
