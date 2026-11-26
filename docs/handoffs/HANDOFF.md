@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.3 completata)
+# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.3 e audit follow-up verificati)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -8,6 +8,8 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **Fonte di verità**: `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Current Progress
+
+- **Audit follow-up verificato sul candidato da `36f6745`**: cleanup dell'handoff/backlog e reset del solo DB di test; tre fix separati per storno del compenso istruttore, conflitti tra modifiche della stessa prenotazione e progressione degli avvisi oltre destinatari SMTP rifiutati. Record con criteri e prove: `_bmad-output/implementation-artifacts/audit-followup-2026-11-26.md`. Gate: 2.349 unit, lint/typecheck/build verdi. Browser su PostgreSQL disposable: 687 passati, due flaky passati al retry (`mobile-reports`, navigazione 18.3b), tre METAR saltati per upstream indisponibile. Il rerun mirato ha passato tre volte Quota associativa con Indietro/Avanti e navigazione 18.3b; `mobile-reports` ha richiesto ancora un retry. Prove UI/API separate su DB sintetico e SMTP mock locale verdi. Revisione indipendente GPT 6 Sol xhigh approvata senza bloccanti. Nessuna nuova story o modifica a `main`.
 
 - **18.3 done** (`1c23687` per 18.3b; `55c8601` per 18.3a): Indietro/Avanti chiudono e attraversano i pannelli senza perdere focus; la tab mostra subito il pending e il percorso lento mostra uno scheletro AirOps. Fast 3G/CPU 4×, dal pointerdown al marker: 10,5–24,4 ms in 15 prove finali, con ordine degli eventi verificato separatamente e barre ferme. Prefetch su carico sintetico: Panoramica 12–15 richieste contro 17 sulla base, Flotta/Pianificazione 7 contro 7. Il boundary conserva la 404 diretta di una persona inesistente; Contabilità riconcilia righe e KPI tramite reader canonici dopo le scritture. Revisioni indipendenti GPT 6 Sol xhigh approvate. Gate finali 2.331 unit e build; browser su DB sintetico nuovo `E2E_EXIT=0`: 688 passati, un Mailpit locale recuperato al retry, tre METAR saltati e non verificati. Handoff quota positiva e regressioni 18.3a verdi. Epic 18 resta in-progress; nessun intervento su `main`.
 
@@ -50,7 +52,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **16.5 done** (`caeb973` feat, `be11075` record, `2d012ab` decisioni PO sulla review, `c635b34` fix, `f23ca47` Fix Record): compenso istruttore congelato sul volo, ex istruttori visibili e pagabili, pagamenti concorrenti bloccati sotto lock. Arbitro finale 607 + 3 flaky = **610**, exit 0. **Conteggi**: e2e **610**, unit **2242**.
 - **16.6a done** (`a6be2da`, `76c7eba`, `d543c1a`, `dea21d5`, `7a9ec4e`, `c5c1efa`, `dcad37e`, `c47ec70`): data valuta futura rifiutata (422 `EFFECTIVE_DATE_IN_FUTURE`), errori dei pannelli leggibili (`.fld-error`, ≥ 4,5:1), «Cassa per categoria» e «Ricavi maturati» ovunque, **keep-alive 75 s del server e2e** (TD-19.10-g chiuso: 0 ECONNRESET da allora). Durante la chiusura trovato e corretto un bug di prodotto della 16.5 (`6c19915`: remount della console Istruttori che chiudeva il pannello «Paga»). Arbitro finale **615/615**, exit 0. **Conteggi**: e2e **615**, unit **2252**.
 - **16.6b done** (`6e76e20`, `91a70b0`, `c453b22`, `25ef34d`, `470d4ca`): chiave di idempotenza stabile nel pannello quota; catene di rettifica classificate dal **libro della radice** (`reversalRootBook`, enum DEPOSIT/REVENUE/TRANSFER) — la correzione di un giroconto resta giroconto (decisione PO). Arbitro finale 614 + 2 flaky = **616**, exit 0. **Conteggi**: e2e **616**, unit **2261**. Nuova story **16.10** (doppi addebiti dopo un guasto di rete nei 7 form con `Idempotency-Key`) in coda all'Epic 16, file da creare dopo la 16.9.
-- **Prossima**: 18.3 secondo lo split ratificato. Verificare lo stato di `dev` prima di ogni pubblicazione.
+- **Nota storica**: il precedente handoff indicava 18.3 come prossima; ora 18.3 è conclusa. Verificare lo stato di `dev` prima di ogni pubblicazione.
 
 ## Key Decisions di oggi
 
@@ -88,7 +90,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 ## Next Steps
 
-1. Pubblicare i commit verificati su `dev` solo in fast-forward. Non fare merge o deploy.
+1. Per le prossime integrazioni, ricontrollare `origin/dev` e pubblicare solo in fast-forward dopo i gate richiesti. Non fare merge o deploy senza mandato.
 2. Per il prossimo lavoro consultare `development_status` in `sprint-status.yaml` e lo stato delle story dell'Epic 18: la 17.5 e l'Epic 17 sono già conclusi. Questa voce sostituisce l'istruzione rimasta dal precedente handoff; lo storico sopra resta valido.
 3. Correggere la corrispondenza delle tabelle in PDF/Excel. Poi iniziare le prove email con provider gratuiti, solo in sandbox e con dati fittizi.
 
