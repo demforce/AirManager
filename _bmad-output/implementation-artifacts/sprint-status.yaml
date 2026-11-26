@@ -648,7 +648,7 @@ action_items:
   - epic: 12
     action: "F5 review 12.11: registrare nel registry OpenAPI le 8 route nuove della 12.11 (settings/{club,scheduling,smtp,smtp/test-email,metar-station,membership-fee}, metar, expiry-alerts/trigger, people/{id}/membership-fee) — registry.test.ts usa arrayContaining e non lo segnala"
     owner: "story 12.13 (cleanup sweep)"
-    status: open
+    status: done  # chiuso nella story 12.13: registry.test.ts include le route elencate; mantenuta la voce storica
   - epic: 9
     action: "AI-1: eseguire il TD-5 (deferred pass: hydration money-format, from<=to pagina school, locale diario, azzera-filtri PPR, ricontrollo scadenze updateBooking, pg.Pool warning) col ciclo story->dev->review"
     owner: "sessione corrente 2026-07-10"

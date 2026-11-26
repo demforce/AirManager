@@ -89,7 +89,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 ## Next Steps
 
 1. Pubblicare i commit verificati su `dev` solo in fast-forward. Non fare merge o deploy.
-2. Riprendere con la 17.5, poi Epic 18 secondo stato e dipendenze dei file story.
+2. Per il prossimo lavoro consultare `development_status` in `sprint-status.yaml` e lo stato delle story dell'Epic 18: la 17.5 e l'Epic 17 sono già conclusi. Questa voce sostituisce l'istruzione rimasta dal precedente handoff; lo storico sopra resta valido.
 3. Correggere la corrispondenza delle tabelle in PDF/Excel. Poi iniziare le prove email con provider gratuiti, solo in sandbox e con dati fittizi.
 
 ## Suggested skills
