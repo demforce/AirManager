@@ -3952,9 +3952,22 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
   .billing-mobile > .mobile-chip-strip{ padding-block: 0; }
 }
 
+/* The personal view of Planning precedes the shared calendar on phones. */
+.planning-personal-card, .page-title-block .planning-personal-sub{ display: none; }
+@media (max-width: 640px){
+  .planning-personal-card, .page-title-block .planning-personal-sub{ display: block; }
+  .page-title-block .planning-staff-sub{ display: none; }
+  .planning-personal-card .mobile-card-head{ align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .planning-personal-card h2{ margin: 0; }
+  .planning-personal-card .btn{ min-height: 44px; }
+  .planning-personal-card ul{ margin: 0; padding: 0; list-style: none; }
+  .planning-personal-card li{ display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 16px; border-top: 1px solid var(--border); }
+  .planning-personal-card .list-title{ overflow-wrap: anywhere; }
+}
+
 /* Story 18.2b: mobile empty lists keep a heading, one sentence and one way forward. */
 @media (max-width: 640px){
-  .page:has(.mobile-empty-unfiltered) > .page-head{ position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .page:not(.personal-planning):has(.mobile-empty-unfiltered) > .page-head{ position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .page:has(.mobile-empty-unfiltered) > .kpi-row{ display: none; }
   .card.mobile-empty-unfiltered:not([data-testid="schedule-section"]) > .card-head > :not(.card-title):not([data-testid="billing-new-transaction-button"]){ display: none; }
   .card.mobile-empty-unfiltered:not([data-testid="schedule-section"]) > .card-head{ padding-block: 12px; }

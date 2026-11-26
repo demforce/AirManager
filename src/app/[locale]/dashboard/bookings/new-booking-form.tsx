@@ -204,6 +204,15 @@ export function bookingAircraftSearch(q: string, suffix: string) {
   }));
 }
 
+/** Opens the existing creation panel owned by BookingsTable, including its focus and Back handling. */
+export function OpenBookingButton({ label, testId }: { label: string; testId: string }) {
+  return (
+    <button type="button" className="btn primary" onClick={() => window.dispatchEvent(new Event('airmanager:new-booking'))} data-testid={testId}>
+      {label}
+    </button>
+  );
+}
+
 /**
  * "Nuova prenotazione" (story 12.3, AC 4) — the SAME 7.1/7.3/7.4 mechanics
  * (mode-scoped picker, success/warning banners) as the legacy

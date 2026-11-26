@@ -85,6 +85,7 @@ const { getSchedulingSettings } = await import('./app-settings.service');
 const {
   createBooking,
   listBookings,
+  listOwnUpcomingBookings,
   listCalendarBookings,
   updateBooking,
   cancelBooking,
@@ -670,6 +671,29 @@ describe('createBooking (Story 7.1, AC 1/2/3)', () => {
     );
 
     expect(bookingCreateMock).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING' }) }));
+  });
+});
+
+describe('listOwnUpcomingBookings', () => {
+  const now = new Date('2026-11-26T09:00:00Z');
+
+  it('reads only the signed-in holder’s next live departures, with a bounded lookahead', async () => {
+    const items = Array.from({ length: 4 }, (_, i) => ({
+      id: String(i), startsAt: now, status: 'APPROVED', aircraft: { registration: 'I-TEST' },
+    }));
+    bookingFindMany.mockResolvedValue(items);
+    const result = await listOwnUpcomingBookings(studentActor(), now);
+    expect(bookingFindManyMock).toHaveBeenCalledWith({
+      where: { personId: 'person_student', startsAt: { gte: now }, status: { in: ['PENDING', 'APPROVED'] } },
+      orderBy: [{ startsAt: 'asc' }, { id: 'asc' }], take: 4,
+      select: { id: true, startsAt: true, status: true, aircraft: { select: { registration: true } } },
+    });
+    expect(result).toEqual({ items: items.slice(0, 3), truncated: true });
+  });
+
+  it('returns an empty preview without querying bookings for an unlinked viewer', async () => {
+    expect(await listOwnUpcomingBookings(pilotActor(null), now)).toEqual({ items: [], truncated: false });
+    expect(bookingFindManyMock).not.toHaveBeenCalled();
   });
 });
 

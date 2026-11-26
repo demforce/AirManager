@@ -1307,6 +1307,14 @@
     "calendarTruncated": "Mostrate le prime 1.000 prenotazioni.",
     "title": "Pianificazione",
     "sub": "Calendario dei velivoli e prenotazioni da approvare.",
+    "personal": {
+      "title": "Le mie prossime prenotazioni",
+      "book": "Prenota",
+      "pilotSub": "Consulta le tue prenotazioni e la disponibilità dei velivoli.",
+      "studentSub": "Consulta le tue lezioni e la disponibilità dei velivoli.",
+      "empty": "Non hai prenotazioni in programma.",
+      "truncated": "Sono mostrate le prime tre prenotazioni in ordine di partenza."
+    },
     "occupied": "Occupato",
     "schedule": {
       "freeAircraftCount": "{count, plural, one {Un altro velivolo libero} other {Altri # velivoli liberi}}",

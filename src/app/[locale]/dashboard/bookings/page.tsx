@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge';
 import { PICKER_LIMIT } from '@/lib/picker';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
@@ -6,7 +7,7 @@ import { sanitizeBookingStatusFilter } from '@/lib/booking-status-filter';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
 import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
 import { buildAgendaEntries } from '@/lib/mobile-agenda';
-import { APP_TIMEZONE } from '@/lib/time';
+import { APP_TIMEZONE, formatDateTime } from '@/lib/time';
 import { canOfferBookingCreate } from '@/lib/booking-create-eligibility';
 import { addDaysDateOnly, dateOnlyInZone, todayDateOnlyInZone, weekStartDateOnly, zonedMidnightUtc } from '@/lib/zoned-time';
 import { hasPermission } from '@/server/auth/rbac';
@@ -19,6 +20,7 @@ import {
   searchBookingInstructors,
   listScheduleAircraft,
   listBookings,
+  listOwnUpcomingBookings,
   listCalendarBookings,
 } from '@/server/services/bookings.service';
 import { getMe } from '@/server/services/me.service';
@@ -26,7 +28,7 @@ import { buildBookingsTableLabels, buildEditBookingFormLabels, buildNewBookingFo
 import type { BookingRowDto, BookingsTableLabels, BookingStatusDto } from './bookings-table';
 import { BookingsTable } from './bookings-table';
 import type { EditBookingFormLabels } from './edit-booking-form';
-import type { AircraftOption, InstructorOption, NewBookingFormLabels, NewBookingFormMode, PersonOption } from './new-booking-form';
+import { OpenBookingButton, type AircraftOption, type InstructorOption, type NewBookingFormLabels, type NewBookingFormMode, type PersonOption } from './new-booking-form';
 import { Schedule, type CalendarNav, type ScheduleAgendaRow, type ScheduleLabels } from './schedule';
 
 type PageProps = {
@@ -237,10 +239,13 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
 
   let page = Math.max(1, Number.parseInt(pageParam ?? '1', 10) || 1);
   const listQuery = { from: listFrom, pageSize: BOOKINGS_PAGE_SIZE, status: listStatuses, ...aircraftFilter };
-  const [firstPage, pendingResult] = await Promise.all([
+  // Admin/instructor (including mixed roles) keep the staff view and incur no preview query.
+  const personalPlanning = !canReadNames && (actor.roles.includes('PILOT') || actor.roles.includes('STUDENT'));
+  const [firstPage, pendingResult, personal] = await Promise.all([
     listBookings(actor, { ...listQuery, page }),
     // Dedicated count for the summary, with the same aircraft filter.
     listBookings(actor, { from: nowIso, status: ['PENDING'], page: 1, pageSize: 1, ...aircraftFilter }),
+    personalPlanning ? listOwnUpcomingBookings(actor, now) : null,
   ]);
   // Clamp an out-of-range ?page to the last real page (same pattern as `FlightsPage`).
   const lastPage = Math.max(1, Math.ceil(firstPage.total / BOOKINGS_PAGE_SIZE));
@@ -421,14 +426,42 @@ export default async function BookingsPage({ params, searchParams }: PageProps) 
   const editBookingLabels: EditBookingFormLabels = buildEditBookingFormLabels(t, schedulingWindowSummary);
   const bookingsTableLabels: BookingsTableLabels = buildBookingsTableLabels(t);
 
+  const studentPlanning = actor.roles.includes('STUDENT');
+  const tEmpty = await getTranslations('EmptyState');
   return (
-    <main className="page">
+    <main className={personal ? 'page personal-planning' : 'page'}>
       <div className="page-head">
         <div className="page-title-block">
           <h1 className="fold-duplicate-title">{t('title')}</h1>
-          <div className="sub">{t('sub')}</div>
+          <div className={personal ? 'sub planning-staff-sub' : 'sub'}>{t('sub')}</div>
+          {personal && <div className="sub planning-personal-sub">
+            {studentPlanning && !canCreateNew ? tEmpty('scheduleStudentInfo') : t(studentPlanning ? 'personal.studentSub' : 'personal.pilotSub')}
+          </div>}
         </div>
       </div>
+
+      {personal && (
+        <section className="card planning-personal-card" aria-labelledby="personal-bookings-title" data-testid="mobile-personal-bookings">
+          <div className="mobile-card-head">
+            <h2 id="personal-bookings-title" className="mobile-card-title">{t('personal.title')}</h2>
+            {canCreateNew && <OpenBookingButton label={t('personal.book')} testId="mobile-personal-book" />}
+          </div>
+          {personal.items.length === 0 ? <p className="mobile-card-empty">{t('personal.empty')}</p> : (
+            <ul>
+              {personal.items.map((booking) => (
+                <li key={booking.id}>
+                  <div>
+                    <div className="list-title">{booking.aircraft.registration}</div>
+                    <time className="list-sub" dateTime={booking.startsAt.toISOString()}>{formatDateTime(booking.startsAt, dateLocale)}</time>
+                  </div>
+                  <Badge tone={booking.status === 'APPROVED' ? 'ok' : 'warn'} dot>{t(`list.status.${booking.status}`)}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+          {personal.truncated && <p className="mobile-card-empty">{t('personal.truncated')}</p>}
+        </section>
+      )}
 
       {calendarTruncated && <p role="status">{t('calendarTruncated')}</p>}
       <Schedule

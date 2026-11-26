@@ -1004,6 +1004,21 @@ export async function listBookings(actor: Actor, query: ListBookingsQuery): Prom
   );
 }
 
+/** Personal planning preview. Its holder always comes from the session, independently of the public calendar and list filters. */
+export async function listOwnUpcomingBookings(actor: Actor, now: Date) {
+  authorize(actor, 'self.read');
+  if (!actor.personId) return { items: [], truncated: false };
+
+  const previewSize = 3;
+  const rows = await prisma.booking.findMany({
+    where: { personId: actor.personId, startsAt: { gte: now }, status: { in: ['PENDING', 'APPROVED'] } },
+    orderBy: [{ startsAt: 'asc' }, { id: 'asc' }],
+    take: previewSize + 1,
+    select: { id: true, startsAt: true, status: true, aircraft: { select: { registration: true } } },
+  });
+  return { items: rows.slice(0, previewSize), truncated: rows.length > previewSize };
+}
+
 /** The calendar's own maximum span (story 7.2, Task 2) — a calendar renders a week at most, so a wider range is always a client error, never a legitimate page. */
 const MAX_CALENDAR_RANGE_MS = 8 * 24 * 60 * 60 * 1000;
 

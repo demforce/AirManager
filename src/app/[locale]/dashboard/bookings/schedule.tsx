@@ -44,7 +44,7 @@ import { parseDateOnlyUtc } from '@/lib/date-only';
 import { SlideOver } from '@/components/ui/slide-over';
 import { dismissHistoryLayer, prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
-import { fetchBookingOptions, type AircraftOption, type InstructorOption } from './new-booking-form';
+import { fetchBookingOptions, OpenBookingButton, type AircraftOption, type InstructorOption } from './new-booking-form';
 
 export type { CalendarDayBlock, CalendarWeekChip } from '@/lib/booking-schedule';
 
@@ -824,9 +824,7 @@ export function Schedule({
                     {tEmpty('clearFilters')}
                   </button>
                 ) : canCreateNew ? (
-                  <button type="button" className="btn primary" onClick={() => window.dispatchEvent(new Event('airmanager:new-booking'))} data-testid="mobile-agenda-book-flight">
-                    {tEmpty('bookFlight')}
-                  </button>
+                  <OpenBookingButton label={tEmpty('bookFlight')} testId="mobile-agenda-book-flight" />
                 ) : studentOnly ? <p className="mobile-empty-hint">{tEmpty('scheduleStudentInfo')}</p> : null}
               </div> : <p className="mobile-card-empty" data-testid="mobile-agenda-empty">{hasAircraft ? labels.dayEmpty : labels.noAircraft}</p>
             ) : (

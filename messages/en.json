@@ -1307,6 +1307,14 @@
     "calendarTruncated": "Showing the first 1,000 bookings.",
     "title": "Scheduling",
     "sub": "Aircraft timeline and bookings awaiting approval.",
+    "personal": {
+      "title": "My upcoming bookings",
+      "book": "Book",
+      "pilotSub": "Check your bookings and aircraft availability.",
+      "studentSub": "Check your lessons and aircraft availability.",
+      "empty": "You have no upcoming bookings.",
+      "truncated": "The first three bookings are shown in departure order."
+    },
     "occupied": "Booked",
     "schedule": {
       "freeAircraftCount": "{count, plural, one {One more available aircraft} other {# more available aircraft}}",
