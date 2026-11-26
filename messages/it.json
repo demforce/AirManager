@@ -80,6 +80,8 @@
       "title": "Meteo campo"
     },
     "mobile": {
+      "myAccount": "Conto",
+      "myCompensation": "Compensi",
       "more": "Altro",
       "moreSheet": "Altre sezioni",
       "profile": "Profilo"
@@ -303,7 +305,7 @@
   "PilotsPage": {
     "title": "Piloti",
     "sub": "{total, plural, one {# persona} other {# persone}} · {suspended, plural, one {# sospesa} other {# sospese}}",
-    "cardTitle": "Anagrafica piloti",
+    "cardTitle": "Anagrafica",
     "searchPlaceholder": "Cerca per nome o email…",
     "includeArchivedLabel": "Solo archiviati",
     "empty": "Nessuna persona trovata.",

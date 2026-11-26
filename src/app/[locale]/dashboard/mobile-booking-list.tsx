@@ -29,8 +29,6 @@ import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 
 export type MobileBookingRow = {
   id: string;
-  /** Mono chip before the title (the registration). Omitted where the title already IS the registration. */
-  tail?: string;
   title: string;
   sub: string;
   /** `withTimeColumn` only: start (bold) and end (quiet) of the slot. */
@@ -58,12 +56,13 @@ export type MobileBookingListProps = {
   rows: MobileBookingRow[];
   labels: MobileBookingListLabels;
   withTimeColumn?: boolean;
+  className?: string;
   testId: string;
   rowTestId: string;
   emptyTestId: string;
 };
 
-export function MobileBookingList({ rows, labels, withTimeColumn = false, testId, rowTestId, emptyTestId }: MobileBookingListProps) {
+export function MobileBookingList({ rows, labels, withTimeColumn = false, className = '', testId, rowTestId, emptyTestId }: MobileBookingListProps) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
@@ -74,7 +73,7 @@ export function MobileBookingList({ rows, labels, withTimeColumn = false, testId
 
   return (
     <>
-      <div className="card" data-testid={testId}>
+      <div className={`card ${className}`} data-testid={testId}>
         <div className="mobile-card-head">
           <span className="mobile-card-title">{labels.title}</span>
           {labels.count ? <span className="mobile-card-count">{labels.count}</span> : null}
@@ -104,7 +103,6 @@ export function MobileBookingList({ rows, labels, withTimeColumn = false, testId
               ) : null}
               <span className="mobile-row-main">
                 <span className="mobile-row-title">
-                  {row.tail ? <span className="mobile-row-tail">{row.tail}</span> : null}
                   <span className="mobile-row-name">{row.title}</span>
                 </span>
                 <span className="mobile-row-sub">{row.sub}</span>

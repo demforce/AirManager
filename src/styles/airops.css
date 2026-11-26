@@ -1082,6 +1082,8 @@ html[data-theme="dark"] .list-icon.green{ color: var(--ok); }
 .logbook{ display: flex; flex-direction: column; overflow-x: auto; }
 .student-row > *, .lb-row > *{ min-width: 0; overflow: hidden; }
 .student-row > * > *{ max-width: 100%; }
+/* Contain the absolutely positioned screen-reader labels inside their header cells. */
+.lb-row.header > *{ position: relative; }
 .lb-row{
   display: grid;
   grid-template-columns: 90px 80px 1.4fr 50px 1.4fr 120px 60px 60px;
@@ -1840,11 +1842,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .sidebar{ display: none; }
   .topbar{ display: none; }
 
-  /* Nothing interactive ends up under the fixed bar. Template value (100px),
-     and it holds by measurement: the bar is 67px with one-line labels
-     (admin) and 78px with the longest two-line one ("Le mie transazioni",
-     pilot/allievo), so >=22px of clearance either way, plus the same
-     safe-area inset the bar adds to its own padding. */
+  /* Reserve clearance for the fixed tab bar, including when labels wrap at 320px. */
   .main{ padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
   /* Toasts (z-index 200) stay above the bar — template reference: 92px. */
   .toast-host{ bottom: calc(92px + env(safe-area-inset-bottom)); }
@@ -1905,13 +1903,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   }
   .mobile-tab.active{ color: var(--ink); font-weight: 600; }
   .mobile-tab svg{ width: 19px; height: 19px; }
-  /* The template's own tab labels are all one short word; the app's
-     `shell.nav.*` ones are not ("Le mie transazioni" — AC 2 keeps the
-     existing keys), so a label wraps to at most two lines instead of being
-     truncated. The inactive dots keep their slot (opacity, not display), so
-     every column stays the same height; only ONE dot is ever visible, so it
-     simply follows its own label. */
-  .mobile-tab-label{ font-size: 9.5px; line-height: 1.15; letter-spacing: 0.02em; text-align: center; }
+  .mobile-tab-label{ font-size: 10.5px; line-height: 1.15; letter-spacing: 0.02em; text-align: center; }
   .mobile-tab-dot{ width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: 0; }
   .mobile-tab.active .mobile-tab-dot{ opacity: 1; }
   .mobile-tab-dot[data-pending="true"]{ opacity: 1; box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent); animation: nav-pending-pulse 1s ease-in-out infinite; }
@@ -2284,6 +2276,11 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
     margin-top: 3px;
     font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .mobile-booking-rows .mobile-row-name, .mobile-booking-rows .mobile-row-sub{
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   /* --- "Avvisi" feed (template 106-116) ---

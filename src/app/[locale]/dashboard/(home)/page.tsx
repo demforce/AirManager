@@ -451,9 +451,13 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
   const inProgressBookings = filterInProgress(calendarBookingsToday, now);
   const inProgressRows: MobileBookingRow[] = inProgressBookings.map((booking) => ({
     id: booking.id,
-    tail: booking.aircraftRegistration,
     title: booking.personName ?? mobileNoValue,
-    sub: booking.instructorName ? `${slotRange(booking, displayLocale)} · ${booking.instructorName}` : slotRange(booking, displayLocale),
+    sub: [
+      booking.aircraftRegistration,
+      formatDateOnly(dateOnlyInZone(booking.startsAt, APP_TIMEZONE), displayLocale),
+      slotRange(booking, displayLocale),
+      booking.instructorName,
+    ].filter(Boolean).join(' · '),
     badgeTone: 'warn',
     // Same wording the instructor face already uses for this exact state —
     // one lexicon, one key, no second string that could drift.
@@ -560,6 +564,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
           `display: none`. */}
       <div className="overview-mobile">
         <MobileBookingList
+          className="mobile-booking-rows"
           rows={inProgressRows}
           labels={{
             title: t('overview.mobile.inProgress.title'),

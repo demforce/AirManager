@@ -241,6 +241,7 @@ export function BookingsTable({
   // are the sheet's `secondStep` instead (R-15.2-a), same shape as the
   // Panoramica's pending queue.
   const [sheetId, setSheetId] = useState<string | null>(null);
+  const [sheetNow, setSheetNow] = useState(0);
   const [sheetStep, setSheetStep] = useState<'none' | 'deny' | 'cancel' | 'requirements'>('none');
   const [sheetDenyReason, setSheetDenyReason] = useState('');
   const [sheetDenyError, setSheetDenyError] = useState<string | null>(null);
@@ -514,6 +515,15 @@ export function BookingsTable({
 
   const sheetBooking = items.find((booking) => booking.id === sheetId) ?? null;
 
+  // Re-evaluate the primary action if the selected slot starts while its sheet is open.
+  const sheetStartsAt = sheetBooking?.status === 'APPROVED' ? Date.parse(sheetBooking.startsAt) : null;
+  useEffect(() => {
+    if (sheetStartsAt === null || sheetStartsAt <= sheetNow) return;
+    const delay = Math.min(Math.max(0, sheetStartsAt - Date.now()), 2_147_483_647);
+    const timer = window.setTimeout(() => setSheetNow(Date.now()), delay);
+    return () => window.clearTimeout(timer);
+  }, [sheetStartsAt, sheetNow]);
+
   /** Parity with the desktop row (AC 5): everything the row shows, plus the notes and the rejection reason it only shows in part. */
   function sheetRows(booking: BookingRowDto): BottomSheetRow[] {
     const rows: BottomSheetRow[] = [
@@ -530,24 +540,26 @@ export function BookingsTable({
   }
 
   /** A row's sheet always opens on its first step, never on a leftover one from the previous row. */
-  function openSheet(id: string): void {
+  function openSheet(id: string, now: number): void {
     setSheetStep('none');
     setSheetDenyReason('');
     setSheetDenyError(null);
+    setSheetNow(now);
     setSheetId(id);
   }
 
   /**
    * The decisions this booking admits, in the desktop row's own order and
    * under its own gates (`canManageAny` / `isOwnRow`) — full parity, ratifica
-   * R-15.4-d. The FIRST button carries `sheetPrimaryRef` so that coming back
-   * from a second step lands the focus on something real, whichever action
-   * happens to be first for this row.
+   * R-15.4-d. The highlighted action also receives focus after a second step.
    */
   function renderSheetActions(booking: BookingRowDto): ReactNode {
     const canManageRow = canManageAny || isOwnRow(booking);
     const busy = pendingActionId === booking.id;
     const actions: ReactNode[] = [];
+    const approvePrimary = booking.status === 'PENDING' && canManageAny;
+    const flownPrimary = canManageAny && sheetStartsAt !== null && sheetStartsAt <= sheetNow;
+    const movePrimary = !approvePrimary && !flownPrimary;
 
     if (booking.status === 'PENDING' && canManageAny) {
       actions.push(
@@ -555,7 +567,7 @@ export function BookingsTable({
           key="approve"
           type="button"
           className="btn primary"
-          ref={actions.length === 0 ? sheetPrimaryRef : undefined}
+          ref={sheetPrimaryRef}
           disabled={busy}
           onClick={() => void handleApprove(booking.id, 'sheet')}
           data-testid="booking-approve-action-mobile"
@@ -585,8 +597,8 @@ export function BookingsTable({
         <button
           key="move"
           type="button"
-          className="btn"
-          ref={actions.length === 0 ? sheetPrimaryRef : undefined}
+          className={movePrimary ? 'btn primary' : 'btn'}
+          ref={movePrimary ? sheetPrimaryRef : undefined}
           disabled={busy}
           onClick={() => {
             // Ratifica R-15.4-d: the sheet goes away FIRST, then the panel
@@ -607,8 +619,8 @@ export function BookingsTable({
         <button
           key="flown"
           type="button"
-          className="btn"
-          ref={actions.length === 0 ? sheetPrimaryRef : undefined}
+          className={flownPrimary ? 'btn primary' : 'btn'}
+          ref={flownPrimary ? sheetPrimaryRef : undefined}
           disabled={busy}
           onClick={() => void handleFlown(booking.id)}
           data-testid="booking-flown-action-mobile"
@@ -629,7 +641,6 @@ export function BookingsTable({
           key="cancel"
           type="button"
           className="btn"
-          ref={actions.length === 0 ? sheetPrimaryRef : undefined}
           disabled={busy}
           onClick={() => setSheetStep('cancel')}
           data-testid="booking-cancel-action-mobile"
@@ -644,8 +655,8 @@ export function BookingsTable({
         <button
           key="reopen"
           type="button"
-          className="btn"
-          ref={actions.length === 0 ? sheetPrimaryRef : undefined}
+          className="btn primary"
+          ref={sheetPrimaryRef}
           disabled={busy}
           onClick={() => void handleReopen(booking.id)}
           data-testid="booking-reopen-action-mobile"
@@ -854,7 +865,7 @@ export function BookingsTable({
           ))}
         </div>
 
-        <div data-testid="mobile-bookings-list">
+        <div className="mobile-booking-rows" data-testid="mobile-bookings-list">
           {items.length === 0 ? (
             <div className="mobile-empty-state">
               <p className="mobile-card-empty" data-testid="mobile-bookings-empty">{status !== null || aircraftFilterId ? tEmpty('filtered') : labels.empty}</p>
@@ -866,20 +877,19 @@ export function BookingsTable({
             </div>
           ) : (
             items.map((booking) => {
-              const subLine = `${formatDateOnly(booking.startsAtDateOnly, locale)} · ${formatTimeOfDay(new Date(booking.startsAt), locale)}`;
+              const subLine = `${booking.aircraftRegistration} · ${formatDateOnly(booking.startsAtDateOnly, locale)} · ${formatTimeOfDay(new Date(booking.startsAt), locale)}`;
               const title = booking.personName ?? labels.occupied;
               return (
                 <button
                   key={booking.id}
                   type="button"
                   className="mobile-row"
-                  aria-label={`${labels.mobile.openDetail}: ${title} · ${booking.aircraftRegistration} · ${subLine}`}
-                  onClick={() => openSheet(booking.id)}
+                  aria-label={`${labels.mobile.openDetail}: ${title} · ${subLine}`}
+                  onClick={() => openSheet(booking.id, Date.now())}
                   data-testid="booking-row-mobile"
                 >
                   <span className="mobile-row-main">
                     <span className="mobile-row-title">
-                      <span className="mobile-row-tail">{booking.aircraftRegistration}</span>
                       <span className="mobile-row-name">{title}</span>
                     </span>
                     <span className="mobile-row-sub">{subLine}</span>

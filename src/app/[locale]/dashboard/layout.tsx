@@ -191,7 +191,10 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
           />
           <IdempotentSubmissionProvider actorId={actor.userId}>{children}</IdempotentSubmissionProvider>
           <MobileNav
-            tabs={mobileLayout.tabs.map(toMobileItem)}
+            tabs={mobileLayout.tabs.map((item) => ({
+              ...toMobileItem(item),
+              ...(item.id === 'myAccount' || item.id === 'myCompensation' ? { tabLabel: t(`mobile.${item.id}`) } : {}),
+            }))}
             more={mobileLayout.more.map(toMobileItem)}
             navLabel={t('navLabel')}
             moreLabel={t('mobile.more')}

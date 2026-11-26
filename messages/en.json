@@ -80,6 +80,8 @@
       "title": "Field weather"
     },
     "mobile": {
+      "myAccount": "Statement",
+      "myCompensation": "Payouts",
       "more": "More",
       "moreSheet": "More sections",
       "profile": "Profile"
@@ -303,7 +305,7 @@
   "PilotsPage": {
     "title": "Pilots",
     "sub": "{total} on file · {suspended} suspended",
-    "cardTitle": "Pilots directory",
+    "cardTitle": "Directory",
     "searchPlaceholder": "Search by name or email…",
     "includeArchivedLabel": "Archived only",
     "empty": "No pilots found.",

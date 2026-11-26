@@ -3,7 +3,7 @@
 /**
  * Bottom tab bar + "Altro" sheet (story 15.1, epic 15 R1/R2) — the <=640px
  * counterpart of `Sidebar`, ported from the `AirOps Mobile` template's own
- * nav (fixed bar, 19px icon + 9.5px label + accent dot, sheet with a 2-column
+ * nav (fixed bar, 19px icon + compact label + accent dot, sheet with a 2-column
  * grid of the remaining sections).
  *
  * Switch: CSS only (`airops.css`, `@media (max-width: 640px)`) — this tree is
@@ -40,6 +40,7 @@ export type MobileNavItemView = {
   href: string;
   icon: NavIconKey;
   label: string;
+  tabLabel?: string;
 };
 
 export type MobileNavProps = {
@@ -78,10 +79,11 @@ export function MobileNav({ tabs, more, navLabel, moreLabel, moreSheetLabel, pen
               href={item.href}
               className={`mobile-tab ${active ? 'active' : ''}`}
               aria-current={active ? 'page' : undefined}
+              aria-label={item.tabLabel ? item.label : undefined}
               data-testid={`mobile-tab-${item.id}`}
             >
               <ItemIcon />
-              <span className="mobile-tab-label">{item.label}</span>
+              <span className="mobile-tab-label">{item.tabLabel ?? item.label}</span>
               <NavPendingIndicator className={`mobile-tab-dot ${active ? 'active' : ''}`} label={pendingLabel} routeKey={pathname} />
             </Link>
           );
