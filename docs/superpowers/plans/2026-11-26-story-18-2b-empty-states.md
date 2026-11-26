@@ -54,3 +54,10 @@
 - [x] Run `npm run gates` on the final application tree and record exit status.
 - [x] Run `scripts/e2e.sh start` and inspect `scripts/e2e.sh status`; separate passes, retries, skips and failures. Final full run: `E2E_EXIT=0`, 662 passed, 5 flaky, 2 skipped. The three METAR cases :61, :167 and :208 were not verified; :167 failed login first and then skipped with missing `raw`. Two user-management cases passed only on retry #2.
 - [x] Record measured empty-state heights and the authorization decision; commit with explicit pathspecs. Leave BMAD review and done status pending independent review.
+
+### Independent review blocker: empty billing primary action
+
+- [x] Reproduce the hidden existing primary button with a red browser test on an empty synthetic card; exclude only this button from the mobile compacting selector.
+- [x] Verify the real unfiltered branch on a separate local database with zero ledger rows, then remove that database. This manual browser proof passed; the committed regression test covers the CSS selector using a DOM class simulation and does not claim an actual empty database.
+- [x] Run `npm run gates` on the corrected code: exit 0, 2,329 unit tests and build.
+- [x] Run the full browser suite on the corrected tree: `E2E_EXIT=0`, 667 passed, 1 flaky, 2 skipped; METAR :61/:167/:208 not verified. Make a correction commit and request independent rereview.

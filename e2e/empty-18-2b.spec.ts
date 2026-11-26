@@ -83,6 +83,37 @@ test('18.2b: filtered admin registries explain no results and clear the filters,
   await expect(page).not.toHaveURL(/aircraft=/);
 });
 
+test('18.2b review: an empty unfiltered ledger keeps its create action on mobile and desktop', async ({ page }) => {
+  await login(page, 'admin@airmanager.local');
+  const name = `EmptyLedger182b${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
+  const category = await page.request.post('/api/v1/cash-categories', { data: { name } });
+  expect(category.status()).toBe(201);
+  const categoryId = ((await category.json()) as { id: string }).id;
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(`/it/dashboard/billing?categoryId=${categoryId}`);
+  await expect(page.getByTestId('mobile-billing-empty')).toBeVisible();
+  // The shared seed contains ledger rows. Give the real empty card its unfiltered
+  // presentation class in the browser, without altering the shared database or ACL.
+  // This is the exact selector that hid the existing primary button in review.
+  await page.locator('.card:has([data-testid="mobile-billing-empty"])').evaluate((card) => card.classList.add('mobile-empty-unfiltered'));
+  await expect(page.getByTestId('billing-new-transaction-button')).toBeVisible();
+  await expect(page.getByTestId('mobile-billing-filters-button')).toBeHidden();
+  await page.getByTestId('billing-new-transaction-button').click();
+  await expect(page.getByTestId('transaction-form')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 320, height: 568 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+
+  await page.setViewportSize({ width: 1280, height: 812 });
+  await expect(page.getByTestId('billing-new-transaction-button')).toBeVisible();
+  const box = await page.locator('.page-head').evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return [rect.x, rect.y, rect.width, rect.height].map((value) => Math.round(value * 100) / 100);
+  });
+  expect(box).toEqual([260, 85.84, 992, 51.44]);
+});
+
 test('18.2b: own empty Logbook action follows active profile, and student navigation names who books', async ({ page }) => {
   test.setTimeout(120_000);
   await login(page, 'admin@airmanager.local');
