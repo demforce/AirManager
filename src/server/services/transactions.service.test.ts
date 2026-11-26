@@ -106,6 +106,7 @@ const baseCashRow: Fixture = {
   reversalOfId: null,
   reversal: null,
   accountMovementId: null,
+  instructorPayoutId: null,
   category: { name: 'Manutenzione' },
   accountMovement: null,
 };
@@ -533,6 +534,20 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
     expect(result.items[0]).toMatchObject({ id: 'cm_package', personId: 'person_2', personName: 'Osei Paolo', actionable: false });
+  });
+
+  it('hides the reverse action for a payout cash twin while leaving a manual cash movement actionable', async () => {
+    accountFindMany.mockResolvedValue([]);
+    accountCount.mockResolvedValue(0);
+    cashFindMany.mockResolvedValue([
+      { ...baseCashRow, id: 'cm_payout', instructorPayoutId: 'payout_1' },
+      { ...baseCashRow, id: 'cm_manual', instructorPayoutId: null },
+    ]);
+    cashCount.mockResolvedValue(2);
+
+    const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
+    expect(result.items.find((row) => row.id === 'cm_payout')?.actionable).toBe(false);
+    expect(result.items.find((row) => row.id === 'cm_manual')?.actionable).toBe(true);
   });
 
   it('applies from/to inclusive on effectiveDate to BOTH sources', async () => {

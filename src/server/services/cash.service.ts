@@ -451,6 +451,7 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
       paymentMethod: true,
       reversalOfId: true,
       accountMovementId: true,
+      instructorPayoutId: true,
       reversal: { select: { id: true } },
     },
   });
@@ -465,6 +466,9 @@ export async function reverseCashMovement(actor: Actor, id: string, reason: stri
     throw new ConflictError(
       'This movement is the automatic twin of an account movement — correct it via the account rettifica, not the cash register.',
     );
+  }
+  if (original.instructorPayoutId) {
+    throw new ConflictError('This movement is linked to an instructor payout and cannot be reversed on its own.');
   }
   if (original.reversalOfId !== null) {
     throw new ConflictError('A reversal cannot itself be reversed.');

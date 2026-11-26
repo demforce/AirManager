@@ -82,6 +82,7 @@ const CASH_ROW_SELECT = {
   reversalOfId: true,
   reversal: { select: { id: true } },
   accountMovementId: true,
+  instructorPayoutId: true,
   category: { select: { name: true } },
   accountMovement: { select: { amountCents: true, account: { select: { personId: true, person: { select: { firstName: true, lastName: true } } } } } },
 } as const;
@@ -317,7 +318,7 @@ function toCashRow(row: SelectedCashRow): InternalRow {
     reference: null,
     reversal: row.reversalOfId !== null,
     reversed: row.reversal !== null,
-    actionable: row.accountMovementId === null && row.reversalOfId === null && row.reversal === null,
+    actionable: row.accountMovementId === null && row.instructorPayoutId === null && row.reversalOfId === null && row.reversal === null,
   };
 }
 

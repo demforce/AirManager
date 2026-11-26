@@ -561,6 +561,17 @@ describe('cash.service (story 3.4 — cash-register categories and manual moveme
       expect(movementCreateMock).not.toHaveBeenCalled();
     });
 
+    it('rejects reversing a payout cash twin without changing the instructor payout', async () => {
+      movementFindUnique.mockResolvedValue({
+        id: 'payout_cash', categoryId: 'cat_compensi', amountCents: -50000,
+        paymentMethod: 'BANK_TRANSFER', reversalOfId: null,
+        accountMovementId: null, instructorPayoutId: 'payout_1', reversal: null,
+      });
+
+      await expect(reverseCashMovement(adminActor(), 'payout_cash', 'Errore')).rejects.toThrow(ConflictError);
+      expect(movementCreateMock).not.toHaveBeenCalled();
+    });
+
     it('rejects reversing a movement that is itself already a reversal (no storno of a storno)', async () => {
       movementFindUnique.mockResolvedValue({
         id: 'move_reversal',
