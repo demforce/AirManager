@@ -84,7 +84,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 - **DB**: `airmanager` (e2e, post-arbitro) e **`airmanager_load`** (DB di carico rigenerato il 2026-11-03 con `seed:load`, migrazione della 16.5 applicata) — gemello per le misure dell'Epic 17, **da cancellare a fine Epic 17**.
 - Porte 3000/3100 libere. Nessun subagent attivo.
 - File untracked/modificati non nostri, da non committare: `.agents/`, `.claude/skills/*` (compresa la cancellazione di `.claude/skills/design-taste-frontend/SKILL.md`), `.claude/workflows/`, `.github/hooks/`, `.github/skills/`, `skills-lock.json`, `q.txt`, `_bmad-output/planning-artifacts/audit-2026-11-02/`.
-- Prima della pubblicazione 17.2–17.4, ricontrollare `origin/dev` e usare un push fast-forward.
+- Nota storica: prima della pubblicazione 17.2–17.4 era richiesto ricontrollare `origin/dev` e usare un push fast-forward. Le story sono concluse; per i reset sintetici locali usare `TEST_DATABASE_URL` con `npm run db:reset:test` (solo `airmanager_test` o `airmanager_e2e`).
 
 ## Next Steps
 
