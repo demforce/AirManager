@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.5 completata)
+# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.6 completata)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -9,7 +9,9 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 ## Current Progress
 
-- **18.5 done** con il completamento della **18.5b**, commit `9732247`. Dalla seconda tab mobile pilota e allievo vedono le proprie prossime prenotazioni prima del calendario condiviso. «Prenota» compare con l’eligibilità già prevista. Il solo allievo legge chi può prenotare per lui. A 375 px la CTA del pilota sale da 1.005 a 129 px. Gli screenshot di admin e istruttore coincidono con la base. Revisione indipendente approvata, 2.351 unit verdi, 699 casi browser al primo tentativo e tre recuperati in quattro retry su 702, nessuno skip. [Record 18.5](../../_bmad-output/implementation-artifacts/18-5-righe-tab-lessico.md). La prossima story prevista è la **18.6, Tema di sistema**.
+- **18.6 done** nel commit `475b3f1`. Senza una preferenza salvata, AirManager apre con il tema del sistema e ne segue i cambi mentre la pagina è aperta. La scelta manuale ha precedenza e si conserva nel browser. Verificati 48 primi paint con chunk applicativi bloccati e 48 schermate interattive a 375 e 1280 px. Chiuso il TD sullo schema dei colori dei controlli nativi della 15.10. Revisione indipendente approvata dopo la correzione del riferimento allo scroll nel test Flotta. Gate verdi, 2.351 unit e suite browser di 708 casi con 706 passed, due flaky recuperati e zero skip finali. [Misure, screenshot e diagnostica](../../_bmad-output/implementation-artifacts/18-6-tema-di-sistema.md). Il prossimo sotto-step è **18.7a**, colonne e intestazioni desktop.
+
+- **18.5 done** con il completamento della **18.5b**, commit `9732247`. Dalla seconda tab mobile pilota e allievo vedono le proprie prossime prenotazioni prima del calendario condiviso. «Prenota» compare con l’eligibilità già prevista. Il solo allievo legge chi può prenotare per lui. A 375 px la CTA del pilota sale da 1.005 a 129 px. Gli screenshot di admin e istruttore coincidono con la base. Revisione indipendente approvata, 2.351 unit verdi, 699 casi browser al primo tentativo e tre recuperati in quattro retry su 702, nessuno skip. [Record 18.5](../../_bmad-output/implementation-artifacts/18-5-righe-tab-lessico.md). La 18.6 è documentata sopra.
 
 - **18.5a done** nel commit `450ac94`. Le righe di Pianificazione e «In corso ora» mostrano il nome per intero e le marche accanto a data e ora. I tab mobili stanno su una riga a 360–414 px per tutti i ruoli in IT e EN. A 320 px «Registro voli» occupa due righe per istruttore, pilota e allievo in italiano. Il dettaglio prenotazione evidenzia l’azione per lo stato corrente e le restituisce il focus. Verificati anche il contenimento dello scroll del Registro e la card Anagrafica. Revisione indipendente approvata, 2.349 unit verdi. Suite browser di 700 casi su dati sintetici, 697 passati al primo tentativo e tre recuperati in quattro retry. [Misure, screenshot e diagnostica](../../_bmad-output/implementation-artifacts/18-5-righe-tab-lessico.md). La 18.5b ha poi completato la Pianificazione per pilota e allievo.
 
