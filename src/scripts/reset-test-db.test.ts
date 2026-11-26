@@ -21,11 +21,11 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe('reset-test-db guardrails', () => {
   it.each([
-    'postgresql://tester:pw@localhost:5432/airmanager',
+    'postgresql://tester:pw@localhost:55432/airmanager',
     'postgresql://tester:pw@localhost:5432/airmanager_test',
-    'postgresql://tester:pw@db.example:5432/airmanager_test',
-    'postgresql://tester:pw@localhost:5432/postgres',
-    'postgresql://tester:pw@localhost:5432/airmanager_test?schema=other',
+    'postgresql://tester:pw@db.example:55432/airmanager_test',
+    'postgresql://tester:pw@localhost:55432/postgres',
+    'postgresql://tester:pw@localhost:55432/airmanager_test?schema=other',
   ])('rejects a non-isolated target before connecting: %s', async (url) => {
     await expect(resetTestDatabase(url)).rejects.toThrow();
     expect(connect).not.toHaveBeenCalled();
