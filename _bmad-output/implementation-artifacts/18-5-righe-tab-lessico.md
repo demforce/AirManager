@@ -4,7 +4,9 @@ baseline_commit: 1f6ab3e
 
 # Story 18.5: Righe, tab e lessico (riperimetrata il 2026-11-03: il lessico è passato alla 19.12b)
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e` con modelli statici calibrati sulle misure documentate). **Dev: Opus 5 xhigh** (UI). Review: Opus 5 xhigh adversarial. **Split** (v. §PO): **18.5a** (M4, M6, M13d, TD-19.12b-a, card Piloti) indipendente dall'Epic 17, può partire subito dopo l'Epic 16; **18.5b** (M11) DOPO la 18.4 (condivide `schedule.tsx`, la pagina e il filtro) e coordinata con la 18.2 (stessa testata di Pianificazione).
+Status: **in-progress** — **18.5a done**, AC 1–5 approvati il 2026-11-26 sul commit `450ac94`. **18.5b ready-for-dev**, AC 6 da avviare.
+
+Piano originario del 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e` con modelli statici calibrati sulle misure documentate). **Dev: Opus 5 xhigh** (UI). Review: Opus 5 xhigh adversarial. **Split** (v. §PO): **18.5a** (M4, M6, M13d, TD-19.12b-a, card Piloti) indipendente dall'Epic 17, può partire subito dopo l'Epic 16; **18.5b** (M11) DOPO la 18.4 (condivide `schedule.tsx`, la pagina e il filtro) e coordinata con la 18.2 (stessa testata di Pianificazione).
 
 ## Story
 
@@ -63,6 +65,57 @@ Ratificate dal PO il 2026-11-03/04 in un solo giro (AskUserQuestion: «Sì, tutt
 
 ### Agent Model Used
 
+18.5a sviluppata da un solo agente nel contesto Codex Cloud avviato con la selezione GPT 6.2 Astra xhigh. Base di implementazione `d47a569053fd04dec30428eff8aa6c03dcb3eba5`. Albero congelato per la revisione di codice e test `5735a11d601db77a6049e426b38749486e41dffe`.
+
 ### Completion Notes List
 
+#### 18.5a — AC 1–5
+
+- **AC 1, M4.** Le righe dell’elenco prenotazioni e di «In corso ora» mostrano il nome nella prima riga e marche, data e ora sotto. La seconda riga di «In corso ora» conserva anche l’ora di fine e, quando presente, l’istruttore. Le informazioni lunghe possono andare a capo. Prova con un velivolo e un pilota sintetici run-unique, ciascun campo di 20 caratteri (nome completo con spazio). La misura su `.mobile-row-name` è `scrollWidth/clientWidth` in pixel. Nelle due esecuzioni i suffissi casuali producono nomi della stessa lunghezza ma di larghezza intrinseca leggermente diversa.
+
+  | Superficie | Base a 375 / 390 | Candidato a 375 / 390 |
+  | --- | --- | --- |
+  | Pianificazione | 141/43, 141/58 | 138/138, 138/138 |
+  | Panoramica, In corso ora | 141/49, 141/64 | 138/138, 138/138 |
+
+  Ogni coppia è stata rilevata sia in tema chiaro sia in tema scuro. Il browser verifica anche il testo completo della riga secondaria e l’assenza di overflow su di essa.
+
+- **AC 2, M6.** Font della barra da 9,5 a 10,5 px. Nella matrice di **80 combinazioni** (quattro ruoli, IT/EN, due temi, cinque larghezze), le 64 combinazioni fra 360 e 414 px hanno tutte e cinque le etichette su una sola riga e altezza barra **68,0625 px**. A 320 px «Registro voli» va a capo per istruttore, pilota e allievo in IT (barra 80,125 px in entrambi i temi). Le altre dieci combinazioni a 320 misurano 68,0625 px. Sulla base le barre misuravano 66,921875 o 77,84375 px. Il browser controlla i nomi accessibili completi dei link, li segue, verifica l’H1 e legge la voce completa nel menu desktop. Etichette brevi riservate alle due voci nella barra.
+- **AC 3, M13d.** Nel primo passo di uno sheet con azioni, il primario e la destinazione del focus al ritorno coincidono. Per l’admin, approvata futura → Modifica, approvata iniziata → «Segna come effettuata», in attesa → Approva. Una prova con orologio controllato attraversa l’inizio mentre lo sheet è aperto. Il ritorno da Annulla o dal motivo di rifiuto è verificato sui tre stati decisionali. Nei tre stati riapribili il solo comando «Riapri» è primario. Una prenotazione annullata non espone decisioni. I controlli di ruolo e le transizioni disponibili restano quelli del servizio.
+- **AC 4, TD-19.12b-a.** Le due etichette accessibili dell’intestazione Registro introdotte dalla 19.12b erano assolute senza un contenitore posizionato; ora le celle di intestazione ne sono il riferimento. Sul Registro con un volo sintetico della persona di prova, eccedenza di `documentElement.scrollWidth` rispetto a `clientWidth` a **641/768/900/1024/1100/1280 px**: **390/263/131/175/99/0** sulla base e **0/0/0/0/0/0** sul candidato. Questa misurazione riguarda lo scroll del documento; lo scroll interno della tabella appartiene alla 18.7.
+- **AC 5.** La card della pagina Piloti è «Anagrafica» in IT e «Directory» in EN. Verifica sul testo visibile della card per entrambe le lingue.
+
+**Screenshot dello sheet** raccolti nel mirato verde sul candidato, prima schermata di ogni stato con dati sintetici. [Approvata futura](evidence/18-5a/sheet-approved-future.png), [approvata iniziata](evidence/18-5a/sheet-approved-started.png), [in attesa](evidence/18-5a/sheet-pending.png), [rifiutata](evidence/18-5a/sheet-denied.png), [effettuata](evidence/18-5a/sheet-flown.png), [assente](evidence/18-5a/sheet-no-show.png), [annullata](evidence/18-5a/sheet-cancelled.png).
+
+#### Prove di discriminazione
+
+Sulla base, `scripts/e2e.sh start e2e/mobile-rows-tabs.spec.ts --retries=0 --workers=2` ha dato `E2E_EXIT=1`, tre test rossi. Riscontri: nome tagliato nelle due liste, etichette su due righe o font sotto soglia, zero pulsanti primari su APPROVED, documento con overflow e vecchio titolo. Il primo tentativo sullo stesso binario aveva incluso un timeout da 90 s dovuto alle ripetute attese su asserzioni volutamente rosse e un selettore di fixture errato. Lo spec corretto ha completato le misure di baseline. Il corrispondente mirato sul candidato è verde, **3/3 in 42,8 s**, nessun retry o skip.
+
+Controprova su copia isolata della build, con il solo CSS emesso modificato. È stato rimosso il contenitore posizionato delle celle e riportata davanti al nome, in un layout flex, la metadata con `flex-shrink:0` senza limite. In questa copia la metadata comprende anche data e ora; sulla base era solo il chip marche. SHA-256 del CSS originale `3d9f9cc82e8bca6a48a1cb4e1e2cf2f08f61a9e38964fa77753202bcaee0d000`, della variante `6984a96d008f33d68d6069aa14ed7e0d82e662b8990f2bc8a3f130671294b343`. Eseguito nella copia `scripts/e2e.sh start e2e/mobile-rows-tabs.spec.ts -g 'distinguishable|populated' --retries=0 --workers=1`: **2 rossi**, `E2E_EXIT=1`; nome da 138 px in 0 px disponibili in entrambe le liste, eccedenze del Registro di nuovo 390/263/131/175/99/0. CSS del checkout ricontrollato con SHA-256 originale.
+
+Nel primo `npm run gates` lint ha segnalato `bookings-table.tsx:547 react-hooks/purity: Cannot call impure function during render` (exit finale 1). La lettura dell’orologio è ora nella callback del click. Il primo controllo mirato con le parentesi del percorso escaped in modo errato è uscito 2 (`No files matching the pattern`); ripetuto sul percorso letterale, `npx eslint 'src/app/[locale]/dashboard/bookings/bookings-table.tsx'` è uscito 0.
+
+#### Gate sul candidato
+
+`npm run gates`, exit **0**: lint 71 s, typecheck 11 s, **2.349/2.349 unit** in 22 s, build di produzione 74 s. Il comando `env -u NODE_ENV node scripts/reset-test-db.mjs` ha azzerato, migrato e popolato il solo database disposable `airmanager_e2e` sul socket TCP locale dedicato (exit 0). La suite usa la build verificata con `--keepAliveTimeout 75000`, Mailpit su localhost e una fixture locale per la stazione LIML.
+
+`E2E_REUSE_SERVER=1 scripts/e2e.sh start --workers=2`, esito letto con `TMPDIR=/tmp/am185a scripts/e2e.sh status`: **`E2E_EXIT=0` in 27,2 minuti**, 700 casi distinti. **697 passati al primo tentativo**, **3 passati al retry**, nessuno saltato o fallito. I 3 test nuovi sono passati tutti al primo tentativo. Il secondo nome run-unique misura 132/132 px nelle otto combinazioni, con altezze della barra e misure del Registro uguali al mirato. I 3 casi METAR sono passati al primo tentativo con la fixture LIML.
+
+Tentativi falliti del full (il runner non assegna un exit di processo separato a ogni tentativo):
+
+| Test | Riga diagnostica sanitizzata | Esito |
+| --- | --- | --- |
+| `account-adjustments.spec.ts:94` | `Expected 1 Mailpit message(s) to [destinatario sintetico] within 15000ms` | Passato al retry 1 |
+| `empty-18-2b.spec.ts:52` | `en/billing desktop`, poi `it/billing desktop`: ordinata attesa 85,84, rilevata 79,84 px a parità degli altri tre valori | Passato al retry 2 |
+| `mobile-expiries-movements.spec.ts:666` | `/it/dashboard/reports .segmented button height`: atteso ≥ 43,5, rilevato 0 px | Passato al retry 1 |
+
+#### Revisione indipendente
+
+Il revisore GPT 6 Sol xhigh ha approvato gli AC 1–5 senza rilievi sul tree `5735a11d601db77a6049e426b38749486e41dffe`, poi committato come `450ac94`. Ha verificato l’interfaccia su una seconda build con database sintetico separato, i sette screenshot, le controprove e il log della suite completa. [Rapporto del revisore](evidence/18-5a/review.md).
+
 ### File List
+
+- `src/app/[locale]/dashboard/(home)/page.tsx`, `mobile-booking-list.tsx`, `bookings/bookings-table.tsx` (due righe di prenotazione e azioni dello sheet)
+- `src/app/[locale]/dashboard/layout.tsx`, `src/components/shell/mobile-nav.tsx`, `src/styles/airops.css`
+- `messages/it.json`, `messages/en.json`
+- `e2e/mobile-rows-tabs.spec.ts`, `_bmad-output/implementation-artifacts/evidence/18-5a/sheet-*.png`
