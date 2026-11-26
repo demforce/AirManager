@@ -91,7 +91,7 @@ export default async function InstructorsPage({ params }: PageProps) {
     <main className="page">
       <div className="page-head">
         <div className="page-title-block">
-          <h1>{t('title')}</h1>
+          <h1 className="fold-duplicate-title">{t('title')}</h1>
           <div className="sub">{inactiveCount > 0 ? `${sub} · ${t('subInactive', { inactive: inactiveCount })}` : sub}</div>
         </div>
       </div>

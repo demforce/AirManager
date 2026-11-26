@@ -955,13 +955,13 @@ test.describe('story 15.10 — the three page-level contrasts (AC 6)', () => {
           return { kpis, days };
         });
 
-        expect(measured.kpis.length, 'the four tier KPIs are on screen at both widths').toBe(4);
+        expect(measured.kpis.length, 'tier KPIs remain desktop only after story 18.2a').toBe(viewport.width > 640 ? 4 : 0);
         for (const kpi of measured.kpis) {
           expect(kpi.ratio, `${viewport.width}px ${kpi.tid}`).toBeGreaterThanOrEqual(4.5);
         }
         // The two that were fixed carry the class and no inline colour left.
         const fixed = measured.kpis.filter((kpi) => ['scadenze-stat-expired', 'scadenze-stat-within7', 'scadenze-stat-within60'].includes(kpi.tid ?? ''));
-        expect(fixed).toHaveLength(3);
+        expect(fixed).toHaveLength(viewport.width > 640 ? 3 : 0);
         for (const kpi of fixed) {
           expect(kpi.cls, `${kpi.tid} must carry a stat tone class`).toMatch(/stat-tone-(bad|info)/);
           expect(kpi.inlineColor, `${kpi.tid} must not carry an inline colour any more`).toBe(false);

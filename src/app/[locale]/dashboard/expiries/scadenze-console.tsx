@@ -139,6 +139,7 @@ export type ScadenzeConsoleLabels = {
     filters: string;
     /** `{count}` filled client-side (`t.raw`) — how many PANEL filters are active. */
     filtersCount: string;
+    moreActions: string;
     filtersTitle: string;
     apply: string;
     empty: string;
@@ -154,6 +155,7 @@ export type ScadenzeConsoleProps = {
   totalPages: number;
   totalShown: number;
   tierCounts: { expired: number; within7: number; within30: number; within60: number };
+  windowCounts: { expired: number; within7: number; within30: number; within60: number; all: number };
   filters: ScadenzeFilters;
   typeOptions: TypeOption[];
   personOptions: PersonOption[];
@@ -232,6 +234,7 @@ export function ScadenzeConsole({
   totalPages,
   totalShown,
   tierCounts,
+  windowCounts,
   filters: initialFilters,
   typeOptions,
   personOptions,
@@ -436,11 +439,10 @@ export function ScadenzeConsole({
 
   return (
     <>
-      {/* `kpi-row-grid` (15.3): 2x2 on the phone, because these four numbers
-          are ONE scale of urgency and the strip hides the 3rd and the 4th
-          behind a swipe (ratifica R-15.7-h). The four desktop tracks moved
-          from an inline style into `.scadenze-kpi-row` — an inline
-          `grid-template-columns` cannot be overridden by a media query.
+      {/* The four global urgency bands remain desktop cards. Story 18.2a hides
+          them on phones, where the filtered cumulative counts live on the
+          window chips instead. The desktop tracks use `.scadenze-kpi-row`;
+          an inline grid-template-columns cannot be overridden by mobile CSS.
           Identical computed style above 640px, measured. */}
       <div className="kpi-row kpi-row-grid scadenze-kpi-row">
         <StatCard label={labels.statCards.expired} value={tierCounts.expired} ink="var(--bad)" tone="stat-tone-bad" note={labels.statCards.expiredNote} testId="scadenze-stat-expired" />
@@ -525,7 +527,7 @@ export function ScadenzeConsole({
           <button type="button" className="btn scadenze-filters-trigger" onClick={openFilterPanel} data-testid="mobile-scadenze-filters-button">
             {panelActiveCount === 0 ? labels.mobile.filters : labels.mobile.filtersCount.replace('{count}', String(panelActiveCount))}
           </button>
-          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={exportPdfHref} pdfUnavailable={exportPdfUnavailable} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} xlsUnavailable={exportXlsUnavailable} />
+          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={exportPdfHref} pdfUnavailable={exportPdfUnavailable} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} xlsUnavailable={exportXlsUnavailable} mobileMoreLabel={labels.mobile.moreActions} mobileExtraAction={canChargeMembershipFee ? { label: labels.membershipFee.button, onClick: () => setFeeModalOpen(true), disabled: membershipFeeCents <= 0, disabledHint: labels.membershipFee.disabledHint, testId: 'scadenze-membership-fee-button-mobile' } : undefined} />
           {canChargeMembershipFee ? (
             <button
               type="button"
@@ -629,6 +631,7 @@ export function ScadenzeConsole({
                 data-testid={`mobile-scadenze-window-chip-${value}`}
               >
                 {labels.segmented[value === '60' ? 'win60' : value === '30' ? 'win30' : value === '7' ? 'win7' : value === 'expired' ? 'expired' : 'all']}
+                <span className="mobile-window-count">{windowCounts[value === '60' ? 'within60' : value === '30' ? 'within30' : value === '7' ? 'within7' : value]}</span>
               </button>
             ))}
           </div>

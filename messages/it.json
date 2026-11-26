@@ -1125,6 +1125,7 @@
       "times": "Orari",
       "filters": "Filtri",
       "filtersCount": "Filtri ({count})",
+      "moreActions": "Altre azioni",
       "filtersTitle": "Filtri del registro",
       "apply": "Applica",
       "instructorLine": "Istruttore: {name}"
@@ -1246,6 +1247,7 @@
         "openPerson": "Apri scheda persona",
         "filters": "Filtri",
         "filtersCount": "Filtri ({count})",
+        "moreActions": "Altre azioni",
         "filtersTitle": "Filtri del registro",
         "apply": "Applica",
         "empty": "Nessuna scadenza da mostrare.",
@@ -1994,6 +1996,7 @@
       "bookTypeAll": "Tutti",
       "filters": "Filtri",
       "filtersCount": "Filtri ({count})",
+      "moreActions": "Altre azioni",
       "filtersTitle": "Filtri delle transazioni",
       "apply": "Applica",
       "close": "Chiudi",

@@ -131,10 +131,10 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   };
 
   return (
-    <main className="page">
+    <main className="page fold-billing">
       <div className="page-head">
         <div className="page-title-block">
-          <h1>{t('title')}</h1>
+          <h1 className="fold-duplicate-title">{t('title')}</h1>
           <div className="sub">{t('sub', { count: result.total, period: periodLabel })}</div>
         </div>
       </div>
@@ -332,6 +332,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             filters: t('mobile.filters'),
             // Placeholder filled client-side (the count is client state) — `t.raw`, per the convention.
             filtersCount: t.raw('mobile.filtersCount') as string,
+            moreActions: t('mobile.moreActions'),
             filtersTitle: t('mobile.filtersTitle'),
             apply: t('mobile.apply'),
             close: t('mobile.close'),

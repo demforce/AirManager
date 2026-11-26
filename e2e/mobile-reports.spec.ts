@@ -117,6 +117,7 @@ const HIDDEN_SCROLLERS = (): { cls: string; cw: number; sw: number }[] => {
   const page = document.querySelector('.page');
   if (!page) return out;
   for (const el of Array.from(page.querySelectorAll('*'))) {
+    if (el.classList.contains('fold-duplicate-title')) continue; // visually hidden, still accessible heading
     if (el.scrollWidth <= el.clientWidth + 1) continue;
     if (getComputedStyle(el).overflowX === 'hidden') continue;
     if (el.classList.contains('kpi-row')) continue;
@@ -131,6 +132,7 @@ const CLIPPED_WITHOUT_ELLIPSIS = (): { cls: string; cw: number; sw: number }[] =
   const page = document.querySelector('.page');
   if (!page) return out;
   for (const el of Array.from(page.querySelectorAll('*'))) {
+    if (el.classList.contains('fold-duplicate-title')) continue; // visually hidden, still accessible heading
     if (el.scrollWidth <= el.clientWidth + 1) continue;
     if (el.getClientRects().length === 0) continue;
     const cs = getComputedStyle(el);

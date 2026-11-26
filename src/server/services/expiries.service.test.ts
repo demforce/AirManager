@@ -42,6 +42,7 @@ const { prisma } = await import('@/server/db/prisma');
 const {
   deleteExpiry,
   getExpiryTierCounts,
+  getExpiryWindowCounts,
   getMedicalRequirementFailure,
   listAllExpiries,
   listBlockingExpiriesByPerson,
@@ -597,6 +598,33 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
       // The same rows as the list: archived people's documents are out of the counts too (review 19.7b F1).
       expect(sql).toMatch(/WHERE pd\."archivedAt" IS NULL/);
       expect(getCurrencySettingsMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getExpiryWindowCounts', () => {
+    it('requires expiries.manage before reading', async () => {
+      await expect(getExpiryWindowCounts(pilotActor(), { page: 1, pageSize: 20 })).rejects.toThrow(ForbiddenError);
+      expect(queryRawMock).not.toHaveBeenCalled();
+    });
+
+    it('counts cumulative windows on the same filtered registry, without selected window or pagination', async () => {
+      queryRawMock.mockResolvedValue([{ expired: 2, within7: 4, within30: 8, within60: 13, all: 21 }] as never);
+      const result = await getExpiryWindowCounts(adminActor(), {
+        page: 3, pageSize: 20, window: '7', category: 'MEDICAL', expiryTypeId: 'type-1', personQuery: 'Rossi',
+      });
+      expect(result).toEqual({ expired: 2, within7: 4, within30: 8, within60: 13, all: 21 });
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      const { sql } = rawCall();
+      expect(sql).toMatch(/COUNT\(\*\) FILTER \(WHERE r\."expiresAt" <= \?::date \+ 7\)/);
+      expect(sql).not.toMatch(/r\."expiresAt" >= \?::date/);
+      expect(sql).toMatch(/AS "within30"/);
+      expect(sql).toMatch(/AS "within60"/);
+      expect(sql).toMatch(/AS "all"/);
+      expect(sql).toMatch(/JOIN "Person" p ON p\."id" = r\."personId"/);
+      expect(sql).toMatch(/r\."category" = \?/);
+      expect(sql).toMatch(/r\."expiryTypeId" = \?/);
+      expect(sql).toMatch(/p\."firstName" ILIKE/);
+      expect(sql.slice(sql.lastIndexOf('FROM "registryRows" r'))).not.toMatch(/LIMIT \?|OFFSET \?/);
     });
   });
 

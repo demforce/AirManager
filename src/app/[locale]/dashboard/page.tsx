@@ -152,7 +152,7 @@ export default async function DashboardPage({ params }: PageProps) {
     <main className="page">
       <div className="page-head">
         <div className="page-title-block">
-          <h1>{t('fallback.title')}</h1>
+          <h1 className="fold-duplicate-title">{t('fallback.title')}</h1>
           <div className="sub">{t('fallback.sub')}</div>
         </div>
       </div>
@@ -516,7 +516,7 @@ async function renderAdminOverview(actor: Actor, locale: AppLocale, displayLocal
       {calendarTruncated && <p role="status">{tBookings('calendarTruncated')}</p>}
       <div className="page-head">
         <div className="page-title-block">
-          <h1>{t('overview.title')}</h1>
+          <h1 className="fold-duplicate-title">{t('overview.title')}</h1>
           <div className="sub">
             <span className="dot" />
             {subParts.join(' · ')}

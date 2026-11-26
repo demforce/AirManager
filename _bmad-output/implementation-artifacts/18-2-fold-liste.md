@@ -4,7 +4,7 @@ baseline_commit: 1f6ab3e
 
 # Story 18.2: Il fold torna alle liste
 
-Status: **ready-for-dev** — 2026-11-03 (file creato dalla sessione principale con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e`). **Dev: Opus 5 xhigh** (UI). Review: Opus 5 xhigh adversarial. **Ordine**: DOPO 16.6a, 16.6b, 17.3 (cambiano Contabilità e Registro voli) e 18.1 (altezza della topbar); la misura «prima» si fa su quel HEAD. 18.5 e 18.7 dopo. Split: v. §PO.
+Status: **in-progress** — 18.2a (AC 1–5, 7–8) verificata sul ramo locale `story/18-2a` e pronta per la revisione indipendente; 18.2b (AC 6) resta da sviluppare. L'umbrella 18.2 non è done. File creato il 2026-11-03 con `bmad-create-story`, ricognizione in sola lettura su `1f6ab3e`. Dev/review secondo la sostituzione permanente autorizzata dal PO: GPT 6 Sol per lo sviluppo ordinario e revisore indipendente separato. **Ordine**: DOPO 16.6a, 16.6b, 17.3 e 18.1. Split: v. §PO.
 
 ## Story
 
@@ -37,9 +37,11 @@ Fonte: `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md` §«Story 18.2»
 
 ## Tasks / Subtasks
 
-- [ ] Misura «prima» sul HEAD di partenza (dopo 16.6a/16.6b/17.3/18.1).
-- [ ] Titolo `sr-only` (AC 1); conteggi per finestra (AC 2); sheet azioni (AC 3); Contabilità (AC 4); stati vuoti (AC 6).
-- [ ] e2e fold e pillole, adeguamento dei pin, discriminanze, Dev Agent Record.
+- [x] Misura «prima» su `ba1ffdedd46fef8e3757b0d970cc01cd7e47ca7e` (dopo 18.1).
+- [x] 18.2a: titolo `sr-only` (AC 1), conteggi per finestra (AC 2), sheet azioni (AC 3), Contabilità (AC 4), fold (AC 5), desktop (AC 7).
+- [ ] 18.2b: stati vuoti (AC 6), azioni e i18n della mappa PO.
+- [x] 18.2a: gate, browser finale, benchmark ed evidenze (AC 8); stato review.
+- [ ] 18.2a: revisione indipendente e risoluzione degli eventuali rilievi.
 
 ## Dev Notes
 
@@ -70,6 +72,26 @@ Ratificate dal PO il 2026-11-03/04 in un solo giro (AskUserQuestion: «Sì, tutt
 
 ### Agent Model Used
 
+- Codex Sol, singolo agente di sviluppo. Revisione indipendente ancora da eseguire in contesto separato.
+
 ### Completion Notes List
 
+- Base locale `ba1ffdedd46fef8e3757b0d970cc01cd7e47ca7e`; ramo `story/18-2a`. Scope solo AC 1–5, 7–8. L'AC 6 non è implementata né dichiarata completa.
+- AC 1: i titoli che duplicano la topbar restano `h1` accessibili e diventano visivamente nascosti solo a ≤640 px. Le facce personali con saluto/titolo diverso restano visibili. Sonde storiche di overflow aggiornate a escludere esplicitamente il solo titolo nascosto.
+- AC 2: `getExpiryWindowCounts` usa `registryRowsSql` e `registryWhereSql` con categoria, tipo e persona correnti, senza finestra selezionata né paginazione; `COUNT FILTER` restituisce finestre cumulative includendo gli scaduti. Le quattro stat card globali restano sul desktop e sono nascoste sul telefono.
+- AC 3–4: «Altre azioni» usa il `MobileSheet` esistente con PDF/Excel diretti e, solo su Scadenze, Quota associativa. Ricerca, Filtri e azione primaria restano visibili. I tre KPI Contabilità mantengono gli sheet e stanno su una striscia orizzontale a riga singola.
+- Benchmark su 375×812, offset documento del primo contenuto, base IT chiaro → candidato (massimo IT/EN, chiaro/scuro): Scadenze 609,28 → 289,84 px (budget 320); Contabilità 563,41 → 348,33 px (budget 350); Registro voli 423,41 → 310,81 px (budget 350); Velivoli/Piloti 324,44 → 291,84 px; Istruttori 388,25 → 355,66 px (EN 336,81). Panoramica/Pianificazione: test di non regressione confrontando il medesimo DOM col titolo visibile; pilota/allievo: titoli personali e registro in sola lettura verificati. Nessun overflow documento a 320 nelle otto pagine provate.
+- Riscontro manuale aggiuntivo, Chromium locale e seed sintetico, 375×812 IT/EN nei due temi: primo blocco dopo `.page-head` pilota Panoramica 264,44 px, Scadenze personali 148,44, Registro voli 101,84; allievo rispettivamente 212,44 / 148,44 / 101,84. I titoli personali restano visibili, quello del Registro voli misura 1 px; overflow del documento pari a 0 anche a 320 su tutte e sei le combinazioni ruolo/pagina. Comando Playwright read-only exit 0.
+- Desktop 1280: sulle otto pagine admin il box `.page-head` resta `[x 260, y 85,84, larghezza 992, altezza 51,44]` px in IT/EN; le nuove regole di layout sono limitate a ≤640 px.
+- Discriminante difensiva sul conteggio in copia isolata `/tmp/airmanager-mutant-18-2a-6rvaiiqk`: tolto il where filtrato, unit exit 1 (1 failed, 1 passed, 89 skipped), fallimento sulla mancanza di `r."category" = ?`; sorgente originale passa. Nessuna ACL modificata. Un browser rosso contro il vecchio HEAD non è stato eseguito; la suite nuova verifica il comportamento sul candidato.
+- `npm run gates` sull'albero finale: lint exit 0 (36 s), typecheck exit 0 (7 s), Vitest 2.322/2.322 exit 0 (21 s), build exit 0 (55 s). `git diff --check` exit 0.
+- Prima suite completa del candidato: `scripts/e2e.sh start` exit 1, 663 passati, 3 METAR saltati, 1 fallito (`e2e/picker-cap.spec.ts:49`: Scadenze desktop 53 opzioni native, limite 50). La causa era il nuovo fixture 18.2a, che creava cinque tipi di scadenza globali; il test ora riusa cinque tipi attivi del seed e conserva persona/date run-unique. Controprova mirata `scripts/e2e.sh start --no-deps e2e/fold-18-2a.spec.ts`: 3/3 passati, exit 0. Nel browser finale il picker cap è passato al primo tentativo.
+- Browser integrato finale su DB resettato e riseminato, SMTP su `localhost`: `scripts/e2e.sh start`, `E2E_EXIT=0`, 662 passati, 3 segnalati flaky e 2 saltati, 667 test in totale. Le tre prove 18.2a, l'ordine/cap della Panoramica, i due casi Pianificazione fuori dalla fascia 23:40–00:20 Roma, export PDF, geometria mobile e picker cap sono passati. Nessun deploy, email reale o accesso a dati di produzione.
+- Flaky separati: `account-adjustments.spec.ts:94` è passato al retry #1 dopo 15 s di attesa Mailpit di un messaggio sintetico; `expiry-alerts.spec.ts:186` è passato al retry #1 dopo timeout di 30 s sulla POST locale del job; `mobile-metar.spec.ts:167` ha fallito il login iniziale (rimasto su `/it/login` per 5 s) e al retry è stato saltato per assenza di `raw` nella risposta METAR. Anche `mobile-metar.spec.ts:61` e `:208` sono saltati per assenza di `raw`. Il comportamento METAR di quei tre casi **non è attestato**; il motivo esatto della risposta senza `raw` non è stato verificato oltre alla condizione di skip del test. Il gate Playwright resta exit 0.
+- Revisione indipendente ancora pendente. Nessun push di `dev` o modifica di `main`; 18.2b è la prossima parte dell'umbrella dopo la review.
+
 ### File List
+
+- Servizio Scadenze e unit: `src/server/services/expiries.service.ts`, `src/server/services/expiries.service.test.ts`.
+- Testate, console e menu: `src/app/[locale]/dashboard/{page.tsx,bookings,expiries,billing,logbook,fleet,pilots,instructors,my-account,my-compensation,reports}`, `src/components/ui/export-menu.tsx`, `src/styles/airops.css`, `messages/{it,en}.json`.
+- Browser: `e2e/fold-18-2a.spec.ts` e aggiornamenti mirati a `e2e/{home-dashboard,mobile-billing,mobile-expiries-movements,mobile-ink-targets,mobile-logbook,mobile-membership-fee,mobile-registries,mobile-reports,mobile-self-public,pdf-exports,picker-cap}.spec.ts`.

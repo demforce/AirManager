@@ -154,6 +154,7 @@ export type LogbookConsoleLabels = {
     filters: string;
     /** `{count}` filled client-side (`t.raw`) — the number of PANEL filters currently active. */
     filtersCount: string;
+    moreActions: string;
     filtersTitle: string;
     apply: string;
   };
@@ -587,7 +588,7 @@ export function LogbookConsole({
           >
             {panelActiveCount === 0 ? labels.mobile.filters : labels.mobile.filtersCount.replace('{count}', String(panelActiveCount))}
           </button>
-          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={pdfExportHref} pdfUnavailable={exportPdfUnavailable} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} xlsUnavailable={exportXlsUnavailable} />
+          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={pdfExportHref} pdfUnavailable={exportPdfUnavailable} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} xlsUnavailable={exportXlsUnavailable} mobileMoreLabel={labels.mobile.moreActions} />
           {canManage ? (
             <button type="button" className="btn primary" onClick={() => setEditorTarget({ mode: 'new' })} data-testid="logbook-new-button">
               <Icon.plus /> {labels.newEntry}

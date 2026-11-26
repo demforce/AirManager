@@ -310,6 +310,9 @@ button{ font: inherit; color: inherit; }
   font-size: 26px;
   line-height: 1.1;
 }
+/* ExportMenu's optional mobile labels/actions are hidden unless a list opts in. */
+.export-mobile-more-label,
+.export-mobile-extra{ display: none; }
 .page-title-block .sub{
   color: var(--ink-3);
   font-size: 13px;
@@ -3108,17 +3111,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator{
   .billing-desktop-body{ display: none; }
   .billing-mobile{ display: block; }
 
-  /* --- the three riquadri as a tappable KPI each (R-15.8a-c) ---
-     Measured pre-fix at 375px: the three stacked cards were 579.92px tall and
-     the first transaction row started at 1068.23 on a 812px screen. The strip
-     replaces them; the full detail of each riquadro is one tap away, in a
-     sheet, so nothing is lost (R4).
-     `1fr 1fr` with the FIRST cell spanning, not `repeat(3, 1fr)`: three money
-     values in 101px columns wrap to two clamped lines each on a real ledger
-     (`-1.216,22 €` needs ~99px at 15px mono), and the month's result is the
-     number this page is opened for — it gets the full width, liquidità and
-     acconti share the row below. No empty cell, and no swipe to reach the
-     third number (the defect ratifica R-15.3-c already corrected for the 2x2). */
+  /* 15.8a's tappable KPI cards replaced three stacked panels. Story 18.2a
+     overrides the grid below with a single scrollable row at the end of this
+     stylesheet; each button still opens its full detail sheet. */
   .billing-panels{ display: none; }
   .kpi-row.billing-kpi-row{
     display: grid;
@@ -3875,3 +3870,59 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
 .stats-rankings-table td:first-child{ overflow-wrap: anywhere; }
 .stats-rankings-pagination{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .stats-rankings-pagination .btn{ min-height: 44px; }
+
+/* Story 18.2a: scoped fold reductions, after the earlier mobile patterns. */
+@media (max-width: 640px){
+  /* A page opts in only when its heading duplicates the mobile top bar. */
+  .page-title-block h1.fold-duplicate-title{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border-width: 0;
+  }
+  .fold-more-actions .export-desktop-label{ display: none; }
+  .fold-more-actions .export-mobile-more-label{ display: inline; }
+  .fold-more-actions .export-menu-trigger > svg{ display: none; }
+  .export-menu-panel .pop-row > .export-mobile-extra{ display: inline-flex; min-height: 44px; justify-content: flex-start; }
+  .page.fold-expiries,
+  .page.fold-billing,
+  .page.fold-logbook{ gap: 8px; }
+  .kpi-row.scadenze-kpi-row{ display: none; }
+  .kpi-row.billing-kpi-row{
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .billing-kpi-row::-webkit-scrollbar{ display: none; }
+  .billing-kpi-row > *,
+  .billing-kpi-row > *:first-child{ flex: 0 0 min(68%, 210px); min-width: 0; scroll-snap-align: start; }
+  .scadenze-head > [data-testid="scadenze-membership-fee-button"]{ display: none; }
+  .scadenze-head > .scadenze-filters-trigger,
+  .billing-head > .billing-filters-trigger,
+  .logbook-head > .logbook-filters-trigger{ flex: 0 0 auto; order: 3; }
+  .scadenze-head > .scadenze-search,
+  .billing-head > .billing-search,
+  .logbook-head > .logbook-search{ flex: 1 1 calc(100% - 130px); min-width: 0; order: 1; }
+  .scadenze-head > .scadenze-search .bare-input,
+  .billing-head > .billing-search .bare-input,
+  .logbook-head > .logbook-search .bare-input{ min-width: 0; }
+  .scadenze-head > .btn.primary,
+  .billing-head > .btn.primary,
+  .logbook-head > .btn.primary{ flex: 1 1 0; min-width: 0; order: 4; }
+  .scadenze-head > div.fold-more-actions,
+  .billing-head > div.fold-more-actions,
+  .logbook-head > div.fold-more-actions{ flex: 0 0 auto; order: 2; }
+  .scadenze-head > div.fold-more-actions > .btn,
+  .billing-head > div.fold-more-actions > .btn,
+  .logbook-head > div.fold-more-actions > .btn{ width: auto; min-height: 44px; }
+  .scadenze-head > .btn.primary,
+  .billing-head > .btn.primary{ height: 44px; padding-block: 0; }
+  .billing-head{ padding-block: 11px; }
+  .billing-mobile > .mobile-chip-strip{ padding-block: 0; }
+}

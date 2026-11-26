@@ -227,7 +227,7 @@ test.describe('Home dashboard — role-based landing (story 12.12, AC 1/4/5/6)',
 });
 
 test.describe('Home dashboard — data-driven (story 12.12, AC 1)', () => {
-  test('a fresh PENDING booking appears in the AdminOverview\'s embedded "Prenotazioni" card, which reads startsAt-ascending like /dashboard/bookings, and is reflected in the KPI', async ({ page }) => {
+  test('a fresh PENDING booking is reflected in the KPI while the embedded Prenotazioni card stays capped and startsAt-ascending', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page, 'PF');
     const password = 'PendingFirstHome123!';
@@ -249,9 +249,12 @@ test.describe('Home dashboard — data-driven (story 12.12, AC 1)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
+    // The overview previews only the earliest eight rows across every status.
+    // Under fullyParallel, other specs can fill those slots before this future
+    // fixture. Its absence from this capped preview must not fail the test.
     const ourRow = page.getByTestId('booking-row').filter({ hasText: aircraft.registration });
-    await expect(ourRow).toBeVisible();
-    await expect(ourRow.getByText('In attesa', { exact: true })).toBeVisible();
+    if (await ourRow.count()) await expect(ourRow.getByText('In attesa', { exact: true })).toBeVisible();
+    expect(await page.getByTestId('booking-row').count()).toBeLessThanOrEqual(8);
 
     // Ordering invariant (PO decision 2026-07-26, replacing story 12.12's
     // pending-first ordering): the embedded card reads `startsAt` ascending,
@@ -268,5 +271,12 @@ test.describe('Home dashboard — data-driven (story 12.12, AC 1)', () => {
     // The "Prenotazioni in attesa" KPI reflects the real pending count (>= 1: this fixture, possibly more from concurrent specs).
     const kpiValue = page.getByTestId('kpi-bookings-pending').locator('.kpi-value');
     expect(Number(await kpiValue.innerText())).toBeGreaterThanOrEqual(1);
+
+    // The full list, narrowed to this run's aircraft, always contains the
+    // booking even when it falls outside the overview's eight-row window.
+    await page.goto(`/it/dashboard/bookings?aircraft=${encodeURIComponent(aircraft.id)}`);
+    const fullRow = page.getByTestId('bookings-list-section').getByTestId('booking-row').filter({ hasText: aircraft.registration });
+    await expect(fullRow).toBeVisible();
+    await expect(fullRow.getByText('In attesa', { exact: true })).toBeVisible();
   });
 });

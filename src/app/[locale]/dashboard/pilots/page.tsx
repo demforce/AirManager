@@ -91,7 +91,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
     <main className="page">
       <div className="page-head">
         <div className="page-title-block">
-          <h1>{t('title')}</h1>
+          <h1 className="fold-duplicate-title">{t('title')}</h1>
           <div className="sub">{t('sub', { total: result.totalCount, suspended: result.suspendedCount })}</div>
         </div>
       </div>

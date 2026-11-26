@@ -7,7 +7,7 @@ import type { ExpiryItemDto, ExpiryWindowDto, RegistryCategoryDto } from '@/lib/
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getMembershipFeeCents } from '@/server/services/app-settings.service';
-import { getExpiryTierCounts, listAllExpiries, listPersonExpiries, type ExpiryListItem } from '@/server/services/expiries.service';
+import { getExpiryTierCounts, getExpiryWindowCounts, listAllExpiries, listPersonExpiries, type ExpiryListItem } from '@/server/services/expiries.service';
 import { listExpiryTypes } from '@/server/services/expiry-types.service';
 import { listPeople } from '@/server/services/people.service';
 import { MyExpiries } from './my-expiries';
@@ -92,6 +92,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     const typeOptions = allTypes.map((type) => ({ id: type.id, name: type.name, kind: type.kind }));
 
     const tierCounts = await getExpiryTierCounts(actor);
+    const windowCounts = await getExpiryWindowCounts(actor, { category, expiryTypeId, personQuery, page: 1, pageSize: REGISTRY_PAGE_SIZE });
     const membershipFeeCents = await getMembershipFeeCents(actor);
 
     const registryQuery = {
@@ -132,10 +133,10 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     );
 
     return (
-      <main className="page">
+      <main className="page fold-expiries">
         <div className="page-head">
           <div className="page-title-block">
-            <h1>{t('title')}</h1>
+            <h1 className="fold-duplicate-title">{t('title')}</h1>
             <div className="sub">{t('sub', { count: tierCounts.expired + tierCounts.within7 + tierCounts.within30 + tierCounts.within60 })}</div>
           </div>
         </div>
@@ -147,6 +148,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
           totalPages={registryTotalPages}
           totalShown={registryResult.total}
           tierCounts={tierCounts}
+          windowCounts={windowCounts}
           filters={filters}
           typeOptions={typeOptions}
           personOptions={personOptions}
@@ -252,6 +254,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               // `t.raw`: `{count}` is interpolated CLIENT-SIDE (the number of
               // active panel filters), same rationale as `shown` above.
               filtersCount: t.raw('registry.mobile.filtersCount') as string,
+              moreActions: t('registry.mobile.moreActions'),
               filtersTitle: t('registry.mobile.filtersTitle'),
               apply: t('registry.mobile.apply'),
               empty: t('registry.mobile.empty'),

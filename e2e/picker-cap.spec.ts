@@ -110,7 +110,12 @@ test('@picker-cap bounds native selects across admin navigation and bounds searc
       await page.getByTestId('billing-new-transaction-button').click();
       await checkPicker(page, 'transaction-person', 'people', 'N1');
       await page.goto('/it/dashboard/expiries');
-      await page.getByTestId('scadenze-membership-fee-button').click();
+      if (width === 375) {
+        await page.getByTestId('export-menu-trigger').click();
+        await page.getByTestId('scadenze-membership-fee-button-mobile').click();
+      } else {
+        await page.getByTestId('scadenze-membership-fee-button').click();
+      }
       await checkPicker(page, 'membership-fee-person', 'people', 'N1');
     }
     await page.context().clearCookies();

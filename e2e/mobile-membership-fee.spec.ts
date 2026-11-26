@@ -83,7 +83,8 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     await topUp(page, pilot.personId, 100_000);
 
     await page.goto('/it/dashboard/expiries');
-    await page.getByTestId('scadenze-membership-fee-button').click();
+    await page.getByTestId('export-menu-trigger').click();
+    await page.getByTestId('scadenze-membership-fee-button-mobile').click();
     const panel = page.getByTestId('membership-fee-panel');
     await expect(panel).toHaveCount(1);
     await expect(panel).toBeVisible();
@@ -124,7 +125,7 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     // widths, without navigating away (the modal keeps its state on resize).
     for (const viewport of [PHONE, DESKTOP]) {
       await page.setViewportSize(viewport);
-      for (const testid of ['scadenze-membership-fee-button', 'membership-fee-panel', 'membership-fee-amount', 'membership-fee-submit']) {
+      for (const testid of ['membership-fee-panel', 'membership-fee-amount', 'membership-fee-submit']) {
         await expect(page.getByTestId(testid), `${testid} @${viewport.width}`).toHaveCount(1);
       }
     }
@@ -153,7 +154,8 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     const pilot = await createPilotPerson(page); // no top-up: balance 0
 
     await page.goto('/it/dashboard/expiries');
-    await page.getByTestId('scadenze-membership-fee-button').click();
+    await page.getByTestId('export-menu-trigger').click();
+    await page.getByTestId('scadenze-membership-fee-button-mobile').click();
     const panel = page.getByTestId('membership-fee-panel');
     const combobox = panel.getByRole('combobox', { name: 'Persona' });
     await combobox.click();

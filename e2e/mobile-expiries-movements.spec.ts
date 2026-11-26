@@ -129,6 +129,7 @@ const CLIPPED_WITHOUT_ELLIPSIS = (): { cls: string; cw: number; sw: number }[] =
   const page = document.querySelector('.page');
   if (!page) return out;
   for (const el of Array.from(page.querySelectorAll('*'))) {
+    if (el.classList.contains('fold-duplicate-title')) continue; // visually hidden, still accessible heading
     if (el.scrollWidth <= el.clientWidth + 1) continue;
     if (el.getClientRects().length === 0) continue;
     const cs = getComputedStyle(el);
@@ -337,7 +338,9 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
     // R4: every filter and every action is still reachable.
     await expect(page.getByTestId('scadenze-filter-pilot')).toBeVisible();
     await expect(page.getByTestId('mobile-scadenze-filters-button')).toBeVisible();
-    await expect(page.getByTestId('scadenze-membership-fee-button')).toBeVisible();
+    await page.getByTestId('export-menu-trigger').click();
+    await expect(page.getByTestId('scadenze-membership-fee-button-mobile')).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect(page.getByTestId('scadenze-send-reminders-button')).toBeVisible();
     for (const value of ['60', '30', '7', 'expired', 'all']) {
       await expect(page.getByTestId(`mobile-scadenze-window-chip-${value}`)).toBeVisible();

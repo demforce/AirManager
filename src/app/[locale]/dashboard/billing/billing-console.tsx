@@ -176,6 +176,7 @@ export type BillingConsoleLabels = {
     unattributedChip: string;
     filters: string;
     filtersCount: string;
+    moreActions: string;
     filtersTitle: string;
     apply: string;
     close: string;
@@ -846,7 +847,7 @@ export function BillingConsole({
           <button type="button" className="btn billing-filters-trigger" onClick={openFilterPanel} data-testid="mobile-billing-filters-button">
             {panelActiveCount === 0 ? labels.mobile.filters : labels.mobile.filtersCount.replace('{count}', String(panelActiveCount))}
           </button>
-          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={cashReportPdfHref} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} />
+          <ExportMenu label={labels.exportMenu.label} pdfLabel={labels.exportMenu.pdfLabel} pdfHref={cashReportPdfHref} xlsLabel={labels.exportMenu.xlsLabel} xlsHref={exportHref} mobileMoreLabel={labels.mobile.moreActions} />
           <button type="button" className="btn primary" onClick={() => setEditorOpen(true)} data-testid="billing-new-transaction-button">
             <Icon.plus /> {labels.newTransaction}
           </button>

@@ -599,6 +599,27 @@ export type ExpiryTierCounts = {
   within60: number;
 };
 
+/** Mobile window chips count the rows each filter would show, before pagination. */
+export type ExpiryWindowCounts = ExpiryTierCounts & { all: number };
+
+export async function getExpiryWindowCounts(actor: Actor, query: ListAllExpiriesQuery): Promise<ExpiryWindowCounts> {
+  authorize(actor, 'expiries.manage');
+  const today = todayDateOnlyInZone(APP_TIMEZONE);
+  const settings = await getCurrencySettings();
+  // The selected window must not restrict the population counted for its peers.
+  const whereSql = registryWhereSql({ ...query, window: undefined, status: undefined }, today);
+  const [counts] = await prisma.$queryRaw<ExpiryWindowCounts[]>`
+    ${registryRowsSql(today, settings)}
+    SELECT (COUNT(*) FILTER (WHERE r."expiresAt" < ${today}::date))::int AS "expired",
+           (COUNT(*) FILTER (WHERE r."expiresAt" <= ${today}::date + 7))::int AS "within7",
+           (COUNT(*) FILTER (WHERE r."expiresAt" <= ${today}::date + 30))::int AS "within30",
+           (COUNT(*) FILTER (WHERE r."expiresAt" <= ${today}::date + 60))::int AS "within60",
+           (COUNT(*))::int AS "all"
+    FROM "registryRows" r JOIN "Person" p ON p."id" = r."personId"
+    ${whereSql}`;
+  return counts ?? { expired: 0, within7: 0, within30: 0, within60: 0, all: 0 };
+}
+
 /**
  * The Scadenze registry's 4 stat-card counts (story 12.11, AC 3) — GLOBAL
  * counts across the WHOLE unified registry (story 19.7b, Q-19.7-a: documents

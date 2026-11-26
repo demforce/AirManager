@@ -1125,6 +1125,7 @@
       "times": "Times",
       "filters": "Filters",
       "filtersCount": "Filters ({count})",
+      "moreActions": "More actions",
       "filtersTitle": "Logbook filters",
       "apply": "Apply",
       "instructorLine": "Instructor: {name}"
@@ -1246,6 +1247,7 @@
         "openPerson": "Open person profile",
         "filters": "Filters",
         "filtersCount": "Filters ({count})",
+        "moreActions": "More actions",
         "filtersTitle": "Registry filters",
         "apply": "Apply",
         "empty": "No expiry in this window.",
@@ -1994,6 +1996,7 @@
       "bookTypeAll": "All",
       "filters": "Filters",
       "filtersCount": "Filters ({count})",
+      "moreActions": "More actions",
       "filtersTitle": "Ledger filters",
       "apply": "Apply",
       "close": "Close",

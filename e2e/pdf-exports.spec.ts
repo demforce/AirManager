@@ -334,7 +334,7 @@ test.describe('PDF exports (Story 10.2, FR-40)', () => {
     });
     expect(createResponse.status()).toBe(201);
 
-    await page.goto('/it/dashboard/bookings');
+    await page.goto(`/it/dashboard/bookings?aircraft=${encodeURIComponent(aircraft.id)}`);
     const list = page.getByTestId('bookings-list-section');
     await expect(list.getByTestId('booking-row').filter({ hasText: aircraft.registration })).toBeVisible();
 

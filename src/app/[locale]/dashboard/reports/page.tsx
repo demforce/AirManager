@@ -103,7 +103,7 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
     <main className="page">
       <div className="page-head">
         <div className="page-title-block">
-          <h1>{t('title')}</h1>
+          <h1 className="fold-duplicate-title">{t('title')}</h1>
           <div className="sub">{t('sub', { period: periodLabel })}</div>
         </div>
         {/* `.segmented` has SIX consumers app-wide (Pianificazione, Panoramica,

@@ -119,6 +119,7 @@ const CLIPPED_WITHOUT_ELLIPSIS = (): { cls: string; cw: number; sw: number }[] =
   const page = document.querySelector('.page');
   if (!page) return out;
   for (const el of Array.from(page.querySelectorAll('*'))) {
+    if (el.classList.contains('fold-duplicate-title')) continue; // visually hidden, still accessible heading
     if (el.scrollWidth <= el.clientWidth + 1) continue;
     if (el.getClientRects().length === 0) continue;
     const cs = getComputedStyle(el);
@@ -583,7 +584,7 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     await page.setViewportSize(PHONE);
     await gotoBilling(page);
     expect(await page.evaluate(DISPLAY_PROBE, '.billing-panels')).toBe('none');
-    expect(await page.evaluate(DISPLAY_PROBE, '.billing-kpi-row')).toBe('grid');
+    expect(await page.evaluate(DISPLAY_PROBE, '.billing-kpi-row')).toBe('flex');
     expect(await page.evaluate(() => document.querySelectorAll('.kpi-row').length)).toBe(1);
 
     // The same numbers, from the same object — read from the SAME render, never
@@ -802,7 +803,7 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
       }
       // One node per voice, at 375 AND at 1280.
       await expect(page.getByTestId('export-menu-xls')).toHaveCount(1);
-      await expect(page.getByRole('button', { name: 'Esporta' })).toHaveCount(1);
+      await expect(page.getByRole('button', { name: path.includes('/fleet') ? 'Esporta' : 'Altre azioni' })).toHaveCount(1);
 
       await page.setViewportSize(DESKTOP);
       await page.goto(path);

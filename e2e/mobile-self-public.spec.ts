@@ -181,6 +181,7 @@ async function hiddenScrollers(page: Page, root: string): Promise<string[]> {
   return page.evaluate(
     (rootSelector) =>
       [...document.querySelectorAll(`${rootSelector} *`)]
+        .filter((el) => !el.classList.contains('fold-duplicate-title'))
         .filter((el) => el.scrollWidth > el.clientWidth + 1 && !el.closest('.slideover') && getComputedStyle(el).textOverflow !== 'ellipsis')
         .map((el) => `${el.getAttribute('data-testid') ?? ''}|${String(el.className)}|${el.clientWidth}/${el.scrollWidth}`),
     root,

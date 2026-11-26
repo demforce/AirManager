@@ -404,6 +404,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
     const geometry = await page.evaluate(() => ({
       pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       hidden: [...document.querySelectorAll('.page *')]
+        .filter((el) => !el.classList.contains('fold-duplicate-title'))
         .filter((el) => el.scrollWidth > el.clientWidth + 1 && !el.closest('.slideover') && getComputedStyle(el).textOverflow !== 'ellipsis')
         .map((el) => String(el.className)),
     }));
@@ -688,6 +689,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
             pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             // Declared exception: `.kpi-row` is a scroll strip BY DESIGN (R-15.2-f).
             hidden: [...document.querySelectorAll('.page *')]
+              .filter((el) => !el.classList.contains('fold-duplicate-title'))
               .filter(
                 (el) =>
                   el.scrollWidth > el.clientWidth + 1 &&
@@ -925,6 +927,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
         // GONE: this sweep now covers the whole page, `account-section`
         // included, which is the binary proof that the debt is paid.
         hiddenOutsideAccount: [...document.querySelectorAll('.page *')]
+          .filter((el) => !el.classList.contains('fold-duplicate-title'))
           .filter((el) => el.scrollWidth > el.clientWidth + 1 && !el.closest('.slideover') && getComputedStyle(el).textOverflow !== 'ellipsis')
           .map((el) => String(el.className)),
       };

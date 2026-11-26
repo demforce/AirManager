@@ -190,10 +190,10 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
   const tBookings = await getTranslations('BookingsPage');
 
   return (
-    <main className="page">
+      <main className="page fold-logbook">
       <div className="page-head">
         <div className="page-title-block">
-          <h1>{t('title')}</h1>
+          <h1 className="fold-duplicate-title">{t('title')}</h1>
           <div className="sub">{canManage ? t('sub', { count: totals.count }) : t('subOwn', { count: totals.count })}</div>
         </div>
       </div>
@@ -378,6 +378,7 @@ export default async function LogbookPage({ params, searchParams }: PageProps) {
             // `t.raw`: the {count} placeholder is filled CLIENT-side (same
             // reasoning as `editor.fields.studentOnlyCorrectionHint` above).
             filtersCount: t.raw('mobile.filtersCount'),
+            moreActions: t('mobile.moreActions'),
             filtersTitle: t('mobile.filtersTitle'),
             apply: t('mobile.apply'),
           },

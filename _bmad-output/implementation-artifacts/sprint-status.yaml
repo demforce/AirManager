@@ -499,9 +499,9 @@ development_status:
   17-7-export-pdf-stream: done  # independent GPT 6 Sol xhigh review approved; pdfkit 0.20.2
   17-8-alert-job-a-lotti: done  # revisione indipendente GPT 6 Sol xhigh approvata; limiti SMTP/AOG documentati
   epic-17-retrospective: optional
-  epic-18: backlog
+  epic-18: in-progress
   18-1-pavimento-mobile-unico: done  # revisione indipendente GPT 6 Sol xhigh approvata; due skip METAR documentati
-  18-2-fold-liste: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.2-a..d; SPLIT 18.2a (fold) / 18.2b (stati vuoti), entrambe nel file; dev Opus DOPO 16.6a/16.6b/17.3/18.1
+  18-2-fold-liste: in-progress  # 18.2a (AC 1-5,7-8) verificata, in review indipendente; 18.2b (AC 6, stati vuoti) ancora da sviluppare, umbrella non done
   18-3-indietro-chiude-navigazione-risponde: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.3-a..c; SPLIT 18.3a (Indietro chiude) / 18.3b (scheletro e pending, dopo l'Epic 17), entrambe nel file; dev Opus
   18-4-filtri-pianificazione-mobile: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.4-a..c; dev Opus DOPO 17.2 e 17.6 (rimisurare)
   18-5-righe-tab-lessico: ready-for-dev  # story file 2026-11-04 + ratifiche PO Q-18.5-a..e; SPLIT 18.5a (M4, M6, M13d, TD-19.12b-a — diagnosi corretta: lo sfondamento lo causano le sr-only della 19.12b —, card «Anagrafica») / 18.5b (M11, dopo 18.4); dev Opus. Nota della riperimetrazione: RIPERIMETRATA 2026-11-03 alla chiusura della 19.12b: il LESSICO di M6/M11/M13a-c e' fatto nella 19.12b (Estratto conto, Velivoli, Registra volo, Ricarica, sottotitolo Pianificazione). Restano layout e comportamento: M4 righe col dato che distingue; M6 tab bar su una riga a prescindere dall'etichetta (font, audit MOB-2; in EN «Account statement» va su due righe a 390-414, review 19.12b I2); M11 seconda tab del pilota diversa dalla console admin; M13d azione primaria nello sheet prenotazione; TD-19.12b-a Registro voli, lo scroller .logbook non contiene la griglia (scroll del documento a 641-1100 px, +50 px dalla 19.12b L3); eventuale ritocco della card «Anagrafica piloti» (PO, 19.12b domanda 1)

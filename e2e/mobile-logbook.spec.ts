@@ -212,6 +212,7 @@ async function pageGeometry(page: Page): Promise<{ pageOverflow: number; atConte
     // scroll BY DESIGN; an ellipsised text node is not a hidden scroller
     // (lesson 15.5 §5-iv), it is the affordance itself.
     const scrollers = [...document.querySelectorAll<HTMLElement>('.page *')]
+      .filter((element) => !element.classList.contains('fold-duplicate-title'))
       .filter((element) => element.scrollWidth > element.clientWidth + 1)
       .filter((element) => getComputedStyle(element).display !== 'none' && element.getBoundingClientRect().width > 0)
       .filter((element) => !element.closest('.kpi-row') && !element.closest('.mobile-chip-strip'))

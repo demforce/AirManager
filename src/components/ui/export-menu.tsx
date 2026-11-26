@@ -48,22 +48,25 @@ export type ExportMenuProps = {
   xlsHref?: string;
   /** Same as {@link ExportMenuProps.pdfUnavailable}, for the Excel entry. */
   xlsUnavailable?: string;
+  /** Story 18.2a: three list heads use this existing sheet as their mobile actions menu. */
+  mobileMoreLabel?: string;
+  mobileExtraAction?: { label: string; onClick: () => void; disabled?: boolean; disabledHint?: string; testId: string };
 };
 
-export function ExportMenu({ label, pdfLabel, pdfHref, pdfUnavailable, xlsLabel, xlsHref, xlsUnavailable }: ExportMenuProps) {
+export function ExportMenu({ label, pdfLabel, pdfHref, pdfUnavailable, xlsLabel, xlsHref, xlsUnavailable, mobileMoreLabel, mobileExtraAction }: ExportMenuProps) {
   const [open, setOpen] = useState(false);
   /** Referentially stable by contract — `MobileSheet` gates its focus effect on it. */
   const close = useCallback(() => setOpen(false), []);
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className={mobileMoreLabel ? 'fold-more-actions' : undefined} style={{ position: 'relative' }}>
       <button type="button" className="btn export-menu-trigger" onClick={() => setOpen((current) => !current)} data-testid="export-menu-trigger">
-        <Icon.doc /> {label} <span style={{ fontSize: 10, marginLeft: 2, opacity: 0.6 }}>▾</span>
+        <Icon.doc /> <span className="export-desktop-label">{label}</span><span className="export-mobile-more-label">{mobileMoreLabel}</span> <span style={{ fontSize: 10, marginLeft: 2, opacity: 0.6 }}>▾</span>
       </button>
       <MobileSheet
         open={open}
         onClose={close}
-        label={label}
+        label={mobileMoreLabel ?? label}
         testId="export-menu-sheet"
         className="export-menu-sheet"
         scrimClassName="popover-scrim"
@@ -112,6 +115,11 @@ export function ExportMenu({ label, pdfLabel, pdfHref, pdfUnavailable, xlsLabel,
               {xlsLabel}
             </a>
           )}
+          {mobileExtraAction ? (
+            <button type="button" className="btn export-mobile-extra" disabled={mobileExtraAction.disabled} title={mobileExtraAction.disabled ? mobileExtraAction.disabledHint : undefined} onClick={() => { close(); mobileExtraAction.onClick(); }} data-testid={mobileExtraAction.testId}>
+              {mobileExtraAction.label}
+            </button>
+          ) : null}
         </div>
       </MobileSheet>
     </div>
