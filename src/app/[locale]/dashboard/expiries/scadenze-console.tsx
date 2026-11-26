@@ -27,7 +27,7 @@ import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
-import { prepareHistoryNavigation } from '@/components/ui/history-layer';
+import { dismissHistoryLayerIfSameSearch, prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
@@ -351,8 +351,9 @@ export function ScadenzeConsole({
   /** ONE navigation on "Applica" (AD-4), carrying the panel filter AND the typed search together. */
   function applyFilterDraft(): void {
     if (filterDraft === null) return;
-    prepareHistoryNavigation();
     const next = filterDraft;
+    if (dismissHistoryLayerIfSameSearch(buildQuery(next), dismissFilterPanel)) return;
+    prepareHistoryNavigation();
     setFilterDraft(null);
     setFilters(next);
     setPersonQueryInput(next.personQuery);
@@ -753,6 +754,12 @@ export function ScadenzeConsole({
                 type="button"
                 className="btn"
                 onClick={() => {
+                  if (dismissHistoryLayerIfSameSearch({}, () => {
+                    personQueryDebounce.cancel();
+                    setFilterDraft(null);
+                    setFilters({ window: '60', category: '', expiryTypeId: '', personQuery: '' });
+                    setPersonQueryInput('');
+                  })) return;
                   prepareHistoryNavigation();
                   setFilterDraft(null);
                   handleReset(true);

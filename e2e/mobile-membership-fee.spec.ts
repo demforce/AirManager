@@ -101,6 +101,23 @@ test.describe('Story 15.7 — Quota associativa a tutto schermo (ratifica R-15.7
     expect(feePosts).toBe(0);
     await page.goBack();
     await expect(page).toHaveURL(previousUrl);
+    await page.goForward();
+    await expect(page).toHaveURL(expiriesUrl);
+    await expect(modal).toHaveCount(0);
+    await expect(page.getByTestId('export-menu-sheet')).toHaveCount(0);
+    await page.getByTestId('export-menu-trigger').click();
+    await page.getByTestId('scadenze-membership-fee-button-mobile').click();
+    await expect(modal).toBeVisible();
+    await modal.getByRole('button', { name: 'Chiudi' }).click();
+    await expect(modal).toHaveCount(0);
+    await page.getByTestId('mobile-tab-fleet').click();
+    await expect(page).toHaveURL(/\/it\/dashboard\/fleet$/);
+    const fleetUrl = page.url();
+    await page.goBack();
+    await expect(page).toHaveURL(expiriesUrl);
+    await page.goForward();
+    await expect(page).toHaveURL(fleetUrl);
+    await expect(modal).toHaveCount(0);
   });
 
   test('il pannello e` a tutto schermo, i suoi target sono >=44px, e l\'addebito riuscito resta quello di oggi (Idempotency-Key, saldo e scadenza nel messaggio)', async ({ page }) => {

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { todayRome } from './helpers';
+import { addDaysIso, registerFlightOn, todayRome } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 if (!PASSWORD) throw new Error('history-layers.spec.ts requires SEED_ADMIN_PASSWORD');
@@ -12,8 +13,29 @@ async function login(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/it\/dashboard$/);
 }
 
+/** The seeded DB has zero flights, so filter tests create their own row. */
+async function seedLogbookRow(page: Page): Promise<void> {
+  const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  const personResponse = await page.request.post('/api/v1/people', { data: { firstName: 'History', lastName: `Filter-${suffix}` } });
+  expect(personResponse.status()).toBe(201);
+  const person = (await personResponse.json()) as { id: string };
+  const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/pilot`, {
+    data: { licenseNumber: `HIST-${suffix}`, licenseType: 'PPL(A)' },
+  });
+  expect(profileResponse.status()).toBe(200);
+  const aircraftResponse = await page.request.post('/api/v1/aircraft', {
+    data: { registration: `I-H${suffix.toUpperCase()}`.slice(0, 20), type: 'Ultraleggero 3 assi', model: 'History test' },
+  });
+  expect(aircraftResponse.status()).toBe(201);
+  const aircraft = (await aircraftResponse.json()) as { id: string };
+  const yesterday = addDaysIso(todayRome(), -1);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: 0, pilotPriceCents: 0, validFrom: yesterday });
+  await registerFlightOn(page, { aircraftId: aircraft.id, personId: person.id, flightType: 'TOURISM', date: yesterday, noCharge: true });
+}
+
 async function openLogbookFromOverview(page: Page): Promise<string> {
   const previous = page.url();
+  await seedLogbookRow(page);
   await page.getByTestId('mobile-tab-more').click();
   await page.getByTestId('mobile-more-logbook').click();
   await expect(page).toHaveURL(/\/it\/dashboard\/logbook$/);
@@ -110,6 +132,68 @@ test('18.3a AC3: Apply performs one navigation, then Back returns the unfiltered
   await expect(page).toHaveURL(base);
 });
 
+test('18.3a review: unchanged Apply and active Altro link close without a ghost Back', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await login(page);
+  const source = await openLogbookFromOverview(page);
+  await page.getByTestId('mobile-flight-filters-button').click();
+  await page.getByTestId('mobile-flight-filters-apply').click();
+  await expect(page.locator('.slideover.open')).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(source);
+
+  await openLogbookFromOverview(page);
+  const logbook = page.url();
+  await page.getByTestId('mobile-tab-more').click();
+  await page.getByTestId('mobile-more-logbook').click();
+  await expect(page.getByTestId('mobile-more-sheet')).toHaveCount(0);
+  await expect(page).toHaveURL(logbook);
+  await page.goBack();
+  await expect(page).toHaveURL(source);
+});
+
+for (const filter of [
+  { path: 'logbook', input: 'flight-filter-person', open: 'mobile-flight-filters-button', reset: 'flight-filter-reset-mobile' },
+  { path: 'billing', input: 'billing-filter-person', open: 'mobile-billing-filters-button', reset: 'billing-filter-reset-mobile' },
+  { path: 'expiries', input: 'scadenze-filter-pilot', open: 'mobile-scadenze-filters-button', reset: 'mobile-scadenze-filter-reset' },
+]) {
+  test(`18.3a review: Reset clears an unfinished search in ${filter.path} without rearming it`, async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await login(page);
+    const source = page.url();
+    if (filter.path === 'logbook') await seedLogbookRow(page);
+    await page.goto(`/it/dashboard/${filter.path}`);
+    const base = page.url();
+    await page.getByTestId(filter.input).fill('PendingReviewSearch');
+    await page.getByTestId(filter.open).click();
+    expect(page.url()).toBe(base);
+    await page.getByTestId(filter.reset).click();
+    await expect(page.locator('.slideover.open')).toHaveCount(0);
+    await expect(page.getByTestId(filter.input)).toHaveValue('');
+    await page.waitForTimeout(500); // longer than the 400 ms search debounce
+    expect(page.url()).toBe(base);
+    await page.goBack();
+    await expect(page).toHaveURL(source);
+  });
+}
+
+test('18.3a review: active Altro link clears a filtered URL and Back restores the filter', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await login(page);
+  await openLogbookFromOverview(page);
+  await page.getByTestId('mobile-flight-filters-button').click();
+  await page.getByTestId('flight-filter-type-mobile').selectOption('TOURISM');
+  await page.getByTestId('mobile-flight-filters-apply').click();
+  await expect(page).toHaveURL(/flightType=TOURISM/);
+  const filtered = page.url();
+  await page.getByTestId('mobile-tab-more').click();
+  await page.getByTestId('mobile-more-logbook').click();
+  await expect(page).toHaveURL(/\/it\/dashboard\/logbook$/);
+  await expect(page.getByTestId('mobile-more-sheet')).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(filtered);
+});
+
 test('18.3a AC4: a link in Altro reaches Settings and one Back returns to the source', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await login(page);
@@ -163,6 +247,21 @@ test('18.3a AC6: save refreshes the register and the next Back leaves the page o
   await page.getByTestId('transaction-result-close').click();
   await expect(page.locator('.slideover.open')).toHaveCount(0);
   await expect(page.getByTestId('transaction-row-mobile').filter({ hasText: marker })).toBeVisible();
+  const billing = page.url();
+  await page.getByTestId('mobile-tab-fleet').click();
+  await expect(page).toHaveURL(/\/it\/dashboard\/fleet$/);
+  const fleet = page.url();
+  await page.locator('[data-testid^="mobile-fleet-card-"]').first().click();
+  await expect(page.getByTestId('mobile-fleet-sheet')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId('mobile-fleet-sheet')).toHaveCount(0);
+  await expect(page).toHaveURL(fleet);
+  await page.goBack();
+  await expect(page).toHaveURL(billing);
+  await page.goForward();
+  await expect(page).toHaveURL(fleet);
+  await page.goBack();
+  await expect(page).toHaveURL(billing);
   await page.goBack();
   await expect(page).toHaveURL(source);
 });

@@ -48,7 +48,7 @@ import { Icon } from '@/components/ui/icons';
 import { DateInput } from '@/components/ui/date-input';
 import { Avatar } from '@/components/ui/avatar';
 import { SlideOver } from '@/components/ui/slide-over';
-import { prepareHistoryNavigation } from '@/components/ui/history-layer';
+import { dismissHistoryLayerIfSameSearch, prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import { NEGATIVE_BALANCES_HREF } from '@/lib/negative-balance-links';
@@ -689,8 +689,9 @@ export function BillingConsole({
   /** ONE navigation on "Applica" (AD-3) — navigating per `onChange`, as the desktop head does, would remount the console and close the panel under the reader's thumb. */
   function applyFilterDraft(): void {
     if (filterDraft === null) return;
-    prepareHistoryNavigation();
     const next = filterDraft;
+    if (dismissHistoryLayerIfSameSearch(buildFilterQuery(next), dismissFilterPanel)) return;
+    prepareHistoryNavigation();
     setFilterDraft(null);
     setFilters(next);
     navigate(next, true);
@@ -1326,6 +1327,12 @@ export function BillingConsole({
                 type="button"
                 className="btn"
                 onClick={() => {
+                  if (dismissHistoryLayerIfSameSearch({}, () => {
+                    debouncedPersonQuery.cancel();
+                    setFilterDraft(null);
+                    setFilters({ dateFrom: '', dateTo: '', bookType: '', categoryId: '', personQuery: '', unattributed: false });
+                    setPersonQueryInput('');
+                  })) return;
                   prepareHistoryNavigation();
                   setFilterDraft(null);
                   handleReset(true);

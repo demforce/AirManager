@@ -33,7 +33,7 @@ import { ExportMenu } from '@/components/ui/export-menu';
 import { Icon } from '@/components/ui/icons';
 import { DateInput } from '@/components/ui/date-input';
 import { SlideOver } from '@/components/ui/slide-over';
-import { prepareHistoryNavigation, transferHistoryLayer } from '@/components/ui/history-layer';
+import { dismissHistoryLayerIfSameSearch, prepareHistoryNavigation, transferHistoryLayer } from '@/components/ui/history-layer';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
@@ -449,8 +449,9 @@ export function LogbookConsole({
   /** ONE navigation on "Applica" (AD-4) — navigating per `onChange`, as the desktop head does, would remount the console and close the panel under the reader's thumb. */
   function applyFilterDraft(): void {
     if (filterDraft === null) return;
-    prepareHistoryNavigation();
     const next = filterDraft;
+    if (dismissHistoryLayerIfSameSearch(buildFilterQuery(next), dismissFilterPanel)) return;
+    prepareHistoryNavigation();
     setFilterDraft(null);
     setFilters(next);
     navigate(next, true);
@@ -913,6 +914,12 @@ export function LogbookConsole({
                 type="button"
                 className="btn"
                 onClick={() => {
+                  if (dismissHistoryLayerIfSameSearch({}, () => {
+                    personQueryDebounce.cancel();
+                    setFilterDraft(null);
+                    setFilters({ dateFrom: '', dateTo: '', aircraftId: '', personId: '', personQuery: '', flightType: '' });
+                    setPersonQueryInput('');
+                  })) return;
                   prepareHistoryNavigation();
                   setFilterDraft(null);
                   handleReset(true);
