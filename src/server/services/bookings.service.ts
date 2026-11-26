@@ -1281,8 +1281,14 @@ export async function updateBooking(actor: Actor, bookingId: string, input: Upda
     // this row anyway; taken there, AFTER the aircraft, it formed a cycle with
     // an approval of the same booking (`Booking` -> `Aircraft` there,
     // `Aircraft` -> `Booking` here): 40P01, a 500 to one of the two. The
-    // result is never read, the effect IS the lock.
-    await tx.$queryRaw`SELECT "id" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
+    // The lock serializes edits before the current editable fields are re-read.
+    const lockedRows = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
+    if (lockedRows.length === 0) throw new NotFoundError('Booking not found.');
+    const current = await tx.booking.findUnique({ where: { id: bookingId }, select: EDITABLE_BOOKING_SELECT });
+    if (!current) throw new NotFoundError('Booking not found.');
+    if (current.status !== existing.status || !isSameSlot(existing, current) || current.notes !== existing.notes) {
+      throw new ConflictError('This booking has changed; please retry.');
+    }
 
     // ALL Aircraft ids next, ONE query, ORDER BY id FOR UPDATE — same
     // multi-lock pattern as `flights.service.ts#updateFlight` (module
@@ -1474,7 +1480,7 @@ async function readApprovalChecks(
   return { booking, failures, scheduling: await getSchedulingSettings() };
 }
 
-/** Whether the row locked by an approval is still the slot its requirements were read on. */
+/** Whether a locked row still has the slot checked before the transaction. */
 function isSameSlot(read: MovableBooking, locked: LockedBookingRow): boolean {
   return (
     read.personId === locked.personId &&

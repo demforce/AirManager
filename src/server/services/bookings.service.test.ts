@@ -1439,6 +1439,20 @@ describe('updateBooking (Story 7.3, AC 1/2)', () => {
     await expect(updateBooking(adminActor(), 'booking_1', { notes: 'x' })).rejects.toThrow(ConflictError);
   });
 
+  it.each([
+    ['slot', { startsAt: new Date('2099-06-01T12:00:00.000Z'), endsAt: new Date('2099-06-01T13:00:00.000Z') }],
+    ['notes', { notes: 'Changed by another editor' }],
+  ])('rejects a %s changed after the initial read and before the booking lock', async (_, change) => {
+    let reads = 0;
+    bookingFindUnique.mockImplementation(async () => (++reads === 1 ? EXISTING_OWN_BOOKING : { ...EXISTING_OWN_BOOKING, ...change }));
+
+    const error = await updateBooking(adminActor(), 'booking_1', { notes: 'My edit' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect((error as InstanceType<typeof ConflictError>).message).toBe('This booking has changed; please retry.');
+    expect(bookingUpdateManyMock).not.toHaveBeenCalled();
+  });
+
   // --- PENDING/APPROVED editable set (Story 12.2, AC 4) -------------------
 
   it('a PENDING booking is also editable (was ACTIVE-only) — the atomic guard keys off the CURRENT status', async () => {
