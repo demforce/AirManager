@@ -509,6 +509,8 @@ development_status:
   18-6-tema-di-sistema: done  # 475b3f1, AC 1–9 approvati, TD color-scheme della 15.10 chiuso
   18-7-desktop-colonne-sticky-fermo-panoramica: done  # 18.7a (AC 1–4, c09f2b8) e 18.7b (AC 5–6, d675dd332c); verifica e revisione nel record.
   epic-18-retrospective: optional
+  # Follow-up export post Epic 18 verificato il 2026-11-26, commit applicativo ddc1c6f.
+  # Decisioni aperte su formato Scadenze e font PDF in verifica-corrispondenza-export.md.
   # EPIC 19 — Semplificazione e regole operative (change request PO 2026-11-01,
   # _bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md, ratifiche R-19-a..p).
   # Tutte con UI: dev Opus 5 xhigh, review Opus 5 xhigh. Eseguito dopo la chiusura della 16.3.

@@ -16,6 +16,12 @@ Il primo tentativo browser aveva riutilizzato un vecchio processo sulla porta 30
 
 Sul tree di codice e test `ec72d87fe283df6e054712df0c82a71273641a84`, `npm run gates` ha superato lint, typecheck, 2.351 unit test e build. La suite Chromium da 715 casi ha restituito exit 0. Playwright ha classificato 712 casi come passati e tre come intermittenti, tutti recuperati al primo retry. I due casi flotta e i tre METAR sono passati subito. Nessuno skip definitivo. Il database di test e Mailpit erano locali.
 
+## Verifica degli export dopo l’Epic 18
+
+Il follow-up è concluso sul commit applicativo `ddc1c6f`. In Contabilità, «Transazioni (Excel)» rispetta entrambi gli estremi del periodo, compresi gli intervalli aperti e i filtri combinati. Nel registro Scadenze la proiezione compatta a cinque colonne è coerente con la 19.7b. Il PDF perde alcuni caratteri dei nomi fuori da WinAnsi. Gli esempi scaricati, le decisioni aperte e la diagnosi dei quattro retry sono nel [record di verifica](../../_bmad-output/implementation-artifacts/verifica-corrispondenza-export.md).
+
+Il candidato ha superato lint, typecheck, 2.351 unit e build. La suite Chromium su dati sintetici locali ha concluso con exit 0, 712 passati e quattro casi recuperati al primo retry su 716, zero skip definitivi. La revisione indipendente ha approvato la correzione.
+
 ## Prossimo lavoro
 
-La retrospettiva dell’Epic 18 resta facoltativa. Il prossimo intervento concordato è verificare e correggere la corrispondenza delle tabelle negli export PDF ed Excel. Seguono le prove di login ed email su dati fittizi e provider sandbox. Prima di riprendere, leggere la punta remota di `dev` e verificare il record BMAD pertinente.
+Il PO può decidere se offrire una versione dettagliata di Scadenze e se incorporare un font Unicode nei PDF per conservare la grafia dei nomi. La retrospettiva dell’Epic 18 resta facoltativa. In coda restano le prove di login ed email con dati fittizi e provider sandbox, da avviare in una fase separata.
