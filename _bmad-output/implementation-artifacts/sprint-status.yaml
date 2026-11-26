@@ -489,7 +489,7 @@ development_status:
   16-9-un-solo-calendario-client: done  # 2026-11-25: d45d308, 2282 unit, 621 browser + 1 flaky recuperato, exit 0; 2026-11-03: riallineata su 56c6664 (§R: 5 copie client + expiry-editor; D-R1 entra il dominio Scadenze in UTC, chiude TD-19.9-b; D-R2 via todayDateOnlyUtc); dev Opus
   16-10-idempotenza-form-importi: done  # 2026-11-25: 2289 unit, 69 browser mirati e tutti i 622 casi browser verificati in tre segmenti. NUOVA 2026-11-04, decisione PO sulla review 16.6b (F1): per i 7 form con Idempotency-Key — 409 IDEMPOTENCY_IN_PROGRESS = «operazione in corso» senza chiave nuova; messaggio di rete onesto; stessa chiave dopo chiudi/riapri e ricarica per lo stesso tentativo
   epic-16-retrospective: optional
-  epic-17: in-progress
+  epic-17: done  # 17.1–17.8 done; retrospettiva optional
   17-1-fondamenta-misura-configurazione: done  # 2026-09-27 — feat a6e2a39 + record 24c9e2b (dev Sonnet dal parziale dello stash), review SHIPPABLE-WITH-FIXES (3 major: AC 9 non soddisfatto alla lettera → PO opzione A, AC emendato; 53100 riproducibile a 512mb → shm 1gb; render.mjs moltiplicava i long task), fix 405189a/141c444; container ricreato 2 volte dalla sessione principale (volume intatto); arbitro finale 537/537 exit 0
   17-2-timeline-pianificazione-scala: done  # 2026-11-25: 0ebfbc2, 2291 unit, 623 browser, misure e parità nel record; story file 2026-11-03 (ricognizione su e951960) + ratifiche PO Q-17.2-a..e; dev Opus DOPO 16.8
   17-3-saldi-negativi-aggregati: done  # 2026-11-25: d68647a; verifica integrata 2292 unit, 621 e2e passati, 3 METAR saltati, nessun fallimento
