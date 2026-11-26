@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureBookingRequirements } from './helpers';
+import { ensureBookingRequirements, waitForDashboardContent } from './helpers';
 
 /**
  * Home dashboard per ruolo (story 12.12, AC 1/4/5/6/7). The home
@@ -30,6 +30,7 @@ async function loginExpectingDashboard(page: Page, email: string, password: stri
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Accedi' }).click();
   await expect(page).toHaveURL(/\/it\/dashboard$/);
+  await waitForDashboardContent(page);
 }
 
 function uniqueSuffix(): string {

@@ -24,6 +24,7 @@
     "description": "Airfield management: pilots, aircraft, flights, bookings and finances in one place."
   },
   "shell": {
+    "loading": "Loading…",
     "groups": {
       "operations": "Operations",
       "directory": "Directory",
@@ -1823,6 +1824,7 @@
   },
   "BillingPage": {
     "title": "Billing",
+    "refreshError": "The change was saved, but the data did not update. Reload the page.",
     "sub": "{count, plural, one {# transaction} other {# transactions}} · {period}",
     "periodAll": "full history",
     "newTransaction": "New transaction",

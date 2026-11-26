@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { addDaysIso, ensureValidSeedExpiries, registerFlightOn, todayRome } from './helpers';
+import { addDaysIso, ensureValidSeedExpiries, registerFlightOn, todayRome, waitForDashboardContent } from './helpers';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 import { NAV_ITEMS } from '@/components/shell/route-registry';
 
@@ -409,6 +409,7 @@ test.describe('story 18.1 — one phone touch floor', () => {
           ['/it/dashboard/reports', ['.reports-rank-metrics > button']],
         ] as const) {
           await page.goto(path);
+          await waitForDashboardContent(page, page.locator(selectors[0]!).first());
           for (const selector of selectors) {
             const boxes = await page.locator(selector).evaluateAll((els) => els.filter((el) => el.getClientRects().length).map((el) => {
               const r = el.getBoundingClientRect(); return Math.min(r.width, r.height);
@@ -566,6 +567,7 @@ test.describe('story 18.1 — one phone touch floor', () => {
         await loginExpectingDashboard(page, ADMIN_EMAIL);
         await page.setViewportSize({ width, height: 812 });
         await page.goto('/it/dashboard/bookings');
+        await waitForDashboardContent(page, page.getByTestId('schedule-section'));
         const data = await page.locator('[data-testid="schedule-section"]').evaluate((section) => {
           const heading = section.querySelector('.card-head')!;
           const arrows = [...section.querySelectorAll('.date-nav .iconbtn')].map((el) => {

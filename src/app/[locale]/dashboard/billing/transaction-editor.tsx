@@ -15,7 +15,7 @@ import { PICKER_LIMIT, type OptionPage } from '@/lib/picker';
  */
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyInZone } from '@/lib/zoned-time';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DateInput } from '@/components/ui/date-input';
 import { Field, Input, InputGroup, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
@@ -66,7 +66,7 @@ export type TransactionEditorLabels = {
 type TransactionEditorProps = {
   open: boolean;
   onClose: () => void;
-  /** Refreshes the server-rendered table/KPI (`router.refresh()`) — the slide-over stays open to show the result panel (same ratifica-1 pattern as `flight-editor.tsx`). */
+  /** Reconciles the table/KPI after a write while the result panel stays open (same ratifica-1 pattern as `flight-editor.tsx`). */
   onMutated: () => void;
   personOptions: PersonOption[];
   categoryOptions: CategoryOption[];
@@ -110,8 +110,22 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
   const [categoryError, setCategoryError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ResultState | null>(null);
+  const notifiedResultRef = useRef<ResultState | null>(null);
+  const onMutatedRef = useRef(onMutated);
   const { submitIdempotently, submissionError } = useIdempotentSubmission();
   const formRef = useRef<HTMLFormElement | null>(null);
+
+  useEffect(() => { onMutatedRef.current = onMutated; }, [onMutated]);
+  // The result panel commits first; then the server-rendered table/KPI refresh
+  // while the panel remains open. One result causes exactly one refresh.
+  useEffect(() => {
+    if (result === null) {
+      notifiedResultRef.current = null;
+    } else if (notifiedResultRef.current !== result) {
+      notifiedResultRef.current = result;
+      onMutatedRef.current();
+    }
+  }, [result]);
 
   const personComboOptions = useMemo<SearchComboboxOption[]>(
     () => personOptions.map((person) => ({ id: person.id, label: personLabel(person) })),
@@ -195,7 +209,6 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
 
     const data = (await response.json()) as { kind: 'TOP_UP' | 'ADJUSTMENT' | 'CASH'; account?: { balanceCents: number } };
     setResult(data.kind === 'CASH' ? { kind: 'CASH' } : { kind: data.kind, balanceCents: data.account!.balanceCents });
-    onMutated();
   }
 
   const footer =

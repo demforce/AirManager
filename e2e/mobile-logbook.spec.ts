@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
-import { submitPastRequirements } from './helpers';
+import { submitPastRequirements, waitForDashboardContent } from './helpers';
 
 /**
  * Story 15.6 — the phone face of the flight registry: the widest table of the
@@ -230,7 +230,7 @@ async function pageGeometry(page: Page): Promise<{ pageOverflow: number; atConte
 /** The page scoped to ONE run-unique aircraft: the list then holds exactly this test's own flights. */
 async function gotoLogbook(page: Page, aircraftId: string, extra = ''): Promise<void> {
   await page.goto(`/it/dashboard/logbook?aircraftId=${aircraftId}${extra}`);
-  await expect(page.getByTestId('mobile-flights-list')).toBeAttached();
+  await waitForDashboardContent(page);
 }
 
 type MailpitSummary = { ID: string; Subject: string };
@@ -410,6 +410,7 @@ test.describe('Registro voli mobile — sheet di dettaglio (story 15.6, AC 2/3)'
 
     // Real keyboard, never `focus()`: the card must BE in the tab order.
     const card = page.getByTestId('flight-row-mobile').first();
+    await expect(card).toBeVisible();
     await card.focus();
     await expect(card).toBeFocused();
     await page.keyboard.press('Enter');

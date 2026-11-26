@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { todayRome } from './helpers';
+import { todayRome, waitForDashboardContent } from './helpers';
+import { formatCents } from '../src/lib/money';
+import type { BillingLiveSnapshot } from '../src/lib/billing-live';
 
 /**
  * Story 15.8a — the phone face of the Contabilità (`/dashboard/billing`) and
@@ -103,7 +105,7 @@ async function recordCashMovement(page: Page, categoryId: string, amountCents: n
 async function gotoBilling(page: Page, query: Record<string, string> = {}): Promise<void> {
   const params = new URLSearchParams(query);
   await page.goto(`/it/dashboard/billing${params.toString() ? `?${params.toString()}` : ''}`);
-  await expect(page.locator('.billing-head')).toHaveCount(1);
+  await waitForDashboardContent(page, page.locator('.billing-head'));
 }
 
 // --- in-page probes --------------------------------------------------------
@@ -512,8 +514,14 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     await page.getByTestId('transaction-reverse-confirm-mobile').click();
     await expect(page.getByTestId('transaction-reverse-required-mobile')).toBeVisible();
     await page.getByTestId('transaction-reverse-reason-mobile').fill(`motivo ${marker}`);
+    const reconciled = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/api/v1/billing-view?'));
     await page.getByTestId('transaction-reverse-confirm-mobile').click();
     await expect(page.getByTestId('toast')).toBeVisible();
+    const viewResponse = await reconciled;
+    expect(viewResponse.status()).toBe(200);
+    const view = (await viewResponse.json()) as BillingLiveSnapshot;
+    await expect(page.getByTestId('transaction-row-mobile')).toHaveCount(2);
+    await expect(page.getByTestId('mobile-billing-kpi-treasury')).toContainText(formatCents(view.summary.treasury.availableCents));
 
     const api = await page.request.get(`/api/v1/transactions?categoryId=${category.id}&pageSize=20`);
     const body = (await api.json()) as { items: { amountCents: number; reversal: boolean; reversed: boolean }[] };
@@ -1003,6 +1011,7 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     await page.reload();
 
     // (iii) the head: undo the phone rules and the height goes back over the pre-fix budget.
+    await waitForDashboardContent(page, page.locator('.billing-head'));
     const after = await headHeights(page);
     expect(after.total).toBeLessThanOrEqual(265.66);
     await page.addStyleTag({
@@ -1016,22 +1025,26 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     await page.reload();
 
     // (iv) the containment guard: a child pushed out of the card must be caught.
+    await waitForDashboardContent(page, page.locator('.billing-head'));
     expect(await page.evaluate(CHILDREN_OUT_OF_CARD)).toEqual([]);
     await page.addStyleTag({ content: '.mobile-row-transaction > .mobile-row-side{ position: relative; left: 80px; }' });
     expect(await page.evaluate(CHILDREN_OUT_OF_CARD)).not.toEqual([]);
     await page.reload();
 
     // (v) the no-ellipsis guard: remove the ellipsis and the clipped text is caught.
+    await waitForDashboardContent(page, page.locator('.billing-head'));
     expect(await page.evaluate(CLIPPED_WITHOUT_ELLIPSIS)).toEqual([]);
     await page.addStyleTag({ content: '.mobile-row-name, .mobile-row-sub{ text-overflow: clip !important; }' });
     expect(await page.evaluate(CLIPPED_WITHOUT_ELLIPSIS)).not.toEqual([]);
     await page.reload();
+    await waitForDashboardContent(page, page.locator('.billing-head'));
 
     // (vi) the 44px sweep: shrink one target and the sweep sees it.
     expect(await page.evaluate(SMALL_TARGETS)).toEqual([]);
     await page.addStyleTag({ content: '.billing-head > .billing-filters-trigger{ min-height: 20px !important; height: 20px !important; }' });
     expect(await page.evaluate(SMALL_TARGETS)).not.toEqual([]);
     await page.reload();
+    await waitForDashboardContent(page, page.locator('.billing-head'));
 
     // (vi-bis) the 44px floor on the "Saldi negativi" LINKS (review 15.8a
     // MINOR-1: the row was 44 but the `<a>` a thumb hits was 18.13). The card
@@ -1060,6 +1073,7 @@ test.describe('Contabilità mobile (story 15.8a)', () => {
     await page.addStyleTag({ content: '.billing-negative-row > a{ min-height: 0 !important; line-height: normal !important; }' });
     expect(await page.evaluate(SMALL_TARGETS)).not.toEqual([]);
     await page.reload();
+    await waitForDashboardContent(page, page.locator('.billing-head'));
 
     // (vii-bis) `.billing-head > .billing-feedback{ display: none }` — the rule
     // is unreachable BY FLOW on a phone (record §3e: the three desktop

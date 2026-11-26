@@ -61,6 +61,7 @@ test('18.2b: filtered admin registries explain no results and clear the filters,
       await expect(page.getByTestId(`mobile-${id}-empty`)).toContainText(locale === 'it' ? 'Nessun risultato con questi filtri' : 'No results with these filters');
       await page.getByTestId(`mobile-${id}-clear-filters`).click();
       await expect(page).not.toHaveURL(new RegExp(marker));
+      await expect(page.locator('.page-head')).toBeVisible();
       await page.setViewportSize({ width: 320, height: 568 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), `${locale}/${route} @320`).toBeLessThanOrEqual(0);
       await page.setViewportSize({ width: 1280, height: 812 });

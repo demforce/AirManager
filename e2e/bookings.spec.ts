@@ -2,7 +2,7 @@ import { seedPickerAircraft, seedPickerStudents } from './db-fixtures';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import ExcelJS from 'exceljs';
-import { BOOKING_BALANCE_FLOOR_CENTS, addDaysIso, ensureBookingRequirements, ownFailures, personIdByEmail, selectFromCombobox, todayRome, type E2eRequirementFailure } from './helpers';
+import { BOOKING_BALANCE_FLOOR_CENTS, addDaysIso, ensureBookingRequirements, ownFailures, personIdByEmail, selectFromCombobox, todayRome, waitForDashboardContent, type E2eRequirementFailure } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -51,7 +51,7 @@ function uniqueEmail(prefix: string): string {
  */
 async function gotoBookingsAndWaitForHydration(page: Page): Promise<void> {
   await page.goto('/it/dashboard/bookings');
-  await page.waitForLoadState('networkidle');
+  await waitForDashboardContent(page, page.getByTestId('schedule-section'));
 }
 
 type MailpitMessageSummary = { ID: string; Subject: string };
@@ -931,6 +931,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
       }
 
       await page.goto('/it/dashboard/bookings?view=week');
+      await waitForDashboardContent(page, page.getByTestId('schedule-section'));
       await page.getByTestId('schedule-filter-toggle').click();
 
       // Review F2: a plain `.click()` on "Fatto" is NOT a valid regression
@@ -976,6 +977,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     // which month is shown — no extra fixtures needed, it reliably exceeds
     // the week-grid card's ~268px height on its own.
     await page.goto('/it/dashboard/bookings?view=week');
+    await waitForDashboardContent(page, page.getByTestId('schedule-section'));
     await page.getByTestId('schedule-date-pick').click();
 
     const geometry = await page.evaluate(() => {
@@ -1016,6 +1018,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/it/dashboard/bookings?view=week');
+    await waitForDashboardContent(page, page.getByTestId('schedule-section'));
 
     // Filter popover: pre-fix, its `right`-anchored math (no clamp) pushed the
     // popover's LEFT edge 139px past the viewport's left edge at this width
@@ -1067,6 +1070,7 @@ test.describe('Aircraft bookings (Story 7.1, AC 1/2/3)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/it/dashboard/bookings?view=week');
+    await waitForDashboardContent(page, page.getByTestId('schedule-section'));
 
     // The desktop grid is gone at this width, not merely scrollable.
     await expect(page.locator('.week-grid')).toBeHidden();
@@ -1569,6 +1573,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     // (the dead Tailwind `pointer-events-none opacity-40` utilities this
     // replaced) — must be genuinely unclickable, not just visually dimmed.
     await page.goto('/it/dashboard/bookings?page=1');
+    await waitForDashboardContent(page, page.getByTestId('booking-page-prev'));
     const prevLink = page.getByTestId('booking-page-prev');
     await expect(prevLink).toHaveAttribute('aria-disabled', 'true');
     expect(await prevLink.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none');
@@ -1581,6 +1586,7 @@ test.describe('Booking edit/cancel (Story 7.3, AC 1/2)', () => {
     expect(page.url()).toBe(urlBeforeClick);
 
     await page.goto(`/it/dashboard/bookings?view=week&date=${FUTURE_DAY}&page=2`);
+    await waitForDashboardContent(page, page.getByTestId('schedule-section'));
 
     // Direction 1: every calendar link preserves the list's ?page=2.
     // Story 14.1 (AC 3): 'calendar-today' (the "Oggi" nav link) was removed.

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { addDaysIso, todayRome } from './helpers';
+import { addDaysIso, todayRome, waitForDashboardContent } from './helpers';
 
 const PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 if (!PASSWORD) throw new Error('fold-18-2a.spec.ts requires the local synthetic seed password');
@@ -67,6 +67,7 @@ test('18.2a: mobile fold and desktop page-head geometry in both locales and them
     for (const [route, selector, limit] of routes) {
       await page.setViewportSize({ width: 375, height: 812 });
       await page.goto(`/${locale}/dashboard/${route}`);
+      await waitForDashboardContent(page, page.locator(selector));
       for (const theme of ['light', 'dark']) {
         await page.evaluate((value) => document.documentElement.setAttribute('data-theme', value), theme);
         const top = await page.locator(selector).evaluate((node) => node.getBoundingClientRect().top + scrollY);
@@ -88,6 +89,7 @@ test('18.2a: mobile fold and desktop page-head geometry in both locales and them
     for (const route of ['', 'bookings']) {
       await page.setViewportSize({ width: 375, height: 812 });
       await page.goto(`/${locale}/dashboard${route ? `/${route}` : ''}`);
+      await waitForDashboardContent(page, page.locator('.page-head'));
       const after = await page.locator('.page-head + *').evaluate((node) => node.getBoundingClientRect().top + scrollY);
       const before = await page.evaluate(() => {
         const title = document.querySelector('main.page h1.fold-duplicate-title');
@@ -117,10 +119,13 @@ test('18.2a: pilot and student keep their distinct mobile headings and read-only
     await login(page, email);
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto('/it/dashboard');
+    await waitForDashboardContent(page);
     expect(await page.locator('main.page h1').evaluate((node) => node.getBoundingClientRect().width)).toBeGreaterThan(1);
     await page.goto('/it/dashboard/expiries');
+    await waitForDashboardContent(page);
     expect(await page.locator('main.page h1').evaluate((node) => node.getBoundingClientRect().width)).toBeGreaterThan(1);
     await page.goto('/it/dashboard/logbook');
+    await waitForDashboardContent(page);
     await expect(page.locator('main.page h1.fold-duplicate-title')).toHaveCount(1);
     expect(await page.locator('main.page h1').evaluate((node) => node.getBoundingClientRect().width)).toBe(1);
     await expect(page.getByTestId('logbook-new-button')).toHaveCount(0);

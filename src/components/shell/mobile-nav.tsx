@@ -32,6 +32,7 @@ import { Icon } from '@/components/ui/icons';
 import { MobileSheet } from '@/components/ui/mobile-sheet';
 import { dismissHistoryLayer, prepareHistoryNavigation } from '@/components/ui/history-layer';
 import { Link, usePathname } from '@/i18n/navigation';
+import { NavPendingIndicator } from './nav-pending-indicator';
 import type { NavIconKey, NavItemId } from './route-registry';
 
 export type MobileNavItemView = {
@@ -52,9 +53,10 @@ export type MobileNavProps = {
   moreLabel: string;
   /** Sheet section label ("Altre sezioni"), also the sheet's accessible name. */
   moreSheetLabel: string;
+  pendingLabel: string;
 };
 
-export function MobileNav({ tabs, more, navLabel, moreLabel, moreSheetLabel }: MobileNavProps) {
+export function MobileNav({ tabs, more, navLabel, moreLabel, moreSheetLabel, pendingLabel }: MobileNavProps) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const closeMore = useCallback(() => setMoreOpen(false), []);
@@ -80,7 +82,7 @@ export function MobileNav({ tabs, more, navLabel, moreLabel, moreSheetLabel }: M
             >
               <ItemIcon />
               <span className="mobile-tab-label">{item.label}</span>
-              <span className="mobile-tab-dot" />
+              <NavPendingIndicator className={`mobile-tab-dot ${active ? 'active' : ''}`} label={pendingLabel} routeKey={pathname} />
             </Link>
           );
         })}

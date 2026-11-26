@@ -1,10 +1,10 @@
 import { PICKER_LIMIT } from '@/lib/picker';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
-import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
-import { currentMonthRange } from '@/lib/period-presets';
+import { buildExportHref } from '@/lib/export-href';
 import type { BookTypeDto } from '@/lib/schemas/transactions';
-import { formatDateOnly, formatMonthYear } from '@/lib/time';
+import { projectBillingCompensation, projectBillingNegativeBalances } from '@/lib/billing-live';
+import { formatDateOnly } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getNegativeBalanceSummary } from '@/server/services/accounts.service';
@@ -15,6 +15,7 @@ import { listPeople } from '@/server/services/people.service';
 import { listTransactions } from '@/server/services/transactions.service';
 import { BillingConsole, type BillingFilters } from './billing-console';
 import { BillingPanels } from './billing-panels';
+import { BillingLiveProvider, BillingPageSub } from './billing-live';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -82,7 +83,8 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const cashCategories = await listCashCategories(actor, { includeInactive: false });
   const categoryOptions = cashCategories.map((category) => ({ id: category.id, name: category.name }));
 
-  const summary = await getBillingSummary(actor);
+  const asOf = new Date();
+  const summary = await getBillingSummary(actor, asOf);
   const compensation = await getCompensationSummary(actor);
   const negativeBalances = await getNegativeBalanceSummary(actor);
 
@@ -94,7 +96,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
     page = lastPage;
     result = await listTransactions(actor, { ...txQuery, page });
   }
-  const totalPages = Math.max(1, Math.ceil(result.total / TX_PAGE_SIZE));
 
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const t = await getTranslations('BillingPage');
@@ -108,8 +109,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
     ...(unattributed ? { unattributed: 'true' } : {}),
   };
   const exportHref = buildExportHref('/api/v1/transactions', filterQuery, locale);
-  const reportPeriod = dateFrom && dateTo ? { from: dateFrom, to: dateTo } : currentMonthRange();
-  const cashReportPdfHref = buildPdfExportHref('/api/v1/cash-report/pdf', reportPeriod, locale);
 
   const periodLabel = dateFrom && dateTo
     ? `${formatDateOnly(dateFrom, displayLocale)} – ${formatDateOnly(dateTo, displayLocale)}`
@@ -119,7 +118,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
         ? `${t('filters.dateTo')} ${formatDateOnly(dateTo, displayLocale)}`
         : t('periodAll');
 
-  const monthLabel = formatMonthYear(new Date(), displayLocale);
 
   const filters: BillingFilters = {
     dateFrom: dateFrom ?? '',
@@ -132,16 +130,19 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
 
   return (
     <main className="page fold-billing">
+      <BillingLiveProvider
+        key={JSON.stringify({ page, ...filterQuery })}
+        initial={{ asOf: asOf.toISOString(), transactions: result, summary, compensation: projectBillingCompensation(compensation), negativeBalances: { count: negativeBalances.count, top: projectBillingNegativeBalances(negativeBalances.top) } }}
+        filters={filters}
+      >
       <div className="page-head">
         <div className="page-title-block">
           <h1 className="fold-duplicate-title">{t('title')}</h1>
-          <div className="sub">{t('sub', { count: result.total, period: periodLabel })}</div>
+          <BillingPageSub period={periodLabel} />
         </div>
       </div>
 
       <BillingPanels
-        summary={summary}
-        monthLabel={monthLabel}
         moneyLocale={displayLocale}
         locale={displayLocale}
         unattributedHref={{ pathname: '/dashboard/billing', query: { unattributed: 'true' } }}
@@ -175,36 +176,16 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
       />
 
       <BillingConsole
-        key={JSON.stringify({ page, ...filterQuery })}
-        items={result.items}
-        page={page}
-        totalPages={totalPages}
         filters={filters}
         personOptions={personOptions}
         categoryOptions={categoryOptions}
-        byCategory={summary.byCategory.categories}
-        // Story 16.5 (AD-9): a month-to-date widget — an instructor no longer
-        // active has no hours this month, and a "0:00 · 0,00 €" row would read
-        // as "owed nothing"; their all-time owed lives on the Compensi page.
-        compensation={compensation.filter((row) => row.isActive).map((row) => ({
-          personId: row.personId,
-          firstName: row.firstName,
-          lastName: row.lastName,
-          mtdMinutes: row.mtdMinutes,
-          payoutRateCents: row.payoutRateCents,
-          owedMtdCents: row.owedMtdCents,
-        }))}
-        negativeBalances={negativeBalances.top.map((item) => ({ personId: item.personId, firstName: item.firstName, lastName: item.lastName, balanceCents: item.balanceCents }))}
-        negativeBalanceCount={negativeBalances.count}
         exportHref={exportHref}
-        cashReportPdfHref={cashReportPdfHref}
         moneyLocale={displayLocale}
         locale={displayLocale}
         labels={{
           newTransaction: t('newTransaction'),
           byCategory: {
             title: t('byCategory.title'),
-            sub: t('byCategory.sub', { month: monthLabel }),
             empty: t('byCategory.empty'),
             in: t('byCategory.in'),
             out: t('byCategory.out'),
@@ -350,6 +331,7 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
           },
         }}
       />
+      </BillingLiveProvider>
     </main>
   );
 }

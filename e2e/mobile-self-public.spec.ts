@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { allTimeStatement, ensureValidSeedExpiries } from './helpers';
+import { allTimeStatement, ensureValidSeedExpiries, waitForDashboardContent } from './helpers';
 
 /**
  * Story 15.9 — the two self-service surfaces (the shared estratto conto of
@@ -358,6 +358,9 @@ test.describe('Le mie transazioni — the shared estratto conto on a phone (AC 1
   });
 
   test('pagination stays the same two links on BOTH faces, at 44px, above the tab bar (AC 7)', async ({ page }) => {
+    // The setup creates a login and 21 movements before pagination can be
+    // exercised; a slow local API response can exhaust the default 30 s.
+    test.setTimeout(60_000);
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const password = 'SelfMobilePage123!';
     const pilot = await createPilotWithLogin(page, password, 'Pagina');
@@ -400,6 +403,7 @@ test.describe('Le mie transazioni — the shared estratto conto on a phone (AC 1
     await loginExpectingDashboard(page, pilot.email, password);
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/my-account');
+    await waitForDashboardContent(page, page.getByTestId('export-menu-trigger'));
 
     await expect(page.getByTestId('export-menu-trigger')).toHaveCount(1);
     const triggerBox = await page.getByTestId('export-menu-trigger').boundingBox();
@@ -718,6 +722,7 @@ test.describe('I miei compensi on a phone (AC 4/5)', () => {
     await loginExpectingDashboard(page, instructor.email, password);
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/my-compensation');
+    await waitForDashboardContent(page, page.getByTestId('my-compensation-kpis'));
 
     expect(await treeDisplays(page, '.compensation-desktop-body', '.compensation-mobile')).toEqual({ desktop: 'none', mobile: 'block' });
     const card = page.getByTestId('my-compensation-payout-row-mobile');
@@ -757,6 +762,8 @@ test.describe('I miei compensi on a phone (AC 4/5)', () => {
 
     // The desktop keeps its five-column grid and its table.
     await page.setViewportSize(DESKTOP);
+    await expect(page.getByTestId('dashboard-loading')).toHaveCount(0);
+    await expect(page.getByTestId('my-compensation-kpis')).toBeVisible();
     expect(await treeDisplays(page, '.compensation-desktop-body', '.compensation-mobile')).toEqual({ desktop: 'flex', mobile: 'none' });
     expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-testid="my-compensation-kpis"]')!).gridTemplateColumns.split(' ').length)).toBe(5);
     await expect(page.getByTestId('my-compensation-payout-row')).toHaveCount(1);

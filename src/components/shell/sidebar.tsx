@@ -11,6 +11,7 @@
  */
 import { Icon } from '@/components/ui/icons';
 import { Link, usePathname } from '@/i18n/navigation';
+import { NavPendingIndicator } from './nav-pending-indicator';
 import type { NavGroupId, NavIconKey, NavItemId } from './route-registry';
 
 export type SidebarNavItemView = {
@@ -57,9 +58,10 @@ export type SidebarProps = {
    * than restructuring the DOM into a nested `<nav>`.
    */
   navLabel: string;
+  pendingLabel: string;
 };
 
-export function Sidebar({ groups, brandName, brandSub, badges, metar, navLabel }: SidebarProps) {
+export function Sidebar({ groups, brandName, brandSub, badges, metar, navLabel, pendingLabel }: SidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -90,6 +92,7 @@ export function Sidebar({ groups, brandName, brandSub, badges, metar, navLabel }
               >
                 <ItemIcon />
                 <span className="label-txt">{item.label}</span>
+                <NavPendingIndicator className="nav-item-pending" label={pendingLabel} routeKey={pathname} />
                 {badge && <span className="badge">{badge}</span>}
               </Link>
             );

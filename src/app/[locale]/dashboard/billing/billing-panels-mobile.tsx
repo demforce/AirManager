@@ -10,12 +10,9 @@
  * the FULL detail of that riquadro in a `BottomSheet` (R3 + parity 15.5 F2):
  * nothing is lost (R4), only moved one tap away.
  *
- * Where the state lives (AD-1): `billing-panels.tsx` stays a SERVER
- * component — the KPI strip is the only part that needs an open/closed
- * state, so only IT is a client island. Every number arrives already
- * computed inside `getBillingSummary`'s own `BillingSummary` (comportamento
- * 1, Billing-1's single definition of revenue): this component formats and
- * lays out, exactly like its desktop twin, and never re-derives.
+ * The panel and its desktop twin share the canonical Billing snapshot after
+ * writes. Every number comes from `getBillingSummary`; this component only
+ * formats and lays it out, never re-derives it.
  */
 import { useCallback, useState, type ReactNode } from 'react';
 import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';

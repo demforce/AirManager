@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ensureValidSeedExpiries, todayRome } from './helpers';
+import { ensureValidSeedExpiries, todayRome, waitForDashboardContent } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
+import { formatCents } from '../src/lib/money';
+import type { BillingLiveSnapshot } from '../src/lib/billing-live';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -158,6 +160,7 @@ async function selectFromCombobox(combobox: Locator, query: string, optionLabel:
 async function gotoBilling(page: Page, query: Record<string, string>): Promise<void> {
   const params = new URLSearchParams(query);
   await page.goto(`/it/dashboard/billing?${params.toString()}`);
+  await waitForDashboardContent(page, page.locator('.billing-head'));
 }
 
 /**
@@ -476,14 +479,109 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
     // always dates the storno row as TODAY (server clock), not the original's `day1`
     // (a past isolation date), so a date-scoped filter would hide the storno row.
     await gotoBilling(page, { categoryId });
+    const billingUrl = page.url();
+    const historyLength = await page.evaluate(() => window.history.length);
     const row = billingRows(page).filter({ hasText: 'Uscita da stornare' });
     await row.getByTestId('transaction-reverse-action').click();
     await page.waitForSelector('[data-testid="transaction-reverse-panel"]');
-    await page.getByTestId('transaction-reverse-reason').fill('Storno di verifica e2e');
+    await page.getByTestId('transaction-reverse-reason').fill(`Storno di verifica e2e ${uniqueSuffix()}`);
+    const reversed = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/api/v1/cash-movements/') && response.url().endsWith('/reverse'));
+    const reconciled = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/api/v1/billing-view?'));
     await page.getByTestId('transaction-reverse-confirm').click();
+    expect((await reversed).status()).toBe(200);
+    const viewResponse = await reconciled;
+    expect(viewResponse.status()).toBe(200);
+    const view = (await viewResponse.json()) as BillingLiveSnapshot;
     await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
     await expect(billingRows(page)).toHaveCount(2);
+    await expect(page).toHaveURL(billingUrl);
+    expect(await page.evaluate(() => window.history.length)).toBe(historyLength);
+    await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
+    await expect(page.getByTestId('billing-panel-cash')).toHaveText(formatCents(view.summary.treasury.cashCents));
+    await expect(page.getByTestId('billing-panel-net')).toHaveText(formatCents(view.summary.result.netCents));
+    await expect(page.locator('.page-head .sub')).toContainText('2 transazioni');
+    await expect(page.getByTestId('billing-by-category-row').filter({ hasText: categoryName })).toContainText('40,00');
     await expect(billingRows(page).filter({ hasText: 'Uscita da stornare' }).getByTestId('transaction-reverse-action')).toHaveCount(0);
+  });
+
+  test('Export in a new tab does not cancel a pending billing reconciliation', async ({ page, context }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const categoryId = await createCategory(page, `Export-Reconcile-${uniqueSuffix()}`);
+    const { day1 } = uniqueDatePair();
+    await recordCashMovement(page, categoryId, -1700, day1, 'Uscita export in corso');
+    await gotoBilling(page, { categoryId });
+
+    let releaseView!: () => void;
+    const heldView = new Promise<void>((resolve) => { releaseView = resolve; });
+    let viewRequested!: () => void;
+    const requested = new Promise<void>((resolve) => { viewRequested = resolve; });
+    await page.route('**/api/v1/billing-view?**', async (route) => {
+      viewRequested();
+      await heldView;
+      await route.continue();
+    });
+
+    try {
+      await billingRows(page).filter({ hasText: 'Uscita export in corso' }).getByTestId('transaction-reverse-action').click();
+      await page.getByTestId('transaction-reverse-reason').fill(`Export reconcile ${uniqueSuffix()}`);
+      await page.getByTestId('transaction-reverse-confirm').click();
+      await requested;
+      await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
+      await page.getByTestId('export-menu-trigger').click();
+      const popupPromise = context.waitForEvent('page');
+      await page.getByTestId('export-menu-xls').click();
+      const popup = await popupPromise;
+      await popup.close();
+      releaseView();
+      await expect(billingRows(page)).toHaveCount(2);
+      await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
+    } finally {
+      releaseView();
+      await page.unroute('**/api/v1/billing-view?**');
+    }
+  });
+
+  test('Leaving Billing ignores a failed pending reconciliation', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const categoryId = await createCategory(page, `Leave-Reconcile-${uniqueSuffix()}`);
+    const { day1 } = uniqueDatePair();
+    await recordCashMovement(page, categoryId, -1900, day1, 'Uscita navigazione');
+    await gotoBilling(page, { categoryId });
+
+    let releaseView!: () => void;
+    const heldView = new Promise<void>((resolve) => { releaseView = resolve; });
+    let viewRequested!: () => void;
+    const requested = new Promise<void>((resolve) => { viewRequested = resolve; });
+    let viewSettled!: () => void;
+    const settled = new Promise<void>((resolve) => { viewSettled = resolve; });
+    await page.route('**/api/v1/billing-view?**', async (route) => {
+      viewRequested();
+      await heldView;
+      try {
+        await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+      } catch {
+        // The same-context navigation can abort the request before release.
+      } finally {
+        viewSettled();
+      }
+    });
+
+    try {
+      await billingRows(page).filter({ hasText: 'Uscita navigazione' }).getByTestId('transaction-reverse-action').click();
+      await page.getByTestId('transaction-reverse-reason').fill(`Leaving reconcile ${uniqueSuffix()}`);
+      await page.getByTestId('transaction-reverse-confirm').click();
+      await requested;
+      await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
+      await page.locator('.sidebar a[href$="/dashboard/fleet"]').click();
+      await expect(page).toHaveURL(/\/it\/dashboard\/fleet$/);
+      releaseView();
+      await settled;
+      await expect(page.locator('.page-head h1')).toBeVisible();
+      await expect(page.getByText('Operazione registrata, ma i dati non si sono aggiornati.')).toHaveCount(0);
+    } finally {
+      releaseView();
+      await page.unroute('**/api/v1/billing-view?**');
+    }
   });
 });
 
@@ -499,6 +597,13 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
 // scheda persona's own estratto conto section, `pdf-exports.spec.ts` and
 // `person-detail.spec.ts` — never touched here).
 test.describe('Billing RBAC (Story 12.9, AC 8)', () => {
+  test('billing-view rejects unsupported export query options', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const response = await page.request.get('/api/v1/billing-view?format=xlsx');
+    expect(response.status()).toBe(422);
+    expect((await response.json()).error.code).toBe('VALIDATION_ERROR');
+  });
+
   test('a pilot is redirected away from /dashboard/billing and gets a 403 AD-8 envelope from GET /api/v1/transactions', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
@@ -509,5 +614,9 @@ test.describe('Billing RBAC (Story 12.9, AC 8)', () => {
     expect(response.status()).toBe(403);
     const body = await response.json();
     expect(body.error.code).toBe('FORBIDDEN');
+
+    const liveView = await page.request.get('/api/v1/billing-view?page=1&pageSize=20');
+    expect(liveView.status()).toBe(403);
+    expect((await liveView.json()).error.code).toBe('FORBIDDEN');
   });
 });

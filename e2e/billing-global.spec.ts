@@ -21,6 +21,8 @@
 // `npx playwright test billing-global.spec.ts --no-deps`.
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { formatCents } from '../src/lib/money';
+import type { BillingLiveSnapshot } from '../src/lib/billing-live';
 
 import { negativeBalanceControl, seedAccountAdjustments } from './db-fixtures';
 
@@ -124,11 +126,16 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', { 
 
     const select = row.getByTestId('transaction-reclassify-method');
     await expect(select).toBeVisible();
+    const reconciled = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/api/v1/billing-view?'));
     await select.selectOption('CASH');
     await expect(page.getByTestId('billing-reclassify-feedback')).toHaveText('Metodo assegnato.');
+    const viewResponse = await reconciled;
+    expect(viewResponse.status()).toBe(200);
+    const view = (await viewResponse.json()) as BillingLiveSnapshot;
 
-    // `router.refresh()` re-runs the server-side `unattributed=true` filter — the row, now attributed, drops out on its own.
+    // The canonical live view re-runs the same unattributed filter and KPI read.
     await expect(billingRows(page).filter({ hasText: DESKTOP_UNATTRIBUTED_MARKER })).toHaveCount(0);
+    await expect(page.getByTestId('billing-panel-available')).toHaveText(formatCents(view.summary.treasury.availableCents));
 
     // A direct API check closes the loop independently of the UI's own filtered view.
     const stillUnattributedResponse = await page.request.get('/api/v1/transactions?unattributed=true&pageSize=100');

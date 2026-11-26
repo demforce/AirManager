@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { addDaysIso, todayRome } from './helpers';
+import { addDaysIso, todayRome, waitForDashboardContent } from './helpers';
 
 /**
  * Story 15.7 — the phone faces of the Scadenze registry (admin) and of "Le mie
@@ -79,6 +79,7 @@ async function createExpiryFixture(page: Page, daysFromNow: number, notes?: stri
 /** The registry, narrowed to ONE run-unique type — never "my row is on page 1". */
 async function gotoScadenze(page: Page, fixture: ExpiryFixture, window = 'all'): Promise<void> {
   await page.goto(`/it/dashboard/expiries?window=${window}&expiryTypeId=${fixture.typeId}`);
+  await waitForDashboardContent(page);
 }
 
 /**
@@ -475,6 +476,7 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
     // without having measured a single target.
     const pagedTypeId = await createPagedExpiryFixture(page, 21);
     await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${pagedTypeId}`);
+    await waitForDashboardContent(page, page.getByTestId('scadenze-pagination-status'));
     await expect(page.getByTestId('scadenze-pagination-status')).toHaveText('1 / 2');
     const prev = page.getByTestId('scadenze-page-prev');
     const next = page.getByTestId('scadenze-page-next');
@@ -499,6 +501,7 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
     for (const viewport of [PHONE, DESKTOP]) {
       await page.setViewportSize(viewport);
       await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${pagedTypeId}`);
+      await waitForDashboardContent(page, page.getByTestId('scadenze-pagination-status'));
       for (const testid of ['scadenze-page-prev', 'scadenze-page-next', 'scadenze-pagination-status']) {
         await expect(page.getByTestId(testid), `${testid} @${viewport.width}`).toHaveCount(1);
       }

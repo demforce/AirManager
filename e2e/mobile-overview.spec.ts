@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureBookingRequirements } from './helpers';
+import { ensureBookingRequirements, waitForDashboardContent } from './helpers';
 
 /**
  * Story 15.3 — the phone Panoramica and the two personal landings.
@@ -558,6 +558,7 @@ test.describe('story 15.3 — keyboard and nesting', () => {
 
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard');
+    await waitForDashboardContent(page);
 
     const nesting = await page.evaluate(() => ({
       buttonInButton: document.querySelectorAll('.overview-mobile button button, .landing-mobile button button').length,
@@ -567,8 +568,10 @@ test.describe('story 15.3 — keyboard and nesting', () => {
 
     const trigger = page.getByTestId('mobile-overview-inprogress-row').filter({ hasText: aircraft.registration });
     // A speaking name, not a bare "Apri" (AC 8).
+    await expect(trigger).toBeVisible();
     await expect(trigger).toHaveAttribute('aria-label', new RegExp(`${pilot.lastName}`));
     await trigger.focus();
+    await expect(trigger).toBeFocused();
     await page.keyboard.press('Enter');
 
     const sheet = page.getByTestId('mobile-booking-sheet');
@@ -644,13 +647,20 @@ test.describe('story 15.3 — review fixes', () => {
 
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard');
+    await waitForDashboardContent(page);
 
-    await page.getByTestId('mobile-overview-inprogress-row').filter({ hasText: aircraft.registration }).focus();
+    const inProgressRow = page.getByTestId('mobile-overview-inprogress-row').filter({ hasText: aircraft.registration });
+    await expect(inProgressRow).toBeVisible();
+    await inProgressRow.focus();
+    await expect(inProgressRow).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('mobile-booking-sheet')).toBeVisible();
 
     // Escape the open sheet the way the keyboard does, and open the other one.
-    await page.getByTestId('mobile-overview-pending-row').filter({ hasText: aircraft.registration }).focus();
+    const pendingRow = page.getByTestId('mobile-overview-pending-row').filter({ hasText: aircraft.registration });
+    await expect(pendingRow).toBeVisible();
+    await pendingRow.focus();
+    await expect(pendingRow).toBeFocused();
     await page.keyboard.press('Enter');
 
     // `getByRole`, not `[role="dialog"]` (story 15.10): `SlideOver` is a real

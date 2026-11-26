@@ -24,6 +24,7 @@
     "description": "Gestionale per aviosuperficie: piloti, velivoli, voli, prenotazioni e finanze in un unico posto."
   },
   "shell": {
+    "loading": "Caricamento…",
     "groups": {
       "operations": "Operazioni",
       "directory": "Anagrafiche",
@@ -1823,6 +1824,7 @@
   },
   "BillingPage": {
     "title": "Contabilità",
+    "refreshError": "Operazione registrata, ma i dati non si sono aggiornati. Ricarica la pagina.",
     "sub": "{count, plural, one {# transazione} other {# transazioni}} · {period}",
     "periodAll": "storico completo",
     "newTransaction": "Nuova transazione",

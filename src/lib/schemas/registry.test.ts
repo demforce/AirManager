@@ -87,6 +87,7 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
         '/api/v1/bookings/{id}/cancel',
         '/api/v1/people/{id}/account/pdf',
         '/api/v1/cash-report/pdf',
+        '/api/v1/billing-view',
         '/api/v1/flights/pdf',
         '/api/v1/expiries/pdf',
         '/api/v1/settings/airfield',
@@ -124,6 +125,18 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     const schemas = doc.components?.schemas as Record<string, JsonSchema> | undefined;
     expect(Object.keys(schemas?.['UpdateSettingsRequest']?.properties ?? {}).sort()).toEqual(blocks);
     expect(Object.keys(schemas?.['SettingsSnapshot']?.properties ?? {}).sort()).toEqual(blocks);
+  });
+
+  it('documents the protected Billing live view with its canonical snapshot and errors', () => {
+    const operation = (doc.paths as Record<string, Record<string, { responses: Record<string, unknown>; parameters?: Array<{ name: string }> }>>)['/api/v1/billing-view']?.['get'];
+    expect(Object.keys(operation?.responses ?? {}).sort()).toEqual(['200', '401', '403', '422', '500']);
+    expect(operation?.parameters?.map((parameter) => parameter.name).sort()).toEqual([
+      'bookType', 'categoryId', 'from', 'page', 'pageSize', 'personQuery', 'to', 'unattributed',
+    ]);
+    const schemas = doc.components?.schemas as Record<string, { properties?: Record<string, unknown> }> | undefined;
+    expect(Object.keys(schemas?.['BillingLiveSnapshot']?.properties ?? {}).sort()).toEqual([
+      'asOf', 'compensation', 'negativeBalances', 'summary', 'transactions',
+    ]);
   });
 
   it('documents GET/PUT /api/v1/settings/currency — GET without a permission gate (401 only), PUT 401/403/422 (story 19.8, D-8)', () => {

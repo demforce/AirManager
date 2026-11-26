@@ -52,20 +52,19 @@ import { dismissHistoryLayerIfSameSearch, prepareHistoryNavigation } from '@/com
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import { NEGATIVE_BALANCES_HREF } from '@/lib/negative-balance-links';
+import { buildPdfExportHref } from '@/lib/export-href';
+import { currentMonthRange } from '@/lib/period-presets';
 import type { AppLocale } from '@/i18n/routing';
 import type { PaymentMethodDto } from '@/lib/schemas/accounts';
 import { ledgerSide, transactionCardSubLine, transactionCardTitle, transactionSheetSub, transactionStatusIsAnomalous } from '@/lib/mobile-billing';
 import { formatCents, parseCents } from '@/lib/money';
 import { ledgerClubAmountCents, type BookTypeDto, type TransactionRowDto } from '@/lib/schemas/transactions';
-import { formatDateOnly, formatMinutes } from '@/lib/time';
+import { formatDateOnly, formatMinutes, formatMonthYear } from '@/lib/time';
 import { TransactionEditor, type TransactionEditorLabels } from './transaction-editor';
+import { useBillingLive } from './billing-live';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type CategoryOption = { id: string; name: string };
-type CompensationRow = { personId: string; firstName: string; lastName: string; mtdMinutes: number; payoutRateCents: number | null; owedMtdCents: number };
-type NegativeBalanceRow = { personId: string; firstName: string; lastName: string; balanceCents: number };
-/** Mirrors `cash.service.ts#CashReportCategoryTotal` — the "Per categoria" panel's own row (story Billing-2: replaces the old Σ-positivi `revenueByKind` bars). */
-type CategoryTotal = { categoryId: string; categoryName: string; inCents: number; outCents: number; netCents: number };
 
 /** The phone sheet's own step (story 15.8a): the detail, or one of the three writes rendered as a `secondStep`. */
 type SheetStep = 'none' | 'adjust' | 'reverse' | 'reclassify';
@@ -107,7 +106,7 @@ function useDebouncedCallback(callback: (value: string) => void, delayMs: number
 
 export type BillingConsoleLabels = {
   newTransaction: string;
-  byCategory: { title: string; sub: string; empty: string; in: string; out: string; net: string };
+  byCategory: { title: string; empty: string; in: string; out: string; net: string };
   instructorCompensation: { title: string; sub: string; noRate: string; empty: string };
   negativeBalances: { title: string; count: string; preview: string; link: string };
   exportMenu: { label: string; xlsLabel: string; pdfLabel: string };
@@ -197,18 +196,10 @@ export type BillingConsoleLabels = {
 };
 
 export type BillingConsoleProps = {
-  items: TransactionRowDto[];
-  page: number;
-  totalPages: number;
   filters: BillingFilters;
   personOptions: PersonOption[];
   categoryOptions: CategoryOption[];
-  byCategory: CategoryTotal[];
-  compensation: CompensationRow[];
-  negativeBalances: NegativeBalanceRow[];
-  negativeBalanceCount: number;
   exportHref: string;
-  cashReportPdfHref: string;
   moneyLocale: 'it' | 'en';
   locale: 'it' | 'en';
   labels: BillingConsoleLabels;
@@ -255,26 +246,34 @@ function initialsFor(name: string): string {
 }
 
 export function BillingConsole({
-  items,
-  page,
-  totalPages,
   filters: initialFilters,
   personOptions,
   categoryOptions,
-  byCategory,
-  compensation,
-  negativeBalances,
-  negativeBalanceCount,
   exportHref,
-  cashReportPdfHref,
   moneyLocale,
   locale,
   labels,
 }: BillingConsoleProps) {
   const router = useRouter();
   const tEmpty = useTranslations('EmptyState');
+  const tBilling = useTranslations('BillingPage');
+  const { snapshot, reconcile, cancelPending } = useBillingLive();
+  const { items, page, pageSize, total } = snapshot.transactions;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const byCategory = snapshot.summary.byCategory.categories;
+  const compensation = snapshot.compensation;
+  const negativeBalances = snapshot.negativeBalances.top;
+  const negativeBalanceCount = snapshot.negativeBalances.count;
   const toast = useToast();
+
+  function reconcileAfterWrite(): void {
+    void reconcile().catch(() => toast.show(tBilling('refreshError'), 'warn'));
+  }
   const [filters, setFilters] = useState<BillingFilters>(initialFilters);
+  const reportPeriod = initialFilters.dateFrom && initialFilters.dateTo
+    ? { from: initialFilters.dateFrom, to: initialFilters.dateTo }
+    : currentMonthRange(new Date(snapshot.asOf));
+  const cashReportPdfHref = buildPdfExportHref('/api/v1/cash-report/pdf', reportPeriod, locale);
   const [personQueryInput, setPersonQueryInput] = useState(initialFilters.personQuery);
   const [editorOpen, setEditorOpen] = useState(false);
 
@@ -342,6 +341,7 @@ export function BillingConsole({
   }
 
   function navigate(next: BillingFilters, replace = false): void {
+    cancelPending();
     const params = new URLSearchParams(buildFilterQuery(next));
     const search = params.toString();
     const href = `/dashboard/billing${search ? `?${search}` : ''}`;
@@ -456,7 +456,7 @@ export function BillingConsole({
 
     setAdjustingRow(null);
     setAdjustFeedback(labels.adjustModal.success);
-    router.refresh();
+    reconcileAfterWrite();
   }
 
   function openReverse(row: TransactionRowDto): void {
@@ -505,7 +505,7 @@ export function BillingConsole({
 
     setReversingRow(null);
     setReverseFeedback(labels.reverseModal.success);
-    router.refresh();
+    reconcileAfterWrite();
   }
 
   /** The ONE network path of a riclassifica (AD-8): the SAME `PATCH /cash-movements/{id}` with the SAME body, on both faces. Returns `true` on success. */
@@ -529,7 +529,7 @@ export function BillingConsole({
       return;
     }
     setReclassifyFeedback({ ok: true, message: labels.actions.reclassifySuccess });
-    router.refresh();
+    reconcileAfterWrite();
   }
 
   // --- phone face (story 15.8a) -------------------------------------------
@@ -608,7 +608,7 @@ export function BillingConsole({
     }
     closeSheet();
     toast.show(labels.adjustModal.success, 'ok');
-    router.refresh();
+    reconcileAfterWrite();
   }
 
   /** The phone twin of `submitReverse`. */
@@ -628,7 +628,7 @@ export function BillingConsole({
     }
     closeSheet();
     toast.show(labels.reverseModal.success, 'ok');
-    router.refresh();
+    reconcileAfterWrite();
   }
 
   /** The phone twin of `handleReclassify` — EXPLICIT (choose, then confirm), never a `<select>` that writes on change (R-15.8a-g). Same single `PATCH`, same body. */
@@ -642,7 +642,7 @@ export function BillingConsole({
     }
     closeSheet();
     toast.show(labels.actions.reclassifySuccess, 'ok');
-    router.refresh();
+    reconcileAfterWrite();
   }
 
   /**
@@ -732,7 +732,7 @@ export function BillingConsole({
             difference, and the reason those two cannot be the same elements. */}
         <div className="card-head billing-head">
           <div className="card-title">{labels.table.cardTitle}</div>
-          <span className="card-sub">{labels.table.shown}</span>
+          <span className="card-sub">{tBilling('table.shown', { shown: items.length, total })}</span>
           <div className="spacer" />
           {/* R-15.8a-j: on the phone these three outcomes are toasts (the phone
               writes never set them — their only triggers, the `.mini-modal`s and
@@ -1094,7 +1094,7 @@ export function BillingConsole({
         <div className="card">
           <div className="card-head">
             <div className="card-title">{labels.byCategory.title}</div>
-            <span className="card-sub">{labels.byCategory.sub}</span>
+            <span className="card-sub">{tBilling('byCategory.sub', { month: formatMonthYear(new Date(snapshot.asOf), moneyLocale) })}</span>
           </div>
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {byCategory.length === 0 ? (
@@ -1177,14 +1177,14 @@ export function BillingConsole({
         <div className="card billing-negative-card" style={{ marginTop: 16 }} data-testid="billing-negative-balances-card">
           <div className="card-head">
             <div className="card-title">{labels.negativeBalances.title}</div>
-            <span className="card-sub" data-testid="negative-balances-count" data-count={negativeBalanceCount}>{labels.negativeBalances.count}</span>
+            <span className="card-sub" data-testid="negative-balances-count" data-count={negativeBalanceCount}>{tBilling('negativeBalances.count', { count: negativeBalanceCount })}</span>
             <div className="spacer" />
             <Link href={NEGATIVE_BALANCES_HREF} locale={locale as AppLocale} className="card-sub" style={{ textDecoration: 'underline' }}>
               {labels.negativeBalances.link}
             </Link>
           </div>
           {negativeBalanceCount > negativeBalances.length ? (
-            <p className="card-sub" style={{ margin: '4px 18px' }}>{labels.negativeBalances.preview}</p>
+            <p className="card-sub" style={{ margin: '4px 18px' }}>{tBilling('negativeBalances.preview', { count: negativeBalances.length })}</p>
           ) : null}
           {/* The `max-height`/`overflow-y` this node used to carry inline moved
               into `.billing-negative-list` (identical computed style above 640px,
@@ -1208,7 +1208,7 @@ export function BillingConsole({
       <TransactionEditor
         open={editorOpen}
         onClose={() => setEditorOpen(false)}
-        onMutated={() => router.refresh()}
+        onMutated={reconcileAfterWrite}
         personOptions={personOptions}
         categoryOptions={categoryOptions}
         moneyLocale={moneyLocale}

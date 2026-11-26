@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { waitForDashboardContent } from './helpers';
 
 /**
  * Mobile shell (story 15.1): bottom tab bar, "Altro" sheet, compact top bar
@@ -38,6 +39,7 @@ test.describe('Mobile shell — tab bar and "Altro" sheet (story 15.1, AC 1/2/3)
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard');
+    await waitForDashboardContent(page);
 
     // AC 1: below 640px the sidebar is gone from the accessibility tree and
     // the tab bar IS the "Aree operative" landmark (lesson 103-F1: exactly
@@ -177,6 +179,7 @@ test.describe('Mobile shell — bottom geometry (story 15.1, AC 6)', () => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard');
+    await waitForDashboardContent(page);
 
     const geometry = await page.evaluate(async () => {
       window.scrollTo(0, document.body.scrollHeight);

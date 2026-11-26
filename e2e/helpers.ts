@@ -1,6 +1,19 @@
 import { expect } from '@playwright/test';
 import type { APIResponse, Locator, Page } from '@playwright/test';
 
+/** A streamed dashboard URL can resolve while its loading boundary is still visible. */
+export async function waitForDashboardContent(page: Page, content?: Locator): Promise<void> {
+  await expect(page.getByTestId('dashboard-loading')).toHaveCount(0);
+  await expect(content ?? page.locator('main.page')).toBeVisible();
+  // Wait for a quiet network, then verify the real page is still visible.
+  // Network quiet alone does not prove hydration; interaction tests do that.
+  await page.waitForLoadState('networkidle');
+  // The first visible frame can precede a later streamed fallback. Check again
+  // after requests settle so callers do not measure a transient page.
+  await expect(page.getByTestId('dashboard-loading')).toHaveCount(0);
+  await expect(content ?? page.locator('main.page')).toBeVisible();
+}
+
 /** A comfortably far-future date — never itself the boundary under test. */
 export const FAR_FUTURE_DATE = '2099-12-31';
 

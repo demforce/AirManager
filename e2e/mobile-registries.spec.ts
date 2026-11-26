@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
-import { todayRome } from './helpers';
+import { todayRome, waitForDashboardContent } from './helpers';
 
 /**
  * Story 15.5 — the phone faces of the four registry surfaces: the fleet as a
@@ -121,11 +121,13 @@ async function registerBlockingExpiry(page: Page, personId: string, typeName: st
 /** Reaches a fixture THROUGH the page's own search — never "it is on page 1". */
 async function searchFleet(page: Page, query: string): Promise<void> {
   await page.goto(`/it/dashboard/fleet?q=${encodeURIComponent(query)}`);
+  await waitForDashboardContent(page, page.getByTestId('fleet-search'));
   await expect(page.getByTestId('fleet-search')).toHaveValue(query);
 }
 
 async function searchPilots(page: Page, query: string): Promise<void> {
   await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(query)}`);
+  await waitForDashboardContent(page, page.getByTestId('pilots-search'));
   await expect(page.getByTestId('pilots-search')).toHaveValue(query);
 }
 
@@ -594,6 +596,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
 
     await page.setViewportSize(PHONE);
     await page.goto('/it/dashboard/fleet');
+    await waitForDashboardContent(page, page.getByTestId('fleet-search'));
 
     for (const testId of FLEET_TESTIDS) {
       await expect(page.getByTestId(testId)).toHaveCount(1);
@@ -636,6 +639,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
       await page.setViewportSize(PHONE);
       await page.goto(`/it/dashboard/${surface}`);
       const exportTrigger = page.locator('.registry-head > div > .btn');
+      await waitForDashboardContent(page, exportTrigger);
       await expect(exportTrigger, surface).toHaveCount(1);
       expect(await heightOf(exportTrigger), `export trigger @${surface}`).toBeGreaterThanOrEqual(44);
 
@@ -651,6 +655,7 @@ test.describe('Story 15.5 — anagrafiche in the mobile language', () => {
       await page.setViewportSize(viewport);
       for (const surface of ['fleet', 'pilots', 'instructors']) {
         await page.goto(`/it/dashboard/${surface}`);
+        await waitForDashboardContent(page, page.locator('.registry-head'));
         const geometry = await page.evaluate(() => {
           window.scrollTo(0, document.body.scrollHeight);
           const bar = document.querySelector('.mobile-tabbar');

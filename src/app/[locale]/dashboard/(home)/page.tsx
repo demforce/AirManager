@@ -50,14 +50,14 @@ import {
   buildScheduleLabels,
   buildEditBookingFormLabels,
   buildSchedulingWindowSummary,
-} from './bookings/booking-labels';
-import { BookingsTable, type BookingRowDto, type BookingStatusDto } from './bookings/bookings-table';
-import type { PersonOption } from './bookings/new-booking-form';
-import { Schedule, type CalendarNav } from './bookings/schedule';
-import { DispatchFlightButton } from './dispatch-flight-button';
-import type { FlightEditorLabels } from './logbook/flight-editor';
-import { MobileBookingList, type MobileBookingRow } from './mobile-booking-list';
-import { MobilePendingBookings, type MobilePendingBookingRow } from './mobile-pending-bookings';
+} from '../bookings/booking-labels';
+import { BookingsTable, type BookingRowDto, type BookingStatusDto } from '../bookings/bookings-table';
+import type { PersonOption } from '../bookings/new-booking-form';
+import { Schedule, type CalendarNav } from '../bookings/schedule';
+import { DispatchFlightButton } from '../dispatch-flight-button';
+import type { FlightEditorLabels } from '../logbook/flight-editor';
+import { MobileBookingList, type MobileBookingRow } from '../mobile-booking-list';
+import { MobilePendingBookings, type MobilePendingBookingRow } from '../mobile-pending-bookings';
 
 type PageProps = {
   params: Promise<{ locale: string }>;

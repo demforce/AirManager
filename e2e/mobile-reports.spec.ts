@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { ensureValidSeedExpiries, waitForDashboardContent } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 /**
@@ -52,7 +52,7 @@ function uniqueSuffix(): string {
 
 async function gotoReports(page: Page, query = ''): Promise<void> {
   await page.goto(`/it/dashboard/reports${query}`);
-  await expect(page.locator('.kpi-row')).toHaveCount(1);
+  await waitForDashboardContent(page, page.locator('.kpi-row'));
   // The chart-label gaps and the head height are FONT metrics: measured before
   // `@fontsource`'s faces are applied, the fallback gives different numbers
   // (measured on the sibling spec: a card head 16px taller). `networkidle`
@@ -451,6 +451,7 @@ test.describe('Statistiche mobile (story 15.8b)', () => {
       for (const viewport of [PHONE, DESKTOP]) {
         await page.setViewportSize(viewport);
         await gotoReports(page);
+        await expect(page.locator('.util-bar .seg').first()).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe(theme);
 
         // 1) `.util-bar .seg` — the graphic object of the four ranked lists.

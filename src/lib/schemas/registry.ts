@@ -28,6 +28,7 @@ import {
   updateAircraftSchema,
 } from './aircraft';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
+import { billingLiveQuerySchema, billingLiveSnapshotSchema } from './billing-live';
 import {
   bookingItemSchema,
   bookingListResponseSchema,
@@ -278,6 +279,7 @@ registry.register('RecordCashMovementRequest', recordCashMovementSchema);
 registry.register('ReverseCashMovementRequest', reverseCashMovementSchema);
 registry.register('ReclassifyCashMovement', reclassifyCashMovementSchema);
 registry.register('CashReport', cashReportResponseSchema);
+registry.register('BillingLiveSnapshot', billingLiveSnapshotSchema);
 registry.register('RequirementFailure', requirementFailureSchema);
 const requirementsNotMetDetailsRef = registry.register('RequirementsNotMetDetails', requirementsNotMetDetailsSchema);
 registry.register('RegisterFlightRequest', registerFlightSchema);
@@ -922,6 +924,21 @@ registry.registerPath({
 });
 
 // --- Unified billing ledger (epic 12, story 12.9) ---------------------------
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/v1/billing-view',
+  summary: 'Read the Billing page ledger and KPI snapshot after a mutation',
+  description:
+    'Story 18.3b: authorized canonical view of the filtered, paginated ledger and its unfiltered KPIs. Uses the same filters and read services as GET /api/v1/transactions and the Billing page. Only active instructor preview fields and the bounded negative-balance preview are returned. Requires finance.manage.',
+  tags: ['Billing'],
+  security,
+  request: { query: billingLiveQuerySchema },
+  responses: {
+    200: { description: 'The reconciled Billing view.', content: jsonContent(billingLiveSnapshotSchema) },
+    ...errorResponses(401, 403, 422),
+  },
+});
 
 registry.registerPath({
   method: 'get',

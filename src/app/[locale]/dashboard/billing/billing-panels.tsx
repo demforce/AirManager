@@ -1,19 +1,18 @@
+'use client';
+
 /**
  * The three riquadri (story Billing-2, AC 1) — replaces the old 5-tile
  * `.kpi-row` (`getBillingKpis`, retired). Design
  * `docs/superpowers/specs/2026-07-26-billing-rework-design.md` §5: three
  * independent "books" that never mix into one signed column — Risultato
  * (P&L), Liquidità (running cash/bank), Acconti piloti (debito verso i
- * piloti). Server-rendered (no `'use client'` — plain stat rows plus two
- * `Link`s, same idiom as `pilots-console.tsx`'s server-side table cells);
- * every number arrives ALREADY computed by `getBillingSummary` (Billing-1),
- * this component only formats and lays them out.
+ * piloti). The authorized readers compute every number; this component
+ * formats the shared live snapshot for the desktop and phone faces.
  *
  * Story 15.8a (R-15.8a-c) adds the phone face — a tappable KPI per riquadro,
  * detail in a sheet — as a CLIENT island (`billing-panels-mobile.tsx`), the
- * smallest thing that needs the open/closed state (AD-1). This file stays a
- * server component: the same numbers, from the same object, are simply
- * passed down.
+ * smallest thing that needs the open/closed state (AD-1). Both faces now
+ * consume the same client snapshot after a ledger mutation.
  *
  * The "Istruttori" KPI tile the old row had (owed MTD, a single aggregate)
  * is NOT relocated here (Dev Notes, AC 1) — it doesn't fit the three-book
@@ -23,11 +22,13 @@
  * already shows the same figure per-instructor, in more detail.
  */
 import { Link } from '@/i18n/navigation';
+import { useTranslations } from 'next-intl';
 import { NEGATIVE_BALANCES_HREF } from '@/lib/negative-balance-links';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
-import type { BillingSummary } from '@/server/services/billing-summary.service';
+import { formatMonthYear } from '@/lib/time';
 import { BillingPanelsMobile, type BillingPanelsMobileLabels } from './billing-panels-mobile';
+import { useBillingLive } from './billing-live';
 
 export type BillingPanelsLabels = {
   result: { title: string; revenue: string; cost: string; net: string };
@@ -36,8 +37,6 @@ export type BillingPanelsLabels = {
 };
 
 export type BillingPanelsProps = {
-  summary: BillingSummary;
-  monthLabel: string;
   moneyLocale: 'it' | 'en';
   locale: 'it' | 'en';
   /** The secchiello's own filter link (story Billing-2, AC 3) — only rendered when `treasury.unattributedCount > 0` (spec §8: never hidden while non-empty; review F1 — gated on count, not the summed amount, since two opposite-signed unattributed rows sum to 0 but leave the secchiello reachable). */
@@ -84,7 +83,12 @@ function TotalRow({ label, value, testId, tone }: { label: string; value: string
   );
 }
 
-export function BillingPanels({ summary, monthLabel, moneyLocale, locale, unattributedHref, labels, mobileLabels }: BillingPanelsProps) {
+export function BillingPanels({ moneyLocale, locale, unattributedHref, labels, mobileLabels }: BillingPanelsProps) {
+  const { snapshot } = useBillingLive();
+  const summary = snapshot.summary;
+  const monthLabel = formatMonthYear(new Date(snapshot.asOf), moneyLocale);
+  const t = useTranslations('BillingPage');
+  const unattributedLabel = t('panels.treasury.unattributed', { count: summary.treasury.unattributedCount });
   const { result, treasury, deposits } = summary;
 
   return (
@@ -99,7 +103,7 @@ export function BillingPanels({ summary, monthLabel, moneyLocale, locale, unattr
         moneyLocale={moneyLocale}
         locale={locale}
         unattributedHref={unattributedHref}
-        labels={labels}
+        labels={{ ...labels, treasury: { ...labels.treasury, unattributed: unattributedLabel } }}
         mobile={mobileLabels}
       />
       <div className="billing-panels">
@@ -133,7 +137,7 @@ export function BillingPanels({ summary, monthLabel, moneyLocale, locale, unattr
                 className="stat-tone-warn"
                 style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginTop: 2, textDecoration: 'underline' }}
               >
-                <span>{labels.treasury.unattributed}</span>
+                  <span>{unattributedLabel}</span>
                 <span className="mono num" data-testid="billing-panel-unattributed">
                   {formatCents(treasury.unattributedCents, moneyLocale)}
                 </span>

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ensureValidSeedExpiries } from './helpers';
+import { ensureValidSeedExpiries, waitForDashboardContent } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
@@ -304,8 +304,13 @@ test.describe('Flight log with filters and role-scoped visibility (Story 5.4, AC
     await registerFlight(page, { aircraftId: aircraftB.id, personId: personB.personId, flightDate: '2020-06-15', flightType: 'TOURISM', minutes: 45 });
 
     await page.goto('/it/dashboard/logbook');
+    await waitForDashboardContent(page, page.getByTestId('flight-filter-aircraft'));
     const aircraftFilter = page.getByTestId('flight-filter-aircraft');
+    const filteredAircraft = page.waitForResponse((response) =>
+      response.url().includes('/api/v1/aircraft?') && new URL(response.url()).searchParams.get('q') === aircraftA.registration,
+    );
     await aircraftFilter.fill(aircraftA.registration);
+    expect((await filteredAircraft).status()).toBe(200);
     await page.getByRole('listbox').getByRole('option', { name: aircraftA.registration, exact: true }).click();
     await expect(page).toHaveURL(new RegExp('aircraftId=' + aircraftA.id));
     await expect(aircraftFilter).toHaveValue(aircraftA.registration);

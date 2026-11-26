@@ -161,7 +161,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
   return (
     <ToastProvider>
       <div className="app">
-        <Sidebar groups={groups} brandName="AirManager" brandSub={icao ? `${branding.name} · ${icao}` : branding.name} metar={metar} navLabel={t('navLabel')} />
+        <Sidebar groups={groups} brandName="AirManager" brandSub={icao ? `${branding.name} · ${icao}` : branding.name} metar={metar} navLabel={t('navLabel')} pendingLabel={t('loading')} />
         <div className="main">
           <TopBar
             brandName="AirManager"
@@ -196,6 +196,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             navLabel={t('navLabel')}
             moreLabel={t('mobile.more')}
             moreSheetLabel={t('mobile.moreSheet')}
+            pendingLabel={t('loading')}
           />
         </div>
       </div>

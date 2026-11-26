@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureBookingRequirements } from './helpers';
+import { ensureBookingRequirements, waitForDashboardContent } from './helpers';
 
 /**
  * Story 15.4 — the phone faces of `/dashboard/bookings`: the agenda of "Voli
@@ -243,8 +243,12 @@ async function findMobileCard(page: Page, text: string, query = ''): Promise<Ret
   for (let pageNumber = 1; pageNumber <= MAX_PAGES; pageNumber += 1) {
     const suffix = `${query ? `${query}&` : ''}page=${pageNumber}`;
     await page.goto(`/it/dashboard/bookings?${suffix}`);
+    await waitForDashboardContent(page, page.getByTestId('bookings-list-section'));
     const card = page.getByTestId('booking-row-mobile').filter({ hasText: text });
-    if ((await card.count()) > 0) return card;
+    if ((await card.count()) > 0) {
+      await expect(card).toBeVisible();
+      return card;
+    }
     const status = await page.getByTestId('booking-pagination-status').count();
     if (status === 0) break;
     const [current, total] = (await page.getByTestId('booking-pagination-status').innerText()).split('/').map((part) => Number(part.trim()));

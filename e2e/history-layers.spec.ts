@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { addDaysIso, registerFlightOn, todayRome } from './helpers';
+import { addDaysIso, registerFlightOn, todayRome, waitForDashboardContent } from './helpers';
 import { seedAircraftRate } from './db-fixtures';
 
 const PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
@@ -226,14 +226,17 @@ test('18.3a AC5: aircraft detail transfers its entry to the editor; Back closes 
 });
 
 test('18.3a AC6: save refreshes the register and the next Back leaves the page once', async ({ page }) => {
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 375, height: 812 });
   await login(page);
   const source = page.url();
   const marker = `History-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const descriptionMarker = `${marker}-row`;
   const created = await page.request.post('/api/v1/cash-categories', { data: { name: marker } });
   expect(created.status()).toBe(201);
   const category = (await created.json()) as { id: string };
   await page.goto(`/it/dashboard/billing?categoryId=${category.id}`);
+  await waitForDashboardContent(page, page.getByTestId('billing-new-transaction-button'));
   await expect(page.getByTestId('billing-new-transaction-button')).toBeVisible();
   await page.getByTestId('billing-new-transaction-button').click();
   await page.getByTestId('transaction-kind').selectOption('cash');
@@ -241,12 +244,17 @@ test('18.3a AC6: save refreshes the register and the next Back leaves the page o
   await page.getByTestId('transaction-direction').selectOption('in');
   await page.getByTestId('transaction-amount').fill('50');
   await page.getByTestId('transaction-date').fill(todayRome());
-  await page.getByTestId('transaction-description').fill(marker);
+  await page.getByTestId('transaction-description').fill(descriptionMarker);
+  const posted = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/api/v1/transactions'));
   await page.getByTestId('transaction-submit').click();
+  const postResponse = await posted;
+  expect(postResponse.status()).toBe(201);
+  expect((postResponse.request().postDataJSON() as { categoryId: string }).categoryId).toBe(category.id);
   await expect(page.getByTestId('transaction-result-panel')).toBeVisible();
+  await expect(page.getByTestId('transaction-row-mobile').filter({ hasText: descriptionMarker })).toBeVisible({ timeout: 15_000 });
   await page.getByTestId('transaction-result-close').click();
   await expect(page.locator('.slideover.open')).toHaveCount(0);
-  await expect(page.getByTestId('transaction-row-mobile').filter({ hasText: marker })).toBeVisible();
+  await expect(page.getByTestId('transaction-row-mobile').filter({ hasText: descriptionMarker })).toBeVisible();
   const billing = page.url();
   await page.getByTestId('mobile-tab-fleet').click();
   await expect(page).toHaveURL(/\/it\/dashboard\/fleet$/);
@@ -258,10 +266,14 @@ test('18.3a AC6: save refreshes the register and the next Back leaves the page o
   await expect(page).toHaveURL(fleet);
   await page.goBack();
   await expect(page).toHaveURL(billing);
+  // The consumed same-URL layer entry is crossed before Billing's base entry.
+  // URL equality alone can observe that intermediate entry too early.
+  await page.waitForFunction(() => window.history.state?.__airManagerHistoryLayer?.base === true);
   await page.goForward();
   await expect(page).toHaveURL(fleet);
   await page.goBack();
   await expect(page).toHaveURL(billing);
+  await page.waitForFunction(() => window.history.state?.__airManagerHistoryLayer?.base === true);
   await page.goBack();
   await expect(page).toHaveURL(source);
 });
