@@ -1,4 +1,4 @@
-# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.3a completata)
+# HANDOFF — AirManager (aggiornato: 2026-11-26 — 18.3 completata)
 
 Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19, push e PR #22), `HANDOFF-2026-11-03-2230.md`, `HANDOFF-2026-11-03-1252.md`.
 
@@ -9,7 +9,7 @@ Handoff precedenti: `docs/handoffs/HANDOFF-2026-11-03-2300.md` (chiusura Epic 19
 
 ## Current Progress
 
-- **18.3a done** (`55c8601`): Indietro chiude sheet e pannelli senza perdere navigazione o focus; Avanti attraversa correttamente le voci consumate. Inclusi filtri invariati, ricerca pendente, link attivo filtrato e handoff quota positiva da Scadenze, senza invio. Revisione indipendente GPT 6 Sol xhigh approvata, nessun bloccante. Gate 2.329 unit e build; browser su DB sintetico nuovo 682 passati, un flaky e due saltati. Le tre UI METAR non sono verificate; gesti iOS/Android non provati headless. **18.3b AC 8–10 resta ready-for-dev e l'umbrella 18.3 in-progress.** Nessun intervento su `main`.
+- **18.3 done** (`1c23687` per 18.3b; `55c8601` per 18.3a): Indietro/Avanti chiudono e attraversano i pannelli senza perdere focus; la tab mostra subito il pending e il percorso lento mostra uno scheletro AirOps. Fast 3G/CPU 4×, dal pointerdown al marker: 10,5–24,4 ms in 15 prove finali, con ordine degli eventi verificato separatamente e barre ferme. Prefetch su carico sintetico: Panoramica 12–15 richieste contro 17 sulla base, Flotta/Pianificazione 7 contro 7. Il boundary conserva la 404 diretta di una persona inesistente; Contabilità riconcilia righe e KPI tramite reader canonici dopo le scritture. Revisioni indipendenti GPT 6 Sol xhigh approvate. Gate finali 2.331 unit e build; browser su DB sintetico nuovo `E2E_EXIT=0`: 688 passati, un Mailpit locale recuperato al retry, tre METAR saltati e non verificati. Handoff quota positiva e regressioni 18.3a verdi. Epic 18 resta in-progress; nessun intervento su `main`.
 
 - **Epic 17 done**: le otto story 17.1–17.8 sono `done` in sprint-status; la retrospettiva resta `optional`. Il rollup prima rimasto `in-progress` è stato allineato. Il database sintetico `airmanager_load` è ancora presente per eventuali misure successive e va eliminato quando non serve più; non è un gate BMAD di chiusura.
 

@@ -4,7 +4,7 @@ baseline_commit: 1f6ab3e
 
 # Story 18.3: Indietro chiude, la navigazione risponde
 
-Status: **in-progress** — 18.3a «Indietro chiude» done dopo riesame indipendente; 18.3b «La navigazione risponde» resta ready-for-dev. File creato il 2026-11-03 con `bmad-create-story` e ricognizione su `1f6ab3e`. Per la 18.3a, Dev e revisore indipendente: GPT 6 Sol secondo la sostituzione permanente approvata da Enrico. **Split** in due meccanismi indipendenti con gate separati: v. §PO.
+Status: **done** — 18.3a «Indietro chiude» e 18.3b «La navigazione risponde» completate con gate e revisioni indipendenti. File creato il 2026-11-03 con `bmad-create-story` e ricognizione su `1f6ab3e`. Per entrambe, sviluppo GPT 6 Sol e revisione indipendente GPT 6 Sol xhigh secondo la sostituzione permanente approvata da Enrico. **Split** in due meccanismi indipendenti con gate separati: v. §PO.
 
 ## Story
 
@@ -42,7 +42,7 @@ Fonte: `docs/superpowers/plans/2026-09-10-epics-16-18-audit.md` §«Story 18.3»
 ## Tasks / Subtasks
 
 - [x] 18.3a: NEW `src/components/ui/history-layer.ts` (gemello di `focus-trap.ts`), UPDATE `slide-over.tsx` e `mobile-sheet.tsx`, i 3 «Applica», i link con `close`, i passaggi sheet → pannello; e2e nuovo; aggiornare la riga «Escape e i pannelli» di CLAUDE.md. Implementazione, gate e riesame indipendente completati; 18.3a done.
-- [ ] 18.3b: NEW `src/app/[locale]/dashboard/loading.tsx` + CSS dello scheletro; `mobile-nav.tsx` (indicatore in un figlio del `Link` con `useLinkStatus`); `sidebar.tsx` se §PO Q-18.3-b = A; 1-2 chiavi «Caricamento…»; e2e con throttling; audit dei 195 `toHaveURL`.
+- [x] 18.3b: un componente AirOps condiviso richiamato dai `loading.tsx` delle sezioni e della home (boundary globale escluso per conservare HTTP 404 su `people/[id]`), CSS dello scheletro; `mobile-nav.tsx` e `sidebar.tsx` con indicatore nel `Link` basato su `useLinkStatus`; messaggi «Caricamento…»; e2e con throttling e audit dei `toHaveURL` attuali. Implementazione, gate e revisione indipendente completati.
 
 ## Dev Notes
 
@@ -99,9 +99,9 @@ GPT 6 Sol (sviluppo, un solo agente). Riesame indipendente GPT 6 Sol xhigh appro
 - `e2e/history-layers.spec.ts`, `e2e/flights.spec.ts`, `e2e/mobile-membership-fee.spec.ts`
 - `CLAUDE.md`, questo record, `sprint-status.yaml`, piano `docs/superpowers/plans/2026-11-26-story-18-3a-history.md`
 
-## 18.3b — Dev Agent Record (revisione indipendente pendente)
+## 18.3b — Dev Agent Record (revisione indipendente approvata)
 
-Sviluppo: GPT 6 Sol, un solo agente. La story resta **in-progress**; nessuna approvazione di review, chiusura BMAD o pubblicazione è attestata qui.
+Sviluppo: GPT 6 Sol, un solo agente. Revisione indipendente GPT 6 Sol xhigh **approvata** sul commit `1c2368797a3fed2a1fbc7853753dc82692c58d96` (tree `66fd084190724ea3ed6a46e363b6f4d944ccf863`, base `dd625f7c7831d5cdd686b1bd98389b95908c00db`): nessun rilievo bloccante, alto o medio residuo. AC 8–10 e regressioni 18.3a approvati con le evidenze e i limiti sotto; la story 18.3 è **done**.
 
 ### Piano ed esecuzione
 
