@@ -5,6 +5,12 @@ import { recordAdjustmentSchema, recordTopUpSchema } from '@/lib/schemas/account
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
+// These unit fixtures model the original operational contact path. Trial routing
+// (both opt-in states) is exercised against PostgreSQL in test-legacy-mail-routing.
+vi.mock('@/server/auth/email-trial-policy', async (original) => ({
+  ...await original<typeof import('@/server/auth/email-trial-policy')>(), emailTrialEnabled: () => false,
+}));
+
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
     account: {

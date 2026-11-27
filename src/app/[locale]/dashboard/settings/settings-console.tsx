@@ -29,6 +29,7 @@ import { CurrencyCard, type CurrencyCardLabels } from './currency-card';
 import { MembershipCard, type MembershipCardLabels } from './membership-card';
 import { RatingsCard, type RatingsCardLabels } from './ratings-card';
 import { SchedulingCard, type SchedulingCardLabels } from './scheduling-card';
+import { LegacyMailCard } from './legacy-mail-card';
 import { SmtpCard, type SmtpCardLabels } from './smtp-card';
 import { TreasuryCard, type TreasuryCardLabels } from './treasury-card';
 
@@ -119,7 +120,7 @@ function omit<T>(record: Record<string, T>, keys: string[]): Record<string, T> {
  * No "unsaved changes" guard on leaving and no "discard" button (D-6): the
  * bar always says what is unsaved, and a reload discards.
  */
-export function SettingsConsole({ snapshot, labels }: { snapshot: SettingsSnapshotData; labels: SettingsConsoleLabels }) {
+export function SettingsConsole({ snapshot, labels, showLegacyMail }: { snapshot: SettingsSnapshotData; labels: SettingsConsoleLabels; showLegacyMail: boolean }) {
   const router = useRouter();
   const toast = useToast();
   const formRef = useRef<HTMLFormElement>(null);
@@ -258,6 +259,7 @@ export function SettingsConsole({ snapshot, labels }: { snapshot: SettingsSnapsh
           testEmailBlocked={testEmailBlocked(baseline, draft)}
           labels={labels.smtp}
         />
+        {showLegacyMail && <LegacyMailCard />}
         <TreasuryCard value={draft.treasury} onChange={(change) => changeSection('treasury', change)} errors={fieldErrors('treasury')} labels={labels.treasury} />
         <RatingsCard
           key={`ratings-${saveCount}`}

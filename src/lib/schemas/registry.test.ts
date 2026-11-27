@@ -16,6 +16,16 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     expect(doc.info.title).toBe('AirManager API');
   });
 
+  it('publishes the authenticated legacy preview and its conflict-aware opt-in contract', () => {
+    const contract = doc.paths?.['/api/v1/settings/legacy-mail'];
+    expect(contract?.get?.parameters).toContainEqual(expect.objectContaining({ name: 'page', in: 'query' }));
+    for (const method of ['get', 'put'] as const) {
+      expect(contract?.[method]?.security).toBeDefined();
+      expect(Object.keys(contract?.[method]?.responses ?? {})).toEqual(expect.arrayContaining(['200', '401', '403', '404', '422']));
+    }
+    expect(contract?.put?.responses?.['409']).toBeDefined();
+  });
+
   it('documents archive as aircraft plus advisory booking counts and leaves unarchive unchanged', () => {
     type Response = { content?: Record<string, { schema?: { properties?: Record<string, unknown> } }> };
     const paths = doc.paths as Record<string, { post?: { responses?: Record<string, Response> } }>;

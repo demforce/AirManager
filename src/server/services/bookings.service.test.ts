@@ -10,6 +10,12 @@ import { requirementsNotMetDetailsSchema } from '@/lib/schemas/requirements';
 import { ROLE_PERMISSIONS, type Actor } from '@/server/auth/rbac';
 import type { RequirementsInput } from './requirements.service';
 
+// These unit fixtures model the original operational contact path. Trial routing
+// (both opt-in states) is exercised against PostgreSQL in test-legacy-mail-routing.
+vi.mock('@/server/auth/email-trial-policy', async (original) => ({
+  ...await original<typeof import('@/server/auth/email-trial-policy')>(), emailTrialEnabled: () => false,
+}));
+
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
     appSetting: { findUnique: vi.fn() },

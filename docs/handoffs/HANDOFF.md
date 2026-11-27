@@ -66,9 +66,15 @@ Il milestone è chiuso. Da Impostazioni l’amministratore può sospendere i sol
 
 Revisione indipendente approvata. Sono passati 2.404 unit, 74 casi PostgreSQL, cinque casi Chromium a posta spenta e la suite completa con 727 casi Chromium, 726 passati al primo tentativo, uno passato al primo retry e zero skip.
 
+## Riconciliazione dei recapiti storici
+
+La prima story è conclusa. Con la prova locale abilitata, da **Impostazioni → Recapiti degli account** un admin può vedere l’inventario, attivare la regola dopo la simulazione e ripristinare il comportamento precedente. L’opzione è spenta per default. I cinque avvisi ai titolari usano la casella verificata soltanto per coppie collegate, attive, con indirizzi equivalenti e senza collisioni. I casi irrisolti mantengono la destinazione storica. Una persona senza account conserva il proprio contatto e il test SMTP usa quello del club.
+
+Approvazione indipendente e gate verdi con 2.405 unit, 79 prove PostgreSQL/SMTP, cinque casi del fallback offline e 729 casi Chromium passati al primo tentativo, zero retry e zero skip. [Record BMAD e limiti](../../_bmad-output/implementation-artifacts/riconciliazione-recapiti-legacy.md)
+
 ## Prossimo lavoro
 
-Restano da pianificare la gestione degli account storici, l’indirizzo verificato unico e il cambio di recapito. Il trial pubblico resta disattivato per default. Il monitor dispone della procedura di avvio nell’ambiente autorizzato. [Guida operativa](../operations/credential-mail.md)
+La [story di cambio indirizzo verificato](../../_bmad-output/implementation-artifacts/cambio-indirizzo-verificato.md) è in backlog. Per il cambio ordinario il titolare confermerà vecchia e nuova casella, anche quando è amministratore o riceve assistenza da un altro admin. Solo nel recupero, dopo identificazione indipendente, potrà omettere la conferma dalla vecchia casella. Restano la verifica della nuova, l’avviso alla vecchia, l’audit, il cambio atomico e la revoca immediata di sessioni e link. La prova di login resta disattivata per default.
 
 Per il futuro login ordinario con link email monouso da 10 minuti, il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il test SMTP continuerà a usare il contatto del club come destinazione distinta. [Decisione del PO](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
 

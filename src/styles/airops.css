@@ -4040,3 +4040,14 @@ html[data-theme="dark"] .stat-tone-info{ color: var(--info); }
   .card.mobile-empty-unfiltered .billing-mobile > .mobile-chip-strip{ display: none; }
   .page.fold-billing:has(.mobile-empty-unfiltered) [data-testid="mobile-billing-kpis"]{ display: none; }
 }
+
+.legacy-mail-body { padding: 0 20px 16px; }
+.legacy-mail-body p { margin: 12px 0; }
+.legacy-mail-body [role="status"]:empty { margin: 0; }
+.legacy-mail-rows { padding: 0; margin: 12px 0; list-style: none; }
+.legacy-mail-rows li { padding: 10px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.legacy-mail-pages { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+@media (max-width: 640px){
+  .legacy-mail-rows a{ display: inline-flex; align-items: center; max-width: 100%; min-height: 44px; min-width: 44px; }
+}

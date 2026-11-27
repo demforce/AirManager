@@ -1,3 +1,4 @@
+import { readHolderDelivery } from './legacy-mail-routing';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@/generated/prisma/client';
 import { getOperationalMailPolicy, type MailBoundary, type OperationalMailPolicy } from './operational-mail-settings';
@@ -260,20 +261,21 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
           });
           // Rendering is asynchronous. A renewal may already have removed this
           // attempt's markers. After handoff, SMTP cannot recall a message.
-          const [owned, current] = await Promise.all([
+          const [owned, delivery] = await Promise.all([
             prisma.sentAlert.findFirst({
               where: { id: claimIds[0], expiry: { person: { archivedAt: null, email: candidate.person.email }, expiryType: { isActive: true } } },
               select: { id: true },
             }),
-            getOperationalMailPolicy(),
+            readHolderDelivery({ id: candidate.person.id, email: candidate.person.email }),
           ]);
-          if (!owned) {
+          const current = delivery.policy;
+          if (!owned || !delivery.email) {
             await prisma.sentAlert.deleteMany({ where: { id: { in: claimIds } } });
             continue;
           }
           if (current.switches.expiryHolder && policy.holderSince?.cycle === current.holderSince?.cycle) {
             sendAttempted = true;
-            await getMailSender().send({ ...content, to: candidate.person.email });
+            await getMailSender().send({ ...content, to: delivery.email });
             holderEmailsSent += 1;
             alertsCreated += claims.length;
             transportFailures = 0;
@@ -290,7 +292,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
             holderStatus = current.switches.expiryHolder ? 'THRESHOLD_SUSPENDED' : 'REMINDERS_DISABLED';
           }
         } catch (error) {
-          console.error('runExpiryAlertsJob: failed to send holder alert email', error);
+          console.error('runExpiryAlertsJob: failed to send holder alert email');
           await prisma.sentAlert.deleteMany({ where: { id: { in: claimIds } } });
           if (sendAttempted) {
             if (isRecipientRejection(error)) { recipientRejections += 1; transportFailures = 0; }

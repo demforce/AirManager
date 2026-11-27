@@ -1,3 +1,4 @@
+import { readHolderDelivery } from './legacy-mail-routing';
 import { Prisma, type AccountMovementRootBook, type AccountMovementType, type PaymentMethod } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { AppLocale } from '@/i18n/routing';
@@ -6,7 +7,6 @@ import { rootBookType } from '@/lib/schemas/transactions';
 import { escapeLikePattern } from '@/lib/sql-like';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
-import { getOperationalMailPolicy } from './operational-mail-settings';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildNegativeBalanceAlertEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -619,12 +619,13 @@ export async function sendNegativeBalanceAlert(
       personName: `${person.firstName} ${person.lastName}`,
       balanceCents,
     });
-    if (!(await getOperationalMailPolicy()).switches.negativeBalance) return;
-    await getMailSender().send({ ...content, to: person.email });
-  } catch (error) {
+    const delivery = await readHolderDelivery({ id: personId, email: person.email });
+    if (!delivery.email || !delivery.policy.switches.negativeBalance) return;
+    await getMailSender().send({ ...content, to: delivery.email });
+  } catch {
     // Never let a mail failure surface to the caller — the movement is
     // already committed and must stay valid (Dev Notes).
-    console.error('sendNegativeBalanceAlert: failed to send alert email', error);
+    console.error('sendNegativeBalanceAlert: failed to send alert email');
   }
 }
 

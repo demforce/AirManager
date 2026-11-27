@@ -1,3 +1,4 @@
+import { readHolderDelivery } from './legacy-mail-routing';
 import { boundedOptions, PICKER_LIMIT, type OptionPage } from '@/lib/picker';
 import { Prisma, type AircraftPriceCategory, type AircraftStatus, type BookingStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
@@ -8,7 +9,6 @@ import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, Tran
 import type { SchedulingSettingsDto } from '@/lib/schemas/settings';
 import { APP_TIMEZONE } from '@/lib/time';
 import { dateOnlyInZone, todayDateOnlyInZone, zonedWallTime } from '@/lib/zoned-time';
-import { getOperationalMailPolicy } from './operational-mail-settings';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildBookingDeniedEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -1705,10 +1705,11 @@ async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
       // Just written by transitionBooking's own transaction — safe to assert.
       reason: booking.denyReason!,
     });
-    if (!(await getOperationalMailPolicy()).switches.bookingDenied) return;
-    await getMailSender().send({ ...content, to: person.email });
-  } catch (error) {
-    console.error('transitionBooking: failed to send booking-denied email', error);
+    const delivery = await readHolderDelivery({ id: booking.personId, email: person.email });
+    if (!delivery.email || !delivery.policy.switches.bookingDenied) return;
+    await getMailSender().send({ ...content, to: delivery.email });
+  } catch {
+    console.error('transitionBooking: failed to send booking-denied email');
   }
 }
 
