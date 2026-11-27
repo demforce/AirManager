@@ -1,5 +1,7 @@
 # Riscontri della riconciliazione dei recapiti
 
+**Archivio storico.** Questo documento descrive il collaudo del commit `142ef94`, prima del ritiro della simulazione. [Stato aggiornato](../../riconciliazione-recapiti-legacy.md)
+
 Le prove usano PostgreSQL 16 su loopback, Chromium e Mailpit con inoltro disattivato. Gli indirizzi di fixture appartengono a un dominio sintetico. I log riportati qui contengono esiti, quantità e nomi dei controlli.
 
 ## Confronto con la base

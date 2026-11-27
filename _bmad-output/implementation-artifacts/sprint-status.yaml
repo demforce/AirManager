@@ -518,8 +518,8 @@ development_status:
   invito-e-login-email: done
   template-html-email: done
   protezioni-accesso-pre-cutover: done
-  riconciliazione-recapiti-legacy: done
-  cambio-indirizzo-verificato: backlog
+  # Simulazione recapiti ritirata. Cambio indirizzo sospeso e fuori dal piano attivo.
+  ritiro-simulazione-recapiti: done
   # EPIC 19 — Semplificazione e regole operative (change request PO 2026-11-01,
   # _bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md, ratifiche R-19-a..p).
   # Tutte con UI: dev Opus 5 xhigh, review Opus 5 xhigh. Eseguito dopo la chiusura della 16.3.

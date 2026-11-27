@@ -1,4 +1,3 @@
-import { readHolderDelivery } from './legacy-mail-routing';
 import type { AircraftStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
@@ -514,10 +513,8 @@ async function sendImpactedHolderEmails(
       try {
         const locale: AppLocale = localeByPerson.get(person.id) === 'en' ? 'en' : 'it';
         const content = await buildEmail(locale, { firstName: person.firstName, startsAt: booking.startsAt });
-        const delivery = await readHolderDelivery({ id: person.id, email: person.email });
-        if (!delivery.policy.switches[switchKey]) return;
-        if (!delivery.email) continue;
-        await getMailSender().send({ ...content, to: delivery.email });
+        if (!(await getOperationalMailPolicy()).switches[switchKey]) return;
+        await getMailSender().send({ ...content, to: person.email });
       } catch {
         console.error(action === 'setOutOfService' ? 'setOutOfService: failed to send aircraft-grounded email' : 'archiveAircraft: failed to send aircraft-archived email');
       }

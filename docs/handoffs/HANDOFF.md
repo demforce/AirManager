@@ -66,16 +66,12 @@ Il milestone è chiuso. Da Impostazioni l’amministratore può sospendere i sol
 
 Revisione indipendente approvata. Sono passati 2.404 unit, 74 casi PostgreSQL, cinque casi Chromium a posta spenta e la suite completa con 727 casi Chromium, 726 passati al primo tentativo, uno passato al primo retry e zero skip.
 
-## Riconciliazione dei recapiti storici
+## Ritiro della simulazione dei recapiti
 
-La prima story è conclusa. Con la prova locale abilitata, da **Impostazioni → Recapiti degli account** un admin può vedere l’inventario, attivare la regola dopo la simulazione e ripristinare il comportamento precedente. L’opzione è spenta per default. I cinque avvisi ai titolari usano la casella verificata soltanto per coppie collegate, attive, con indirizzi equivalenti e senza collisioni. I casi irrisolti mantengono la destinazione storica. Una persona senza account conserva il proprio contatto e il test SMTP usa quello del club.
+L'amministratore trova in Impostazioni le dieci schede precedenti. La destinazione degli avvisi operativi torna a seguire le regole anteriori a `142ef94`, anche nelle installazioni di prova che avevano attivato la simulazione. Il contatto delle persone senza account e quello del club per il test SMTP conservano i loro usi distinti. La migrazione correttiva rimuove i due indici di ricerca e la funzione della simulazione. [Record BMAD del ritiro](../../_bmad-output/implementation-artifacts/riconciliazione-recapiti-legacy.md)
 
-Approvazione indipendente e gate verdi con 2.405 unit, 79 prove PostgreSQL/SMTP, cinque casi del fallback offline e 729 casi Chromium passati al primo tentativo, zero retry e zero skip. [Record BMAD e limiti](../../_bmad-output/implementation-artifacts/riconciliazione-recapiti-legacy.md)
+## Requisito aperto
 
-## Prossimo lavoro
-
-La [story di cambio indirizzo verificato](../../_bmad-output/implementation-artifacts/cambio-indirizzo-verificato.md) è in backlog. Per il cambio ordinario il titolare confermerà vecchia e nuova casella, anche quando è amministratore o riceve assistenza da un altro admin. Solo nel recupero, dopo identificazione indipendente, potrà omettere la conferma dalla vecchia casella. Restano la verifica della nuova, l’avviso alla vecchia, l’audit, il cambio atomico e la revoca immediata di sessioni e link. La prova di login resta disattivata per default.
-
-Per il futuro login ordinario con link email monouso da 10 minuti, il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il test SMTP continuerà a usare il contatto del club come destinazione distinta. [Decisione del PO](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
+Enrico ha confermato un solo indirizzo registrato per utente, usato per l’accesso e per le comunicazioni. Questa correzione non migra i recapiti esistenti. Il cambio indirizzo è sospeso e fuori dal piano attivo. [Decisione sul recapito unico](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
 
 Restano aperte le decisioni sul formato dettagliato di Scadenze e sul font Unicode nei PDF. La retrospettiva dell’Epic 18 resta facoltativa.

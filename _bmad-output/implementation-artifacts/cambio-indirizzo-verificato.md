@@ -1,6 +1,6 @@
 # Cambio dell’indirizzo verificato
 
-Stato BMAD **backlog**. Questa story segue la [riconciliazione dei recapiti storici](riconciliazione-recapiti-legacy.md).
+**Sospesa, fuori dal piano attivo.** I criteri seguenti documentano la proposta precedente. Ogni decisione sul cambio indirizzo resta separata dal [ritiro del pannello](riconciliazione-recapiti-legacy.md).
 
 - Per cambiare il proprio indirizzo, ogni titolare, amministratori inclusi, conferma sia la vecchia casella sia la nuova. Prima del completamento il recapito in uso continua a servire accesso e comunicazioni.
 - Quando un admin assiste un altro utente, è il titolare a confermare le proprie due caselle. L’indirizzo personale dell’operatore non partecipa alla verifica.

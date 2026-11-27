@@ -4,7 +4,6 @@ import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getSettingsSnapshot } from '@/server/services/settings.service';
 import type { RatingsCardLabels } from './ratings-card';
-import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import { SettingsConsole } from './settings-console';
 
 type PageProps = {
@@ -117,7 +116,6 @@ export default async function SettingsPage({ params }: PageProps) {
       </div>
 
       <SettingsConsole
-        showLegacyMail={emailTrialEnabled()}
         snapshot={snapshot}
         labels={{
           save: t('save'),

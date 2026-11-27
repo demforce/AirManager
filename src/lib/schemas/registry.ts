@@ -28,7 +28,6 @@ import {
   updateAircraftSchema,
 } from './aircraft';
 import { accessSecurityStatusSchema, loginPauseSchema } from './settings';
-import { legacyMailChangeSchema, legacyMailPageSchema, legacyMailPolicySchema, legacyMailPreviewSchema } from './legacy-mail-routing';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
 import { billingLiveQuerySchema, billingLiveSnapshotSchema } from './billing-live';
 import {
@@ -1730,21 +1729,6 @@ registry.registerPath({
     200: { description: 'The saved SMTP settings (password omitted).', content: jsonContent(smtpSettingsDtoSchema) },
     ...errorResponses(401, 403, 422),
   },
-});
-
-registry.registerPath({
-  method: 'get', path: '/api/v1/settings/legacy-mail', summary: 'Preview operational address reconciliation',
-  description: 'Local email trial only. Requires a current active administrator. Returns paginated internal record references and reasons.',
-  tags: ['Settings'], security, request: { query: legacyMailPageSchema },
-  responses: { 200: { description: 'Current preview and operator-bound revision.', content: jsonContent(legacyMailPreviewSchema) },
-    ...errorResponses(401, 403, 404, 422) },
-});
-registry.registerPath({
-  method: 'put', path: '/api/v1/settings/legacy-mail', summary: 'Apply or roll back verified operational addresses',
-  description: 'Local email trial only. A change requires the same active administrator and a current preview revision.',
-  tags: ['Settings'], security, request: { body: { required: true, content: jsonContent(legacyMailChangeSchema) } },
-  responses: { 200: { description: 'Saved routing preference.', content: jsonContent(legacyMailPolicySchema) },
-    ...errorResponses(401, 403, 404, 409, 422) },
 });
 
 registry.registerPath({

@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { emailTrialEnabled } from '../src/server/auth/email-trial-policy';
 import { seedAircraftRate } from './db-fixtures';
 
 /**
@@ -44,11 +43,10 @@ const DESKTOP = { width: 1280, height: 720 };
 
 /** The floor is the REQUIREMENT (44px) minus half a pixel of rounding — never the value obtained (lesson 15.7 MINOR-1). */
 const TARGET_FLOOR = 43.5;
-const historicalSettingsCards = [
+const expectedSettingsCards = [
   'club', 'membership', 'currency', 'scheduling', 'notifications', 'smtp',
   'treasury', 'ratings', 'medical', 'cash-categories',
 ].map(name => name + '-settings-card');
-const trialCard = 'legacy-mail-settings-card';
 
 /** Same permissive baseline `settings.spec.ts` restores: a PUT has no unset, so the only way to neutralise a leftover window is to write a maximally permissive one. */
 const PERMISSIVE_SCHEDULING = { openTime: '00:00', closeTime: '23:59', minSlotMinutes: 30, turnaroundMinutes: 0, maxAdvanceDays: 3650 };
@@ -349,8 +347,7 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await gotoSettings(page);
     expect(await page.evaluate(() => document.documentElement.clientWidth)).toBe(375);
     const post = await headHeights(page);
-    const expectedCards = emailTrialEnabled() ? [...historicalSettingsCards, trialCard] : historicalSettingsCards;
-    expect(post.map(card => card.testid).sort()).toEqual([...expectedCards].sort());
+    expect(post.map(card => card.testid).sort()).toEqual([...expectedSettingsCards].sort());
     // The heads carry a 44px action and are STILL not taller than they were
     // before story 15.8b — the arithmetic, measured, not promised (lesson
     // 15.6 R-15.6-e / 15.5 F3). PRE is rendered in this same page, so fonts,
@@ -799,47 +796,6 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     });
     expect(layering.onSheet).toBe(true);
     expect(layering.sheetZ).toBe('40');
-  });
-
-  test('l’inventario del trial conserva link, controlli e barra Salva utilizzabili sul telefono', async ({ page }) => {
-    await login(page, ADMIN_EMAIL);
-    await page.setViewportSize(PHONE);
-    await gotoSettings(page);
-    const inventory = page.getByTestId(trialCard);
-    if (!emailTrialEnabled()) {
-      await expect(inventory).toHaveCount(0);
-      return;
-    }
-    await inventory.getByRole('button', { name: 'Simula la riconciliazione' }).click();
-    const personLink = inventory.getByRole('link').first();
-    await expect(personLink).toBeVisible();
-
-    for (const viewport of [NARROW, PHONE, WIDE_PHONE]) {
-      await page.setViewportSize(viewport);
-      expect(await page.evaluate(SMALL_TARGETS)).toEqual([]);
-      const sizes = await inventory.locator('button, a').evaluateAll(nodes => nodes.map(node => {
-        const { width, height } = node.getBoundingClientRect();
-        return { width, height };
-      }));
-      for (const size of sizes) {
-        expect(size.width).toBeGreaterThanOrEqual(TARGET_FLOOR);
-        expect(size.height).toBeGreaterThanOrEqual(TARGET_FLOOR);
-      }
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
-      expect(layoutScrollers(await page.evaluate(HIDDEN_SCROLLERS))).toEqual([]);
-      expect(await page.evaluate(CLIPPED_WITHOUT_ELLIPSIS)).toEqual([]);
-
-      for (const position of ['top', 'bottom']) {
-        await page.evaluate(pos => window.scrollTo(0, pos === 'top' ? 0 : document.documentElement.scrollHeight), position);
-        const bar = await barOverTabbar(page);
-        expect(bar.gap, `preview open, ${position} @${viewport.width}`).toBeGreaterThanOrEqual(0);
-        expect(bar.hitsSave).toBe(true);
-      }
-    }
-    const href = await personLink.getAttribute('href');
-    expect(href).toMatch(/^\/it\/dashboard\/people\/[^/]+$/);
-    await personLink.click();
-    await expect(page).toHaveURL(url => url.pathname === href);
   });
 
   test('AC 11: le guardie di questa pagina sono DISCRIMINANTI (pre-fix simulato sul repo intatto)', async ({ page }) => {
