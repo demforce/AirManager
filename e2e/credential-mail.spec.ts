@@ -44,7 +44,7 @@ for (const locale of ['it', 'en'] as const) {
         name: locale === 'it' ? 'Modifica' : 'Edit'
       }).click();
       const section = page.getByTestId('pilot-access-none');
-      await section.getByLabel('Email').fill(email);
+      await section.getByLabel('Email', { exact: true }).fill(email);
       await section.getByLabel(locale === 'it' ? 'Pilota' : 'Pilot', {
         exact: true
       }).check();

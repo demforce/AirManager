@@ -101,7 +101,8 @@
       "submitting": "Accesso in corso…",
       "errorGeneric": "Email o password non corretti.",
       "forgotPassword": "Password dimenticata?",
-      "requiredField": "Campo obbligatorio."
+      "requiredField": "Campo obbligatorio.",
+      "trialLink": "Accedi via email"
     },
     "setPassword": {
       "kicker": "Imposta password",
@@ -129,6 +130,22 @@
       "confirmation": "Se l'indirizzo email corrisponde a un account attivo, riceverai a breve un'email con le istruzioni per reimpostare la password.",
       "backToLogin": "Torna all'accesso",
       "requiredField": "Campo obbligatorio."
+    },
+    "emailTrial": {
+      "email": "Email",
+      "back": "Torna all’accesso",
+      "requestTitle": "Accesso via email",
+      "requestHelp": "Inserisci l’indirizzo del tuo account.",
+      "request": "Richiedi il link",
+      "verifyTitle": "Verifica il tuo indirizzo",
+      "verifyHelp": "Conferma di aver ricevuto l’invito a questo indirizzo.",
+      "verify": "Conferma indirizzo",
+      "loginTitle": "Conferma l’accesso",
+      "loginHelp": "Inserisci l’indirizzo a cui hai ricevuto il link e conferma per entrare.",
+      "login": "Conferma e accedi",
+      "invalid": "Impossibile completare la richiesta.",
+      "sent": "Se l’account è abilitato, riceverai un link via email.",
+      "verified": "Indirizzo verificato. Puoi richiedere il tuo link di accesso."
     }
   },
   "DashboardPage": {
@@ -432,7 +449,10 @@
         "emailConflict": "Esiste già un accesso con questa email.",
         "genericError": "Si è verificato un errore. Riprova.",
         "grantLabel": "Crea un accesso per questa persona",
-        "invalidEmail": "Inserisci un'email valida."
+        "invalidEmail": "Inserisci un'email valida.",
+        "verificationOption": "Invita con verifica email (prova)",
+        "verifiedEmail": "Indirizzo verificato",
+        "pendingEmail": "Indirizzo da verificare"
       },
       "archive": {
         "sectionTitle": "Archivio",
@@ -1837,6 +1857,14 @@
       "windowUntil": "fino al {date} compreso",
       "windowUnknown": "rientro da definire",
       "windowOverdue": "oltre il {date} previsto, rientro da definire"
+    },
+    "verifyEmail": {
+      "subject": "Verifica il tuo indirizzo AirManager",
+      "deadlineBody": "Conferma il tuo indirizzo entro {expiry}.\n\n{url}"
+    },
+    "loginLink": {
+      "subject": "Link di accesso AirManager",
+      "deadlineBody": "Conferma il tuo accesso entro {expiry}.\n\n{url}"
     }
   },
   "NegativeBalancesPage": {

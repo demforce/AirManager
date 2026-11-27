@@ -26,7 +26,7 @@ export async function readObservedSmtpConfig() {
 export type ObservedSmtpConfig = Awaited<ReturnType<typeof readObservedSmtpConfig>>;
 
 /** SMTPConnection exposes the positive final DATA reply and lets the hard deadline close this exact connection. */
-export function submitObservedMail(config: ObservedSmtpConfig, message: MailMessage): Promise<SmtpObservation> {
+export function submitObservedMail(config: ObservedSmtpConfig, message: MailMessage, stillEligible?: () => Promise<boolean>): Promise<SmtpObservation> {
   return new Promise(resolve => {
     const connection = new SMTPConnection({
       host: config.host,
@@ -56,7 +56,7 @@ export function submitObservedMail(config: ObservedSmtpConfig, message: MailMess
     const timer = setTimeout(failed, SMTP_ATTEMPT_MS);
     connection.on('error', failed);
     connection.on('end', () => failed());
-    function submit() {
+    async function submit() {
       if (finished) return;
       try {
         const mime = new MailComposer({
@@ -71,6 +71,10 @@ export function submitObservedMail(config: ObservedSmtpConfig, message: MailMess
             channel: true
           });
         }
+        if (stillEligible && !(await stillEligible())) {
+          return finish({ outcome: 'SUPPRESSED', phase: 'RECIPIENT', channel: false });
+        }
+        if (finished) return;
         stage = 'MESSAGE';
         connection.send(envelope, mime.createReadStream(), (err, info) => {
           if (err) return failed(err);

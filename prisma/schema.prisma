@@ -391,6 +391,7 @@ model InstructorRate {
 /// needs a `Person` yet (kept optional to avoid coupling auth to the full
 /// anagrafica before story 2.1 exists).
 model User {
+  emailVerification EmailVerification?
   id           String  @id @default(cuid())
   email        String  @unique
   /// Nullable (story 1.4): an invited user has no password until they follow
@@ -467,7 +468,27 @@ model User {
 /// flows (story 1.4, AC 1/3). Only the sha256 hash of the token is ever
 /// persisted — the raw value exists only in the emailed link and is never
 /// logged or stored.
+// Only accounts explicitly enrolled by an admin have this row.
+model EmailVerification {
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email      String
+  verifiedAt DateTime?
+}
+
+model EmailTrialRequest {
+  id         String   @id @default(cuid())
+  identity   String
+  origin     String
+  createdAt  DateTime @default(now())
+  @@index([identity, createdAt])
+  @@index([origin, createdAt])
+  @@index([createdAt])
+}
+
 enum AuthTokenType {
+  VERIFY_EMAIL
+  LOGIN_LINK
   INVITE
   PASSWORD_RESET
 }
@@ -1568,6 +1589,7 @@ model CredentialMail {
   history     MailAttempt[]
 
   @@unique([operatorId, userId, purpose, actionKey])
+  @@index([purpose, createdAt])
   @@index([state, nextAt])
   @@index([userId, purpose, createdAt])
 }

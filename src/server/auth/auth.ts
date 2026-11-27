@@ -1,3 +1,5 @@
+import { emailTrialEnabled } from './email-trial-policy';
+import { consumeTrialLink, loginRequestOrigin } from '@/server/services/email-trial.service';
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { extractClientIp } from '@/lib/api/client-ip';
@@ -22,6 +24,13 @@ import { applyActiveRecheck } from './jwt-active-check';
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   providers: [
+    ...(emailTrialEnabled() ? [Credentials({
+      id: 'email-link', name: 'Email link', credentials: { token: {}, email: {} },
+      authorize: async (credentials, request) => {
+        const user = await consumeTrialLink('LOGIN_LINK', credentials.token, credentials.email, loginRequestOrigin(request.headers));
+        return user ? { ...user, emailTrialLogin: true } : null;
+      },
+    })] : []),
     Credentials({
       credentials: {
         email: {},

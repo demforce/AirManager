@@ -1,5 +1,5 @@
 export type SmtpPhase = 'CONFIG' | 'CONNECT' | 'AUTH' | 'SENDER' | 'RECIPIENT' | 'DATA' | 'MESSAGE' | 'FINAL';
-export type SmtpOutcome = 'ACCEPTED' | 'TEMPORARY' | 'PERMANENT' | 'CONFIGURATION' | 'UNAVAILABLE' | 'UNCERTAIN';
+export type SmtpOutcome = 'SUPPRESSED' | 'ACCEPTED' | 'TEMPORARY' | 'PERMANENT' | 'CONFIGURATION' | 'UNAVAILABLE' | 'UNCERTAIN';
 export type SmtpObservation = {
   outcome: SmtpOutcome;
   phase: SmtpPhase;

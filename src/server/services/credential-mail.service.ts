@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma, AuthTokenType } from '@/generated/prisma/client';
+import { credentialEligible } from '@/server/auth/email-trial-policy';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
+export const LOGIN_LINK_TTL_MS = 10 * 60_000;
 export const INVITE_TTL_MS = 7 * 86_400_000;
 export const PASSWORD_RESET_TTL_MS = 2 * 3_600_000;
 type Tx = Prisma.TransactionClient;
@@ -27,9 +29,10 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
     select: {
       email: true,
       isActive: true,
-      passwordHash: true
+      passwordHash: true, roles: true, emailVerification: true
     }
   });
+  if (purpose === 'INVITE' && user?.emailVerification) purpose = 'VERIFY_EMAIL';
   const now = await databaseNow(tx);
   if (action) {
     const previous = await tx.credentialMail.findFirst({
@@ -48,8 +51,8 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
       state: 'QUEUED' as const
     };
   }
-  if (!user || !user.isActive || expectedEmail && user.email !== expectedEmail || purpose === 'INVITE' && user.passwordHash !== null) {
-    if (purpose === 'PASSWORD_RESET') return null;
+  if (!user || !credentialEligible(user, purpose) || expectedEmail && user.email !== expectedEmail) {
+    if (purpose === 'PASSWORD_RESET' || purpose === 'LOGIN_LINK') return null;
     if (!user) throw new NotFoundError('User not found.');
     throw new ConflictError('This account has no eligible pending invitation.');
   }
@@ -129,7 +132,7 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
     data: {
       userId,
       purpose,
-      expiresAt: new Date(now.getTime() + (purpose === 'INVITE' ? INVITE_TTL_MS : PASSWORD_RESET_TTL_MS)),
+      expiresAt: new Date(now.getTime() + (purpose === 'LOGIN_LINK' ? LOGIN_LINK_TTL_MS : purpose === 'PASSWORD_RESET' ? PASSWORD_RESET_TTL_MS : INVITE_TTL_MS)),
       createdAt: now,
       observedAt: now,
       nextAt: now,
@@ -159,7 +162,7 @@ export async function readInviteStatus(actor: Actor, userId: string) {
   const latest = await prisma.credentialMail.findFirst({
     where: {
       userId,
-      purpose: 'INVITE'
+      purpose: { in: ['INVITE', 'VERIFY_EMAIL'] }
     },
     orderBy: { generation: 'desc' },
     select: {

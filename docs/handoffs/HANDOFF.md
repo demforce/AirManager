@@ -48,7 +48,16 @@ La [prima fase del login](../../_bmad-output/implementation-artifacts/accesso-ad
 
 Sul candidato approvato sono passati i cinque casi Chromium isolati senza SMTP o worker, 2.378 unit, 27 prove della coda e 16 dei promemoria. La suite completa ha concluso con 723 casi al primo tentativo e un retry riuscito sul download Excel delle scadenze, senza skip.
 
+## Prova isolata di verifica indirizzo e login via email
+
+La [story di collaudo](../../_bmad-output/implementation-artifacts/invito-e-login-email.md) è conclusa su dati sintetici. Copre invito amministrativo, conferma esplicita, accesso monouso di dieci minuti e limiti agli invii. La modalità è disattivata per default. I link vengono generati dall’origine configurata e le anteprime non aprono una sessione.
+
+Il riesame indipendente ha approvato il tree `528bbcfaa6b1765fd7e76db778d3b89cbb8dd8d7`. Sono passati 2.380 test unitari, 13 casi di invito/login sul database, 27 casi di regressione della coda e 16 dei promemoria. La suite completa ha superato 726 casi Chromium senza retry o skip. A parte, tutti e cinque i casi del fallback admin sono passati a trial e worker spenti, con relay indisponibile.
+
 ## Prossimo lavoro
+
+1. La [story del layout HTML](../../_bmad-output/implementation-artifacts/template-html-email.md) è il prossimo passo. Comprende tutte le email applicative e conserva la parte di testo semplice. Il collaudo previsto usa capture locale, messaggi sintetici e verifiche MIME e di resa su telefono e desktop.
+2. Prima dell’attivazione pubblica completare anche il rafforzamento del fallback admin, gli avvisi di sicurezza sempre via email e la sospensione mirata degli invii login, descritti nel record del collaudo.
 
 Per il futuro login ordinario con link email monouso da 10 minuti, il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il test SMTP continuerà a usare il contatto del club come destinazione distinta. [Decisione del PO](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
 

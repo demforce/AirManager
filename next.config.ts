@@ -39,6 +39,13 @@ const nextConfig: NextConfig = {
           // HSTS belongs at the TLS-terminating reverse proxy, not here.
         ],
       },
+      {
+        source: '/:locale(it|en)/email-access',
+        headers: [
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Cache-Control', value: 'private, no-store, max-age=0' },
+        ],
+      },
     ];
   },
 };

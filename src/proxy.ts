@@ -10,7 +10,7 @@ const intlMiddleware = createIntlMiddleware(routing);
 // Anything not listed here is protected by default (AC 3) — add future
 // public pages explicitly.
 // Last entry: route removed in story 19.1, kept public so anonymous visitors get a 404, not the login page.
-const PUBLIC_WEB_PATHS = new Set(['', '/login', '/set-password', '/forgot-password', '/ppr']);
+const PUBLIC_WEB_PATHS = new Set(['', '/login', '/email-access', '/set-password', '/forgot-password', '/ppr']);
 
 // Auth.js's own endpoints (sign-in, callback, csrf, session, sign-out) must
 // stay reachable without a session — they are how a session gets created.

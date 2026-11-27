@@ -2,6 +2,7 @@ import type { User as NextAuthUser } from 'next-auth';
 import { loginSchema } from '@/lib/schemas/login';
 import { prisma } from '@/server/db/prisma';
 import { recordSuccessfulLogin, reserveLoginAttempt } from './login-throttle';
+import { verifiedTrialAddress } from './email-trial-policy';
 import { hashPassword, verifyPassword } from './password';
 
 // Verified against when the email doesn't match an active user, so the
@@ -67,8 +68,9 @@ async function verifyCredentials(rawCredentials: unknown, ip: string | null, pro
     return null;
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !user.isActive || !user.passwordHash || (provider && !user.roles.includes('ADMIN'))) {
+  const user = await prisma.user.findUnique({ where: { email }, include: { emailVerification: true } });
+  if (!user || !user.isActive || !user.passwordHash || (provider && !user.roles.includes('ADMIN'))
+    || (user.emailVerification && (!provider || !verifiedTrialAddress(user)))) {
     // Same outcome for "no such user", "inactive user", and "invited user
     // who hasn't set a password yet" (story 1.4: `passwordHash` is nullable)
     // as for a wrong password below — never reveal which case it was (AC 2).

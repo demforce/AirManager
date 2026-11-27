@@ -2,10 +2,11 @@ import type { Prisma } from '@/generated/prisma/client';
 import type { Role } from '@/generated/prisma/enums';
 import type { CreateUserInput, UpdateUserInput } from '@/lib/schemas/users';
 import { authorize, type Actor } from '@/server/auth/rbac';
+import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import { prisma } from '@/server/db/prisma';
 import { enqueueCredential } from './credential-mail.service';
 export { resendInvite } from './credential-mail.service';
-import { ConflictError, NotFoundError } from './errors';
+import { ConflictError, NotFoundError, ValidationError } from './errors';
 
 export type UserListItem = {
   id: string;
@@ -16,6 +17,7 @@ export type UserListItem = {
   /** Whether the user has completed their invite (set a password). Never
    * exposes the hash itself — only used by the UI's "pending invite" badge. */
   passwordSet: boolean;
+  emailVerified?: boolean;
   person: { id: string; firstName: string; lastName: string } | null;
   createdAt: Date;
 };
@@ -27,6 +29,7 @@ const USER_SELECT = {
   isActive: true,
   locale: true,
   passwordHash: true,
+  emailVerification: { select: { verifiedAt: true } },
   person: { select: { id: true, firstName: true, lastName: true } },
   createdAt: true,
 } as const;
@@ -38,6 +41,7 @@ type SelectedUser = {
   isActive: boolean;
   locale: string;
   passwordHash: string | null;
+  emailVerification?: { verifiedAt: Date | null } | null;
   person: { id: string; firstName: string; lastName: string } | null;
   createdAt: Date;
 };
@@ -50,6 +54,7 @@ function toListItem(user: SelectedUser): UserListItem {
     isActive: user.isActive,
     locale: user.locale,
     passwordSet: user.passwordHash !== null,
+    ...(user.emailVerification && { emailVerified: Boolean(user.emailVerification.verifiedAt) }),
     person: user.person,
     createdAt: user.createdAt,
   };
@@ -81,6 +86,7 @@ async function assertPersonAvailable(personId: string, excludeUserId?: string): 
 
 /** The account and its invitation are committed or rolled back together in both creation flows. */
 export async function createUserCore(tx: Prisma.TransactionClient, input: CreateUserInput): Promise<SelectedUser> {
+  if (input.verificationInvite && !emailTrialEnabled()) throw new ValidationError('Verification invitations are unavailable.');
   let user;
   try {
     user = await tx.user.create({
@@ -90,6 +96,7 @@ export async function createUserCore(tx: Prisma.TransactionClient, input: Create
         locale: input.locale,
         personId: input.personId ?? null,
         passwordHash: null,
+        ...(input.verificationInvite && { emailVerification: { create: { email: input.email } } }),
         isActive: true,
       },
       select: USER_SELECT,

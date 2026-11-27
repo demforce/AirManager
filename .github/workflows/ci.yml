@@ -71,6 +71,8 @@ jobs:
           - 8025:8025
     env:
       DATABASE_URL: postgresql://airmanager:airmanager@localhost:5432/airmanager_e2e?schema=public
+      AIRMANAGER_EMAIL_TRIAL: "1"
+      APP_URL: http://localhost:3000
       TEST_DATABASE_URL: postgresql://airmanager:airmanager@localhost:5432/airmanager_e2e?schema=public
       # Story 17.1 — documents the env contract only; equals the code
       # default (src/lib/env.ts), so CI behaviour is unchanged.

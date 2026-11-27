@@ -7,6 +7,7 @@
  * Pure, server-only — `pilots/page.tsx` renders byte-identical output to
  * before this extraction.
  */
+import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import type { getTranslations } from 'next-intl/server';
 import type { PersonSaveErrorLabels } from '@/lib/person-save';
 import type { PilotEditorLabels, ToastLabels } from './pilot-editor';
@@ -77,6 +78,9 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       genericError: t('editor.medical.genericError'),
     },
     access: {
+      verificationOption: emailTrialEnabled() ? t('editor.access.verificationOption') : null,
+      verifiedEmail: t('editor.access.verifiedEmail'),
+      pendingEmail: t('editor.access.pendingEmail'),
       sectionTitle: t('editor.access.sectionTitle'),
       noUser: t('editor.access.noUser'),
       email: t('editor.access.email'),

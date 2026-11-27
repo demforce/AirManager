@@ -1,5 +1,5 @@
 import net from 'node:net';
-type Reply = 'accept' | 'temporary' | 'permanent' | 'finalTemporary' | 'loseReply' | 'holdReply' | 'holdRejection' | 'requireAuth' | 'authFailure';
+type Reply = 'accept' | 'temporary' | 'permanent' | 'finalTemporary' | 'loseReply' | 'holdReply' | 'holdGreeting' | 'holdRejection' | 'requireAuth' | 'authFailure';
 /** Disposable loopback relay. Payloads are discarded; acceptance and recipient assertions live only in memory. */
 export async function startSyntheticSmtp() {
   const controls = {
@@ -13,7 +13,9 @@ export async function startSyntheticSmtp() {
     clients.add(socket);
     socket.on('error', () => {});
     socket.on('close', () => clients.delete(socket));
-    socket.write('220 fixture.invalid ESMTP\r\n');
+    const greet = () => { socket.write('220 fixture.invalid ESMTP\r\n'); };
+    if (controls.reply === 'holdGreeting') controls.finish = greet;
+    else greet();
     let buffer = '';
     let data = false;
     const reply = controls.reply;

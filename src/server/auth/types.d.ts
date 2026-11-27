@@ -15,6 +15,7 @@ declare module 'next-auth' {
     personId: string | null;
     tokenVersion: number;
     adminPasswordVersion?: number;
+    emailTrialLogin?: boolean;
   }
 
   interface Session {
@@ -41,6 +42,7 @@ declare module 'next-auth/jwt' {
      */
     tokenVersion: number;
     adminPasswordVersion?: number;
+    emailTrialLogin?: boolean;
   }
 }
 
@@ -59,5 +61,6 @@ declare module '@auth/core/jwt' {
     lastActiveCheck: number;
     tokenVersion: number;
     adminPasswordVersion?: number;
+    emailTrialLogin?: boolean;
   }
 }

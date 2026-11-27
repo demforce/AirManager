@@ -1,3 +1,4 @@
+import { singleMailbox } from './email-trial';
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
 import { exportQuerySchema } from './common';
 import { setInstructorPayoutRateSchema } from './instructor-compensation';
@@ -185,7 +186,8 @@ const createPersonExpiriesSchema = z
   });
 
 const createPersonAccessSchema = z.object({
-  email: z.string().trim().toLowerCase().pipe(z.email()),
+  verificationInvite: z.literal(true).optional(),
+  email: singleMailbox,
   roles: z.array(roleSchema).min(1),
 });
 

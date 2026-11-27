@@ -1,4 +1,5 @@
 import type { JWT } from 'next-auth/jwt';
+import { credentialEligible, emailTrialEnabled, verifiedTrialAddress } from './email-trial-policy';
 import { prisma } from '@/server/db/prisma';
 
 /** Re-verification interval (story 1.4, AC 2: "max 15 min di grazia"). */
@@ -34,7 +35,9 @@ export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
 export async function applyActiveRecheck(token: JWT, now: number = Date.now()): Promise<JWT | null> {
   const lastCheck = token.lastActiveCheck ?? 0;
   const adminPassword = token.adminPasswordVersion !== undefined;
-  if (!adminPassword && now - lastCheck < ACTIVE_RECHECK_INTERVAL_MS) {
+  const trial = token.emailTrialLogin === true;
+  if (trial && !emailTrialEnabled()) return null;
+  if (!trial && !adminPassword && now - lastCheck < ACTIVE_RECHECK_INTERVAL_MS) {
     return token;
   }
 
@@ -42,9 +45,10 @@ export async function applyActiveRecheck(token: JWT, now: number = Date.now()): 
   try {
     user = await prisma.user.findUnique({
       where: { id: token.userId },
-      select: { isActive: true, roles: true, tokenVersion: true, personId: true, ...(adminPassword && { adminPasswordVersion: true }) },
+      select: { isActive: true, roles: true, tokenVersion: true, personId: true, ...(adminPassword && { adminPasswordVersion: true }), ...((trial || adminPassword) && { email: true, emailVerification: true }) },
     });
   } catch (error) {
+    if (trial) return null;
     if (!adminPassword) throw error;
     console.warn(JSON.stringify({ event: 'admin_password_session_check', at: new Date().toISOString(), outcome: 'error' }));
     return null;
@@ -54,6 +58,8 @@ export async function applyActiveRecheck(token: JWT, now: number = Date.now()): 
     return null;
   }
 
+  if (trial && (user.email !== token.email || !credentialEligible(user, 'LOGIN_LINK'))) return null;
+  if (adminPassword && user.emailVerification && !verifiedTrialAddress(user)) return null;
   if (adminPassword && (!user.roles.includes('ADMIN') || token.adminPasswordVersion !== user.adminPasswordVersion)) {
     return null;
   }

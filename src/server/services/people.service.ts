@@ -235,6 +235,7 @@ export type PilotUserInfo = {
   isActive: boolean;
   /** Whether the user completed their invite — never exposes the hash (same convention as `users.service.ts#UserListItem`). */
   passwordSet: boolean;
+  emailVerified?: boolean;
 } | null;
 
 export type PilotsPageItem = PersonListItem & {
@@ -280,7 +281,7 @@ export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): 
     ids.length > 0
       ? prisma.user.findMany({
           where: { personId: { in: ids } },
-          select: { id: true, personId: true, email: true, roles: true, isActive: true, passwordHash: true },
+          select: { id: true, personId: true, email: true, roles: true, isActive: true, passwordHash: true, emailVerification: { select: { verifiedAt: true } } },
         })
       : [],
     prisma.person.count({ where: { archivedAt: null } }),
@@ -304,7 +305,7 @@ export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): 
       ...item,
       balanceCents: balanceByPersonId.get(item.id) ?? 0,
       lastFlightDate: lastFlightDate ? toDateOnlyString(lastFlightDate) : null,
-      user: user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null } : null,
+      user: user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null, ...(user.emailVerification && { emailVerified: Boolean(user.emailVerification.verifiedAt) }) } : null,
     };
   });
 
@@ -348,9 +349,9 @@ export async function getPerson(actor: Actor, id: string): Promise<PersonDetail>
 export async function getPersonUser(personId: string): Promise<PilotUserInfo> {
   const user = await prisma.user.findUnique({
     where: { personId },
-    select: { id: true, email: true, roles: true, isActive: true, passwordHash: true },
+    select: { id: true, email: true, roles: true, isActive: true, passwordHash: true, emailVerification: { select: { verifiedAt: true } } },
   });
-  return user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null } : null;
+  return user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null, ...(user.emailVerification && { emailVerified: Boolean(user.emailVerification.verifiedAt) }) } : null;
 }
 
 /**
@@ -504,7 +505,7 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
 
     if (input.access) {
       // The composite access form uses the standalone account's default locale.
-      await createUserCore(tx, { email: input.access.email, roles: input.access.roles, locale: 'it', personId: person.id });
+      await createUserCore(tx, { email: input.access.email, roles: input.access.roles, locale: 'it', personId: person.id, ...(input.access.verificationInvite && { verificationInvite: true }) });
     }
 
     return { person };

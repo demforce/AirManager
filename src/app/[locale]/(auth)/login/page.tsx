@@ -1,3 +1,4 @@
+import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Icon } from '@/components/ui/icons';
 import { Link, redirect } from '@/i18n/navigation';
@@ -63,6 +64,7 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
             <div className="sub">{t('description')}</div>
           </div>
 
+          {emailTrialEnabled() && !adminPassword && <p><Link href="/email-access">{t('trialLink')}</Link></p>}
           <LoginForm
             key={adminPassword ? 'admin-password' : 'credentials'}
             provider={adminPassword ? 'admin-password' : 'credentials'}

@@ -309,9 +309,10 @@ export async function buildAircraftArchivedEmail(
 }
 
 /** Retries preserve the original absolute expiry, including its time zone. */
-export async function buildCredentialEmail(locale: AppLocale, purpose: 'INVITE' | 'PASSWORD_RESET', url: string, expiresAt: Date) {
+export async function buildCredentialEmail(locale: AppLocale, purpose: 'INVITE' | 'PASSWORD_RESET' | 'VERIFY_EMAIL' | 'LOGIN_LINK', url: string, expiresAt: Date) {
   const messages = await loadMessages(locale);
-  const t = createTranslator({ locale, messages, namespace: purpose === 'INVITE' ? 'Emails.invite' : 'Emails.passwordReset' });
+  const namespaces = { INVITE: 'Emails.invite', PASSWORD_RESET: 'Emails.passwordReset', VERIFY_EMAIL: 'Emails.verifyEmail', LOGIN_LINK: 'Emails.loginLink' } as const;
+  const t = createTranslator({ locale, messages, namespace: namespaces[purpose] });
   const expiry = new Intl.DateTimeFormat(locale, { dateStyle: 'long', timeStyle: 'long', timeZone: 'Europe/Rome' }).format(expiresAt);
   return { subject: t('subject'), text: t('deadlineBody', { url, expiry }) };
 }

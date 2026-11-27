@@ -115,7 +115,7 @@ async function createPilotWithAccess(page: Page, email: string): Promise<{ lastN
   await rowFor(page, lastName).getByRole('button', { name: 'Modifica' }).click();
 
   const accessSection = page.getByTestId('pilot-access-none');
-  await accessSection.getByLabel('Email').fill(email);
+  await accessSection.getByLabel('Email', { exact: true }).fill(email);
   await accessSection.getByLabel('Pilota', { exact: true }).check();
   await page.getByTestId('pilot-access-create').click();
   await expect(page.getByTestId('toast').filter({ hasText: 'Accesso creato' })).toBeVisible();

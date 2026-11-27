@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { credentialEligible } from '@/server/auth/email-trial-policy';
 import { hashPassword } from '@/server/auth/password';
 import { prisma } from '@/server/db/prisma';
 import { enqueueCredential, lockMailAccount } from './credential-mail.service';
@@ -114,7 +115,7 @@ export async function setPasswordWithToken(rawToken: string, newPassword: string
   const tokenHash = createHash('sha256').update(rawToken).digest('hex');
   const authToken = await prisma.authToken.findUnique({ where: { tokenHash } });
 
-  if (!authToken || authToken.usedAt || authToken.expiresAt.getTime() <= Date.now()) {
+  if (!authToken || !['INVITE', 'PASSWORD_RESET'].includes(authToken.type) || authToken.usedAt || authToken.expiresAt.getTime() <= Date.now()) {
     throw new ValidationError('Invalid or expired token.');
   }
 
@@ -122,12 +123,19 @@ export async function setPasswordWithToken(rawToken: string, newPassword: string
 
   await prisma.$transaction(async (tx) => {
     await lockMailAccount(tx, authToken.userId);
+    const user = await tx.user.findUnique({
+      where: { id: authToken.userId }, include: { emailVerification: true },
+    });
+    if (!user || (user.emailVerification && !credentialEligible(user, authToken.type))) {
+      throw new ValidationError('Invalid or expired token.');
+    }
     // Atomic single-use claim: the conditional `usedAt: null` filter makes
     // the database decide exactly one winner between concurrent requests
     // replaying the same token — a plain check-then-update would let both
     // through (TOCTOU).
     const claimed = await tx.authToken.updateMany({
-      where: { id: authToken.id, usedAt: null, expiresAt: { gt: new Date() } },
+      where: { id: authToken.id, type: authToken.type, usedAt: null, expiresAt: { gt: new Date() },
+      },
       data: { usedAt: new Date() },
     });
     if (claimed.count === 0) {

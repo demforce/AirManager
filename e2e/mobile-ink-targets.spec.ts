@@ -164,11 +164,11 @@ async function smallTargets(page: Page, root: string, floor = TARGET_FLOOR): Pro
 }
 
 const TOUCH_EDITORS = [
-  { name: 'flight', path: '/it/dashboard/logbook', trigger: 'logbook-new-button' },
+  { name: 'flight', path: '/it/dashboard/logbook', trigger: 'logbook-new-button', emptyTrigger: 'mobile-flights-new' },
   { name: 'aircraft', path: '/it/dashboard/fleet', trigger: 'fleet-new-button' },
   { name: 'pilot', path: '/it/dashboard/pilots', trigger: 'pilots-new-button' },
   { name: 'instructor', path: '/it/dashboard/instructors', trigger: 'instructors-new-button' },
-  { name: 'booking', path: '/it/dashboard/bookings', trigger: 'new-booking-button' },
+  { name: 'booking', path: '/it/dashboard/bookings', trigger: 'new-booking-button', emptyTrigger: 'mobile-bookings-new' },
 ] as const;
 
 /** Own rows for the edit sweep; never depend on another parallel spec's data. */
@@ -294,7 +294,10 @@ test.describe('story 18.1 — one phone touch floor', () => {
         await page.setViewportSize({ width, height: 812 });
         for (const editor of TOUCH_EDITORS) {
           await page.goto(editor.path);
-          await page.getByTestId(editor.trigger).click();
+          const primary = page.getByTestId(editor.trigger);
+          // On a freshly seeded phone the empty-state action replaces the header action.
+          const trigger = 'emptyTrigger' in editor ? primary.or(page.getByTestId(editor.emptyTrigger)) : primary;
+          await trigger.filter({ visible: true }).click();
           await expect(page.locator('.slideover.open .slideover-panel')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
           const small = await smallTargets(page, '.slideover.open');
           expect(small, `${editor.name} ${width}px ${theme}: ${JSON.stringify(small)}`).toEqual([]);

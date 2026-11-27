@@ -101,7 +101,8 @@
       "submitting": "Signing in…",
       "errorGeneric": "Incorrect email or password.",
       "forgotPassword": "Forgot your password?",
-      "requiredField": "Required field."
+      "requiredField": "Required field.",
+      "trialLink": "Sign in by email"
     },
     "setPassword": {
       "kicker": "Set password",
@@ -129,6 +130,22 @@
       "confirmation": "If that email address matches an active account, you'll receive an email shortly with instructions to reset your password.",
       "backToLogin": "Back to sign in",
       "requiredField": "Required field."
+    },
+    "emailTrial": {
+      "email": "Email",
+      "back": "Back to sign-in",
+      "requestTitle": "Email sign-in",
+      "requestHelp": "Enter your account email address.",
+      "request": "Request sign-in link",
+      "verifyTitle": "Verify your email address",
+      "verifyHelp": "Confirm that you received the invitation at this address.",
+      "verify": "Confirm address",
+      "loginTitle": "Confirm sign-in",
+      "loginHelp": "Enter the address where you received the link and confirm to sign in.",
+      "login": "Confirm and sign in",
+      "invalid": "Unable to complete the request.",
+      "sent": "If your account is eligible, you will receive a sign-in email.",
+      "verified": "Email verified. You can now request a sign-in link."
     }
   },
   "DashboardPage": {
@@ -432,7 +449,10 @@
         "emailConflict": "A user with this email already exists.",
         "genericError": "Something went wrong. Please try again.",
         "grantLabel": "Create access for this person",
-        "invalidEmail": "Enter a valid email address."
+        "invalidEmail": "Enter a valid email address.",
+        "verificationOption": "Send email verification invitation (trial)",
+        "verifiedEmail": "Email verified",
+        "pendingEmail": "Email pending verification"
       },
       "archive": {
         "sectionTitle": "Archive",
@@ -1837,6 +1857,14 @@
       "windowUntil": "until {date} inclusive",
       "windowUnknown": "return date not yet known",
       "windowOverdue": "past the expected {date}, return date not yet known"
+    },
+    "verifyEmail": {
+      "subject": "Verify your AirManager email address",
+      "deadlineBody": "Confirm your email address by {expiry}.\n\n{url}"
+    },
+    "loginLink": {
+      "subject": "Your AirManager sign-in link",
+      "deadlineBody": "Confirm your sign-in by {expiry}.\n\n{url}"
     }
   },
   "NegativeBalancesPage": {

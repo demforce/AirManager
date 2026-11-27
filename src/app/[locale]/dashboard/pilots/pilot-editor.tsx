@@ -76,6 +76,9 @@ export type PilotEditorLabels = {
   /** `subHeading` is the in-section label above the medical picker (AC 2/1) — the rest mirrors `ExpiryDraftEditorLabels`. */
   medical: { subHeading: string } & ExpiryDraftEditorLabels;
   access: {
+    verificationOption: string | null;
+    verifiedEmail: string;
+    pendingEmail: string;
     sectionTitle: string;
     noUser: string;
     email: string;
@@ -889,6 +892,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
     setSelections((current) => ({ ...current, [typeId]: date }));
   }
 
+  const [verificationInvite, setVerificationInvite] = useState(false);
   const [grantAccess, setGrantAccess] = useState(false);
   const [accessEmail, setAccessEmail] = useState('');
   const [accessRoles, setAccessRoles] = useState<Role[]>([]);
@@ -956,7 +960,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
           }
         : {}),
       ...(expiries.length > 0 ? { expiries } : {}),
-      ...(grantAccess ? { access: { email: accessEmail.trim().toLowerCase(), roles: accessRoles } } : {}),
+      ...(grantAccess ? { access: { email: accessEmail, roles: accessRoles, ...(verificationInvite && { verificationInvite: true }) } } : {}),
     };
 
     const response = await fetch('/api/v1/people', {
@@ -1135,6 +1139,12 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
           </label>
           {grantAccess ? (
             <div style={{ marginTop: 10 }}>
+              {labels.access.verificationOption && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" checked={verificationInvite} onChange={event => setVerificationInvite(event.target.checked)} />
+                  {labels.access.verificationOption}
+                </label>
+              )}
               <div className="form-grid">
                 <Field label={labels.access.email} wide error={accessEmailError ? labels.access.invalidEmail : undefined}>
                   <Input type="email" value={accessEmail} onChange={(event) => setAccessEmail(event.target.value)} aria-invalid={accessEmailError} data-testid="new-person-access-email" />
@@ -1219,6 +1229,7 @@ function AccessSection({
   const [formError, setFormError] = useState<string | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [pending, setPending] = useState(false);
+  const [verificationInvite, setVerificationInvite] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const action = useRef<{ userId: string; key: string } | null>(null);
   const inFlight = useRef(false);
@@ -1244,7 +1255,7 @@ function AccessSection({
     const response = await fetch('/api/v1/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: values.email, roles: values.roles, locale: 'it', personId }),
+      body: JSON.stringify({ email: values.email, roles: values.roles, locale: 'it', personId, ...(verificationInvite && { verificationInvite: true }) }),
     });
 
     if (!response.ok) {
@@ -1253,9 +1264,9 @@ function AccessSection({
       return;
     }
 
-    const created = (await response.json()) as { id: string; email: string; roles: Role[]; isActive: boolean; passwordSet: boolean };
+    const created = (await response.json()) as { id: string; email: string; roles: Role[]; isActive: boolean; passwordSet: boolean; emailVerified?: boolean };
     toast.show(toastLabels.userCreated, 'ok');
-    onMutated({ id: created.id, email: created.email, roles: created.roles, isActive: created.isActive, passwordSet: created.passwordSet });
+    onMutated({ id: created.id, email: created.email, roles: created.roles, isActive: created.isActive, passwordSet: created.passwordSet, emailVerified: created.emailVerified });
   }
 
   async function handleResendInvite(): Promise<void> {
@@ -1288,11 +1299,11 @@ function AccessSection({
             .replace('{roles}', user.roles.map((role) => labels.roleOptions[role]).join(', '))}
         </p>
         <div style={{ marginTop: 6 }}>
-          <Badge tone={user.passwordSet ? 'ok' : 'warn'} dot>
-            {user.passwordSet ? labels.statusActive : labels.statusPending}
+          <Badge tone={(user.emailVerified ?? user.passwordSet) ? 'ok' : 'warn'} dot>
+            {user.emailVerified !== undefined ? (user.emailVerified ? labels.verifiedEmail : labels.pendingEmail) : user.passwordSet ? labels.statusActive : labels.statusPending}
           </Badge>
         </div>
-        {!user.passwordSet ? (
+        {!(user.emailVerified ?? user.passwordSet) ? (
           <button type="button" className="btn mini" disabled={pending} onClick={() => void handleResendInvite()} style={{ marginTop: 10 }}>
             {labels.resendInvite}
           </button>
@@ -1307,6 +1318,12 @@ function AccessSection({
         {labels.noUser}
       </p>
       <form onSubmit={(event) => void handleSubmit(onCreateUser)(event)} noValidate>
+        {labels.verificationOption && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={verificationInvite} onChange={event => setVerificationInvite(event.target.checked)} />
+            {labels.verificationOption}
+          </label>
+        )}
         <div className="form-grid">
           <Field label={labels.email} wide error={errors.email ? labels.invalidEmail : undefined}>
             <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />

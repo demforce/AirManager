@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { CredentialMail, MailAttempt, MailChannel, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/server/db/prisma';
+import { credentialEligible, emailTrialEnabled, trialPurpose } from '@/server/auth/email-trial-policy';
 import { env } from '@/lib/env';
 import { buildCredentialEmail } from '@/server/adapters/mail/templates';
 import { InvalidMailConfiguration, readObservedSmtpConfig, submitObservedMail } from '@/server/adapters/mail/observed-smtp';
@@ -109,6 +110,18 @@ async function recordOutcome(tx: Tx, channel: MailChannel, attempt: MailAttempt,
         }
       });
     }
+  }
+  if (result.outcome === 'SUPPRESSED') {
+    // No SMTP submission took place. A suppressed local credential is not a
+    // health observation and must not close/reopen the shared mail channel.
+    if (attempt.intentId) {
+      const intent = await tx.credentialMail.findUnique({ where: { id: attempt.intentId } });
+      if (intent?.attemptId === attempt.id && intent.tokenId) {
+        await tx.authToken.updateMany({ where: { id: intent.tokenId, usedAt: null }, data: { usedAt: now } });
+      }
+    }
+    await cancelReservation(tx, attempt, now);
+    return;
   }
   const observation = saveProbe(channel, attempt, result, now);
   const sameConfig = channel.config === attempt.config;
@@ -272,6 +285,7 @@ export async function reserveMail(manual: boolean, intervalMs: number) {
       intent = await tx.credentialMail.findFirst({
         where: {
           state: 'QUEUED',
+          ...(!emailTrialEnabled() && { purpose: { in: ['INVITE' as const, 'PASSWORD_RESET' as const] }, user: { emailVerification: null } }),
           revokedAt: null,
           nextAt: {
             lte: now
@@ -361,10 +375,15 @@ export async function beginHandoff(reserved: MailAttempt, raw = randomBytes(32).
           id: attempt.intentId
         },
         include: {
-          user: true
+          user: { include: { emailVerification: true } }
         }
       });
-      if (intent.attemptId !== attempt.id || intent.state !== 'CLAIMED' || intent.revokedAt || !intent.user.isActive || intent.purpose === 'INVITE' && intent.user.passwordHash !== null) {
+      if (intent.attemptId !== attempt.id || intent.state !== 'CLAIMED' || intent.revokedAt) {
+        await cancelReservation(tx, attempt, now);
+        return null;
+      }
+      if (!credentialEligible(intent.user, intent.purpose)) {
+        await tx.credentialMail.update({ where: { id: intent.id }, data: { state: 'SUPPRESSED', reason: 'REVOKED', revokedAt: now, observedAt: now } });
         await cancelReservation(tx, attempt, now);
         return null;
       }
@@ -510,6 +529,7 @@ export async function processMailAttempt(attempt: MailAttempt, club?: string, lo
   }
   const raw = randomBytes(32).toString('base64url');
   let message;
+  let isolatedDelivery = false;
   try {
     if (attempt.intentId) {
       const intent = await prisma.credentialMail.findUnique({
@@ -520,14 +540,33 @@ export async function processMailAttempt(attempt: MailAttempt, club?: string, lo
           user: {
             select: {
               email: true,
-              locale: true
+              locale: true, emailVerification: { select: { userId: true } }
             }
           }
         }
       });
       if (intent) {
-        const url = new URL('/set-password', env.APP_URL);
-        url.searchParams.set('token', raw);
+        const trialDelivery = trialPurpose(intent.purpose);
+        isolatedDelivery = trialDelivery || Boolean(intent.user.emailVerification);
+        if (isolatedDelivery && !['localhost', '127.0.0.1', '::1'].includes(config.host)) {
+          await prisma.$transaction(async tx => {
+            await lockChannel(tx);
+            const now = await databaseNow(tx);
+            await tx.credentialMail.updateMany({ where: { id: intent.id, attemptId: attempt.id, state: 'CLAIMED' },
+              data: { state: 'SUPPRESSED', reason: 'CONFIGURATION', observedAt: now } });
+            await cancelReservation(tx, attempt, now);
+          });
+          return null;
+        }
+        if (isolatedDelivery && config.host === 'localhost') config.host = '127.0.0.1';
+        const locale = intent.user.locale === 'en' ? 'en' : 'it';
+        const url = new URL(trialDelivery ? '/' + locale + '/email-access' : '/set-password', env.APP_URL);
+        if (trialDelivery) {
+          url.searchParams.set('purpose', intent.purpose === 'VERIFY_EMAIL' ? 'verify' : 'login');
+          url.hash = raw;
+        } else {
+          url.searchParams.set('token', raw);
+        }
         const content = await buildCredentialEmail(intent.user.locale === 'en' ? 'en' : 'it', intent.purpose, url.toString(), intent.expiresAt);
         message = {
           to: intent.user.email,
@@ -549,7 +588,17 @@ export async function processMailAttempt(attempt: MailAttempt, club?: string, lo
   if (!handoff) return null;
   let result: SmtpObservation;
   try {
-    result = await submitObservedMail(config, message);
+    // The account read under the handoff lock is authoritative for the envelope.
+    if (handoff.credential) message.to = handoff.credential.to;
+    const credential = handoff.credential;
+    result = await submitObservedMail(config, message, isolatedDelivery && credential ? async () => {
+      // The greeting or SMTP authentication can take time. Check immediately
+      // before handing the single-recipient message to SMTP, outside all locks.
+      const token = await prisma.authToken.findUnique({ where: { tokenHash: createHash('sha256').update(raw).digest('hex') },
+        include: { user: { include: { emailVerification: true } } } });
+      return Boolean(token && !token.usedAt && token.expiresAt > await databaseNow(prisma)
+        && token.user.email === credential.to && credentialEligible(token.user, token.type));
+    } : undefined);
   } catch {
     result = { outcome: 'UNCERTAIN', phase: 'MESSAGE', channel: false };
   }
