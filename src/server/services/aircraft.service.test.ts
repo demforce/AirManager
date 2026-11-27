@@ -5,6 +5,7 @@ import { ForbiddenError } from './errors';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
+    appSetting: { findUnique: vi.fn() },
     aircraft: {
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
@@ -167,6 +168,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
     bookingFindManyMock.mockReset();
     personFindManyMock.mockReset();
     userFindManyMock.mockReset();
+    vi.mocked(prisma.appSetting.findUnique).mockReset().mockResolvedValue(null);
     sendMock.mockReset();
     vi.mocked(buildAircraftGroundedEmail).mockClear();
     // Story AOG-1b defaults: no impacted booking, hence no recipient — every
@@ -718,7 +720,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         aircraft: { status: 'OUT_OF_SERVICE', statusReason: 'Inspection', archivedAt: expect.any(Date) },
         impactedBookings: { pending: 1, approved: 2, effectiveUntil: null },
       });
-      expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_1'] } } }));
+      await vi.waitFor(() => expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_1'] } } })));
       await vi.waitFor(() => expect(sendMock).toHaveBeenCalledExactlyOnceWith({ to: 'pilot@example.test', subject: 'Aircraft archived subject', text: 'Aircraft archived text' }));
     });
   });
@@ -959,6 +961,23 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       expect(where.startsAt.lt?.toISOString()).toBe('2031-05-12T22:00:00.000Z');
     });
 
+    it.each(['aircraftGrounded', 'aircraftArchived'] as const)('still commits the action when %s email is off', async (key) => {
+      mockInteractiveTransaction();
+      aircraftFindUnique.mockResolvedValue(SELECTED_AIRCRAFT);
+      aircraftUpdateMany.mockResolvedValue({ count: 1 });
+      aircraftFindUniqueOrThrow.mockResolvedValue(groundedFixture());
+      bookingFindMany.mockResolvedValue([{ id: 'booking', status: 'APPROVED', personId: 'holder', startsAt: new Date('2031-05-02T09:00:00Z') }]);
+      personFindMany.mockResolvedValue([{ id: 'holder', firstName: 'Synthetic', email: 'holder@example.test' }]);
+      vi.mocked(prisma.appSetting.findUnique).mockResolvedValue({ value: JSON.stringify({ switches: { [key]: false }, holderSince: null, digestSince: null }) } as never);
+      const result = key === 'aircraftGrounded'
+        ? await setOutOfService(adminActor(), 'aircraft_1', { reason: 'Synthetic' })
+        : await archiveAircraft(adminActor(), 'aircraft_1');
+      expect(result.impactedBookings.approved).toBe(1);
+      expect(updateManyMock).toHaveBeenCalledOnce();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
     it('emails ONE holder per impacted APPROVED booking and NOTHING to a PENDING holder (AC 10)', async () => {
       mockInteractiveTransaction();
       aircraftFindUnique.mockResolvedValue({ id: 'aircraft_1' });
@@ -975,7 +994,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
 
       // The PENDING holder is not even LOOKED UP: the recipient set is the
       // APPROVED subset, decided by the one domain function (R-AOG-i).
-      expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_approved'] } } }));
+      await vi.waitFor(() => expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_approved'] } } })));
       await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
       expect(sendMock).toHaveBeenCalledWith({ to: 'anna@example.test', subject: 'Aircraft grounded subject', text: 'Aircraft grounded text' });
       // Recipient locale is the holder's OWN `User.locale` (AD-7), and the mail

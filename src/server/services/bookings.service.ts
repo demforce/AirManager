@@ -8,6 +8,7 @@ import type { CalendarBookingsQuery, CreateBookingInput, ListBookingsQuery, Tran
 import type { SchedulingSettingsDto } from '@/lib/schemas/settings';
 import { APP_TIMEZONE } from '@/lib/time';
 import { dateOnlyInZone, todayDateOnlyInZone, zonedWallTime } from '@/lib/zoned-time';
+import { getOperationalMailPolicy } from './operational-mail-settings';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildBookingDeniedEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -1704,6 +1705,7 @@ async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
       // Just written by transitionBooking's own transaction — safe to assert.
       reason: booking.denyReason!,
     });
+    if (!(await getOperationalMailPolicy()).switches.bookingDenied) return;
     await getMailSender().send({ to: person.email, subject, text });
   } catch (error) {
     console.error('transitionBooking: failed to send booking-denied email', error);

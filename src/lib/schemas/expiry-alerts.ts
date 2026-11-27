@@ -6,6 +6,7 @@ import { z } from './zod-with-openapi';
 // `expiry-alerts.service.ts`'s `ExpiryAlertsJobResult`.
 
 export const expiryAlertsJobResultSchema = z.object({
+  status: z.enum(['completed', 'disabled', 'settings_changed']),
   candidates: z.number().int().nonnegative(),
   alertsCreated: z.number().int().nonnegative(),
   holderEmailsSent: z.number().int().nonnegative(),

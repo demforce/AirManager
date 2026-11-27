@@ -333,7 +333,7 @@ test.describe('Impostazioni mobile (story 15.8b)', () => {
     await gotoSettings(page);
     expect(await page.evaluate(() => document.documentElement.clientWidth)).toBe(375);
     const post = await headHeights(page);
-    expect(post).toHaveLength(9);
+    expect(post).toHaveLength(10);
     // The heads carry a 44px action and are STILL not taller than they were
     // before story 15.8b — the arithmetic, measured, not promised (lesson
     // 15.6 R-15.6-e / 15.5 F3). PRE is rendered in this same page, so fonts,

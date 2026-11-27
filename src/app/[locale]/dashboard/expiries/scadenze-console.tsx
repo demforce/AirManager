@@ -108,7 +108,7 @@ export type ScadenzeConsoleLabels = {
   daysAgoSuffix: string;
   daysSuffix: string;
   exportMenu: { label: string; xlsLabel: string; pdfLabel: string };
-  reminders: { button: string; sent: string; error: string };
+  reminders: { button: string; disabled: string; changed: string; sent: string; error: string };
   membershipFee: {
     button: string;
     disabledHint: string;
@@ -392,7 +392,13 @@ export function ScadenzeConsole({
       toast.show(labels.reminders.error, 'bad');
       return;
     }
-    const body = (await response.json()) as { holderEmailsSent: number; digestEmailsSent: number; remaining: number };
+    const body = (await response.json()) as { status: 'completed' | 'disabled' | 'settings_changed'; holderEmailsSent: number; digestEmailsSent: number; remaining: number };
+    if (body.status === 'disabled' || body.status === 'settings_changed') {
+      const feedback = body.status === 'disabled' ? labels.reminders.disabled : labels.reminders.changed;
+      setRemindersFeedback(feedback);
+      toast.show(feedback, 'info');
+      return;
+    }
     const message = labels.reminders.sent.replace('{holders}', String(body.holderEmailsSent)).replace('{digests}', String(body.digestEmailsSent)).replace('{remaining}', String(body.remaining));
     setRemindersFeedback(message);
     toast.show(message, 'ok');

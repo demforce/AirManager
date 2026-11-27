@@ -6,6 +6,7 @@ import { rootBookType } from '@/lib/schemas/transactions';
 import { escapeLikePattern } from '@/lib/sql-like';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
+import { getOperationalMailPolicy } from './operational-mail-settings';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildNegativeBalanceAlertEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
@@ -618,6 +619,7 @@ export async function sendNegativeBalanceAlert(
       personName: `${person.firstName} ${person.lastName}`,
       balanceCents,
     });
+    if (!(await getOperationalMailPolicy()).switches.negativeBalance) return;
     await getMailSender().send({ to: person.email, subject, text });
   } catch (error) {
     // Never let a mail failure surface to the caller — the movement is

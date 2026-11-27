@@ -1,3 +1,5 @@
+import type { NotificationSettings } from '@/lib/operational-mail';
+import { getOperationalMailPolicy, writeNotificationSettings } from './operational-mail-settings';
 import { Prisma } from '@/generated/prisma/client';
 import type { CurrencySettings } from '@/lib/currency';
 import type {
@@ -51,6 +53,7 @@ export type SettingsSnapshot = {
   membershipFee: MembershipFeeSettingDto;
   currency: CurrencySettings;
   scheduling: SchedulingSettingsDto;
+  notifications: NotificationSettings;
   smtp: SmtpSettingsDto;
   treasury: TreasurySettingsDto;
   /** RATING and MEDICAL only — the membership-fee type is a system type (story 19.7a) and is never listed here. */
@@ -62,7 +65,7 @@ export type SettingsSnapshot = {
 export async function getSettingsSnapshot(actor: Actor): Promise<SettingsSnapshot> {
   authorize(actor, 'settings.manage');
 
-  const [airfield, icao, contactEmail, metarStation, annualFeeCents, currency, scheduling, smtp, treasury, expiryTypes, cashCategories] = await Promise.all([
+  const [airfield, icao, contactEmail, metarStation, annualFeeCents, currency, scheduling, smtp, treasury, expiryTypes, cashCategories, mailPolicy] = await Promise.all([
     getAirfieldBranding(),
     getAirfieldIcao(),
     getAirfieldContactEmail(),
@@ -74,6 +77,7 @@ export async function getSettingsSnapshot(actor: Actor): Promise<SettingsSnapsho
     getTreasurySettings(actor),
     listExpiryTypes(actor, { includeInactive: true }),
     listCashCategories(actor, { includeInactive: true }),
+    getOperationalMailPolicy(),
   ]);
 
   return {
@@ -85,6 +89,7 @@ export async function getSettingsSnapshot(actor: Actor): Promise<SettingsSnapsho
     membershipFee: { annualFeeCents },
     currency,
     scheduling,
+    notifications: mailPolicy.switches,
     smtp,
     treasury,
     expiryTypes: expiryTypes.filter((expiryType) => expiryType.kind !== 'MEMBERSHIP'),
@@ -216,6 +221,7 @@ export async function saveSettings(actor: Actor, patch: UpdateSettingsInput): Pr
       if (patch.membershipFee) await writeMembershipFeeCore(tx, patch.membershipFee.annualFeeCents);
       if (patch.currency) await writeCurrencySettingsCore(tx, patch.currency);
       if (patch.scheduling) await writeSchedulingSettingsCore(tx, patch.scheduling);
+      if (patch.notifications) await writeNotificationSettings(tx, patch.notifications);
       if (patch.smtp) await writeSmtpSettingsCore(tx, patch.smtp);
       if (patch.treasury) await writeTreasurySettingsCore(tx, patch.treasury);
 

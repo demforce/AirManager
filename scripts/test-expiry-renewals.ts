@@ -11,6 +11,7 @@ import { prisma } from '@/server/db/prisma';
 import { updateExpiry, updateExpiryDateCore } from '@/server/services/expiries.service';
 import { runExpiryAlertsJob } from '@/server/services/expiry-alerts.service';
 import { chargeMembershipFee } from '@/server/services/membership.service';
+import { getSettingsSnapshot, saveSettings } from '@/server/services/settings.service';
 import { updatePerson } from '@/server/services/people.service';
 
 let admin: Actor;
@@ -33,6 +34,7 @@ before(async () => {
 });
 beforeEach(() => { mail = []; });
 afterEach(async () => {
+  await prisma.appSetting.deleteMany({ where: { key: 'mail.operational' } });
   if (expiryIds.length) await prisma.expiry.deleteMany({ where: { id: { in: expiryIds.splice(0) } } });
 });
 after(() => prisma.$disconnect());
@@ -203,3 +205,190 @@ test('201 pending expiries drain in two runs, within the cap of 200', async (t) 
   assert.deepEqual([second.candidates, second.alertsCreated, second.remaining], [1, 1, 0]);
   assert.equal(await prisma.sentAlert.count({ where: { expiryId: { in: expiryIds }, threshold: 60 } }), 201);
 });
+
+test('disabled channels leave existing markers intact; reactivation starts at the next threshold', async (t) => {
+  const persisted = await fixture('Existing', 3);
+  const nextThreshold = await fixture('LegacyNext', 8);
+  await prisma.expiry.updateMany({ where: { id: { in: [persisted.id, nextThreshold.id] } }, data: { notificationCycle: null } });
+  await prisma.sentAlert.create({ data: { expiryId: persisted.id, threshold: 60 } });
+  const original = await getSettingsSnapshot(admin);
+  assert.equal(original.notifications.expiryHolder, true);
+  assert.equal(original.notifications.expiryDigest, true);
+  t.mock.method(getMailSender(), 'send', async (message: MailMessage) => { mail.push(message); });
+  await saveSettings(admin, { notifications: { expiryHolder: false, expiryDigest: false } });
+  const disabled = await runExpiryAlertsJob();
+  assert.equal(disabled.status, 'disabled');
+  assert.equal(disabled.alertsCreated, 0);
+  assert.deepEqual(await markers(persisted.id), [60]);
+  assert.equal(mail.length, 0);
+  await saveSettings(admin, { notifications: { expiryHolder: true, expiryDigest: true } });
+  await updateExpiry(admin, persisted.id, { notes: 'synthetic notes' });
+  const resumed = await runExpiryAlertsJob(1);
+  assert.equal(resumed.candidates, 0, 'Skipped backlog is excluded before the batch limit');
+  assert.equal(resumed.remaining, 0);
+  assert.deepEqual(await markers(persisted.id), [60]);
+  const fresh = await fixture('New cycle', 5);
+  await saveSettings(admin, { notifications: { expiryHolder: true, expiryDigest: true } });
+  await runExpiryAlertsJob(1);
+  assert.deepEqual(await markers(fresh.id), [60, 30, 7]);
+  assert.equal(mail.filter((m) => m.to === fresh.email).length, 1);
+  await updateExpiry(admin, persisted.id, { expiresAt: iso(20) });
+  await runExpiryAlertsJob();
+  assert.deepEqual(await markers(persisted.id), [60, 30]);
+  assert.equal(mail.filter((m) => m.to === persisted.email).length, 1);
+  const noon = day(0).getTime() + 12 * 3_600_000;
+  t.mock.timers.enable({ apis: ['Date'], now: noon + 86_400_000 });
+  await runExpiryAlertsJob();
+  assert.deepEqual(await markers(nextThreshold.id), [7], 'Next Rome day reaches the first eligible legacy threshold');
+  t.mock.timers.setTime(noon + 5 * 86_400_000);
+  await runExpiryAlertsJob();
+  assert.deepEqual(await markers(fresh.id), [60, 30, 7, 0]);
+});
+
+test('digest only records each due item once, including a holder without an address; rejected digest stays best effort', async (t) => {
+  await saveSettings(admin, { notifications: { expiryHolder: false } });
+  const target = await fixture('DigestOnly', 5);
+  const noAddress = await fixture('NoAddress', 6);
+  await prisma.person.update({ where: { id: noAddress.person.id }, data: { email: null } });
+  t.mock.method(getMailSender(), 'send', async (message: MailMessage) => { mail.push(message); });
+  const runs = await Promise.all([runExpiryAlertsJob(), runExpiryAlertsJob()]);
+  assert.equal(runs.reduce((n, run) => n + run.holderEmailsSent + run.holdersWithoutEmail, 0), 0);
+  const items = mail.map((m) => m.text).join('\n');
+  for (const row of [target, noAddress]) {
+    assert.equal(items.split('\n').filter((line) => line.includes(row.person.lastName)).length, 1);
+    assert.deepEqual(await markers(row.id), [60, 30, 7]);
+  }
+  assert.equal(items.split('[promemoria al titolare disattivato]').length - 1, 2);
+  assert.equal((await runExpiryAlertsJob()).candidates, 0);
+  t.mock.restoreAll();
+  const rejected = await fixture('RejectedDigest', 40);
+  t.mock.method(getMailSender(), 'send', async () => { throw new Error('synthetic admin digest rejection'); });
+  assert.equal((await runExpiryAlertsJob()).digestEmailsSent, 0);
+  assert.deepEqual(await markers(rejected.id), [60]);
+  assert.equal((await runExpiryAlertsJob()).candidates, 0);
+});
+
+test('holder only retries failed mail without a digest and keeps the single successful claim', async (t) => {
+  await saveSettings(admin, { notifications: { expiryDigest: false } });
+  const target = await fixture('Retry', 40);
+  let reject = true;
+  t.mock.method(getMailSender(), 'send', async (message: MailMessage) => {
+    assert.equal(message.to, target.email);
+    if (reject) { reject = false; throw new Error('synthetic first holder failure'); }
+    mail.push(message);
+  });
+  const failed = await runExpiryAlertsJob();
+  assert.deepEqual([failed.alertsCreated, failed.holdersWithoutEmail, failed.digestEmailsSent, failed.remaining], [0, 0, 0, 1]);
+  assert.deepEqual(await markers(target.id), []);
+  const retried = await runExpiryAlertsJob();
+  assert.equal(retried.holderEmailsSent, 1);
+  assert.deepEqual(await markers(target.id), [60]);
+  assert.equal((await runExpiryAlertsJob()).candidates, 0);
+  assert.equal(mail.length, 1);
+});
+
+test('reenabling one channel does not send its backlog while the other remains active', async (t) => {
+  t.mock.method(getMailSender(), 'send', async (message: MailMessage) => { mail.push(message); });
+  await saveSettings(admin, { notifications: { expiryHolder: false } });
+  const waitingHolder = await fixture('WaitingHolder', 5);
+  await saveSettings(admin, { notifications: { expiryHolder: true } });
+  const first = await runExpiryAlertsJob();
+  assert.equal(first.holderEmailsSent, 0);
+  assert.equal(first.digestEmailsSent, 1);
+  assert.ok(mail[0].text.includes(waitingHolder.person.lastName) && mail[0].text.includes('soglia già maturata alla riattivazione'));
+  mail = [];
+  await saveSettings(admin, { notifications: { expiryDigest: false } });
+  const waitingDigest = await fixture('WaitingDigest', 4);
+  await saveSettings(admin, { notifications: { expiryDigest: true } });
+  const second = await runExpiryAlertsJob();
+  assert.equal(second.holderEmailsSent, 1);
+  assert.equal(second.digestEmailsSent, 0);
+  assert.deepEqual(mail.map((m) => m.to), [waitingDigest.email]);
+});
+
+test('overlapping settings saves merge and a running job stops claiming after the switches change', async (t) => {
+  await Promise.all([
+    saveSettings(admin, { notifications: { aircraftArchived: false } }),
+    saveSettings(admin, { notifications: { negativeBalance: false } }),
+  ]);
+  const { notifications } = await getSettingsSnapshot(admin);
+  assert.equal(notifications.aircraftArchived, false);
+  assert.equal(notifications.negativeBalance, false);
+  const first = await fixture('First', 1);
+  const second = await fixture('Second', 2);
+  t.mock.method(getMailSender(), 'send', async (message: MailMessage) => {
+    assert.equal(message.to, first.email);
+    await saveSettings(admin, { notifications: { expiryDigest: false, expiryHolder: false } });
+  });
+  const run = await runExpiryAlertsJob();
+  assert.equal(run.status, 'settings_changed');
+  assert.equal(run.holderEmailsSent, 1);
+  assert.equal(run.digestEmailsSent, 0);
+  assert.equal(run.remaining, 0);
+  assert.deepEqual(await markers(second.id), []);
+});
+
+test('digest-only renewal while a later claim waits removes the obsolete entry and preserves the new cycle', async (t) => {
+  await saveSettings(admin, { notifications: { expiryHolder: false } });
+  const renewed = await fixture('RenewedBeforeDigest', 3);
+  const second = await fixture('OtherDigestItem', 4);
+  t.mock.method(getMailSender(), 'send', async (message: MailMessage) => { mail.push(message); });
+  let job: ReturnType<typeof runExpiryAlertsJob> | undefined;
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Expiry" WHERE id = ${second.id} FOR NO KEY UPDATE`;
+    job = runExpiryAlertsJob();
+    const timeout = Date.now() + 5000;
+    while (!(await markers(renewed.id)).length) {
+      assert.ok(Date.now() < timeout, 'First claim reached before the later expiry lock');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await updateExpiry(admin, renewed.id, { expiresAt: iso(50) });
+  }, { timeout: 10000 });
+  assert.ok(job);
+  assert.equal((await job).digestEmailsSent, 1);
+  assert.ok(mail[0].text.includes(second.person.lastName));
+  assert.ok(!mail[0].text.includes(renewed.person.lastName));
+  assert.deepEqual(await markers(renewed.id), []);
+  mail = [];
+  await runExpiryAlertsJob();
+  assert.deepEqual(await markers(renewed.id), [60]);
+  assert.ok(mail[0].text.includes(renewed.person.lastName));
+  assert.ok(mail[0].text.includes('50 giorni'));
+});
+
+for (const change of ['type', 'person'] as const) {
+  test('digest-only releases the unattempted claims when the ' + change + ' becomes ineligible', async (t) => {
+    await saveSettings(admin, { notifications: { expiryHolder: false } });
+    const target = await fixture('Excluded', 3);
+    const other = await fixture('Other', 4);
+    // A marker from an earlier attempt must survive this cleanup.
+    await prisma.sentAlert.create({ data: { expiryId: target.id, threshold: 60 } });
+    t.mock.method(getMailSender(), 'send', async (message: MailMessage) => { mail.push(message); });
+    async function setEligible(eligible: boolean) {
+      if (change === 'type') await prisma.expiryType.update({ where: { id: target.type.id }, data: { isActive: eligible } });
+      else await prisma.person.update({ where: { id: target.person.id }, data: { archivedAt: eligible ? null : new Date() } });
+    }
+    let job: ReturnType<typeof runExpiryAlertsJob> | undefined;
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Expiry" WHERE id = ${other.id} FOR NO KEY UPDATE`;
+      job = runExpiryAlertsJob();
+      const timeout = Date.now() + 5000;
+      while ((await markers(target.id)).length < 3) {
+        assert.ok(Date.now() < timeout, 'Target was claimed before the later expiry lock');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await setEligible(false);
+    }, { timeout: 10000 });
+    assert.ok(job);
+    assert.equal((await job).digestEmailsSent, 1);
+    assert.ok(!mail[0].text.includes(target.person.lastName));
+    assert.deepEqual(await markers(target.id), [60], 'Release only the undelivered attempt');
+    await setEligible(true);
+    mail = [];
+    const restored = await runExpiryAlertsJob();
+    assert.equal(restored.digestEmailsSent, 1);
+    assert.ok(mail[0].text.includes(target.person.lastName));
+    assert.deepEqual(await markers(target.id), [60, 30, 7]);
+    assert.equal((await runExpiryAlertsJob()).candidates, 0);
+  });
+}

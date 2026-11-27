@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { NOTIFICATION_KEYS, type NotificationKey } from '@/lib/operational-mail';
+import { Toggle } from '@/components/ui/toggle';
 import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
 import {
@@ -37,7 +39,7 @@ export type SettingsConsoleLabels = {
   save: string;
   saved: string;
   saveBar: { clean: string; dirty: string; saving: string };
-  /** Short names of the nine sections, for the save bar's "Modifiche non salvate: …". */
+  /** Short names of the sections, for the save bar's "Modifiche non salvate: …". */
   sections: Record<SettingsSection, string>;
   /** `integerRange` carries `{min}`/`{max}`, interpolated here (pass it with `t.raw`). */
   errors: Record<Exclude<SettingsErrorMessage['key'], 'nameTaken' | 'inUse'>, string> & Record<NonNullable<SettingsErrors['bar']>, string>;
@@ -45,6 +47,7 @@ export type SettingsConsoleLabels = {
   membership: MembershipCardLabels;
   currency: CurrencyCardLabels;
   scheduling: SchedulingCardLabels;
+  notifications: Record<NotificationKey | 'title' | 'resume' | 'on' | 'off', string>;
   smtp: SmtpCardLabels;
   treasury: TreasuryCardLabels;
   ratings: RatingsCardLabels & { errors: ListErrorLabels };
@@ -106,7 +109,7 @@ function omit<T>(record: Record<string, T>, keys: string[]): Record<string, T> {
 /**
  * The Impostazioni page as ONE form with ONE "Salva" (story 19.8, R-19-m,
  * A17). It holds the saved values (`baseline`) and the values on screen
- * (`draft`), both from {@link toDraft}; the nine sections are controlled and
+ * (`draft`), both from {@link toDraft}; the sections are controlled and
  * save nothing themselves. The Salva — at the end of the form, in a bar that
  * stays on the bottom edge (D-4) — checks what the client can check, then
  * sends ONE `PATCH /api/v1/settings` with only what changed (D-3); the answer
@@ -235,6 +238,19 @@ export function SettingsConsole({ snapshot, labels }: { snapshot: SettingsSnapsh
         <MembershipCard value={draft.membership} onChange={(change) => changeSection('membership', change)} errors={fieldErrors('membership')} labels={labels.membership} />
         <CurrencyCard value={draft.currency} onChange={(change) => changeSection('currency', change)} errors={fieldErrors('currency')} labels={labels.currency} />
         <SchedulingCard value={draft.scheduling} onChange={(change) => changeSection('scheduling', change)} errors={fieldErrors('scheduling')} labels={labels.scheduling} />
+        <section className="card settings-card" data-testid="notifications-settings-card" aria-labelledby="notifications-heading">
+          <div className="card-head"><h2 className="card-title" id="notifications-heading">{labels.notifications.title}</h2></div>
+          <div style={{ padding: '18px 20px' }}>
+            <div className="form-grid">
+              {NOTIFICATION_KEYS.map((key) => (
+                <Toggle key={key} id={`notification-${key}`} label={labels.notifications[key]}
+                  checked={draft.notifications[key]} onChange={(checked) => changeSection('notifications', { [key]: checked })}
+                  onText={labels.notifications.on} offText={labels.notifications.off} />
+              ))}
+            </div>
+            <p className="hint" style={{ marginTop: 12 }}>{labels.notifications.resume}</p>
+          </div>
+        </section>
         <SmtpCard
           value={draft.smtp}
           onChange={(change) => changeSection('smtp', change)}

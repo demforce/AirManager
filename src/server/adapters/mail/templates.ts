@@ -40,7 +40,7 @@ export type ExpiryDigestItem = {
   typeName: string;
   expiresAt: Date;
   daysLeft: number;
-  holderStatus: 'EMAILED' | 'NO_EMAIL' | 'SEND_FAILED';
+  holderStatus: 'EMAILED' | 'NO_EMAIL' | 'SEND_FAILED' | 'REMINDERS_DISABLED' | 'THRESHOLD_SUSPENDED';
 };
 
 /**
@@ -189,10 +189,17 @@ export async function buildExpiryDigestEmail(
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'Emails.expiryDigest' });
 
+  const flags = {
+    EMAILED: '',
+    NO_EMAIL: t('noEmailFlag'),
+    SEND_FAILED: t('sendFailedFlag'),
+    REMINDERS_DISABLED: t('remindersDisabledFlag'),
+    THRESHOLD_SUSPENDED: t('thresholdSuspendedFlag'),
+  };
   const lines = params.items.map((item) => {
     const daysPhrase = item.daysLeft < 0 ? t('expiredDaysAgo', { days: Math.abs(item.daysLeft) }) : expiryDaysPhrase(locale, messages, item.daysLeft);
     const date = formatExpiryDate(item.expiresAt, locale);
-    const flag = item.holderStatus === 'NO_EMAIL' ? t('noEmailFlag') : item.holderStatus === 'SEND_FAILED' ? t('sendFailedFlag') : '';
+    const flag = flags[item.holderStatus];
     return t('itemLine', { name: item.personName, typeName: item.typeName, daysPhrase, date, flag });
   });
 

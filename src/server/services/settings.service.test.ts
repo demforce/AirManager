@@ -480,7 +480,7 @@ describe('getSettingsSnapshot — the page and the save answer from one read (AC
 
     const snapshot = await getSettingsSnapshot(adminActor());
 
-    expect(Object.keys(snapshot).sort()).toEqual(['airfield', 'cashCategories', 'club', 'currency', 'expiryTypes', 'membershipFee', 'metarStation', 'scheduling', 'smtp', 'treasury']);
+    expect(Object.keys(snapshot).sort()).toEqual(['airfield', 'cashCategories', 'club', 'currency', 'expiryTypes', 'membershipFee', 'metarStation', 'notifications', 'scheduling', 'smtp', 'treasury']);
     expect(snapshot.club.icao).toBe('LIRB');
     expect(snapshot.metarStation).toEqual({ station: '' });
     expect(snapshot.membershipFee).toEqual({ annualFeeCents: 6000 });

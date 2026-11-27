@@ -1228,7 +1228,9 @@
       "reminders": {
         "button": "Invia promemoria",
         "sent": "Promemoria ai titolari: {holders} · riepiloghi agli amministratori: {digests}. Altri {remaining} in coda: partiranno al prossimo giro.",
-        "error": "Impossibile inviare i promemoria. Riprova."
+        "error": "Impossibile inviare i promemoria. Riprova.",
+        "disabled": "Promemoria al titolare e riepilogo agli amministratori disattivati.",
+        "changed": "Le impostazioni dei promemoria sono cambiate durante il giro. Il prossimo giro userà le nuove impostazioni."
       },
       "membershipFee": {
         "button": "Quota associativa",
@@ -1771,6 +1773,18 @@
         "empty": "Nessuna categoria in questo catalogo.",
         "movementsCount": "{count, plural, one {# movimento} other {# movimenti}}"
       }
+    },
+    "notifications": {
+      "title": "Email operative",
+      "negativeBalance": "Peggioramento del saldo al titolare del conto",
+      "bookingDenied": "Diniego della prenotazione al titolare",
+      "aircraftGrounded": "Velivolo fuori servizio: avviso ai titolari delle prenotazioni approvate interessate",
+      "aircraftArchived": "Archiviazione del velivolo ai titolari delle prenotazioni approvate interessate",
+      "expiryHolder": "Promemoria delle scadenze al titolare",
+      "expiryDigest": "Riepilogo delle scadenze agli amministratori",
+      "resume": "Alla riattivazione, le scadenze esistenti ripartono dalla soglia successiva.",
+      "on": "Attivata",
+      "off": "Disattivata"
     }
   },
   "Emails": {
@@ -1801,7 +1815,9 @@
       "itemLine": "- {name} — {typeName}: {daysPhrase} (il {date}){flag}",
       "expiredDaysAgo": "scadenza superata da {days, plural, one {# giorno} other {# giorni}}",
       "noEmailFlag": " [senza email — contattare la persona direttamente]",
-      "sendFailedFlag": " [invio email fallito — nuovo tentativo automatico al prossimo giro]"
+      "sendFailedFlag": " [invio email fallito — nuovo tentativo automatico al prossimo giro]",
+      "remindersDisabledFlag": " [promemoria al titolare disattivato]",
+      "thresholdSuspendedFlag": " [soglia già maturata alla riattivazione dei promemoria al titolare]"
     },
     "bookingDenied": {
       "subject": "Prenotazione rifiutata: {aircraftRegistration}",

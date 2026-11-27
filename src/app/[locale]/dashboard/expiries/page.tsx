@@ -221,7 +221,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             daysSuffix: t('registry.daysSuffix'),
             exportMenu: { label: t('registry.exportMenu.label'), xlsLabel: t('registry.exportMenu.xlsLabel'), pdfLabel: t('registry.exportMenu.pdfLabel') },
             // `sent`: `t.raw` — result counts interpolated CLIENT-SIDE (same rationale as `shown` above).
-            reminders: { button: t('registry.reminders.button'), sent: t.raw('registry.reminders.sent') as string, error: t('registry.reminders.error') },
+            reminders: { disabled: t('registry.reminders.disabled'), changed: t('registry.reminders.changed'), button: t('registry.reminders.button'), sent: t.raw('registry.reminders.sent') as string, error: t('registry.reminders.error') },
             membershipFee: {
               button: t('registry.membershipFee.button'),
               disabledHint: t('registry.membershipFee.disabledHint'),

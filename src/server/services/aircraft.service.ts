@@ -9,6 +9,7 @@ import type {
   SetOutOfServiceInput,
   UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
+import { getOperationalMailPolicy } from './operational-mail-settings';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildAircraftArchivedEmail, buildAircraftGroundedEmail } from '@/server/adapters/mail/templates';
 import { authorize, type Actor } from '@/server/auth/rbac';
@@ -487,6 +488,8 @@ async function sendImpactedHolderEmails(
   if (approvedBookings.length === 0) return;
 
   try {
+    const switchKey = action === 'setOutOfService' ? 'aircraftGrounded' : 'aircraftArchived';
+    if (!(await getOperationalMailPolicy()).switches[switchKey]) return;
     // First booking wins per holder — the list is already `startsAt`-ascending.
     const firstBookingByPerson = new Map<string, ImpactedApprovedBooking>();
     for (const booking of approvedBookings) {
@@ -509,6 +512,7 @@ async function sendImpactedHolderEmails(
       try {
         const locale: AppLocale = localeByPerson.get(person.id) === 'en' ? 'en' : 'it';
         const { subject, text } = await buildEmail(locale, { firstName: person.firstName, startsAt: booking.startsAt });
+        if (!(await getOperationalMailPolicy()).switches[switchKey]) return;
         await getMailSender().send({ to: person.email, subject, text });
       } catch (error) {
         console.error(action === 'setOutOfService' ? 'setOutOfService: failed to send aircraft-grounded email' : 'archiveAircraft: failed to send aircraft-archived email', error);

@@ -1351,6 +1351,8 @@ enum ExpiryProposalStatus {
 /// `expiry-types.service.ts#deleteExpiryType`'s pre-check + `P2003` backstop
 /// (409, "in use — deactivate it instead").
 model Expiry {
+  /// Initial registration or last change of expiry date. Legacy cycles are NULL.
+  notificationCycle Int? @default(dbgenerated("nextval('\"Expiry_notificationCycle_seq\"'::regclass)"))
   id           String     @id @default(cuid())
   personId     String
   person       Person     @relation(fields: [personId], references: [id])

@@ -7,7 +7,7 @@ vi.mock('@/server/db/prisma', () => ({
     $queryRaw: vi.fn(),
     expiry: { findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn() },
     appSetting: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
-    sentAlert: { findFirst: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
+    sentAlert: { findMany: vi.fn(), findFirst: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
     user: { findMany: vi.fn(), findUnique: vi.fn() },
   },
 }));
@@ -50,6 +50,8 @@ function candidate(id: string, days = 60) {
 
 describe('story 17.8 alert batches', () => {
   beforeEach(() => {
+    vi.mocked(prisma.sentAlert.findMany).mockImplementation((async ({ where }: { where: { id: { in: string[] } } }) =>
+      where.id.in.map((id) => ({ id }))) as never);
     rowsById.clear();
     vi.mocked(prisma.$transaction).mockImplementation(async (callback) => callback(prisma));
     vi.mocked(prisma.$queryRaw).mockImplementation((async (_sql: unknown, id: string) => {
@@ -205,7 +207,7 @@ describe('story 17.8 alert batches', () => {
     const rows = Array.from({ length: 201 }, (_, i) => candidate(`a${String(i).padStart(3, '0')}`));
     let storedCursor: string | null = null;
     let storedUpdatedAt = new Date('2026-01-01T00:00:00.000Z');
-    settingFind.mockImplementation((async () => storedCursor === null ? null : { value: storedCursor, updatedAt: storedUpdatedAt }) as never);
+    settingFind.mockImplementation((async ({ where }: { where: { key: string } }) => where.key !== 'expiry-alerts.retry-cursor' || storedCursor === null ? null : { value: storedCursor, updatedAt: storedUpdatedAt }) as never);
     settingCreate.mockImplementation((async ({ data }: { data: { value: string } }) => {
       storedCursor = data.value;
       return data;

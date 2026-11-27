@@ -111,14 +111,31 @@ describe('generateOpenApiDocument (Story 1.5 Task 2, AC 1)', () => {
     );
   });
 
-  it('documents the composite PATCH /api/v1/settings: request with the 10 blocks (UpdateSettingsRequest), response SettingsSnapshot, errors 401/403/409/422 (story 19.8, AC 7)', () => {
-    type JsonSchema = { properties?: Record<string, unknown> };
-    type Operation = { requestBody?: { content: Record<string, { schema: JsonSchema }> }; responses: Record<string, { content?: Record<string, { schema: JsonSchema }> }> };
+  it('documents the optional settings PATCH blocks, the full notification snapshot and the admin permission', () => {
+    type JsonSchema = { properties?: Record<string, JsonSchema>; required?: string[] };
+    type Operation = { description?: string; security?: unknown; requestBody?: { content: Record<string, { schema: JsonSchema }> }; responses: Record<string, { content?: Record<string, { schema: JsonSchema }> }> };
     const patch = (doc.paths as Record<string, Record<string, Operation>>)['/api/v1/settings']?.['patch'];
-    const blocks = ['airfield', 'cashCategories', 'club', 'currency', 'expiryTypes', 'membershipFee', 'metarStation', 'scheduling', 'smtp', 'treasury'];
+    const blocks = ['airfield', 'cashCategories', 'club', 'currency', 'expiryTypes', 'membershipFee', 'metarStation', 'notifications', 'scheduling', 'smtp', 'treasury'];
 
-    expect(Object.keys(patch?.requestBody?.content['application/json']?.schema.properties ?? {}).sort()).toEqual(blocks);
-    expect(Object.keys(patch?.responses['200']?.content?.['application/json']?.schema.properties ?? {}).sort()).toEqual(blocks);
+    const request = patch?.requestBody?.content['application/json']?.schema;
+    const response = patch?.responses['200']?.content?.['application/json']?.schema;
+    expect(Object.keys(request?.properties ?? {}).sort()).toEqual(blocks);
+    expect(Object.keys(response?.properties ?? {}).sort()).toEqual(blocks);
+    expect(request?.required ?? []).toEqual([]);
+    expect(response?.required).toContain('notifications');
+
+    const keys = ['aircraftArchived', 'aircraftGrounded', 'bookingDenied', 'expiryDigest', 'expiryHolder', 'negativeBalance'];
+    for (const schema of [request, response]) {
+      const flags = schema?.properties?.notifications;
+      expect(Object.keys(flags?.properties ?? {}).sort()).toEqual(keys);
+      for (const key of keys) expect(flags?.properties?.[key]).toMatchObject({ type: 'boolean' });
+      expect(flags).toMatchObject({ type: 'object', additionalProperties: false });
+    }
+    expect(request?.properties?.notifications).toHaveProperty('minProperties', 1);
+    expect(request?.properties?.notifications.required ?? []).toEqual([]);
+    expect(response?.properties?.notifications.required?.slice().sort()).toEqual(keys);
+    expect(patch?.security).toEqual([{ cookieAuth: [] }]);
+    expect(patch?.description).toContain('Requires `settings.manage`');
     expect(Object.keys(patch?.responses ?? {}).sort()).toEqual(['200', '401', '403', '409', '422', '500']);
 
     // Named components, same convention as every other registered request/response.

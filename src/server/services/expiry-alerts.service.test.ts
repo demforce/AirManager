@@ -12,7 +12,7 @@ vi.mock('@/server/db/prisma', () => ({
       count: vi.fn(),
     },
     appSetting: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
-    sentAlert: {
+    sentAlert: { findMany: vi.fn(),
       findFirst: vi.fn(),
       createMany: vi.fn(),
       deleteMany: vi.fn(),
@@ -81,6 +81,8 @@ function adminUserFixture(overrides: Partial<Fixture> = {}): Fixture {
 
 describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, idempotent job, FR-37, AD-9)', () => {
   beforeEach(() => {
+    vi.mocked(prisma.sentAlert.findMany).mockImplementation((async ({ where }: { where: { id: { in: string[] } } }) =>
+      where.id.in.map((id) => ({ id }))) as never);
     rowsById.clear();
     vi.mocked(prisma.$transaction).mockImplementation(async (callback) => callback(prisma));
     vi.mocked(prisma.$queryRaw).mockImplementation((async (_sql: unknown, id: string) => {
@@ -97,7 +99,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     expiryFindManyMock.mockReset();
     expiryCountMock.mockReset();
     sentAlertCreateManyMock.mockReset();
-    sentAlertDeleteManyMock.mockReset();
+    sentAlertDeleteManyMock.mockReset().mockResolvedValue({ count: 0 });
     userFindManyMock.mockReset();
     sendMock.mockReset();
     vi.mocked(buildExpiryAlertEmail).mockClear();
@@ -107,6 +109,78 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     expiryCountMock.mockResolvedValue(0);
     sentAlertDeleteManyMock.mockResolvedValue({ count: 1 });
     userFindMany.mockResolvedValue([adminUserFixture()]);
+  });
+
+  function setMailPolicy(expiryHolder: boolean, expiryDigest: boolean) {
+    const value = JSON.stringify({ switches: { expiryHolder, expiryDigest }, holderSince: null, digestSince: null });
+    vi.mocked(prisma.appSetting.findUnique).mockImplementation((async ({ where }: { where: { key: string } }) =>
+      where.key === 'mail.operational' ? { value } : null) as never);
+  }
+
+  it.each([true, false])('a holder switch turned off during rendering stops its send and retains claims only for an active digest (%s)', async (digest) => {
+    const target = candidateFixture();
+    expiryFindMany.mockResolvedValue([target]);
+    vi.mocked(buildExpiryAlertEmail).mockImplementationOnce(async () => {
+      setMailPolicy(false, digest);
+      return { subject: 'alert', text: 'alert' };
+    });
+    const result = await runExpiryAlertsJob();
+    expect(result.status).toBe('settings_changed');
+    expect(result.holderEmailsSent).toBe(0);
+    expect(result.digestEmailsSent).toBe(Number(digest));
+    expect(result.alertsCreated).toBe(Number(digest));
+    expect(sendMock).not.toHaveBeenCalledWith(expect.objectContaining({ to: 'mario@example.com' }));
+    if (digest) {
+      expect(buildExpiryDigestEmail).toHaveBeenCalledWith('it', { items: [expect.objectContaining({ holderStatus: 'REMINDERS_DISABLED' })] });
+      expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
+    } else {
+      expect(sentAlertDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: [expect.any(String)] } } });
+    }
+  });
+
+  it('turning off the digest during holder rendering leaves the eligible holder handoff intact', async () => {
+    expiryFindMany.mockResolvedValue([candidateFixture()]);
+    vi.mocked(buildExpiryAlertEmail).mockImplementationOnce(async () => {
+      setMailPolicy(true, false);
+      return { subject: 'alert', text: 'alert' };
+    });
+    expect(await runExpiryAlertsJob()).toMatchObject({ status: 'settings_changed', holderEmailsSent: 1, digestEmailsSent: 0, alertsCreated: 1 });
+  });
+
+  it('turning off the digest during the first admin delivery stops the second handoff without releasing the consumed item', async () => {
+    setMailPolicy(false, true);
+    expiryFindMany.mockResolvedValue([candidateFixture()]);
+    userFindMany.mockResolvedValue([adminUserFixture(), adminUserFixture({ email: 'other@example.test' })]);
+    sendMock.mockImplementationOnce(async () => { setMailPolicy(false, false); });
+    const result = await runExpiryAlertsJob();
+    expect(result).toMatchObject({ status: 'settings_changed', holderEmailsSent: 0, digestEmailsSent: 1, alertsCreated: 1 });
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
+  });
+
+  it('turning off the digest during its first render releases digest-only claims if no delivery started', async () => {
+    setMailPolicy(false, true);
+    expiryFindMany.mockResolvedValue([candidateFixture()]);
+    vi.mocked(buildExpiryDigestEmail).mockImplementationOnce(async () => {
+      setMailPolicy(false, false);
+      return { subject: 'digest', text: 'digest' };
+    });
+    sentAlertDeleteManyMock.mockResolvedValue({ count: 1 });
+    expect(await runExpiryAlertsJob()).toMatchObject({ status: 'settings_changed', alertsCreated: 0, digestEmailsSent: 0 });
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(sentAlertDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: [expect.any(String)] } } });
+  });
+
+  it('removes a renewed item before the first digest handoff and never sends an empty digest', async () => {
+    setMailPolicy(false, true);
+    expiryFindMany.mockResolvedValue([candidateFixture()]);
+    vi.mocked(buildExpiryDigestEmail).mockImplementationOnce(async () => {
+      vi.mocked(prisma.sentAlert.findMany).mockResolvedValue([]);
+      return { subject: 'digest', text: 'old date' };
+    });
+    expect(await runExpiryAlertsJob()).toMatchObject({ holderEmailsSent: 0, digestEmailsSent: 0 });
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(prisma.sentAlert.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: { in: [expect.any(String)] } }) }));
   });
 
   // --- Candidate query horizon --------------------------------------------

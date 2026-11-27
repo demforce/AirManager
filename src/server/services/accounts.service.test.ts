@@ -102,7 +102,6 @@ const accountMovementCreate = accountMovementCreateMock as unknown as {
 };
 const personFindUnique = personFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const userFindUnique = userFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const appSettingFindUnique = appSettingFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void };
 
@@ -722,6 +721,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       amountCents: number;
       personEmail?: string | null;
       thresholdValue?: string;
+      disableBalanceMail?: boolean;
       userLocale?: string | null;
     };
 
@@ -731,7 +731,11 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         email: options.personEmail === undefined ? PERSON.email : options.personEmail,
       });
       accountFindUnique.mockResolvedValue(ACCOUNT);
-      appSettingFindUnique.mockResolvedValue(options.thresholdValue === undefined ? null : { value: options.thresholdValue });
+      appSettingFindUniqueMock.mockImplementation((async ({ where }: { where: { key: string } }) => {
+        if (where.key === 'mail.operational') return options.disableBalanceMail
+          ? { value: JSON.stringify({ switches: { negativeBalance: false }, holderSince: null, digestSince: null }) } : null;
+        return options.thresholdValue === undefined ? null : { value: options.thresholdValue };
+      }) as never);
       queryRaw.mockResolvedValue([]);
       // First aggregate = the locked "balance before" read inside the tx;
       // second = readOverview's post-commit balance.
@@ -968,6 +972,14 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     });
 
     describe('negative-balance band alert (AC 2/3 — stateless: only a WORSENING transition emails)', () => {
+      it('a worsening adjustment commits with the balance notification off', async () => {
+        mockAdjustmentHappyPath({ balanceBeforeCents: 5000, amountCents: -10000, disableBalanceMail: true });
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -10000, reason: 'Synthetic adjustment' });
+        await flushAsync();
+        expect(accountMovementCreateMock).toHaveBeenCalledTimes(1);
+        expect(sendMock).not.toHaveBeenCalled();
+      });
+
       it('ok → negative sends the alert email once, after the commit', async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: 5000, amountCents: -10000 });
 

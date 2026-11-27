@@ -12,6 +12,7 @@ import type { RequirementsInput } from './requirements.service';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
+    appSetting: { findUnique: vi.fn() },
     person: {
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
@@ -293,7 +294,8 @@ beforeEach(() => {
   // default; the F4 tests override it with an archived/profile-less person.
   personFindUniqueOrThrow.mockResolvedValue(ACTIVE_PILOT_PERSON);
   userFindUnique.mockResolvedValue(null);
-  sendMock.mockReset();
+  vi.mocked(prisma.appSetting.findUnique).mockReset().mockResolvedValue(null);
+    sendMock.mockReset();
   sendMock.mockResolvedValue(undefined);
   // Story 12.11, AC 4: no scheduling window configured by default (backward-safe,
   // "chiavi assenti -> nessun vincolo") — individual window tests override.
@@ -1824,6 +1826,16 @@ describe('transitionBooking — transition matrix (Story 12.2, AC 3/7)', () => {
 });
 
 describe('transitionBooking — booking-denied email (Story 12.2, AC 5)', () => {
+  it('still denies the booking when its email is off', async () => {
+    mockBookingLock({ status: 'PENDING' });
+    personFindUnique.mockImplementation(async () => ({ email: 'holder@example.test' }));
+    vi.mocked(prisma.appSetting.findUnique).mockResolvedValue({ value: JSON.stringify({ switches: { bookingDenied: false }, holderSince: null, digestSince: null }) } as never);
+    bookingFindUniqueOrThrow.mockResolvedValue({ ...CREATED_BOOKING_ROW, status: 'DENIED', denyReason: 'Synthetic' });
+    expect((await transitionBooking(adminActor(), 'booking_1', { to: 'DENIED', reason: 'Synthetic' })).status).toBe('DENIED');
+    expect(bookingUpdateManyMock).toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
   it('DENY sends the email AFTER commit, to the person\'s email, in their OWN User.locale', async () => {
     mockBookingLock({ status: 'PENDING' });
     personFindUnique.mockImplementation(async () => ({ email: 'mario@example.com' }));

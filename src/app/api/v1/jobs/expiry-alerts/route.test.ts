@@ -32,7 +32,7 @@ const { POST } = await import('./route');
 
 const runExpiryAlertsJobMock = vi.mocked(runExpiryAlertsJob);
 
-const RESULT = { candidates: 2, alertsCreated: 1, holderEmailsSent: 1, holdersWithoutEmail: 0, digestEmailsSent: 1, remaining: 3 };
+const RESULT = { status: 'completed' as const, candidates: 2, alertsCreated: 1, holderEmailsSent: 1, holdersWithoutEmail: 0, digestEmailsSent: 1, remaining: 3 };
 
 function req(headers?: Record<string, string>): NextRequest {
   return new NextRequest(new Request('http://localhost/api/v1/jobs/expiry-alerts', { method: 'POST', headers }));

@@ -190,7 +190,7 @@ test.describe('Impostazioni — PATCH /api/v1/settings, the composite contract (
 
     for (const email of [PILOT_EMAIL, INSTRUCTOR_EMAIL]) {
       const other = await pageAs(browser, email);
-      const response = await other.request.patch('/api/v1/settings', { data: { membershipFee: { annualFeeCents: feeBefore + 4321 } } });
+      const response = await other.request.patch('/api/v1/settings', { data: { membershipFee: { annualFeeCents: feeBefore + 4321 }, notifications: { expiryDigest: false } } });
       expect(response.status(), email).toBe(403);
       expect(((await response.json()) as { error: { code: string } }).error.code).toBe('FORBIDDEN');
       await other.context().close();
@@ -350,7 +350,7 @@ test.describe('Impostazioni — PATCH /api/v1/settings, the composite contract (
     const response = await page.request.patch('/api/v1/settings', { data: { smtp: { ...MAILPIT_SMTP, from, pass: 'a-secret-password' } } });
     expect(response.status()).toBe(200);
     const snapshot = (await response.json()) as Record<string, unknown> & { smtp: Record<string, unknown>; expiryTypes: { kind: string; name: string }[] };
-    expect(Object.keys(snapshot).sort()).toEqual(['airfield', 'cashCategories', 'club', 'currency', 'expiryTypes', 'membershipFee', 'metarStation', 'scheduling', 'smtp', 'treasury']);
+    expect(Object.keys(snapshot).sort()).toEqual(['airfield', 'cashCategories', 'club', 'currency', 'expiryTypes', 'membershipFee', 'metarStation', 'notifications', 'scheduling', 'smtp', 'treasury']);
     expect(snapshot.smtp).not.toHaveProperty('pass');
     expect(snapshot.smtp).toMatchObject({ from, hasPassword: true });
     expect(snapshot.expiryTypes.some((type) => type.kind === 'MEMBERSHIP' || type.name === 'Quota associativa')).toBe(false);
@@ -844,4 +844,51 @@ test.describe('Impostazioni — Categorie di cassa in draft (story 12.13 review 
     await page.waitForLoadState('networkidle');
     await expect(page.getByTestId('cash-category-row').filter({ hasText: category.name })).toHaveAttribute('data-state', 'saved');
   });
+});
+
+test('operational mail switches save from the keyboard in IT/EN and leave club and account mail available', async ({ page }) => {
+  test.slow(); // The complete UI flow waits for three separate local mail deliveries.
+  await loginExpectingDashboard(page, ADMIN_EMAIL);
+  await gotoSettingsAndWaitForHydration(page);
+  const switches = page.getByTestId('notifications-settings-card').getByRole('switch');
+  const keys = ['negativeBalance', 'bookingDenied', 'aircraftGrounded', 'aircraftArchived', 'expiryHolder', 'expiryDigest'];
+  await expect(switches).toHaveCount(keys.length);
+  const contact = 'club-' + uniqueSuffix() + '@example.test';
+  const originalClub = await (await page.request.get('/api/v1/settings/club')).json();
+  try {
+    for (const control of await switches.all()) {
+      await expect(control).toHaveAccessibleName(/.+/);
+      await expect(control).toBeChecked();
+      await control.focus();
+      await control.press('Space');
+      await expect(control).not.toBeChecked();
+    }
+    const saved = await saveAndWait(page);
+    expect(saved.response.status()).toBe(200);
+    expect(saved.body).toEqual({ notifications: Object.fromEntries(keys.map((key) => [key, false])) });
+    const configured = await page.request.patch('/api/v1/settings', { data: { club: { ...originalClub, contactEmail: contact }, smtp: { ...MAILPIT_SMTP, from: 'Sandbox <sandbox@example.test>' } } });
+    expect(configured.status()).toBe(200);
+
+    await page.goto('/en/dashboard/settings');
+    await expect(page.getByRole('heading', { name: 'Operational emails' })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Expiry digest to administrators' })).not.toBeChecked();
+    await page.getByTestId('smtp-test-email-button').click();
+    expect((await waitForMailpitMessage(contact, 'prova')).Text).toContain('SMTP');
+
+    await page.goto('/it/dashboard/expiries');
+    await page.getByTestId('scadenze-send-reminders-button').click();
+    await expect(page.getByTestId('scadenze-reminders-feedback')).toContainText('disattivati');
+    const email = 'account-' + uniqueSuffix() + '@example.test';
+    const invited = await page.request.post('/api/v1/users', { data: { email, roles: ['PILOT'] } });
+    expect(invited.status()).toBe(201);
+    const invite = await waitForMailpitMessage(email, 'invito');
+    const link = invite.Text.match(/https?:\/\/\S+\/set-password\?token=\S+/);
+    expect(link).toBeTruthy();
+    const token = new URL(link![0]).searchParams.get('token');
+    expect((await page.request.post('/api/v1/auth/set-password', { data: { token, password: 'SyntheticTest123!' } })).ok()).toBe(true);
+    expect((await page.request.post('/api/v1/auth/forgot-password', { data: { email } })).ok()).toBe(true);
+    expect((await waitForMailpitMessage(email, 'Reimposta')).Text).toContain('set-password');
+  } finally {
+    expect((await page.request.patch('/api/v1/settings', { data: { notifications: Object.fromEntries(keys.map((key) => [key, true])), club: originalClub } })).ok()).toBe(true);
+  }
 });

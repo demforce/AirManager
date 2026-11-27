@@ -1,3 +1,4 @@
+import { DEFAULT_NOTIFICATIONS } from '@/lib/operational-mail';
 import { describe, expect, it } from 'vitest';
 import {
   buildSettingsPatch,
@@ -16,6 +17,7 @@ import {
 /** A fresh install: nothing saved but the factory defaults (scheduling and SMTP all `null`). */
 function freshSnapshot(): SettingsSnapshotData {
   return {
+    notifications: { ...DEFAULT_NOTIFICATIONS },
     airfield: { name: 'AirManager' },
     club: { icao: '', contactEmail: '' },
     metarStation: { station: '' },

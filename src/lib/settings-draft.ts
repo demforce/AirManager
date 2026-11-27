@@ -1,3 +1,4 @@
+import { NOTIFICATION_KEYS, type NotificationSettings } from '@/lib/operational-mail';
 import { z } from 'zod';
 import { CURRENCY_LIMITS } from '@/lib/currency';
 import { parseCents } from '@/lib/money';
@@ -21,6 +22,7 @@ export type SmtpSecurity = 'NONE' | 'STARTTLS' | 'SSL_TLS';
 
 /** The snapshot as the page receives it (`settings.service.ts#getSettingsSnapshot`, or the PATCH's JSON answer) — only the fields this module reads. */
 export type SettingsSnapshotData = {
+  notifications: NotificationSettings;
   airfield: { name: string };
   club: { icao: string; contactEmail: string };
   metarStation: { station: string };
@@ -58,6 +60,7 @@ export type CashCategoryDraftItem = {
 
 /** The page's values as the inputs hold them (strings), one key per section in page order (D-10). */
 export type SettingsDraft = {
+  notifications: NotificationSettings;
   club: { name: string; icao: string; contactEmail: string; metarStation: string };
   membership: { fee: string };
   currency: { minFlights: string; windowDays: string };
@@ -71,7 +74,7 @@ export type SettingsDraft = {
 
 export type SettingsSection = keyof SettingsDraft;
 
-export const SETTINGS_SECTIONS: readonly SettingsSection[] = ['club', 'membership', 'currency', 'scheduling', 'smtp', 'treasury', 'ratings', 'medical', 'cashCategories'];
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = ['club', 'membership', 'currency', 'scheduling', 'notifications', 'smtp', 'treasury', 'ratings', 'medical', 'cashCategories'];
 
 type ScalarSection = Exclude<SettingsSection, 'ratings' | 'medical' | 'cashCategories'>;
 
@@ -90,6 +93,7 @@ export const FIELD_PATHS = {
     turnaroundMinutes: 'scheduling.turnaroundMinutes',
     maxAdvanceDays: 'scheduling.maxAdvanceDays',
   },
+  notifications: {},
   smtp: { host: 'smtp.host', port: 'smtp.port', security: 'smtp.security', from: 'smtp.from', user: 'smtp.user', pass: 'smtp.pass' },
   treasury: { cash: 'treasury.openingCashCents', bank: 'treasury.openingBankCents', date: 'treasury.openingDate' },
 } as const satisfies { [S in ScalarSection]: Partial<Record<keyof SettingsDraft[S], string>> };
@@ -134,6 +138,7 @@ export function toDraft(snapshot: SettingsSnapshotData): SettingsDraft {
   const { scheduling, smtp, treasury } = snapshot;
 
   return {
+    notifications: snapshot.notifications,
     club: { name: snapshot.airfield.name, icao: snapshot.club.icao, contactEmail: snapshot.club.contactEmail, metarStation: snapshot.metarStation.station },
     membership: { fee: centsToInput(snapshot.membershipFee.annualFeeCents) },
     currency: { minFlights: String(snapshot.currency.minFlights), windowDays: String(snapshot.currency.windowDays) },
@@ -371,6 +376,8 @@ export function buildSettingsPatch(baseline: SettingsDraft, draft: SettingsDraft
     body[block] = block === 'smtp' && draft.smtp.pass !== '' ? { ...scalarPayloads.smtp(draft), pass: draft.smtp.pass } : scalarPayloads[block](draft);
   }
 
+  const changed = NOTIFICATION_KEYS.filter((key) => baseline.notifications[key] !== draft.notifications[key]);
+  if (changed.length) body.notifications = Object.fromEntries(changed.map((key) => [key, draft.notifications[key]]));
   const expiryTypes = expiryTypesBlock(baseline, draft);
   const cashCategories = cashCategoriesBlock(baseline, draft);
   const expiryTypesBody = compactList(expiryTypes.block as Required<ExpiryTypesBlock>);
@@ -385,6 +392,7 @@ export function buildSettingsPatch(baseline: SettingsDraft, draft: SettingsDraft
 /** The sections with something to save, in page order — what the save bar lists. */
 export function dirtySections(baseline: SettingsDraft, draft: SettingsDraft): SettingsSection[] {
   const dirty = new Set<SettingsSection>();
+  if (NOTIFICATION_KEYS.some((key) => baseline.notifications[key] !== draft.notifications[key])) dirty.add('notifications');
   for (const block of Object.keys(scalarPayloads) as ScalarBlock[]) {
     if (scalarBlockChanged(block, baseline, draft)) dirty.add(SECTION_OF_BLOCK[block]);
   }

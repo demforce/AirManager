@@ -1228,7 +1228,9 @@
       "reminders": {
         "button": "Send reminders",
         "sent": "Reminders sent: {holders} to holders, {digests} to the admins. {remaining} more are queued for the next run.",
-        "error": "Send failed. Please try again."
+        "error": "Send failed. Please try again.",
+        "disabled": "Holder reminders and administrator digests are disabled.",
+        "changed": "Reminder settings changed during the run. The next run will use the new settings."
       },
       "membershipFee": {
         "button": "Membership fee",
@@ -1771,6 +1773,18 @@
         "empty": "No category in this catalogue.",
         "movementsCount": "{count, plural, one {# movement} other {# movements}}"
       }
+    },
+    "notifications": {
+      "title": "Operational emails",
+      "negativeBalance": "Worsening balance to the account holder",
+      "bookingDenied": "Booking denial to the booking holder",
+      "aircraftGrounded": "Aircraft grounding to affected approved booking holders",
+      "aircraftArchived": "Aircraft archiving to affected approved booking holders",
+      "expiryHolder": "Expiry reminders to the holder",
+      "expiryDigest": "Expiry digest to administrators",
+      "resume": "When enabled again, existing expiries resume at the next threshold.",
+      "on": "On",
+      "off": "Off"
     }
   },
   "Emails": {
@@ -1801,7 +1815,9 @@
       "itemLine": "- {name} — {typeName}: {daysPhrase} (on {date}){flag}",
       "expiredDaysAgo": "expired {days, plural, one {# day} other {# days}} ago",
       "noEmailFlag": " [no email on file — contact them directly]",
-      "sendFailedFlag": " [email delivery failed — automatically retried on the next run]"
+      "sendFailedFlag": " [email delivery failed — automatically retried on the next run]",
+      "remindersDisabledFlag": " [holder reminders disabled]",
+      "thresholdSuspendedFlag": " [threshold already reached when holder reminders resumed]"
     },
     "bookingDenied": {
       "subject": "Booking denied: {aircraftRegistration}",

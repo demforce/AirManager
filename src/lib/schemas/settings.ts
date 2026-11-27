@@ -299,6 +299,15 @@ function checkListOps(value: ListOps, ctx: z.RefinementCtx): void {
   }
 }
 
+export const notificationSettingsSchema = z.strictObject({
+  negativeBalance: z.boolean(),
+  bookingDenied: z.boolean(),
+  aircraftGrounded: z.boolean(),
+  aircraftArchived: z.boolean(),
+  expiryHolder: z.boolean(),
+  expiryDigest: z.boolean(),
+});
+
 export const updateSettingsSchema = z
   .object({
     airfield: airfieldBrandingSchema.optional(),
@@ -307,6 +316,7 @@ export const updateSettingsSchema = z
     membershipFee: membershipFeeSettingSchema.optional(),
     currency: currencySettingsSchema.optional(),
     scheduling: schedulingSettingsSchema.optional(),
+    notifications: notificationSettingsSchema.partial().refine((flags) => Object.keys(flags).length > 0).openapi({ minProperties: 1 }).optional(),
     smtp: smtpSettingsInputSchema.optional(),
     treasury: treasurySettingsSchema.optional(),
     expiryTypes: z
@@ -350,6 +360,7 @@ export const settingsSnapshotSchema = z.object({
   membershipFee: membershipFeeSettingSchema,
   currency: currencySettingsSchema,
   scheduling: schedulingSettingsDtoSchema,
+  notifications: notificationSettingsSchema,
   smtp: smtpSettingsDtoSchema,
   treasury: treasurySettingsDtoSchema,
   expiryTypes: z.array(expiryTypeItemSchema),
