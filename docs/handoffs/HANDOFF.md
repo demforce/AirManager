@@ -34,6 +34,14 @@ Story chiusa al commit applicativo `2337eca` dopo riesame indipendente. Il candi
 
 Se entrambi i canali scadenze sono spenti, il job risponde `disabled` senza registrare soglie. Quando un canale viene riacceso, i cicli esistenti ripartono dalle soglie dei giorni successivi di Roma. Creazioni e rinnovi successivi seguono la normale cadenza, anche il giorno stesso. La migrazione riguarda il ciclo delle scadenze. Il [record degli interruttori](../../_bmad-output/implementation-artifacts/interruttori-email-operative.md) riporta i controlli sugli avvisi, sui dati preesistenti e sulla finestra di consegna SMTP.
 
+## Coda SMTP per inviti e recupero password
+
+La [story della coda SMTP](../../_bmad-output/implementation-artifacts/coda-smtp-accesso.md) è conclusa al commit applicativo `25519f39d380`. La creazione utente e il recupero registrano la richiesta nel database. L’amministratore può distinguere un invito accodato da un messaggio accettato dal trasporto e vedere una conferma mancante. Il worker sospende gli invii incerti e limita a tre i tentativi nei casi temporanei con mancata accettazione certa. Il reinvio autorizzato dell’invito invalida la credenziale precedente.
+
+La revisione indipendente ha approvato il candidato. Gate integrato con 2.369 unit, 27 prove PostgreSQL/SMTP sulla coda e 16 regressioni dei promemoria. Chromium su 719 casi, 716 al primo tentativo, 3 dopo retry e 0 skip. La migrazione è stata provata su una copia sintetica già configurata, inclusi un token storico utilizzabile e il contatto senza account.
+
+Nell’ambiente di destinazione il worker richiede un processo supervisionato separato da Next. La [guida operativa](../operations/credential-mail.md) descrive l’attivazione autorizzata e la verifica dello stato in Impostazioni.
+
 ## Prossimo lavoro
 
 Per la futura fase di accesso, il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il test SMTP continuerà a usare il contatto del club come destinazione distinta. [Decisione del PO](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)

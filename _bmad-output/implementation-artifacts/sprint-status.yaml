@@ -513,6 +513,7 @@ development_status:
   # Decisioni aperte su formato Scadenze e font PDF in verifica-corrispondenza-export.md.
   promemoria-rinnovo: done  # c1ddad6, verifica PostgreSQL e Mailpit, gate e review nel record.
   interruttori-email-operative: done  # 2337eca, prove PostgreSQL/Mailpit e riesame indipendente nel record.
+  coda-smtp-accesso: done  # 25519f39, coda credenziali, SMTP su loopback, upgrade e revisione nel record.
   # EPIC 19 — Semplificazione e regole operative (change request PO 2026-11-01,
   # _bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md, ratifiche R-19-a..p).
   # Tutte con UI: dev Opus 5 xhigh, review Opus 5 xhigh. Eseguito dopo la chiusura della 16.3.
