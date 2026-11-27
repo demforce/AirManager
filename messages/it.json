@@ -1810,12 +1810,17 @@
     }
   },
   "Emails": {
+    "layout": {
+      "footer": "Comunicazioni del club"
+    },
     "invite": {
+      "action": "Imposta la password",
       "subject": "Hai ricevuto un invito ad AirManager",
       "body": "Ciao,\n\nHai ricevuto un invito per accedere ad AirManager. Imposta la tua password entro {expiresInDays, plural, one {# giorno} other {# giorni}} visitando il link seguente:\n\n{url}\n\nSe non ti aspettavi questo invito, puoi ignorare questa email.",
       "deadlineBody": "Hai ricevuto un invito ad AirManager. Imposta la password entro {expiry}.\n\n{url}"
     },
     "passwordReset": {
+      "action": "Reimposta la password",
       "subject": "Reimposta la tua password AirManager",
       "body": "Ciao,\n\nHai richiesto di reimpostare la password del tuo account AirManager. Il link seguente è valido per {expiresInHours, plural, one {# ora} other {# ore}}:\n\n{url}\n\nSe non hai richiesto tu questa operazione, ignora questa email: la password attuale resta invariata.",
       "deadlineBody": "Hai richiesto il recupero della password AirManager. Scegli una nuova password entro {expiry}.\n\n{url}"
@@ -1836,7 +1841,10 @@
     "expiryDigest": {
       "subject": "Riepilogo avvisi di scadenza",
       "intro": "Sono stati inviati i seguenti avvisi di scadenza:",
-      "itemLine": "- {name} — {typeName}: {daysPhrase} (il {date}){flag}",
+      "itemLine": "- {name} — {details}{flag}",
+      "details": "{typeName}: {daysPhrase} (il {date})",
+      "holderColumn": "Titolare",
+      "expiryColumn": "Scadenza",
       "expiredDaysAgo": "scadenza superata da {days, plural, one {# giorno} other {# giorni}}",
       "noEmailFlag": " [senza email — contattare la persona direttamente]",
       "sendFailedFlag": " [invio email fallito — nuovo tentativo automatico al prossimo giro]",
@@ -1859,10 +1867,12 @@
       "windowOverdue": "oltre il {date} previsto, rientro da definire"
     },
     "verifyEmail": {
+      "action": "Verifica il tuo indirizzo",
       "subject": "Verifica il tuo indirizzo AirManager",
       "deadlineBody": "Conferma il tuo indirizzo entro {expiry}.\n\n{url}"
     },
     "loginLink": {
+      "action": "Conferma l’accesso",
       "subject": "Link di accesso AirManager",
       "deadlineBody": "Conferma il tuo accesso entro {expiry}.\n\n{url}"
     }

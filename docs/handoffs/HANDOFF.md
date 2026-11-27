@@ -54,10 +54,15 @@ La [story di collaudo](../../_bmad-output/implementation-artifacts/invito-e-logi
 
 Il riesame indipendente ha approvato il tree `528bbcfaa6b1765fd7e76db778d3b89cbb8dd8d7`. Sono passati 2.380 test unitari, 13 casi di invito/login sul database, 27 casi di regressione della coda e 16 dei promemoria. La suite completa ha superato 726 casi Chromium senza retry o skip. A parte, tutti e cinque i casi del fallback admin sono passati a trial e worker spenti, con relay indisponibile.
 
+## HTML per tutte le email applicative
+
+La story HTML è conclusa. Tutti gli undici tipi di email attivi condividono wordmark, intestazione, tipografia e footer. Gli inviti e il login mostrano la rispettiva azione. Il digest conserva l’associazione tra titolare, scadenza e stato in una tabella. Il messaggio SMTP del club resta bilingue. [Story, criteri e revisione indipendente](../../_bmad-output/implementation-artifacts/template-html-email.md)
+
+Le 21 catture Mailpit conservano l’oggetto e il testo semplice della base. Le otto credenziali riportano in HTML lo stesso link dell’alternativa di testo. Su quattro larghezze Chromium sono stati verificati 84 rendering. Sul tree di codice e test approvato sono passati 2.400 unit, 56 casi PostgreSQL e 726 casi browser. La suite browser si è conclusa senza retry o skip. [Matrice e quattro anteprime sintetiche](../../_bmad-output/implementation-artifacts/evidence/email-html/collaudo.md)
+
 ## Prossimo lavoro
 
-1. La [story del layout HTML](../../_bmad-output/implementation-artifacts/template-html-email.md) è il prossimo passo. Comprende tutte le email applicative e conserva la parte di testo semplice. Il collaudo previsto usa capture locale, messaggi sintetici e verifiche MIME e di resa su telefono e desktop.
-2. Prima dell’attivazione pubblica completare anche il rafforzamento del fallback admin, gli avvisi di sicurezza sempre via email e la sospensione mirata degli invii login, descritti nel record del collaudo.
+Prima dell’attivazione pubblica completare il rafforzamento del fallback admin, gli avvisi di sicurezza sempre via email e la sospensione mirata degli invii login. Utilizzare la base HTML per gli avvisi di sicurezza e per il futuro cambio di recapito quando saranno implementati. [Piano del login](../../_bmad-output/implementation-artifacts/invito-e-login-email.md)
 
 Per il futuro login ordinario con link email monouso da 10 minuti, il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il test SMTP continuerà a usare il contatto del club come destinazione distinta. [Decisione del PO](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
 

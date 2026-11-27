@@ -3,7 +3,7 @@ import type { CredentialMail, MailAttempt, MailChannel, Prisma } from '@/generat
 import { prisma } from '@/server/db/prisma';
 import { credentialEligible, emailTrialEnabled, trialPurpose } from '@/server/auth/email-trial-policy';
 import { env } from '@/lib/env';
-import { buildCredentialEmail } from '@/server/adapters/mail/templates';
+import { buildCredentialEmail, buildSmtpTestEmail } from '@/server/adapters/mail/templates';
 import { InvalidMailConfiguration, readObservedSmtpConfig, submitObservedMail } from '@/server/adapters/mail/observed-smtp';
 import type { SmtpObservation } from '@/server/adapters/mail/smtp-observation';
 import { databaseNow, lockMailAccount } from './credential-mail.service';
@@ -569,15 +569,14 @@ export async function processMailAttempt(attempt: MailAttempt, club?: string, lo
         }
         const content = await buildCredentialEmail(intent.user.locale === 'en' ? 'en' : 'it', intent.purpose, url.toString(), intent.expiresAt);
         message = {
-          to: intent.user.email,
-          ...content
+          ...content,
+          to: intent.user.email
         };
       }
     } else if (club) {
       message = {
-        to: club,
-        subject: 'AirManager — Email di prova / Test email',
-        text: 'Email di prova / SMTP test · AirManager.'
+        ...await buildSmtpTestEmail(),
+        to: club
       };
     }
   } catch {

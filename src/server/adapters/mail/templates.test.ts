@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/lib/env', () => ({ env: { APP_URL: 'http://localhost:3000' } }));
 import {
   buildAircraftGroundedEmail,
   buildExpiryAlertEmail,

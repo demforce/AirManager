@@ -615,12 +615,12 @@ export async function sendNegativeBalanceAlert(
     // back to Italian, same default as `User.locale`'s own schema default.
     const user = await prisma.user.findUnique({ where: { personId }, select: { locale: true } });
     const locale: AppLocale = user?.locale === 'en' ? 'en' : 'it';
-    const { subject, text } = await buildNegativeBalanceAlertEmail(locale, {
+    const content = await buildNegativeBalanceAlertEmail(locale, {
       personName: `${person.firstName} ${person.lastName}`,
       balanceCents,
     });
     if (!(await getOperationalMailPolicy()).switches.negativeBalance) return;
-    await getMailSender().send({ to: person.email, subject, text });
+    await getMailSender().send({ ...content, to: person.email });
   } catch (error) {
     // Never let a mail failure surface to the caller — the movement is
     // already committed and must stay valid (Dev Notes).

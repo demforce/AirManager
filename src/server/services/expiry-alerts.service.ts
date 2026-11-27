@@ -252,7 +252,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
         let sendAttempted = false;
         try {
           const locale = resolveLocale(localeByPerson.get(candidate.person.id));
-          const { subject, text } = await buildExpiryAlertEmail(locale, {
+          const content = await buildExpiryAlertEmail(locale, {
             personName,
             typeName: candidate.expiryType.name,
             expiresAt: candidate.expiresAt,
@@ -273,7 +273,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
           }
           if (current.switches.expiryHolder && policy.holderSince?.cycle === current.holderSince?.cycle) {
             sendAttempted = true;
-            await getMailSender().send({ to: candidate.person.email, subject, text });
+            await getMailSender().send({ ...content, to: candidate.person.email });
             holderEmailsSent += 1;
             alertsCreated += claims.length;
             transportFailures = 0;
@@ -333,7 +333,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
         // only if at least one item disappeared. Once handed off, this digest
         // is the historical report of that attempt for the remaining admins.
         while (digestItems.length) {
-          const { subject, text } = await buildExpiryDigestEmail(locale, { items: digestItems });
+          const content = await buildExpiryDigestEmail(locale, { items: digestItems });
           const ids = digestAttempted ? [] : [...unattempted.values()].map(([first]) => first);
           const [current, owned] = await Promise.all([
             getOperationalMailPolicy(),
@@ -359,7 +359,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
             continue;
           }
           digestAttempted = true;
-          await getMailSender().send({ to: adminUser.email, subject, text });
+          await getMailSender().send({ ...content, to: adminUser.email });
           digestEmailsSent += 1;
           break;
         }

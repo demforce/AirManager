@@ -1810,12 +1810,17 @@
     }
   },
   "Emails": {
+    "layout": {
+      "footer": "Club communications"
+    },
     "invite": {
+      "action": "Set your password",
       "subject": "You've been invited to AirManager",
       "body": "Hello,\n\nYou've been invited to access AirManager. Set your password within {expiresInDays, plural, one {# day} other {# days}} by visiting the link below:\n\n{url}\n\nIf you weren't expecting this invite, you can ignore this email.",
       "deadlineBody": "You have been invited to AirManager. Set your password by {expiry}.\n\n{url}"
     },
     "passwordReset": {
+      "action": "Reset your password",
       "subject": "Reset your AirManager password",
       "body": "Hello,\n\nYou requested to reset your AirManager account password. The link below is valid for {expiresInHours, plural, one {# hour} other {# hours}}:\n\n{url}\n\nIf you didn't request this, ignore this email: your current password remains unchanged.",
       "deadlineBody": "You requested a password reset for AirManager. Choose a new password by {expiry}.\n\n{url}"
@@ -1836,7 +1841,10 @@
     "expiryDigest": {
       "subject": "Expiry alert summary",
       "intro": "The following expiry alerts were sent:",
-      "itemLine": "- {name} — {typeName}: {daysPhrase} (on {date}){flag}",
+      "itemLine": "- {name} — {details}{flag}",
+      "details": "{typeName}: {daysPhrase} (on {date})",
+      "holderColumn": "Holder",
+      "expiryColumn": "Expiry",
       "expiredDaysAgo": "expired {days, plural, one {# day} other {# days}} ago",
       "noEmailFlag": " [no email on file — contact them directly]",
       "sendFailedFlag": " [email delivery failed — automatically retried on the next run]",
@@ -1859,10 +1867,12 @@
       "windowOverdue": "past the expected {date}, return date not yet known"
     },
     "verifyEmail": {
+      "action": "Verify your email address",
       "subject": "Verify your AirManager email address",
       "deadlineBody": "Confirm your email address by {expiry}.\n\n{url}"
     },
     "loginLink": {
+      "action": "Confirm sign-in",
       "subject": "Your AirManager sign-in link",
       "deadlineBody": "Confirm your sign-in by {expiry}.\n\n{url}"
     }

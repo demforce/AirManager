@@ -1,3 +1,5 @@
+import { renderClubProbe, renderEmail, type EmailContent } from './mail-layout';
+import type { CredentialPurpose } from './credential-action';
 import { createTranslator } from 'next-intl';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
@@ -17,13 +19,13 @@ async function loadMessages(locale: AppLocale): Promise<Messages> {
   return (await import(`../../../../messages/${locale}.json`)).default as Messages;
 }
 
-export type InviteEmailContent = { subject: string; text: string };
-export type PasswordResetEmailContent = { subject: string; text: string };
-export type NegativeBalanceAlertEmailContent = { subject: string; text: string };
-export type ExpiryAlertEmailContent = { subject: string; text: string };
-export type ExpiryDigestEmailContent = { subject: string; text: string };
-export type BookingDeniedEmailContent = { subject: string; text: string };
-export type AircraftGroundedEmailContent = { subject: string; text: string };
+export type InviteEmailContent = EmailContent;
+export type PasswordResetEmailContent = EmailContent;
+export type NegativeBalanceAlertEmailContent = EmailContent;
+export type ExpiryAlertEmailContent = EmailContent;
+export type ExpiryDigestEmailContent = EmailContent;
+export type BookingDeniedEmailContent = EmailContent;
+export type AircraftGroundedEmailContent = EmailContent;
 
 /**
  * One row of the staff digest (story 6.3, tri-state hardened story TD-1 AC
@@ -55,10 +57,10 @@ export async function buildInviteEmail(
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'Emails.invite' });
 
-  return {
-    subject: t('subject'),
-    text: t('body', { url: params.setPasswordUrl, expiresInDays: params.expiresInDays }),
-  };
+  const { credentialAction } = await import('./credential-action');
+  const action = credentialAction(locale, 'INVITE', params.setPasswordUrl, t('action'));
+  return renderEmail(locale, messages.Emails.layout.footer, t('subject'),
+    t('body', { url: params.setPasswordUrl, expiresInDays: params.expiresInDays }), { action });
 }
 
 /**
@@ -72,10 +74,10 @@ export async function buildPasswordResetEmail(
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'Emails.passwordReset' });
 
-  return {
-    subject: t('subject'),
-    text: t('body', { url: params.setPasswordUrl, expiresInHours: params.expiresInHours }),
-  };
+  const { credentialAction } = await import('./credential-action');
+  const action = credentialAction(locale, 'PASSWORD_RESET', params.setPasswordUrl, t('action'));
+  return renderEmail(locale, messages.Emails.layout.footer, t('subject'),
+    t('body', { url: params.setPasswordUrl, expiresInHours: params.expiresInHours }), { action });
 }
 
 /**
@@ -93,10 +95,10 @@ export async function buildNegativeBalanceAlertEmail(
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'Emails.negativeBalanceAlert' });
 
-  return {
-    subject: t('subject'),
-    text: t('body', { name: params.personName, balance: formatCents(params.balanceCents, locale) }),
-  };
+  return renderEmail(locale, messages.Emails.layout.footer,
+    t('subject'),
+    t('body', { name: params.personName, balance: formatCents(params.balanceCents, locale) }),
+  );
 }
 
 /**
@@ -164,10 +166,10 @@ export async function buildExpiryAlertEmail(
   const daysPhrase = expiryDaysPhrase(locale, messages, params.daysLeft);
   const date = formatExpiryDate(params.expiresAt, locale);
 
-  return {
-    subject: t('subject', { typeName: params.typeName }),
-    text: t('body', { name: params.personName, typeName: params.typeName, daysPhrase, date }),
-  };
+  return renderEmail(locale, messages.Emails.layout.footer,
+    t('subject', { typeName: params.typeName }),
+    t('body', { name: params.personName, typeName: params.typeName, daysPhrase, date }),
+  );
 }
 
 /**
@@ -196,17 +198,19 @@ export async function buildExpiryDigestEmail(
     REMINDERS_DISABLED: t('remindersDisabledFlag'),
     THRESHOLD_SUSPENDED: t('thresholdSuspendedFlag'),
   };
-  const lines = params.items.map((item) => {
+  const rows = params.items.map((item) => {
     const daysPhrase = item.daysLeft < 0 ? t('expiredDaysAgo', { days: Math.abs(item.daysLeft) }) : expiryDaysPhrase(locale, messages, item.daysLeft);
     const date = formatExpiryDate(item.expiresAt, locale);
-    const flag = flags[item.holderStatus];
-    return t('itemLine', { name: item.personName, typeName: item.typeName, daysPhrase, date, flag });
+    const details = t('details', { typeName: item.typeName, daysPhrase, date });
+    return { name: item.personName, details, flag: flags[item.holderStatus] };
   });
 
-  return {
-    subject: t('subject'),
-    text: `${t('intro')}\n\n${lines.join('\n')}`,
-  };
+  const intro = t('intro');
+  const lines = rows.map((row) => t('itemLine', row));
+  return renderEmail(locale, messages.Emails.layout.footer, t('subject'), `${intro}\n\n${lines.join('\n')}`, {
+    intro,
+    table: { headers: [t('holderColumn'), t('expiryColumn')], rows },
+  });
 }
 
 /**
@@ -228,15 +232,15 @@ export async function buildBookingDeniedEmail(
   const t = createTranslator({ locale, messages, namespace: 'Emails.bookingDenied' });
   const when = formatDateTime(params.startsAt, locale);
 
-  return {
-    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
-    text: t('body', {
+  return renderEmail(locale, messages.Emails.layout.footer,
+    t('subject', { aircraftRegistration: params.aircraftRegistration }),
+    t('body', {
       firstName: params.firstName,
       aircraftRegistration: params.aircraftRegistration,
       when,
       reason: params.reason,
     }),
-  };
+  );
 }
 
 /**
@@ -279,40 +283,48 @@ export async function buildAircraftGroundedEmail(
         ? t('windowUnknown')
         : t('windowOverdue', { date: formatDateOnly(params.outOfServiceUntil, locale) });
 
-  return {
-    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
-    text: t('body', {
+  return renderEmail(locale, messages.Emails.layout.footer,
+    t('subject', { aircraftRegistration: params.aircraftRegistration }),
+    t('body', {
       firstName: params.firstName,
       aircraftRegistration: params.aircraftRegistration,
       when,
       reason: params.reason,
       window,
     }),
-  };
+  );
 }
 
 /** Notify an approved holder without implying their booking was cancelled. */
 export async function buildAircraftArchivedEmail(
   locale: AppLocale,
   params: { firstName: string; aircraftRegistration: string; startsAt: Date },
-): Promise<{ subject: string; text: string }> {
+): Promise<EmailContent> {
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'Emails.aircraftArchived' });
-  return {
-    subject: t('subject', { aircraftRegistration: params.aircraftRegistration }),
-    text: t('body', {
+  return renderEmail(locale, messages.Emails.layout.footer,
+    t('subject', { aircraftRegistration: params.aircraftRegistration }),
+    t('body', {
       firstName: params.firstName,
       aircraftRegistration: params.aircraftRegistration,
       when: formatDateTime(params.startsAt, locale),
     }),
-  };
+  );
 }
 
 /** Retries preserve the original absolute expiry, including its time zone. */
-export async function buildCredentialEmail(locale: AppLocale, purpose: 'INVITE' | 'PASSWORD_RESET' | 'VERIFY_EMAIL' | 'LOGIN_LINK', url: string, expiresAt: Date) {
+export async function buildCredentialEmail(locale: AppLocale, purpose: CredentialPurpose, url: string, expiresAt: Date) {
   const messages = await loadMessages(locale);
   const namespaces = { INVITE: 'Emails.invite', PASSWORD_RESET: 'Emails.passwordReset', VERIFY_EMAIL: 'Emails.verifyEmail', LOGIN_LINK: 'Emails.loginLink' } as const;
   const t = createTranslator({ locale, messages, namespace: namespaces[purpose] });
   const expiry = new Intl.DateTimeFormat(locale, { dateStyle: 'long', timeStyle: 'long', timeZone: 'Europe/Rome' }).format(expiresAt);
-  return { subject: t('subject'), text: t('deadlineBody', { url, expiry }) };
+  const { credentialAction } = await import('./credential-action');
+  const action = credentialAction(locale, purpose, url, t('action'));
+  return renderEmail(locale, messages.Emails.layout.footer, t('subject'), t('deadlineBody', { url, expiry }), { action });
+}
+
+/** The club probe has always been bilingual, independent of the administrator's locale. */
+export async function buildSmtpTestEmail(): Promise<EmailContent> {
+  const [it, en] = await Promise.all([loadMessages('it'), loadMessages('en')]);
+  return renderClubProbe(it.Emails.layout.footer, en.Emails.layout.footer);
 }

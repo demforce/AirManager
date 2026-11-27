@@ -10,6 +10,7 @@ import type {
   UpdateAircraftInput,
 } from '@/lib/schemas/aircraft';
 import { getOperationalMailPolicy } from './operational-mail-settings';
+import type { EmailContent } from '@/server/adapters/mail/mail-layout';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildAircraftArchivedEmail, buildAircraftGroundedEmail } from '@/server/adapters/mail/templates';
 import { authorize, type Actor } from '@/server/auth/rbac';
@@ -482,7 +483,7 @@ export async function previewOutOfServiceImpact(actor: Actor, id: string, query:
 async function sendImpactedHolderEmails(
   impact: AogImpact,
   action: 'setOutOfService' | 'archiveAircraft',
-  buildEmail: (locale: AppLocale, holder: { firstName: string; startsAt: Date }) => Promise<{ subject: string; text: string }>,
+  buildEmail: (locale: AppLocale, holder: { firstName: string; startsAt: Date }) => Promise<EmailContent>,
 ): Promise<void> {
   const approvedBookings = impact.approvedBookings;
   if (approvedBookings.length === 0) return;
@@ -511,9 +512,9 @@ async function sendImpactedHolderEmails(
 
       try {
         const locale: AppLocale = localeByPerson.get(person.id) === 'en' ? 'en' : 'it';
-        const { subject, text } = await buildEmail(locale, { firstName: person.firstName, startsAt: booking.startsAt });
+        const content = await buildEmail(locale, { firstName: person.firstName, startsAt: booking.startsAt });
         if (!(await getOperationalMailPolicy()).switches[switchKey]) return;
-        await getMailSender().send({ to: person.email, subject, text });
+        await getMailSender().send({ ...content, to: person.email });
       } catch (error) {
         console.error(action === 'setOutOfService' ? 'setOutOfService: failed to send aircraft-grounded email' : 'archiveAircraft: failed to send aircraft-archived email', error);
       }

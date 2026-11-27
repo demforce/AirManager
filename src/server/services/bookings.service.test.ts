@@ -59,7 +59,7 @@ vi.mock('@/server/adapters/mail', () => ({
 }));
 
 vi.mock('@/server/adapters/mail/templates', () => ({
-  buildBookingDeniedEmail: vi.fn(async () => ({ subject: 'Booking denied subject', text: 'Booking denied text' })),
+  buildBookingDeniedEmail: vi.fn(async () => ({ subject: 'Booking denied subject', text: 'Booking denied text', html: '<p>Booking denied text</p>' })),
 }));
 
 // Story 12.11, AC 4: `assertWithinSchedulingWindow` reads `getSchedulingSettings`
@@ -1847,7 +1847,7 @@ describe('transitionBooking — booking-denied email (Story 12.2, AC 5)', () => 
     await transitionBooking(adminActor(), 'booking_1', { to: 'DENIED', reason: 'Manutenzione straordinaria' });
 
     expect(sendMock).toHaveBeenCalledTimes(1);
-    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'mario@example.com', subject: 'Booking denied subject' }));
+    expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'mario@example.com', subject: 'Booking denied subject', html: '<p>Booking denied text</p>' }));
     expect(buildBookingDeniedEmail).toHaveBeenCalledWith(
       'en',
       expect.objectContaining({ firstName: 'Mario', aircraftRegistration: 'I-ABCD', reason: 'Manutenzione straordinaria' }),

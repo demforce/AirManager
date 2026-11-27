@@ -55,8 +55,8 @@ vi.mock('@/server/adapters/mail', () => ({
 }));
 
 vi.mock('@/server/adapters/mail/templates', () => ({
-  buildAircraftArchivedEmail: vi.fn(async () => ({ subject: 'Aircraft archived subject', text: 'Aircraft archived text' })),
-  buildAircraftGroundedEmail: vi.fn(async () => ({ subject: 'Aircraft grounded subject', text: 'Aircraft grounded text' })),
+  buildAircraftArchivedEmail: vi.fn(async () => ({ subject: 'Aircraft archived subject', text: 'Aircraft archived text', html: '<p>Aircraft archived text</p>' })),
+  buildAircraftGroundedEmail: vi.fn(async () => ({ subject: 'Aircraft grounded subject', text: 'Aircraft grounded text', html: '<p>Aircraft grounded text</p>' })),
 }));
 
 // Story 19.3 (AC 20): `authorize` spied through, so the `settings.manage`
@@ -721,7 +721,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
         impactedBookings: { pending: 1, approved: 2, effectiveUntil: null },
       });
       await vi.waitFor(() => expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_1'] } } })));
-      await vi.waitFor(() => expect(sendMock).toHaveBeenCalledExactlyOnceWith({ to: 'pilot@example.test', subject: 'Aircraft archived subject', text: 'Aircraft archived text' }));
+      await vi.waitFor(() => expect(sendMock).toHaveBeenCalledExactlyOnceWith({ to: 'pilot@example.test', subject: 'Aircraft archived subject', text: 'Aircraft archived text', html: '<p>Aircraft archived text</p>' }));
     });
   });
 
@@ -996,7 +996,7 @@ describe('aircraft.service (story 2.4 — aircraft.manage RBAC + CRUD/archiving)
       // APPROVED subset, decided by the one domain function (R-AOG-i).
       await vi.waitFor(() => expect(personFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: { in: ['person_approved'] } } })));
       await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
-      expect(sendMock).toHaveBeenCalledWith({ to: 'anna@example.test', subject: 'Aircraft grounded subject', text: 'Aircraft grounded text' });
+      expect(sendMock).toHaveBeenCalledWith({ to: 'anna@example.test', subject: 'Aircraft grounded subject', text: 'Aircraft grounded text', html: '<p>Aircraft grounded text</p>' });
       // Recipient locale is the holder's OWN `User.locale` (AD-7), and the mail
       // names the aircraft, the reason, the window and THEIR booking.
       expect(buildAircraftGroundedEmail).toHaveBeenCalledWith('en', {

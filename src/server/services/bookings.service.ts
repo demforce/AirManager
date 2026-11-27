@@ -1698,7 +1698,7 @@ async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
   try {
     const user = await prisma.user.findUnique({ where: { personId: booking.personId }, select: { locale: true } });
     const locale: AppLocale = user?.locale === 'en' ? 'en' : 'it';
-    const { subject, text } = await buildBookingDeniedEmail(locale, {
+    const content = await buildBookingDeniedEmail(locale, {
       firstName: booking.person.firstName,
       aircraftRegistration: booking.aircraft.registration,
       startsAt: booking.startsAt,
@@ -1706,7 +1706,7 @@ async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
       reason: booking.denyReason!,
     });
     if (!(await getOperationalMailPolicy()).switches.bookingDenied) return;
-    await getMailSender().send({ to: person.email, subject, text });
+    await getMailSender().send({ ...content, to: person.email });
   } catch (error) {
     console.error('transitionBooking: failed to send booking-denied email', error);
   }

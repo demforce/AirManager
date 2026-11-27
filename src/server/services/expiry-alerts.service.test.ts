@@ -29,8 +29,8 @@ vi.mock('@/server/adapters/mail', () => ({
 }));
 
 vi.mock('@/server/adapters/mail/templates', () => ({
-  buildExpiryAlertEmail: vi.fn(async () => ({ subject: 'Alert subject', text: 'Alert text' })),
-  buildExpiryDigestEmail: vi.fn(async () => ({ subject: 'Digest subject', text: 'Digest text' })),
+  buildExpiryAlertEmail: vi.fn(async () => ({ subject: 'Alert subject', text: 'Alert text', html: '<p>Alert text</p>' })),
+  buildExpiryDigestEmail: vi.fn(async () => ({ subject: 'Digest subject', text: 'Digest text', html: '<p>Digest text</p>' })),
 }));
 
 const { prisma } = await import('@/server/db/prisma');
@@ -122,7 +122,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     expiryFindMany.mockResolvedValue([target]);
     vi.mocked(buildExpiryAlertEmail).mockImplementationOnce(async () => {
       setMailPolicy(false, digest);
-      return { subject: 'alert', text: 'alert' };
+      return { subject: 'alert', text: 'alert', html: '<p>alert</p>' };
     });
     const result = await runExpiryAlertsJob();
     expect(result.status).toBe('settings_changed');
@@ -142,7 +142,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     expiryFindMany.mockResolvedValue([candidateFixture()]);
     vi.mocked(buildExpiryAlertEmail).mockImplementationOnce(async () => {
       setMailPolicy(true, false);
-      return { subject: 'alert', text: 'alert' };
+      return { subject: 'alert', text: 'alert', html: '<p>alert</p>' };
     });
     expect(await runExpiryAlertsJob()).toMatchObject({ status: 'settings_changed', holderEmailsSent: 1, digestEmailsSent: 0, alertsCreated: 1 });
   });
@@ -163,7 +163,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     expiryFindMany.mockResolvedValue([candidateFixture()]);
     vi.mocked(buildExpiryDigestEmail).mockImplementationOnce(async () => {
       setMailPolicy(false, false);
-      return { subject: 'digest', text: 'digest' };
+      return { subject: 'digest', text: 'digest', html: '<p>digest</p>' };
     });
     sentAlertDeleteManyMock.mockResolvedValue({ count: 1 });
     expect(await runExpiryAlertsJob()).toMatchObject({ status: 'settings_changed', alertsCreated: 0, digestEmailsSent: 0 });
@@ -176,7 +176,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
     expiryFindMany.mockResolvedValue([candidateFixture()]);
     vi.mocked(buildExpiryDigestEmail).mockImplementationOnce(async () => {
       vi.mocked(prisma.sentAlert.findMany).mockResolvedValue([]);
-      return { subject: 'digest', text: 'old date' };
+      return { subject: 'digest', text: 'old date', html: '<p>old date</p>' };
     });
     expect(await runExpiryAlertsJob()).toMatchObject({ holderEmailsSent: 0, digestEmailsSent: 0 });
     expect(sendMock).not.toHaveBeenCalled();
@@ -217,6 +217,8 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
       expect(sentAlertCreateManyMock).toHaveBeenCalledWith({ data: [{ id: expect.any(String), expiryId: 'exp_1', threshold: 60 }] });
       expect(sendMock).toHaveBeenCalledTimes(2); // holder + digest (admin)
+      expect(sendMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ html: '<p>Alert text</p>' }));
+      expect(sendMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ html: '<p>Digest text</p>' }));
       expect(result).toMatchObject({ candidates: 1, alertsCreated: 1, holderEmailsSent: 1, holdersWithoutEmail: 0, digestEmailsSent: 1 });
     });
 

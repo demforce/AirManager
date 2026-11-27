@@ -45,7 +45,7 @@ vi.mock('@/server/adapters/mail', () => ({
 }));
 
 vi.mock('@/server/adapters/mail/templates', () => ({
-  buildNegativeBalanceAlertEmail: vi.fn(async () => ({ subject: 'Alert subject', text: 'Alert text' })),
+  buildNegativeBalanceAlertEmail: vi.fn(async () => ({ subject: 'Alert subject', text: 'Alert text', html: '<p>Alert text</p>' })),
 }));
 
 const { prisma } = await import('@/server/db/prisma');
@@ -987,7 +987,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         await flushAsync();
 
         expect(sendMock).toHaveBeenCalledTimes(1);
-        expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'mario@example.com' }));
+        expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'mario@example.com', html: '<p>Alert text</p>' }));
       });
 
       it('ok → belowThreshold (a double worsening in one movement) sends exactly ONE email', async () => {
