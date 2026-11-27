@@ -26,8 +26,16 @@ Il candidato ha superato lint, typecheck, 2.351 unit e build. La suite Chromium 
 
 La story è conclusa nel commit applicativo `c1ddad6`. Il job confronta la data selezionata con quella corrente sotto lo stesso lock usato dai tre percorsi di rinnovo. Nella prova su PostgreSQL un rinnovo da +3 a +50 giorni durante il giro lascia intatte tutte le soglie e il titolare non riceve il testo a +3. Al giro successivo riceve «50 giorni». Un invio già affidato al trasporto può arrivare dopo il rinnovo. La revisione indipendente e i gate su Node 22 e 24 hanno approvato il candidato. Chromium ha chiuso con 714 passati al primo tentativo, due al primo retry e zero skip. Il [record della story](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md) conserva le prove sui due job concorrenti, sul guasto SMTP, sul lotto da 200 e sul comando «Invia promemoria» dalla schermata Scadenze.
 
+## Interruttori delle email operative
+
+La sezione Email operative di Impostazioni consente di scegliere separatamente gli avvisi per saldo, diniego di prenotazione, velivolo fuori servizio, archiviazione, promemoria al titolare e riepilogo agli amministratori. In un club già configurato, in assenza di una preferenza salvata, i sei valori sono tutti attivi. Le operazioni di saldo, prenotazione e flotta proseguono anche con la relativa email spenta. Il test SMTP del club e le email di invito e recupero restano disponibili.
+
+Story chiusa al commit applicativo `2337eca` dopo riesame indipendente. Il candidato ha superato 2.363 unit test e 16 prove PostgreSQL. Dei 717 casi Chromium, 715 sono passati al primo tentativo e due al primo retry, con zero skip.
+
+Se entrambi i canali scadenze sono spenti, il job risponde `disabled` senza registrare soglie. Quando un canale viene riacceso, i cicli esistenti ripartono dalle soglie dei giorni successivi di Roma. Creazioni e rinnovi successivi seguono la normale cadenza, anche il giorno stesso. La migrazione riguarda il ciclo delle scadenze. Il [record degli interruttori](../../_bmad-output/implementation-artifacts/interruttori-email-operative.md) riporta i controlli sugli avvisi, sui dati preesistenti e sulla finestra di consegna SMTP.
+
 ## Prossimo lavoro
 
-Dopo la correzione dei promemoria a seguito di rinnovo, il prossimo passo approvato è la story dei sei interruttori operativi. Per una story successiva il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il recapito del club servirà da destinazione distinta per il test SMTP. [Record promemoria dopo rinnovo](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
+Per la futura fase di accesso, il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il test SMTP continuerà a usare il contatto del club come destinazione distinta. [Decisione del PO](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
 
 Restano aperte le decisioni sul formato dettagliato di Scadenze e sul font Unicode nei PDF. La retrospettiva dell’Epic 18 resta facoltativa.
