@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { lockExpiryDate } from './expiry-cycle';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import type { AppLocale } from '@/i18n/routing';
@@ -95,14 +96,6 @@ const CANDIDATE_SELECT = {
   sentAlerts: { select: { threshold: true } },
 } as const;
 
-type Candidate = {
-  id: string;
-  expiresAt: Date;
-  person: { id: string; firstName: string; lastName: string; email: string | null };
-  expiryType: { name: string };
-  sentAlerts: { threshold: number }[];
-};
-
 /** Every threshold `T` with `daysLeft <= T` — the DUE set (Contesto: a cadence marker, not an equality). */
 function dueThresholds(daysLeft: number): number[] {
   return EXPIRY_ALERT_THRESHOLDS.filter((threshold) => daysLeft <= threshold);
@@ -113,6 +106,33 @@ function isRecipientRejection(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const { command, responseCode } = error as { command?: unknown; responseCode?: unknown };
   return command === 'RCPT TO' && typeof responseCode === 'number' && [450, 550, 551, 552, 553].includes(responseCode);
+}
+
+/** A selected page can outlive a renewal. Claims and date changes serialize
+ * on the same expiry row. A replaced cycle is reconsidered by a fresh page.
+ * The second statement sees markers committed by a job we waited for. */
+async function claimExpiry(selected: { id: string; expiresAt: Date }, today: Date) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const currentDate = await lockExpiryDate(tx, selected.id);
+      if (currentDate?.getTime() !== selected.expiresAt.getTime()) return null;
+      const candidate = await tx.expiry.findUnique({
+        where: { id: selected.id, person: { archivedAt: null }, expiryType: { isActive: true } },
+        select: CANDIDATE_SELECT,
+      });
+      if (!candidate) return null;
+      const daysLeft = daysUntilUtc(candidate.expiresAt, today);
+      const consumed = new Set(candidate.sentAlerts.map((row) => row.threshold));
+      const claims = dueThresholds(daysLeft).filter((threshold) => !consumed.has(threshold))
+        .map((threshold) => ({ id: randomUUID(), expiryId: candidate.id, threshold }));
+      if (!claims.length) return null;
+      await tx.sentAlert.createMany({ data: claims });
+      return { candidate, daysLeft, claims };
+    });
+  } catch (error) {
+    if (hasPrismaCode(error, 'P2002') || hasPrismaCode(error, 'P2003')) return null;
+    throw error;
+  }
 }
 
 export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN): Promise<ExpiryAlertsJobResult> {
@@ -156,47 +176,26 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
   while (candidatesProcessed < limit) {
     const where = cursor === null ? pendingWhere : after(cursor);
     const take = Math.min(PAGE_SIZE, limit - candidatesProcessed);
-    const page: Candidate[] = await prisma.expiry.findMany({
+    const page: { id: string; expiresAt: Date; personId: string }[] = await prisma.expiry.findMany({
       where,
       orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }],
       take,
-      select: CANDIDATE_SELECT,
+      select: { id: true, expiresAt: true, personId: true },
     });
     if (page.length === 0) { reachedEnd = true; break; }
     const locales = await prisma.user.findMany({
-      where: { personId: { in: page.map((candidate) => candidate.person.id) } },
+      where: { personId: { in: page.map((candidate) => candidate.personId) } },
       select: { personId: true, locale: true },
     });
     const localeByPerson = new Map(locales.map((user) => [user.personId, user.locale]));
 
-    for (const candidate of page) {
+    for (const selected of page) {
       candidatesProcessed += 1;
-      cursor = { expiresAt: candidate.expiresAt, id: candidate.id };
-      const daysLeft = daysUntilUtc(candidate.expiresAt, today);
-      const consumed = new Set(candidate.sentAlerts.map((sentAlert) => sentAlert.threshold));
-      const toConsume = dueThresholds(daysLeft).filter((threshold) => !consumed.has(threshold));
-
-      if (toConsume.length === 0) {
-        continue;
-      }
-
-      // Stable claim IDs let a failed attempt release only rows it inserted.
-      // A concurrent renewal can clear the old markers and another run can
-      // claim the same thresholds before this send reports its failure.
-      const claims = toConsume.map((threshold) => ({ id: randomUUID(), expiryId: candidate.id, threshold }));
-      try {
-        await prisma.sentAlert.createMany({
-          data: claims,
-        });
-      } catch (error) {
-        if (hasPrismaCode(error, 'P2002') || hasPrismaCode(error, 'P2003')) {
-          // A concurrent run owns the claim, or the expiry was deleted while
-          // this page was processed. Neither case should send an email.
-          continue;
-        }
-        throw error;
-      }
-
+      cursor = selected;
+      const claim = await claimExpiry(selected, today);
+      if (!claim) continue;
+      const { candidate, daysLeft, claims } = claim;
+      const claimIds = claims.map((row) => row.id);
       const personName = `${candidate.person.firstName} ${candidate.person.lastName}`;
       // Tri-state (story TD-1, AC 2): `EMAILED`/`NO_EMAIL`/`SEND_FAILED` — the
       // digest flag must distinguish "no email on file" (contact them
@@ -215,15 +214,25 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
             expiresAt: candidate.expiresAt,
             daysLeft,
           });
+          // Rendering is asynchronous. A renewal may already have removed this
+          // attempt's markers. After handoff, SMTP cannot recall a message.
+          const owned = await prisma.sentAlert.findFirst({
+            where: { id: claimIds[0], expiry: { person: { archivedAt: null, email: candidate.person.email }, expiryType: { isActive: true } } },
+            select: { id: true },
+          });
+          if (!owned) {
+            await prisma.sentAlert.deleteMany({ where: { id: { in: claimIds } } });
+            continue;
+          }
           sendAttempted = true;
           await getMailSender().send({ to: candidate.person.email, subject, text });
           holderEmailsSent += 1;
-          alertsCreated += toConsume.length;
+          alertsCreated += claims.length;
           transportFailures = 0;
           holderStatus = 'EMAILED';
         } catch (error) {
           console.error('runExpiryAlertsJob: failed to send holder alert email', error);
-          await prisma.sentAlert.deleteMany({ where: { id: { in: claims.map((claim) => claim.id) } } });
+          await prisma.sentAlert.deleteMany({ where: { id: { in: claimIds } } });
           if (sendAttempted) {
             if (isRecipientRejection(error)) { recipientRejections += 1; transportFailures = 0; }
             else transportFailures += 1;
@@ -232,7 +241,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
         }
       } else {
         holdersWithoutEmail += 1;
-        alertsCreated += toConsume.length;
+        alertsCreated += claims.length;
         holderStatus = 'NO_EMAIL';
       }
 

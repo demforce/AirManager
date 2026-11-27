@@ -769,7 +769,12 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       const profiles = { pilotProfile: null, studentProfile: null, instructorProfile: null, ...state.profiles };
       const record = (name: string, value: unknown = {}) => async () => (calls.push(name), value);
       return {
-        $queryRaw: vi.fn(async (strings: TemplateStringsArray) => (calls.push(`queryRaw:${strings.join('?')}`), [{ id: 'person_1', archivedAt: state.archivedAt ?? null }])),
+        $queryRaw: vi.fn(async (strings: TemplateStringsArray, id: string) => {
+          const sql = strings.join('?');
+          calls.push(`queryRaw:${sql}`);
+          if (sql.includes('FROM "Expiry"')) return state.expiries?.filter((row) => row.id === id) ?? [];
+          return [{ id: 'person_1', archivedAt: state.archivedAt ?? null }];
+        }),
         pilotProfile: { upsert: vi.fn(record('pilotProfile.upsert', { licenseNumber: 'L', licenseType: 'PPL', deactivatedAt: null })), updateMany: vi.fn(record('pilotProfile.updateMany', { count: 0 })) },
         studentProfile: {
           upsert: vi.fn(record('studentProfile.upsert', { courseStartDate: new Date('2026-03-01'), deactivatedAt: null })),

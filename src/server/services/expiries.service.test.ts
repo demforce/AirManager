@@ -757,6 +757,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     });
 
     it('patches notes to null explicitly (distinct from leaving it untouched)', async () => {
+      queryRawMock.mockResolvedValue([{ expiresAt: parseDateOnlyUtc('2026-12-31') }]);
       expiryFindUnique.mockResolvedValue({ id: 'exp_1', expiresAt: parseDateOnlyUtc('2026-12-31') });
       expiryUpdate.mockResolvedValue(expiryFixture({ notes: null }));
 
@@ -770,6 +771,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     // --- SentAlert wipe-on-renewal (story 6.3, AD-9) -----------------------
 
     it('expiresAt CHANGES value -> wipes SentAlert in the same transaction (renewal re-earns its alert cycle)', async () => {
+      queryRawMock.mockResolvedValue([{ expiresAt: parseDateOnlyUtc('2026-12-31') }]);
       expiryFindUnique.mockResolvedValue({ id: 'exp_1', expiresAt: parseDateOnlyUtc('2026-12-31') });
       sentAlertDeleteMany.mockResolvedValue({ count: 2 });
       expiryUpdate.mockResolvedValue(expiryFixture({ expiresAt: parseDateOnlyUtc('2027-06-30') }));
@@ -781,6 +783,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     });
 
     it('expiresAt stays the SAME value (re-submitted, or only notes patched) -> does NOT touch SentAlert', async () => {
+      queryRawMock.mockResolvedValue([{ expiresAt: parseDateOnlyUtc('2026-12-31') }]);
       expiryFindUnique.mockResolvedValue({ id: 'exp_1', expiresAt: parseDateOnlyUtc('2026-12-31') });
       expiryUpdate.mockResolvedValue(expiryFixture());
 
@@ -790,6 +793,7 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
     });
 
     it('only notes patched (expiresAt absent from the input) -> does NOT touch SentAlert', async () => {
+      queryRawMock.mockResolvedValue([{ expiresAt: parseDateOnlyUtc('2026-12-31') }]);
       expiryFindUnique.mockResolvedValue({ id: 'exp_1', expiresAt: parseDateOnlyUtc('2026-12-31') });
       expiryUpdate.mockResolvedValue(expiryFixture());
 
@@ -803,14 +807,14 @@ describe('expiries.service (story 6.2 — person expiries, computed status, FR-3
 
   describe('updateExpiryDateCore', () => {
     it('writes the date on the given tx and wipes SentAlert only when the date changes', async () => {
-      const tx = { sentAlert: { deleteMany: vi.fn(async () => ({ count: 1 })) }, expiry: { update: vi.fn(async () => ({})) } };
+      const tx = { $queryRaw: vi.fn().mockResolvedValueOnce([{ expiresAt: parseDateOnlyUtc('2026-12-31') }]).mockResolvedValueOnce([{ expiresAt: parseDateOnlyUtc('2027-06-30') }]), sentAlert: { deleteMany: vi.fn(async () => ({ count: 1 })) }, expiry: { update: vi.fn(async () => ({})) } };
 
-      await updateExpiryDateCore(tx as never, 'exp_1', parseDateOnlyUtc('2027-06-30'), parseDateOnlyUtc('2026-12-31'), 'admin_1');
+      await updateExpiryDateCore(tx as never, 'exp_1', parseDateOnlyUtc('2027-06-30'), 'admin_1');
       expect(tx.sentAlert.deleteMany).toHaveBeenCalledWith({ where: { expiryId: 'exp_1' } });
       expect(tx.expiry.update).toHaveBeenCalledWith({ where: { id: 'exp_1' }, data: { expiresAt: parseDateOnlyUtc('2027-06-30'), actorUserId: 'admin_1' } });
 
       tx.sentAlert.deleteMany.mockClear();
-      await updateExpiryDateCore(tx as never, 'exp_1', parseDateOnlyUtc('2027-06-30'), parseDateOnlyUtc('2027-06-30'), 'admin_1');
+      await updateExpiryDateCore(tx as never, 'exp_1', parseDateOnlyUtc('2027-06-30'), 'admin_1');
       expect(tx.sentAlert.deleteMany).not.toHaveBeenCalled();
       expect(sentAlertDeleteManyMock).not.toHaveBeenCalled();
     });

@@ -11,6 +11,7 @@ import { todayDateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { getCurrencySettings } from './app-settings.service';
+import { lockExpiryDate } from './expiry-cycle';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 /**
@@ -274,14 +275,14 @@ export async function registerExpiry(actor: Actor, input: RegisterExpiryInput): 
 export async function updateExpiry(actor: Actor, id: string, input: UpdateExpiryInput): Promise<ExpiryListItem> {
   authorize(actor, 'expiries.manage');
 
-  const existing = await prisma.expiry.findUnique({ where: { id }, select: { id: true, expiresAt: true } });
+  const existing = await prisma.expiry.findUnique({ where: { id }, select: { id: true } });
   if (!existing) {
     throw new NotFoundError('Expiry not found.');
   }
 
   const updated = await prisma.$transaction(async (tx) => {
     if (input.expiresAt !== undefined) {
-      await updateExpiryDateCore(tx, id, parseDateOnlyUtc(input.expiresAt), existing.expiresAt, actor.userId);
+      await updateExpiryDateCore(tx, id, parseDateOnlyUtc(input.expiresAt), actor.userId);
     }
 
     return tx.expiry.update({
@@ -308,12 +309,12 @@ export async function updateExpiryDateCore(
   tx: Prisma.TransactionClient,
   expiryId: string,
   nextExpiresAt: Date,
-  previousExpiresAt: Date,
   actorUserId: string,
 ): Promise<void> {
-  if (nextExpiresAt.getTime() !== previousExpiresAt.getTime()) {
-    await tx.sentAlert.deleteMany({ where: { expiryId } });
-  }
+  const current = await lockExpiryDate(tx, expiryId);
+  if (!current) throw new NotFoundError('Expiry not found.');
+  if (current.getTime() === nextExpiresAt.getTime()) return;
+  await tx.sentAlert.deleteMany({ where: { expiryId } });
   await tx.expiry.update({ where: { id: expiryId }, data: { expiresAt: nextExpiresAt, actorUserId } });
 }
 

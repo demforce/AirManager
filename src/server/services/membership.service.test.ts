@@ -14,7 +14,7 @@ vi.mock('@/server/db/prisma', () => ({
     account: { upsert: vi.fn() },
     accountMovement: { create: vi.fn(), aggregate: vi.fn() },
     expiryType: { findFirst: vi.fn(), upsert: vi.fn() },
-    expiry: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+    expiry: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
     sentAlert: { deleteMany: vi.fn() },
     $queryRaw: vi.fn(),
     $transaction: vi.fn(),
@@ -51,7 +51,6 @@ const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
 const accountMovementAggregateMock = vi.mocked(prisma.accountMovement.aggregate);
 const expiryTypeFindFirstMock = vi.mocked(prisma.expiryType.findFirst);
 const expiryTypeUpsertMock = vi.mocked(prisma.expiryType.upsert);
-const expiryFindUniqueMock = vi.mocked(prisma.expiry.findUnique);
 const expiryUpdateMock = vi.mocked(prisma.expiry.update);
 const expiryCreateMock = vi.mocked(prisma.expiry.create);
 const sentAlertDeleteManyMock = vi.mocked(prisma.sentAlert.deleteMany);
@@ -62,7 +61,6 @@ type Fixture = Record<string, unknown>;
 const personFindUnique = personFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture | null) => void };
 const accountUpsert = accountUpsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryTypeUpsert = expiryTypeUpsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const expiryFindUnique = expiryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture | null) => void };
 const expiryUpdate = expiryUpdateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const expiryCreate = expiryCreateMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void };
@@ -107,7 +105,6 @@ beforeEach(() => {
   accountMovementAggregateMock.mockReset();
   expiryTypeFindFirstMock.mockReset();
   expiryTypeUpsertMock.mockReset();
-  expiryFindUniqueMock.mockReset();
   expiryUpdateMock.mockReset();
   expiryCreateMock.mockReset();
   sentAlertDeleteManyMock.mockReset();
@@ -143,7 +140,6 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
   });
 
   it('debits the account with a NEGATIVE-amount ADJUSTMENT movement (AD-3: negative = addebito)', async () => {
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_1', expiresAt: new Date('2028-03-10') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -162,7 +158,6 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
   });
 
   it('no MEMBERSHIP type yet: upserts "Quota associativa" by NAME (kind MEMBERSHIP, ALL scope, non-blocking, 12 months), realigning a row that already holds the name (review 19.7a F4)', async () => {
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_1', expiresAt: new Date('2028-03-10') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -180,7 +175,6 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
 
   it('the MEMBERSHIP type exists: found by KIND, never upserted nor modified (review 19.7a F4)', async () => {
     expiryTypeFindFirstMock.mockResolvedValue({ id: 'expirytype_found_by_kind' } as never);
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_1', expiresAt: new Date('2028-03-10') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -190,7 +184,6 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
   });
 
   it('FIRST charge (no existing Expiry): creates one, expiresAt = today+12mo, NO SentAlert wipe (nothing to wipe)', async () => {
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
     const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -211,7 +204,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
 
   it('RENEWAL, current expiry still in the future (early renewal): rolls forward from the CURRENT expiresAt, never from today (ratifica 1b)', async () => {
     // Current expiry is 2027-09-01, well after "today" (2027-03-10) — the new expiry must be 2028-09-01 (current + 12mo), NOT 2028-03-10 (today + 12mo).
-    expiryFindUnique.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2027-09-01T00:00:00.000Z') });
+    queryRawMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'expiry_existing', expiresAt: new Date('2027-09-01T00:00:00.000Z') }]);
     expiryUpdate.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2028-09-01') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -225,7 +218,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
   });
 
   it('RENEWAL, current expiry already LAPSED: rolls forward from TODAY, not the stale past date', async () => {
-    expiryFindUnique.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2026-01-01T00:00:00.000Z') });
+    queryRawMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'expiry_existing', expiresAt: new Date('2026-01-01T00:00:00.000Z') }]);
     expiryUpdate.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2028-03-10') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -236,7 +229,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
   });
 
   it('a RENEWAL wipes SentAlert for that expiry in the SAME transaction (ratifica 1a — "renewal re-earns its alert cycle")', async () => {
-    expiryFindUnique.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2027-09-01T00:00:00.000Z') });
+    queryRawMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'expiry_existing', expiresAt: new Date('2027-09-01T00:00:00.000Z') }]);
     expiryUpdate.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2028-09-01') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -245,7 +238,7 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
   });
 
   it('returns the post-commit balance (SUM aggregate, read-your-own-write) and the renewed expiry', async () => {
-    expiryFindUnique.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2027-09-01T00:00:00.000Z') });
+    queryRawMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'expiry_existing', expiresAt: new Date('2027-09-01T00:00:00.000Z') }]);
     expiryUpdate.mockResolvedValue({ id: 'expiry_existing', expiresAt: new Date('2028-09-01T00:00:00.000Z') });
     mockBalances(1_000_000, -12000);
 
@@ -256,7 +249,6 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
   });
 
   it('upserts (never re-creates) the Account — a first-time payer with no prior movements is not blocked', async () => {
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -267,12 +259,13 @@ describe('chargeMembershipFee (story 12.11, AC 7)', () => {
   });
 
   it('locks the Account row (FOR UPDATE) before reading the balance (review F3/F7)', async () => {
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
 
-    expect(queryRawMock).toHaveBeenCalledTimes(1);
+    const statements = queryRawMock.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join('?'));
+    expect(statements[0]).toMatch(/FROM "Account".*FOR UPDATE/);
+    expect(statements[1]).toMatch(/FROM "Expiry"[\s\S]*FOR NO KEY UPDATE/);
   });
 });
 
@@ -306,7 +299,6 @@ describe('chargeMembershipFee — insufficient-balance guard and its deroga (PO 
 
   it('allows an addebito that lands EXACTLY on zero (equal = covered, the shared rule)', async () => {
     mockBalances(5000, 0);
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
     const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -329,8 +321,7 @@ describe('chargeMembershipFee — insufficient-balance guard and its deroga (PO 
       expect(personFindUniqueMock).not.toHaveBeenCalled();
       expect(transactionMock).not.toHaveBeenCalled();
       // The same actor WITHOUT force reaches the reads: the 403 above is the `force` gate, not `finance.manage`.
-      expiryFindUnique.mockResolvedValue(null);
-      expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
+        expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
       await chargeMembershipFee(instructor, 'person_1', { amountCents: 5000, force: false });
       expect(personFindUniqueMock).toHaveBeenCalledTimes(1);
     } finally {
@@ -340,7 +331,6 @@ describe('chargeMembershipFee — insufficient-balance guard and its deroga (PO 
 
   it('an ADMIN force at balance 0 charges below zero — exactly the case the in-app alert (F7) exists for', async () => {
     mockBalances(0, -5000);
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
     const result = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: true });
@@ -351,7 +341,6 @@ describe('chargeMembershipFee — insufficient-balance guard and its deroga (PO 
   });
 
   it('force with a balance that covers the amount charges exactly as without it', async () => {
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-03-10') });
 
     const forced = await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: true });
@@ -372,7 +361,6 @@ describe('chargeMembershipFee — insufficient-balance guard and its deroga (PO 
 describe('chargeMembershipFee — Europe/Rome "today" at a midnight boundary (story 16.1)', () => {
   it('AC 4: at 00:30 Rome on the 1st (CEST), the ADJUSTMENT is dated on the NEW (Roma) month', async () => {
     vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep in Rome
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2027-09-01') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });
@@ -388,7 +376,6 @@ describe('chargeMembershipFee — Europe/Rome "today" at a midnight boundary (st
 
   it('AC 5: at 00:30 Rome on 1 Jan 2027 (CET), the fee is "Quota associativa 2027" (not 2026), dated 2027-01-01, expiring 2028-01-01', async () => {
     vi.setSystemTime(new Date('2026-12-31T23:30:00.000Z')); // 00:30 CET, 1 Jan 2027 in Rome
-    expiryFindUnique.mockResolvedValue(null);
     expiryCreate.mockResolvedValue({ id: 'expiry_new', expiresAt: new Date('2028-01-01') });
 
     await chargeMembershipFee(adminActor(), 'person_1', { amountCents: 5000, force: false });

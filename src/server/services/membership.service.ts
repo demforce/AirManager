@@ -144,10 +144,12 @@ export async function chargeMembershipFee(actor: Actor, personId: string, input:
         select: { id: true },
       }));
 
-    const existingExpiry = await tx.expiry.findUnique({
-      where: { personId_expiryTypeId: { personId, expiryTypeId: expiryType.id } },
-      select: { id: true, expiresAt: true },
-    });
+    // The account lock serializes charges; the expiry lock also serializes
+    // a charge with the reminder job and both date editors.
+    const [existingExpiry] = await tx.$queryRaw<{ id: string; expiresAt: Date }[]>`
+      SELECT "id", "expiresAt" FROM "Expiry"
+      WHERE "personId" = ${personId} AND "expiryTypeId" = ${expiryType.id}
+      FOR NO KEY UPDATE`;
 
     let expiry: { id: string; expiresAt: Date };
     if (existingExpiry) {

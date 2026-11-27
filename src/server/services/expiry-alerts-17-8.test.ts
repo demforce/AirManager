@@ -3,9 +3,11 @@ import { EXPIRY_ALERT_THRESHOLDS } from '@/lib/expiry-status';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
-    expiry: { findMany: vi.fn(), count: vi.fn() },
+    $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
+    expiry: { findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn() },
     appSetting: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
-    sentAlert: { createMany: vi.fn(), deleteMany: vi.fn() },
+    sentAlert: { findFirst: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
     user: { findMany: vi.fn(), findUnique: vi.fn() },
   },
 }));
@@ -29,20 +31,34 @@ const settingFind = vi.mocked(prisma.appSetting.findUnique);
 const settingCreate = vi.mocked(prisma.appSetting.create);
 const settingUpdate = vi.mocked(prisma.appSetting.updateMany);
 
+const rowsById = new Map<string, { expiresAt: Date }>();
+
 function candidate(id: string, days = 60) {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() + days);
-  return {
+  const row = {
     id,
+    personId: `person_${id}`,
     expiresAt: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())),
     person: { id: `person_${id}`, firstName: 'Test', lastName: id, email: `${id}@example.test` },
     expiryType: { name: 'Test type' },
     sentAlerts: [],
   };
+  rowsById.set(id, row);
+  return row;
 }
 
 describe('story 17.8 alert batches', () => {
   beforeEach(() => {
+    rowsById.clear();
+    vi.mocked(prisma.$transaction).mockImplementation(async (callback) => callback(prisma));
+    vi.mocked(prisma.$queryRaw).mockImplementation((async (_sql: unknown, id: string) => {
+      const row = rowsById.get(String(id));
+      return row ? [{ expiresAt: row.expiresAt }] : [];
+    }) as never);
+    vi.mocked(prisma.expiry.findUnique).mockImplementation((async ({ where }: { where: { id: string } }) => rowsById.get(where.id) ?? null) as never);
+    vi.mocked(prisma.sentAlert.findFirst).mockResolvedValue({ id: 'owned' } as never);
+
     vi.clearAllMocks();
     find.mockResolvedValue([] as never);
     count.mockResolvedValue(0);

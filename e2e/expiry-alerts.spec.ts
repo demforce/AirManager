@@ -229,7 +229,12 @@ test.describe('Session-authenticated trigger (Story 12.11, AC 3; ratifica utente
     });
     expect(registerResponse.status()).toBe(201);
 
-    const firstRun = await page.request.post('/api/v1/expiry-alerts/trigger');
+    await page.goto('/it/dashboard/expiries');
+    const [firstRun] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith('/api/v1/expiry-alerts/trigger') && r.request().method() === 'POST'),
+      page.getByTestId('scadenze-send-reminders-button').click(),
+    ]);
+    await expect(page.getByTestId('scadenze-reminders-feedback')).toContainText('in coda');
     expect(firstRun.status()).toBe(200);
     const firstBody = (await firstRun.json()) as { holderEmailsSent: number; digestEmailsSent: number; remaining: number };
     expect(typeof firstBody.holderEmailsSent).toBe('number');

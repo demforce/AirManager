@@ -4,12 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
+    $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
     expiry: {
+      findUnique: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
     },
     appSetting: { findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     sentAlert: {
+      findFirst: vi.fn(),
       createMany: vi.fn(),
       deleteMany: vi.fn(),
     },
@@ -55,15 +59,20 @@ function prismaError(code: string): unknown {
   return { code };
 }
 
+const rowsById = new Map<string, { expiresAt: Date }>();
+
 function candidateFixture(overrides: Partial<Fixture> = {}): Fixture {
-  return {
+  const row = {
     id: 'exp_1',
+    personId: 'person_1',
     expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 60),
     person: { id: 'person_1', firstName: 'Mario', lastName: 'Rossi', email: 'mario@example.com' },
     expiryType: { name: 'Visita medica classe 2' },
     sentAlerts: [],
     ...overrides,
   };
+  rowsById.set(row.id, row);
+  return row;
 }
 
 function adminUserFixture(overrides: Partial<Fixture> = {}): Fixture {
@@ -72,6 +81,15 @@ function adminUserFixture(overrides: Partial<Fixture> = {}): Fixture {
 
 describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, idempotent job, FR-37, AD-9)', () => {
   beforeEach(() => {
+    rowsById.clear();
+    vi.mocked(prisma.$transaction).mockImplementation(async (callback) => callback(prisma));
+    vi.mocked(prisma.$queryRaw).mockImplementation((async (_sql: unknown, id: string) => {
+      const row = rowsById.get(String(id));
+      return row ? [{ expiresAt: row.expiresAt }] : [];
+    }) as never);
+    vi.mocked(prisma.expiry.findUnique).mockImplementation((async ({ where }: { where: { id: string } }) => rowsById.get(where.id) ?? null) as never);
+    vi.mocked(prisma.sentAlert.findFirst).mockResolvedValue({ id: 'owned' } as never);
+
     vi.mocked(prisma.appSetting.findUnique).mockReset();
     vi.mocked(prisma.appSetting.findUnique).mockResolvedValue(null);
     vi.mocked(prisma.appSetting.create).mockReset();
@@ -223,6 +241,26 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
       await expect(runExpiryAlertsJob()).rejects.toThrow('connection lost');
     });
+  });
+
+  it('skips a selected cycle when the locked expiry date has changed before claim', async () => {
+    expiryFindMany.mockResolvedValue([candidateFixture()]);
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([{ expiresAt: addDaysUtc(todayDateOnlyUtcInZone(APP_TIMEZONE), 50) }]);
+    const result = await runExpiryAlertsJob();
+    expect(result).toMatchObject({ candidates: 1, alertsCreated: 0, holderEmailsSent: 0, digestEmailsSent: 0 });
+    expect(sentAlertCreateManyMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('skips the holder and digest if renewal invalidates a claim during rendering', async () => {
+    expiryFindMany.mockResolvedValue([candidateFixture()]);
+    vi.mocked(prisma.sentAlert.findFirst).mockResolvedValueOnce(null);
+    const result = await runExpiryAlertsJob();
+    expect(buildExpiryAlertEmail).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ alertsCreated: 0, holderEmailsSent: 0, digestEmailsSent: 0 });
+    expect(sendMock).not.toHaveBeenCalled();
+    const claims = sentAlertCreateManyMock.mock.calls[0]?.[0]?.data as { id: string }[];
+    expect(sentAlertDeleteManyMock).toHaveBeenCalledWith({ where: { id: { in: claims.map((row) => row.id) } } });
   });
 
   // --- Titolare without an email ------------------------------------------

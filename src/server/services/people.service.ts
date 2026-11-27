@@ -682,16 +682,14 @@ export async function updatePerson(actor: Actor, id: string, patch: UpdatePerson
     if (finalProfiles && expirySet.length > 0) {
       const rows = await tx.expiry.findMany({
         where: { personId: id, expiryTypeId: { in: expirySet.map((entry) => entry.expiryTypeId) } },
-        select: { id: true, expiryTypeId: true, expiresAt: true },
+        select: { id: true, expiryTypeId: true },
       });
       const rowByType = new Map(rows.map((row) => [row.expiryTypeId, row]));
       for (const entry of expirySet) {
         const nextExpiresAt = parseDateOnlyUtc(entry.expiresAt);
         const row = rowByType.get(entry.expiryTypeId);
         if (row) {
-          if (row.expiresAt.getTime() !== nextExpiresAt.getTime()) {
-            await updateExpiryDateCore(tx, row.id, nextExpiresAt, row.expiresAt, actor.userId);
-          }
+          await updateExpiryDateCore(tx, row.id, nextExpiresAt, actor.userId);
           continue;
         }
         if (locked.archivedAt !== null) {
