@@ -1,4 +1,4 @@
-# Handoff AirManager · 26 novembre 2026
+# Handoff AirManager · 27 novembre 2026
 
 ## Stato del progetto
 
@@ -22,6 +22,12 @@ Il follow-up è concluso sul commit applicativo `ddc1c6f`. In Contabilità, «Tr
 
 Il candidato ha superato lint, typecheck, 2.351 unit e build. La suite Chromium su dati sintetici locali ha concluso con exit 0, 712 passati e quattro casi recuperati al primo retry su 716, zero skip definitivi. La revisione indipendente ha approvato la correzione.
 
+## Promemoria dopo rinnovo
+
+La story è conclusa nel commit applicativo `c1ddad6`. Il job confronta la data selezionata con quella corrente sotto lo stesso lock usato dai tre percorsi di rinnovo. Nella prova su PostgreSQL un rinnovo da +3 a +50 giorni durante il giro lascia intatte tutte le soglie e il titolare non riceve il testo a +3. Al giro successivo riceve «50 giorni». Un invio già affidato al trasporto può arrivare dopo il rinnovo. La revisione indipendente e i gate su Node 22 e 24 hanno approvato il candidato. Chromium ha chiuso con 714 passati al primo tentativo, due al primo retry e zero skip. Il [record della story](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md) conserva le prove sui due job concorrenti, sul guasto SMTP, sul lotto da 200 e sul comando «Invia promemoria» dalla schermata Scadenze.
+
 ## Prossimo lavoro
 
-Il PO può decidere se offrire una versione dettagliata di Scadenze e se incorporare un font Unicode nei PDF per conservare la grafia dei nomi. La retrospettiva dell’Epic 18 resta facoltativa. In coda restano le prove di login ed email con dati fittizi e provider sandbox, da avviare in una fase separata.
+Dopo la correzione dei promemoria a seguito di rinnovo, il prossimo passo approvato è la story dei sei interruttori operativi. Per una story successiva il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il recapito del club servirà da destinazione distinta per il test SMTP. [Record promemoria dopo rinnovo](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
+
+Restano aperte le decisioni sul formato dettagliato di Scadenze e sul font Unicode nei PDF. La retrospettiva dell’Epic 18 resta facoltativa.
