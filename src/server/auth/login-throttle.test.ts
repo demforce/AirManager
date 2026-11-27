@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -35,6 +36,7 @@ const executeRawMock = vi.fn(async () => undefined);
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
     loginAttempt: {
+      findMany: vi.fn(async ({ where }: { where: Parameters<typeof matchesWindow>[1] }) => rows.filter(row => matchesWindow(row, where)).sort((a,b) => +b.createdAt - +a.createdAt)),
       count: vi.fn(async ({ where }: { where: Parameters<typeof matchesWindow>[1] }) => rows.filter((r) => matchesWindow(r, where)).length),
       create: vi.fn(async ({ data }: { data: { identifier: string; ip: string | null; succeeded: boolean } }) => {
         const row: Row = { ...data, createdAt: new Date() };
@@ -86,6 +88,48 @@ describe('login-throttle (H1, CWE-307 — throttle semantics; TD-6, F2 — atomi
     expect(await reserveLoginAttempt(email, ip)).toBe(false);
     await recordSuccessfulLogin(email, ip, 'admin-password');
     expect(rows).toEqual([]);
+  });
+
+  it('paces admin reservations with finite, increasing delays and never extends a wait on refusal', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01'));
+    const reserve = () => reserveLoginAttempt('fixture@example.invalid', null, 'admin-password');
+    for (let attempt = 0; attempt < 3; attempt++) expect(await reserve()).toBe(true);
+    for (const delay of [5_000, 30_000, 120_000, 300_000]) {
+      vi.setSystemTime(Date.now() + delay - 1);
+      const count = rows.length;
+      expect(await reserve()).toBe(false);
+      expect(rows).toHaveLength(count);
+      vi.setSystemTime(Date.now() + 1);
+      expect(await reserve()).toBe(true);
+    }
+    vi.setSystemTime(Date.now() + LOGIN_RATE_LIMIT_WINDOW_MS);
+    expect(await reserve()).toBe(true);
+  });
+
+  it('shares the IPv6 cap across password providers and counts existing bare, bracketed and opaque history', async () => {
+    const ip = '2001:db8::1';
+    const bracketed = '[' + ip + ']';
+    const digest = (value: string) => 'bucket:' + createHmac('sha256', 'synthetic-login-bucket-test-secret')
+      .update('login-throttle:ip:' + value).digest('hex');
+    const history = [ip, bracketed, digest(ip), digest(bracketed)];
+    for (let i = 0; i < LOGIN_MAX_FAILED_PER_IP - 2; i++) rows.push({
+      identifier: 'previous-' + i, ip: history[i % history.length], succeeded: false, createdAt: new Date(),
+    });
+    expect(await reserveLoginAttempt('fallback', bracketed, 'admin-password')).toBe(true);
+    expect(rows.at(-1)?.ip).toBe(digest(ip));
+    expect(await reserveLoginAttempt('legacy', '2001:0db8:0:0:0:0:0:1')).toBe(true);
+    expect(await reserveLoginAttempt('later', ip)).toBe(false);
+    expect(await reserveLoginAttempt('later', bracketed, 'admin-password')).toBe(false);
+  });
+
+  it('keeps the fallback available for a separate admin when no trustworthy origin is attributable', async () => {
+    for (let identity = 0; identity < 12; identity++) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        expect(await reserveLoginAttempt('fixture-' + identity + '@example.invalid', null, 'admin-password')).toBe(true);
+      }
+    }
+    expect(await reserveLoginAttempt('independent@example.invalid', null, 'admin-password')).toBe(true);
   });
 
   it('reserves (returns true) with no history', async () => {

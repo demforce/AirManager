@@ -27,6 +27,7 @@ import {
   setOutOfServiceSchema,
   updateAircraftSchema,
 } from './aircraft';
+import { accessSecurityStatusSchema, loginPauseSchema } from './settings';
 import { forgotPasswordSchema, setPasswordSchema } from './auth-tokens';
 import { billingLiveQuerySchema, billingLiveSnapshotSchema } from './billing-live';
 import {
@@ -1728,6 +1729,16 @@ registry.registerPath({
     200: { description: 'The saved SMTP settings (password omitted).', content: jsonContent(smtpSettingsDtoSchema) },
     ...errorResponses(401, 403, 422),
   },
+});
+
+registry.registerPath({
+  method: 'get', path: '/api/v1/settings/access-security', summary: 'Inspect aggregated access security incidents and mail status',
+  tags: ['Settings'], security, responses: { 200: { description: 'Administrative status.', content: jsonContent(accessSecurityStatusSchema) }, ...errorResponses(401, 403) },
+});
+registry.registerPath({
+  method: 'put', path: '/api/v1/settings/access-security', summary: 'Pause or resume sending email sign-in links',
+  tags: ['Settings'], security, request: { body: { required: true, content: jsonContent(loginPauseSchema) } },
+  responses: { 200: { description: 'Saved login email policy.', content: jsonContent(loginPauseSchema) }, ...errorResponses(401, 403, 422) },
 });
 
 registry.registerPath({

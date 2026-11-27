@@ -669,11 +669,15 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
 
     for (const url of ['/it/dashboard/bookings', '/it/dashboard/reports', '/it/dashboard']) {
       await page.goto(url);
-      const segmented = await page.evaluate(() => {
-        const el = document.querySelector('.segmented');
-        if (!el) return null;
+      const reports = url === '/it/dashboard/reports';
+      const target = reports ? page.getByTestId('reports-period-month') : page.locator('.segmented').first();
+      if (reports) await expect(target).toBeVisible();
+      else if (!await target.count()) continue;
+      const segmented = await target.evaluate((target, reports) => {
+        const el = reports ? target.closest('.segmented.reports-period') : target;
+        if (!el) throw new Error('The visible month link must belong to the reports period selector.');
         const rect = el.getBoundingClientRect();
-        const btn = el.querySelector('button, a');
+        const btn = reports ? target : el.querySelector('button, a');
         return {
           display: getComputedStyle(el).display,
           cls: typeof el.className === 'string' ? el.className : '',
@@ -682,29 +686,27 @@ test.describe('Story 15.7 — Scadenze su telefono', () => {
           btnMinHeight: btn ? getComputedStyle(btn).minHeight : null,
           btnH: btn ? Math.round(btn.getBoundingClientRect().height * 100) / 100 : null,
         };
-      });
-      if (segmented) {
-        // The 15.7 rules hide the Scadenze finestra through a class of ITS OWN
-        // page; the shared phone floor now reaches rendered controls. On `/dashboard` the
-        // widget that carries it lives inside a `.home-desktop-surface` that
-        // 15.3 already hides at this width, so its rect is legitimately 0).
-        expect(segmented.display, `${url} .segmented display`).toBe('flex');
-        if (url === '/it/dashboard/reports') {
-          // Story 15.8b OWNS this page and its AC 1 raises both toggles to the
-          // 44px floor — through the page-owned classes `.reports-period` /
-          // `.reports-rank-metrics` still owns this face, while 18.1 extends
-          // the same phone floor to the other rendered consumers.
-          expect(segmented.cls, `${url} .segmented owner class`).toMatch(/\breports-(period|rank-metrics)\b/);
-          expect(segmented.btnMinHeight, `${url} .segmented child min-height`).toBe('44px');
+      }, reports);
+      // The 15.7 rules hide the Scadenze finestra through a class of ITS OWN
+      // page; the shared phone floor now reaches rendered controls. On `/dashboard` the
+      // widget that carries it lives inside a `.home-desktop-surface` that
+      // 15.3 already hides at this width, so its rect is legitimately 0).
+      expect(segmented.display, `${url} .segmented display`).toBe('flex');
+      if (reports) {
+        // Story 15.8b OWNS this page and its AC 1 raises both toggles to the
+        // 44px floor — through the page-owned classes `.reports-period` /
+        // `.reports-rank-metrics` still owns this face, while 18.1 extends
+        // the same phone floor to the other rendered consumers.
+        expect(segmented.cls, `${url} .segmented owner class`).toMatch(/\breports-(period|rank-metrics)\b/);
+        expect(segmented.btnMinHeight, `${url} .segmented child min-height`).toBe('44px');
+        expect(segmented.btnH, `${url} .segmented button height`).toBeGreaterThanOrEqual(43.5);
+      } else {
+        // Story 18.1 PO Q-18.1-a: the shared phone floor now includes the
+        // Pianificazione, Scadenze and Panoramica segmented controls.
+        expect(segmented.btnMinHeight, `${url} .segmented child min-height`).toBe('44px');
+        if (segmented.rendered) {
+          expect(segmented.h, `${url} .segmented height`).toBeGreaterThan(20);
           expect(segmented.btnH, `${url} .segmented button height`).toBeGreaterThanOrEqual(43.5);
-        } else {
-          // Story 18.1 PO Q-18.1-a: the shared phone floor now includes the
-          // Pianificazione, Scadenze and Panoramica segmented controls.
-          expect(segmented.btnMinHeight, `${url} .segmented child min-height`).toBe('44px');
-          if (segmented.rendered) {
-            expect(segmented.h, `${url} .segmented height`).toBeGreaterThan(20);
-            expect(segmented.btnH, `${url} .segmented button height`).toBeGreaterThanOrEqual(43.5);
-          }
         }
       }
     }

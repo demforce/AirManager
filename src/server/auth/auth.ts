@@ -1,5 +1,5 @@
 import { emailTrialEnabled } from './email-trial-policy';
-import { consumeTrialLink, loginRequestOrigin } from '@/server/services/email-trial.service';
+import { consumeTrialLink, loginRequestOrigin, trustedProxyIp } from '@/server/services/email-trial.service';
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { extractClientIp } from '@/lib/api/client-ip';
@@ -47,8 +47,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       id: 'admin-password',
       name: 'Administrator password',
       credentials: { email: {}, password: {} },
-      authorize: (credentials, request) =>
-        authorizeCredentials(credentials, extractClientIp(request.headers.get('x-forwarded-for')), 'admin-password'),
+      authorize: (credentials, request) => {
+        return authorizeCredentials(credentials, trustedProxyIp(request.headers), 'admin-password');
+      },
     }),
   ],
   callbacks: {

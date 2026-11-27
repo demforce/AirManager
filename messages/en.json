@@ -105,6 +105,7 @@
       "trialLink": "Sign in by email"
     },
     "setPassword": {
+      "adminPolicy": "For an administrator account, choose a new personal password of at least 15 characters, used only for AirManager.",
       "kicker": "Set password",
       "title": "Set your password",
       "description": "Choose a password of at least 10 characters to sign in to AirManager.",
@@ -1810,6 +1811,11 @@
     }
   },
   "Emails": {
+    "securityAlert": {
+      "subject": "AirManager — Security alert",
+      "MAIL_WORKER": "At {time}, the mail worker or a queued email was at least four minutes overdue. Check the process and inspect the queue in Settings.",
+      "LOGIN_VOLUME": "Email sign-in requests reached the warning threshold at {time}. Review the situation in Settings and pause sign-in emails if needed."
+    },
     "layout": {
       "footer": "Club communications"
     },
@@ -2206,6 +2212,22 @@
     },
     "retry": "Try again",
     "home": "Go to the overview"
+  },
+  "AccessSecurity": {
+    "title": "Sign-in security",
+    "scope": "Pausing affects sign-in email delivery. A new request will be needed after resuming. Links already sent keep their original expiry.",
+    "paused": "Sign-in email delivery is paused.",
+    "enabled": "Sign-in email delivery is allowed.",
+    "resume": "Resume sign-in emails",
+    "pause": "Pause sign-in emails",
+    "failed": "Could not save. Try again.",
+    "checked": "Latest security check: {time}.",
+    "never": "The security monitor has yet to complete its first check.",
+    "LOGIN_VOLUME": "High volume of email sign-in requests.",
+    "MAIL_WORKER": "The mail worker is overdue.",
+    "noRecipients": "Incidents awaiting a verified administrator address: {count}.",
+    "alerts": "Pending alerts: {waiting}. Acceptance uncertain: {uncertain}. Rejected or attempts exhausted: {rejected}.",
+    "loading": "Reading security status…"
   },
   "CredentialMail": {
     "ACTIVE": "Active",

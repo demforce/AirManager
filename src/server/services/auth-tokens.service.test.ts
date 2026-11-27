@@ -33,6 +33,7 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 vi.mock('@/server/auth/password', () => ({
+  verifyPassword: vi.fn(async (hash: string, value: string) => hash === 'hashed:' + value),
   hashPassword: vi.fn(async (plain: string) => `hashed:${plain}`),
 }));
 
@@ -72,7 +73,7 @@ const resetAttemptCreateMock = vi.mocked(prisma.passwordResetAttempt.create);
 // fixtures ambiguous (same workaround as me.service.test.ts): narrow to the
 // shapes this service actually reads.
 const userFindUnique = findUniqueUserMock as unknown as {
-  mockResolvedValue: (v: { id: string; email: string; isActive: boolean; locale: string } | null) => void;
+  mockResolvedValue: (v: { id: string; email: string; isActive: boolean; locale: string; roles?: string[]; passwordHash?: string } | null) => void;
 };
 const tokenFindUnique = findUniqueTokenMock as unknown as {
   mockResolvedValue: (
@@ -273,8 +274,18 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
 
   describe('setPasswordWithToken (AC 1/3 — monouso)', () => {
     beforeEach(() => {
-      userFindUnique.mockResolvedValue({ id: 'user_fixture', email: 'fixture@example.test', isActive: true, locale: 'it' });
+      userFindUnique.mockResolvedValue({ id: 'user_fixture', email: 'fixture@example.test', isActive: true, locale: 'it', roles: ['PILOT'] });
     });
+    it('protects the individual admin password on renewal without consuming the token on a policy failure', async () => {
+      userFindUnique.mockResolvedValue({ id: 'admin_fixture', email: 'fixture@example.test', isActive: true, locale: 'it',
+        roles: ['ADMIN'], passwordHash: 'hashed:previous long fixture phrase' });
+      tokenFindUnique.mockResolvedValue({ id: 'token', userId: 'admin_fixture', type: 'PASSWORD_RESET', usedAt: null, expiresAt: new Date(Date.now() + 60000) });
+      for (const password of ['short-fixture', 'previous long fixture phrase']) {
+        await expect(setPasswordWithToken('fixture', password)).rejects.toMatchObject({code: 'ADMIN_PASSWORD_POLICY'});
+      }
+      expect(updateManyTokenMock).not.toHaveBeenCalled();
+    });
+
     it('throws ValidationError for an unknown token', async () => {
       tokenFindUnique.mockResolvedValue(null);
 

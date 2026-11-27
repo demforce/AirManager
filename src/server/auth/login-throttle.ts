@@ -1,3 +1,4 @@
+import { isIPv6 } from 'node:net';
 import { createHmac } from 'node:crypto';
 import { env } from '@/lib/env';
 import { prisma } from '@/server/db/prisma';
@@ -38,6 +39,16 @@ export const LOGIN_MAX_FAILED_PER_IP = 30;
 // window. The shared advisory lock below also covers both login providers.
 function privateBucket(dimension: 'email' | 'ip', value: string): string {
   return 'bucket:' + createHmac('sha256', env.AUTH_SECRET).update('login-throttle:' + dimension + ':' + value).digest('hex');
+}
+
+// The URL parser returns a bracketed IPv6 hostname, while the legacy proxy
+// supplies a bare literal. Write a single bucket; accept both previous spellings.
+function throttleOrigin(value: string) {
+  const bare = value.startsWith('[') && value.endsWith(']') ? value.slice(1, -1) : value;
+  const canonical = !bare.includes('%') && isIPv6(bare) ? new URL('http://[' + bare + ']').hostname.slice(1, -1) : value;
+  const spellings = isIPv6(canonical) && !canonical.includes('%') ? [...new Set([value, bare, canonical, '[' + canonical + ']'])] : [value];
+  const privateValue = privateBucket('ip', canonical);
+  return { canonical, privateValue, history: [...spellings, ...spellings.map(ip => privateBucket('ip', ip))] };
 }
 
 /**
@@ -100,7 +111,7 @@ function privateBucket(dimension: 'email' | 'ip', value: string): string {
  */
 export async function reserveLoginAttempt(identifier: string, ip: string | null, provider?: 'admin-password'): Promise<boolean> {
   const emailBucket = privateBucket('email', identifier);
-  const ipBucket = ip ? privateBucket('ip', ip) : null;
+  const origin = ip ? throttleOrigin(ip) : null;
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${identifier})::bigint)`;
 
@@ -113,16 +124,27 @@ export async function reserveLoginAttempt(identifier: string, ip: string | null,
       return false;
     }
 
-    if (ip && ipBucket) {
+    if (provider) {
+      // Only this provider's opaque reservations drive its additional delay.
+      // The existing caps still count attempts at both entry points.
+      const recent = await tx.loginAttempt.findMany({
+        where: { identifier: { in: [emailBucket] }, succeeded: false, createdAt: { gt: windowStart } },
+        orderBy: { createdAt: 'desc' }, select: { createdAt: true }, take: 6,
+      });
+      const delays = [0, 0, 0, 5_000, 30_000, 120_000, 300_000];
+      if (recent.length && Date.now() < recent[0].createdAt.getTime() + delays[recent.length]) return false;
+    }
+
+    if (origin) {
       const ipFailures = await tx.loginAttempt.count({
-        where: { ip: { in: [ip, ipBucket] }, succeeded: false, createdAt: { gt: windowStart } },
+        where: { ip: { in: origin.history }, succeeded: false, createdAt: { gt: windowStart } },
       });
       if (ipFailures >= LOGIN_MAX_FAILED_PER_IP) {
         return false;
       }
     }
 
-    await tx.loginAttempt.create({ data: { identifier: provider ? emailBucket : identifier, ip: provider ? ipBucket : ip, succeeded: false } });
+    await tx.loginAttempt.create({ data: { identifier: provider ? emailBucket : identifier, ip: (provider ? origin?.privateValue : origin?.canonical) ?? null, succeeded: false } });
     return true;
   });
 }

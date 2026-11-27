@@ -371,3 +371,9 @@ export const settingsSnapshotSchema = z.object({
   expiryTypes: z.array(expiryTypeItemSchema),
   cashCategories: z.array(cashCategoryItemSchema),
 });
+
+export const loginPauseSchema = z.strictObject({ paused: z.boolean() });
+export const accessSecurityStatusSchema = z.object({
+  paused: z.boolean(), monitoredAt: z.iso.datetime().nullable(), incidents: z.array(z.enum(['MAIL_WORKER', 'LOGIN_VOLUME'])),
+  withoutRecipients: z.number().int(), waiting: z.number().int(), uncertain: z.number().int(), rejected: z.number().int(),
+});

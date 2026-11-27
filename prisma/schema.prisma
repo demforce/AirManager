@@ -419,6 +419,7 @@ model User {
   personId     String? @unique
   person       Person? @relation(fields: [personId], references: [id])
 
+  securityDeliveries                  SecurityDelivery[]
   credentialMail                      CredentialMail[]
   authTokens                          AuthToken[]
   /// Aircraft rates this user recorded (story 4.1) — `AircraftRate.actorUserId`.
@@ -1621,7 +1622,50 @@ model MailChannel {
   failures      Int       @default(0)
   probeId       String?
   probeAfter    DateTime?
+  loginLinksPaused Boolean  @default(false)
+  /// Highest credential generation at the last pause, including in-flight login messages.
+  loginPauseThrough BigInt  @default(0)
+  monitorStartedAt DateTime @default(now())
+  monitorAt     DateTime?
   heartbeatAt   DateTime?
   manual        Json?
   automatic     Json?
+}
+
+/// Aggregate counts only. The independent monitor prunes old minute buckets.
+model LoginVolume {
+  minute DateTime @id
+  requests Int
+}
+
+model SecurityIncident {
+  id String @id @default(uuid())
+  kind String
+  openedAt DateTime
+  lastSeenAt DateTime
+  resolvedAt DateTime?
+  needsRecipients Boolean @default(true)
+  deliveries SecurityDelivery[]
+
+  @@index([kind, resolvedAt])
+}
+
+model SecurityDelivery {
+  id String @id @default(uuid())
+  incidentId String
+  incident SecurityIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  state String @default("QUEUED")
+  attempts Int @default(0)
+  recipientFailures Int @default(0)
+  nextAt DateTime @default(now())
+  leaseUntil DateTime?
+  attemptKey String?
+  reason String?
+  smtpCode Int?
+  config Int?
+
+  @@unique([incidentId, userId])
+  @@index([state, nextAt])
 }

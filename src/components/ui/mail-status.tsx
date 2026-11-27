@@ -65,3 +65,41 @@ export function InviteStatus({ userId, refresh }: { userId: string; refresh: num
     {invite.revokedAt ? ' ' + t('invalidLink') : ''}
   </p>;
 }
+
+type AccessStatus = { paused: boolean; monitoredAt: string | null; incidents: string[]; withoutRecipients: number; waiting: number; uncertain: number; rejected: number };
+
+export function AccessSecurityControl() {
+  const t = useTranslations('AccessSecurity');
+  const locale = useLocale();
+  const [revision, setRevision] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const url = '/api/v1/settings/access-security';
+  const s = useMailStatus<AccessStatus>(url, revision);
+  async function toggle(paused: boolean) {
+    setSaving(true);
+    setFeedback('');
+    try {
+      const response = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused }) });
+      setFeedback(t(response.ok ? (paused ? 'paused' : 'enabled') : 'failed'));
+      setRevision(v => v + 1);
+    } catch { setFeedback(t('failed')); }
+    finally { setSaving(false); }
+  }
+  return <section aria-label={t('title')} style={{ margin: '20px 0' }}>
+    <h3>{t('title')}</h3>
+    {s ? <>
+      <p>{t('scope')}</p>
+      <p>{t(s.paused ? 'paused' : 'enabled')}</p>
+      <button className="btn" type="button" disabled={saving} onClick={() => void toggle(!s.paused)}>
+        {t(s.paused ? 'resume' : 'pause')}
+      </button>
+      <p role="status">{feedback}</p>
+      <p>{s.monitoredAt ? t('checked', { time: formatDateTime(new Date(s.monitoredAt), locale === 'en' ? 'en' : 'it') }) : t('never')}</p>
+      {s.incidents.map(kind => <p key={kind}>{t(kind)}</p>)}
+      {s.withoutRecipients > 0 && <p>{t('noRecipients', { count: s.withoutRecipients })}</p>}
+      <p>{t('alerts', { waiting: s.waiting, uncertain: s.uncertain, rejected: s.rejected })}</p>
+    </> : <p>{t('loading')}</p>}
+  </section>;
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { SmtpHealth } from '@/components/ui/mail-status';
+import { AccessSecurityControl, SmtpHealth } from '@/components/ui/mail-status';
 import { useId, useState } from 'react';
 import { Field, Input, Select } from '@/components/ui/field';
 import type { SettingsDraft, SmtpSecurity } from '@/lib/settings-draft';
@@ -109,6 +109,7 @@ export function SmtpCard({ value, onChange, errors, testEmailBlocked, labels }: 
         ) : null}
 
         <SmtpHealth refresh={refresh} />
+        <AccessSecurityControl />
         <div className="form-grid">
           <Field label={labels.host} error={errors.host}>
             <Input

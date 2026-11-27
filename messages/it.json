@@ -105,6 +105,7 @@
       "trialLink": "Accedi via email"
     },
     "setPassword": {
+      "adminPolicy": "Per un account amministratore scegli una nuova password personale di almeno 15 caratteri, usata solo per AirManager.",
       "kicker": "Imposta password",
       "title": "Imposta la tua password",
       "description": "Scegli una password di almeno 10 caratteri per accedere ad AirManager.",
@@ -1810,6 +1811,11 @@
     }
   },
   "Emails": {
+    "securityAlert": {
+      "subject": "AirManager — Avviso di sicurezza",
+      "MAIL_WORKER": "Alle {time} è stato rilevato un ritardo di almeno quattro minuti nel processo o nella coda di invio della posta. Controlla il processo e la coda in Impostazioni.",
+      "LOGIN_VOLUME": "Alle {time} le richieste di accesso via email hanno raggiunto la soglia di avviso. Controlla la situazione in Impostazioni. Se necessario, sospendi gli invii dei link di accesso."
+    },
     "layout": {
       "footer": "Comunicazioni del club"
     },
@@ -2206,6 +2212,22 @@
     },
     "retry": "Riprova",
     "home": "Vai alla Panoramica"
+  },
+  "AccessSecurity": {
+    "title": "Sicurezza degli accessi",
+    "scope": "La pausa riguarda gli invii dei link di accesso. Alla ripresa servirà una nuova richiesta. I link già inviati mantengono la loro scadenza.",
+    "paused": "Invio dei link di accesso sospeso.",
+    "enabled": "Invio dei link di accesso consentito.",
+    "resume": "Riprendi invii dei link di accesso",
+    "pause": "Sospendi invii dei link di accesso",
+    "failed": "Salvataggio non riuscito. Riprova.",
+    "checked": "Ultimo controllo di sicurezza: {time}.",
+    "never": "Il monitor di sicurezza deve ancora eseguire il primo controllo.",
+    "LOGIN_VOLUME": "Picco di richieste di accesso via email.",
+    "MAIL_WORKER": "Processo di invio della posta in ritardo.",
+    "noRecipients": "Incidenti in attesa di un amministratore con indirizzo verificato: {count}.",
+    "alerts": "Avvisi in attesa: {waiting}. Accettazione incerta: {uncertain}. Rifiutati o tentativi esauriti: {rejected}.",
+    "loading": "Lettura dello stato di sicurezza…"
   },
   "CredentialMail": {
     "ACTIVE": "Attivo",

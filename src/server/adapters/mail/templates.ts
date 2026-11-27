@@ -328,3 +328,9 @@ export async function buildSmtpTestEmail(): Promise<EmailContent> {
   const [it, en] = await Promise.all([loadMessages('it'), loadMessages('en')]);
   return renderClubProbe(it.Emails.layout.footer, en.Emails.layout.footer);
 }
+
+export async function buildSecurityAlertEmail(locale: AppLocale, kind: 'MAIL_WORKER' | 'LOGIN_VOLUME', openedAt: Date) {
+  const messages = await loadMessages(locale);
+  const t = createTranslator({ locale, messages, namespace: 'Emails.securityAlert' });
+  return renderEmail(locale, messages.Emails.layout.footer, t('subject'), t(kind, { time: formatDateTime(openedAt, locale) }));
+}

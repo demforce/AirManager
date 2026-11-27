@@ -18,6 +18,7 @@
     "seed:demo": "tsx prisma/seed-demo.ts",
     "seed:load": "tsx prisma/seed-load.ts",
     "postinstall": "prisma generate",
+    "security:monitor": "tsx scripts/security-monitor.ts",
     "mail:worker": "tsx scripts/mail-worker.ts"
   },
   "dependencies": {

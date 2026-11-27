@@ -28,6 +28,7 @@ type Labels = {
   goToLogin: string;
   errorMismatch: string;
   errorTooShort: string;
+  adminPolicy: string;
   errorGeneric: string;
 };
 
@@ -61,10 +62,8 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
     });
 
     if (!response.ok) {
-      // AC 1/3: an unknown/expired/reused token is the only failure mode
-      // exposed here — the service doesn't distinguish invite from reset,
-      // so neither does this message.
-      setFormError(labels.errorGeneric);
+      const body = await response.json().catch(() => null);
+      setFormError(body?.error?.code === 'ADMIN_PASSWORD_POLICY' ? labels.adminPolicy : labels.errorGeneric);
       return;
     }
 
@@ -90,6 +89,7 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
         <Input type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...register('password')} />
       </Field>
 
+      <p className="fld-hint">{labels.adminPolicy}</p>
       <Field label={labels.confirmPassword} error={errors.confirmPassword ? labels.errorMismatch : undefined}>
         <Input type="password" autoComplete="new-password" aria-invalid={Boolean(errors.confirmPassword)} {...register('confirmPassword')} />
       </Field>

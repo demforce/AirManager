@@ -56,6 +56,8 @@ async function verifyCredentials(rawCredentials: unknown, ip: string | null, pro
   // this closes the concurrent-burst race that a separate check-then-record
   // could not.
   if (!(await reserveLoginAttempt(email, ip, provider))) {
+    // Suppressed admin attempts do no password work. The decision is independent of account existence.
+    if (provider) return null;
     // Same generic `null` as every other failure path (AC 2), and still runs
     // the constant-time dummy verify so the CredentialsSignin outcome carries
     // no password-shaped timing. This path is measurably FASTER than the

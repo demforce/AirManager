@@ -7,18 +7,26 @@ import { prisma } from '@/server/db/prisma';
 import { credentialEligible, emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import { databaseNow, enqueueCredential, lockMailAccount } from './credential-mail.service';
 
+import { lockLoginRequests } from './access-security';
+
 const MINUTE = 60_000;
 
 // Direct peers share a bucket. Only an explicitly authenticated, sanitizing
 // ingress may assert a single IP address. Never store its header or secret.
-export function loginRequestOrigin(headers: Pick<Headers, 'get'>): string {
+export function trustedProxyIp(headers: Pick<Headers, 'get'>): string | null {
   const secret = process.env.AIRMANAGER_TRIAL_PROXY_SECRET;
   const supplied = headers.get('x-airmanager-proxy-key');
   const ip = headers.get('x-forwarded-for');
-  if (!secret || Buffer.byteLength(secret) < 32 || !supplied || !ip || ip.includes('%') || !isIP(ip)) return 'direct';
+  if (!secret || Buffer.byteLength(secret) < 32 || !supplied || !ip || ip.includes('%') || !isIP(ip)) return null;
   const expected = Buffer.from(secret);
   const actual = Buffer.from(supplied);
-  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return 'direct';
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
+  return ip;
+}
+
+export function loginRequestOrigin(headers: Pick<Headers, 'get'>): string {
+  const ip = trustedProxyIp(headers);
+  if (!ip) return 'direct';
   return isIP(ip) === 6 ? new URL('http://[' + ip + ']').hostname : ip;
 }
 
@@ -27,9 +35,16 @@ function bucket(kind: string, value: string) {
 }
 
 async function reserveRequest(tx: Prisma.TransactionClient, step: 'request' | 'confirmation', identity: string, origin: string) {
-  const namespace = step === 'request' ? 1 : 2;
-  await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(19021, ${namespace}::int)`;
+  if (step === 'request') await lockLoginRequests(tx);
+  else await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(19021, 2)`;
   const now = await databaseNow(tx);
+  if (step === 'request') {
+    // Count demand before any identity, origin, pause or issuance suppression.
+    const minute = new Date(Math.floor(+now / MINUTE) * MINUTE);
+    await tx.loginVolume.upsert({ where: { minute }, create: { minute, requests: 1 }, update: { requests: { increment: 1 } } });
+    const channel = await tx.mailChannel.findUniqueOrThrow({ where: { id: 1 }, select: { loginLinksPaused: true } });
+    if (channel.loginLinksPaused) return null;
+  }
   const cutoff = new Date(+now - 10 * MINUTE);
   await tx.emailTrialRequest.deleteMany({ where: { createdAt: { lte: cutoff } } });
   const accountBucket = bucket(step + ':identity', identity);
@@ -56,7 +71,7 @@ export async function requestEmailLogin(rawEmail: string, origin: string): Promi
       const login = { purpose: 'LOGIN_LINK' as const };
       if (await tx.credentialMail.count({ where: { ...login, createdAt: { gt: since(20) } } }) >= 10) return;
       const forAccount = { ...login, userId: account.id };
-      if (await tx.credentialMail.findFirst({ where: { ...forAccount, expiresAt: { gt: now } }, select: { id: true } })
+      if (await tx.credentialMail.findFirst({ where: { ...forAccount, expiresAt: { gt: now }, OR: [{ reason: null }, { reason: { not: 'LOGIN_PAUSED' } }] }, select: { id: true } })
         || await tx.credentialMail.count({ where: { ...forAccount, createdAt: { gt: since(60) } } }) >= 3) return;
       await enqueueCredential(tx, account.id, 'LOGIN_LINK', undefined, email);
     });

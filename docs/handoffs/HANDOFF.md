@@ -60,9 +60,15 @@ La story HTML è conclusa. Tutti gli undici tipi di email attivi condividono wor
 
 Le 21 catture Mailpit conservano l’oggetto e il testo semplice della base. Le otto credenziali riportano in HTML lo stesso link dell’alternativa di testo. Su quattro larghezze Chromium sono stati verificati 84 rendering. Sul tree di codice e test approvato sono passati 2.400 unit, 56 casi PostgreSQL e 726 casi browser. La suite browser si è conclusa senza retry o skip. [Matrice e quattro anteprime sintetiche](../../_bmad-output/implementation-artifacts/evidence/email-html/collaudo.md)
 
+## Protezioni dell’accesso prima del cutover
+
+Il milestone è chiuso. Da Impostazioni l’amministratore può sospendere i soli nuovi invii dei link di login. I link già inviati funzionano fino alla loro scadenza e il fallback resta utilizzabile anche durante un’interruzione della posta. Il monitor registra i picchi e i ritardi del worker su database. La coda invia gli avvisi di sicurezza HTML e testo ai soli admin attivi con recapito verificato e distingue accettazione SMTP, rifiuto e incertezza. Prima di una futura attivazione il club deve collaudare individualmente il fallback, verificare i destinatari degli avvisi e predisporre la supervisione separata del monitor. [Record BMAD e collaudo](../../_bmad-output/implementation-artifacts/protezioni-accesso-pre-cutover.md)
+
+Revisione indipendente approvata. Sono passati 2.404 unit, 74 casi PostgreSQL, cinque casi Chromium a posta spenta e la suite completa con 727 casi Chromium, 726 passati al primo tentativo, uno passato al primo retry e zero skip.
+
 ## Prossimo lavoro
 
-Prima dell’attivazione pubblica completare il rafforzamento del fallback admin, gli avvisi di sicurezza sempre via email e la sospensione mirata degli invii login. Utilizzare la base HTML per gli avvisi di sicurezza e per il futuro cambio di recapito quando saranno implementati. [Piano del login](../../_bmad-output/implementation-artifacts/invito-e-login-email.md)
+Restano da pianificare la gestione degli account storici, l’indirizzo verificato unico e il cambio di recapito. Il trial pubblico resta disattivato per default. Il monitor dispone della procedura di avvio nell’ambiente autorizzato. [Guida operativa](../operations/credential-mail.md)
 
 Per il futuro login ordinario con link email monouso da 10 minuti, il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il test SMTP continuerà a usare il contatto del club come destinazione distinta. [Decisione del PO](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
 

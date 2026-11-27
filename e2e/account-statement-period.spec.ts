@@ -604,8 +604,21 @@ test.describe('Estratto conto by period — the export cap and the self face (st
     await loginExpectingDashboard(page, pilot.email, password);
     await page.goto('/it/dashboard/my-account');
     await expect(page.getByTestId('account-statement-empty')).toHaveText('Nessun movimento nel periodo selezionato.');
-    await page.getByTestId('account-period-from').fill(FROM);
-    await page.getByTestId('account-period-to').fill(TO);
+    const fromField = page.getByTestId('account-period-from');
+    const toField = page.getByTestId('account-period-to');
+    const openFromCalendar = page.locator('.account-period-field').filter({ has: fromField }).getByRole('button', { name: 'Apri calendario' });
+    const calendar = page.locator('.cal-popover');
+    // The default dates are server-rendered. Wait for the date control to respond before editing them.
+    await expect.poll(async () => {
+      if (!await calendar.isVisible()) await openFromCalendar.click();
+      return calendar.isVisible();
+    }).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(calendar).toBeHidden();
+    await fromField.fill(FROM);
+    await toField.fill(TO);
+    await expect(fromField).toHaveValue(FROM);
+    await expect(toField).toHaveValue(TO);
     await page.getByTestId('account-period-apply').click();
     await expect(page).toHaveURL(new RegExp(`/it/dashboard/my-account\\?from=${FROM}&to=${TO}$`));
     await expect(page.getByTestId('account-movement-row')).toHaveCount(20);

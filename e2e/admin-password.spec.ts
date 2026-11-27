@@ -35,6 +35,9 @@ test('admin password from a signed-out browser saves a pilot in the registry', a
 test('the administrator entry keeps its method and return path across languages', async ({ page }) => {
   await page.goto('/it/login?callbackUrl=%2Fit%2Fdashboard%2Fpilots');
   await page.getByRole('link', { name: heading, exact: true }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/it/login' && url.searchParams.get('access') === 'admin'
+    && url.searchParams.get('callbackUrl') === '/it/dashboard/pilots');
+  await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   await page.getByTestId('auth-locale-switch').click();
   await expect(page.getByRole('heading', { name: 'Administrator password sign-in' })).toBeVisible();
   expect(new URL(page.url()).searchParams.get('callbackUrl')).toBe('/en/dashboard/pilots');

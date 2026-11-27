@@ -27,6 +27,7 @@ export async function readMailHealth(actor: Actor) {
     }
   }), prisma.mailAttempt.count({
     where: {
+      origin: { not: 'SECURITY' },
       outcome: {
         in: ['TEMPORARY', 'PERMANENT']
       }

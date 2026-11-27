@@ -5,6 +5,7 @@ import { getSmtpSettingsForMailer } from '@/server/services/app-settings.service
 import { classifySmtpError, type SmtpObservation, type SmtpPhase } from './smtp-observation';
 import type { MailMessage } from './mail-sender';
 export const SMTP_ATTEMPT_MS = 90_000;
+export class NonLocalTestRelay extends Error {}
 export class InvalidMailConfiguration extends Error {}
 
 export async function readObservedSmtpConfig() {

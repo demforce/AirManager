@@ -57,6 +57,7 @@ export default defineConfig({
         '**/picker-cap.spec.ts',
         '**/credential-mail.spec.ts',
         '**/email-access-retry.spec.ts',
+        '**/access-security.spec.ts',
       ],
       // These tests read or write global settings/ledger state. Run them
       // only in their serialized projects below.
@@ -211,7 +212,7 @@ export default defineConfig({
       use: sharedUse,
     },
     {
-      name: 'credential-mail', testMatch: ['**/credential-mail.spec.ts', '**/email-access-retry.spec.ts'], workers: 1,
+      name: 'credential-mail', testMatch: ['**/credential-mail.spec.ts', '**/email-access-retry.spec.ts', '**/access-security.spec.ts'], workers: 1,
       dependencies: ['picker-cap'], use: sharedUse,
     },
   ],

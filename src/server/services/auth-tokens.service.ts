@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { credentialEligible } from '@/server/auth/email-trial-policy';
-import { hashPassword } from '@/server/auth/password';
+import { hashPassword, verifyPassword } from '@/server/auth/password';
 import { prisma } from '@/server/db/prisma';
 import { enqueueCredential, lockMailAccount } from './credential-mail.service';
 export { INVITE_TTL_MS, PASSWORD_RESET_TTL_MS } from './credential-mail.service';
@@ -128,6 +128,10 @@ export async function setPasswordWithToken(rawToken: string, newPassword: string
     });
     if (!user || (user.emailVerification && !credentialEligible(user, authToken.type))) {
       throw new ValidationError('Invalid or expired token.');
+    }
+    if (user.roles.includes('ADMIN') && (Array.from(newPassword).length < 15
+      || (user.passwordHash && await verifyPassword(user.passwordHash, newPassword)))) {
+      throw new ValidationError('Choose a new individual administrator password of at least 15 characters.', undefined, 'ADMIN_PASSWORD_POLICY');
     }
     // Atomic single-use claim: the conditional `usedAt: null` filter makes
     // the database decide exactly one winner between concurrent requests

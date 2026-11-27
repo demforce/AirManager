@@ -4,25 +4,18 @@ import { prisma } from '@/server/db/prisma';
 import { credentialEligible, emailTrialEnabled, trialPurpose } from '@/server/auth/email-trial-policy';
 import { env } from '@/lib/env';
 import { buildCredentialEmail, buildSmtpTestEmail } from '@/server/adapters/mail/templates';
-import { InvalidMailConfiguration, readObservedSmtpConfig, submitObservedMail } from '@/server/adapters/mail/observed-smtp';
+import { NonLocalTestRelay, InvalidMailConfiguration, readObservedSmtpConfig, submitObservedMail } from '@/server/adapters/mail/observed-smtp';
+import { deliverSecurityAlerts, recoverSecurityLeases } from './security-alert-delivery';
 import type { SmtpObservation } from '@/server/adapters/mail/smtp-observation';
 import { databaseNow, lockMailAccount } from './credential-mail.service';
 import { ConflictError } from './errors';
-export const DEFAULT_SCAN_MS = 30_000;
-const LEASE = 120_000;
+import { DEFAULT_SCAN_MS, MAIL_LEASE_MS as LEASE, lockMailChannel as lockChannel, mailCapacityAvailable } from './mail-transport-budget';
+export { DEFAULT_SCAN_MS } from './mail-transport-budget';
 const RETRY_MARGIN = 120_000;
 type Tx = Prisma.TransactionClient;
 type Origin = 'MANUAL' | 'AUTO' | 'CREDENTIAL';
 const after = (now: Date, ms: number) => new Date(now.getTime() + ms);
 const terminal = ['ACCEPTED', 'UNCERTAIN', 'PERMANENT', 'EXHAUSTED', 'EXPIRED', 'SUPPRESSED'];
-async function lockChannel(tx: Tx) {
-  await tx.$queryRaw`SELECT id FROM "MailChannel" WHERE id = 1 FOR UPDATE`;
-  return tx.mailChannel.findUniqueOrThrow({
-    where: {
-      id: 1
-    }
-  });
-}
 function saveProbe(channel: MailChannel, attempt: MailAttempt, result: SmtpObservation, at: Date): Prisma.MailChannelUpdateInput {
   if (attempt.origin === 'CREDENTIAL') return {};
   const field = attempt.origin === 'MANUAL' ? 'manual' : 'automatic';
@@ -79,7 +72,11 @@ async function recordOutcome(tx: Tx, channel: MailChannel, attempt: MailAttempt,
       const nextAt = after(now, wait);
       let state: string = result.outcome;
       let reason: string = result.outcome;
-      if (retryable) {
+      const pausedLogin = intent.purpose === 'LOGIN_LINK' && intent.generation <= channel.loginPauseThrough;
+      if (pausedLogin && (retryable || result.outcome === 'SUPPRESSED')) {
+        state = 'SUPPRESSED';
+        reason = 'LOGIN_PAUSED';
+      } else if (retryable) {
         if (intent.revokedAt) {
           state = 'SUPPRESSED';
         } else if (intent.attempts >= 3) {
@@ -158,6 +155,7 @@ async function recordOutcome(tx: Tx, channel: MailChannel, attempt: MailAttempt,
   });
 }
 async function recover(tx: Tx, now: Date) {
+  await recoverSecurityLeases(tx, now);
   const stale = await tx.mailAttempt.findMany({
     where: {
       finishedAt: null,
@@ -264,24 +262,11 @@ export async function reserveMail(manual: boolean, intervalMs: number) {
         id: 1
       }
     });
-    const active = await tx.mailAttempt.count({
-      where: {
-        finishedAt: null
-      }
-    });
-    if (active >= 2 || channel.mode === 'PROBING') return null;
+    if (channel.mode === 'PROBING' || !await mailCapacityAvailable(tx, now, manual ? null : intervalMs)) return null;
     const paused = channel.mode === 'PAUSED';
     if (paused && !manual && (!channel.probeAfter || channel.probeAfter > now)) return null;
     let intent: CredentialMail | null = null;
     if (!manual) {
-      const used = await tx.mailAttempt.count({
-        where: {
-          startedAt: {
-            gt: after(now, -intervalMs)
-          }
-        }
-      });
-      if (used >= 10) return null;
       intent = await tx.credentialMail.findFirst({
         where: {
           state: 'QUEUED',
@@ -382,6 +367,11 @@ export async function beginHandoff(reserved: MailAttempt, raw = randomBytes(32).
         await cancelReservation(tx, attempt, now);
         return null;
       }
+      if (intent.purpose === 'LOGIN_LINK' && (channel.loginLinksPaused || intent.generation <= channel.loginPauseThrough)) {
+        await tx.credentialMail.update({ where: { id: intent.id }, data: { state: 'SUPPRESSED', reason: 'LOGIN_PAUSED', observedAt: now } });
+        await cancelReservation(tx, attempt, now);
+        return null;
+      }
       if (!credentialEligible(intent.user, intent.purpose)) {
         await tx.credentialMail.update({ where: { id: intent.id }, data: { state: 'SUPPRESSED', reason: 'REVOKED', revokedAt: now, observedAt: now } });
         await cancelReservation(tx, attempt, now);
@@ -450,6 +440,7 @@ export async function beginHandoff(reserved: MailAttempt, raw = randomBytes(32).
       });
       credential = {
         raw,
+        generation: intent.generation,
         expiresAt: intent.expiresAt,
         purpose: intent.purpose,
         locale: intent.user.locale === 'en' ? 'en' as const : 'it' as const,
@@ -508,7 +499,7 @@ export async function deferMailPreparation(attempt: MailAttempt, invalidConfig: 
   });
   return result;
 }
-export class NonLocalTestRelay extends Error {}
+export { NonLocalTestRelay } from '@/server/adapters/mail/observed-smtp';
 
 export async function processMailAttempt(attempt: MailAttempt, club?: string, loopbackOnly = false) {
   // Resolve the configured transport and render before the short database fence.
@@ -595,6 +586,10 @@ export async function processMailAttempt(attempt: MailAttempt, club?: string, lo
       // before handing the single-recipient message to SMTP, outside all locks.
       const token = await prisma.authToken.findUnique({ where: { tokenHash: createHash('sha256').update(raw).digest('hex') },
         include: { user: { include: { emailVerification: true } } } });
+      if (credential.purpose === 'LOGIN_LINK') {
+        const channel = await prisma.mailChannel.findUniqueOrThrow({ where: { id: 1 }, select: { loginLinksPaused: true, loginPauseThrough: true } });
+        if (channel.loginLinksPaused || credential.generation <= channel.loginPauseThrough) return false;
+      }
       return Boolean(token && !token.usedAt && token.expiresAt > await databaseNow(prisma)
         && token.user.email === credential.to && credentialEligible(token.user, token.type));
     } : undefined);
@@ -639,6 +634,8 @@ export async function runMailCycle(intervalMs = DEFAULT_SCAN_MS, loopbackOnly = 
       }
     });
   });
+  // Give due security mail a share before a busy credential queue uses the whole interval.
+  await deliverSecurityAlerts(loopbackOnly, intervalMs);
   let count = 0;
   for (let round = 0; round < 5; round++) {
     const reservations = (await Promise.all([reserveMail(false, intervalMs), reserveMail(false, intervalMs)])).filter(a => a !== null);

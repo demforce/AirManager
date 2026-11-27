@@ -59,6 +59,7 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
               locale={locale as AppLocale}
               labels={{
                 password: t('passwordLabel'),
+                adminPolicy: t('adminPolicy'),
                 confirmPassword: t('confirmPasswordLabel'),
                 submit: t('submit'),
                 submitting: t('submitting'),
