@@ -90,6 +90,8 @@
   "auth": {
     "otherLanguage": "English",
     "login": {
+      "adminPassword": "Accesso amministratori con password",
+      "standardLogin": "Torna all’accesso ordinario",
       "kicker": "Accesso",
       "title": "Accedi ad AirManager",
       "description": "Inserisci email e password per accedere alla tua area riservata.",

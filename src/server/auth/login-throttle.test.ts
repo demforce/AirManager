@@ -17,12 +17,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * live Postgres advisory lock) is left for review-time verification — see
  * the Dev Agent Record.
  */
+vi.mock('@/lib/env', () => ({ env: { AUTH_SECRET: 'synthetic-login-bucket-test-secret' } }));
+
 type Row = { identifier: string; ip: string | null; succeeded: boolean; createdAt: Date };
 let rows: Row[] = [];
 
-function matchesWindow(row: Row, where: { identifier?: string; ip?: string; succeeded?: boolean; createdAt?: { gt: Date } }): boolean {
-  if (where.identifier !== undefined && row.identifier !== where.identifier) return false;
-  if (where.ip !== undefined && row.ip !== where.ip) return false;
+function matchesWindow(row: Row, where: { identifier?: { in: string[] }; ip?: { in: string[] }; succeeded?: boolean; createdAt?: { gt: Date } }): boolean {
+  if (where.identifier !== undefined && !where.identifier.in.includes(row.identifier)) return false;
+  if (where.ip !== undefined && (row.ip === null || !where.ip.in.includes(row.ip))) return false;
   if (where.succeeded !== undefined && row.succeeded !== where.succeeded) return false;
   if (where.createdAt && row.createdAt.getTime() <= where.createdAt.gt.getTime()) return false;
   return true;
@@ -72,6 +74,18 @@ describe('login-throttle (H1, CWE-307 — throttle semantics; TD-6, F2 — atomi
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('shares the identifier limit across both providers without storing admin form addresses', async () => {
+    const email = 'mixed@example.invalid';
+    const ip = '192.0.2.4';
+    for (let i = 1; i < LOGIN_MAX_FAILED_PER_IDENTIFIER; i++) await reserveLoginAttempt(email, ip);
+    expect(await reserveLoginAttempt(email, ip, 'admin-password')).toBe(true);
+    expect(rows.at(-1)?.identifier).not.toBe(email);
+    expect(rows.at(-1)?.ip).not.toBe(ip);
+    expect(await reserveLoginAttempt(email, ip)).toBe(false);
+    await recordSuccessfulLogin(email, ip, 'admin-password');
+    expect(rows).toEqual([]);
   });
 
   it('reserves (returns true) with no history', async () => {

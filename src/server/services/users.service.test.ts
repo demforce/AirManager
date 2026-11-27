@@ -192,7 +192,7 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       const result = await updateUser(adminActor(), 'user_1', { isActive: false });
 
       expect(updateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'user_1' }, data: { isActive: false } }),
+        expect.objectContaining({ where: { id: 'user_1' }, data: { isActive: false, adminPasswordVersion: { increment: 1 } } }),
       );
       expect(result.isActive).toBe(false);
     });
@@ -249,7 +249,7 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       await updateUser(adminActor(), 'user_1', { roles: ['STUDENT'], locale: 'en', isActive: true });
 
       const data = updateMock.mock.calls[0]?.[0]?.data as Record<string, unknown>;
-      expect(data).toEqual({ roles: ['STUDENT'], locale: 'en', isActive: true });
+      expect(data).toEqual({ roles: ['STUDENT'], locale: 'en', isActive: true, adminPasswordVersion: { increment: 1 } });
       expect(data.tokenVersion).toBeUndefined();
     });
   });

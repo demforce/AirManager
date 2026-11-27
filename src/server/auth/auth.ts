@@ -34,6 +34,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // apply its per-IP dimension.
       authorize: (credentials, request) => authorizeCredentials(credentials, extractClientIp(request.headers.get('x-forwarded-for'))),
     }),
+    Credentials({
+      id: 'admin-password',
+      name: 'Administrator password',
+      credentials: { email: {}, password: {} },
+      authorize: (credentials, request) =>
+        authorizeCredentials(credentials, extractClientIp(request.headers.get('x-forwarded-for')), 'admin-password'),
+    }),
   ],
   callbacks: {
     ...authConfig.callbacks,

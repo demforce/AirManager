@@ -6,7 +6,7 @@ export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 /**
  * Re-verifies `User.isActive`, `User.roles`, `User.tokenVersion` and `User.personId` against
- * the DB at most once every `ACTIVE_RECHECK_INTERVAL_MS`, using
+ * the DB on every admin-password session read. Other sessions are checked once every `ACTIVE_RECHECK_INTERVAL_MS`, using
  * `token.lastActiveCheck` as the watermark. Node runtime only (`auth.ts`) —
  * never called from `src/proxy.ts`'s `getToken` read, which has no Prisma
  * access.
@@ -33,16 +33,28 @@ export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
  */
 export async function applyActiveRecheck(token: JWT, now: number = Date.now()): Promise<JWT | null> {
   const lastCheck = token.lastActiveCheck ?? 0;
-  if (now - lastCheck < ACTIVE_RECHECK_INTERVAL_MS) {
+  const adminPassword = token.adminPasswordVersion !== undefined;
+  if (!adminPassword && now - lastCheck < ACTIVE_RECHECK_INTERVAL_MS) {
     return token;
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: token.userId },
-    select: { isActive: true, roles: true, tokenVersion: true, personId: true },
-  });
+  let user;
+  try {
+    user = await prisma.user.findUnique({
+      where: { id: token.userId },
+      select: { isActive: true, roles: true, tokenVersion: true, personId: true, ...(adminPassword && { adminPasswordVersion: true }) },
+    });
+  } catch (error) {
+    if (!adminPassword) throw error;
+    console.warn(JSON.stringify({ event: 'admin_password_session_check', at: new Date().toISOString(), outcome: 'error' }));
+    return null;
+  }
 
   if (!user || !user.isActive) {
+    return null;
+  }
+
+  if (adminPassword && (!user.roles.includes('ADMIN') || token.adminPasswordVersion !== user.adminPasswordVersion)) {
     return null;
   }
 

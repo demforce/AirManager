@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+import { env } from '@/lib/env';
 import { prisma } from '@/server/db/prisma';
 
 /**
@@ -31,6 +33,12 @@ export const LOGIN_MAX_FAILED_PER_IDENTIFIER = 10;
  * before locking out everyone behind it.
  */
 export const LOGIN_MAX_FAILED_PER_IP = 30;
+
+// Keep legacy reservations and new opaque reservations in the same rolling
+// window. The shared advisory lock below also covers both login providers.
+function privateBucket(dimension: 'email' | 'ip', value: string): string {
+  return 'bucket:' + createHmac('sha256', env.AUTH_SECRET).update('login-throttle:' + dimension + ':' + value).digest('hex');
+}
 
 /**
  * Checks both caps and, if under them, immediately records a pessimistic
@@ -90,29 +98,31 @@ export const LOGIN_MAX_FAILED_PER_IP = 30;
  * always comes from the login form itself, so a missing/spoofed IP can never
  * fully bypass the throttle (H5: IP must never be the ONLY dimension).
  */
-export async function reserveLoginAttempt(identifier: string, ip: string | null): Promise<boolean> {
+export async function reserveLoginAttempt(identifier: string, ip: string | null, provider?: 'admin-password'): Promise<boolean> {
+  const emailBucket = privateBucket('email', identifier);
+  const ipBucket = ip ? privateBucket('ip', ip) : null;
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${identifier})::bigint)`;
 
     const windowStart = new Date(Date.now() - LOGIN_RATE_LIMIT_WINDOW_MS);
 
     const identifierFailures = await tx.loginAttempt.count({
-      where: { identifier, succeeded: false, createdAt: { gt: windowStart } },
+      where: { identifier: { in: [identifier, emailBucket] }, succeeded: false, createdAt: { gt: windowStart } },
     });
     if (identifierFailures >= LOGIN_MAX_FAILED_PER_IDENTIFIER) {
       return false;
     }
 
-    if (ip) {
+    if (ip && ipBucket) {
       const ipFailures = await tx.loginAttempt.count({
-        where: { ip, succeeded: false, createdAt: { gt: windowStart } },
+        where: { ip: { in: [ip, ipBucket] }, succeeded: false, createdAt: { gt: windowStart } },
       });
       if (ipFailures >= LOGIN_MAX_FAILED_PER_IP) {
         return false;
       }
     }
 
-    await tx.loginAttempt.create({ data: { identifier, ip, succeeded: false } });
+    await tx.loginAttempt.create({ data: { identifier: provider ? emailBucket : identifier, ip: provider ? ipBucket : ip, succeeded: false } });
     return true;
   });
 }
@@ -128,7 +138,7 @@ export async function reserveLoginAttempt(identifier: string, ip: string | null)
  * accounts from one IP, then "reset" that IP's counter by logging into an
  * unrelated account of their own from the same address.
  */
-export async function recordSuccessfulLogin(identifier: string, ip: string | null): Promise<void> {
-  await prisma.loginAttempt.create({ data: { identifier, ip, succeeded: true } });
-  await prisma.loginAttempt.deleteMany({ where: { identifier, succeeded: false } });
+export async function recordSuccessfulLogin(identifier: string, ip: string | null, provider?: 'admin-password'): Promise<void> {
+  if (!provider) await prisma.loginAttempt.create({ data: { identifier, ip, succeeded: true } });
+  await prisma.loginAttempt.deleteMany({ where: { identifier: { in: [identifier, privateBucket('email', identifier)] }, succeeded: false } });
 }

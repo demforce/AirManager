@@ -19,6 +19,7 @@ type LoginFormLabels = {
 };
 
 type LoginFormProps = {
+  provider: 'credentials' | 'admin-password';
   labels: LoginFormLabels;
   /** Where to send the user after a successful sign-in (already locale-prefixed). */
   callbackUrl: string;
@@ -33,7 +34,7 @@ type LoginFormProps = {
  * explicit `htmlFor`/`id` pair would — `e2e/login.spec.ts` selectors are
  * untouched.
  */
-export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
+export function LoginForm({ labels, callbackUrl, provider }: LoginFormProps) {
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -49,7 +50,7 @@ export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
   async function onSubmit(values: LoginInput) {
     setFormError(null);
 
-    const result = await signIn('credentials', {
+    const result = await signIn(provider, {
       email: values.email,
       password: values.password,
       redirect: false,

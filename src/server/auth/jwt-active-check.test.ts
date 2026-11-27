@@ -36,6 +36,30 @@ describe('applyActiveRecheck (story 1.4, AC 2 — mocked time)', () => {
     findUniqueMock.mockReset();
   });
 
+  it.each([
+    { isActive: true, roles: ['PILOT'], tokenVersion: 2, adminPasswordVersion: 1 },
+    { isActive: false, roles: ['ADMIN'], tokenVersion: 2, adminPasswordVersion: 1 },
+    { isActive: true, roles: ['ADMIN'], tokenVersion: 3, adminPasswordVersion: 1 },
+    { isActive: true, roles: ['ADMIN'], tokenVersion: 2, adminPasswordVersion: 2 },
+  ])('ends admin password sessions on the next read after eligibility or version changes: %o', async (user) => {
+    findUnique.mockResolvedValue({ ...user, personId: null });
+    const token = makeToken({ roles: ['ADMIN'], tokenVersion: 2, adminPasswordVersion: 1, lastActiveCheck: 10_000 });
+    expect(await applyActiveRecheck(token, 10_001)).toBeNull();
+  });
+
+  it('closes an admin session with a sanitized diagnostic when its live check is unavailable', async () => {
+    const audit = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    findUniqueMock.mockRejectedValueOnce(new Error('synthetic-private-diagnostic'));
+    try {
+      expect(await applyActiveRecheck(makeToken({ adminPasswordVersion: 0 }))).toBeNull();
+      expect(JSON.parse(audit.mock.calls[0]![0])).toEqual({
+        event: 'admin_password_session_check', at: expect.any(String), outcome: 'error',
+      });
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
   it('skips the DB recheck when the interval has not elapsed yet', async () => {
     const now = 1_000_000;
     const token = makeToken({ lastActiveCheck: now - (ACTIVE_RECHECK_INTERVAL_MS - 1) });

@@ -408,6 +408,8 @@ model User {
   /// — bounding a stolen session's post-reset survival instead of leaving it
   /// valid for the JWT's full 30-day lifetime.
   tokenVersion Int     @default(0)
+  /// Changes when admin-password eligibility is withdrawn. Legacy sessions do not use this counter.
+  adminPasswordVersion Int @default(0)
   /// UI/email language (story 1.4, AD-7). Kept as a plain string rather than
   /// a Prisma enum so it maps 1:1 onto `next-intl`'s `AppLocale` ('it'|'en')
   /// without a translation layer; validated at the Zod boundary.
@@ -489,7 +491,7 @@ model AuthToken {
 /// `docs/security/owasp-audit-2026-07-22.md`) — one row per Credentials
 /// provider `authorize()` outcome, counted in a rolling window by
 /// `login-throttle.ts`. No relation to `User`: `identifier` is the raw
-/// (lowercased) email from the login form, recorded even when it matches no
+/// (lowercased) email for legacy attempts or a keyed bucket for admin-password attempts, even for no
 /// account — an unknown-email guess must count toward its own throttle
 /// bucket exactly like a wrong password, or an attacker could distinguish
 /// "locked" from "unknown" by which one never accumulates failures.

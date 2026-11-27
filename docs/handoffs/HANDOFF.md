@@ -42,8 +42,14 @@ La revisione indipendente ha approvato il candidato. Gate integrato con 2.369 un
 
 Nell’ambiente di destinazione il worker richiede un processo supervisionato separato da Next. La [guida operativa](../operations/credential-mail.md) descrive l’attivazione autorizzata e la verifica dello stato in Impostazioni.
 
+## Accesso amministratori con password individuale
+
+La [prima fase del login](../../_bmad-output/implementation-artifacts/accesso-admin-password.md) è conclusa. Dalla pagina di accesso l’amministratore può aprire il form dedicato e lavorare anche a posta spenta. La sessione emessa da questo ingresso verifica subito ruolo, stato e versioni alla richiesta protetta successiva. Il form ordinario continua a servire gli utenti attuali. Prima di introdurre i link email, ogni admin deve collaudare la propria password da una sessione nuova. Il record documenta come preparare gli account con password mancante.
+
+Sul candidato approvato sono passati i cinque casi Chromium isolati senza SMTP o worker, 2.378 unit, 27 prove della coda e 16 dei promemoria. La suite completa ha concluso con 723 casi al primo tentativo e un retry riuscito sul download Excel delle scadenze, senza skip.
+
 ## Prossimo lavoro
 
-Per la futura fase di accesso, il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il test SMTP continuerà a usare il contatto del club come destinazione distinta. [Decisione del PO](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
+Per il futuro login ordinario con link email monouso da 10 minuti, il PO ha scelto un unico indirizzo verificato per l’accesso e le comunicazioni di chi ha un account. I contatti senza account continueranno a ricevere avvisi al proprio recapito, senza creare account impliciti. Il test SMTP continuerà a usare il contatto del club come destinazione distinta. [Decisione del PO](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
 
 Restano aperte le decisioni sul formato dettagliato di Scadenze e sul font Unicode nei PDF. La retrospettiva dell’Epic 18 resta facoltativa.

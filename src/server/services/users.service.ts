@@ -178,6 +178,10 @@ export async function updateUser(actor: Actor, id: string, patch: UpdateUserInpu
         ...(patch.locale !== undefined && { locale: patch.locale }),
         ...(patch.personId !== undefined && { personId: patch.personId }),
         ...(patch.isActive !== undefined && { isActive: patch.isActive }),
+        // Invalidate in the same write even if a later update restores eligibility.
+        ...((patch.isActive === false || (patch.roles && !patch.roles.includes('ADMIN'))) && {
+          adminPasswordVersion: { increment: 1 },
+        }),
         ...(personIdChanges && { tokenVersion: { increment: 1 } }),
       },
       select: USER_SELECT,
