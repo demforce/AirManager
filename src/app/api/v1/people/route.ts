@@ -28,7 +28,7 @@ export const GET = apiRoute({
   },
 });
 
-export const POST = apiRoute({
+export const POST = apiRoute({ sanitizeUnexpected: true,
   bodySchema: createPersonSchema,
   successStatus: 201,
   handle: async ({ actor, body }) => createPerson(actor, body),

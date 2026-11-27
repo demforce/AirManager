@@ -416,6 +416,7 @@ model User {
   personId     String? @unique
   person       Person? @relation(fields: [personId], references: [id])
 
+  credentialMail                      CredentialMail[]
   authTokens                          AuthToken[]
   /// Aircraft rates this user recorded (story 4.1) — `AircraftRate.actorUserId`.
   aircraftRates                       AircraftRate[]
@@ -1541,4 +1542,62 @@ model IdempotencyRecord {
   completedAt        DateTime?
 
   @@unique([userId, endpoint, key])
+}
+
+/// One generation of one credential at the account's current address. Recipient data stays on User.
+model CredentialMail {
+  generation  BigInt        @unique @default(autoincrement())
+  id          String        @id @default(uuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose     AuthTokenType
+  state       String        @default("QUEUED")
+  reason      String?
+  createdAt   DateTime      @default(now())
+  observedAt  DateTime      @default(now())
+  nextAt      DateTime      @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  tokenId     String?
+  attemptId   String?
+  attempts    Int           @default(0)
+  operatorId  String?
+  actionKey   String?
+  history     MailAttempt[]
+
+  @@unique([operatorId, userId, purpose, actionKey])
+  @@index([state, nextAt])
+  @@index([userId, purpose, createdAt])
+}
+
+model MailAttempt {
+  sequence   BigInt          @unique @default(autoincrement())
+  id         String          @id @default(uuid())
+  intentId   String?
+  intent     CredentialMail? @relation(fields: [intentId], references: [id], onDelete: Cascade)
+  origin     String
+  config     Int
+  number     Int
+  phase      String
+  outcome    String?
+  smtpCode   Int?
+  startedAt  DateTime        @default(now())
+  leaseUntil DateTime
+  finishedAt DateTime?
+
+  @@index([finishedAt, leaseUntil])
+  @@index([startedAt])
+}
+
+model MailChannel {
+  id            Int       @id
+  config        Int       @default(1)
+  mode          String    @default("ACTIVE")
+  reason        String?
+  failures      Int       @default(0)
+  probeId       String?
+  probeAfter    DateTime?
+  heartbeatAt   DateTime?
+  manual        Json?
+  automatic     Json?
 }

@@ -4,6 +4,9 @@ import { ForbiddenError } from './errors';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
+    $queryRaw: vi.fn(async () => [{ now: new Date() }]),
+    credentialMail: { findFirst: vi.fn(), count: vi.fn(async () => 0), updateMany: vi.fn(), create: vi.fn(async () => ({ id: 'resend' })) },
+    authToken: { updateMany: vi.fn() },
     user: {
       findUnique: vi.fn(),
       count: vi.fn(),
@@ -17,12 +20,13 @@ vi.mock('@/server/db/prisma', () => ({
   },
 }));
 
-vi.mock('./auth-tokens.service', () => ({
-  sendInviteEmail: vi.fn(),
+vi.mock('./credential-mail.service', async (original) => ({
+  ...await original<typeof import('./credential-mail.service')>(),
+  enqueueCredential: vi.fn(),
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { sendInviteEmail } = await import('./auth-tokens.service');
+const { enqueueCredential } = await import('./credential-mail.service');
 const { createUser, resendInvite, updateUser } = await import('./users.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
@@ -32,7 +36,7 @@ const createMock = vi.mocked(prisma.user.create);
 const updateMock = vi.mocked(prisma.user.update);
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const transactionMock = vi.mocked(prisma.$transaction);
-const sendInviteEmailMock = vi.mocked(sendInviteEmail);
+const enqueueMock = vi.mocked(enqueueCredential);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as me.service.test.ts): narrow each
@@ -75,7 +79,7 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
     createMock.mockReset();
     updateMock.mockReset();
     personFindUniqueMock.mockReset();
-    sendInviteEmailMock.mockReset();
+    enqueueMock.mockReset();
 
     // `createUser` runs its write inside a trivial `$transaction` (story
     // 13.1, so its own write logic — `createUserCore` — is reusable by
@@ -106,10 +110,10 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
   });
 
   describe('createUser', () => {
-    it('creates the user with passwordHash null and sends the invite email (AC 1)', async () => {
+    it('creates the user with passwordHash null and atomically enqueues the invite (AC 1)', async () => {
       userFindUnique.mockResolvedValue(null); // no existing user with that email
       userCreate.mockResolvedValue(SELECTED_USER);
-      sendInviteEmailMock.mockResolvedValue(undefined);
+      enqueueMock.mockResolvedValue({ id: 'intent', state: 'QUEUED' });
 
       const result = await createUser(adminActor(), {
         email: 'invitee@airmanager.local',
@@ -121,7 +125,7 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       expect(createMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ passwordHash: null, isActive: true }) }),
       );
-      expect(sendInviteEmailMock).toHaveBeenCalledWith('user_1', 'invitee@airmanager.local', 'it');
+      expect(enqueueMock).toHaveBeenCalledWith(prisma, 'user_1', 'INVITE');
       expect(result.passwordSet).toBe(false);
     });
 
@@ -167,19 +171,11 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       ).rejects.toThrow(ConflictError);
     });
 
-    it('still returns the created user when the invite email fails to send', async () => {
+    it('propagates an enqueue failure to the transaction instead of creating an unreachable account', async () => {
       userFindUnique.mockResolvedValue(null);
       userCreate.mockResolvedValue(SELECTED_USER);
-      sendInviteEmailMock.mockRejectedValue(new Error('SMTP unreachable'));
-
-      const result = await createUser(adminActor(), {
-        email: 'invitee@airmanager.local',
-        roles: ['PILOT'],
-        locale: 'it',
-        personId: null,
-      });
-
-      expect(result.id).toBe('user_1');
+      enqueueMock.mockRejectedValue(new Error('fixture storage unavailable'));
+      await expect(createUser(adminActor(), { email: 'x@example.test', roles: ['PILOT'], locale: 'it' })).rejects.toThrow('fixture storage unavailable');
     });
   });
 
@@ -271,11 +267,11 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
 
     it('re-sends the invite for a user who has not set a password yet', async () => {
       userFindUnique.mockResolvedValue(SELECTED_USER);
-      sendInviteEmailMock.mockResolvedValue(undefined);
+      enqueueMock.mockResolvedValue({ id: 'intent', state: 'QUEUED' });
 
       await resendInvite(adminActor(), 'user_1');
 
-      expect(sendInviteEmailMock).toHaveBeenCalledWith('user_1', 'invitee@airmanager.local', 'it');
+      expect(prisma.credentialMail.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: 'user_1', purpose: 'INVITE' }) }));
     });
   });
 });

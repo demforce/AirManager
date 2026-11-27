@@ -3,7 +3,8 @@ import type { Role } from '@/generated/prisma/enums';
 import type { CreateUserInput, UpdateUserInput } from '@/lib/schemas/users';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { sendInviteEmail } from './auth-tokens.service';
+import { enqueueCredential } from './credential-mail.service';
+export { resendInvite } from './credential-mail.service';
 import { ConflictError, NotFoundError } from './errors';
 
 export type UserListItem = {
@@ -54,11 +55,6 @@ function toListItem(user: SelectedUser): UserListItem {
   };
 }
 
-/** Exported (story 13.1) so `people.service.ts`'s one-step create composite can reuse it for its own `access.email` invite. */
-export function emailLocale(locale: string): 'it' | 'en' {
-  return locale === 'en' ? 'en' : 'it';
-}
-
 /** Prisma unique-constraint violation (e.g. concurrent link to the same person). */
 function isUniqueViolation(error: unknown): boolean {
   return (
@@ -83,21 +79,11 @@ async function assertPersonAvailable(personId: string, excludeUserId?: string): 
   }
 }
 
-/**
- * The raw write behind `createUser` (AC 1) — extracted (story 13.1, Dev
- * Notes: "helper condivisi, mai duplicazione", same `getFlightTotals` 12.8
- * precedent) so the one-step person-create composite
- * (`people.service.ts#createPerson`, its `access` block) can run this INSIDE
- * its OWN atomic transaction via the SAME `tx` — a brand-new person can
- * never already be linked to a user, so unlike the standalone `createUser`
- * below, no `assertPersonAvailable` pre-check is needed here, only the
- * unique-email backstop. Deliberately does NOT send the invite email — every
- * caller does that AFTER its transaction commits (fire-and-forget,
- * unchanged behavior; AC 5's "post-commit" requirement for the composite).
- */
+/** The account and its invitation are committed or rolled back together in both creation flows. */
 export async function createUserCore(tx: Prisma.TransactionClient, input: CreateUserInput): Promise<SelectedUser> {
+  let user;
   try {
-    return await tx.user.create({
+    user = await tx.user.create({
       data: {
         email: input.email,
         roles: input.roles,
@@ -114,6 +100,8 @@ export async function createUserCore(tx: Prisma.TransactionClient, input: Create
     }
     throw error;
   }
+  await enqueueCredential(tx, user.id, 'INVITE');
+  return user;
 }
 
 /**
@@ -138,12 +126,6 @@ export async function createUser(actor: Actor, input: CreateUserInput): Promise<
   // request can win the race and the unique constraint fires here instead
   // (`createUserCore`'s own P2002 catch).
   const user = await prisma.$transaction((tx) => createUserCore(tx, input));
-
-  try {
-    await sendInviteEmail(user.id, user.email, emailLocale(user.locale));
-  } catch (error) {
-    console.error('createUser: failed to send invite email', error);
-  }
 
   return toListItem(user);
 }
@@ -208,19 +190,4 @@ export async function updateUser(actor: Actor, id: string, patch: UpdateUserInpu
   }
 
   return toListItem(user);
-}
-
-/** Re-sends the invite email for a user who has not yet set a password. */
-export async function resendInvite(actor: Actor, id: string): Promise<void> {
-  authorize(actor, 'users.manage');
-
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) {
-    throw new NotFoundError('User not found.');
-  }
-  if (user.passwordHash !== null) {
-    throw new ConflictError('User already set a password; there is no pending invite to resend.');
-  }
-
-  await sendInviteEmail(user.id, user.email, emailLocale(user.locale));
 }

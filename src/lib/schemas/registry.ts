@@ -123,6 +123,7 @@ import {
   smtpSettingsDtoSchema,
   smtpSettingsInputSchema,
   testEmailResultSchema,
+  smtpHealthSchema,
   treasurySettingsSchema,
   updateSettingsSchema,
 } from './settings';
@@ -1247,16 +1248,17 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'post',
-  path: '/api/v1/users/{id}/resend-invite',
-  summary: 'Re-send the invite email for a user who has not yet set a password',
-  tags: ['Users'],
-  security,
-  request: { params: idParams },
-  responses: {
-    200: { description: 'The invite email was (re-)queued.', content: jsonContent(okResponseSchema) },
-    ...errorResponses(401, 403, 404, 409),
-  },
+  method: 'get', path: '/api/v1/users/{id}/resend-invite', summary: 'Read invitation status (users.manage)', tags: ['Users'], security,
+  request: { params: idParams }, responses: { 200: { description: 'Latest invitation, if available.', content: jsonContent(z.object({ invite: z.object({
+    state: z.string(), credentialValidUntil: z.iso.datetime().nullable(), reason: z.string().nullable(), observedAt: z.iso.datetime(), nextAt: z.iso.datetime(), expiresAt: z.iso.datetime(), revokedAt: z.iso.datetime().nullable(),
+    history: z.array(z.object({ outcome: z.string().nullable(), phase: z.string(), smtpCode: z.number().nullable() })) }).nullable() })) }, ...errorResponses(401,403) },
+});
+
+registry.registerPath({
+  method: 'post', path: '/api/v1/users/{id}/resend-invite', summary: 'Queue a new invitation for an eligible account', tags: ['Users'], security,
+  request: { params: idParams, headers: z.object({ 'Idempotency-Key': z.string().min(8).max(128).optional() }) },
+  responses: { 200: { description: 'The immutable result of this issuance request, including a duplicate request.', content: jsonContent(z.object({
+    ok: z.literal(true), invite: z.object({ id: z.string(), state: z.literal('QUEUED') }) })) }, ...errorResponses(401,403,404,409,422) },
 });
 
 registry.registerPath({
@@ -1729,16 +1731,14 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'post',
-  path: '/api/v1/settings/smtp/test-email',
-  summary: 'Send a test email through the configured SMTP settings (story 12.11, AC 1/2)',
-  description: '`{ sent: boolean }` — `sent: false` on a mail-transport failure, never a 5xx (the service\'s own contract). Admin-only (`settings.manage`).',
-  tags: ['Settings'],
-  security,
-  responses: {
-    200: { description: 'The send attempt result.', content: jsonContent(testEmailResultSchema) },
-    ...errorResponses(401, 403),
-  },
+  method: 'get', path: '/api/v1/settings/smtp/test-email', summary: 'Inspect credential queue, worker and latest SMTP observations',
+  tags: ['Settings'], security, responses: { 200: { description: 'Administrative diagnostics.', content: jsonContent(smtpHealthSchema) }, ...errorResponses(401,403) },
+});
+
+registry.registerPath({
+  method: 'post', path: '/api/v1/settings/smtp/test-email', summary: 'Test SMTP using the saved club contact',
+  description: 'sent is true only after the final SMTP confirmation. A missing confirmation is uncertain.', tags: ['Settings'], security,
+  responses: { 200: { description: 'Normalized observation for this manual test.', content: jsonContent(testEmailResultSchema) }, ...errorResponses(401,403,409,422) },
 });
 
 registry.registerPath({

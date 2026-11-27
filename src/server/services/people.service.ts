@@ -5,12 +5,11 @@ import { parseDateOnlyUtc } from '@/lib/date-only';
 import type { CreatePersonInput, ListPeopleQuery, UpdatePersonCompositeInput } from '@/lib/schemas/people';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { sendInviteEmail } from './auth-tokens.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { assertScopeCompatible, updateExpiryDateCore } from './expiries.service';
 import { upsertInstructorRateCore } from './instructor-rates.service';
 import { assertRateValidFromNotPast } from './rates.service';
-import { createUserCore, emailLocale } from './users.service';
+import { createUserCore } from './users.service';
 
 /** Story 2.2, AC 1: which profiles (pilot/student/instructor) are currently active. */
 export type ProfileFlags = {
@@ -431,10 +430,7 @@ async function assertExpiryTypesValidForComposite(
  * dropped (AC 5). A failure in ANY block (duplicate email, unknown/inactive
  * expiry type, scope mismatch, `access.email` already taken, ...) rolls
  * back the ENTIRE person — every write below shares the SAME `tx`. The
- * invite email (only if `access` was given) is sent AFTER the transaction
- * commits (fire-and-forget, same pattern as the standalone
- * `POST /api/v1/users`) — never before, so a rolled-back create never sends
- * an invite for a user that doesn't exist.
+ * invitation intent shares that transaction. The dispatcher sees only committed accounts.
  *
  * Calling this with none of `profiles`/`expiries`/`access` behaves IDENTICALLY
  * to the pre-13.1 `createPerson` (retro-compatibility, AC 5) — the pilot
@@ -480,7 +476,7 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
     await assertExpiryTypesValidForComposite(input.expiries, input.profiles);
   }
 
-  const { person, user } = await prisma.$transaction(async (tx) => {
+  const { person } = await prisma.$transaction(async (tx) => {
     const person = await createPersonCore(tx, input);
 
     if (input.profiles?.pilot) {
@@ -506,22 +502,13 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
       }
     }
 
-    const user = input.access
-      ? // `locale: 'it'` matches `createUserSchema`'s own default — the
-        // composite's `access` block (AC 5) has no locale field of its own.
-        await createUserCore(tx, { email: input.access.email, roles: input.access.roles, locale: 'it', personId: person.id })
-      : null;
-
-    return { person, user };
-  });
-
-  if (user) {
-    try {
-      await sendInviteEmail(user.id, user.email, emailLocale(user.locale));
-    } catch (error) {
-      console.error('createPerson: failed to send invite email', error);
+    if (input.access) {
+      // The composite access form uses the standalone account's default locale.
+      await createUserCore(tx, { email: input.access.email, roles: input.access.roles, locale: 'it', personId: person.id });
     }
-  }
+
+    return { person };
+  });
 
   return {
     ...toListItem(person),

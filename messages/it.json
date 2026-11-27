@@ -468,8 +468,8 @@
       "topUpRecorded": "Ricarica registrata.",
       "suspended": "Accesso sospeso.",
       "reactivated": "Accesso riattivato.",
-      "userCreated": "Accesso creato: invito inviato per email.",
-      "inviteResent": "Invito reinviato.",
+      "userCreated": "Accesso creato. Invito in attesa.",
+      "inviteResent": "Nuovo invito in attesa.",
       "genericError": "Si è verificato un errore. Riprova.",
       "lastAdminError": "Impossibile sospendere l'ultimo amministratore attivo."
     },
@@ -1790,11 +1790,13 @@
   "Emails": {
     "invite": {
       "subject": "Hai ricevuto un invito ad AirManager",
-      "body": "Ciao,\n\nHai ricevuto un invito per accedere ad AirManager. Imposta la tua password entro {expiresInDays, plural, one {# giorno} other {# giorni}} visitando il link seguente:\n\n{url}\n\nSe non ti aspettavi questo invito, puoi ignorare questa email."
+      "body": "Ciao,\n\nHai ricevuto un invito per accedere ad AirManager. Imposta la tua password entro {expiresInDays, plural, one {# giorno} other {# giorni}} visitando il link seguente:\n\n{url}\n\nSe non ti aspettavi questo invito, puoi ignorare questa email.",
+      "deadlineBody": "Hai ricevuto un invito ad AirManager. Imposta la password entro {expiry}.\n\n{url}"
     },
     "passwordReset": {
       "subject": "Reimposta la tua password AirManager",
-      "body": "Ciao,\n\nHai richiesto di reimpostare la password del tuo account AirManager. Il link seguente è valido per {expiresInHours, plural, one {# ora} other {# ore}}:\n\n{url}\n\nSe non hai richiesto tu questa operazione, ignora questa email: la password attuale resta invariata."
+      "body": "Ciao,\n\nHai richiesto di reimpostare la password del tuo account AirManager. Il link seguente è valido per {expiresInHours, plural, one {# ora} other {# ore}}:\n\n{url}\n\nSe non hai richiesto tu questa operazione, ignora questa email: la password attuale resta invariata.",
+      "deadlineBody": "Hai richiesto il recupero della password AirManager. Scegli una nuova password entro {expiry}.\n\n{url}"
     },
     "negativeBalanceAlert": {
       "subject": "Il tuo conto AirManager è in negativo",
@@ -2164,5 +2166,40 @@
     },
     "retry": "Riprova",
     "home": "Vai alla Panoramica"
+  },
+  "CredentialMail": {
+    "ACTIVE": "Attivo",
+    "PAUSED": "In pausa",
+    "PROBING": "Verifica in corso",
+    "QUEUED": "In attesa",
+    "CLAIMED": "In preparazione",
+    "HANDOFF": "Invio in corso",
+    "ACCEPTED": "Accettato dal trasporto SMTP",
+    "TEMPORARY": "Rifiuto temporaneo",
+    "PERMANENT": "Rifiuto permanente",
+    "CONFIGURATION": "Verificare la configurazione SMTP",
+    "UNAVAILABLE": "Trasporto non disponibile prima dell’invio",
+    "UNCERTAIN": "Conferma SMTP mancante",
+    "EXHAUSTED": "Tentativi esauriti",
+    "EXPIRED": "Scaduto",
+    "SUPPRESSED": "Sostituito o revocato",
+    "WINDOW": "Finestra di invio terminata.",
+    "never": "Mai verificato",
+    "observation": "{result} · {time}",
+    "channel": "Canale SMTP · {state}",
+    "counts": "In attesa: {waiting}. Incerti: {uncertain}.",
+    "manual": "Prova manuale al club: {observation}",
+    "automatic": "Verifica automatica su un messaggio dovuto: {observation}",
+    "worker": "Worker: {observation}",
+    "workerLate": "ultimo ciclo in ritardo, {time}",
+    "workerActive": "ultimo ciclo {time}",
+    "invite": "Invito: {state} · {time}.",
+    "retry": "{reason}. Prossimo tentativo: {time}.",
+    "uncertainInvite": "Il messaggio potrebbe arrivare. Un nuovo invito renderà valido solo il nuovo link.",
+    "invalidLink": "Il link precedente non è più valido.",
+    "probeBusy": "È in corso un’altra verifica o un invio. Riprova.",
+    "failures": "Tentativi rifiutati: {rejected}. Invii con tentativi esauriti: {exhausted}.",
+    "oldest": "In attesa da {time}.",
+    "linkValidUntil": "Il link emesso resta valido fino al {time} (ora di Roma)."
   }
 }

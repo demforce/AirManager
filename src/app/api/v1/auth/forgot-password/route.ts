@@ -14,12 +14,13 @@ import { requestPasswordReset } from '@/server/services/auth-tokens.service';
  * `requestPasswordReset`'s per-IP throttle
  * dimension — a throttled call still returns this SAME 200.
  */
-export const POST = apiRoute({
+export const POST = apiRoute({ sanitizeUnexpected: true,
   auth: 'public',
   bodySchema: forgotPasswordSchema,
   handle: async ({ body, request }) => {
     const ip = extractClientIp(request.headers.get('x-forwarded-for'));
-    await requestPasswordReset(body.email, ip);
+    try { await requestPasswordReset(body.email, ip); }
+    catch { console.error('credential-mail: reset request unavailable'); }
     return { ok: true };
   },
 });

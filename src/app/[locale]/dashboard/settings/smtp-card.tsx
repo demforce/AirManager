@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+import { SmtpHealth } from '@/components/ui/mail-status';
 import { useId, useState } from 'react';
 import { Field, Input, Select } from '@/components/ui/field';
 import type { SettingsDraft, SmtpSecurity } from '@/lib/settings-draft';
@@ -50,6 +52,8 @@ export function SmtpCard({ value, onChange, errors, testEmailBlocked, labels }: 
   const [testSending, setTestSending] = useState(false);
   const [testFeedback, setTestFeedback] = useState<string | null>(null);
   const hintId = useId();
+  const t = useTranslations('CredentialMail');
+  const [refresh, setRefresh] = useState(0);
 
   async function sendTestEmail(): Promise<void> {
     setTestSending(true);
@@ -57,17 +61,22 @@ export function SmtpCard({ value, onChange, errors, testEmailBlocked, labels }: 
 
     const response = await fetch('/api/v1/settings/smtp/test-email', { method: 'POST' }).catch(() => null);
     setTestSending(false);
+    setRefresh(value => value + 1);
 
     if (response?.status === 422) {
       setTestFeedback(labels.testEmailNoContact);
+      return;
+    }
+    if (response?.status === 409) {
+      setTestFeedback(t('probeBusy'));
       return;
     }
     if (!response?.ok) {
       setTestFeedback(labels.testEmailFailed);
       return;
     }
-    const body = (await response.json()) as { sent: boolean };
-    setTestFeedback(body.sent ? labels.testEmailSent : labels.testEmailFailed);
+    const body = (await response.json()) as { sent: boolean; outcome?: string };
+    setTestFeedback(body.outcome ? t(body.outcome) : body.sent ? labels.testEmailSent : labels.testEmailFailed);
   }
 
   return (
@@ -94,11 +103,12 @@ export function SmtpCard({ value, onChange, errors, testEmailBlocked, labels }: 
           </p>
         ) : null}
         {testFeedback ? (
-          <p role="status" data-testid="smtp-test-email-feedback" style={{ marginBottom: 12, fontSize: 12.5, color: testFeedback === labels.testEmailSent ? 'var(--ok)' : 'var(--bad)' }}>
+          <p role="status" data-testid="smtp-test-email-feedback" style={{ marginBottom: 12, fontSize: 12.5, color: (testFeedback === t('ACCEPTED') || testFeedback === labels.testEmailSent) ? 'var(--ok)' : 'var(--bad)' }}>
             {testFeedback}
           </p>
         ) : null}
 
+        <SmtpHealth refresh={refresh} />
         <div className="form-grid">
           <Field label={labels.host} error={errors.host}>
             <Input

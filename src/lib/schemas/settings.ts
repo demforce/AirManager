@@ -188,7 +188,12 @@ export const smtpSettingsDtoSchema = z.object({
 
 export type SmtpSettingsDto = z.infer<typeof smtpSettingsDtoSchema>;
 
-export const testEmailResultSchema = z.object({ sent: z.boolean() });
+export const mailObservationOutcome = z.enum(['ACCEPTED', 'TEMPORARY', 'PERMANENT', 'UNAVAILABLE', 'CONFIGURATION', 'UNCERTAIN']);
+export const testEmailResultSchema = z.object({ attemptId: z.string(), sent: z.boolean(), outcome: mailObservationOutcome, phase: z.string(), code: z.number().int().optional() });
+const probeObservation = z.object({ id: z.string(), startedAt: z.iso.datetime(), at: z.iso.datetime(), config: z.number().int(), outcome: mailObservationOutcome, phase: z.string(), code: z.number().nullable() });
+export const smtpHealthSchema = z.object({ mode: z.enum(['ACTIVE','PAUSED','PROBING']), reason: z.string().nullable(),
+  heartbeatAt: z.iso.datetime().nullable(), workerOverdue: z.boolean(), manual: probeObservation.nullable(), automatic: probeObservation.nullable(),
+  waiting: z.number().int(), uncertain: z.number().int(), rejected: z.number().int(), exhausted: z.number().int(), oldestAt: z.iso.datetime().nullable() });
 
 export type TestEmailResultDto = z.infer<typeof testEmailResultSchema>;
 

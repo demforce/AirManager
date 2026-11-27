@@ -17,7 +17,8 @@
     "db:reset:test": "node scripts/reset-test-db.mjs",
     "seed:demo": "tsx prisma/seed-demo.ts",
     "seed:load": "tsx prisma/seed-load.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "mail:worker": "tsx scripts/mail-worker.ts"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",

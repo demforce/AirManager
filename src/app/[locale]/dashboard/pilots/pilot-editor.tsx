@@ -19,6 +19,7 @@
  * saves it all or nothing. Accesso and Archivio stay actions of their own,
  * outside that form.
  */
+import { InviteStatus } from '@/components/ui/mail-status';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -990,7 +991,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
       return;
     }
 
-    toast.show(toastLabels.created, 'ok');
+    toast.show(canManageUsers && grantAccess ? toastLabels.created + ' ' + toastLabels.userCreated : toastLabels.created, 'ok');
     onClose();
     onCreated();
   }
@@ -1218,6 +1219,9 @@ function AccessSection({
   const [formError, setFormError] = useState<string | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [pending, setPending] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const action = useRef<{ userId: string; key: string } | null>(null);
+  const inFlight = useRef(false);
 
   const {
     register,
@@ -1255,20 +1259,29 @@ function AccessSection({
   }
 
   async function handleResendInvite(): Promise<void> {
-    if (!user) return;
+    if (!user || inFlight.current) return;
+    inFlight.current = true;
     setPending(true);
-    const response = await fetch(`/api/v1/users/${user.id}/resend-invite`, { method: 'POST' });
-    setPending(false);
-    if (!response.ok) {
-      toast.show(toastLabels.genericError, 'bad');
-      return;
-    }
-    toast.show(toastLabels.inviteResent, 'ok');
+    if (action.current?.userId !== user.id) action.current = { userId: user.id, key: crypto.randomUUID() };
+    try {
+      const response = await fetch(`/api/v1/users/${user.id}/resend-invite`, {
+        method: 'POST', headers: { 'Idempotency-Key': action.current.key },
+      });
+      if (response.ok || response.status < 500) action.current = null;
+      if (!response.ok) {
+        toast.show(toastLabels.genericError, 'bad');
+        return;
+      }
+      setRefresh(n => n + 1);
+      toast.show(toastLabels.inviteResent, 'ok');
+    } catch { toast.show(toastLabels.genericError, 'bad'); }
+    finally { inFlight.current = false; setPending(false); }
   }
 
   if (user) {
     return (
       <div data-testid="pilot-access-existing">
+        <InviteStatus userId={user.id} refresh={refresh} />
         <p className="fld-label" style={{ textTransform: 'none' }}>
           {labels.userSummary
             .replace('{email}', user.email)

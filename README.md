@@ -56,6 +56,7 @@ Vedi `CLAUDE.md` per le convenzioni di progetto e `_bmad-output/planning-artifac
 | Script | Descrizione |
 | --- | --- |
 | `npm run dev` | Avvia il server di sviluppo Next.js |
+| `npm run mail:worker` | Avvia il dispatcher degli inviti e dei recuperi password. [Attivazione e diagnostica](docs/operations/credential-mail.md) |
 | `npm run build` | Build di produzione |
 | `npm run start` | Avvia il build di produzione |
 | `npm run lint` | ESLint |

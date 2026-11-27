@@ -306,6 +306,8 @@ export interface ApiRouteConfig<TQuery, TBody, TParams extends Record<string, st
   bodySchema?: z.ZodType<TBody>;
   /** HTTP status for a successful response. Default 200. */
   successStatus?: number;
+  /** Mail-related failures can embed an address or a link in a dependency's diagnostics. */
+  sanitizeUnexpected?: boolean;
   /**
    * Opt-in request-level idempotency (story TD-2, AC 1-4): when set AND the
    * caller sends the `Idempotency-Key` header, a retry with the same key
@@ -496,7 +498,7 @@ export function apiRoute<
       if (error instanceof DomainError) {
         return domainErrorResponse(error);
       }
-      return internalErrorResponse(error);
+      return internalErrorResponse(config.sanitizeUnexpected ? 'Credential mail operation unavailable.' : error);
     }
   };
 }

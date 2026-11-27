@@ -9,7 +9,7 @@ import { createUser } from '@/server/services/users.service';
  * sibling GET (list) handler was removed — the Piloti page reads its roster
  * from `people.service.ts#listPilotsPageData` directly, never from here.
  */
-export const POST = apiRoute({
+export const POST = apiRoute({ sanitizeUnexpected: true,
   bodySchema: createUserSchema,
   successStatus: 201,
   handle: async ({ actor, body }) => createUser(actor, body),

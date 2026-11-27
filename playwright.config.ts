@@ -22,6 +22,7 @@ const sharedUse = {
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/mail-worker-setup.ts',
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 2 : 0,
@@ -54,6 +55,7 @@ export default defineConfig({
         '**/mobile-settings.spec.ts',
         '**/aog-overview-count.spec.ts',
         '**/picker-cap.spec.ts',
+        '**/credential-mail.spec.ts',
       ],
       // These tests read or write global settings/ledger state. Run them
       // only in their serialized projects below.
@@ -206,6 +208,10 @@ export default defineConfig({
       workers: 1,
       dependencies: ['aog-overview-count'],
       use: sharedUse,
+    },
+    {
+      name: 'credential-mail', testMatch: '**/credential-mail.spec.ts', workers: 1,
+      dependencies: ['picker-cap'], use: sharedUse,
     },
   ],
   webServer: {

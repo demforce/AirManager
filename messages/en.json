@@ -468,8 +468,8 @@
       "topUpRecorded": "Top-up recorded.",
       "suspended": "User suspended.",
       "reactivated": "User reactivated.",
-      "userCreated": "User created: invite email sent.",
-      "inviteResent": "Invite resent.",
+      "userCreated": "Account created. Invitation queued.",
+      "inviteResent": "New invitation queued.",
       "genericError": "Something went wrong. Please try again.",
       "lastAdminError": "Cannot suspend the last active admin."
     },
@@ -1790,11 +1790,13 @@
   "Emails": {
     "invite": {
       "subject": "You've been invited to AirManager",
-      "body": "Hello,\n\nYou've been invited to access AirManager. Set your password within {expiresInDays, plural, one {# day} other {# days}} by visiting the link below:\n\n{url}\n\nIf you weren't expecting this invite, you can ignore this email."
+      "body": "Hello,\n\nYou've been invited to access AirManager. Set your password within {expiresInDays, plural, one {# day} other {# days}} by visiting the link below:\n\n{url}\n\nIf you weren't expecting this invite, you can ignore this email.",
+      "deadlineBody": "You have been invited to AirManager. Set your password by {expiry}.\n\n{url}"
     },
     "passwordReset": {
       "subject": "Reset your AirManager password",
-      "body": "Hello,\n\nYou requested to reset your AirManager account password. The link below is valid for {expiresInHours, plural, one {# hour} other {# hours}}:\n\n{url}\n\nIf you didn't request this, ignore this email: your current password remains unchanged."
+      "body": "Hello,\n\nYou requested to reset your AirManager account password. The link below is valid for {expiresInHours, plural, one {# hour} other {# hours}}:\n\n{url}\n\nIf you didn't request this, ignore this email: your current password remains unchanged.",
+      "deadlineBody": "You requested a password reset for AirManager. Choose a new password by {expiry}.\n\n{url}"
     },
     "negativeBalanceAlert": {
       "subject": "Your AirManager account is in the negative",
@@ -2164,5 +2166,40 @@
     },
     "retry": "Try again",
     "home": "Go to the overview"
+  },
+  "CredentialMail": {
+    "ACTIVE": "Active",
+    "PAUSED": "Paused",
+    "PROBING": "Probe in progress",
+    "QUEUED": "Queued",
+    "CLAIMED": "Preparing",
+    "HANDOFF": "Submission in progress",
+    "ACCEPTED": "Accepted by the SMTP transport",
+    "TEMPORARY": "Temporary rejection",
+    "PERMANENT": "Permanent rejection",
+    "CONFIGURATION": "Check SMTP configuration",
+    "UNAVAILABLE": "Transport unavailable before submission",
+    "UNCERTAIN": "SMTP confirmation missing",
+    "EXHAUSTED": "Attempts exhausted",
+    "EXPIRED": "Expired",
+    "SUPPRESSED": "Superseded or revoked",
+    "WINDOW": "Sending window ended.",
+    "never": "Never checked",
+    "observation": "{result} · {time}",
+    "channel": "SMTP channel · {state}",
+    "counts": "Queued: {waiting}. Uncertain: {uncertain}.",
+    "manual": "Manual club test: {observation}",
+    "automatic": "Automatic check on a due message: {observation}",
+    "worker": "Worker: {observation}",
+    "workerLate": "last cycle overdue, {time}",
+    "workerActive": "last cycle {time}",
+    "invite": "Invitation: {state} · {time}.",
+    "retry": "{reason}. Next attempt: {time}.",
+    "uncertainInvite": "The message may still arrive. Issuing a new invitation makes only the new link valid.",
+    "invalidLink": "The previous link is no longer valid.",
+    "probeBusy": "Another check or delivery is in progress. Try again.",
+    "failures": "Rejected attempts: {rejected}. Messages with exhausted attempts: {exhausted}.",
+    "oldest": "Oldest queued since {time}.",
+    "linkValidUntil": "The issued link remains valid until {time} (Rome time)."
   }
 }

@@ -58,11 +58,11 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 // Story 13.1: `createPerson`'s `access` block sends the invite email via the
-// REAL `sendInviteEmail` (only this one call is mocked out — `createUserCore`
+// REAL `enqueueCredential` (only this one call is mocked out — `createUserCore`
 // itself is the real function from `users.service.ts`, running against the
 // same fake `prisma` above).
-vi.mock('./auth-tokens.service', () => ({
-  sendInviteEmail: vi.fn(),
+vi.mock('./credential-mail.service', () => ({
+  enqueueCredential: vi.fn(),
 }));
 
 // Story 19.7b: `expiries.service.ts` (imported by this service) now reads the
@@ -89,7 +89,7 @@ vi.mock('@/server/auth/rbac', async (importOriginal) => {
 });
 
 const { prisma } = await import('@/server/db/prisma');
-const { sendInviteEmail } = await import('./auth-tokens.service');
+const { enqueueCredential } = await import('./credential-mail.service');
 const {
   archivePerson,
   createPerson,
@@ -133,7 +133,7 @@ const userCreateMock = vi.mocked(prisma.user.create);
 const expiryTypeFindManyMock = vi.mocked(prisma.expiryType.findMany);
 const expiryCreateMock = vi.mocked(prisma.expiry.create);
 const expiryFindManyMock = vi.mocked(prisma.expiry.findMany);
-const sendInviteEmailMock = vi.mocked(sendInviteEmail);
+const enqueueMock = vi.mocked(enqueueCredential);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as users.service.test.ts): narrow each
@@ -225,7 +225,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
     expiryCreateMock.mockReset();
     expiryFindManyMock.mockReset();
     deniedPermissions.clear();
-    sendInviteEmailMock.mockReset();
+    enqueueMock.mockReset();
     queryRawMock.mockReset();
     // Story 19.3 default: the `Person` row lock finds the person.
     (queryRawMock as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue([{ id: 'person_1' }]);
@@ -590,10 +590,10 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expect(expiryTypeFindManyMock).not.toHaveBeenCalled();
       expect(userFindUniqueMock).not.toHaveBeenCalled();
       expect(userCreateMock).not.toHaveBeenCalled();
-      expect(sendInviteEmailMock).not.toHaveBeenCalled();
+      expect(enqueueMock).not.toHaveBeenCalled();
     });
 
-    it('activates pilot+instructor (the student profile excludes both since story 19.3), registers an expiry per profile scope, and creates+invites the linked user — all in ONE $transaction, invite sent only AFTER it resolves', async () => {
+    it('activates pilot+instructor (the student profile excludes both since story 19.3), registers an expiry per profile scope, and creates+invites the linked user — all in ONE $transaction, intent is part of the same commit', async () => {
       personFindFirst.mockResolvedValue(null);
       personCreate.mockResolvedValue(SELECTED_PERSON);
       pilotProfileUpsert.mockResolvedValue({ licenseNumber: 'IT-PPL-1', licenseType: 'PPL(A)', deactivatedAt: null });
@@ -602,7 +602,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
       expiryCreate.mockResolvedValue({ id: 'expiry_1' });
       userFindUnique.mockResolvedValue(null);
       userCreate.mockResolvedValue({ id: 'user_1', email: 'maria@airmanager.local', locale: 'it' });
-      sendInviteEmailMock.mockResolvedValue(undefined);
+      enqueueMock.mockResolvedValue({ id: 'intent', state: 'QUEUED' });
 
       const result = await createPerson(adminActor(), {
         ...input,
@@ -626,8 +626,8 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         expect.objectContaining({ data: expect.objectContaining({ email: 'maria@airmanager.local', roles: ['PILOT'], personId: 'person_1' }) }),
       );
 
-      // The invite is sent AFTER the transaction resolves (fire-and-forget), never inside it.
-      expect(sendInviteEmailMock).toHaveBeenCalledWith('user_1', 'maria@airmanager.local', 'it');
+      // The invitation intent is enqueued on the same transaction as the person and account.
+      expect(enqueueMock).toHaveBeenCalledWith(prisma, 'user_1', 'INVITE');
 
       expect(result.profiles).toEqual({ pilot: true, student: false, instructor: true });
     });
@@ -682,7 +682,7 @@ describe('people.service (story 2.1 — people.read/people.manage RBAC + CRUD/ar
         createPerson(adminActor(), { ...input, expiries: [{ expiryTypeId: 'et_1', expiresAt: '2027-01-01' }] }),
       ).rejects.toThrow('db unavailable');
 
-      expect(sendInviteEmailMock).not.toHaveBeenCalled();
+      expect(enqueueMock).not.toHaveBeenCalled();
     });
 
     it('an expiresAt in the PAST succeeds (review F1, closed at the root by R6: `Expiry.issuedAt` no longer exists, so there is nothing left for a past `expiresAt` to be inconsistent with — the resulting scadenza is simply already `expired`, the real state of the world)', async () => {
