@@ -1,10 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
 import { listFlightsQuerySchema, registerFlightSchema } from '@/lib/schemas/flights';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
+
+// These are default-mode billing fixtures. PostgreSQL and SMTP cover the enabled trial.
+beforeAll(() => vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '0'));
+afterAll(() => vi.unstubAllEnvs());
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {

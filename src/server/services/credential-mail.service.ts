@@ -1,6 +1,7 @@
+import { accountMailboxUncontested } from './account-mailbox';
 import { randomUUID } from 'node:crypto';
 import type { Prisma, AuthTokenType } from '@/generated/prisma/client';
-import { credentialEligible } from '@/server/auth/email-trial-policy';
+import { credentialEligible, emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
@@ -34,6 +35,10 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
   });
   if (purpose === 'INVITE' && user?.emailVerification) purpose = 'VERIFY_EMAIL';
   const now = await databaseNow(tx);
+  if (action && user && (purpose === 'VERIFY_EMAIL' || emailTrialEnabled()) &&
+      (purpose !== 'VERIFY_EMAIL' || !credentialEligible(user, purpose))) {
+    throw new ConflictError('This account has no eligible pending invitation.');
+  }
   if (action) {
     const previous = await tx.credentialMail.findFirst({
       where: {
@@ -51,7 +56,8 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
       state: 'QUEUED' as const
     };
   }
-  if (!user || !credentialEligible(user, purpose) || expectedEmail && user.email !== expectedEmail) {
+  if (!user || !credentialEligible(user, purpose) || expectedEmail && user.email !== expectedEmail
+    || user.emailVerification && !await accountMailboxUncontested(tx, userId, user.email)) {
     if (purpose === 'PASSWORD_RESET' || purpose === 'LOGIN_LINK') return null;
     if (!user) throw new NotFoundError('User not found.');
     throw new ConflictError('This account has no eligible pending invitation.');

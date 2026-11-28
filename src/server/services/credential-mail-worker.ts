@@ -1,3 +1,4 @@
+import { accountMailboxUncontested } from './account-mailbox';
 import { createHash, randomBytes } from 'node:crypto';
 import type { CredentialMail, MailAttempt, MailChannel, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/server/db/prisma';
@@ -372,7 +373,8 @@ export async function beginHandoff(reserved: MailAttempt, raw = randomBytes(32).
         await cancelReservation(tx, attempt, now);
         return null;
       }
-      if (!credentialEligible(intent.user, intent.purpose)) {
+      if (!credentialEligible(intent.user, intent.purpose)
+        || intent.user.emailVerification && !await accountMailboxUncontested(tx, intent.userId, intent.user.email)) {
         await tx.credentialMail.update({ where: { id: intent.id }, data: { state: 'SUPPRESSED', reason: 'REVOKED', revokedAt: now, observedAt: now } });
         await cancelReservation(tx, attempt, now);
         return null;
@@ -591,7 +593,7 @@ export async function processMailAttempt(attempt: MailAttempt, club?: string, lo
         if (channel.loginLinksPaused || credential.generation <= channel.loginPauseThrough) return false;
       }
       return Boolean(token && !token.usedAt && token.expiresAt > await databaseNow(prisma)
-        && token.user.email === credential.to && credentialEligible(token.user, token.type));
+        && token.user.email === credential.to && credentialEligible(token.user, token.type) && await accountMailboxUncontested(prisma, token.userId, token.user.email));
     } : undefined);
   } catch {
     result = { outcome: 'UNCERTAIN', phase: 'MESSAGE', channel: false };

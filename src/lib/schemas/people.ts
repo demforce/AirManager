@@ -186,6 +186,7 @@ const createPersonExpiriesSchema = z
   });
 
 const createPersonAccessSchema = z.object({
+  // Older explicit trial clients remain valid. Omission never selects a legacy password invite.
   verificationInvite: z.literal(true).optional(),
   email: singleMailbox,
   roles: z.array(roleSchema).min(1),
@@ -235,6 +236,7 @@ export type InstructorProfileDto = z.infer<typeof instructorProfileSchema>;
  * activated, an object (with `deactivatedAt` possibly set) once it has been.
  */
 export const personDetailSchema = personListItemSchema.extend({
+  emailReadOnly: z.literal(true).optional(),
   pilotProfile: pilotProfileSchema.nullable(),
   studentProfile: studentProfileSchema.nullable(),
   instructorProfile: instructorProfileSchema.nullable(),

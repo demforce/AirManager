@@ -42,7 +42,7 @@ export type ExpiryDigestItem = {
   typeName: string;
   expiresAt: Date;
   daysLeft: number;
-  holderStatus: 'EMAILED' | 'NO_EMAIL' | 'SEND_FAILED' | 'REMINDERS_DISABLED' | 'THRESHOLD_SUSPENDED';
+  holderStatus: 'EMAILED' | 'NO_EMAIL' | 'RECIPIENT_CHANGED' | 'PENDING_ACTIVATION' | 'SEND_FAILED' | 'REMINDERS_DISABLED' | 'THRESHOLD_SUSPENDED';
 };
 
 /**
@@ -194,6 +194,8 @@ export async function buildExpiryDigestEmail(
   const flags = {
     EMAILED: '',
     NO_EMAIL: t('noEmailFlag'),
+    RECIPIENT_CHANGED: t('recipientChangedFlag'),
+    PENDING_ACTIVATION: t('pendingActivationFlag'),
     SEND_FAILED: t('sendFailedFlag'),
     REMINDERS_DISABLED: t('remindersDisabledFlag'),
     THRESHOLD_SUSPENDED: t('thresholdSuspendedFlag'),

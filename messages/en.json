@@ -451,7 +451,6 @@
         "genericError": "Something went wrong. Please try again.",
         "grantLabel": "Create access for this person",
         "invalidEmail": "Enter a valid email address.",
-        "verificationOption": "Send email verification invitation (trial)",
         "verifiedEmail": "Email verified",
         "pendingEmail": "Email pending verification"
       },
@@ -467,6 +466,7 @@
       "errors": {
         "required": "Required field.",
         "generic": "Something went wrong. Please try again.",
+        "emailInUse": "This email address is already in use.",
         "conflictEmail": "A person with this email already exists.",
         "profilesExclusive": "The student profile cannot be activated together with pilot or instructor."
       },
@@ -1852,6 +1852,8 @@
       "holderColumn": "Holder",
       "expiryColumn": "Expiry",
       "expiredDaysAgo": "expired {days, plural, one {# day} other {# days}} ago",
+      "recipientChangedFlag": " [reminder withheld because the recipient changed]",
+      "pendingActivationFlag": " [reminder withheld pending activation]",
       "noEmailFlag": " [no email on file — contact them directly]",
       "sendFailedFlag": " [email delivery failed — automatically retried on the next run]",
       "remindersDisabledFlag": " [holder reminders disabled]",

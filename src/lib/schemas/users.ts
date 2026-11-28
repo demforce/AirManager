@@ -14,6 +14,7 @@ export const roleSchema = z.enum(Role);
  * Conventions: "Uno schema Zod per input/output per endpoint").
  */
 export const createUserSchema = z.object({
+  // Older explicit trial clients remain valid. Omission never selects a legacy password invite.
   verificationInvite: z.literal(true).optional(),
   email: singleMailbox,
   roles: z.array(roleSchema).min(1),
@@ -58,6 +59,7 @@ export const userListItemSchema = z.object({
   locale: localeSchema,
   passwordSet: z.boolean(),
   emailVerified: z.boolean().optional(),
+  canResendVerificationInvite: z.boolean().optional(),
   person: z.object({ id: z.string(), firstName: z.string(), lastName: z.string() }).nullable(),
   createdAt: z.iso.datetime(),
 });

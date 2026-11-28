@@ -46,7 +46,7 @@ import { todayDateOnlyInZone } from '@/lib/zoned-time';
 import { useIdempotentSubmission } from '@/lib/use-idempotent-submission';
 import { PilotEditor, type PilotEditorLabels } from './pilot-editor';
 
-export type PilotUser = { id: string; email: string; roles: Role[]; isActive: boolean; passwordSet: boolean; emailVerified?: boolean } | null;
+export type PilotUser = { id: string; email: string; roles: Role[]; isActive: boolean; passwordSet: boolean; emailVerified?: boolean; canResendVerificationInvite?: boolean } | null;
 
 /** Story 19.7a (R-19-i): the currency of a pilot/student — `currency.service.ts#listCurrencyByPerson`'s row. */
 export type PilotCurrency = { current: boolean; expiresAt: string | null; daysUntil: number | null };

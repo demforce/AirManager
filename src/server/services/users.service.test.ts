@@ -1,6 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
+
+// Legacy service fixtures use password invitations; the isolated opt-in flow uses PostgreSQL.
+beforeAll(() => vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '0'));
+afterAll(() => vi.unstubAllEnvs());
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {

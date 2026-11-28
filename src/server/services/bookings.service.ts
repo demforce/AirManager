@@ -1,3 +1,4 @@
+import { captureEventRecipients, holderMailbox, holderDeliveryFence, type EventRecipients } from './account-mailbox';
 import { boundedOptions, PICKER_LIMIT, type OptionPage } from '@/lib/picker';
 import { Prisma, type AircraftPriceCategory, type AircraftStatus, type BookingStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
@@ -1590,7 +1591,7 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
   // Review 19.10 F2: read before the transaction (this function's doc-comment).
   const approvalChecks = to === 'APPROVED' ? await readApprovalChecks(bookingId) : null;
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const { updated, atEvent } = await prisma.$transaction(async (tx) => {
     const lockedRows = await tx.$queryRaw<LockedBookingRow[]>`
       SELECT "id", "status", "personId", "instructorProfileId", "aircraftId", "startsAt", "endsAt" FROM "Booking" WHERE "id" = ${bookingId} FOR UPDATE`;
     const existing = lockedRows[0];
@@ -1670,11 +1671,13 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
       throw new ConflictError('This booking has changed status; please retry.');
     }
 
-    return tx.booking.findUniqueOrThrow({ where: { id: bookingId }, select: BOOKING_SELECT });
+    const updated = await tx.booking.findUniqueOrThrow({ where: { id: bookingId }, select: BOOKING_SELECT });
+    const atEvent = to === 'DENIED' ? await captureEventRecipients(tx, [updated.personId]) : undefined;
+    return { updated, atEvent };
   });
 
   if (to === 'DENIED') {
-    await sendBookingDeniedEmail(updated);
+    await sendBookingDeniedEmail(updated, atEvent);
   }
 
   return toListItem(updated);
@@ -1691,11 +1694,12 @@ export async function transitionBooking(actor: Actor, bookingId: string, input: 
  * skip (AC 5), distinct from an actual send failure (`console.error`, still
  * no throw).
  */
-async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
-  const person = await prisma.person.findUnique({ where: { id: booking.personId }, select: { email: true } });
-  if (!person?.email) return;
-
+async function sendBookingDeniedEmail(booking: SelectedBooking, atEvent?: EventRecipients): Promise<void> {
   try {
+    const person = await prisma.person.findUnique({ where: { id: booking.personId }, select: { email: true } });
+    if (!person) return;
+    const recipient = await holderMailbox(booking.personId, person.email, atEvent);
+    if (!recipient) return;
     const user = await prisma.user.findUnique({ where: { personId: booking.personId }, select: { locale: true } });
     const locale: AppLocale = user?.locale === 'en' ? 'en' : 'it';
     const content = await buildBookingDeniedEmail(locale, {
@@ -1706,7 +1710,7 @@ async function sendBookingDeniedEmail(booking: SelectedBooking): Promise<void> {
       reason: booking.denyReason!,
     });
     if (!(await getOperationalMailPolicy()).switches.bookingDenied) return;
-    await getMailSender().send({ ...content, to: person.email });
+    await getMailSender().send({ ...content, to: recipient.email, ...holderDeliveryFence(booking.personId, recipient) });
   } catch {
     console.error('transitionBooking: failed to send booking-denied email');
   }

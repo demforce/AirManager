@@ -2,6 +2,7 @@ import type { Prisma } from '@/generated/prisma/client';
 import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
+import { securityOwnershipFilter } from './account-mailbox';
 import { databaseNow } from './credential-mail.service';
 
 const MINUTE = 60_000;
@@ -53,7 +54,8 @@ async function queueAlertRecipients(tx: Prisma.TransactionClient) {
   if (!waiting.length) return;
   const admins = await tx.$queryRaw<{ id: string }[]>`
     SELECT u.id FROM "User" u JOIN "EmailVerification" e ON e."userId" = u.id
-    WHERE u."isActive" AND 'ADMIN' = ANY(u.roles) AND e.email = u.email AND e."verifiedAt" IS NOT NULL`;
+    WHERE u."isActive" AND 'ADMIN' = ANY(u.roles) AND e.email = u.email AND e."verifiedAt" IS NOT NULL
+      ${securityOwnershipFilter()}`;
   if (!admins.length) return;
   const userIds = admins.map(a => a.id);
   for (const { id } of waiting) {

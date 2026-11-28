@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { env } from '@/lib/env';
 import { getSmtpSettingsForMailer } from '@/server/services/app-settings.service';
-import type { MailMessage, MailSender } from './mail-sender';
+import { MailRecipientChangedError, type MailMessage, type MailSender } from './mail-sender';
 
 /**
  * SMTP implementation of `MailSender`, via `nodemailer`. Settings-first
@@ -19,7 +19,11 @@ export class SmtpMailSender implements MailSender {
   async send(message: MailMessage): Promise<void> {
     const settings = await getSmtpSettingsForMailer();
 
-    const host = settings.host || env.SMTP_HOST;
+    let host = settings.host || env.SMTP_HOST;
+    if (message.confirmRecipient) {
+      if (!['localhost', '127.0.0.1', '::1'].includes(host)) throw new Error('Local test relay required.');
+      if (host === 'localhost') host = '127.0.0.1';
+    }
     const port = settings.port ?? env.SMTP_PORT;
     const from = settings.from || env.MAIL_FROM;
     // `security` mapping (AC 1): none/STARTTLS/SSL-TLS -> `secure`/`requireTLS`.
@@ -43,6 +47,8 @@ export class SmtpMailSender implements MailSender {
       greetingTimeout: 10_000,
     });
 
+    if (message.confirmRecipient && !await message.confirmRecipient()) throw new MailRecipientChangedError();
+    message.onSubmit?.();
     await transporter.sendMail({
       from,
       to: message.to,

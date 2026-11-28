@@ -76,7 +76,7 @@ export type PilotEditorLabels = {
   /** `subHeading` is the in-section label above the medical picker (AC 2/1) — the rest mirrors `ExpiryDraftEditorLabels`. */
   medical: { subHeading: string } & ExpiryDraftEditorLabels;
   access: {
-    verificationOption: string | null;
+    verifiedInvites: boolean;
     verifiedEmail: string;
     pendingEmail: string;
     sectionTitle: string;
@@ -199,7 +199,7 @@ export function PilotEditor({ target, onClose, onMutated, canManageUsers, locale
                 labels={labels.access}
                 toast={toast}
                 toastLabels={toastLabels}
-                onMutated={(user) => applyPatch({ user })}
+                onMutated={(user) => applyPatch({ user, ...(labels.access.verifiedInvites && user?.emailVerified !== undefined && { email: user.email }) })}
               />
             </Section>
           ) : null}
@@ -412,7 +412,8 @@ function EditPersonForm({
   /** `expiryTypeId` — the expiry row the error is shown on instead of the section (review 19.4 F2). */
   const [saveError, setSaveError] = useState<{ section: PersonSaveSection; message: string; expiryTypeId: string | null } | null>(null);
 
-  const changedIdentity = changedIdentityFields(identityValues, defaultValues);
+  const registeredEmail = labels.access.verifiedInvites && pilot.user ? pilot.user.email : null;
+  const changedIdentity = changedIdentityFields(identityValues, defaultValues).filter(field => field !== 'email' || registeredEmail === null);
   const profileChanges = profilesDetail && profileDraft ? profileChangesOf(profilesDetail, profileDraft) : {};
   const hasProfileChanges = Object.keys(profileChanges).length > 0;
   const hasExpiryChanges = expiries.changes.set.length > 0 || expiries.changes.remove.length > 0;
@@ -528,7 +529,9 @@ function EditPersonForm({
             <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
           </Field>
           <Field label={labels.identity.email} error={errors.email ? labels.errors.required : undefined}>
-            <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email', { setValueAs: blankToNull })} />
+            {registeredEmail !== null
+              ? <Input type="email" value={registeredEmail} readOnly />
+              : <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email', { setValueAs: blankToNull })} />}
           </Field>
           <Field label={labels.identity.phone} error={errors.phone ? labels.errors.required : undefined}>
             <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone', { setValueAs: blankToNull })} />
@@ -807,6 +810,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
 
   const {
     register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
@@ -892,16 +896,18 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
     setSelections((current) => ({ ...current, [typeId]: date }));
   }
 
-  const [verificationInvite, setVerificationInvite] = useState(false);
   const [grantAccess, setGrantAccess] = useState(false);
   const [accessEmail, setAccessEmail] = useState('');
+  const contactEmail = useWatch({ control, name: 'email' });
+  const singleAccountEmail = grantAccess && labels.access.verifiedInvites;
+  const registeredEmail = singleAccountEmail ? contactEmail ?? '' : accessEmail;
   const [accessRoles, setAccessRoles] = useState<Role[]>([]);
 
   function isValidAccessEmail(value: string): boolean {
     return z.string().trim().toLowerCase().pipe(z.email()).safeParse(value).success;
   }
 
-  const accessEmailError = submitAttempted && grantAccess && !isValidAccessEmail(accessEmail);
+  const accessEmailError = submitAttempted && grantAccess && !isValidAccessEmail(registeredEmail);
   const accessRolesError = submitAttempted && grantAccess && accessRoles.length === 0;
   const missingDateIds = submitAttempted
     ? new Set(Object.entries(selections).filter(([, expiresAt]) => !expiresAt).map(([typeId]) => typeId))
@@ -936,7 +942,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
     const nextStudentFieldError = activateStudent && !studentCourseStartDate;
     const expiries = Object.entries(selections).map(([expiryTypeId, expiresAt]) => ({ expiryTypeId, expiresAt }));
     const missingDate = expiries.some((entry) => !entry.expiresAt);
-    const emailValid = !grantAccess || isValidAccessEmail(accessEmail);
+    const emailValid = !grantAccess || isValidAccessEmail(registeredEmail);
     const rolesValid = !grantAccess || accessRoles.length > 0;
 
     if (nextPilotFieldError || nextStudentFieldError || missingDate || !emailValid || !rolesValid) {
@@ -947,7 +953,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
     const payload: CreatePersonInput = {
       firstName: base.firstName,
       lastName: base.lastName,
-      email: base.email ?? null,
+      email: singleAccountEmail ? null : base.email ?? null,
       phone: base.phone ?? null,
       address: base.address ?? null,
       ...(activatePilot || activateStudent || activateInstructor
@@ -960,7 +966,7 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
           }
         : {}),
       ...(expiries.length > 0 ? { expiries } : {}),
-      ...(grantAccess ? { access: { email: accessEmail, roles: accessRoles, ...(verificationInvite && { verificationInvite: true }) } } : {}),
+      ...(grantAccess ? { access: { email: registeredEmail, roles: accessRoles } } : {}),
     };
 
     const response = await fetch('/api/v1/people', {
@@ -1012,8 +1018,8 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
         <Field label={labels.identity.lastName} error={errors.lastName ? labels.errors.required : undefined}>
           <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
         </Field>
-        <Field label={labels.identity.email} error={errors.email ? labels.errors.required : undefined}>
-          <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email', { setValueAs: blankToNull })} />
+        <Field label={labels.identity.email} error={singleAccountEmail && accessEmailError ? labels.access.invalidEmail : errors.email ? labels.errors.required : undefined}>
+          <Input type="email" data-testid={singleAccountEmail ? 'new-person-access-email' : undefined} aria-invalid={Boolean(errors.email) || (singleAccountEmail && accessEmailError)} {...register('email', { setValueAs: blankToNull })} />
         </Field>
         <Field label={labels.identity.phone} error={errors.phone ? labels.errors.required : undefined}>
           <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone', { setValueAs: blankToNull })} />
@@ -1139,17 +1145,11 @@ function NewPersonForm({ labels, toast, toastLabels, canManageUsers, onClose, on
           </label>
           {grantAccess ? (
             <div style={{ marginTop: 10 }}>
-              {labels.access.verificationOption && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" checked={verificationInvite} onChange={event => setVerificationInvite(event.target.checked)} />
-                  {labels.access.verificationOption}
-                </label>
-              )}
-              <div className="form-grid">
+              {!singleAccountEmail && <div className="form-grid">
                 <Field label={labels.access.email} wide error={accessEmailError ? labels.access.invalidEmail : undefined}>
                   <Input type="email" value={accessEmail} onChange={(event) => setAccessEmail(event.target.value)} aria-invalid={accessEmailError} data-testid="new-person-access-email" />
                 </Field>
-              </div>
+              </div>}
               <div className="fld-label" style={{ marginTop: 10, marginBottom: 6 }}>
                 {labels.access.roles}
               </div>
@@ -1229,7 +1229,6 @@ function AccessSection({
   const [formError, setFormError] = useState<string | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [pending, setPending] = useState(false);
-  const [verificationInvite, setVerificationInvite] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const action = useRef<{ userId: string; key: string } | null>(null);
   const inFlight = useRef(false);
@@ -1255,7 +1254,7 @@ function AccessSection({
     const response = await fetch('/api/v1/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: values.email, roles: values.roles, locale: 'it', personId, ...(verificationInvite && { verificationInvite: true }) }),
+      body: JSON.stringify({ email: values.email, roles: values.roles, locale: 'it', personId }),
     });
 
     if (!response.ok) {
@@ -1264,9 +1263,9 @@ function AccessSection({
       return;
     }
 
-    const created = (await response.json()) as { id: string; email: string; roles: Role[]; isActive: boolean; passwordSet: boolean; emailVerified?: boolean };
+    const created = (await response.json()) as NonNullable<PilotUser>;
     toast.show(toastLabels.userCreated, 'ok');
-    onMutated({ id: created.id, email: created.email, roles: created.roles, isActive: created.isActive, passwordSet: created.passwordSet, emailVerified: created.emailVerified });
+    onMutated(created);
   }
 
   async function handleResendInvite(): Promise<void> {
@@ -1303,7 +1302,7 @@ function AccessSection({
             {user.emailVerified !== undefined ? (user.emailVerified ? labels.verifiedEmail : labels.pendingEmail) : user.passwordSet ? labels.statusActive : labels.statusPending}
           </Badge>
         </div>
-        {!(user.emailVerified ?? user.passwordSet) ? (
+        {(labels.verifiedInvites ? user.canResendVerificationInvite : user.emailVerified === undefined && !user.passwordSet) ? (
           <button type="button" className="btn mini" disabled={pending} onClick={() => void handleResendInvite()} style={{ marginTop: 10 }}>
             {labels.resendInvite}
           </button>
@@ -1318,12 +1317,6 @@ function AccessSection({
         {labels.noUser}
       </p>
       <form onSubmit={(event) => void handleSubmit(onCreateUser)(event)} noValidate>
-        {labels.verificationOption && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input type="checkbox" checked={verificationInvite} onChange={event => setVerificationInvite(event.target.checked)} />
-            {labels.verificationOption}
-          </label>
-        )}
         <div className="form-grid">
           <Field label={labels.email} wide error={errors.email ? labels.invalidEmail : undefined}>
             <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email')} />

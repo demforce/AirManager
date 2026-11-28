@@ -1,3 +1,4 @@
+import { accountMailboxUncontested } from './account-mailbox';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { Prisma } from '@/generated/prisma/client';
@@ -94,14 +95,16 @@ export async function consumeTrialLink(purpose: 'VERIFY_EMAIL' | 'LOGIN_LINK', r
       const user = await tx.user.findUnique({ where: { id: token.userId }, select: {
         id: true, email: true, isActive: true, roles: true, tokenVersion: true, personId: true, emailVerification: true,
       } });
-      if (!user || !credentialEligible(user, purpose) || (purpose === 'LOGIN_LINK' && mailbox.data !== user.email)) return null;
+      if (!user || !credentialEligible(user, purpose) || !await accountMailboxUncontested(tx, user.id, user.email) || (purpose === 'LOGIN_LINK' && mailbox.data !== user.email)) return null;
       const now = await databaseNow(tx);
       const claim = await tx.authToken.updateMany({
         where: { id: token.id, type: purpose, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now },
       });
       if (claim.count !== 1) return null;
       if (purpose === 'VERIFY_EMAIL') {
-        await tx.emailVerification.update({ where: { userId: user.id }, data: { verifiedAt: now } });
+        await tx.$executeRaw`UPDATE "EmailVerification"
+          SET "verifiedAt" = ${now}, "expiryStartCycle" = nextval('"Expiry_notificationCycle_seq"')
+          WHERE "userId" = ${user.id}`;
       }
       return { id: user.id, email: user.email, roles: user.roles, personId: user.personId, tokenVersion: user.tokenVersion };
     });

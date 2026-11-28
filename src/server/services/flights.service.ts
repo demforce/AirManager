@@ -1,3 +1,4 @@
+import { captureEventRecipients } from './account-mailbox';
 import { Prisma, type AircraftPriceCategory, type FlightType } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc, toDateOnlyString } from '@/lib/date-only';
@@ -1045,6 +1046,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
     balanceAfterCents,
     accountId,
     accountCreatedAt,
+    atEvent,
   } = await prisma.$transaction(async (tx) => {
     // Row lock (FOR UPDATE) — serializes concurrent registrations on this
     // aircraft, so the `FLIGHT_OVERLAP` read below never misses a racing
@@ -1089,7 +1091,9 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
       balanceBeforeCents,
       forceStamp: settleBalanceUnderLock(actor, input, resolved, balanceBeforeCents),
     });
-    return { ...core, accountId: account.id, accountCreatedAt: account.createdAt };
+    const atEvent = bandWorsened(balanceBand(core.balanceBeforeCents, thresholdCents), balanceBand(core.balanceAfterCents, thresholdCents))
+      ? await captureEventRecipients(tx, [resolved.person.id]) : undefined;
+    return { ...core, accountId: account.id, accountCreatedAt: account.createdAt, atEvent };
   });
 
   // Guard-free re-read, same rationale as `recordTopUp`. H3 fix
@@ -1116,7 +1120,7 @@ export async function registerFlight(actor: Actor, input: RegisterFlightInput): 
     // below gets the new "already red OR ends up red" condition.
     void sendNegativeBalanceAlert(
       resolved.person.id,
-      { firstName: resolved.person.firstName, lastName: resolved.person.lastName, email: resolved.person.email },
+      { firstName: resolved.person.firstName, lastName: resolved.person.lastName, email: resolved.person.email, atEvent },
       account.balanceCents,
     );
   }
@@ -1284,7 +1288,7 @@ export async function updateFlight(actor: Actor, flightId: string, input: Regist
   });
   const thresholdCents = await getNegativeBalanceThresholdCents();
 
-  const { flight, balanceBeforeCents, balanceAfterCents } = await prisma.$transaction(async (tx) => {
+  const { flight, balanceBeforeCents, balanceAfterCents, atEvent } = await prisma.$transaction(async (tx) => {
     const lockedFlight = await tx.$queryRaw<Array<{ aircraftId: string; updatedAt: Date }>>`
       SELECT "aircraftId", "updatedAt" FROM "Flight" WHERE "id" = ${flightId} FOR UPDATE`;
     if (lockedFlight.length === 0) {
@@ -1343,7 +1347,10 @@ export async function updateFlight(actor: Actor, flightId: string, input: Regist
       },
     });
 
-    return { flight: updated, balanceBeforeCents: before, balanceAfterCents: await readBalanceCents(tx, account.id) };
+    const after = await readBalanceCents(tx, account.id);
+    const atEvent = bandWorsened(balanceBand(before, thresholdCents), balanceBand(after, thresholdCents))
+      ? await captureEventRecipients(tx, [resolved.person.id]) : undefined;
+    return { flight: updated, balanceBeforeCents: before, balanceAfterCents: after, atEvent };
   });
 
   const account = await getAccountOverview(actor, resolved.person.id);
@@ -1353,7 +1360,7 @@ export async function updateFlight(actor: Actor, flightId: string, input: Regist
   if (bandWorsened(balanceBand(balanceBeforeCents, thresholdCents), balanceBand(balanceAfterCents, thresholdCents))) {
     void sendNegativeBalanceAlert(
       resolved.person.id,
-      { firstName: resolved.person.firstName, lastName: resolved.person.lastName, email: resolved.person.email },
+      { firstName: resolved.person.firstName, lastName: resolved.person.lastName, email: resolved.person.email, atEvent },
       account.balanceCents,
     );
   }

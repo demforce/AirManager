@@ -1,3 +1,4 @@
+import { accountMailboxUncontested } from './account-mailbox';
 import { randomUUID } from 'node:crypto';
 import type { Prisma, SecurityDelivery } from '@/generated/prisma/client';
 import { singleMailbox } from '@/lib/schemas/email-trial';
@@ -17,7 +18,8 @@ async function recipient(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: recipientFields });
   if (!user?.isActive || !user.roles.includes('ADMIN') || !verifiedTrialAddress(user)) return null;
   const mailbox = singleMailbox.safeParse(user.email);
-  return mailbox.success && mailbox.data === user.email ? user : null;
+  return mailbox.success && mailbox.data === user.email
+    && (!emailTrialEnabled() || await accountMailboxUncontested(prisma, userId, user.email)) ? user : null;
 }
 
 // Called under the same channel lock as reservations and completion. Both ledgers

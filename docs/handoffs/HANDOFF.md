@@ -75,3 +75,11 @@ L'amministratore trova in Impostazioni le dieci schede precedenti. La destinazio
 Enrico ha confermato un solo indirizzo registrato per utente, usato per l’accesso e per le comunicazioni. Questa correzione non migra i recapiti esistenti. Il cambio indirizzo è sospeso e fuori dal piano attivo. [Decisione sul recapito unico](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
 
 Restano aperte le decisioni sul formato dettagliato di Scadenze e sul font Unicode nei PDF. La retrospettiva dell’Epic 18 resta facoltativa.
+
+## Indirizzo account, unicità e invito di verifica
+
+La story sull’indirizzo verificato è chiusa. Nel trial l’account usa un’unica casella per accesso e comunicazioni, univoca fra tutti gli account. L’amministratore ottiene un invito di verifica automatico sia creando l’utenza sia creando la persona con accesso. Il fallback amministrativo usa la password individuale predisposta prima di un eventuale guasto della posta.
+
+Sul tree `6c9bff26c31e37b65bb64b83f06d468e973fd0cb` sono passati il riesame indipendente, il gate con 2.404 unitari, 107 casi PostgreSQL/SMTP e i cinque casi Chromium con trial acceso. La suite Chromium a trial spento ha concluso 727 scenari. Sono passati 724 al primo tentativo e uno al primo retry. I due scenari saltati richiedevano il trial acceso e sono passati nella suite dedicata. La copia sintetica aggiornata ha conservato la data originale della prova di casella. Enrico ha deciso la durata di sette giorni per l’invito iniziale, il reinvio finché la prima attivazione è pendente e l’esclusione degli avvisi precedenti alla conferma. Il record della story documenta le soglie del titolare e del digest, l’idoneità al momento dell’evento e il limite sui vecchi rinnovi di cui manca la data. [Prove locali e checkpoint precedenti](../../_bmad-output/implementation-artifacts/evidence/recapito-account-verificato/riscontri.md)
+
+Il prossimo incarico è la [riattivazione tramite link](../../_bmad-output/implementation-artifacts/riattivazione-account-con-link.md). Oggi un amministratore può riattivare direttamente una persona da Piloti, anche a trial acceso. Prima di una futura attivazione pubblica va completato il percorso distinto di riattivazione. La durata del relativo link resta aperta. Il lavoro sul cambio indirizzo resta separato.

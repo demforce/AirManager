@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 test('admin pauses and resumes sign-in emails from Settings using the personal fallback', async ({ page }) => {
   await page.goto('/it/login');
   await page.getByRole('link', { name: 'Accesso amministratori con password', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Accesso amministratori con password', exact: true })).toBeVisible();
   await page.getByLabel('Email', { exact: true }).fill('admin@airmanager.local');
   await page.getByLabel('Password', { exact: true }).fill(process.env.SEED_ADMIN_PASSWORD!);
   await page.getByRole('button', { name: 'Accedi', exact: true }).click();

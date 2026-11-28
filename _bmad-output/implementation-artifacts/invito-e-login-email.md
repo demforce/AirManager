@@ -2,7 +2,7 @@
 
 Stato BMAD: done. Base `8a8db640e377c76ecb2b57a4453a36148aaeb989`.
 
-L’admin sceglie esplicitamente l’invito con verifica quando crea l’accesso in Piloti. La creazione dell’account, il suo indirizzo da verificare e la prenotazione dell’invito fanno parte della stessa transazione. Una normale creazione amministrativa continua a produrre l’invito password. Nessuna riga di verifica viene aggiunta agli account esistenti. La verifica richiede un POST consapevole e lascia il browser disconnesso. Il login richiede un secondo messaggio con credenziale distinta e una conferma esplicita dell’indirizzo prima della creazione della sessione Auth.js.
+Nella prima versione del trial, documentata in questa story, l’admin sceglieva esplicitamente l’invito con verifica in Piloti. La normale creazione amministrativa produceva allora l’invito password. Nel trial corrente le due creazioni già presenti in Piloti accodano automaticamente l’invito di verifica nella stessa transazione dell’account. La procedura aggiornata è riportata nella sezione «Attivazione per il collaudo». Nessuna riga di verifica viene aggiunta agli account esistenti. La verifica richiede un POST consapevole e lascia il browser disconnesso. Il login richiede un secondo messaggio con credenziale distinta e una conferma esplicita dell’indirizzo prima della creazione della sessione Auth.js.
 
 | Criterio | Riscontro verificato |
 |---|---|
@@ -17,7 +17,7 @@ L’admin sceglie esplicitamente l’invito con verifica quando crea l’accesso
 
 Solo in un ambiente disposable impostare `AIRMANAGER_EMAIL_TRIAL=1` sia sul processo web sia sul worker. Usare lo stesso `DATABASE_URL` e `TEST_DATABASE_URL` con PostgreSQL locale dedicato denominato airmanager_test o airmanager_e2e e un `APP_URL` loopback corrispondente all’origine del browser. Avviare Mailpit locale senza inoltro e il worker di prova locale descritto nel runbook della coda. Applicare prima le migrazioni al database sintetico. Senza attivazione la pagina pubblica è indisponibile e il provider email non viene registrato. Un worker ordinario non prende in carico i nuovi scopi con la modalità spenta. Il canale di prova consegna solo a un relay loopback. L’uscita dalla modalità impedisce anche l’uso di sessioni emesse dal provider sperimentale.
 
-Nella scheda di creazione accesso scegliere «Invita con verifica email (prova)». L’invito di verifica conserva la finestra inviti di sette giorni. Dopo la conferma, dalla pagina di login scegliere «Accedi via email». Il browser rimuove il frammento del link dalla barra degli indirizzi. L’app usa solo l’hash nel database. La mail di collaudo è per sua natura leggibile in Mailpit. Proteggere il capture come una casella di posta.
+Con la prova email attiva, creare l’accesso dalla scheda della persona oppure insieme alla persona. Il server accoda automaticamente l’invito all’unica casella registrata. Finché la prima attivazione è pendente e l’utenza abilitata, l’amministratore può usare «Reinvia invito» in Piloti. L’invito di verifica conserva la finestra inviti di sette giorni. Dopo la conferma, dalla pagina di login scegliere «Accedi via email». Il browser rimuove il frammento del link dalla barra degli indirizzi. L’app usa solo l’hash nel database. La mail di collaudo è per sua natura leggibile in Mailpit. Proteggere il capture come una casella di posta. [Procedura di prima attivazione](recapito-account-verificato.md)
 
 ## Confini e limiti
 

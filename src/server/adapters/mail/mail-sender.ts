@@ -10,8 +10,17 @@ export type MailMessage = {
   subject: string;
   text: string;
   html?: string;
+  /** Recheck an isolated trial recipient after reading settings, immediately before submission. */
+  confirmRecipient?: () => Promise<boolean>;
+  /** Called immediately before submitting the prepared message to the transport. */
+  onSubmit?: () => void;
 };
 
 export interface MailSender {
   send(message: MailMessage): Promise<void>;
+}
+
+/** A definite change of identity at the handoff fence, distinct from a failed lookup. */
+export class MailRecipientChangedError extends Error {
+  constructor() { super('Recipient eligibility changed.'); }
 }

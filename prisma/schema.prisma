@@ -393,6 +393,7 @@ model InstructorRate {
 model User {
   emailVerification EmailVerification?
   id           String  @id @default(cuid())
+  /// An additional SQL expression index enforces canonical uniqueness for legacy spellings.
   email        String  @unique
   /// Nullable (story 1.4): an invited user has no password until they follow
   /// their invite link and set one via `AuthToken`. `authorize()` rejects
@@ -475,6 +476,8 @@ model EmailVerification {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   email      String
   verifiedAt DateTime?
+  /// First verification (or the upgrade watermark for an existing proof), in the expiry cycle sequence.
+  expiryStartCycle Int?
 }
 
 model EmailTrialRequest {

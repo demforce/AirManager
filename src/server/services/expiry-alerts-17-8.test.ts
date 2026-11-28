@@ -1,5 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXPIRY_ALERT_THRESHOLDS } from '@/lib/expiry-status';
+
+// These fixtures exercise the default legacy configuration. The opt-in path uses
+// PostgreSQL and local SMTP in scripts/test-single-account-address.ts.
+beforeAll(() => vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '0'));
+afterAll(() => vi.unstubAllEnvs());
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {

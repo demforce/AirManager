@@ -1,6 +1,11 @@
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// These fixtures exercise the default legacy configuration. The opt-in path uses
+// PostgreSQL and local SMTP in scripts/test-single-account-address.ts.
+beforeAll(() => vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '0'));
+afterAll(() => vi.unstubAllEnvs());
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
@@ -422,7 +427,7 @@ describe('expiry-alerts.service (story 6.3 — automatic expiry alert emails, id
 
       expect(userFindManyMock).toHaveBeenCalledWith({
         where: { isActive: true, roles: { has: 'ADMIN' } },
-        select: { email: true, locale: true },
+        select: { id: true, email: true, locale: true },
       });
     });
 

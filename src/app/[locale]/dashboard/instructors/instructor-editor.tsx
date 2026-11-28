@@ -209,10 +209,10 @@ export function InstructorEditor({
 
 // --- The form ------------------------------------------------------------------
 
-type PersonIdentity = Pick<PersonDetailDto, 'firstName' | 'lastName' | 'email' | 'phone' | 'address'>;
+type PersonIdentity = Pick<PersonDetailDto, 'firstName' | 'lastName' | 'email' | 'phone' | 'address' | 'emailReadOnly'>;
 
 function identityOf(person: PersonIdentity): PersonIdentity {
-  return { firstName: person.firstName, lastName: person.lastName, email: person.email, phone: person.phone, address: person.address };
+  return { ...(person.emailReadOnly && { emailReadOnly: true }), firstName: person.firstName, lastName: person.lastName, email: person.email, phone: person.phone, address: person.address };
 }
 
 async function fetchPersonIdentity(personId: string): Promise<PersonIdentity | null> {
@@ -516,7 +516,7 @@ function EditInstructorForm({
             <Input aria-invalid={Boolean(errors.lastName)} {...register('lastName')} />
           </Field>
           <Field label={labels.identity.email} error={errors.email ? labels.identity.requiredField : undefined}>
-            <Input type="email" aria-invalid={Boolean(errors.email)} {...register('email', { setValueAs: blankToNull })} />
+            <Input type="email" readOnly={identity?.emailReadOnly} aria-invalid={Boolean(errors.email)} {...register('email', { setValueAs: blankToNull })} />
           </Field>
           <Field label={labels.identity.phone} error={errors.phone ? labels.identity.requiredField : undefined}>
             <Input type="tel" aria-invalid={Boolean(errors.phone)} {...register('phone', { setValueAs: blankToNull })} />

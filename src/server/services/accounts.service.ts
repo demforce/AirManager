@@ -1,3 +1,4 @@
+import { captureEventRecipients, holderMailbox, holderDeliveryFence, type EventRecipients } from './account-mailbox';
 import { Prisma, type AccountMovementRootBook, type AccountMovementType, type PaymentMethod } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { AppLocale } from '@/i18n/routing';
@@ -601,15 +602,15 @@ export async function getNegativeBalanceThresholdCents(): Promise<number> {
  */
 export async function sendNegativeBalanceAlert(
   personId: string,
-  person: { firstName: string; lastName: string; email: string | null },
+  person: { firstName: string; lastName: string; email: string | null; atEvent?: EventRecipients },
   balanceCents: number,
 ): Promise<void> {
-  if (!person.email) {
-    console.warn('sendNegativeBalanceAlert: person has no email, skipping alert.');
-    return;
-  }
-
   try {
+    const recipient = await holderMailbox(personId, person.email, person.atEvent);
+    if (!recipient) {
+      console.warn('sendNegativeBalanceAlert: no eligible recipient, skipping alert.');
+      return;
+    }
     // `User.locale` (AD-7) — the recipient's own language, not the staff
     // actor's. No linked `User` (a titolare who never got app access) falls
     // back to Italian, same default as `User.locale`'s own schema default.
@@ -620,7 +621,7 @@ export async function sendNegativeBalanceAlert(
       balanceCents,
     });
     if (!(await getOperationalMailPolicy()).switches.negativeBalance) return;
-    await getMailSender().send({ ...content, to: person.email });
+    await getMailSender().send({ ...content, to: recipient.email, ...holderDeliveryFence(personId, recipient) });
   } catch {
     // Never let a mail failure surface to the caller — the movement is
     // already committed and must stay valid (Dev Notes).
@@ -684,7 +685,7 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
   const thresholdCents = await getNegativeBalanceThresholdCents();
   const reason = input.reason;
 
-  const { balanceBeforeCents, balanceAfterCents } = await prisma.$transaction(async (tx) => {
+  const { balanceBeforeCents, balanceAfterCents, atEvent } = await prisma.$transaction(async (tx) => {
     // Row lock (FOR UPDATE): serializes concurrent adjustments/top-ups on
     // THIS account so their "balance before" reads never race (review 2.5
     // F1 pattern) — `Account` has no balance column, the lock is a pure
@@ -766,7 +767,10 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
       throw error;
     }
 
-    return { balanceBeforeCents: beforeCents, balanceAfterCents: beforeCents + input.amountCents };
+    const afterCents = beforeCents + input.amountCents;
+    const atEvent = bandWorsened(balanceBand(beforeCents, thresholdCents), balanceBand(afterCents, thresholdCents))
+      ? await captureEventRecipients(tx, [personId]) : undefined;
+    return { balanceBeforeCents: beforeCents, balanceAfterCents: afterCents, atEvent };
   });
 
   // Guard-free re-read, same rationale as `recordTopUp` (review 3.1 F1) —
@@ -795,7 +799,7 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
     // `balanceAfterCents` decides the band transition, but a concurrent
     // top-up committed in parallel (recordTopUp takes no Account lock) could
     // make it stale by send time — the freshly re-read overview can't.
-    void sendNegativeBalanceAlert(personId, person, overview.balanceCents);
+    void sendNegativeBalanceAlert(personId, { ...person, atEvent }, overview.balanceCents);
   }
 
   // Story 14.4 review F7 (ratifica R-14.4-d) — the in-app signal, deliberately

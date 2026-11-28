@@ -451,7 +451,6 @@
         "genericError": "Si è verificato un errore. Riprova.",
         "grantLabel": "Crea un accesso per questa persona",
         "invalidEmail": "Inserisci un'email valida.",
-        "verificationOption": "Invita con verifica email (prova)",
         "verifiedEmail": "Indirizzo verificato",
         "pendingEmail": "Indirizzo da verificare"
       },
@@ -467,6 +466,7 @@
       "errors": {
         "required": "Campo obbligatorio.",
         "generic": "Si è verificato un errore. Riprova.",
+        "emailInUse": "Questo indirizzo email è già in uso.",
         "conflictEmail": "Esiste già una persona con questa email.",
         "profilesExclusive": "Il profilo allievo non può essere attivato insieme a pilota o istruttore."
       },
@@ -1852,6 +1852,8 @@
       "holderColumn": "Titolare",
       "expiryColumn": "Scadenza",
       "expiredDaysAgo": "scadenza superata da {days, plural, one {# giorno} other {# giorni}}",
+      "recipientChangedFlag": " [promemoria sospeso per cambio di destinatario]",
+      "pendingActivationFlag": " [promemoria sospeso in attesa dell’attivazione]",
       "noEmailFlag": " [senza email — contattare la persona direttamente]",
       "sendFailedFlag": " [invio email fallito — nuovo tentativo automatico al prossimo giro]",
       "remindersDisabledFlag": " [promemoria al titolare disattivato]",

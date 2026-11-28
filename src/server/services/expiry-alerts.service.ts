@@ -1,12 +1,15 @@
+import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
+import { captureEventRecipients, holderMailbox, holderDeliveryFence, digestRecipientCurrent, holderStillCurrent } from './account-mailbox';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@/generated/prisma/client';
 import { getOperationalMailPolicy, type MailBoundary, type OperationalMailPolicy } from './operational-mail-settings';
 import { lockExpiryDate } from './expiry-cycle';
 import { APP_TIMEZONE } from '@/lib/time';
-import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
+import { dateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
 import type { AppLocale } from '@/i18n/routing';
 import { daysUntilUtc, EXPIRY_ALERT_THRESHOLDS } from '@/lib/expiry-status';
 import { getMailSender } from '@/server/adapters/mail';
+import { MailRecipientChangedError } from '@/server/adapters/mail/mail-sender';
 import { buildExpiryAlertEmail, buildExpiryDigestEmail, type ExpiryDigestItem } from '@/server/adapters/mail/templates';
 import { prisma } from '@/server/db/prisma';
 
@@ -95,6 +98,7 @@ const CANDIDATE_SELECT = {
   id: true,
   expiresAt: true,
   notificationCycle: true,
+  createdAt: true,
   person: { select: { id: true, firstName: true, lastName: true, email: true } },
   expiryType: { select: { name: true } },
   sentAlerts: { select: { threshold: true } },
@@ -132,6 +136,16 @@ function eligible(boundary: MailBoundary | null, cycle: number | null, expiresAt
     || expiresAt.getTime() - threshold * MS_PER_DAY > Date.parse(boundary.day);
 }
 
+type EnrollmentBoundary = { verifiedAt: Date | null; expiryStartCycle: number | null };
+function afterFirstActivation(proof: EnrollmentBoundary | null | undefined, expiry: {
+  createdAt: Date; notificationCycle: number | null; expiresAt: Date;
+}, threshold: number) {
+  if (!proof?.verifiedAt || expiry.createdAt > proof.verifiedAt) return true;
+  if (proof.expiryStartCycle !== null && expiry.notificationCycle !== null && expiry.notificationCycle > proof.expiryStartCycle) return true;
+  const day = dateOnlyInZone(proof.verifiedAt, APP_TIMEZONE);
+  return expiry.expiresAt.getTime() - threshold * MS_PER_DAY > Date.parse(day);
+}
+
 function sameExpiryPolicy(a: OperationalMailPolicy, b: OperationalMailPolicy): boolean {
   return a.switches.expiryHolder === b.switches.expiryHolder && a.switches.expiryDigest === b.switches.expiryDigest
     && a.holderSince?.cycle === b.holderSince?.cycle && a.digestSince?.cycle === b.digestSince?.cycle;
@@ -162,20 +176,47 @@ async function claimExpiry(selected: { id: string; expiresAt: Date }, today: Dat
       if (!candidate) return null;
       const daysLeft = daysUntilUtc(candidate.expiresAt, today);
       const consumed = new Set(candidate.sentAlerts.map((row) => row.threshold));
+      const atClaim = await captureEventRecipients(tx, [candidate.person.id]);
+      const snapshot = atClaim?.get(candidate.person.id);
+      const lookupFailed = atClaim !== undefined && !snapshot;
+      // If the ownership query failed, still distinguish historical thresholds from
+      // current attempts. Only the latter enter the existing failure/retry path.
+      const enrollment = lookupFailed ? await tx.emailVerification.findFirst({
+        where: { user: { personId: candidate.person.id } }, select: { verifiedAt: true, expiryStartCycle: true },
+      }) : snapshot?.proof;
+      const pendingAtClaim = enrollment?.verifiedAt === null;
       const due = dueThresholds(daysLeft).filter((threshold) => !consumed.has(threshold));
-      const canDeliver = (threshold: number, boundary: MailBoundary | null) => eligible(boundary, candidate.notificationCycle, candidate.expiresAt, threshold);
+      let suppressed = 0;
+      if (enrollment?.verifiedAt) {
+        const historical = due.filter(threshold => !afterFirstActivation(enrollment, candidate, threshold));
+        if (historical.length) {
+          // These cadence markers never described a delivery. Keep them independent
+          // of the attempt IDs released for a failure on a newer, eligible threshold.
+          await tx.sentAlert.createMany({ data: historical.map(threshold => ({ expiryId: candidate.id, threshold })) });
+          suppressed = historical.length;
+          for (const threshold of historical) consumed.add(threshold);
+        }
+      }
+      const canDeliver = (threshold: number, boundary: MailBoundary | null) => !consumed.has(threshold) && eligible(boundary, candidate.notificationCycle, candidate.expiresAt, threshold);
       const holder = due.filter((threshold) => policy.switches.expiryHolder && canDeliver(threshold, policy.holderSince));
       const digest = due.filter((threshold) => policy.switches.expiryDigest && canDeliver(threshold, policy.digestSince));
       const claims = due.filter((threshold) => holder.includes(threshold) || digest.includes(threshold))
         .map((threshold) => ({ id: randomUUID(), expiryId: candidate.id, threshold }));
-      if (!claims.length) return null;
+      if (!claims.length) return suppressed ? { suppressed } : null;
       await tx.sentAlert.createMany({ data: claims });
-      return { candidate, daysLeft, claims, sendHolder: holder.length > 0, digestThresholds: digest };
+      return { candidate, daysLeft, claims, suppressed, pendingAtClaim, atClaim, lookupFailed, sendHolder: holder.length > 0, digestThresholds: digest };
     });
   } catch (error) {
     if (hasPrismaCode(error, 'P2002') || hasPrismaCode(error, 'P2003')) return null;
     throw error;
   }
+}
+
+function ownedDigestClaims(ids: string[]) {
+  return ids.length ? prisma.sentAlert.findMany({
+    where: { id: { in: ids }, expiry: { person: { archivedAt: null }, expiryType: { isActive: true } } },
+    select: { id: true },
+  }) : [];
 }
 
 export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN): Promise<ExpiryAlertsJobResult> {
@@ -194,9 +235,10 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
   let candidatesProcessed = 0;
   let transportFailures = 0;
   let recipientRejections = 0;
-  let digestItems: ExpiryDigestItem[] = [];
+  type DigestRow = ExpiryDigestItem & { createdAt: Date; notificationCycle: number | null; thresholds: number[] };
+  let digestItems: DigestRow[] = [];
   const unattempted = new Map<ExpiryDigestItem, string[]>();
-  const digestOnlyClaims: string[] = [];
+
   const digestStillEnabled = (current: OperationalMailPolicy) => current.switches.expiryDigest && policy.digestSince?.cycle === current.digestSince?.cycle;
   const storedCursor = await prisma.appSetting.findUnique({ where: { key: RETRY_CURSOR_KEY }, select: { value: true, updatedAt: true } });
   let cursor: { expiresAt: Date; id: string } | null = null;
@@ -239,18 +281,21 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
       const claim = await claimExpiry(selected, today, policy);
       if (claim === 'settings_changed') { settingsChanged = true; break batches; }
       if (!claim) continue;
+      alertsCreated += claim.suppressed;
+      if (!claim.candidate) continue;
       const { candidate, daysLeft, claims, digestThresholds } = claim;
       const claimIds = claims.map((row) => row.id);
       let retainedIds = claimIds;
       const personName = `${candidate.person.firstName} ${candidate.person.lastName}`;
       let holderStatus: ExpiryDigestItem['holderStatus'];
-      if (!claim.sendHolder) {
-        alertsCreated += claims.length;
-        digestOnlyClaims.push(...claimIds);
-        holderStatus = policy.switches.expiryHolder ? 'THRESHOLD_SUSPENDED' : 'REMINDERS_DISABLED';
-      } else if (candidate.person.email) {
-        let sendAttempted = false;
-        try {
+      let sendAttempted = false;
+      try {
+        if (claim.sendHolder && claim.lookupFailed) throw new Error('Holder snapshot unavailable.');
+        const recipient = claim.sendHolder ? await holderMailbox(candidate.person.id, candidate.person.email, claim.atClaim) : null;
+        if (!claim.sendHolder) {
+          alertsCreated += claims.length;
+          holderStatus = policy.switches.expiryHolder ? 'THRESHOLD_SUSPENDED' : 'REMINDERS_DISABLED';
+        } else if (recipient) {
           const locale = resolveLocale(localeByPerson.get(candidate.person.id));
           const content = await buildExpiryAlertEmail(locale, {
             personName,
@@ -262,7 +307,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
           // attempt's markers. After handoff, SMTP cannot recall a message.
           const [owned, current] = await Promise.all([
             prisma.sentAlert.findFirst({
-              where: { id: claimIds[0], expiry: { person: { archivedAt: null, email: candidate.person.email }, expiryType: { isActive: true } } },
+              where: { id: claimIds[0], expiry: { person: { archivedAt: null, ...(!emailTrialEnabled() && { email: candidate.person.email }) }, expiryType: { isActive: true } } },
               select: { id: true },
             }),
             getOperationalMailPolicy(),
@@ -271,9 +316,10 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
             await prisma.sentAlert.deleteMany({ where: { id: { in: claimIds } } });
             continue;
           }
+          if (!await holderStillCurrent(candidate.person.id, recipient)) throw new MailRecipientChangedError();
           if (current.switches.expiryHolder && policy.holderSince?.cycle === current.holderSince?.cycle) {
             sendAttempted = true;
-            await getMailSender().send({ ...content, to: candidate.person.email });
+            await getMailSender().send({ ...content, to: recipient.email, ...holderDeliveryFence(candidate.person.id, recipient) });
             holderEmailsSent += 1;
             alertsCreated += claims.length;
             transportFailures = 0;
@@ -285,11 +331,21 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
             if (release.length) await prisma.sentAlert.deleteMany({ where: { id: { in: release } } });
             if (!keep.length) continue;
             retainedIds = keep.map((row) => row.id);
-            digestOnlyClaims.push(...retainedIds);
             alertsCreated += keep.length;
             holderStatus = current.switches.expiryHolder ? 'THRESHOLD_SUSPENDED' : 'REMINDERS_DISABLED';
           }
-        } catch (error) {
+        } else {
+          holdersWithoutEmail += 1;
+          alertsCreated += claims.length;
+          holderStatus = claim.pendingAtClaim ? 'PENDING_ACTIVATION' : 'NO_EMAIL';
+        }
+      } catch (error) {
+        if (error instanceof MailRecipientChangedError) {
+          // This cadence belonged to the old association. A retry must not send it
+          // to a newly linked account, even if the replacement address is verified.
+          alertsCreated += claims.length;
+          holderStatus = 'RECIPIENT_CHANGED';
+        } else {
           console.error('runExpiryAlertsJob: failed to send holder alert email');
           await prisma.sentAlert.deleteMany({ where: { id: { in: claimIds } } });
           if (sendAttempted) {
@@ -298,17 +354,14 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
           }
           holderStatus = 'SEND_FAILED';
         }
-      } else {
-        holdersWithoutEmail += 1;
-        alertsCreated += claims.length;
-        holderStatus = 'NO_EMAIL';
       }
 
       if (digestThresholds.length) {
         const item = { personName, typeName: candidate.expiryType.name, expiresAt: candidate.expiresAt, daysLeft, holderStatus };
-        digestItems.push(item);
+        const row = { ...item, createdAt: candidate.createdAt, notificationCycle: candidate.notificationCycle, thresholds: digestThresholds };
+        digestItems.push(row);
         if (holderStatus !== 'EMAILED' && holderStatus !== 'SEND_FAILED') {
-          unattempted.set(item, retainedIds);
+          unattempted.set(row, retainedIds);
         }
       }
       if (transportFailures >= 3) break;
@@ -318,26 +371,35 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
   }
 
   let digestEmailsSent = 0;
-  let digestAttempted = false;
   let latest = await getOperationalMailPolicy();
   if (digestItems.length && digestStillEnabled(latest)) {
     const adminUsers = await prisma.user.findMany({
       where: { isActive: true, roles: { has: 'ADMIN' } },
-      select: { email: true, locale: true },
+      select: { id: true, email: true, locale: true, ...(emailTrialEnabled() && {
+        emailVerification: { select: { email: true, verifiedAt: true, expiryStartCycle: true } },
+      }) },
     });
 
     admins: for (const adminUser of adminUsers) {
       try {
+        const proof = adminUser.emailVerification;
+        if (emailTrialEnabled() && (!proof?.verifiedAt || proof.email !== adminUser.email)) continue;
         const locale = resolveLocale(adminUser.locale);
         // A renewal during rendering invalidates a digest-only item. Re-render
-        // only if at least one item disappeared. Once handed off, this digest
-        // is the historical report of that attempt for the remaining admins.
+        // only when a visible item disappeared. Only previously submitted rows
+        // are historical; rows omitted for that admin still need their own fence.
         while (digestItems.length) {
-          const content = await buildExpiryDigestEmail(locale, { items: digestItems });
-          const ids = digestAttempted ? [] : [...unattempted.values()].map(([first]) => first);
+          const items = digestItems.filter(row => row.thresholds.some(threshold => afterFirstActivation(proof, row, threshold)));
+          if (!items.length) break;
+          const content = await buildExpiryDigestEmail(locale, { items });
+          const checked = new Map(items.flatMap(item => {
+            const claims = unattempted.get(item);
+            return claims ? [[item, claims] as const] : [];
+          }));
+          const ids = [...checked.values()].map(([first]) => first);
           const [current, owned] = await Promise.all([
             getOperationalMailPolicy(),
-            ids.length ? prisma.sentAlert.findMany({ where: { id: { in: ids }, expiry: { person: { archivedAt: null }, expiryType: { isActive: true } } }, select: { id: true } }) : [],
+            ownedDigestClaims(ids),
           ]);
           latest = current;
           if (!digestStillEnabled(latest)) break admins;
@@ -345,9 +407,9 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
             const ownedIds = new Set(owned.map((row) => row.id));
             const invalidClaims: string[] = [];
             digestItems = digestItems.filter((item) => {
-              const claims = unattempted.get(item);
+              const claims = checked.get(item);
               if (!claims || ownedIds.has(claims[0])) return true;
-              invalidClaims.push(...claims);
+              if (item.holderStatus !== 'RECIPIENT_CHANGED') invalidClaims.push(...claims);
               unattempted.delete(item);
               return false;
             });
@@ -358,21 +420,39 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
             alertsCreated -= released.count;
             continue;
           }
-          digestAttempted = true;
-          await getMailSender().send({ ...content, to: adminUser.email });
+          let rowsChanged = false;
+          const confirmRecipient = async () => {
+            if (!await digestRecipientCurrent(adminUser.id, adminUser.email)) return false;
+            rowsChanged = (await ownedDigestClaims(ids)).length !== ids.length;
+            return !rowsChanged;
+          };
+          const markSubmitted = () => { for (const item of items) unattempted.delete(item); };
+          try {
+            await getMailSender().send({ ...content, to: adminUser.email, onSubmit: markSubmitted, ...(emailTrialEnabled() && { confirmRecipient }) });
+          } catch (error) {
+            // A renewal during SMTP configuration invalidated this rendering. The
+            // next iteration discards its row and renders the remaining items.
+            if (rowsChanged) continue;
+            throw error;
+          }
+          markSubmitted(); // A successful alternate sender also completed this handoff.
           digestEmailsSent += 1;
           break;
         }
         if (!digestItems.length) break;
-      } catch (error) {
-        console.error('runExpiryAlertsJob: failed to send admin digest email', error);
+      } catch {
+        console.error('runExpiryAlertsJob: failed to send admin digest email');
       }
     }
   }
 
-  if (!digestAttempted && !digestStillEnabled(latest) && digestOnlyClaims.length) {
-    const released = await prisma.sentAlert.deleteMany({ where: { id: { in: digestOnlyClaims } } });
-    alertsCreated -= released.count;
+  if (!digestStillEnabled(latest)) {
+    const release = [...unattempted].flatMap(([item, claims]) =>
+      item.holderStatus === 'THRESHOLD_SUSPENDED' || item.holderStatus === 'REMINDERS_DISABLED' ? claims : []);
+    if (release.length) {
+      const released = await prisma.sentAlert.deleteMany({ where: { id: { in: release } } });
+      alertsCreated -= released.count;
+    }
   }
   settingsChanged ||= !sameExpiryPolicy(policy, latest);
   const remaining = await prisma.expiry.count({ where: settingsChanged ? pendingExpiries(latest, today) : pendingWhere });

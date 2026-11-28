@@ -2,8 +2,9 @@ import type { Prisma } from '@/generated/prisma/client';
 import type { Role } from '@/generated/prisma/enums';
 import type { CreateUserInput, UpdateUserInput } from '@/lib/schemas/users';
 import { authorize, type Actor } from '@/server/auth/rbac';
-import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
+import { credentialEligible, emailTrialEnabled, verifiedTrialAddress } from '@/server/auth/email-trial-policy';
 import { prisma } from '@/server/db/prisma';
+import { accountMailboxUncontested, assertContactAvailable, lockMailboxWrites } from './account-mailbox';
 import { enqueueCredential } from './credential-mail.service';
 export { resendInvite } from './credential-mail.service';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
@@ -18,6 +19,7 @@ export type UserListItem = {
    * exposes the hash itself — only used by the UI's "pending invite" badge. */
   passwordSet: boolean;
   emailVerified?: boolean;
+  canResendVerificationInvite?: boolean;
   person: { id: string; firstName: string; lastName: string } | null;
   createdAt: Date;
 };
@@ -29,7 +31,7 @@ const USER_SELECT = {
   isActive: true,
   locale: true,
   passwordHash: true,
-  emailVerification: { select: { verifiedAt: true } },
+  emailVerification: { select: { email: true, verifiedAt: true } },
   person: { select: { id: true, firstName: true, lastName: true } },
   createdAt: true,
 } as const;
@@ -41,7 +43,7 @@ type SelectedUser = {
   isActive: boolean;
   locale: string;
   passwordHash: string | null;
-  emailVerification?: { verifiedAt: Date | null } | null;
+  emailVerification?: { email: string; verifiedAt: Date | null } | null;
   person: { id: string; firstName: string; lastName: string } | null;
   createdAt: Date;
 };
@@ -54,7 +56,8 @@ function toListItem(user: SelectedUser): UserListItem {
     isActive: user.isActive,
     locale: user.locale,
     passwordSet: user.passwordHash !== null,
-    ...(user.emailVerification && { emailVerified: Boolean(user.emailVerification.verifiedAt) }),
+    ...(user.emailVerification && { emailVerified: verifiedTrialAddress(user) }),
+    ...(emailTrialEnabled() && { canResendVerificationInvite: credentialEligible(user, 'VERIFY_EMAIL') }),
     person: user.person,
     createdAt: user.createdAt,
   };
@@ -86,7 +89,12 @@ async function assertPersonAvailable(personId: string, excludeUserId?: string): 
 
 /** The account and its invitation are committed or rolled back together in both creation flows. */
 export async function createUserCore(tx: Prisma.TransactionClient, input: CreateUserInput): Promise<SelectedUser> {
-  if (input.verificationInvite && !emailTrialEnabled()) throw new ValidationError('Verification invitations are unavailable.');
+  const verificationRequired = emailTrialEnabled();
+  if (input.verificationInvite && !verificationRequired) throw new ValidationError('Verification invitations are unavailable.');
+  if (verificationRequired) {
+    await lockMailboxWrites(tx);
+    await assertContactAvailable(tx, input.email, input.personId ?? null);
+  }
   let user;
   try {
     user = await tx.user.create({
@@ -96,7 +104,7 @@ export async function createUserCore(tx: Prisma.TransactionClient, input: Create
         locale: input.locale,
         personId: input.personId ?? null,
         passwordHash: null,
-        ...(input.verificationInvite && { emailVerification: { create: { email: input.email } } }),
+        ...(verificationRequired && { emailVerification: { create: { email: input.email } } }),
         isActive: true,
       },
       select: USER_SELECT,
@@ -107,7 +115,7 @@ export async function createUserCore(tx: Prisma.TransactionClient, input: Create
     }
     throw error;
   }
-  await enqueueCredential(tx, user.id, 'INVITE');
+  await enqueueCredential(tx, user.id, verificationRequired ? 'VERIFY_EMAIL' : 'INVITE');
   return user;
 }
 
@@ -178,7 +186,7 @@ export async function updateUser(actor: Actor, id: string, patch: UpdateUserInpu
 
   let user;
   try {
-    user = await prisma.user.update({
+    const write = (db: Prisma.TransactionClient) => db.user.update({
       where: { id },
       data: {
         ...(patch.roles !== undefined && { roles: patch.roles }),
@@ -193,6 +201,18 @@ export async function updateUser(actor: Actor, id: string, patch: UpdateUserInpu
       },
       select: USER_SELECT,
     });
+    if (emailTrialEnabled() && patch.personId !== undefined) {
+      user = await prisma.$transaction(async tx => {
+        await lockMailboxWrites(tx);
+        const updated = await write(tx);
+        if (updated.emailVerification && !await accountMailboxUncontested(tx, updated.id, updated.email)) {
+          throw new ConflictError('The registered account email belongs to a different record.');
+        }
+        return updated;
+      });
+    } else {
+      user = await write(prisma);
+    }
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw new ConflictError('Email or person already linked to another user.');

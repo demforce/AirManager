@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   calendarBookingsQuerySchema,
   createBookingSchema,
@@ -9,6 +9,11 @@ import {
 import { requirementsNotMetDetailsSchema } from '@/lib/schemas/requirements';
 import { ROLE_PERMISSIONS, type Actor } from '@/server/auth/rbac';
 import type { RequirementsInput } from './requirements.service';
+
+// These fixtures exercise the default legacy configuration. The opt-in path uses
+// PostgreSQL and local SMTP in scripts/test-single-account-address.ts.
+beforeAll(() => vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '0'));
+afterAll(() => vi.unstubAllEnvs());
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {

@@ -4,6 +4,8 @@ import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagi
 import { parseDateOnlyUtc } from '@/lib/date-only';
 import type { CreatePersonInput, ListPeopleQuery, UpdatePersonCompositeInput } from '@/lib/schemas/people';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
+import { credentialEligible, emailTrialEnabled, verifiedTrialAddress } from '@/server/auth/email-trial-policy';
+import { assertContactAvailable, lockMailboxWrites } from './account-mailbox';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { assertScopeCompatible, updateExpiryDateCore } from './expiries.service';
@@ -36,6 +38,7 @@ export type PersonListItem = {
  * this person; an object (possibly with `deactivatedAt` set) means it was.
  */
 export type PersonDetail = PersonListItem & {
+  emailReadOnly?: boolean;
   pilotProfile: PilotProfileDto | null;
   studentProfile: StudentProfileDto | null;
   instructorProfile: InstructorProfileDto | null;
@@ -85,7 +88,11 @@ const PERSON_DETAIL_SELECT = {
   instructorProfile: { select: { deactivatedAt: true } },
 } as const;
 
+const accountAddressSelect = () => emailTrialEnabled()
+  ? { user: { select: { email: true } } } as const : {};
+
 type SelectedPerson = {
+  user?: { email: string } | null;
   id: string;
   firstName: string;
   lastName: string;
@@ -115,7 +122,7 @@ function toListItem(person: SelectedPerson): PersonListItem {
     id: person.id,
     firstName: person.firstName,
     lastName: person.lastName,
-    email: person.email,
+    email: person.user?.email ?? person.email,
     phone: person.phone,
     address: person.address,
     archivedAt: person.archivedAt,
@@ -131,6 +138,7 @@ function toListItem(person: SelectedPerson): PersonListItem {
 function toPersonDetail(person: SelectedPersonDetail): PersonDetail {
   return {
     ...toListItem(person),
+    ...(person.user && { emailReadOnly: true }),
     pilotProfile: person.pilotProfile
       ? { licenseNumber: person.pilotProfile.licenseNumber, licenseType: person.pilotProfile.licenseType, deactivatedAt: person.pilotProfile.deactivatedAt }
       : null,
@@ -197,7 +205,13 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
       OR: [
         { firstName: { contains: word, mode: 'insensitive' as const } },
         { lastName: { contains: word, mode: 'insensitive' as const } },
-        { email: { contains: word, mode: 'insensitive' as const } },
+        ...(emailTrialEnabled() ? [
+          { user: { email: { contains: word, mode: 'insensitive' } } },
+          { AND: [
+            { user: null },
+            { email: { contains: word, mode: 'insensitive' } },
+          ] },
+        ] : [{ email: { contains: word, mode: 'insensitive' } }]),
       ],
     });
   }
@@ -218,7 +232,7 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   // READ COMMITTED takes a fresh snapshot per statement, even inside a transaction.
   const items = await prisma.person.findMany({
     where,
-    select: PERSON_SELECT,
+    select: { ...PERSON_SELECT, ...accountAddressSelect() },
     orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     ...paginationOffset(query),
   });
@@ -236,6 +250,7 @@ export type PilotUserInfo = {
   /** Whether the user completed their invite — never exposes the hash (same convention as `users.service.ts#UserListItem`). */
   passwordSet: boolean;
   emailVerified?: boolean;
+  canResendVerificationInvite?: boolean;
 } | null;
 
 export type PilotsPageItem = PersonListItem & {
@@ -281,7 +296,7 @@ export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): 
     ids.length > 0
       ? prisma.user.findMany({
           where: { personId: { in: ids } },
-          select: { id: true, personId: true, email: true, roles: true, isActive: true, passwordHash: true, emailVerification: { select: { verifiedAt: true } } },
+          select: { id: true, personId: true, email: true, roles: true, isActive: true, passwordHash: true, emailVerification: { select: { email: true, verifiedAt: true } } },
         })
       : [],
     prisma.person.count({ where: { archivedAt: null } }),
@@ -305,7 +320,7 @@ export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): 
       ...item,
       balanceCents: balanceByPersonId.get(item.id) ?? 0,
       lastFlightDate: lastFlightDate ? toDateOnlyString(lastFlightDate) : null,
-      user: user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null, ...(user.emailVerification && { emailVerified: Boolean(user.emailVerification.verifiedAt) }) } : null,
+      user: user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null, ...(user.emailVerification && { emailVerified: verifiedTrialAddress(user) }), ...(emailTrialEnabled() && { canResendVerificationInvite: credentialEligible(user, 'VERIFY_EMAIL') }) } : null,
     };
   });
 
@@ -329,7 +344,7 @@ export async function getPerson(actor: Actor, id: string): Promise<PersonDetail>
     }
   }
 
-  const person = await prisma.person.findUnique({ where: { id }, select: PERSON_DETAIL_SELECT });
+  const person = await prisma.person.findUnique({ where: { id }, select: { ...PERSON_DETAIL_SELECT, ...accountAddressSelect() } });
   if (!person) {
     throw new NotFoundError('Person not found.');
   }
@@ -349,9 +364,9 @@ export async function getPerson(actor: Actor, id: string): Promise<PersonDetail>
 export async function getPersonUser(personId: string): Promise<PilotUserInfo> {
   const user = await prisma.user.findUnique({
     where: { personId },
-    select: { id: true, email: true, roles: true, isActive: true, passwordHash: true, emailVerification: { select: { verifiedAt: true } } },
+    select: { id: true, email: true, roles: true, isActive: true, passwordHash: true, emailVerification: { select: { email: true, verifiedAt: true } } },
   });
-  return user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null, ...(user.emailVerification && { emailVerified: Boolean(user.emailVerification.verifiedAt) }) } : null;
+  return user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null, ...(user.emailVerification && { emailVerified: verifiedTrialAddress(user) }), ...(emailTrialEnabled() && { canResendVerificationInvite: credentialEligible(user, 'VERIFY_EMAIL') }) } : null;
 }
 
 /**
@@ -371,7 +386,7 @@ async function createPersonCore(tx: Prisma.TransactionClient, input: CreatePerso
         phone: input.phone ?? null,
         address: input.address ?? null,
       },
-      select: PERSON_SELECT,
+      select: { ...PERSON_SELECT, ...accountAddressSelect() },
     });
   } catch (error) {
     // assertUnique (below) is check-then-write: a concurrent request can win
@@ -465,7 +480,12 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
     throw studentProfileExclusiveError();
   }
 
-  await assertUnique(input.email);
+  const accountEmail = emailTrialEnabled() ? input.access?.email : undefined;
+  if (accountEmail && input.email && input.email !== accountEmail) {
+    throw new ConflictError('An enrolled account has one registered email.');
+  }
+  const contactEmail = accountEmail ? null : input.email;
+  await assertUnique(contactEmail);
 
   if (input.access) {
     const existingUser = await prisma.user.findUnique({ where: { email: input.access.email }, select: { id: true } });
@@ -478,7 +498,11 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
   }
 
   const { person } = await prisma.$transaction(async (tx) => {
-    const person = await createPersonCore(tx, input);
+    if (emailTrialEnabled() && (contactEmail || input.access)) {
+      await lockMailboxWrites(tx);
+      if (contactEmail) await assertContactAvailable(tx, contactEmail, null);
+    }
+    const person = await createPersonCore(tx, { ...input, email: contactEmail });
 
     if (input.profiles?.pilot) {
       await upsertPilotProfileCore(tx, person.id, input.profiles.pilot);
@@ -513,6 +537,7 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
 
   return {
     ...toListItem(person),
+    ...(accountEmail && { email: accountEmail }),
     profiles: {
       pilot: Boolean(input.profiles?.pilot),
       student: Boolean(input.profiles?.student),
@@ -600,7 +625,7 @@ export async function updatePerson(actor: Actor, id: string, patch: UpdatePerson
     throw new NotFoundError('Person not found.');
   }
 
-  await assertUnique(patch.email, id);
+  if (!emailTrialEnabled()) await assertUnique(patch.email, id);
 
   const expirySet = patch.expiries?.set ?? [];
   const expiryTypeById = new Map<string, CompositeExpiryType>();
@@ -626,10 +651,20 @@ export async function updatePerson(actor: Actor, id: string, patch: UpdatePerson
   }
 
   return prisma.$transaction(async (tx) => {
+    if (emailTrialEnabled() && patch.email !== undefined) await lockMailboxWrites(tx);
     const [locked] = await tx.$queryRaw<Array<{ id: string; archivedAt: Date | null }>>`
       SELECT "id", "archivedAt" FROM "Person" WHERE "id" = ${id} FOR NO KEY UPDATE`;
     if (!locked) {
       throw new NotFoundError('Person not found.');
+    }
+
+    let contactEmail = patch.email;
+    if (emailTrialEnabled() && contactEmail !== undefined) {
+      const linked = await tx.user.findUnique({ where: { personId: id }, select: { email: true } });
+      if (linked) {
+        if (contactEmail !== linked.email) throw new ConflictError('The registered account email cannot be edited here.');
+        contactEmail = undefined; // An unchanged API field is a no-op, never a historical write.
+      } else if (contactEmail) await assertContactAvailable(tx, contactEmail, id);
     }
 
     const profiles = patch.profiles ?? {};
@@ -717,15 +752,15 @@ export async function updatePerson(actor: Actor, id: string, patch: UpdatePerson
     const identity = {
       ...(patch.firstName !== undefined && { firstName: patch.firstName }),
       ...(patch.lastName !== undefined && { lastName: patch.lastName }),
-      ...(patch.email !== undefined && { email: patch.email }),
+      ...(contactEmail !== undefined && { email: contactEmail }),
       ...(patch.phone !== undefined && { phone: patch.phone }),
       ...(patch.address !== undefined && { address: patch.address }),
     };
     if (Object.keys(identity).length === 0) {
-      return toPersonDetail(await tx.person.findUniqueOrThrow({ where: { id }, select: PERSON_DETAIL_SELECT }));
+      return toPersonDetail(await tx.person.findUniqueOrThrow({ where: { id }, select: { ...PERSON_DETAIL_SELECT, ...accountAddressSelect() } }));
     }
     try {
-      return toPersonDetail(await tx.person.update({ where: { id }, data: identity, select: PERSON_DETAIL_SELECT }));
+      return toPersonDetail(await tx.person.update({ where: { id }, data: identity, select: { ...PERSON_DETAIL_SELECT, ...accountAddressSelect() } }));
     } catch (error) {
       // assertUnique (above) is check-then-write: a concurrent request can win the race.
       if (isUniqueViolation(error)) {
@@ -758,7 +793,7 @@ export async function archivePerson(actor: Actor, id: string): Promise<PersonLis
   const person = await prisma.person.update({
     where: { id },
     data: { archivedAt: new Date() },
-    select: PERSON_SELECT,
+    select: { ...PERSON_SELECT, ...accountAddressSelect() },
   });
   return toListItem(person);
 }
@@ -778,7 +813,7 @@ export async function unarchivePerson(actor: Actor, id: string): Promise<PersonL
   const person = await prisma.person.update({
     where: { id },
     data: { archivedAt: null },
-    select: PERSON_SELECT,
+    select: { ...PERSON_SELECT, ...accountAddressSelect() },
   });
   return toListItem(person);
 }

@@ -78,7 +78,7 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
       genericError: t('editor.medical.genericError'),
     },
     access: {
-      verificationOption: emailTrialEnabled() ? t('editor.access.verificationOption') : null,
+      verifiedInvites: emailTrialEnabled(),
       verifiedEmail: t('editor.access.verifiedEmail'),
       pendingEmail: t('editor.access.pendingEmail'),
       sectionTitle: t('editor.access.sectionTitle'),
@@ -117,7 +117,7 @@ export function buildPilotEditorLabels(t: Translator, tProfiles: Translator, tUs
     errors: {
       required: t('editor.errors.required'),
       generic: t('editor.errors.generic'),
-      conflictEmail: t('editor.errors.conflictEmail'),
+      conflictEmail: t('editor.errors.emailInUse'),
       profilesExclusive: t('editor.errors.profilesExclusive'),
     },
     saveErrors: buildPersonSaveErrorLabels(t, tProfiles),

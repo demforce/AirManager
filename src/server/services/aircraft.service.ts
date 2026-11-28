@@ -1,3 +1,4 @@
+import { captureEventRecipients, holderMailbox, holderDeliveryFence, type EventRecipients } from './account-mailbox';
 import type { AircraftStatus } from '@/generated/prisma/client';
 import type { AppLocale } from '@/i18n/routing';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
@@ -326,7 +327,8 @@ export async function archiveAircraft(actor: Actor, id: string): Promise<Archive
     }
     const aircraft = await tx.aircraft.findUniqueOrThrow({ where: { id }, select: AIRCRAFT_SELECT });
     const impact = await computeAogImpact(tx, { aircraftId: id, until: null, now });
-    return { aircraft, impact };
+    const personIds = [...new Set(impact.approvedBookings.map(booking => booking.personId))];
+    return { aircraft, impact: { ...impact, atEvent: await captureEventRecipients(tx, personIds) } };
   });
 
   const listItem = toListItem(aircraft);
@@ -421,7 +423,8 @@ export async function setOutOfService(actor: Actor, id: string, input: SetOutOfS
     // The date the count uses is the one JUST WRITTEN and read back, never the
     // raw input: one source, and the `@db.Date` round-trip already applied.
     const impact = await computeAogImpact(tx, { aircraftId: id, until: aircraft.outOfServiceUntil, now });
-    return { aircraft, impact };
+    const personIds = [...new Set(impact.approvedBookings.map(booking => booking.personId))];
+    return { aircraft, impact: { ...impact, atEvent: await captureEventRecipients(tx, personIds) } };
   });
 
   const listItem = toListItem(aircraft);
@@ -481,7 +484,7 @@ export async function previewOutOfServiceImpact(actor: Actor, id: string, query:
  * undo the committed action.
  */
 async function sendImpactedHolderEmails(
-  impact: AogImpact,
+  impact: AogImpact & { atEvent?: EventRecipients },
   action: 'setOutOfService' | 'archiveAircraft',
   buildEmail: (locale: AppLocale, holder: { firstName: string; startsAt: Date }) => Promise<EmailContent>,
 ): Promise<void> {
@@ -506,15 +509,16 @@ async function sendImpactedHolderEmails(
     const localeByPerson = new Map(users.map((user) => [user.personId, user.locale]));
 
     for (const person of people) {
-      if (!person.email) continue;
       const booking = firstBookingByPerson.get(person.id);
       if (!booking) continue;
 
       try {
+        const recipient = await holderMailbox(person.id, person.email, impact.atEvent);
+        if (!recipient) continue;
         const locale: AppLocale = localeByPerson.get(person.id) === 'en' ? 'en' : 'it';
         const content = await buildEmail(locale, { firstName: person.firstName, startsAt: booking.startsAt });
         if (!(await getOperationalMailPolicy()).switches[switchKey]) return;
-        await getMailSender().send({ ...content, to: person.email });
+        await getMailSender().send({ ...content, to: recipient.email, ...holderDeliveryFence(person.id, recipient) });
       } catch {
         console.error(action === 'setOutOfService' ? 'setOutOfService: failed to send aircraft-grounded email' : 'archiveAircraft: failed to send aircraft-archived email');
       }

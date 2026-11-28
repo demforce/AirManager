@@ -1,3 +1,4 @@
+import { accountMailboxUncontested } from './account-mailbox';
 import { createHash } from 'node:crypto';
 import { credentialEligible } from '@/server/auth/email-trial-policy';
 import { hashPassword, verifyPassword } from '@/server/auth/password';
@@ -126,7 +127,7 @@ export async function setPasswordWithToken(rawToken: string, newPassword: string
     const user = await tx.user.findUnique({
       where: { id: authToken.userId }, include: { emailVerification: true },
     });
-    if (!user || (user.emailVerification && !credentialEligible(user, authToken.type))) {
+    if (!user || (user.emailVerification && (!credentialEligible(user, authToken.type) || !await accountMailboxUncontested(tx, user.id, user.email)))) {
       throw new ValidationError('Invalid or expired token.');
     }
     if (user.roles.includes('ADMIN') && (Array.from(newPassword).length < 15
