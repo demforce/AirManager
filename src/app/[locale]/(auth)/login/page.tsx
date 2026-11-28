@@ -1,13 +1,15 @@
+import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Icon } from '@/components/ui/icons';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { getSessionActor } from '@/server/auth/session';
 import { LoginForm } from './login-form';
+import { AuthLanguageSwitch } from '../auth-language-switch';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ callbackUrl?: string }>;
+  searchParams: Promise<{ callbackUrl?: string; access?: string }>;
 };
 
 /**
@@ -18,7 +20,8 @@ type PageProps = {
  */
 export default async function LoginPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
-  const { callbackUrl } = await searchParams;
+  const { callbackUrl, access } = await searchParams;
+  const adminPassword = access === 'admin';
   setRequestLocale(locale);
 
   // Already signed in — no reason to show the form again.
@@ -28,9 +31,11 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
   }
 
   const t = await getTranslations('auth.login');
+  const safeCallbackUrl = callbackUrl && /^\/(?![/\\])/.test(callbackUrl) ? callbackUrl : undefined;
 
   return (
     <main
+      className="auth-page"
       style={{
         display: 'flex',
         minHeight: '100vh',
@@ -41,6 +46,7 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
         color: 'var(--ink)',
       }}
     >
+      <AuthLanguageSwitch locale={locale as AppLocale} pathname="/login" adminPassword={adminPassword} callbackUrl={safeCallbackUrl} />
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 28 }}>
           <div className="brand-mark">
@@ -54,16 +60,19 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
         <div className="card" style={{ padding: 28 }}>
           <div className="page-title-block" style={{ marginBottom: 20 }}>
             <div className="so-sub">{t('kicker')}</div>
-            <h1>{t('title')}</h1>
+            <h1>{t(adminPassword ? 'adminPassword' : 'title')}</h1>
             <div className="sub">{t('description')}</div>
           </div>
 
+          {emailTrialEnabled() && !adminPassword && <p><Link href="/email-access">{t('trialLink')}</Link></p>}
           <LoginForm
+            key={adminPassword ? 'admin-password' : 'credentials'}
+            provider={adminPassword ? 'admin-password' : 'credentials'}
             callbackUrl={
               // Internal paths only: "//evil.com" and "/\evil.com" are
               // protocol-relative external URLs, not local paths.
-              callbackUrl && /^\/(?![/\\])/.test(callbackUrl)
-                ? callbackUrl
+              safeCallbackUrl
+                ? safeCallbackUrl
                 : `/${locale}/dashboard`
             }
             labels={{
@@ -72,9 +81,21 @@ export default async function LoginPage({ params, searchParams }: PageProps) {
               submit: t('submit'),
               submitting: t('submitting'),
               errorGeneric: t('errorGeneric'),
+              requiredField: t('requiredField'),
             }}
           />
 
+          <p style={{ marginTop: 20, textAlign: 'center' }}>
+            <Link
+              href={{ pathname: '/login', query: {
+                ...(!adminPassword && { access: 'admin' }),
+                ...(safeCallbackUrl && { callbackUrl: safeCallbackUrl }),
+              } }}
+              locale={locale as AppLocale}
+            >
+              {t(adminPassword ? 'standardLogin' : 'adminPassword')}
+            </Link>
+          </p>
           <p style={{ marginTop: 20, textAlign: 'center', fontSize: 12.5 }}>
             <Link href="/forgot-password" locale={locale as AppLocale}>
               {t('forgotPassword')}

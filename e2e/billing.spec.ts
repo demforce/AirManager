@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
+import { ensureValidSeedExpiries, todayRome, waitForDashboardContent } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
+import { formatCents } from '../src/lib/money';
+import type { BillingLiveSnapshot } from '../src/lib/billing-live';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -21,19 +25,32 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Run-unique day, far in the future — same isolation pattern as `cash-report.spec.ts`'s `uniqueDatePair` (a fresh DB per session, but re-runs against a dirty one must not collide). */
-function dateAt(daysFromBase: number): string {
-  return new Date(Date.UTC(2033, 0, 1) + daysFromBase * 86_400_000).toISOString().slice(0, 10);
+/**
+ * Run-unique day, SAFELY IN THE PAST (story 16.6a, R-16-h): a top-up or a cash
+ * movement dated after today is a 422 `EFFECTIVE_DATE_IN_FUTURE`, as a future
+ * flight is for `uniquePastDateOnly` below. A pair is drawn from 2000-01-02 ..
+ * 2009-12-31 (3 651 pairs), a band no other fixture writes in: the seed's cash
+ * rows are 2019, `account-statement-period.spec.ts` uses 2010 and 2012,
+ * `uniquePastDateOnly` 2020-2022, and 2000-01-01 is the treasury opening date
+ * (`treasury-settings.spec.ts#SAFE_OPENING_DATE`). It is a LOW collision
+ * probability, not an isolation: the tests filter the GLOBAL books by date, so
+ * two draws of the same pair (this run's, or a previous run's on a DB that was
+ * not reset) see each other's rows. Top-ups and cash movements read no rate,
+ * so no 2020 floor.
+ */
+function dateAt(daysBeforeBase: number): string {
+  return new Date(Date.UTC(2009, 11, 31) - daysBeforeBase * 86_400_000).toISOString().slice(0, 10);
 }
 
 function uniqueDatePair(): { day1: string; day2: string } {
-  const dayOffset = Math.floor(Math.random() * 9_000);
-  return { day1: dateAt(dayOffset), day2: dateAt(dayOffset + 1) };
+  const dayOffset = Math.floor(Math.random() * 3_651);
+  // day1 < day2: `dateAt` counts BACKWARD, so the larger offset is the earlier day.
+  return { day1: dateAt(dayOffset + 1), day2: dateAt(dayOffset) };
 }
 
 /**
- * A run-unique isolation date SAFELY IN THE PAST (unlike `dateAt`/
- * `uniqueDatePair`'s own far-future scheme) — `registerFlight` rejects a
+ * A run-unique isolation date SAFELY IN THE PAST and after 2020 (`dateAt`'s
+ * band is older than any rate) — `registerFlight` rejects a
  * future `takeoffAt` with a 422 `FLIGHT_DATE_IN_FUTURE`
  * (`flights.service.ts`), so any scenario involving a real flight charge
  * needs a past isolation date instead. Counts backward from a fixed 2022
@@ -48,10 +65,6 @@ function uniquePastDateOnly(): string {
 }
 
 /** Today, `YYYY-MM-DD` (server clock, UTC) — the three riquadri (story Billing-2, AC 1) are ALWAYS the current calendar month, never date-filterable, so a scenario that verifies their arithmetic must be dated today. */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 async function createPilotPerson(page: Page, tag: string): Promise<{ personId: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
   const firstName = 'Billing';
@@ -63,6 +76,8 @@ async function createPilotPerson(page: Page, tag: string): Promise<{ personId: s
     data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
   });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'PILOTS');
   return { personId: person.id, firstName, lastName };
 }
 
@@ -79,19 +94,16 @@ async function createInstructorPerson(page: Page, tag: string): Promise<{ person
   return { personId: person.id, firstName, lastName };
 }
 
-/** Creates an aircraft with a rate in effect since a safely-past date (same pattern as `flight-reversal.spec.ts`). */
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string; registration: string }> {
+/** Creates an aircraft with a rate in effect since a safely-past date (same pattern as `flight-delete-update.spec.ts`). */
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string; registration: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-BL${suffix}`.toUpperCase().slice(0, 20);
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 500 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-    data: { priceCentsPerHour, validFrom: '2020-01-01' },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: '2020-01-01' });
   return { id: aircraft.id, registration };
 }
 
@@ -119,7 +131,7 @@ async function registerTourismFlight(page: Page, aircraftId: string, personId: s
   const takeoffAt = `${dateOnly}T10:00:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + minutes * 60_000).toISOString();
   const response = await page.request.post('/api/v1/flights', {
-    data: { aircraftId, personId, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', flightType: 'TOURISM', takeoffAt, landingAt },
+    data: { aircraftId, personId, departureAirfield: 'Base Airfield', arrivalAirfield: 'Base Airfield', flightType: 'TOURISM', takeoffAt, landingAt, force: true },
   });
   expect(response.status()).toBe(201);
 }
@@ -148,6 +160,7 @@ async function selectFromCombobox(combobox: Locator, query: string, optionLabel:
 async function gotoBilling(page: Page, query: Record<string, string>): Promise<void> {
   const params = new URLSearchParams(query);
   await page.goto(`/it/dashboard/billing?${params.toString()}`);
+  await waitForDashboardContent(page, page.locator('.billing-head'));
 }
 
 /**
@@ -186,7 +199,7 @@ test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType col
     await expect(billingRows(page).nth(1)).toContainText('Voce cassa manuale');
   });
 
-  test('bookType filter (story Billing-2, AC 2): DEPOSIT narrows to acconti (TOP_UP), REVENUE narrows to ricavi — independent of the "Categoria" filter', async ({ page }) => {
+  test('bookType filter (story Billing-2, AC 2; story 16.6b): DEPOSIT narrows to acconti (a TOP_UP and the rettifiche of its chain), REVENUE narrows to ricavi — independent of the "Categoria" filter', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const pilot = await createPilotPerson(page, 'TipoFiltro');
     const category = await createCategory(page, `TipoFiltro-${uniqueSuffix()}`);
@@ -201,6 +214,23 @@ test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType col
     await gotoBilling(page, { dateFrom: day1, dateTo: day1, bookType: 'REVENUE' });
     await expect(billingRows(page)).toHaveCount(1);
     await expect(billingRows(page).first()).toContainText('Entrata cassa');
+
+    // Story 16.6b (ratifica PO 2026-11-03): a rettifica of that ricarica is an
+    // acconto too, so "Acconti" lists it and "Ricavi" does not. A rettifica is
+    // dated today, so the pilot (run-unique name) scopes the rows, not day1.
+    const movements = (await (await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`)).json()) as { items: Array<{ id: string; type: string }> };
+    const topUpId = movements.items.find((item) => item.type === 'TOP_UP')!.id;
+    const adjustment = await page.request.post(`/api/v1/people/${pilot.personId}/account/adjustments`, {
+      data: { amountCents: -2000, reason: 'Ricarica registrata in eccesso', originalMovementId: topUpId },
+    });
+    expect(adjustment.status()).toBe(200);
+
+    await gotoBilling(page, { personQuery: pilot.lastName, bookType: 'DEPOSIT' });
+    await expect(billingRows(page)).toHaveCount(2);
+    await expect(billingRows(page).filter({ hasText: 'Ricarica registrata in eccesso' })).toHaveCount(1);
+
+    await gotoBilling(page, { personQuery: pilot.lastName, bookType: 'REVENUE' });
+    await expect(billingRows(page)).toHaveCount(0);
   });
 
   test('Categoria filter (cash categories only, replaces the old combined Tipo select) narrows to that category only', async ({ page }) => {
@@ -290,14 +320,14 @@ test.describe('Unified billing ledger (Story 12.9; Entrate/Uscite + bookType col
 });
 
 test.describe('Tre riquadri con numeri veri da scenario seminato (story Billing-2, AC 6)', () => {
-  test('ricarica + volo + payout, tutti dated today, move Risultato/Liquidità/Acconti by EXACTLY the expected deltas', async ({ page }) => {
+  test('ricarica + volo + payout, tutti dated today, move Risultato/Liquidità/Acconti by EXACTLY the expected deltas @ledger-global', async ({ page }) => {
     test.slow();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const pilot = await createPilotPerson(page, 'Riquadri');
     const instructor = await createInstructorPerson(page, 'Riquadri');
     const aircraft = await createAircraftWithRate(page, 10000); // 100,00 €/h
-    const today = todayDateOnly();
+    const today = todayRome();
 
     await gotoBilling(page, {});
     await page.waitForSelector('[data-testid="billing-panel-result"]');
@@ -369,6 +399,9 @@ test.describe('"Nuova transazione" — 3 branches (Story 12.9, AC 4)', () => {
     await page.getByTestId('billing-new-transaction-button').click();
     await page.waitForSelector('[data-testid="transaction-form"]');
     await page.getByTestId('transaction-kind').selectOption('adjustment');
+    const today = todayRome();
+    await expect(page.getByTestId('transaction-date')).toBeDisabled();
+    await expect(page.getByTestId('transaction-date')).toHaveValue(today);
     await selectFromCombobox(page.getByTestId('transaction-person'), pilot.lastName, personOptionLabel(pilot));
     await page.getByTestId('transaction-amount').fill('30');
     await page.getByTestId('transaction-reason').fill('Addebito di verifica e2e');
@@ -379,6 +412,10 @@ test.describe('"Nuova transazione" — 3 branches (Story 12.9, AC 4)', () => {
 
     const after = await accountBalance(page, pilot.personId);
     expect(after).toBe(before - 3000);
+    const response = await page.request.get(`/api/v1/people/${pilot.personId}/account/movements`);
+    expect(response.ok()).toBe(true);
+    const movements = (await response.json()) as { items: Array<{ type: string; effectiveDate: string }> };
+    expect(movements.items).toContainEqual(expect.objectContaining({ type: 'ADJUSTMENT', effectiveDate: today }));
   });
 
   test('Movimento cassa: a new row appears in the ledger under the chosen category, in the Uscite column (story Billing-2)', async ({ page }) => {
@@ -440,16 +477,111 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
 
     // Filtered by the (unique, single-use) category — NOT by date: `reverseCashMovement`
     // always dates the storno row as TODAY (server clock), not the original's `day1`
-    // (a far-future isolation date), so a date-scoped filter would hide the storno row.
+    // (a past isolation date), so a date-scoped filter would hide the storno row.
     await gotoBilling(page, { categoryId });
+    const billingUrl = page.url();
+    const historyLength = await page.evaluate(() => window.history.length);
     const row = billingRows(page).filter({ hasText: 'Uscita da stornare' });
     await row.getByTestId('transaction-reverse-action').click();
     await page.waitForSelector('[data-testid="transaction-reverse-panel"]');
-    await page.getByTestId('transaction-reverse-reason').fill('Storno di verifica e2e');
+    await page.getByTestId('transaction-reverse-reason').fill(`Storno di verifica e2e ${uniqueSuffix()}`);
+    const reversed = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/api/v1/cash-movements/') && response.url().endsWith('/reverse'));
+    const reconciled = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/api/v1/billing-view?'));
     await page.getByTestId('transaction-reverse-confirm').click();
+    expect((await reversed).status()).toBe(200);
+    const viewResponse = await reconciled;
+    expect(viewResponse.status()).toBe(200);
+    const view = (await viewResponse.json()) as BillingLiveSnapshot;
     await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
     await expect(billingRows(page)).toHaveCount(2);
+    await expect(page).toHaveURL(billingUrl);
+    expect(await page.evaluate(() => window.history.length)).toBe(historyLength);
+    await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
+    await expect(page.getByTestId('billing-panel-cash')).toHaveText(formatCents(view.summary.treasury.cashCents));
+    await expect(page.getByTestId('billing-panel-net')).toHaveText(formatCents(view.summary.result.netCents));
+    await expect(page.locator('.page-head .sub')).toContainText('2 transazioni');
+    await expect(page.getByTestId('billing-by-category-row').filter({ hasText: categoryName })).toContainText('40,00');
     await expect(billingRows(page).filter({ hasText: 'Uscita da stornare' }).getByTestId('transaction-reverse-action')).toHaveCount(0);
+  });
+
+  test('Export in a new tab does not cancel a pending billing reconciliation', async ({ page, context }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const categoryId = await createCategory(page, `Export-Reconcile-${uniqueSuffix()}`);
+    const { day1 } = uniqueDatePair();
+    await recordCashMovement(page, categoryId, -1700, day1, 'Uscita export in corso');
+    await gotoBilling(page, { categoryId });
+
+    let releaseView!: () => void;
+    const heldView = new Promise<void>((resolve) => { releaseView = resolve; });
+    let viewRequested!: () => void;
+    const requested = new Promise<void>((resolve) => { viewRequested = resolve; });
+    await page.route('**/api/v1/billing-view?**', async (route) => {
+      viewRequested();
+      await heldView;
+      await route.continue();
+    });
+
+    try {
+      await billingRows(page).filter({ hasText: 'Uscita export in corso' }).getByTestId('transaction-reverse-action').click();
+      await page.getByTestId('transaction-reverse-reason').fill(`Export reconcile ${uniqueSuffix()}`);
+      await page.getByTestId('transaction-reverse-confirm').click();
+      await requested;
+      await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
+      await page.getByTestId('export-menu-trigger').click();
+      const popupPromise = context.waitForEvent('page');
+      await page.getByTestId('export-menu-xls').click();
+      const popup = await popupPromise;
+      await popup.close();
+      releaseView();
+      await expect(billingRows(page)).toHaveCount(2);
+      await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
+    } finally {
+      releaseView();
+      await page.unroute('**/api/v1/billing-view?**');
+    }
+  });
+
+  test('Leaving Billing ignores a failed pending reconciliation', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const categoryId = await createCategory(page, `Leave-Reconcile-${uniqueSuffix()}`);
+    const { day1 } = uniqueDatePair();
+    await recordCashMovement(page, categoryId, -1900, day1, 'Uscita navigazione');
+    await gotoBilling(page, { categoryId });
+
+    let releaseView!: () => void;
+    const heldView = new Promise<void>((resolve) => { releaseView = resolve; });
+    let viewRequested!: () => void;
+    const requested = new Promise<void>((resolve) => { viewRequested = resolve; });
+    let viewSettled!: () => void;
+    const settled = new Promise<void>((resolve) => { viewSettled = resolve; });
+    await page.route('**/api/v1/billing-view?**', async (route) => {
+      viewRequested();
+      await heldView;
+      try {
+        await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+      } catch {
+        // The same-context navigation can abort the request before release.
+      } finally {
+        viewSettled();
+      }
+    });
+
+    try {
+      await billingRows(page).filter({ hasText: 'Uscita navigazione' }).getByTestId('transaction-reverse-action').click();
+      await page.getByTestId('transaction-reverse-reason').fill(`Leaving reconcile ${uniqueSuffix()}`);
+      await page.getByTestId('transaction-reverse-confirm').click();
+      await requested;
+      await expect(page.getByTestId('billing-reverse-feedback')).toHaveText('Storno registrato.');
+      await page.locator('.sidebar a[href$="/dashboard/fleet"]').click();
+      await expect(page).toHaveURL(/\/it\/dashboard\/fleet$/);
+      releaseView();
+      await settled;
+      await expect(page.locator('.page-head h1')).toBeVisible();
+      await expect(page.getByText('Operazione registrata, ma i dati non si sono aggiornati.')).toHaveCount(0);
+    } finally {
+      releaseView();
+      await page.unroute('**/api/v1/billing-view?**');
+    }
   });
 });
 
@@ -465,6 +597,13 @@ test.describe('Rettifica / Storna row actions (Story 12.9, AC 3)', () => {
 // scheda persona's own estratto conto section, `pdf-exports.spec.ts` and
 // `person-detail.spec.ts` — never touched here).
 test.describe('Billing RBAC (Story 12.9, AC 8)', () => {
+  test('billing-view rejects unsupported export query options', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const response = await page.request.get('/api/v1/billing-view?format=xlsx');
+    expect(response.status()).toBe(422);
+    expect((await response.json()).error.code).toBe('VALIDATION_ERROR');
+  });
+
   test('a pilot is redirected away from /dashboard/billing and gets a 403 AD-8 envelope from GET /api/v1/transactions', async ({ page }) => {
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
@@ -475,5 +614,9 @@ test.describe('Billing RBAC (Story 12.9, AC 8)', () => {
     expect(response.status()).toBe(403);
     const body = await response.json();
     expect(body.error.code).toBe('FORBIDDEN');
+
+    const liveView = await page.request.get('/api/v1/billing-view?page=1&pageSize=20');
+    expect(liveView.status()).toBe(403);
+    expect((await liveView.json()).error.code).toBe('FORBIDDEN');
   });
 });

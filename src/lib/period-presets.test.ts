@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { currentMonthRange, currentQuarterRange, currentYearRange } from './period-presets';
+import { currentMonthRange, currentQuarterRange, currentYearRange, lastTwelveMonthsRange } from './period-presets';
 
 describe('currentMonthRange (story 3.5, period presets — UI only, Europe/Rome)', () => {
   it('resolves a mid-month UTC instant to that calendar month', () => {
@@ -42,5 +42,25 @@ describe('currentYearRange', () => {
 
   it('picks the Rome-local NEXT year at 23:30 UTC on Dec 31 in winter (CET)', () => {
     expect(currentYearRange(new Date(Date.UTC(2026, 11, 31, 23, 30)))).toEqual({ from: '2027-01-01', to: '2027-12-31' });
+  });
+});
+
+describe('lastTwelveMonthsRange (story 19.11, AC 12 — the estratto conto default period)', () => {
+  it('resolves an ordinary day: to = today, from = the same day a year earlier', () => {
+    expect(lastTwelveMonthsRange(new Date(Date.UTC(2026, 10, 3, 9, 0)))).toEqual({ from: '2025-11-03', to: '2026-11-03' });
+  });
+
+  it('picks the Rome-local NEXT day at 22:30 UTC in summer (CEST, UTC+2)', () => {
+    // 2026-03-31T22:30:00Z is already 2026-04-01T00:30 in Rome (CEST since 29 March).
+    expect(lastTwelveMonthsRange(new Date('2026-03-31T22:30:00Z'))).toEqual({ from: '2025-04-01', to: '2026-04-01' });
+  });
+
+  it('picks the Rome-local NEXT day at 23:30 UTC in winter (CET, UTC+1)', () => {
+    // 2026-01-31T23:30:00Z is already 2026-02-01T00:30 in Rome (CET).
+    expect(lastTwelveMonthsRange(new Date('2026-01-31T23:30:00Z'))).toEqual({ from: '2025-02-01', to: '2026-02-01' });
+  });
+
+  it('clamps 29 February to 28 February of the previous year', () => {
+    expect(lastTwelveMonthsRange(new Date(Date.UTC(2028, 1, 29, 12, 0)))).toEqual({ from: '2027-02-28', to: '2028-02-29' });
   });
 });

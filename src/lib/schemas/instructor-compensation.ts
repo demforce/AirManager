@@ -4,7 +4,8 @@ import { z } from './zod-with-openapi';
 
 /**
  * `GET /api/v1/instructor-compensation` query (epic 12, story 12.7). Plain
- * summary (every ACTIVE instructor) unless `personId` is given, in which
+ * summary (every active instructor, plus those no longer active with an
+ * owed not zero — story 16.5) unless `personId` is given, in which
  * case the SAME route answers the single-instructor DETAIL instead (KPI +
  * recent flights/students — AC 3, "niente endpoint aggiuntivi"). Also
  * carries the shared `?format=xlsx` export params (story 10.1 convention) —
@@ -22,11 +23,15 @@ export type InstructorCompensationQuery = z.infer<typeof instructorCompensationQ
  * One row of the compensation summary — mirrors
  * `instructor-compensation.service.ts`'s `InstructorCompensationSummaryItem`.
  * `payoutRateCents: null` means the admin never set a payout rate for this
- * instructor yet (UI shows "—"); `owed*Cents` is then ALWAYS `null` too
- * (there is nothing to owe against an unset rate). The three variants
+ * instructor yet (UI shows "—"). `owed*Cents` is ALWAYS a number (story
+ * 16.5): the sum of the compensation each SCHOOL flight froze at
+ * registration (`0` on a flight whose instructor had no rate, R-16-k) minus
+ * the payouts — changing the rate today never moves it. The three variants
  * (`mtd`/`ytd`/`total`) are Rome calendar windows — month-to-date,
  * year-to-date, all-time — computed server-side, never re-derived by a
- * client-side date calculation.
+ * client-side date calculation. `isActive: false` is an instructor no longer
+ * active (person archived or profile deactivated), listed only while
+ * `owedTotalCents` is not zero.
  */
 export const instructorCompensationSummaryItemSchema = z.object({
   personId: z.string(),
@@ -36,9 +41,10 @@ export const instructorCompensationSummaryItemSchema = z.object({
   mtdMinutes: z.number().int(),
   ytdMinutes: z.number().int(),
   totalMinutes: z.number().int(),
-  owedMtdCents: z.number().int().nullable(),
-  owedYtdCents: z.number().int().nullable(),
-  owedTotalCents: z.number().int().nullable(),
+  owedMtdCents: z.number().int(),
+  owedYtdCents: z.number().int(),
+  owedTotalCents: z.number().int(),
+  isActive: z.boolean(),
 });
 
 export type InstructorCompensationSummaryItemDto = z.infer<typeof instructorCompensationSummaryItemSchema>;

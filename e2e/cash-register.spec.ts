@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { addDaysIso, todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -70,6 +71,27 @@ function registerRows(page: Page) {
 }
 
 test.describe('Cash register with categories and reversals (Story 3.4 — port to billing, story 12.9; Entrate/Uscite columns story Billing-2)', () => {
+  test('the transaction form prefills the Rome date just after New Year in a UTC browser (story 16.9)', async ({ browser }) => {
+    const context = await browser.newContext({ timezoneId: 'UTC' });
+    try {
+      const page = await context.newPage();
+      await loginExpectingDashboard(page, ADMIN_EMAIL);
+      const hydrationErrors: string[] = [];
+      page.on('console', (message) => {
+        if (/hydrat/i.test(message.text()) && ['warning', 'error'].includes(message.type())) hydrationErrors.push(message.text());
+      });
+      await page.clock.setFixedTime(new Date('2026-12-31T23:30:00.000Z'));
+      await page.goto('/it/dashboard/billing');
+      await page.getByTestId('billing-new-transaction-button').click();
+      await expect(page.getByTestId('transaction-date')).toHaveValue('2027-01-01');
+      await page.getByTestId('transaction-kind').selectOption('adjustment');
+      await expect(page.getByTestId('transaction-date')).toHaveValue('2027-01-01');
+      expect(hydrationErrors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test('staff records a +50 € entrata and a −30 € uscita via "Nuova transazione"; each shows in its own Entrate/Uscite column and the category filter isolates them (AC 2)', async ({
     page,
   }) => {
@@ -140,6 +162,52 @@ test.describe('Cash register with categories and reversals (Story 3.4 — port t
 
     // Neither the reversed original nor the storno itself offers "Storna" anymore.
     await expect(registerRows(page).getByTestId('transaction-reverse-action')).toHaveCount(0);
+  });
+
+  test('a cash movement dated after today (Europe/Rome) is a 422 EFFECTIVE_DATE_IN_FUTURE that writes nothing, on its route and through "Nuova transazione", whose form names the rule; today goes through (story 16.6a, R-16-h)', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const categoryName = uniqueCategoryName('Futuro');
+    const categoryId = await createCategory(page, categoryName);
+    const today = todayRome();
+    const tomorrow = addDaysIso(today, 1);
+
+    const direct = await page.request.post('/api/v1/cash-movements', {
+      data: { categoryId, amountCents: 5000, paymentMethod: 'CASH', effectiveDate: tomorrow },
+    });
+    expect(direct.status()).toBe(422);
+    expect((await direct.json()).error).toMatchObject({ code: 'EFFECTIVE_DATE_IN_FUTURE', details: { effectiveDate: tomorrow } });
+
+    // AC 3: the dispatcher has no guard of its own — the writer's 422 comes through.
+    const dispatched = await page.request.post('/api/v1/transactions', {
+      headers: { 'Idempotency-Key': `e2e-16-6a-cash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` },
+      data: { kind: 'CASH', categoryId, direction: 'in', amountCents: 5000, paymentMethod: 'CASH', effectiveDate: tomorrow },
+    });
+    expect(dispatched.status()).toBe(422);
+    expect((await dispatched.json()).error.code).toBe('EFFECTIVE_DATE_IN_FUTURE');
+
+    await page.goto('/it/dashboard/billing');
+    await page.getByTestId('billing-new-transaction-button').click();
+    await page.waitForSelector('[data-testid="transaction-form"]');
+    await expect(page.getByTestId('transaction-date')).toHaveValue(today);
+    await page.getByTestId('transaction-kind').selectOption('cash');
+    await page.getByTestId('transaction-category').selectOption({ label: categoryName });
+    await page.getByTestId('transaction-direction').selectOption('in');
+    await page.getByTestId('transaction-amount').fill('50');
+    await page.getByTestId('transaction-date').fill(tomorrow);
+    await page.getByTestId('transaction-submit').click();
+    await expect(page.getByTestId('transaction-form-error')).toHaveText('La data non può essere nel futuro.');
+
+    // The bound is inclusive.
+    await page.getByTestId('transaction-date').fill(today);
+    await page.getByTestId('transaction-submit').click();
+    await page.waitForSelector('[data-testid="transaction-result-panel"]');
+
+    // Of the four attempts, only today's was written.
+    const listed = await page.request.get(`/api/v1/cash-movements?categoryId=${categoryId}`);
+    const { items } = (await listed.json()) as { items: Array<{ effectiveDate: string; amountCents: number }> };
+    expect(items).toEqual([expect.objectContaining({ effectiveDate: today, amountCents: 5000 })]);
   });
 
   test('admin deactivates a category via the API: it disappears from the "Nuova transazione" cash picker (AC 1)', async ({ page }) => {

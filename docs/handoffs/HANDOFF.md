@@ -1,72 +1,112 @@
-# HANDOFF — AirManager (aggiornato: 2026-07-27 — **EPIC 13 COMPLETO (11/11)** + post-epic: TD-6, fix-feedback, TD-7 e **REWORK CONTABILITÀ COMPLETO (Billing-1 + Billing-2 DONE)**. Nulla pushato — catena branch stacked. Prossimo lavoro: decide l'utente)
+# Handoff AirManager · 28 novembre 2026
 
-## Lavori post-Epic-13 (richieste utente 2026-07-26, dopo la chiusura dell'epic)
+## Cambio password personale dal profilo admin
 
-Tutto su branch propri, stacked in sequenza sopra `epic-13-ui-feedback` (nessuno pushato):
+La [story](../../_bmad-output/implementation-artifacts/cambio-password-admin-dal-profilo.md) aggiunge al trial locale il cambio su richiesta del titolare già verificato. Il link dura dieci minuti e il salvataggio riuscito revoca le vecchie sessioni. Il reset pubblico e il primo invito mantengono le rispettive scadenze. Il candidato ha superato i gate con 2.421 unitari, 108 verifiche su PostgreSQL/SMTP, 17/17 prove del trial in Chromium e la prova del fallback a posta spenta con un salvataggio riletto dal titolare. La suite ordinaria ha riportato 725 passati al primo tentativo, 1 intermittenti e 9 skip. [Revisione indipendente](../../_bmad-output/implementation-artifacts/cambio-password-admin-dal-profilo-review-report.md).
 
-- **TD-6 security** (`td-6-security-auth`, 4 commit) — DONE. F1 revoca sessioni (`User.tokenVersion`), F2 login-lock atomico. Review Opus 5 con attacchi HTTP reali. Nota deploy corretta: l'app non è mai stata deployata, nessun rischio di sfratto sessioni.
-- **fix-post-epic-13-feedback** (1 commit) — DONE. Card prenotazioni dashboard ordinata per data (era pending-first, decisione PO); seed demo con `kind=MEDICAL` (le visite mediche comparivano tra i ratings — `seed-demo.ts` non era stato aggiornato dallo sweep 13.1); storico tariffe istruttore capped a 5 righe + "Mostra tutte" (pattern flotta 13.4). **Lezione**: `t.raw` per i placeholder `{count}` riempiti lato client (`t()` dà `FORMATTING_ERROR` ICU — il log del server lo dice, NON è cache).
-- **TD-7 datetime-picker** (`td-7-datetime-picker`, 6 commit) — **DONE**. `CalendarPopover` esteso con campo ora digitabile; nuovo `DateTimeInput`; tutti i 10 form data/datetime al picker custom. Review Opus 5: **1 blocker** (popover senza flip verticale → collassava/usciva dallo schermo sul form `/ppr`) + 2 major (falso "oggi" selezionato, ora non digitabile su mobile), tutti fixati (`bf39082`). La deviazione del dev (portal su `document.body`) CONFERMATA legittima: `transform` su `.slideover-panel` intrappola i `position:fixed`. `schedule.tsx` deduplicato. **Full suite 265/265**. Follow-up F7: 4 input `type="time"` nativi restano (scheduling-card, flight-editor) — fuori scope, non urgenti.
-- **Rework Contabilità** — spec APPROVATO (`docs/superpowers/specs/2026-07-26-billing-rework-design.md`), 2 story su branch `billing-rework` (stacked su td-7).
-  - **Story Billing-1 (fondamenta) — DONE** (2026-07-27, 5 commit: `bdf15ec` docs, `47db63e` feat, `f37c2bd` record, `13fcc86` fix review, + docs chiusura). `CashMovement.paymentMethod` + backfill in migrazione; saldi apertura tesoreria in AppSetting + `PUT /settings/treasury`; gemello di denaro dei payout istruttori (categoria "Compensi istruttori", `instructorPayoutId @unique`); `getBillingSummary` (result/treasury/deposits/byCategory) con definizione di ricavo UNICA (`getLedgerRevenueCents` delegata anche da `getBillingKpis` e stats). Review Opus 5: 3 major veri (F1 quinto writer `reverseCashMovement` senza metodo; F2 categorie automatiche non protette — guardia estesa anche a "PPR" su ratifica; F3 storni di cassa/rettifiche non nettati — ratifica: OGNI storno annulla nel SUO mese) + F4-F8; D2 ratificata → select metodo obbligatorio nel pannello PPR. Full suite arbitro (sessione principale — il run del fix-subagent è morto col cap 120s): **265/265, exit 0, zero flaky**; unit 1489→1510. Ratifiche PO chiave nello story file (Review Record completo).
-  - **Story Billing-2 (pagina) — DONE** (2026-07-27, 5 commit: `a30593e` docs, `5fed728` feat, `01be948` record, `0b8059e`+`917c3b0` fix review, + docs chiusura). Tre riquadri su `getBillingSummary` (`getBillingKpis` CANCELLATO, tile Istruttori rimosso con motivazione), registro Entrate/Uscite + colonna Tipo filtrabile, secchiello con `PATCH /cash-movements/{id}` (RBAC verificata via HTTP), card tesoreria in Impostazioni, `treasury-settings.spec.ts` in catena serializzata. Review Opus 5: 4 major (secchiello sparito su somma-zero → gated su count; colonne sotto AA in chiaro → `.stat-tone-*`, rimisurato 9-10:1; rettifica di ricarica contata ricavo → libro dell'originale, delta revenue 0; flaky 2-su-2 del test riquadri → **nuovo project serializzato `billing-global` in coda alla catena** insieme al test del secchiello) + 3 minor + 4 nit, TUTTI chiusi. **2 ratifiche PO**: prospettiva club UNIFORME sul registro (SUPERA il mock §5 dello spec — aggiornato con nota; helper unico `ledgerClubAmountCents` console+export) e libro dell'originale sulle rettifiche (applicazione della ratifica Billing-1). Full suite finale **270/270 x2, 0 flaky, exit 0**; unit 1536.
+## Primo accesso dell’amministratore invitato
 
-## Stato: Epic 13 chiuso
+La [story di onboarding](../../_bmad-output/implementation-artifacts/primo-accesso-admin.md) riguarda la creazione di un nuovo admin nel trial locale. Il titolare conferma la sua casella e imposta la password personale dallo stesso invito di sette giorni. Il bootstrap del primo admin e le promozioni successive di account già attivati rimangono percorsi distinti. La prova è spenta per default. La [revisione indipendente](../../_bmad-output/implementation-artifacts/primo-accesso-admin-review-report.md) ha approvato il candidato. Sono passati i gate e tutti i 15 casi Chromium del trial. Il titolare ha anche salvato e riletto un pilota con la nuova password, a worker e relay dedicati fermi.
 
-**Epic 13 — UI feedback batch post-Epic 12** (punch-list utente 2026-07-22, ~36 item → 11 story): TUTTO DONE. Fonti di verità — NON duplicate qui:
-- **Piano** (item→story, ratifiche R1-R6): `docs/superpowers/plans/2026-07-22-epic-13-ui-feedback.md`
-- **Tracking**: `_bmad-output/implementation-artifacts/sprint-status.yaml` (epic-13: done) + story file `13-*.md` (ogni story porta AC, ratifiche, Dev Agent Record e Review Record completi — la storia dettagliata di ogni ciclo dev/review/fix è LÌ).
-- Story chiuse in quest'ultima sessione: **13.7** Pianificazione (popover fixed + PDF prenotazioni), **13.8** Shell & misc (switcher lingua, icona fleet, label chart, rimozione logo, precompile scadenze), **13.9** Dark theme pass (5 cause radice token-level + fix review), **13.10** Mobile pass (rail 64px ratificato; clamp popover, form-grid/page-head responsive, 4 major dalla review sulla classe "clippato dentro card"), **13.11** Ritiro stack legacy (**Tailwind CSS, Geist e TanStack Table RIMOSSI da package.json**; 4 componenti morti + glife orfane rimossi; mini-reset esplicito al posto del preflight; censimento utility chiuso a zero token morti).
-- **Reviewer switchato a Opus 5** (decisione utente 2026-07-25) — primo epic-segmento completo col nuovo modello: 5 review, tutte shippable-with-fixes, qualità dei findings alta (v. lezioni).
-- **Ultima full suite (arbitro)**: `CI=1 npx playwright test` su build prod, DB fresco → **259 passed (7.4m), exit 0, 0 flaky**, catena settings 6/6 + booking-window 3/3.
+## Unicode nei PDF e colonne di Scadenze
 
-## Branch e stato git (riorganizzato 2026-07-27 su richiesta utente)
+I cinque export PDF usano Liberation Sans incorporato. Il PDF Scadenze dedica le quattro colonne a Persona, Tipo, Scadenza e Stato. Per le 48 scadenze sintetiche della prova ogni cella corrisponde all’Excel nello stesso ordine sia in italiano sia in inglese. Il campione scaricato dal menu dell’app contiene «Łukasz», nomi su più righe e due pagine A4. [Scarica il PDF sintetico](../../_bmad-output/implementation-artifacts/evidence/pdf-unicode/Scadenze-Unicode-AirManager.pdf).
 
-- **Modello: SOLO `main` + `dev`** (policy in CLAUDE.md). Consolidamento 2026-07-27: tutta la catena stacked (epic-12 → epic-13 → td-6 → fix-feedback → td-7 → billing-rework, 142 commit sopra main, fast-forward pulito) è confluita in `dev` e mergiata in `main` via PR unica; PR #18 (linea Refero+Celeste scartata) e #20 (epic-12, superata dal consolidamento) chiuse; TUTTI i branch per-epic/stale cancellati (locale e remoto, inclusi i 18 `claude/*` storici e l'orfano `fix/e2e-datetime-local-tz`, il cui unico fix era già identico nella catena).
-- Untracked deliberato: churn plugin utente (`.claude/skills/*`, `.github/*`, `.agents/`, `skills-lock.json`, `.claude/workflows/`) — NON committare mai.
+Il tree applicativo `049666c90fbdcbfc3a5bf60cd07bef94372d333b` ha superato la revisione indipendente, 2.415 unitari e 725 casi Chromium ordinari al primo tentativo. I sei skip di modalità sono coperti dall’esecuzione trial (14/14). Il tema dell’amministratore legacy resta registrato nel collaudo readiness. [Criteri, misure e prove della story](../../_bmad-output/implementation-artifacts/pdf-unicode-scadenze.md).
 
-## Next steps (in ordine — per la PROSSIMA sessione)
+## Readiness email sintetica
 
-1. ~~Push della catena~~ **FATTO 2026-07-27**: repo consolidato su `main` + `dev` (v. sezione Branch). Il prossimo lavoro parte da `dev`.
-2. **Prossimo lavoro: decide l'utente.** Il rework Contabilità è COMPLETO (Billing-1 fondamenta + Billing-2 pagina, entrambe done — dettagli nella sezione post-Epic-13). Nessuna story pronta nel backlog oltre gli action item aperti in `sprint-status.yaml`.
-3. **Security findings post-epic: FATTI** (story **TD-6**, branch `td-6-security-auth` stacked su epic-13, 2026-07-26 — story file `_bmad-output/implementation-artifacts/td-6-security-auth.md` con Review Record completo). F1 CWE-613 chiuso con `User.tokenVersion` (claim nel JWT, confronto in `applyActiveRecheck`, bump nella transazione di `setPasswordWithToken` — copre reset E invito); F2 CWE-367 chiuso con `reserveLoginAttempt` (prenotazione pessimista + `pg_advisory_xact_lock` per-identifier). Review Opus 5 con attacchi REALI: exploit F1 riprodotto end-to-end (con controllo decisivo che isola la causa nell'eviction da versione) e burst HTTP di 25-40 richieste concorrenti (cap esattamente 10 vs 30 ammessi dal codice pre-fix). Residui ACCETTATI e documentati: per-IP non serializzato fra identifier diversi (overshoot ~17% una tantum, contatore comunque aggirabile via `x-forwarded-for` — residuo D-D già noto); >10 login CORRETTI simultanei sullo stesso identifier vengono rifiutati (il cap conta i tentativi in volo). Nota tecnica (NON un rischio operativo: l'app non è mai stata deployata, 0 sessioni vive esistenti): al PRIMO deploy futuro qualunque JWT emesso prima del claim `tokenVersion` sarebbe trattato come stale entro 15 min — irrilevante finché non esiste una base utenti in produzione. Full suite finale 258+1 flaky trasporto, exit 0.
-3. **Retrospettiva epic-13** (optional in sprint-status) — materiale pronto: i Review Record + le lezioni sotto.
-4. Prossimo epic: decide l'utente (nessun backlog di story pronte oltre i punti sopra).
+Il [collaudo readiness](../../_bmad-output/implementation-artifacts/readiness-email.md) è chiuso dopo revisione indipendente. Sul candidato sono passati 2.413 unitari, 129 casi PostgreSQL e tutti i 14 casi Chromium con trial acceso. La suite ordinaria ha registrato 724 passati al primo tentativo, un retry riuscito e sei skip coperti nel trial. L’admin legacy che ha già impostato la password accede dal fallback, ma per il medesimo account manca ancora il percorso di verifica della casella. Il rollout resta NO-GO per questa transizione. Per un admin creato nel trial, il vero invito seguito dalla conferma ha sbloccato l’avviso in attesa una sola volta. La [lista go/no-go](../operations/credential-mail.md#readiness-prima-di-una-decisione-sul-login-email) distingue le prove sintetiche dalle responsabilità del gestore. La CI comprende l’intera regressione ordinaria e un job autonomo per i contratti del trial.
 
-## Ciclo per story su QUESTA macchina (consolidato — INVARIATO, riusarlo tale e quale)
+## Cambio sequenziale dell’indirizzo verificato
 
-1. Story file (sessione principale Fable, xhigh) → commit `docs(N)` (pattern: chiusura story precedente + story nuova in UN commit).
-2. **DB fresco**: `fuser -k 3000/tcp; docker compose down -v && docker compose up -d && sleep 5 && set -a && . ./.env && set +a && npx prisma migrate deploy && npx prisma db seed` (lo script `npm run db:reset` NON funziona qui: assume l'utente OS postgres del container remoto).
-3. **Dev**: Workflow tool, UN agent `agentType:'dev-story'` effort xhigh, prompt col path story + regole ambiente + report strutturato. UI story: design-taste-frontend + ui-ux-pro-max.
-4. DB fresco → **Review**: `agentType:'adversarial-reviewer'` effort xhigh (**Opus 5** — MAI degradare), notesForReview verbatim + priority zero full suite CI=1 build prod. Se il dev non ha completato la sua full suite, la review la RIESEGUE come arbitro (successo 13.9/13.11).
-5. Fix: chirurgici → sessione principale; corposi → fix-subagent coi findings verbatim + decisioni PO sopraggiunte. Review Record nello story file, `fix(N)` + `docs(N)` chiusura (sprint-status + HANDOFF SEMPRE).
-6. Decisioni PO: AskUserQuestion batchate nei momenti naturali (fine review / pre-dispatch) — l'utente risponde anche a sessione non presidiata, il pattern ha retto per tutto l'epic.
+La [story cambio indirizzo](../../_bmad-output/implementation-artifacts/cambio-indirizzo-verificato.md) è chiusa dalla base `abd20cab` dopo il riesame indipendente del tree applicativo `76678724869a053d482dc27b6a12a332b331473f`. Il titolare usa due link successivi, ciascuno di dieci minuti. L’avvio assistito si trova nella sezione Accesso dell’editor Piloti e indirizza il primo messaggio alla casella attuale del titolare. Al completamento il successivo accesso usa la nuova casella. Sulla copia migrata, i due POST sono riusciti a +543,0 e +662,3 secondi. La richiesta protetta con la vecchia sessione ha restituito 401 e la successiva rettifica del saldo ha generato una sola email per la nuova casella. Il gate ha superato 2.413 unitari, le otto suite PostgreSQL hanno superato 128 casi. Nel browser con trial spento ci sono stati 724 passati, un caso passato al retry e sei skip coperti dal run con trial acceso. La prova resta locale e spenta di default. Dopo questa story sono previsti readiness, poi Unicode e sola rimozione della colonna «Ambito» dal PDF Scadenze.
 
-## Ambiente / regole macchina locale (Fedora dell'utente — NON il container di CLAUDE.md)
 
-- Postgres+Mailpit via `docker compose` del repo (5432/1025/8025); Mailpit API `http://localhost:8025/api/v1/messages`.
-- **Lockfile SOLO via `npx -y npm@10`**.
-- **JOBS_SECRET**: il `.env` locale ha ancora il placeholder → la validazione env di produzione lo RIFIUTA e il webServer CI=1 non parte. Prima di ogni full suite: `export JOBS_SECRET=<valore-non-placeholder>`. Fix definitivo = valore reale in `.env` (azione utente, mai fatta).
-- **Playwright**: suite e2e nativa (verde e ripetibile). MCP Playwright funziona dalla sessione PRINCIPALE via override Docker in `~/.claude.json`; dai SUBAGENT non è raggiungibile → fallback sanzionato: script `playwright-core` throwaway (Chromium cacheato `~/.cache/ms-playwright/chromium-1228`), MAI committati, MAI `playwright install`.
-- **Flake e2e noto (riqualificato review 13.10)**: classe "login POST bloccato a 5s sotto contesa worker" — massiccia su `next dev` (cold-compile), OCCASIONALE anche su build prod CI=1 (1 flaky/run, retry sempre verde). Mai attribuirla a una story senza prova.
-- e2e SEMPRE foreground con output su FILE (mai `| tail`: bufferizza e al kill non esce nulla). I run in background dei subagent MUOIONO con la loro sessione: se un report dichiara la suite incompleta, la sessione principale la RIESEGUE (2 volte su 3 è servito).
-- **Classifier flake**: "claude-sonnet-5 temporarily unavailable" su Bash/Workflow → transitorio; se persiste (outage API più ampio, successo 1 volta: ~20 min), backoff con Monitor (`sleep N; echo retry`) e riprovare — le operazioni read-only e Write/Edit continuano a funzionare.
-- gates: `npm run gates` (mai i 4 comandi separati). **Co-Authored-By = il modello che ha fatto il lavoro** (dev/fix subagent = `Claude Sonnet 5`; sessione principale = `Claude Fable 5`); push/`gh pr close`/`git stash drop` bloccati → comandi inline `!` dell'utente.
-- Parallel-session collision risk (memoria): controllare `git log` per commit altrui PRIMA di ogni commit epic-level.
+## Stato del progetto
 
-## Lezioni consolidate (Epic 13 — le più durevoli, dettagli nei Review Record)
+AirManager gestisce voli, flotta, prenotazioni e contabilità dell’aviosuperficie. L’Epic 18 ha completato i miglioramenti dell’interfaccia mobile e desktop. Le sette story risultano concluse. Per lo stato delle altre iniziative fa fede lo [sprint BMAD](../../_bmad-output/implementation-artifacts/sprint-status.yaml). Lo [storico fino alla 18.7a](HANDOFF-2026-11-26-1827.md) conserva esiti e limiti delle singole story.
 
-- **Il "gemello" va MISURATO, non dichiarato** (3 occorrenze: popover calendario 13.7, LineChart 13.8, .ppr-mark 13.9): quando una story fixa UN esemplare di un pattern, dev e reviewer enumerano ESPLICITAMENTE gli altri esemplari e li verificano.
-- **Guard e2e discriminanti** (13.7): per bug visivi/clipping servono assert di GEOMETRIA + hit-test (`elementFromPoint`), mai click Playwright (scrollIntoViewIfNeeded aggira i clip); la discriminanza va PROVATA contro una riproduzione del pre-fix (MutationObserver/addInitScript, repo intatto).
-- **Contrasto = misura computazionale** (13.9): il giudizio visivo fallisce sotto ~3:1; canvas→RGB→WCAG (o oklch→sRGB in python per i token). Le spiegazioni di MECCANISMO si provano, non si narrano.
-- **Mobile = rect vs box visibile della card + hit-test** (13.10): `document.scrollWidth` di pagina NON vede il contenuto clippato da `.card{overflow:hidden}` (4 major in una review). E il DB fresco NASCONDE gli overflow da valori lunghi: fixture realistiche (text-node substitution in-page).
-- **Rimozione di un framework CSS = diff ortogonale contro il bundle baseline** (13.11): 258 test verdi non vedevano 3 major (utility vive in template literal + preflight); il censimento con grep su `className="..."` è cieco — sweep token-vs-CSS su OGNI espressione + diff dei computed style con iniezione del CSS baseline fino a diff vuoto.
-- **Cosa ha funzionato**: decisioni PO batchate via AskUserQuestion nei momenti naturali; la review come arbitro quando il dev non completa la suite; fix chirurgici in sessione principale con verifica aritmetica pre-commit; recon+draft della story successiva durante le review (zero tempi morti).
+## Ultima consegna
 
-## Suggested skills (prossima sessione)
+La prima parte della 18.7 ha sistemato colonne e intestazioni desktop, commit `c09f2b8`. La 18.7b, commit `d675dd332c`, completa gli AC 5 e 6. Dal telefono un amministratore può aprire «Metti fuori servizio» per un velivolo operativo e trova subito il cursore nel motivo. Conteggio, conferma e notifica seguono il flusso esistente. Il widget desktop mostra fino a otto velivoli, privilegiando quelli fuori servizio e quelli con attività oggi. Il registro completo si raggiunge dal widget. I conteggi comprendono tutta la flotta attiva e la timeline presenta tutte le righe di attività del giorno. [Record 18.7](../../_bmad-output/implementation-artifacts/18-7-desktop-colonne-sticky-fermo-panoramica.md)
 
-- `karpathy-guidelines` — in OGNI prompt di dev/fix/review (regola di progetto).
-- Story UI: `design-taste-frontend` + `ui-ux-pro-max`; riferimento visivo = AirOps (`src/styles/airops.css` + `docs/design-reference/airops/`).
-- `/claude-security` — se si parte dai 2 findings post-epic (il plugin è installato; il report esistente è nel run dir gitignored).
-- `handoff` — a fine epic o fine sessione.
-- Review adversarial: agent type `adversarial-reviewer` via Workflow tool (Opus 5 xhigh) — non una skill, ma il quality gate portante.
+## Prove e problemi risolti
+
+Su dati sintetici, aggiungendo 110 velivoli liberi ai 17 iniziali, a 1280 px la pagina resta alta 3.437 px e conserva 13 righe della giornata. I due temi hanno dato le stesse misure. Sul database di carico sono rimaste visibili 185 righe operative. L’interfaccia mobile è stata verificata con Chromium touch emulato a 375 px. La tastiera di un telefono fisico resta fuori dalla prova. [Misure e diagnostica](../../_bmad-output/implementation-artifacts/evidence/18-7b/riscontri.md)
+
+Il primo tentativo browser aveva riutilizzato un vecchio processo sulla porta 3000. La ripetizione sul server del candidato ha superato entrambi i test mirati. La fixture distingueva inizialmente in modo errato il bordo del giorno di Roma. Dopo la correzione, le prenotazioni a cavallo della mezzanotte e quelle appena fuori dalla finestra danno esiti distinti. Un test di Statistiche mobile intercettava la schermata di caricamento durante la controprova di testo troncato. Il test ora attende un’etichetta visibile e controlla lo stile effettivo prima di misurarla. In un altro run, i due test che misurano lo stato globale della flotta si sovrapponevano. L’aggiunta dei 110 velivoli da parte di un caso alterava la lettura dell’altro. Il loro progetto Playwright ora li esegue in sequenza. Il revisore ha inoltre provato le giornate locali di 23 e 25 ore. [Revisione indipendente](../../_bmad-output/implementation-artifacts/evidence/18-7b/revisione.md)
+
+Sul tree di codice e test `ec72d87fe283df6e054712df0c82a71273641a84`, `npm run gates` ha superato lint, typecheck, 2.351 unit test e build. La suite Chromium da 715 casi ha restituito exit 0. Playwright ha classificato 712 casi come passati e tre come intermittenti, tutti recuperati al primo retry. I due casi flotta e i tre METAR sono passati subito. Nessuno skip definitivo. Il database di test e Mailpit erano locali.
+
+## Verifica degli export dopo l’Epic 18
+
+Il follow-up è concluso sul commit applicativo `ddc1c6f`. In Contabilità, «Transazioni (Excel)» rispetta entrambi gli estremi del periodo, compresi gli intervalli aperti e i filtri combinati. Nel registro Scadenze la proiezione compatta a cinque colonne è coerente con la 19.7b. Il PDF perde alcuni caratteri dei nomi fuori da WinAnsi. Gli esempi scaricati, le decisioni aperte e la diagnosi dei quattro retry sono nel [record di verifica](../../_bmad-output/implementation-artifacts/verifica-corrispondenza-export.md).
+
+Il candidato ha superato lint, typecheck, 2.351 unit e build. La suite Chromium su dati sintetici locali ha concluso con exit 0, 712 passati e quattro casi recuperati al primo retry su 716, zero skip definitivi. La revisione indipendente ha approvato la correzione.
+
+## Promemoria dopo rinnovo
+
+La story è conclusa nel commit applicativo `c1ddad6`. Il job confronta la data selezionata con quella corrente sotto lo stesso lock usato dai tre percorsi di rinnovo. Nella prova su PostgreSQL un rinnovo da +3 a +50 giorni durante il giro lascia intatte tutte le soglie e il titolare non riceve il testo a +3. Al giro successivo riceve «50 giorni». Un invio già affidato al trasporto può arrivare dopo il rinnovo. La revisione indipendente e i gate su Node 22 e 24 hanno approvato il candidato. Chromium ha chiuso con 714 passati al primo tentativo, due al primo retry e zero skip. Il [record della story](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md) conserva le prove sui due job concorrenti, sul guasto SMTP, sul lotto da 200 e sul comando «Invia promemoria» dalla schermata Scadenze.
+
+## Interruttori delle email operative
+
+La sezione Email operative di Impostazioni consente di scegliere separatamente gli avvisi per saldo, diniego di prenotazione, velivolo fuori servizio, archiviazione, promemoria al titolare e riepilogo agli amministratori. In un club già configurato, in assenza di una preferenza salvata, i sei valori sono tutti attivi. Le operazioni di saldo, prenotazione e flotta proseguono anche con la relativa email spenta. Il test SMTP del club e le email di invito e recupero restano disponibili.
+
+Story chiusa al commit applicativo `2337eca` dopo riesame indipendente. Il candidato ha superato 2.363 unit test e 16 prove PostgreSQL. Dei 717 casi Chromium, 715 sono passati al primo tentativo e due al primo retry, con zero skip.
+
+Se entrambi i canali scadenze sono spenti, il job risponde `disabled` senza registrare soglie. Quando un canale viene riacceso, i cicli esistenti ripartono dalle soglie dei giorni successivi di Roma. Creazioni e rinnovi successivi seguono la normale cadenza, anche il giorno stesso. La migrazione riguarda il ciclo delle scadenze. Il [record degli interruttori](../../_bmad-output/implementation-artifacts/interruttori-email-operative.md) riporta i controlli sugli avvisi, sui dati preesistenti e sulla finestra di consegna SMTP.
+
+## Coda SMTP per inviti e recupero password
+
+La [story della coda SMTP](../../_bmad-output/implementation-artifacts/coda-smtp-accesso.md) è conclusa al commit applicativo `25519f39d380`. La creazione utente e il recupero registrano la richiesta nel database. L’amministratore può distinguere un invito accodato da un messaggio accettato dal trasporto e vedere una conferma mancante. Il worker sospende gli invii incerti e limita a tre i tentativi nei casi temporanei con mancata accettazione certa. Il reinvio autorizzato dell’invito invalida la credenziale precedente.
+
+La revisione indipendente ha approvato il candidato. Gate integrato con 2.369 unit, 27 prove PostgreSQL/SMTP sulla coda e 16 regressioni dei promemoria. Chromium su 719 casi, 716 al primo tentativo, 3 dopo retry e 0 skip. La migrazione è stata provata su una copia sintetica già configurata, inclusi un token storico utilizzabile e il contatto senza account.
+
+Nell’ambiente di destinazione il worker richiede un processo supervisionato separato da Next. La [guida operativa](../operations/credential-mail.md) descrive l’attivazione autorizzata e la verifica dello stato in Impostazioni.
+
+## Accesso amministratori con password individuale
+
+La [prima fase del login](../../_bmad-output/implementation-artifacts/accesso-admin-password.md) è conclusa. Dalla pagina di accesso l’amministratore può aprire il form dedicato e lavorare anche a posta spenta. La sessione emessa da questo ingresso verifica subito ruolo, stato e versioni alla richiesta protetta successiva. Il form ordinario continua a servire gli utenti attuali. Prima di introdurre i link email, ogni admin deve collaudare la propria password da una sessione nuova. Il record documenta come preparare gli account con password mancante.
+
+Sul candidato approvato sono passati i cinque casi Chromium isolati senza SMTP o worker, 2.378 unit, 27 prove della coda e 16 dei promemoria. La suite completa ha concluso con 723 casi al primo tentativo e un retry riuscito sul download Excel delle scadenze, senza skip.
+
+## Prova isolata di verifica indirizzo e login via email
+
+La [story di collaudo](../../_bmad-output/implementation-artifacts/invito-e-login-email.md) è conclusa su dati sintetici. Copre invito amministrativo, conferma esplicita, accesso monouso di dieci minuti e limiti agli invii. La modalità è disattivata per default. I link vengono generati dall’origine configurata e le anteprime non aprono una sessione.
+
+Il riesame indipendente ha approvato il tree `528bbcfaa6b1765fd7e76db778d3b89cbb8dd8d7`. Sono passati 2.380 test unitari, 13 casi di invito/login sul database, 27 casi di regressione della coda e 16 dei promemoria. La suite completa ha superato 726 casi Chromium senza retry o skip. A parte, tutti e cinque i casi del fallback admin sono passati a trial e worker spenti, con relay indisponibile.
+
+## HTML per tutte le email applicative
+
+La story HTML è conclusa. Tutti gli undici tipi di email attivi condividono wordmark, intestazione, tipografia e footer. Gli inviti e il login mostrano la rispettiva azione. Il digest conserva l’associazione tra titolare, scadenza e stato in una tabella. Il messaggio SMTP del club resta bilingue. [Story, criteri e revisione indipendente](../../_bmad-output/implementation-artifacts/template-html-email.md)
+
+Le 21 catture Mailpit conservano l’oggetto e il testo semplice della base. Le otto credenziali riportano in HTML lo stesso link dell’alternativa di testo. Su quattro larghezze Chromium sono stati verificati 84 rendering. Sul tree di codice e test approvato sono passati 2.400 unit, 56 casi PostgreSQL e 726 casi browser. La suite browser si è conclusa senza retry o skip. [Matrice e quattro anteprime sintetiche](../../_bmad-output/implementation-artifacts/evidence/email-html/collaudo.md)
+
+## Protezioni dell’accesso prima del cutover
+
+Il milestone è chiuso. Da Impostazioni l’amministratore può sospendere i soli nuovi invii dei link di login. I link già inviati funzionano fino alla loro scadenza e il fallback resta utilizzabile anche durante un’interruzione della posta. Il monitor registra i picchi e i ritardi del worker su database. La coda invia gli avvisi di sicurezza HTML e testo ai soli admin attivi con recapito verificato e distingue accettazione SMTP, rifiuto e incertezza. Prima di una futura attivazione il club deve collaudare individualmente il fallback, verificare i destinatari degli avvisi e predisporre la supervisione separata del monitor. [Record BMAD e collaudo](../../_bmad-output/implementation-artifacts/protezioni-accesso-pre-cutover.md)
+
+Revisione indipendente approvata. Sono passati 2.404 unit, 74 casi PostgreSQL, cinque casi Chromium a posta spenta e la suite completa con 727 casi Chromium, 726 passati al primo tentativo, uno passato al primo retry e zero skip.
+
+## Ritiro della simulazione dei recapiti
+
+L'amministratore trova in Impostazioni le dieci schede precedenti. La destinazione degli avvisi operativi torna a seguire le regole anteriori a `142ef94`, anche nelle installazioni di prova che avevano attivato la simulazione. Il contatto delle persone senza account e quello del club per il test SMTP conservano i loro usi distinti. La migrazione correttiva rimuove i due indici di ricerca e la funzione della simulazione. [Record BMAD del ritiro](../../_bmad-output/implementation-artifacts/riconciliazione-recapiti-legacy.md)
+
+## Requisito aperto
+
+Enrico ha confermato un solo indirizzo registrato per utente, usato per l’accesso e per le comunicazioni. Questa correzione non migra i recapiti esistenti. Il cambio indirizzo è sospeso e fuori dal piano attivo. [Decisione sul recapito unico](../../_bmad-output/implementation-artifacts/promemoria-rinnovo.md)
+
+Restano aperte le decisioni sul formato dettagliato di Scadenze e sul font Unicode nei PDF. La retrospettiva dell’Epic 18 resta facoltativa.
+
+## Indirizzo account, unicità e invito di verifica
+
+La story sull’indirizzo verificato è chiusa. Nel trial l’account usa un’unica casella per accesso e comunicazioni, univoca fra tutti gli account. L’amministratore ottiene un invito di verifica automatico sia creando l’utenza sia creando la persona con accesso. Il fallback amministrativo usa la password individuale predisposta prima di un eventuale guasto della posta.
+
+Sul tree `6c9bff26c31e37b65bb64b83f06d468e973fd0cb` sono passati il riesame indipendente, il gate con 2.404 unitari, 107 casi PostgreSQL/SMTP e i cinque casi Chromium con trial acceso. La suite Chromium a trial spento ha concluso 727 scenari. Sono passati 724 al primo tentativo e uno al primo retry. I due scenari saltati richiedevano il trial acceso e sono passati nella suite dedicata. La copia sintetica aggiornata ha conservato la data originale della prova di casella. Enrico ha deciso la durata di sette giorni per l’invito iniziale, il reinvio finché la prima attivazione è pendente e l’esclusione degli avvisi precedenti alla conferma. Il record della story documenta le soglie del titolare e del digest, l’idoneità al momento dell’evento e il limite sui vecchi rinnovi di cui manca la data. [Prove locali e checkpoint precedenti](../../_bmad-output/implementation-artifacts/evidence/recapito-account-verificato/riscontri.md)
+
+## Riattivazione di un account sospeso
+
+La story è conclusa sul candidato applicativo `9face77`, approvato dalla revisione indipendente. Nel trial Piloti offre «Invia link di riattivazione» per un account sospeso con casella già verificata. Il link dura dieci minuti. L'account resta sospeso fino al POST di conferma, poi il titolare accede da una nuova sessione. L’invito per la prima attivazione resta valido sette giorni.
+
+Il gate integrato ha superato 2.406 unitari e la build. Le sette suite di integrazione hanno superato 118 casi. Con trial spento, Chromium ha registrato 725 passati e quattro skip attesi, senza retry. Con trial acceso sono passati tutti e sette i casi mirati, inclusi i quattro esclusi dalla suite generale. Sono passati anche i cinque scenari del fallback con SMTP e worker spenti. La [scheda di riattivazione](../../_bmad-output/implementation-artifacts/riattivazione-account-con-link.md) riporta il collaudo di aggiornamento, i limiti e la diagnostica. Il cambio email e gli interventi sui PDF restano separati.

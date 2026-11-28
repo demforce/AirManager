@@ -58,3 +58,30 @@ describe('env contract stays in sync with CI and .env.example', () => {
     expect(ciYaml).toMatch(new RegExp(`^\\s+${key}: `, 'm'));
   });
 });
+
+// DATABASE_POOL_MAX (story 17.1, AD-5/AD-7) has a `.default(10)`, so
+// `safeParse(undefined)` succeeds and it never enters `requiredKeys` above —
+// the generic loops are blind to any optional var. Named assertions are the
+// only thing that protects an OPTIONAL var's env-contract documentation
+// from silently drifting; without this block a future edit could delete
+// the .env.example/ci.yml lines and nothing would fail.
+describe('DATABASE_POOL_MAX (optional, story 17.1)', () => {
+  it('defaults to 10 when unset — unchanged runtime behaviour ([I-c])', () => {
+    const parsed = envSchema.parse({ DATABASE_URL: process.env['DATABASE_URL'], AUTH_SECRET: process.env['AUTH_SECRET'] });
+    expect(parsed.DATABASE_POOL_MAX).toBe(10);
+  });
+
+  it('coerces a string env value to a number', () => {
+    const parsed = envSchema.parse({
+      DATABASE_URL: process.env['DATABASE_URL'],
+      AUTH_SECRET: process.env['AUTH_SECRET'],
+      DATABASE_POOL_MAX: '20',
+    });
+    expect(parsed.DATABASE_POOL_MAX).toBe(20);
+  });
+
+  it('is documented in both .env.example and ci.yml (named — optional vars are invisible to the loops above)', () => {
+    expect(envExample).toMatch(/^DATABASE_POOL_MAX=/m);
+    expect(ciYaml).toMatch(/^\s+DATABASE_POOL_MAX: /m);
+  });
+});

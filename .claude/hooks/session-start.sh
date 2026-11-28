@@ -20,10 +20,10 @@ fail() {
   exit 0
 }
 
-# 1. Dependencies (npm install so the cached container state is reused;
+# 1. Dependencies (the pinned npm version accepts this lockfile;
 #    postinstall runs `prisma generate`).
 if [ ! -d node_modules ]; then
-  npm install >>"$LOG" 2>&1 || fail deps
+  npx --yes npm@10.9.11 ci >>"$LOG" 2>&1 || fail deps
 fi
 STATUS+=("deps OK")
 

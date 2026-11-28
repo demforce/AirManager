@@ -1,12 +1,13 @@
 import type { JWT } from 'next-auth/jwt';
+import { credentialEligible, emailTrialEnabled, verifiedTrialAddress } from './email-trial-policy';
 import { prisma } from '@/server/db/prisma';
 
 /** Re-verification interval (story 1.4, AC 2: "max 15 min di grazia"). */
 export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 /**
- * Re-verifies `User.isActive`, `User.roles` and `User.tokenVersion` against
- * the DB at most once every `ACTIVE_RECHECK_INTERVAL_MS`, using
+ * Re-verifies `User.isActive`, `User.roles`, `User.tokenVersion` and `User.personId` against
+ * the DB on every admin-password session read. Other sessions are checked once every `ACTIVE_RECHECK_INTERVAL_MS`, using
  * `token.lastActiveCheck` as the watermark. Node runtime only (`auth.ts`) —
  * never called from `src/proxy.ts`'s `getToken` read, which has no Prisma
  * access.
@@ -22,6 +23,8 @@ export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
  * issued before that bump fails this comparison and is evicted here — the
  * mechanism that makes a password reset actually end an attacker's existing
  * session, instead of leaving it valid for the JWT's full 30-day lifetime.
+ * A changed linked person also ends the session instead of silently changing
+ * the identity it acts for (story 16.7).
  * A token with NO `tokenVersion` claim at all (issued before this field
  * existed) is treated the same as a mismatch — accepted, documented
  * one-time logout of every session alive at deploy time. In every `null`
@@ -31,20 +34,37 @@ export const ACTIVE_RECHECK_INTERVAL_MS = 15 * 60 * 1000;
  */
 export async function applyActiveRecheck(token: JWT, now: number = Date.now()): Promise<JWT | null> {
   const lastCheck = token.lastActiveCheck ?? 0;
-  if (now - lastCheck < ACTIVE_RECHECK_INTERVAL_MS) {
+  const adminPassword = token.adminPasswordVersion !== undefined;
+  const trial = token.emailTrialLogin === true;
+  if (trial && !emailTrialEnabled()) return null;
+  if (!emailTrialEnabled() && !trial && !adminPassword && now - lastCheck < ACTIVE_RECHECK_INTERVAL_MS) {
     return token;
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: token.userId },
-    select: { isActive: true, roles: true, tokenVersion: true },
-  });
+  let user;
+  try {
+    user = await prisma.user.findUnique({
+      where: { id: token.userId },
+      select: { isActive: true, roles: true, tokenVersion: true, personId: true, ...(adminPassword && { adminPasswordVersion: true }), ...((trial || adminPassword) && { email: true, emailVerification: true }) },
+    });
+  } catch (error) {
+    if (trial) return null;
+    if (!adminPassword) throw error;
+    console.warn(JSON.stringify({ event: 'admin_password_session_check', at: new Date().toISOString(), outcome: 'error' }));
+    return null;
+  }
 
   if (!user || !user.isActive) {
     return null;
   }
 
-  if (token.tokenVersion !== user.tokenVersion) {
+  if (trial && (user.email !== token.email || !credentialEligible(user, 'LOGIN_LINK'))) return null;
+  if (adminPassword && user.emailVerification && !verifiedTrialAddress(user)) return null;
+  if (adminPassword && (!user.roles.includes('ADMIN') || token.adminPasswordVersion !== user.adminPasswordVersion)) {
+    return null;
+  }
+
+  if (token.tokenVersion !== user.tokenVersion || token.personId !== user.personId) {
     return null;
   }
 

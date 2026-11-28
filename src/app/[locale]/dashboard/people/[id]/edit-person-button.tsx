@@ -8,12 +8,9 @@
  * component per R-13.3-c ("nessuna logica di editing duplicata"). `onMutated`
  * calls `router.refresh()` so the read-only dossier re-renders with the
  * server's fresh data after a save — same convention as `pilots-console.tsx`.
- * `onClose` ALSO refreshes, unconditionally: unlike `pilots-console.tsx`
- * (whose table never shows ratings inline), this dossier renders a
- * read-only "Scadenze" card, and the editor's Ratings/Visita medica
- * sub-editor (`LiveExpiryEditor`) manages its OWN state with no `onMutated`
- * callback of its own (13.2) — closing is the only reliable moment to
- * pick up a rating added/edited/removed during this session.
+ * Since story 19.4 every write of the editor (the single Salva, the access
+ * and archive actions) calls `onMutated`, ratings and visita medica included,
+ * so closing needs no refresh of its own.
  */
 import { useState } from 'react';
 import { useRouter } from '@/i18n/navigation';
@@ -47,10 +44,7 @@ export function EditPersonButton({ person, canManageUsers, locale, editLabel, la
         // keep the `target: null`-time initial value forever.
         key={open ? `editor-${person.id}` : 'editor-closed'}
         target={open ? { mode: 'edit', pilot: person } : null}
-        onClose={() => {
-          setOpen(false);
-          router.refresh();
-        }}
+        onClose={() => setOpen(false)}
         onMutated={() => router.refresh()}
         canManageUsers={canManageUsers}
         locale={locale}

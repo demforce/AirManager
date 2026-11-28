@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCents, formatSignedCents, parseCents } from './money';
+import { centsForMinutes, formatCents, formatSignedCents, parseCents } from './money';
 
 // Node's ICU formats "<amount> €" for it-IT (non-breaking space before
 // the currency symbol) — spelled out explicitly since it's invisible in a
@@ -101,5 +101,26 @@ describe('parseCents', () => {
   it('round-trips through formatCents', () => {
     const cents = parseCents('42,42');
     expect(formatCents(cents, 'it')).toBe(`42,42${NBSP}€`);
+  });
+});
+
+describe('centsForMinutes (story 16.5, MINOR-1 — the one hours->money conversion)', () => {
+  it('rounds the exact half UP: 69 min at 15,10 €/h is exactly 1736,5 c -> 1737', () => {
+    expect(centsForMinutes(1510, 69)).toBe(1737);
+  });
+
+  it('30 min at 333 c/h is exactly 166,5 c -> 167 (the charge test case)', () => {
+    expect(centsForMinutes(333, 30)).toBe(167);
+  });
+
+  it('0 minutes, or a 0 rate, is 0', () => {
+    expect(centsForMinutes(3000, 0)).toBe(0);
+    expect(centsForMinutes(0, 90)).toBe(0);
+  });
+
+  it('documents why the retired formula had to go: (minutes / 60) * rate loses the half cent on the same pair', () => {
+    expect((69 / 60) * 1510).toBe(1736.4999999999998);
+    expect(Math.round((69 / 60) * 1510)).toBe(1736);
+    expect(centsForMinutes(1510, 69)).not.toBe(Math.round((69 / 60) * 1510));
   });
 });

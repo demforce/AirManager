@@ -1,7 +1,9 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Icon } from '@/components/ui/icons';
+import { Link } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { SetPasswordForm } from './set-password-form';
+import { AuthLanguageSwitch } from '../auth-language-switch';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -22,6 +24,7 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
 
   return (
     <main
+      className="auth-page"
       style={{
         display: 'flex',
         minHeight: '100vh',
@@ -32,6 +35,7 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
         color: 'var(--ink)',
       }}
     >
+      <AuthLanguageSwitch locale={locale as AppLocale} pathname="/set-password" token={token} />
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 28 }}>
           <div className="brand-mark">
@@ -55,6 +59,8 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
               locale={locale as AppLocale}
               labels={{
                 password: t('passwordLabel'),
+                adminPolicy: t('adminPolicy'),
+                adminRejected: t('adminBlocked'),
                 confirmPassword: t('confirmPasswordLabel'),
                 submit: t('submit'),
                 submitting: t('submitting'),
@@ -66,9 +72,14 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
               }}
             />
           ) : (
-            <p role="alert" data-testid="set-password-missing-token" className="alert-box bad">
-              {t('missingToken')}
-            </p>
+            <div>
+              <p role="alert" data-testid="set-password-missing-token" className="alert-box bad">
+                {t('missingToken')}
+              </p>
+              <Link href="/login" locale={locale as AppLocale} className="auth-return-link" style={{ marginTop: 20, display: 'inline-block', fontSize: 12.5 }}>
+                {t('backToLogin')}
+              </Link>
+            </div>
           )}
         </div>
       </div>

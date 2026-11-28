@@ -14,9 +14,12 @@ type LoginFormLabels = {
   submit: string;
   submitting: string;
   errorGeneric: string;
+  /** Story 14.2, AC 1/2: reused for BOTH fields — the point is marking WHICH one, not distinguishing "empty" from "malformed email". */
+  requiredField: string;
 };
 
 type LoginFormProps = {
+  provider: 'credentials' | 'admin-password';
   labels: LoginFormLabels;
   /** Where to send the user after a successful sign-in (already locale-prefixed). */
   callbackUrl: string;
@@ -31,7 +34,7 @@ type LoginFormProps = {
  * explicit `htmlFor`/`id` pair would — `e2e/login.spec.ts` selectors are
  * untouched.
  */
-export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
+export function LoginForm({ labels, callbackUrl, provider }: LoginFormProps) {
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -47,7 +50,7 @@ export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
   async function onSubmit(values: LoginInput) {
     setFormError(null);
 
-    const result = await signIn('credentials', {
+    const result = await signIn(provider, {
       email: values.email,
       password: values.password,
       redirect: false,
@@ -68,11 +71,11 @@ export function LoginForm({ labels, callbackUrl }: LoginFormProps) {
   // would be a native GET putting the credentials in the URL.
   return (
     <form method="post" onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Field label={labels.email}>
+      <Field label={labels.email} error={errors.email ? labels.requiredField : undefined}>
         <Input type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
       </Field>
 
-      <Field label={labels.password}>
+      <Field label={labels.password} error={errors.password ? labels.requiredField : undefined}>
         <Input type="password" autoComplete="current-password" aria-invalid={Boolean(errors.password)} {...register('password')} />
       </Field>
 

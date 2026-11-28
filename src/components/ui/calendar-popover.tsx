@@ -59,6 +59,14 @@ export type CalendarPopoverProps = {
   ref?: Ref<HTMLDivElement>;
   /** Story TD-7: omitted entirely by every date-ONLY consumer (`date-input.tsx`, both `schedule.tsx` popovers) — their render stays byte-identical (AC 1). */
   time?: CalendarPopoverTimeProps;
+  /**
+   * Story 19.3 (AD-7): the earliest pickable day, a LOCAL-constructor `Date`
+   * like `cursor`/`today`. Every day before it renders `disabled` (not
+   * clickable, out of the tab order), and so does "Oggi" when today itself
+   * precedes it. Omitted → render unchanged (`datetime-input.tsx`, both
+   * `schedule.tsx` popovers never pass it).
+   */
+  minDate?: Date;
 };
 
 /** `.cal-popover`'s CSS `width` (`airops.css`) — pinned here so `fixed-popover.ts`'s left-clamp math shares one source instead of a literal drifting out of sync with the CSS. `schedule.tsx` imports this (and the two constants below) from `fixed-popover.ts`, which re-exports it (story TD-7 review F6, PO decision 2026-07-26: dedup the three symbols that used to be duplicated verbatim there). */
@@ -70,6 +78,11 @@ export const CAL_POPOVER_HEIGHT_DATE_TIME = 427;
 
 function sameDay(a: Date, b: Date): boolean {
   return a.toDateString() === b.toDateString();
+}
+
+/** Calendar-day order of two local-constructor dates, ignoring any time of day. */
+function dayBefore(a: Date, b: Date): boolean {
+  return new Date(a.getFullYear(), a.getMonth(), a.getDate()) < new Date(b.getFullYear(), b.getMonth(), b.getDate());
 }
 
 export function CalendarPopover({
@@ -85,6 +98,7 @@ export function CalendarPopover({
   style,
   ref,
   time,
+  minDate,
 }: CalendarPopoverProps) {
   const rawLocale = useLocale();
   const intlLocale = rawLocale === 'en' ? 'en-IE' : 'it-IT';
@@ -135,6 +149,7 @@ export function CalendarPopover({
               type="button"
               className={`cal-cell ${inMonth ? '' : 'out'} ${isSel ? 'sel' : ''} ${isToday ? 'today' : ''}`}
               onClick={() => onPick(date)}
+              disabled={minDate !== undefined && dayBefore(date, minDate)}
             >
               {date.getDate()}
             </button>
@@ -157,7 +172,7 @@ export function CalendarPopover({
                   // A bare text input inside the surrounding `<form>` would
                   // otherwise submit it on Enter (the browser's implicit-
                   // submit rule) — Enter here means "confirm the picker",
-                  // never "submit the whole booking/PPR form".
+                  // never "submit the whole booking form".
                   if (event.key === 'Enter') {
                     event.preventDefault();
                     if (!time.confirmDisabled) time.onConfirm();
@@ -167,15 +182,20 @@ export function CalendarPopover({
               />
             </span>
           </label>
-          {time.invalid ? (
-            <p className="fld-label" style={{ color: 'var(--bad)' }}>
-              {time.invalidLabel}
-            </p>
-          ) : null}
+          {time.invalid ? <p className="fld-error">{time.invalidLabel}</p> : null}
         </>
       ) : null}
       <div className="cal-foot">
-        <button type="button" className="btn" onClick={onToday}>
+        <button
+          type="button"
+          className="btn"
+          onClick={onToday}
+          // The native attribute makes it inert; `aria-disabled` is what gives it
+          // the dimmed look (`.btn[aria-disabled="true"]`, see the time-confirm
+          // button below). Both are absent when `minDate` is not passed.
+          disabled={minDate !== undefined && dayBefore(today, minDate)}
+          aria-disabled={minDate !== undefined && dayBefore(today, minDate) ? true : undefined}
+        >
           {todayLabel}
         </button>
         {time ? (

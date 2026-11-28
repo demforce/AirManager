@@ -24,7 +24,7 @@ const DEFAULT_COLUMN_WIDTH = 18;
 // Leading characters that spreadsheet apps (and CSV re-imports) treat as
 // formula/command triggers — prefixing with `'` forces literal-text
 // interpretation, defusing formula injection (CWE-1236) from user-supplied
-// strings (e.g. unauthenticated public PPR fields).
+// strings (e.g. names and notes typed into a form).
 const FORMULA_TRIGGER_CHARS = new Set(['=', '+', '-', '@', '\t', '\r']);
 
 function neutralizeFormulaInjection(value: string | number | null): string | number | null {

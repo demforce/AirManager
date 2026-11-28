@@ -14,6 +14,8 @@ declare module 'next-auth' {
     roles: Role[];
     personId: string | null;
     tokenVersion: number;
+    adminPasswordVersion?: number;
+    emailTrialLogin?: boolean;
   }
 
   interface Session {
@@ -39,6 +41,8 @@ declare module 'next-auth/jwt' {
      * relies on to end every other live session on a password change.
      */
     tokenVersion: number;
+    adminPasswordVersion?: number;
+    emailTrialLogin?: boolean;
   }
 }
 
@@ -56,5 +60,7 @@ declare module '@auth/core/jwt' {
     personId: string | null;
     lastActiveCheck: number;
     tokenVersion: number;
+    adminPasswordVersion?: number;
+    emailTrialLogin?: boolean;
   }
 }

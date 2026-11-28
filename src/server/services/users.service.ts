@@ -2,9 +2,12 @@ import type { Prisma } from '@/generated/prisma/client';
 import type { Role } from '@/generated/prisma/enums';
 import type { CreateUserInput, UpdateUserInput } from '@/lib/schemas/users';
 import { authorize, type Actor } from '@/server/auth/rbac';
+import { credentialEligible, emailTrialEnabled, verifiedTrialAddress } from '@/server/auth/email-trial-policy';
 import { prisma } from '@/server/db/prisma';
-import { sendInviteEmail } from './auth-tokens.service';
-import { ConflictError, NotFoundError } from './errors';
+import { accountMailboxUncontested, assertContactAvailable, lockMailboxWrites } from './account-mailbox';
+import { databaseNow, enqueueCredential, lockMailAccount, revokeAccountCredentials } from './credential-mail.service';
+export { resendInvite } from './credential-mail.service';
+import { ConflictError, NotFoundError, ValidationError } from './errors';
 
 export type UserListItem = {
   id: string;
@@ -15,6 +18,8 @@ export type UserListItem = {
   /** Whether the user has completed their invite (set a password). Never
    * exposes the hash itself — only used by the UI's "pending invite" badge. */
   passwordSet: boolean;
+  emailVerified?: boolean;
+  canResendVerificationInvite?: boolean;
   person: { id: string; firstName: string; lastName: string } | null;
   createdAt: Date;
 };
@@ -26,6 +31,7 @@ const USER_SELECT = {
   isActive: true,
   locale: true,
   passwordHash: true,
+  emailVerification: { select: { email: true, verifiedAt: true } },
   person: { select: { id: true, firstName: true, lastName: true } },
   createdAt: true,
 } as const;
@@ -37,6 +43,7 @@ type SelectedUser = {
   isActive: boolean;
   locale: string;
   passwordHash: string | null;
+  emailVerification?: { email: string; verifiedAt: Date | null } | null;
   person: { id: string; firstName: string; lastName: string } | null;
   createdAt: Date;
 };
@@ -49,14 +56,11 @@ function toListItem(user: SelectedUser): UserListItem {
     isActive: user.isActive,
     locale: user.locale,
     passwordSet: user.passwordHash !== null,
+    ...(user.emailVerification && { emailVerified: verifiedTrialAddress(user) }),
+    ...(emailTrialEnabled() && { canResendVerificationInvite: credentialEligible(user, 'VERIFY_EMAIL') }),
     person: user.person,
     createdAt: user.createdAt,
   };
-}
-
-/** Exported (story 13.1) so `people.service.ts`'s one-step create composite can reuse it for its own `access.email` invite. */
-export function emailLocale(locale: string): 'it' | 'en' {
-  return locale === 'en' ? 'en' : 'it';
 }
 
 /** Prisma unique-constraint violation (e.g. concurrent link to the same person). */
@@ -70,8 +74,8 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /** Throws if `personId` doesn't exist, or is already linked to a *different* user. */
-async function assertPersonAvailable(personId: string, excludeUserId?: string): Promise<void> {
-  const person = await prisma.person.findUnique({
+async function assertPersonAvailable(personId: string, excludeUserId?: string, db: Prisma.TransactionClient = prisma): Promise<void> {
+  const person = await db.person.findUnique({
     where: { id: personId },
     select: { id: true, user: { select: { id: true } } },
   });
@@ -83,27 +87,24 @@ async function assertPersonAvailable(personId: string, excludeUserId?: string): 
   }
 }
 
-/**
- * The raw write behind `createUser` (AC 1) — extracted (story 13.1, Dev
- * Notes: "helper condivisi, mai duplicazione", same `getFlightTotals` 12.8
- * precedent) so the one-step person-create composite
- * (`people.service.ts#createPerson`, its `access` block) can run this INSIDE
- * its OWN atomic transaction via the SAME `tx` — a brand-new person can
- * never already be linked to a user, so unlike the standalone `createUser`
- * below, no `assertPersonAvailable` pre-check is needed here, only the
- * unique-email backstop. Deliberately does NOT send the invite email — every
- * caller does that AFTER its transaction commits (fire-and-forget,
- * unchanged behavior; AC 5's "post-commit" requirement for the composite).
- */
+/** The account and its invitation are committed or rolled back together in both creation flows. */
 export async function createUserCore(tx: Prisma.TransactionClient, input: CreateUserInput): Promise<SelectedUser> {
+  const verificationRequired = emailTrialEnabled();
+  if (input.verificationInvite && !verificationRequired) throw new ValidationError('Verification invitations are unavailable.');
+  if (verificationRequired) {
+    await lockMailboxWrites(tx);
+    await assertContactAvailable(tx, input.email, input.personId ?? null);
+  }
+  let user;
   try {
-    return await tx.user.create({
+    user = await tx.user.create({
       data: {
         email: input.email,
         roles: input.roles,
         locale: input.locale,
         personId: input.personId ?? null,
         passwordHash: null,
+        ...(verificationRequired && { emailVerification: { create: { email: input.email } } }),
         isActive: true,
       },
       select: USER_SELECT,
@@ -114,6 +115,8 @@ export async function createUserCore(tx: Prisma.TransactionClient, input: Create
     }
     throw error;
   }
+  await enqueueCredential(tx, user.id, verificationRequired ? 'VERIFY_EMAIL' : 'INVITE');
+  return user;
 }
 
 /**
@@ -139,77 +142,74 @@ export async function createUser(actor: Actor, input: CreateUserInput): Promise<
   // (`createUserCore`'s own P2002 catch).
   const user = await prisma.$transaction((tx) => createUserCore(tx, input));
 
-  try {
-    await sendInviteEmail(user.id, user.email, emailLocale(user.locale));
-  } catch (error) {
-    console.error('createUser: failed to send invite email', error);
-  }
-
   return toListItem(user);
+}
+
+async function hasOtherActiveAdmin(db: Prisma.TransactionClient, id: string, trial: boolean): Promise<boolean> {
+  const where = { id: { not: id }, isActive: true, roles: { has: 'ADMIN' as const } };
+  if (!trial) return await db.user.count({ where }) > 0;
+  const candidates = await db.user.findMany({ where, select: {
+    id: true, email: true, isActive: true, roles: true, passwordHash: true, emailVerification: true,
+  } });
+  for (const user of candidates) {
+    if (user.passwordHash && (!user.emailVerification || verifiedTrialAddress(user))) return true;
+    if (credentialEligible(user, 'LOGIN_LINK') && await accountMailboxUncontested(db, user.id, user.email)) return true;
+  }
+  return false;
 }
 
 /** Partial update: roles, locale, linked person (incl. unlinking with `null`), active status (AC 2). */
 export async function updateUser(actor: Actor, id: string, patch: UpdateUserInput): Promise<UserListItem> {
   authorize(actor, 'users.manage');
 
-  const existing = await prisma.user.findUnique({ where: { id } });
-  if (!existing) {
-    throw new NotFoundError('User not found.');
-  }
-
-  if (patch.personId !== undefined && patch.personId !== null) {
-    await assertPersonAvailable(patch.personId, id);
-  }
-
-  // Last-admin protection: user management must never lock itself out.
-  // Deactivating (or de-admining) the last active ADMIN would leave nobody
-  // able to manage users (FR-3), with no recovery path via UI/API.
-  const losesAdmin =
-    existing.isActive &&
-    existing.roles.includes('ADMIN') &&
-    (patch.isActive === false || (patch.roles !== undefined && !patch.roles.includes('ADMIN')));
-  if (losesAdmin) {
-    const otherActiveAdmins = await prisma.user.count({
-      where: { id: { not: id }, isActive: true, roles: { has: 'ADMIN' } },
-    });
-    if (otherActiveAdmins === 0) {
+  const trial = emailTrialEnabled();
+  async function apply(db: Prisma.TransactionClient) {
+    if (trial) {
+      // Membership, last-admin count and state transitions share this short transaction.
+      await lockMailboxWrites(db);
+      await lockMailAccount(db, id);
+    }
+    const existing = await db.user.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('User not found.');
+    if (trial && !existing.isActive && patch.isActive === true) {
+      throw new ConflictError('Confirmation of the registered mailbox is required to reactivate access.', undefined, 'REACTIVATION_REQUIRED');
+    }
+    if (patch.personId != null) await assertPersonAvailable(patch.personId, id, db);
+    const losesAdmin = existing.isActive && existing.roles.includes('ADMIN') &&
+      (patch.isActive === false || (patch.roles !== undefined && !patch.roles.includes('ADMIN')));
+    if (losesAdmin && !await hasOtherActiveAdmin(db, id, trial)) {
       throw new ConflictError('Cannot deactivate or demote the last active admin.');
     }
-  }
-
-  let user;
-  try {
-    user = await prisma.user.update({
+    const personChanges = patch.personId !== undefined && patch.personId !== existing.personId;
+    const suspending = trial && existing.isActive && patch.isActive === false;
+    // A pending reactivation belongs to the identity and privileges the admin reviewed.
+    const newRoles = patch.roles;
+    const rolesChange = newRoles && (newRoles.some(role => !existing.roles.includes(role))
+      || existing.roles.some(role => !newRoles.includes(role)));
+    if (trial && (patch.isActive === false || (!existing.isActive && (personChanges || rolesChange)))) {
+      await revokeAccountCredentials(db, id, await databaseNow(db));
+    }
+    const updated = await db.user.update({
       where: { id },
       data: {
-        ...(patch.roles !== undefined && { roles: patch.roles }),
-        ...(patch.locale !== undefined && { locale: patch.locale }),
-        ...(patch.personId !== undefined && { personId: patch.personId }),
-        ...(patch.isActive !== undefined && { isActive: patch.isActive }),
+        ...patch,
+        ...((patch.isActive === false || (patch.roles && !patch.roles.includes('ADMIN'))) && {
+          adminPasswordVersion: { increment: 1 },
+        }),
+        ...((personChanges || suspending) && { tokenVersion: { increment: 1 } }),
       },
       select: USER_SELECT,
     });
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new ConflictError('Email or person already linked to another user.');
+    if (trial && patch.personId !== undefined && updated.emailVerification
+      && !await accountMailboxUncontested(db, updated.id, updated.email)) {
+      throw new ConflictError('The registered account email belongs to a different record.');
     }
+    return updated;
+  }
+  try {
+    return toListItem(trial ? await prisma.$transaction(apply) : await apply(prisma));
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new ConflictError('Email or person already linked to another user.');
     throw error;
   }
-
-  return toListItem(user);
-}
-
-/** Re-sends the invite email for a user who has not yet set a password. */
-export async function resendInvite(actor: Actor, id: string): Promise<void> {
-  authorize(actor, 'users.manage');
-
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) {
-    throw new NotFoundError('User not found.');
-  }
-  if (user.passwordHash !== null) {
-    throw new ConflictError('User already set a password; there is no pending invite to resend.');
-  }
-
-  await sendInviteEmail(user.id, user.email, emailLocale(user.locale));
 }

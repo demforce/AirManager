@@ -1,0 +1,49 @@
+{
+  "base": "http://127.0.0.1:3002",
+  "email": "admin@airmanager.local",
+  "iter": 1,
+  "conc": 1,
+  "at": "2026-11-25T16:54:30.384Z",
+  "person": "cmwwatu2y0000w2s6p1vxzk3v",
+  "personFrom": "api",
+  "aircraft": "cmwwatua5000bw2s6ggjsoh15",
+  "aircraftFrom": "api",
+  "results": [
+    {
+      "name": "pdf flights 41 days",
+      "path": "/api/v1/flights/pdf?dateFrom=2026-10-15&dateTo=2026-11-25",
+      "status": 200,
+      "ct": "application/pdf",
+      "bytes": 447182,
+      "count": null,
+      "cold_ms": 136835,
+      "p50_ms": 142365,
+      "p95_ms": 142365,
+      "max_ms": 142365
+    },
+    {
+      "name": "pdf expiries 7 days",
+      "path": "/api/v1/expiries/pdf?window=7",
+      "status": 422,
+      "ct": "application/json",
+      "bytes": 134,
+      "count": null,
+      "cold_ms": 382,
+      "p50_ms": 182,
+      "p95_ms": 182,
+      "max_ms": 182
+    },
+    {
+      "name": "pdf account",
+      "path": "/api/v1/people/ec7947fa-e8ab-42b6-889c-82e53475b468/account/pdf",
+      "status": 200,
+      "ct": "application/pdf",
+      "bytes": 9184,
+      "count": null,
+      "cold_ms": 992,
+      "p50_ms": 702,
+      "p95_ms": 702,
+      "max_ms": 702
+    }
+  ]
+}

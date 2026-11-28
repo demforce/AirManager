@@ -1,5 +1,11 @@
 import { paginatedResponseSchema, paginationQuerySchema } from '@/lib/api/pagination';
-import { accountMovementTypeSchema, accountOverviewSchema, paymentMethodSchema } from './accounts';
+import {
+  accountMovementTypeSchema,
+  accountOverviewSchema,
+  accountOverviewWithAlertSchema,
+  paymentMethodSchema,
+  type AccountMovementTypeDto,
+} from './accounts';
 import { cashMovementItemSchema } from './cash';
 import { exportQuerySchema } from './common';
 import { z } from './zod-with-openapi';
@@ -22,14 +28,40 @@ export type TransactionSourceDto = z.infer<typeof transactionSourceSchema>;
  * `ACCOUNT_REVENUE_OR`/`CASH_REVENUE_OR`/`CASH_COST_OR`), so the per-row
  * badge and the riquadri totals can never drift (review Billing-1 F6's
  * lesson, closed at the root by this story instead of left to rot):
- * `REVENUE` (ricavo), `COST` (costo), `DEPOSIT` (acconto — a `TOP_UP`,
- * increases the debito verso i piloti, "non incide sul risultato"),
+ * `REVENUE` (ricavo), `COST` (costo), `DEPOSIT` (acconto — a `TOP_UP`, or
+ * any rettifica of a chain rooted in one (story 16.6b), moves the debito
+ * verso i piloti, "non incide sul risultato"),
  * `TRANSFER` (giroconto — a standalone credit `ADJUSTMENT` with no
  * `reversalOfId`: no P&L role either).
  */
 export const bookTypeSchema = z.enum(['REVENUE', 'COST', 'DEPOSIT', 'TRANSFER']);
 
 export type BookTypeDto = z.infer<typeof bookTypeSchema>;
+
+/**
+ * The book a reversal chain's ROOT belongs to — never `COST` (cash-only, no
+ * `AccountMovement` is ever a cost). This is the ONE place "what book does
+ * this type+sign belong to" is decided for an `AccountMovement` that has no
+ * `reversalOfId` of its own (a `TOP_UP`, a `FLIGHT_CHARGE`, a
+ * `PACKAGE_PURCHASE`, or a standalone `ADJUSTMENT`): shared by the writer
+ * (`accounts.service.ts#recordAdjustment`, which calls it ONCE — when a root
+ * is first linked — and freezes the result on
+ * `AccountMovement.reversalRootBook`, story 16.6b) and the reader
+ * (`transactions.service.ts`'s `accountBookType`, which calls it for every
+ * UNLINKED row and reads the frozen value back for every LINK of a chain).
+ * A root's TYPE alone can't tell a giroconto (a standalone CREDIT
+ * `ADJUSTMENT`) from a quota/addebito (a standalone DEBIT `ADJUSTMENT`) —
+ * both are type `ADJUSTMENT` — hence the `amountCents` sign (review F5 fix,
+ * ratifica PO 2026-11-04: a correction of a giroconto was landing in
+ * REVENUE, a ricavo fantasma).
+ */
+export function rootBookType(type: AccountMovementTypeDto, amountCents: number): 'DEPOSIT' | 'REVENUE' | 'TRANSFER' {
+  if (type === 'TOP_UP') return 'DEPOSIT';
+  if (type === 'FLIGHT_CHARGE') return 'REVENUE';
+  if (type === 'PACKAGE_PURCHASE') return 'TRANSFER';
+  // ADJUSTMENT only from here: a debit is a charge-like addebito (REVENUE), a credit is a giroconto (TRANSFER).
+  return amountCents < 0 ? 'REVENUE' : 'TRANSFER';
+}
 
 /**
  * One ledger row (AC 1; amount convention rewritten story Billing-2, AC 2).
@@ -47,8 +79,7 @@ export type BookTypeDto = z.infer<typeof bookTypeSchema>;
  * and its filter; `kind` survives alongside it (folded into the
  * Descrizione cell) for the granular label (raw `AccountMovementType` or
  * `CashCategory.name`). `reference` is the linked `flightId` (`ACCOUNT`
- * FLIGHT_CHARGE*) or `PprRequest.pprNumber` (`CASH` landing-fee twin),
- * `null` otherwise. `reversal`/`reversed` drive the Stato lineage badge
+ * FLIGHT_CHARGE*), `null` otherwise (every `CASH` row). `reversal`/`reversed` drive the Stato lineage badge
  * (AC 3): `reversal` = this row IS a storno/rettifica of another; `reversed`
  * = another row already corrects/reverses THIS one. `actionable` = staff may
  * act on this row (Rettifica/Storna, AC 3) — always `false` on a derived row
@@ -91,7 +122,7 @@ export type TransactionRowDto = z.infer<typeof transactionRowSchema>;
  * always DB-positive) — returned as-is. `ACCOUNT` rows carry the
  * pilot-account-centric raw direction (a credit to the pilot's balance is
  * positive, `amountCents`'s own doc-comment above) — for a `REVENUE`-booked
- * row (`FLIGHT_CHARGE`/`FLIGHT_CHARGE_REVERSAL`/a revenue `ADJUSTMENT`) that
+ * row (`FLIGHT_CHARGE`/a revenue `ADJUSTMENT`) that
  * is the OPPOSITE of the club's own book (a debit against the pilot IS the
  * club's ricavo — addebito volo -> Entrate; its storno -> Uscite), so it is
  * negated — the SAME negation `transactions.service.ts#computeRevenueCents`
@@ -214,7 +245,10 @@ export type RecordTransactionInput = z.infer<typeof recordTransactionSchema>;
  */
 export const recordTransactionResponseSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('TOP_UP'), account: accountOverviewSchema }),
-  z.object({ kind: z.literal('ADJUSTMENT'), account: accountOverviewSchema }),
+  // Story 14.4 review F7 — `balanceAlert` (ratifica R-14.4-d): this branch is
+  // a real debit ("Addebito conto"), see `accountOverviewWithAlertSchema`'s
+  // own doc-comment.
+  z.object({ kind: z.literal('ADJUSTMENT'), account: accountOverviewWithAlertSchema }),
   z.object({ kind: z.literal('CASH'), cashMovement: cashMovementItemSchema }),
 ]);
 

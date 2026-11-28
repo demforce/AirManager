@@ -33,12 +33,6 @@ export function parseDateOnlyUtc(dateOnly: string): Date {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
-/** `@db.Date` calendar-only "today" (server clock, UTC). */
-export function todayDateOnlyUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
-
 /**
  * Adds a whole number of months to a UTC-midnight date-only `Date`, CLAMPING
  * to the end of the target month rather than overflowing into the next one

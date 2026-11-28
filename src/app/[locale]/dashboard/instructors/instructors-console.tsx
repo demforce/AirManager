@@ -12,24 +12,39 @@
  * page in this app already settled on (`pilots-console.tsx`/
  * `fleet-console.tsx`: every row-affecting action lives in the card, the
  * page-head is title+KPIs only).
+ *
+ * Story 16.5 (P4, R-16-i, Q-16.5-b/c): the instructors NO LONGER active who
+ * are still owed get their own card under the roster, rendered only when it
+ * has rows. Their one action is "Paga" (while the owed is positive — the
+ * server answers 409 `INSTRUCTOR_NOTHING_OWED` otherwise); no name click, no
+ * editor, no sheet: their detail read answers 404. "Compensi da liquidare"
+ * lists them too, labelled.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Avatar } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
+import { dismissHistoryLayer, prepareHistoryNavigation, transferHistoryLayer } from '@/components/ui/history-layer';
 import { ExportMenu } from '@/components/ui/export-menu';
 import { Field, Input, Select } from '@/components/ui/field';
 import { DateInput } from '@/components/ui/date-input';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
 import { useToast } from '@/components/ui/toast';
-import { useRouter } from '@/i18n/navigation';
+import { Link, useRouter } from '@/i18n/navigation';
+import type { AppLocale } from '@/i18n/routing';
+import { parseApiError } from '@/lib/api-field-errors';
+import { avatarColorFor, initialsOf } from '@/lib/mobile-registries';
 import { formatCents, parseCents } from '@/lib/money';
-import { formatMinutes } from '@/lib/time';
-import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { APP_TIMEZONE, formatDateOnly, formatMinutes } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
+import { useIdempotentSubmission } from '@/lib/use-idempotent-submission';
 import type { PersonListItemDto } from '@/lib/schemas/people';
 import { InstructorEditor, type InstructorEditorLabels } from './instructor-editor';
-import { InstructorProfile, type InstructorProfileLabels } from './instructor-profile';
+import { InstructorProfile, fetchDetail, type InstructorDetail, type InstructorProfileLabels } from './instructor-profile';
 
 export type InstructorRow = {
   personId: string;
@@ -37,17 +52,24 @@ export type InstructorRow = {
   lastName: string;
   payoutRateCents: number | null;
   totalMinutes: number;
-  owedTotalCents: number | null;
+  owedTotalCents: number;
+  /** Story 16.5 — `false`: person archived or profile deactivated (the card under the roster). */
+  isActive: boolean;
 };
 
 export type InstructorsConsoleLabels = {
   cardTitle: string;
   empty: string;
+  /** Story 16.5 — the card of the instructors no longer active who are still owed. */
+  inactiveSection: { title: string; hint: string };
   newInstructor: string;
   paymentCycleButton: string;
   exportLabel: string;
+  exportXls: string;
   table: { name: string; rate: string; hours: string; owed: string; actions: string; noValue: string };
   actions: { edit: string; pay: string };
+  /** Story 15.5 — the phone face only (row + detail sheet). */
+  mobile: { openDetail: string; close: string; owedSuffix: string; openProfile: string };
   addInstructor: {
     title: string;
     subtitle: string;
@@ -58,6 +80,8 @@ export type InstructorsConsoleLabels = {
     cancel: string;
     requiredField: string;
     genericError: string;
+    /** Story 19.3 (Q-19.3-c): the 422 `STUDENT_PROFILE_EXCLUSIVE` — the picked person is an active student. */
+    exclusiveError: string;
   };
   editor: InstructorEditorLabels;
   profile: InstructorProfileLabels;
@@ -75,22 +99,26 @@ export type InstructorsConsoleLabels = {
     invalidPeriod: string;
     requiredField: string;
     genericError: string;
+    /** Story 16.5 (R-16-i) — the 409 `INSTRUCTOR_NOTHING_OWED`. */
+    nothingOwed: string;
   };
-  paymentCycle: { title: string; subtitle: string; empty: string; pay: string; closeLabel: string };
-  toast: { rateSet: string; payoutRecorded: string; instructorAdded: string; genericError: string; identitySaved: string };
+  /** `inactive` (story 16.5, Q-16.5-b): the label of a row no longer active. */
+  paymentCycle: { title: string; subtitle: string; empty: string; pay: string; closeLabel: string; inactive: string };
+  toast: { saved: string; payoutRecorded: string; instructorAdded: string };
 };
 
 type InstructorsConsoleProps = {
   items: InstructorRow[];
+  /** Story 16.5 — the instructors no longer active whose owed is not zero. */
+  inactiveItems: InstructorRow[];
   canManagePeople: boolean;
   canManagePayouts: boolean;
-  canManageSettings: boolean;
   exportHref?: string;
   locale: 'it' | 'en';
   labels: InstructorsConsoleLabels;
 };
 
-export function InstructorsConsole({ items, canManagePeople, canManagePayouts, canManageSettings, exportHref, locale, labels }: InstructorsConsoleProps) {
+export function InstructorsConsole({ items, inactiveItems, canManagePeople, canManagePayouts, exportHref, locale, labels }: InstructorsConsoleProps) {
   const router = useRouter();
   const toast = useToast();
   const [editorTarget, setEditorTarget] = useState<InstructorRow | null>(null);
@@ -98,13 +126,20 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
   const [payTarget, setPayTarget] = useState<InstructorRow | null>(null);
   const [addInstructorOpen, setAddInstructorOpen] = useState(false);
   const [paymentCycleOpen, setPaymentCycleOpen] = useState(false);
+  const [sheetId, setSheetId] = useState<string | null>(null);
+
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => setSheetId(null), []);
+  const sheetInstructor = items.find((item) => item.personId === sheetId) ?? null;
 
   const cols = 'minmax(160px,1.8fr) 120px 110px 130px minmax(160px,1.2fr)';
 
   return (
     <>
-      <div className="card">
-        <div className="card-head">
+      <div className={`card ${items.length === 0 ? 'mobile-empty-unfiltered' : ''}`}>
+        {/* ONE head at every width (AD-3) — this page has no search and no
+            pagination, so only the CTA changes shape at <=640px. */}
+        <div className="card-head registry-head">
           <div className="card-title">{labels.cardTitle}</div>
           <div className="spacer" />
           {canManagePayouts ? (
@@ -112,7 +147,7 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
               <Icon.cash /> {labels.paymentCycleButton}
             </button>
           ) : null}
-          {exportHref ? <ExportMenu label={labels.exportLabel} xlsLabel={labels.exportLabel} xlsHref={exportHref} pdfLabel="" /> : null}
+          {exportHref ? <ExportMenu label={labels.exportLabel} xlsLabel={labels.exportXls} xlsHref={exportHref} pdfLabel="" /> : null}
           {canManagePeople ? (
             <button type="button" className="btn primary" onClick={() => setAddInstructorOpen(true)} data-testid="instructors-new-button">
               <Icon.plus /> {labels.newInstructor}
@@ -121,11 +156,11 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
         </div>
 
         {items.length === 0 ? (
-          <p className="card-body" data-testid="instructors-empty">
+          <p className="card-body instructors-desktop-body" data-testid="instructors-empty">
             {labels.empty}
           </p>
         ) : (
-          <div className="students">
+          <div className="students instructors-desktop-body">
             <div className="student-row header" style={{ gridTemplateColumns: cols }}>
               <div>{labels.table.name}</div>
               <div>{labels.table.rate}</div>
@@ -148,7 +183,7 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
                 <div className="mono num">{instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`}</div>
                 <div className="mono num">{formatMinutes(instructor.totalMinutes)}</div>
                 <div className="mono num" style={{ fontWeight: 600 }}>
-                  {instructor.owedTotalCents === null ? labels.table.noValue : formatCents(instructor.owedTotalCents, locale)}
+                  {formatCents(instructor.owedTotalCents, locale)}
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   <button type="button" className="btn mini" onClick={() => setEditorTarget(instructor)} data-testid={`instructor-edit-${instructor.personId}`}>
@@ -164,7 +199,62 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
             ))}
           </div>
         )}
+
+        {/* --- the phone face of the same roster (template 249-268) -----------
+            Same row family as the Piloti list: avatar, name + sub, and on the
+            right the two numbers this page is opened for. The desktop's own
+            read-only `InstructorProfile` panel is absorbed by the sheet — that
+            IS what R3 prescribes for a row detail. */}
+        <div className="instructors-mobile" data-testid="mobile-instructors-list">
+          {items.length === 0 ? (
+            <div className="mobile-empty-state">
+              <p className="mobile-card-empty" data-testid="mobile-instructors-empty">{labels.empty}</p>
+              {canManagePeople ? <button type="button" className="btn primary" onClick={() => setAddInstructorOpen(true)} data-testid="mobile-instructors-new">{labels.newInstructor}</button> : null}
+            </div>
+          ) : (
+            items.map((instructor) => {
+              const name = `${instructor.lastName} ${instructor.firstName}`;
+              return (
+                <button
+                  key={instructor.personId}
+                  type="button"
+                  className="mobile-row mobile-row-person"
+                  aria-label={`${labels.mobile.openDetail}: ${name}`}
+                  onClick={() => setSheetId(instructor.personId)}
+                  data-testid={`mobile-instructor-row-${instructor.personId}`}
+                >
+                  <span className="mobile-row-avatar">
+                    <Avatar as="span" init={initialsOf(instructor.firstName, instructor.lastName)} color={avatarColorFor(instructor.personId)} />
+                  </span>
+                  <span className="mobile-row-main">
+                    <span className="mobile-row-title">
+                      <span className="mobile-row-name">{name}</span>
+                    </span>
+                    <span className="mobile-row-sub">
+                      {instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`}
+                    </span>
+                  </span>
+                  <span className="mobile-row-side">
+                    <span className="mobile-row-amount">{formatMinutes(instructor.totalMinutes)}</span>
+                    <span className="mobile-row-note">{`${formatCents(instructor.owedTotalCents, locale)} ${labels.mobile.owedSuffix}`}</span>
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
       </div>
+
+      {inactiveItems.length > 0 ? (
+        <InactiveInstructorsCard
+          items={inactiveItems}
+          cols={cols}
+          canManagePayouts={canManagePayouts}
+          onPay={setPayTarget}
+          locale={locale}
+          labels={labels}
+        />
+      ) : null}
 
       <InstructorEditor
         // Distinct key NAMESPACE from `InstructorProfile` below (`editor-`/
@@ -174,8 +264,6 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
         onClose={() => setEditorTarget(null)}
         onMutated={() => router.refresh()}
         canManagePeople={canManagePeople}
-        canManagePayouts={canManagePayouts}
-        canManageSettings={canManageSettings}
         locale={locale}
         labels={labels.editor}
         toast={toast}
@@ -203,10 +291,11 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
       <PaymentCycleSlideOver
         open={paymentCycleOpen}
         onClose={() => setPaymentCycleOpen(false)}
-        items={items.filter((instructor) => (instructor.owedTotalCents ?? 0) > 0)}
+        items={[...items, ...inactiveItems].filter((instructor) => instructor.owedTotalCents > 0)}
         locale={locale}
         labels={labels.paymentCycle}
         onPay={(instructor) => {
+          transferHistoryLayer();
           setPaymentCycleOpen(false);
           setPayTarget(instructor);
         }}
@@ -219,7 +308,250 @@ export function InstructorsConsole({ items, canManagePeople, canManagePayouts, c
         labels={labels.addInstructor}
         successMessage={labels.toast.instructorAdded}
       />
+
+      {/* Rendered conditionally (AD-7): `mobile-instructor-sheet` is ONE node. */}
+      {sheetInstructor ? (
+        <InstructorSheet
+          instructor={sheetInstructor}
+          onClose={closeSheet}
+          onEdit={(instructor) => {
+            transferHistoryLayer();
+            closeSheet();
+            setEditorTarget(instructor);
+          }}
+          onPay={(instructor) => {
+            transferHistoryLayer();
+            closeSheet();
+            setPayTarget(instructor);
+          }}
+          canManagePayouts={canManagePayouts}
+          locale={locale}
+          labels={labels}
+        />
+      ) : null}
     </>
+  );
+}
+
+type InstructorSheetProps = {
+  instructor: InstructorRow;
+  onClose: () => void;
+  onEdit: (instructor: InstructorRow) => void;
+  onPay: (instructor: InstructorRow) => void;
+  canManagePayouts: boolean;
+  locale: 'it' | 'en';
+  labels: InstructorsConsoleLabels;
+};
+
+/**
+ * The phone detail of one instructor (review 15.5 F2). The desktop opens TWO
+ * panels from a roster row — the editor and the read-only `InstructorProfile`
+ * — and at <=640px `instructor-name-{id}` lives in a `display: none` tree, so
+ * everything the profile panel says has to be HERE: hours this month, recent
+ * students and recent flights as CFI, plus the entry to the person's record
+ * the pilots sheet already offers (`pilot-open-profile-mobile`).
+ *
+ * The three extra facts come from the SAME read the desktop panel uses
+ * (`GET /api/v1/instructor-compensation?personId=`, `fetchDetail`) and are
+ * fetched ON OPEN, one request for the row the user tapped — the roster list
+ * itself is untouched, so no N+1 is introduced on a page that renders every
+ * instructor at once.
+ */
+function InstructorSheet({ instructor, onClose, onEdit, onPay, canManagePayouts, locale, labels }: InstructorSheetProps) {
+  const [detail, setDetail] = useState<InstructorDetail | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchDetail(instructor.personId).then((result) => {
+      if (!cancelled) setDetail(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [instructor.personId]);
+
+  const rows: BottomSheetRow[] = [
+    { k: labels.table.rate, v: instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h` },
+    { k: labels.table.hours, v: formatMinutes(instructor.totalMinutes) },
+    { k: labels.profile.kpi.hoursMtd, v: detail === null ? '…' : formatMinutes(detail.mtdMinutes) },
+    { k: labels.table.owed, v: formatCents(instructor.owedTotalCents, locale) },
+    {
+      k: labels.profile.recentStudents.sectionTitle,
+      v:
+        detail === null ? (
+          '…'
+        ) : detail.recentStudents.length === 0 ? (
+          labels.profile.recentStudents.empty
+        ) : (
+          <span className="mobile-sheet-list">
+            {detail.recentStudents.map((student) => (
+              <span className="mobile-sheet-list-item" key={student.personId} data-testid="instructor-profile-student-chip-mobile">
+                {student.lastName} {student.firstName}
+              </span>
+            ))}
+          </span>
+        ),
+    },
+    {
+      k: labels.profile.recentFlights.sectionTitle,
+      v:
+        detail === null ? (
+          '…'
+        ) : detail.recentFlights.length === 0 ? (
+          labels.profile.recentFlights.empty
+        ) : (
+          <span className="mobile-sheet-list">
+            {detail.recentFlights.map((flight) => (
+              <span className="mobile-sheet-list-item" key={flight.id} data-testid="instructor-profile-flight-row-mobile">
+                {formatDateOnly(flight.flightDate, locale)} · {flight.personLastName} {flight.personFirstName} · {formatMinutes(flight.minutes)}
+              </span>
+            ))}
+          </span>
+        ),
+    },
+  ];
+
+  return (
+    <BottomSheet
+      open
+      onClose={onClose}
+      testId="mobile-instructor-sheet"
+      sub={labels.cardTitle}
+      title={`${instructor.lastName} ${instructor.firstName}`}
+      badge={<Badge>{instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`}</Badge>}
+      rows={rows}
+      closeLabel={labels.mobile.close}
+      actions={
+        <>
+          <button type="button" className="btn primary" onClick={() => onEdit(instructor)} data-testid="instructor-edit-mobile">
+            {labels.actions.edit}
+          </button>
+          {canManagePayouts ? (
+            <button type="button" className="btn mini ok" onClick={() => onPay(instructor)} data-testid="instructor-pay-mobile">
+              {labels.actions.pay}
+            </button>
+          ) : null}
+          <Link
+            href={`/dashboard/people/${instructor.personId}`}
+            replace
+            locale={locale as AppLocale}
+            className="btn"
+            onClick={() => { prepareHistoryNavigation(); onClose(); }}
+            data-testid="instructor-open-profile-mobile"
+          >
+            {labels.mobile.openProfile}
+          </Link>
+        </>
+      }
+    />
+  );
+}
+
+type InactiveInstructorsCardProps = {
+  items: InstructorRow[];
+  /** The roster's own tracks, so the two cards' columns line up. */
+  cols: string;
+  canManagePayouts: boolean;
+  onPay: (instructor: InstructorRow) => void;
+  locale: 'it' | 'en';
+  labels: InstructorsConsoleLabels;
+};
+
+/**
+ * "Non più attivi, con dovuto" (story 16.5, P4/AD-8, R-16-i, Q-16.5-c) — the
+ * instructors no longer active whose owed is not zero, under the roster. Read
+ * only but for "Paga", offered while the owed is positive (a negative owed —
+ * paid more than accrued — has nothing to pay, and the server would answer
+ * 409). The name is plain text: their detail read answers 404. The phone face
+ * is the roster's person row made static (`.mobile-row-static`): not a
+ * trigger, with "Paga" as a 44px button of its own. Its two faces have
+ * their OWN switch classes (`inactive-instructors-*`): the roster's are one
+ * node each by contract (`mobile-registries.spec.ts` locates them as such).
+ */
+function InactiveInstructorsCard({ items, cols, canManagePayouts, onPay, locale, labels }: InactiveInstructorsCardProps) {
+  const canPay = (instructor: InstructorRow): boolean => canManagePayouts && instructor.owedTotalCents > 0;
+  const rate = (instructor: InstructorRow): string =>
+    instructor.payoutRateCents === null ? labels.table.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h`;
+
+  return (
+    <div className="card" data-testid="inactive-instructors-card">
+      <div className="card-head">
+        <div className="card-title">{labels.inactiveSection.title}</div>
+        <span className="card-sub">{labels.inactiveSection.hint}</span>
+      </div>
+
+      <div className="students inactive-instructors-desktop-body">
+        <div className="student-row header" style={{ gridTemplateColumns: cols }}>
+          <div>{labels.table.name}</div>
+          <div>{labels.table.rate}</div>
+          <div>{labels.table.hours}</div>
+          <div>{labels.table.owed}</div>
+          <div>{labels.table.actions}</div>
+        </div>
+        {items.map((instructor) => {
+          const name = `${instructor.lastName} ${instructor.firstName}`;
+          return (
+            <div key={instructor.personId} className="student-row" data-testid={`inactive-instructor-row-${instructor.personId}`} style={{ gridTemplateColumns: cols }}>
+              <div>
+                <div className="student-name">{name}</div>
+              </div>
+              <div className="mono num">{rate(instructor)}</div>
+              <div className="mono num">{formatMinutes(instructor.totalMinutes)}</div>
+              <div className="mono num" style={{ fontWeight: 600 }}>
+                {formatCents(instructor.owedTotalCents, locale)}
+              </div>
+              <div>
+                {canPay(instructor) ? (
+                  <button
+                    type="button"
+                    className="btn mini ok"
+                    aria-label={`${labels.actions.pay}: ${name}`}
+                    onClick={() => onPay(instructor)}
+                    data-testid={`inactive-instructor-pay-${instructor.personId}`}
+                  >
+                    {labels.actions.pay}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="inactive-instructors-mobile" data-testid="mobile-inactive-instructors-list">
+        {items.map((instructor) => {
+          const name = `${instructor.lastName} ${instructor.firstName}`;
+          return (
+            <div key={instructor.personId} className="mobile-row mobile-row-person mobile-row-static" data-testid={`mobile-inactive-instructor-row-${instructor.personId}`}>
+              <span className="mobile-row-avatar">
+                <Avatar as="span" init={initialsOf(instructor.firstName, instructor.lastName)} color={avatarColorFor(instructor.personId)} />
+              </span>
+              <span className="mobile-row-main">
+                <span className="mobile-row-title">
+                  <span className="mobile-row-name">{name}</span>
+                </span>
+                <span className="mobile-row-sub">{rate(instructor)}</span>
+              </span>
+              <span className="mobile-row-side">
+                <span className="mobile-row-amount">{formatMinutes(instructor.totalMinutes)}</span>
+                <span className="mobile-row-note">{`${formatCents(instructor.owedTotalCents, locale)} ${labels.mobile.owedSuffix}`}</span>
+              </span>
+              {canPay(instructor) ? (
+                <button
+                  type="button"
+                  className="btn mini ok"
+                  aria-label={`${labels.actions.pay}: ${name}`}
+                  onClick={() => onPay(instructor)}
+                  data-testid={`inactive-instructor-pay-${instructor.personId}-mobile`}
+                >
+                  {labels.actions.pay}
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -248,16 +580,6 @@ const payFormSchema = z
 
 type PayFormValues = z.infer<typeof payFormSchema>;
 
-/** Browser-local `YYYY-MM-DD` — same convention as every other `<input type="date">` default in this codebase (`todayDateOnly` in `pilots-console.tsx`/`fleet/aircraft-editor.tsx`). */
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** Default `periodStart` (AC 5: "inizio del periodo scoperto", editable) — the start of the current calendar year, a simple, always-available anchor since the summary API does not expose a precise "last paid up to" date. */
-function yearStartDateOnly(): string {
-  return `${todayDateOnly().slice(0, 4)}-01-01`;
-}
-
 type PaySlideOverProps = {
   instructor: InstructorRow | null;
   onClose: () => void;
@@ -270,15 +592,16 @@ type PaySlideOverProps = {
 /** "Paga" row action (AC 5, `payouts.manage`) — same Idempotency-Key flow as `pilots-console.tsx#TopUpSlideOver`, MANDATORY server-side here (route rejects a missing header, story 12.7 AC 3). */
 function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, successMessage }: PaySlideOverProps) {
   const toast = useToast();
-  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const { submitIdempotently, submissionError } = useIdempotentSubmission();
   const [formError, setFormError] = useState<string | null>(null);
 
+  const today = todayDateOnlyInZone(APP_TIMEZONE);
   const values: PayFormValues = instructor
     ? {
-        amount: (Math.max(instructor.owedTotalCents ?? 0, 0) / 100).toFixed(2).replace('.', ','),
+        amount: (Math.max(instructor.owedTotalCents, 0) / 100).toFixed(2).replace('.', ','),
         method: 'CASH',
-        periodStart: yearStartDateOnly(),
-        periodEnd: todayDateOnly(),
+        periodStart: `${today.slice(0, 4)}-01-01`,
+        periodEnd: today,
         notes: '',
       }
     : { amount: '', method: 'CASH', periodStart: '', periodEnd: '', notes: '' };
@@ -297,25 +620,27 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
 
     let response: Response;
     try {
-      response = await fetch('/api/v1/instructor-payouts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-        body: JSON.stringify({
-          instructorPersonId: instructor.personId,
-          amountCents,
-          periodStart: formValues.periodStart,
-          periodEnd: formValues.periodEnd,
-          method: formValues.method,
-          notes: formValues.notes.trim() === '' ? null : formValues.notes.trim(),
-        }),
+      response = await submitIdempotently('/api/v1/instructor-payouts', {
+        instructorPersonId: instructor.personId,
+        amountCents,
+        periodStart: formValues.periodStart,
+        periodEnd: formValues.periodEnd,
+        method: formValues.method,
+        notes: formValues.notes.trim() === '' ? null : formValues.notes.trim(),
       });
-    } catch {
-      setFormError(labels.genericError);
+    } catch (error) {
+      setFormError(submissionError(error, labels.genericError));
       return;
     }
-    regenerateIdempotencyKey();
 
     if (!response.ok) {
+      const { code } = await parseApiError(response);
+      if (code === 'INSTRUCTOR_NOTHING_OWED') {
+        setFormError(labels.nothingOwed);
+        // Review 16.5 I-4: someone else paid in the meantime — the rows behind the panel still show the old owed and "Paga".
+        onMutated();
+        return;
+      }
       setFormError(labels.genericError);
       return;
     }
@@ -331,7 +656,7 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
       {instructor ? (
         <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="instructor-pay-form">
           <div className="form-grid">
-            <Field label={labels.amount}>
+            <Field label={labels.amount} error={errors.amount ? labels.requiredField : undefined}>
               <Input inputMode="decimal" placeholder="0,00" aria-invalid={Boolean(errors.amount)} {...register('amount')} />
             </Field>
             <Field label={labels.method}>
@@ -341,10 +666,10 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
                 <option value="POS">{labels.methods.pos}</option>
               </Select>
             </Field>
-            <Field label={labels.periodStart}>
+            <Field label={labels.periodStart} error={errors.periodStart ? labels.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.periodStart)} {...register('periodStart')} />
             </Field>
-            <Field label={labels.periodEnd}>
+            <Field label={labels.periodEnd} error={errors.periodEnd ? labels.requiredField : undefined}>
               <DateInput aria-invalid={Boolean(errors.periodEnd)} {...register('periodEnd')} />
             </Field>
             <Field label={labels.notes} wide>
@@ -352,12 +677,12 @@ function PaySlideOver({ instructor, onClose, onMutated, labels, closeLabel, succ
             </Field>
           </div>
           {formError ? (
-            <p role="alert" data-testid="instructor-pay-form-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 14 }}>
+            <p role="alert" data-testid="instructor-pay-form-error" className="fld-error" style={{ marginTop: 14 }}>
               {formError}
             </p>
           ) : null}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-            <button type="button" className="btn" onClick={onClose}>
+            <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
               {labels.cancel}
             </button>
             <button type="submit" disabled={isSubmitting} className="btn primary" data-testid="instructor-pay-submit">
@@ -381,7 +706,7 @@ type PaymentCycleSlideOverProps = {
   onPay: (instructor: InstructorRow) => void;
 };
 
-/** AC 5: "SOLI istruttori con dovuto>0", a per-row "Paga" that closes this panel and opens `PaySlideOver` for that row (batch manual — one POST per row). */
+/** AC 5: "SOLI istruttori con dovuto>0", a per-row "Paga" that closes this panel and opens `PaySlideOver` for that row (batch manual — one POST per row). Story 16.5 (Q-16.5-b): the instructors no longer active are listed too, after the active ones, each labelled. */
 function PaymentCycleSlideOver({ open, onClose, items, locale, labels, onPay }: PaymentCycleSlideOverProps) {
   return (
     <SlideOver open={open} onClose={onClose} title={labels.title} subtitle={labels.subtitle} closeLabel={labels.closeLabel}>
@@ -405,11 +730,12 @@ function PaymentCycleSlideOver({ open, onClose, items, locale, labels, onPay }: 
                 fontSize: 13,
               }}
             >
-              <span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
                 {instructor.lastName} {instructor.firstName}
+                {instructor.isActive ? null : <Badge>{labels.inactive}</Badge>}
               </span>
               <span className="mono num" style={{ fontWeight: 600 }}>
-                {formatCents(instructor.owedTotalCents ?? 0, locale)}
+                {formatCents(instructor.owedTotalCents, locale)}
               </span>
               <button type="button" className="btn mini ok" onClick={() => onPay(instructor)} data-testid={`payment-cycle-pay-${instructor.personId}`}>
                 {labels.pay}
@@ -424,9 +750,10 @@ function PaymentCycleSlideOver({ open, onClose, items, locale, labels, onPay }: 
 
 // --- "Aggiungi istruttore" slide-over -----------------------------------------
 // AC 4: activates the instructor profile on an EXISTING person (or one just
-// created via the Pilots page, story 12.6) — reuses the SAME
-// `PUT /api/v1/people/{id}/profiles/instructor` endpoint the pilots editor's
-// `ProfilesSection` already uses, never a parallel "create person" flow.
+// created via the Pilots page, story 12.6) — through the single-profile
+// `PUT /api/v1/people/{id}/profiles/instructor` endpoint (the pilots editor
+// activates it inside its own single Salva since story 19.4), never a
+// parallel "create person" flow.
 // Story 13.1 (R-13.1-b): the free-text "abilitazioni" field this form used
 // to require is GONE — `PUT .../profiles/instructor` now just activates the
 // profile, no body needed, so this is a plain search-then-confirm (no
@@ -497,7 +824,8 @@ function AddInstructorSlideOver({ open, onClose, onMutated, labels, successMessa
     });
     setSubmitting(false);
     if (!response.ok) {
-      setFormError(labels.genericError);
+      const { code } = await parseApiError(response);
+      setFormError(code === 'STUDENT_PROFILE_EXCLUSIVE' ? labels.exclusiveError : labels.genericError);
       return;
     }
     toast.show(successMessage, 'ok');
@@ -543,12 +871,12 @@ function AddInstructorSlideOver({ open, onClose, onMutated, labels, successMessa
       {selected ? (
         <div style={{ marginTop: 16 }} data-testid="add-instructor-form">
           {formError ? (
-            <p role="alert" data-testid="add-instructor-error" className="fld-label" style={{ color: 'var(--bad)', marginTop: 10 }}>
+            <p role="alert" data-testid="add-instructor-error" className="fld-error" style={{ marginTop: 10 }}>
               {formError}
             </p>
           ) : null}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-            <button type="button" className="btn" onClick={handleClose}>
+            <button type="button" className="btn" onClick={() => dismissHistoryLayer(handleClose)}>
               {labels.cancel}
             </button>
             <button type="button" disabled={submitting} className="btn primary" onClick={() => void handleConfirm()} data-testid="add-instructor-submit">

@@ -1,13 +1,17 @@
 import type { Prisma } from '@/generated/prisma/client';
-import type { Role } from '@/generated/prisma/enums';
+import type { ExpiryScope, Role } from '@/generated/prisma/enums';
 import { paginate, paginationOffset, type PaginatedResult } from '@/lib/api/pagination';
 import { parseDateOnlyUtc } from '@/lib/date-only';
-import type { CreatePersonInput, ListPeopleQuery, UpdatePersonInput } from '@/lib/schemas/people';
+import type { CreatePersonInput, ListPeopleQuery, UpdatePersonCompositeInput } from '@/lib/schemas/people';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
+import { credentialEligible, emailTrialEnabled, verifiedTrialAddress } from '@/server/auth/email-trial-policy';
+import { assertContactAvailable, lockMailboxWrites } from './account-mailbox';
 import { prisma } from '@/server/db/prisma';
-import { sendInviteEmail } from './auth-tokens.service';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
-import { createUserCore, emailLocale } from './users.service';
+import { assertScopeCompatible, updateExpiryDateCore } from './expiries.service';
+import { upsertInstructorRateCore } from './instructor-rates.service';
+import { assertRateValidFromNotPast } from './rates.service';
+import { createUserCore } from './users.service';
 
 /** Story 2.2, AC 1: which profiles (pilot/student/instructor) are currently active. */
 export type ProfileFlags = {
@@ -23,7 +27,6 @@ export type PersonListItem = {
   email: string | null;
   phone: string | null;
   address: string | null;
-  fiscalCode: string | null;
   archivedAt: Date | null;
   createdAt: Date;
   profiles: ProfileFlags;
@@ -35,6 +38,7 @@ export type PersonListItem = {
  * this person; an object (possibly with `deactivatedAt` set) means it was.
  */
 export type PersonDetail = PersonListItem & {
+  emailReadOnly?: boolean;
   pilotProfile: PilotProfileDto | null;
   studentProfile: StudentProfileDto | null;
   instructorProfile: InstructorProfileDto | null;
@@ -71,7 +75,6 @@ const PERSON_SELECT = {
   email: true,
   phone: true,
   address: true,
-  fiscalCode: true,
   archivedAt: true,
   createdAt: true,
   ...PROFILE_FLAG_SELECT,
@@ -85,14 +88,17 @@ const PERSON_DETAIL_SELECT = {
   instructorProfile: { select: { deactivatedAt: true } },
 } as const;
 
+const accountAddressSelect = () => emailTrialEnabled()
+  ? { user: { select: { email: true } } } as const : {};
+
 type SelectedPerson = {
+  user?: { email: string } | null;
   id: string;
   firstName: string;
   lastName: string;
   email: string | null;
   phone: string | null;
   address: string | null;
-  fiscalCode: string | null;
   archivedAt: Date | null;
   createdAt: Date;
   pilotProfile: { deactivatedAt: Date | null } | null;
@@ -116,10 +122,9 @@ function toListItem(person: SelectedPerson): PersonListItem {
     id: person.id,
     firstName: person.firstName,
     lastName: person.lastName,
-    email: person.email,
+    email: person.user?.email ?? person.email,
     phone: person.phone,
     address: person.address,
-    fiscalCode: person.fiscalCode,
     archivedAt: person.archivedAt,
     createdAt: person.createdAt,
     profiles: {
@@ -133,6 +138,7 @@ function toListItem(person: SelectedPerson): PersonListItem {
 function toPersonDetail(person: SelectedPersonDetail): PersonDetail {
   return {
     ...toListItem(person),
+    ...(person.user && { emailReadOnly: true }),
     pilotProfile: person.pilotProfile
       ? { licenseNumber: person.pilotProfile.licenseNumber, licenseType: person.pilotProfile.licenseType, deactivatedAt: person.pilotProfile.deactivatedAt }
       : null,
@@ -143,7 +149,7 @@ function toPersonDetail(person: SelectedPersonDetail): PersonDetail {
   };
 }
 
-/** Prisma unique-constraint violation (concurrent duplicate email/fiscalCode). */
+/** Prisma unique-constraint violation (concurrent duplicate email). */
 function isUniqueViolation(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -156,22 +162,19 @@ function isUniqueViolation(error: unknown): boolean {
 /**
  * Pre-check for the check-then-write race the `try`/`catch` around
  * `create`/`update` backstops (same pattern as `users.service.ts`'s
- * `assertPersonAvailable`). Falsy `email`/`fiscalCode` (undefined or the
- * `null` that clears the field) is never a conflict — Postgres treats
- * multiple `NULL`s in a unique column as distinct.
+ * `assertPersonAvailable`). A falsy `email` (undefined or the `null` that
+ * clears the field) is never a conflict — Postgres treats multiple `NULL`s in
+ * a unique column as distinct.
  */
-async function assertUnique(fields: { email?: string | null; fiscalCode?: string | null }, excludeId?: string): Promise<void> {
-  const conditions: Array<Record<string, string>> = [];
-  if (fields.email) conditions.push({ email: fields.email });
-  if (fields.fiscalCode) conditions.push({ fiscalCode: fields.fiscalCode });
-  if (conditions.length === 0) return;
+async function assertUnique(email: string | null | undefined, excludeId?: string): Promise<void> {
+  if (!email) return;
 
   const existing = await prisma.person.findFirst({
-    where: { OR: conditions, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    where: { email, ...(excludeId ? { id: { not: excludeId } } : {}) },
     select: { id: true },
   });
   if (existing) {
-    throw new ConflictError('A person with this email or fiscal code already exists.');
+    throw new ConflictError('A person with this email already exists.');
   }
 }
 
@@ -180,7 +183,7 @@ async function assertUnique(fields: { email?: string | null; fiscalCode?: string
  * browsable/searchable). `q` matches first name, last name or email,
  * case-insensitively; archived persons (AC 2) are excluded by default and
  * only surfaced with `includeArchived: true`. Read access: `people.read`
- * (staff/admin).
+ * (ADMIN-only).
  */
 export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<PersonListResult> {
   authorize(actor, 'people.read');
@@ -195,13 +198,20 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   // a plain JS object literal), which is exactly the bug this `AND` array
   // avoids.
   const conditions: Array<Record<string, unknown>> = [];
-  if (!query.includeArchived) conditions.push({ archivedAt: null });
-  if (q) {
+  if (query.archivedOnly) conditions.push({ archivedAt: { not: null } });
+  else if (!query.includeArchived) conditions.push({ archivedAt: null });
+  for (const word of q ? q.split(/\s+/) : []) {
     conditions.push({
       OR: [
-        { firstName: { contains: q, mode: 'insensitive' as const } },
-        { lastName: { contains: q, mode: 'insensitive' as const } },
-        { email: { contains: q, mode: 'insensitive' as const } },
+        { firstName: { contains: word, mode: 'insensitive' as const } },
+        { lastName: { contains: word, mode: 'insensitive' as const } },
+        ...(emailTrialEnabled() ? [
+          { user: { email: { contains: word, mode: 'insensitive' } } },
+          { AND: [
+            { user: null },
+            { email: { contains: word, mode: 'insensitive' } },
+          ] },
+        ] : [{ email: { contains: word, mode: 'insensitive' } }]),
       ],
     });
   }
@@ -219,24 +229,14 @@ export async function listPeople(actor: Actor, query: ListPeopleQuery): Promise<
   }
   const where = conditions.length > 0 ? { AND: conditions } : {};
 
-  // Interactive transaction (story TD-1, AC 3) — a batch `$transaction([...])`
-  // sends both queries over the shared driver-adapter connection without
-  // waiting for the first to finish, which the underlying `pg` driver flags
-  // as a deprecated "client already executing a query" (only ever surfaces
-  // once per process, per Node's warning dedup — reproduced empirically on a
-  // fresh dev server before this fix). The awaited callback form serializes
-  // the two reads while staying in the SAME transaction (still one
-  // consistent snapshot for items/total under concurrent writes).
-  const [items, total] = await prisma.$transaction(async (tx) => {
-    const items = await tx.person.findMany({
-      where,
-      select: PERSON_SELECT,
-      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
-      ...paginationOffset(query),
-    });
-    const total = await tx.person.count({ where });
-    return [items, total] as const;
+  // READ COMMITTED takes a fresh snapshot per statement, even inside a transaction.
+  const items = await prisma.person.findMany({
+    where,
+    select: { ...PERSON_SELECT, ...accountAddressSelect() },
+    orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    ...paginationOffset(query),
   });
+  const total = await prisma.person.count({ where });
 
   return paginate(items.map(toListItem), total, query);
 }
@@ -249,12 +249,14 @@ export type PilotUserInfo = {
   isActive: boolean;
   /** Whether the user completed their invite — never exposes the hash (same convention as `users.service.ts#UserListItem`). */
   passwordSet: boolean;
+  emailVerified?: boolean;
+  canResendVerificationInvite?: boolean;
 } | null;
 
 export type PilotsPageItem = PersonListItem & {
   /** Always `SUM(AccountMovement.amountCents)` for the person's account (AD-3) — `0` when the person never activated one (same "no account" convention as `AccountOverview`). */
   balanceCents: number;
-  /** The most recent REGISTERED flight's date (`YYYY-MM-DD`), or `null` if the person never flew. */
+  /** The most recent flight's date (`YYYY-MM-DD`), or `null` if the person never flew. */
   lastFlightDate: string | null;
   user: PilotUserInfo;
 };
@@ -264,9 +266,9 @@ export type PilotsPageResult = {
   total: number;
   page: number;
   pageSize: number;
-  /** Fleet-wide (unfiltered by `q`/pagination — same convention as `fleet/page.tsx`'s own header counts), non-archived total: the page-head "N in archivio". */
+  /** Fleet-wide (unfiltered by `q`/pagination — same convention as `fleet/page.tsx`'s own header counts), non-archived total: the page-head "N persone". */
   totalCount: number;
-  /** Fleet-wide, non-archived count of persons whose linked user has `isActive: false`: the page-head "N sospesi". */
+  /** Fleet-wide, non-archived count of persons whose linked user has `isActive: false`: the page-head "N sospese". */
   suspendedCount: number;
 };
 
@@ -279,7 +281,7 @@ export type PilotsPageResult = {
  * single batched `groupBy`/`findMany` over the page's ids — NEVER a per-row
  * loop calling `getAccountOverview`/`listFlights` (that would be N+1, the
  * exact thing this composite exists to avoid). The pattern mirrors
- * `accounts.service.ts#listNegativeBalances`'s own two-step groupBy-then-join
+ * `accounts.service.ts#listNegativeBalances`'s ledger aggregation
  * (here scoped to the page's ids instead of a `having` filter).
  */
 export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): Promise<PilotsPageResult> {
@@ -289,12 +291,12 @@ export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): 
   const [accounts, flightGroups, users, totalCount, suspendedCount] = await Promise.all([
     ids.length > 0 ? prisma.account.findMany({ where: { personId: { in: ids } }, select: { id: true, personId: true } }) : [],
     ids.length > 0
-      ? prisma.flight.groupBy({ by: ['personId'], where: { personId: { in: ids }, status: 'REGISTERED' }, _max: { flightDate: true } })
+      ? prisma.flight.groupBy({ by: ['personId'], where: { personId: { in: ids } }, _max: { flightDate: true } })
       : [],
     ids.length > 0
       ? prisma.user.findMany({
           where: { personId: { in: ids } },
-          select: { id: true, personId: true, email: true, roles: true, isActive: true, passwordHash: true },
+          select: { id: true, personId: true, email: true, roles: true, isActive: true, passwordHash: true, emailVerification: { select: { email: true, verifiedAt: true } } },
         })
       : [],
     prisma.person.count({ where: { archivedAt: null } }),
@@ -318,7 +320,7 @@ export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): 
       ...item,
       balanceCents: balanceByPersonId.get(item.id) ?? 0,
       lastFlightDate: lastFlightDate ? toDateOnlyString(lastFlightDate) : null,
-      user: user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null } : null,
+      user: user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null, ...(user.emailVerification && { emailVerified: verifiedTrialAddress(user) }), ...(emailTrialEnabled() && { canResendVerificationInvite: credentialEligible(user, 'VERIFY_EMAIL') }) } : null,
     };
   });
 
@@ -327,7 +329,7 @@ export async function listPilotsPageData(actor: Actor, query: ListPeopleQuery): 
 
 /**
  * Returns a single person with the three profiles in full (story 2.2, AC 1).
- * Read access: `people.read` (staff/admin, any person) OR "own" access
+ * Read access: `people.read` (ADMIN-only, any person) OR "own" access
  * (story 2.3, AC 2) — an actor with `self.read` but not `people.read` may
  * only read the record matching `actor.personId`. This is the "own"
  * resource-level scoping documented in `rbac.ts`'s module doc: `authorize()`
@@ -342,7 +344,7 @@ export async function getPerson(actor: Actor, id: string): Promise<PersonDetail>
     }
   }
 
-  const person = await prisma.person.findUnique({ where: { id }, select: PERSON_DETAIL_SELECT });
+  const person = await prisma.person.findUnique({ where: { id }, select: { ...PERSON_DETAIL_SELECT, ...accountAddressSelect() } });
   if (!person) {
     throw new NotFoundError('Person not found.');
   }
@@ -362,9 +364,9 @@ export async function getPerson(actor: Actor, id: string): Promise<PersonDetail>
 export async function getPersonUser(personId: string): Promise<PilotUserInfo> {
   const user = await prisma.user.findUnique({
     where: { personId },
-    select: { id: true, email: true, roles: true, isActive: true, passwordHash: true },
+    select: { id: true, email: true, roles: true, isActive: true, passwordHash: true, emailVerification: { select: { email: true, verifiedAt: true } } },
   });
-  return user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null } : null;
+  return user ? { id: user.id, email: user.email, roles: user.roles, isActive: user.isActive, passwordSet: user.passwordHash !== null, ...(user.emailVerification && { emailVerified: verifiedTrialAddress(user) }), ...(emailTrialEnabled() && { canResendVerificationInvite: credentialEligible(user, 'VERIFY_EMAIL') }) } : null;
 }
 
 /**
@@ -383,15 +385,14 @@ async function createPersonCore(tx: Prisma.TransactionClient, input: CreatePerso
         email: input.email ?? null,
         phone: input.phone ?? null,
         address: input.address ?? null,
-        fiscalCode: input.fiscalCode ?? null,
       },
-      select: PERSON_SELECT,
+      select: { ...PERSON_SELECT, ...accountAddressSelect() },
     });
   } catch (error) {
     // assertUnique (below) is check-then-write: a concurrent request can win
     // the race and the unique constraint fires here instead.
     if (isUniqueViolation(error)) {
-      throw new ConflictError('A person with this email or fiscal code already exists.');
+      throw new ConflictError('A person with this email already exists.');
     }
     throw error;
   }
@@ -445,10 +446,7 @@ async function assertExpiryTypesValidForComposite(
  * dropped (AC 5). A failure in ANY block (duplicate email, unknown/inactive
  * expiry type, scope mismatch, `access.email` already taken, ...) rolls
  * back the ENTIRE person — every write below shares the SAME `tx`. The
- * invite email (only if `access` was given) is sent AFTER the transaction
- * commits (fire-and-forget, same pattern as the standalone
- * `POST /api/v1/users`) — never before, so a rolled-back create never sends
- * an invite for a user that doesn't exist.
+ * invitation intent shares that transaction. The dispatcher sees only committed accounts.
  *
  * Calling this with none of `profiles`/`expiries`/`access` behaves IDENTICALLY
  * to the pre-13.1 `createPerson` (retro-compatibility, AC 5) — the pilot
@@ -467,10 +465,27 @@ async function assertExpiryTypesValidForComposite(
 export async function createPerson(actor: Actor, input: CreatePersonInput): Promise<PersonListItem> {
   authorize(actor, 'people.manage');
   if (input.access) {
+    // Review 14.9 F5: since 14.9, `people.manage` is ADMIN-only, and ADMIN
+    // always also holds `users.manage` — no role can pass the guard above
+    // and fail this one, so this branch is structurally unreachable today.
+    // Kept for a future role holding `people.manage` without
+    // `users.manage`; coverage for it is no longer expressible (an
+    // adjacent test can only reach the OUTER `people.manage` gate).
     authorize(actor, 'users.manage');
   }
+  // Story 19.3 (R-19-e, Q-19.3-c): the body alone decides it for a person who
+  // does not exist yet — no concurrency to serialize, so no need for
+  // `assertStudentProfileExclusive`'s read; same code, before any query.
+  if (input.profiles?.student && (input.profiles.pilot || input.profiles.instructor)) {
+    throw studentProfileExclusiveError();
+  }
 
-  await assertUnique({ email: input.email, fiscalCode: input.fiscalCode });
+  const accountEmail = emailTrialEnabled() ? input.access?.email : undefined;
+  if (accountEmail && input.email && input.email !== accountEmail) {
+    throw new ConflictError('An enrolled account has one registered email.');
+  }
+  const contactEmail = accountEmail ? null : input.email;
+  await assertUnique(contactEmail);
 
   if (input.access) {
     const existingUser = await prisma.user.findUnique({ where: { email: input.access.email }, select: { id: true } });
@@ -482,8 +497,12 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
     await assertExpiryTypesValidForComposite(input.expiries, input.profiles);
   }
 
-  const { person, user } = await prisma.$transaction(async (tx) => {
-    const person = await createPersonCore(tx, input);
+  const { person } = await prisma.$transaction(async (tx) => {
+    if (emailTrialEnabled() && (contactEmail || input.access)) {
+      await lockMailboxWrites(tx);
+      if (contactEmail) await assertContactAvailable(tx, contactEmail, null);
+    }
+    const person = await createPersonCore(tx, { ...input, email: contactEmail });
 
     if (input.profiles?.pilot) {
       await upsertPilotProfileCore(tx, person.id, input.profiles.pilot);
@@ -508,25 +527,17 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
       }
     }
 
-    const user = input.access
-      ? // `locale: 'it'` matches `createUserSchema`'s own default — the
-        // composite's `access` block (AC 5) has no locale field of its own.
-        await createUserCore(tx, { email: input.access.email, roles: input.access.roles, locale: 'it', personId: person.id })
-      : null;
-
-    return { person, user };
-  });
-
-  if (user) {
-    try {
-      await sendInviteEmail(user.id, user.email, emailLocale(user.locale));
-    } catch (error) {
-      console.error('createPerson: failed to send invite email', error);
+    if (input.access) {
+      // The composite access form uses the standalone account's default locale.
+      await createUserCore(tx, { email: input.access.email, roles: input.access.roles, locale: 'it', personId: person.id, ...(input.access.verificationInvite && { verificationInvite: true }) });
     }
-  }
+
+    return { person };
+  });
 
   return {
     ...toListItem(person),
+    ...(accountEmail && { email: accountEmail }),
     profiles: {
       pilot: Boolean(input.profiles?.pilot),
       student: Boolean(input.profiles?.student),
@@ -535,39 +546,229 @@ export async function createPerson(actor: Actor, input: CreatePersonInput): Prom
   };
 }
 
-/** Partial update: name, contact details, fiscal code. Archiving is separate (AC 2). */
-export async function updatePerson(actor: Actor, id: string, patch: UpdatePersonInput): Promise<PersonListItem> {
-  authorize(actor, 'people.manage');
+/** One expiry type of the composite's `expiries.set`, as read before the transaction (AD-2 step 4). */
+type CompositeExpiryType = { id: string; scope: ExpiryScope; isActive: boolean };
 
-  const existing = await prisma.person.findUnique({ where: { id } });
+/** A row the composite is about to CREATE needs an active type (same 422 codes as the composite create, `assertExpiryTypesValidForComposite`). */
+function assertExpiryTypeCreatable(type: CompositeExpiryType): void {
+  if (!type.isActive) {
+    throw new ValidationError(`Expiry type ${type.id} is deactivated.`, { expiryTypeId: type.id }, 'EXPIRY_TYPE_INACTIVE');
+  }
+}
+
+/**
+ * Updates a person (AC 2: name, contact details — archiving stays separate)
+ * and, since story 19.4 (A17, R-19-m), OPTIONALLY saves in the SAME
+ * transaction everything the person editors' single "Salva" carries: profiles
+ * (activated, updated or deactivated), expiries (by type), the instructor
+ * compensation and the student-charged instructor rate. All or nothing: a
+ * failure in any block saves nothing. The body is declarative on the FINAL
+ * state (D-2), so the same body twice gives the same state and no error
+ * (activations are upserts, deactivations and removals are no-ops once done,
+ * an equal expiry date writes nothing, the rate rewrites its own row). A body
+ * with only the anagrafica keys behaves as before, with the richer
+ * `PersonDetail` response.
+ *
+ * Order (AD-2), binding. Outside the transaction — nothing written, every
+ * failure before any lock: the permission of each block present (403 before
+ * any query, never a block silently dropped — `profiles` rides on
+ * `people.manage`), the person (404), the email (409 `CONFLICT`), the types of
+ * the expiry rows that will be created (422) and the rate's decorrenza (422
+ * `RATE_VALID_FROM_IN_PAST`). Inside ONE `$transaction`, every write on `tx`:
+ * 1. the `Person` row lock, `FOR NO KEY UPDATE`, FIRST statement — the same
+ *    lock and mode as `upsertProfile` (so a composite and a `PUT
+ *    …/profiles/{type}` on the same person serialize) and as
+ *    `bookings.service.ts#lockBookingPeople`: it does not conflict with the
+ *    `FOR KEY SHARE` of the FK checks of rows pointing at the person (a
+ *    `FOR UPDATE` here, taken before the `Account` upsert, would close a
+ *    `Person ↔ Account` cycle with `flights.service.ts#registerFlight`). It
+ *    also reads `archivedAt` under the lock, so a concurrent archive cannot
+ *    slip between the check and a new expiry;
+ * 2. profiles: deactivations, then activations through the `*Core` writers,
+ *    then ONE `assertStudentProfileExclusive` on the final state — so
+ *    "deactivate Student + activate Pilot" passes and "activate Pilot" with
+ *    Student still active rolls back everything, the `Account` included;
+ * 3. expiries: removals, then `set` by type — a missing row is created (person
+ *    archived → 409 `PERSON_ARCHIVED`, type active, scope compatible with the
+ *    profiles of step 2 → else 422), an existing one with another date moves
+ *    through `updateExpiryDateCore` (sent alerts wiped), an equal date is not
+ *    written;
+ * 4. compensation and rate, on an instructor profile active AFTER step 2
+ *    (else 409 `INSTRUCTOR_PROFILE_INACTIVE`) — the compensation is a plain
+ *    column assignment here, the twin of
+ *    `instructor-compensation.service.ts#setPayoutRate` (that module pulls
+ *    the eager env chain through `bookings.service.ts`, so it is not
+ *    imported), the rate goes through `upsertInstructorRateCore`;
+ * 5. the anagrafica LAST: an `UPDATE` that changes `email` (a unique column)
+ *    takes the `FOR UPDATE` row lock, the one mode that waits on `KEY SHARE`
+ *    holders — taken last, after it the transaction waits on nothing more, so
+ *    it cannot sit inside a cycle. It also reads back the `PersonDetail`
+ *    (without anagrafica keys, a plain read does).
+ * Lock order: `Person` (no key update) → profile rows/`Account` →
+ * `Expiry`/`SentAlert` → `InstructorProfile` → `InstructorRate` → `Person`
+ * (update) — consistent with the bookings' `Booking → Aircraft → Person →
+ * InstructorProfile` and the flight registry's `Aircraft → Account`.
+ *
+ * Every 409 but the email's carries its own code (AD-5), so a client can tell
+ * which section failed; the expiry errors about ONE row (`EXPIRY_TYPE_NOT_FOUND`,
+ * `EXPIRY_TYPE_INACTIVE`, `SCOPE_MISMATCH`, `EXPIRY_CONFLICT`) also name it in
+ * `details.expiryTypeId` (review 19.4 F2), so the editor shows the error on it.
+ */
+export async function updatePerson(actor: Actor, id: string, patch: UpdatePersonCompositeInput): Promise<PersonDetail> {
+  authorize(actor, 'people.manage');
+  if (patch.expiries) authorize(actor, 'expiries.manage');
+  if (patch.payoutRateCents !== undefined) authorize(actor, 'payouts.manage');
+  if (patch.instructorRate) authorize(actor, 'settings.manage');
+
+  const existing = await prisma.person.findUnique({ where: { id }, select: { id: true } });
   if (!existing) {
     throw new NotFoundError('Person not found.');
   }
 
-  await assertUnique({ email: patch.email, fiscalCode: patch.fiscalCode }, id);
+  if (!emailTrialEnabled()) await assertUnique(patch.email, id);
 
-  let person;
-  try {
-    person = await prisma.person.update({
-      where: { id },
-      data: {
-        ...(patch.firstName !== undefined && { firstName: patch.firstName }),
-        ...(patch.lastName !== undefined && { lastName: patch.lastName }),
-        ...(patch.email !== undefined && { email: patch.email }),
-        ...(patch.phone !== undefined && { phone: patch.phone }),
-        ...(patch.address !== undefined && { address: patch.address }),
-        ...(patch.fiscalCode !== undefined && { fiscalCode: patch.fiscalCode }),
-      },
-      select: PERSON_SELECT,
-    });
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new ConflictError('A person with this email or fiscal code already exists.');
+  const expirySet = patch.expiries?.set ?? [];
+  const expiryTypeById = new Map<string, CompositeExpiryType>();
+  if (expirySet.length > 0) {
+    const ids = expirySet.map((entry) => entry.expiryTypeId);
+    const [types, existingRows] = await Promise.all([
+      prisma.expiryType.findMany({ where: { id: { in: ids } }, select: { id: true, scope: true, isActive: true } }),
+      prisma.expiry.findMany({ where: { personId: id, expiryTypeId: { in: ids } }, select: { expiryTypeId: true } }),
+    ]);
+    for (const type of types) expiryTypeById.set(type.id, type);
+    const registered = new Set(existingRows.map((row) => row.expiryTypeId));
+    for (const typeId of ids) {
+      const type = expiryTypeById.get(typeId);
+      if (!type) {
+        throw new ValidationError(`Expiry type ${typeId} not found.`, { expiryTypeId: typeId }, 'EXPIRY_TYPE_NOT_FOUND');
+      }
+      // An existing row may still move its date on a since-deactivated type (as `updateExpiry` allows).
+      if (!registered.has(typeId)) assertExpiryTypeCreatable(type);
     }
-    throw error;
+  }
+  if (patch.instructorRate) {
+    assertRateValidFromNotPast(patch.instructorRate.validFrom);
   }
 
-  return toListItem(person);
+  return prisma.$transaction(async (tx) => {
+    if (emailTrialEnabled() && patch.email !== undefined) await lockMailboxWrites(tx);
+    const [locked] = await tx.$queryRaw<Array<{ id: string; archivedAt: Date | null }>>`
+      SELECT "id", "archivedAt" FROM "Person" WHERE "id" = ${id} FOR NO KEY UPDATE`;
+    if (!locked) {
+      throw new NotFoundError('Person not found.');
+    }
+
+    let contactEmail = patch.email;
+    if (emailTrialEnabled() && contactEmail !== undefined) {
+      const linked = await tx.user.findUnique({ where: { personId: id }, select: { email: true } });
+      if (linked) {
+        if (contactEmail !== linked.email) throw new ConflictError('The registered account email cannot be edited here.');
+        contactEmail = undefined; // An unchanged API field is a no-op, never a historical write.
+      } else if (contactEmail) await assertContactAvailable(tx, contactEmail, id);
+    }
+
+    const profiles = patch.profiles ?? {};
+    for (const type of ['pilot', 'student', 'instructor'] as const) {
+      if (profiles[type]?.active === false) await deactivateProfileCore(tx, id, type);
+    }
+    if (profiles.pilot?.active) {
+      await upsertPilotProfileCore(tx, id, { licenseNumber: profiles.pilot.licenseNumber, licenseType: profiles.pilot.licenseType });
+    }
+    if (profiles.student?.active) {
+      await upsertStudentProfileCore(tx, id, { courseStartDate: profiles.student.courseStartDate });
+    }
+    if (profiles.instructor?.active) {
+      await upsertInstructorProfileCore(tx, id);
+    }
+    if (profiles.pilot || profiles.student || profiles.instructor) {
+      await assertStudentProfileExclusive(tx, id);
+    }
+
+    const touchesInstructor = patch.payoutRateCents !== undefined || patch.instructorRate !== undefined;
+    // The profiles as step 2 left them: the scope of a new expiry and the instructor parts are judged on these.
+    const finalProfiles =
+      expirySet.length > 0 || touchesInstructor
+        ? await tx.person.findUniqueOrThrow({
+            where: { id },
+            select: {
+              pilotProfile: { select: { deactivatedAt: true } },
+              studentProfile: { select: { deactivatedAt: true } },
+              instructorProfile: { select: { id: true, deactivatedAt: true, payoutRateCents: true } },
+            },
+          })
+        : null;
+
+    const expiryRemove = patch.expiries?.remove ?? [];
+    if (expiryRemove.length > 0) {
+      await tx.expiry.deleteMany({ where: { personId: id, expiryTypeId: { in: expiryRemove } } });
+    }
+    if (finalProfiles && expirySet.length > 0) {
+      const rows = await tx.expiry.findMany({
+        where: { personId: id, expiryTypeId: { in: expirySet.map((entry) => entry.expiryTypeId) } },
+        select: { id: true, expiryTypeId: true },
+      });
+      const rowByType = new Map(rows.map((row) => [row.expiryTypeId, row]));
+      for (const entry of expirySet) {
+        const nextExpiresAt = parseDateOnlyUtc(entry.expiresAt);
+        const row = rowByType.get(entry.expiryTypeId);
+        if (row) {
+          await updateExpiryDateCore(tx, row.id, nextExpiresAt, actor.userId);
+          continue;
+        }
+        if (locked.archivedAt !== null) {
+          throw new ConflictError('This person is archived.', undefined, 'PERSON_ARCHIVED');
+        }
+        // Read before the transaction (step 4); re-checked here for a row deleted meanwhile.
+        const type = expiryTypeById.get(entry.expiryTypeId)!;
+        assertExpiryTypeCreatable(type);
+        assertScopeCompatible(type.scope, finalProfiles, { expiryTypeId: entry.expiryTypeId });
+        try {
+          await tx.expiry.create({
+            data: { personId: id, expiryTypeId: entry.expiryTypeId, expiresAt: nextExpiresAt, actorUserId: actor.userId },
+          });
+        } catch (error) {
+          // A concurrent `POST /expiries` created the same (person, type) row first.
+          if (isUniqueViolation(error)) {
+            throw new ConflictError('An expiry of this type was registered meanwhile.', { expiryTypeId: entry.expiryTypeId }, 'EXPIRY_CONFLICT');
+          }
+          throw error;
+        }
+      }
+    }
+
+    if (finalProfiles && touchesInstructor) {
+      const instructorProfile = finalProfiles.instructorProfile;
+      if (!instructorProfile || instructorProfile.deactivatedAt !== null) {
+        throw new ConflictError('This person has no active instructor profile.', undefined, 'INSTRUCTOR_PROFILE_INACTIVE');
+      }
+      if (patch.payoutRateCents !== undefined && patch.payoutRateCents !== instructorProfile.payoutRateCents) {
+        await tx.instructorProfile.update({ where: { id: instructorProfile.id }, data: { payoutRateCents: patch.payoutRateCents } });
+      }
+      if (patch.instructorRate) {
+        await upsertInstructorRateCore(tx, instructorProfile.id, patch.instructorRate, actor.userId);
+      }
+    }
+
+    const identity = {
+      ...(patch.firstName !== undefined && { firstName: patch.firstName }),
+      ...(patch.lastName !== undefined && { lastName: patch.lastName }),
+      ...(contactEmail !== undefined && { email: contactEmail }),
+      ...(patch.phone !== undefined && { phone: patch.phone }),
+      ...(patch.address !== undefined && { address: patch.address }),
+    };
+    if (Object.keys(identity).length === 0) {
+      return toPersonDetail(await tx.person.findUniqueOrThrow({ where: { id }, select: { ...PERSON_DETAIL_SELECT, ...accountAddressSelect() } }));
+    }
+    try {
+      return toPersonDetail(await tx.person.update({ where: { id }, data: identity, select: { ...PERSON_DETAIL_SELECT, ...accountAddressSelect() } }));
+    } catch (error) {
+      // assertUnique (above) is check-then-write: a concurrent request can win the race.
+      if (isUniqueViolation(error)) {
+        throw new ConflictError('A person with this email already exists.');
+      }
+      throw error;
+    }
+  });
 }
 
 /**
@@ -592,7 +793,7 @@ export async function archivePerson(actor: Actor, id: string): Promise<PersonLis
   const person = await prisma.person.update({
     where: { id },
     data: { archivedAt: new Date() },
-    select: PERSON_SELECT,
+    select: { ...PERSON_SELECT, ...accountAddressSelect() },
   });
   return toListItem(person);
 }
@@ -612,7 +813,7 @@ export async function unarchivePerson(actor: Actor, id: string): Promise<PersonL
   const person = await prisma.person.update({
     where: { id },
     data: { archivedAt: null },
-    select: PERSON_SELECT,
+    select: { ...PERSON_SELECT, ...accountAddressSelect() },
   });
   return toListItem(person);
 }
@@ -664,18 +865,62 @@ async function upsertInstructorProfileCore(tx: Prisma.TransactionClient, personI
   });
 }
 
+function studentProfileExclusiveError(): ValidationError {
+  return new ValidationError(
+    'The student profile cannot be active together with the pilot or instructor profile.',
+    undefined,
+    'STUDENT_PROFILE_EXCLUSIVE',
+  );
+}
+
+/**
+ * The student profile excludes the pilot AND the instructor profile (story
+ * 19.3, R-19-e — "a student has no licence" — extended by Q-19.3-c: an
+ * instructor holds one too). Reads the person's three profiles FROM `tx` and
+ * throws 422 `STUDENT_PROFILE_EXCLUSIVE` when the student one is active
+ * together with either of the others. Called AFTER the profile writes of the
+ * same transaction, so it judges the FINAL state and its throw rolls back
+ * everything the transaction wrote (profile and `Account` alike): a "deactivate
+ * Student + activate Pilot" pair in one save passes, "activate Pilot" with
+ * Student still active does not. The caller must hold the `Person` row lock
+ * (`upsertProfile`, the person composite `updatePerson`) so two concurrent
+ * activations cannot both read the other profile inactive.
+ */
+export async function assertStudentProfileExclusive(tx: Prisma.TransactionClient, personId: string): Promise<void> {
+  const profiles = await tx.person.findUnique({
+    where: { id: personId },
+    select: {
+      pilotProfile: { select: { deactivatedAt: true } },
+      studentProfile: { select: { deactivatedAt: true } },
+      instructorProfile: { select: { deactivatedAt: true } },
+    },
+  });
+  const isActive = (profile: { deactivatedAt: Date | null } | null | undefined): boolean => profile != null && profile.deactivatedAt === null;
+  if (isActive(profiles?.studentProfile) && (isActive(profiles?.pilotProfile) || isActive(profiles?.instructorProfile))) {
+    throw studentProfileExclusiveError();
+  }
+}
+
 /**
  * Activates or updates one of a person's profiles (story 2.2, AC 1/2).
  * Creates the profile row if it doesn't exist yet; if it does — active or
- * previously deactivated — updates its data and clears `deactivatedAt`
- * (AC 2: reactivating, e.g. the student→pilot transition, is just an
- * upsert). `Person.id` never changes across this. Write access:
+ * previously deactivated — updates its data and clears `deactivatedAt`.
+ * Since story 19.3 the student profile excludes the pilot and the instructor
+ * one (`assertStudentProfileExclusive`, 422 `STUDENT_PROFILE_EXCLUSIVE`): the
+ * student→pilot transition is now "deactivate Student, then activate Pilot".
+ * `Person.id` never changes across this. Write access:
  * `people.manage`. Allowed on an archived person (Dev Notes, consistent with
- * review 2.1 F3: editing an archived person is by-design). Each branch
- * below wraps its `*Core` helper in a trivial `$transaction` — same
- * interactive-callback idiom as `accounts.service.ts#readOverview`, kept
- * even for the instructor branch (no companion write) so all three stay
- * uniform and reusable by `createPerson`'s composite the same way.
+ * review 2.1 F3: editing an archived person is by-design).
+ *
+ * Each branch runs in ONE `$transaction` whose FIRST statement locks the
+ * `Person` row — `FOR NO KEY UPDATE`, the same mode and the same reason as
+ * `bookings.service.ts#lockBookingPeople` (it serializes the writers of this
+ * person's profiles without blocking the `FOR KEY SHARE` of any FK check on
+ * the person) — and doubles as the existence check (0 rows → 404). Then the
+ * `*Core` helper (shared with `createPerson`'s composite), then the
+ * exclusivity check on the final state. Lock order inside it: `Person` →
+ * the profile row → `Account` (the core's upsert); no transaction in this
+ * codebase takes `Account` and then `Person`.
  */
 export async function upsertProfile(actor: Actor, personId: string, type: 'pilot', data: PilotProfileInput): Promise<PilotProfileDto>;
 export async function upsertProfile(actor: Actor, personId: string, type: 'student', data: StudentProfileInput): Promise<StudentProfileDto>;
@@ -693,22 +938,22 @@ export async function upsertProfile(
 ): Promise<PilotProfileDto | StudentProfileDto | InstructorProfileDto> {
   authorize(actor, 'people.manage');
 
-  const person = await prisma.person.findUnique({ where: { id: personId }, select: { id: true } });
-  if (!person) {
-    throw new NotFoundError('Person not found.');
-  }
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Person" WHERE "id" = ${personId} FOR NO KEY UPDATE`;
+    if (locked.length === 0) {
+      throw new NotFoundError('Person not found.');
+    }
 
-  if (type === 'pilot') {
-    const input = data as PilotProfileInput;
-    return prisma.$transaction((tx) => upsertPilotProfileCore(tx, personId, input));
-  }
+    const profile =
+      type === 'pilot'
+        ? await upsertPilotProfileCore(tx, personId, data as PilotProfileInput)
+        : type === 'student'
+          ? await upsertStudentProfileCore(tx, personId, data as StudentProfileInput)
+          : await upsertInstructorProfileCore(tx, personId);
 
-  if (type === 'student') {
-    const input = data as StudentProfileInput;
-    return prisma.$transaction((tx) => upsertStudentProfileCore(tx, personId, input));
-  }
-
-  return prisma.$transaction((tx) => upsertInstructorProfileCore(tx, personId));
+    await assertStudentProfileExclusive(tx, personId);
+    return profile;
+  });
 }
 
 /**
@@ -731,16 +976,28 @@ export async function deactivateProfile(actor: Actor, personId: string, type: Pr
   // concurrent deactivations can't both pass a separate read-then-check: the
   // loser matches zero rows and gets the same ConflictError as a deactivate
   // on a never-activated or already-deactivated profile (review 2.2 F1).
-  const where = { personId, deactivatedAt: null };
-  const update = { deactivatedAt: new Date() };
-  const { count } =
-    type === 'pilot'
-      ? await prisma.pilotProfile.updateMany({ where, data: update })
-      : type === 'student'
-        ? await prisma.studentProfile.updateMany({ where, data: update })
-        : await prisma.instructorProfile.updateMany({ where, data: update });
+  const count = await deactivateProfileCore(prisma, personId, type);
   if (count === 0) {
     const label = type === 'pilot' ? 'Pilot' : type === 'student' ? 'Student' : 'Instructor';
     throw new ConflictError(`${label} profile is not active.`);
   }
+}
+
+/**
+ * The guarded deactivation of one profile — `deactivatedAt: null` in the
+ * `where`, so it matches at most the ACTIVE row and returns how many it
+ * changed (0 = never activated or already inactive). Shared by
+ * `deactivateProfile` (0 is its 409) and the person composite of story 19.4
+ * (0 is a no-op: the body states the final state, D-2).
+ */
+async function deactivateProfileCore(tx: Prisma.TransactionClient, personId: string, type: ProfileType): Promise<number> {
+  const where = { personId, deactivatedAt: null };
+  const update = { deactivatedAt: new Date() };
+  const { count } =
+    type === 'pilot'
+      ? await tx.pilotProfile.updateMany({ where, data: update })
+      : type === 'student'
+        ? await tx.studentProfile.updateMany({ where, data: update })
+        : await tx.instructorProfile.updateMany({ where, data: update });
+  return count;
 }

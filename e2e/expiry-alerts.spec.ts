@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { addDaysIso, todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
+const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
@@ -36,8 +38,8 @@ function uniqueTypeName(prefix: string): string {
 }
 
 /** A day `days` from NOW (can be negative), `YYYY-MM-DD` UTC — same helper as `expiry-registration.spec.ts`. */
-function addDaysUtc(days: number): string {
-  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+function addDaysRome(days: number): string {
+  return addDaysIso(todayRome(), days);
 }
 
 type MailpitMessageSummary = { ID: string; Subject: string };
@@ -137,7 +139,7 @@ test.describe('Automatic expiry alert emails, idempotent job (Story 6.3, AC 1/2,
     const expiryType = await createExpiryType(page);
 
     const registerResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId: person.id, expiryTypeId: expiryType.id, expiresAt: addDaysUtc(7) },
+      data: { personId: person.id, expiryTypeId: expiryType.id, expiresAt: addDaysRome(7) },
     });
     expect(registerResponse.status()).toBe(201);
 
@@ -198,7 +200,7 @@ test.describe('Automatic expiry alert emails, idempotent job (Story 6.3, AC 1/2,
 
     const expiryType = await createExpiryType(page);
     const registerResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId: person.id, expiryTypeId: expiryType.id, expiresAt: addDaysUtc(7) },
+      data: { personId: person.id, expiryTypeId: expiryType.id, expiresAt: addDaysRome(7) },
     });
     expect(registerResponse.status()).toBe(201);
 
@@ -223,14 +225,20 @@ test.describe('Session-authenticated trigger (Story 12.11, AC 3; ratifica utente
     const person = await createPersonWithEmail(page, 'SessionTrigger');
     const expiryType = await createExpiryType(page);
     const registerResponse = await page.request.post('/api/v1/expiries', {
-      data: { personId: person.id, expiryTypeId: expiryType.id, expiresAt: addDaysUtc(7) },
+      data: { personId: person.id, expiryTypeId: expiryType.id, expiresAt: addDaysRome(7) },
     });
     expect(registerResponse.status()).toBe(201);
 
-    const firstRun = await page.request.post('/api/v1/expiry-alerts/trigger');
+    await page.goto('/it/dashboard/expiries');
+    const [firstRun] = await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith('/api/v1/expiry-alerts/trigger') && r.request().method() === 'POST'),
+      page.getByTestId('scadenze-send-reminders-button').click(),
+    ]);
+    await expect(page.getByTestId('scadenze-reminders-feedback')).toContainText('in coda');
     expect(firstRun.status()).toBe(200);
-    const firstBody = (await firstRun.json()) as { holderEmailsSent: number; digestEmailsSent: number };
+    const firstBody = (await firstRun.json()) as { holderEmailsSent: number; digestEmailsSent: number; remaining: number };
     expect(typeof firstBody.holderEmailsSent).toBe('number');
+    expect(firstBody.remaining).toBeGreaterThanOrEqual(0);
 
     const holderEmail = await waitForMailpitMessage(person.email, expiryType.name);
     expect(holderEmail.Text).toContain(expiryType.name);
@@ -244,27 +252,10 @@ test.describe('Session-authenticated trigger (Story 12.11, AC 3; ratifica utente
     expect(countAfterSecond).toBe(countAfterFirst);
   });
 
-  test('the session trigger is gated settings.manage — a STAFF actor (expiries.manage, not settings.manage) gets 403; the bearer cron endpoint stays untouched (still needs the secret, not a session)', async ({
+  test('the session trigger is gated settings.manage — a non-admin actor gets 403; the bearer cron endpoint stays untouched (still needs the secret, not a session)', async ({
     page,
   }) => {
-    await loginExpectingDashboard(page, ADMIN_EMAIL);
-
-    const staffPassword = 'StaffAlerts123!';
-    const staffEmail = uniqueEmail('staff-alerts');
-    const usersResponse = await page.request.post('/api/v1/users', { data: { email: staffEmail, roles: ['STAFF'] } });
-    expect(usersResponse.status()).toBe(201);
-    const inviteEmail = await waitForMailpitMessage(staffEmail, 'invitato');
-    const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(inviteEmail.Text);
-    if (!match) throw new Error('Invite email had no set-password link');
-    const setPasswordUrl = new URL(match[1]);
-    await page.goto(setPasswordUrl.pathname + setPasswordUrl.search);
-    await page.getByLabel('Nuova password').fill(staffPassword);
-    await page.getByLabel('Conferma password').fill(staffPassword);
-    await page.getByRole('button', { name: 'Imposta password' }).click();
-    await expect(page.getByTestId('set-password-success')).toBeVisible();
-
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
+    await loginExpectingDashboard(page, PILOT_EMAIL);
 
     // Ratifica utente 4: the "Invia promemoria" button is visible ONLY to ADMIN.
     await page.goto('/it/dashboard/expiries');

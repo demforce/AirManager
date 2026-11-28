@@ -125,7 +125,7 @@ async function computeTreasuryTotals(): Promise<TreasuryTotals> {
   };
 }
 
-/** Acconti (AC 5's `deposits`) — every `Account`'s balance (Σ `AccountMovement.amountCents`, AD-3), split into the positive ("debito verso i piloti") and negative ("esposizione") buckets. One `groupBy`, never N+1 (same aggregation shape as `accounts.service.ts#listNegativeBalances`, extended here to also keep the positive side instead of filtering it out). */
+/** Acconti (AC 5's `deposits`) — every `Account`'s balance (Σ `AccountMovement.amountCents`, AD-3), split into the positive ("debito verso i piloti") and negative ("esposizione") buckets. One `groupBy`, never N+1; its negative side matches `accounts.service.ts#getNegativeBalanceSummary`. */
 async function computeDeposits(): Promise<BillingSummaryDeposits> {
   const grouped = await prisma.accountMovement.groupBy({
     by: ['accountId'],
@@ -151,7 +151,7 @@ async function computeDeposits(): Promise<BillingSummaryDeposits> {
 /**
  * The three-book summary for `ref`'s Europe/Rome calendar month (default:
  * now) — see the module doc-comment for the full breakdown. `finance.manage`
- * (STAFF+ADMIN), same permission `stats.service.ts`/`getCashReport` already
+ * (ADMIN-only), same permission `stats.service.ts`/`getCashReport` already
  * require (review F8: `getBillingKpis`, retired by this story, is no longer
  * a real consumer to cite here).
  */

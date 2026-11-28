@@ -5,7 +5,7 @@ import { listCashMovements, recordCashMovement } from '@/server/services/cash.se
 import { exportCashMovementsXlsx } from '@/server/services/exports.service';
 
 /**
- * Thin routes (AD-1): `finance.manage` (staff+admin) for both — the cash
+ * Thin routes (AD-1): `finance.manage` (ADMIN-only) for both — the cash
  * register itself is day-to-day operation, unlike category CRUD
  * (`settings.manage`). Real authorization stays in `cash.service.ts` (AD-5).
  */

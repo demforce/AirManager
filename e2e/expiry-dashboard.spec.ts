@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { addDaysIso, todayRome } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -31,8 +32,8 @@ function uniqueTypeName(prefix: string): string {
 }
 
 /** A day `days` from NOW (can be negative), `YYYY-MM-DD` UTC — same helper as `expiry-registration.spec.ts` (dates stay relative to actual test-run time, since computed status depends on real "today"). */
-function addDaysUtc(days: number): string {
-  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+function addDaysRome(days: number): string {
+  return addDaysIso(todayRome(), days);
 }
 
 /** Creates a run-unique, always-usable (scope `ALL`) expiry type via the admin API and returns its id/name. */
@@ -93,9 +94,9 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const within30PersonId = await createPilotPerson(page, within30Person);
     const expiredPersonId = await createPilotPerson(page, expiredPerson);
 
-    await registerExpiry(page, { personId: okPersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(120) });
-    await registerExpiry(page, { personId: within30PersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(20) });
-    await registerExpiry(page, { personId: expiredPersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(-10) });
+    await registerExpiry(page, { personId: okPersonId, expiryTypeId: type.id, expiresAt: addDaysRome(120) });
+    await registerExpiry(page, { personId: within30PersonId, expiryTypeId: type.id, expiresAt: addDaysRome(20) });
+    await registerExpiry(page, { personId: expiredPersonId, expiryTypeId: type.id, expiresAt: addDaysRome(-10) });
 
     // window=all (the default ≤60g window would exclude the +120d "ok" row) + the run-unique type filter (isolation on a dirty DB).
     await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${type.id}`);
@@ -105,11 +106,11 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     await expect(rows).toHaveCount(3);
     // Ordered expired -> within60(30d here) -> ok (urgency first, expiresAt asc).
     await expect(rows.nth(0)).toContainText(expiredPerson.lastName);
-    await expect(rows.nth(0).getByTestId('scadenze-status-badge')).toHaveText('Scaduto');
+    await expect(rows.nth(0).getByTestId('scadenze-status-badge')).toHaveText('Scaduta');
     await expect(rows.nth(1)).toContainText(within30Person.lastName);
-    await expect(rows.nth(1).getByTestId('scadenze-status-badge')).toHaveText('≤ 30 giorni');
+    await expect(rows.nth(1).getByTestId('scadenze-status-badge')).toHaveText('≤ 30 gg');
     await expect(rows.nth(2)).toContainText(okPerson.lastName);
-    await expect(rows.nth(2).getByTestId('scadenze-status-badge')).toHaveText('Valido');
+    await expect(rows.nth(2).getByTestId('scadenze-status-badge')).toHaveText('Valida');
 
     // Row tint: the expired row's background is a non-transparent tint (Contesto: `TIER_ROW_TINT`).
     const expiredRowBg = await rows.nth(0).evaluate((element) => getComputedStyle(element).backgroundColor);
@@ -128,11 +129,11 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const type = await createExpiryType(page, 'ALL');
     const person = uniquePerson('FarFuture');
     const personId = await createPilotPerson(page, person);
-    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysUtc(200) });
+    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysRome(200) });
 
     await page.goto(`/it/dashboard/expiries?expiryTypeId=${type.id}`);
     await expect(page.getByTestId('scadenze-row')).toHaveCount(0);
-    await expect(page.getByText('Nulla in questa finestra.')).toBeVisible();
+    await expect(page.getByText('Nessuna scadenza in questo intervallo.')).toBeVisible();
 
     await page.getByTestId('scadenze-window-all').click();
     await expect(page).toHaveURL(/window=all/);
@@ -141,21 +142,38 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     await expect(rows.first()).toContainText(person.lastName);
   });
 
+  /**
+   * Story 19.7b (AC 11): the unified registry counts derived rows too — a
+   * currency row per pilot/student who flew enough — so «≤ 7 gg» moves
+   * whenever ANY concurrent spec registers a document or a flight. Two reads compared for equality are a flake
+   * by construction (lesson Billing-2 F4). A SCISSOR read instead: unfiltered,
+   * filtered, unfiltered; a filter that leaked into the stat cards would make
+   * the filtered read 0 (no row has that type) against two non-zero bounds,
+   * while a concurrent change between the two bounds can only make the
+   * filtered read equal ONE of them. Retried (`toPass`) for the unlikely case
+   * of two concurrent changes inside the same scissor.
+   */
   test('stat cards are GLOBAL counts, unaffected by the table\'s own type/window filters', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const type = await createExpiryType(page, 'ALL');
     const person = uniquePerson('StatCard');
     const personId = await createPilotPerson(page, person);
-    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysUtc(3) });
+    await registerExpiry(page, { personId, expiryTypeId: type.id, expiresAt: addDaysRome(3) });
 
-    await page.goto('/it/dashboard/expiries');
-    const before = await page.getByTestId('scadenze-stat-within7').locator('.kpi-value').innerText();
+    const within7 = async (url: string): Promise<string> => {
+      await page.goto(url);
+      return page.getByTestId('scadenze-stat-within7').locator('.kpi-value').innerText();
+    };
 
-    // Filtering the TABLE by an unrelated type must not change the stat card count.
-    await page.goto(`/it/dashboard/expiries?expiryTypeId=nonexistent-type-id`);
-    const after = await page.getByTestId('scadenze-stat-within7').locator('.kpi-value').innerText();
-    expect(after).toBe(before);
+    await expect(async () => {
+      const before = await within7('/it/dashboard/expiries');
+      // Filtering the TABLE by an unrelated type must not change the stat card count.
+      const filtered = await within7('/it/dashboard/expiries?expiryTypeId=nonexistent-type-id');
+      const after = await within7('/it/dashboard/expiries');
+      expect(Number(before)).toBeGreaterThan(0);
+      expect([before, after]).toContain(filtered);
+    }).toPass({ timeout: 20_000 });
   });
 
   test('AC 2: a scadenza registered for the seed pilot shows in their own-face "Le mie scadenze" view, reachable from the Sidebar; a pilot cannot GET /api/v1/expiries (staff-only)', async ({
@@ -165,7 +183,7 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
 
     const pilotPersonId = await getSeedPilotPersonId(page);
     const type = await createExpiryType(page, 'ALL');
-    await registerExpiry(page, { personId: pilotPersonId, expiryTypeId: type.id, expiresAt: addDaysUtc(30) });
+    await registerExpiry(page, { personId: pilotPersonId, expiryTypeId: type.id, expiresAt: addDaysRome(30) });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
@@ -179,7 +197,12 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     await nav.getByRole('link', { name: 'Scadenze', exact: true }).click();
     await expect(page).toHaveURL(/\/it\/dashboard\/expiries$/);
     await expect(page.getByRole('heading', { name: 'Le mie scadenze' })).toBeVisible();
-    await expect(page.getByText(type.name)).toBeVisible();
+    // Scoped to the desktop ROW, not page-level (story 15.7): "Le mie
+    // scadenze" now also renders a phone card per scadenza, present in the DOM
+    // at every width (`display: none` above 640px), so a page-level
+    // `getByText(type.name)` matches twice and violates strict mode. Same
+    // rewrite-to-the-correct-value as `movements.spec.ts`'s own five.
+    await expect(page.getByTestId('my-expiry-row').filter({ hasText: type.name })).toBeVisible();
 
     const forbiddenResponse = await page.request.get('/api/v1/expiries');
     expect(forbiddenResponse.status()).toBe(403);
@@ -194,8 +217,8 @@ test.describe('Scadenze registry: AirOps registry, stat cards, segmented window,
     const personB = uniquePerson('FiltroB');
     const personAId = await createPilotPerson(page, personA);
     const personBId = await createPilotPerson(page, personB);
-    await registerExpiry(page, { personId: personAId, expiryTypeId: type.id, expiresAt: addDaysUtc(20) });
-    await registerExpiry(page, { personId: personBId, expiryTypeId: type.id, expiresAt: addDaysUtc(20) });
+    await registerExpiry(page, { personId: personAId, expiryTypeId: type.id, expiresAt: addDaysRome(20) });
+    await registerExpiry(page, { personId: personBId, expiryTypeId: type.id, expiresAt: addDaysRome(20) });
 
     await page.goto(`/it/dashboard/expiries?window=all&expiryTypeId=${type.id}`);
     await expect(page.getByTestId('scadenze-row')).toHaveCount(2);

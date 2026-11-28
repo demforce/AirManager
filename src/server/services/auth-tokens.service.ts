@@ -1,19 +1,16 @@
-import { createHash, randomBytes } from 'node:crypto';
-import type { AuthTokenType } from '@/generated/prisma/enums';
-import { getMailSender } from '@/server/adapters/mail';
-import { buildInviteEmail, buildPasswordResetEmail } from '@/server/adapters/mail/templates';
-import { hashPassword } from '@/server/auth/password';
+import { accountMailboxUncontested } from './account-mailbox';
+import { acceptableAdminPassword } from '@/server/auth/admin-password-policy';
+import { createHash } from 'node:crypto';
+import { credentialEligible } from '@/server/auth/email-trial-policy';
+import { hashPassword, verifyPassword } from '@/server/auth/password';
 import { prisma } from '@/server/db/prisma';
-import { env } from '@/lib/env';
+import { enqueueCredential, lockMailAccount } from './credential-mail.service';
+export { INVITE_TTL_MS, PASSWORD_RESET_TTL_MS } from './credential-mail.service';
 import { ValidationError } from './errors';
-
-export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-export const PASSWORD_RESET_TTL_MS = 2 * 60 * 60 * 1000;
 
 // --- H4 (CWE-799/307) throttle: mail-bomb / token-churn on forgot-password,
 // `docs/security/owasp-audit-2026-07-22.md` — same "count recent rows in a
-// window" pattern as `ppr.service.ts`'s per-IP rate limit and
-// `login-throttle.ts`'s login lockout.
+// window" pattern as `login-throttle.ts`'s login lockout.
 
 const PASSWORD_RESET_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
@@ -25,8 +22,7 @@ const PASSWORD_RESET_MAX_PER_IP = 10;
 
 /**
  * `true` when the email or the IP has reached its cap of recent
- * `PasswordResetAttempt` rows. Exported for direct unit-testing (same
- * rationale as `ppr.service.ts#extractSubmitterIp`). `ip: null` (no
+ * `PasswordResetAttempt` rows. Exported for direct unit-testing. `ip: null` (no
  * resolvable `x-forwarded-for`) skips the per-IP check but never the
  * per-email one — the email always comes from the request body itself, so
  * a missing IP can't bypass the throttle entirely (H5 lesson).
@@ -66,60 +62,6 @@ async function recordPasswordResetAttempt(email: string, ip: string | null): Pro
   await prisma.passwordResetAttempt.create({ data: { email, ip } });
 }
 
-const TOKEN_BYTES = 32;
-
-function generateRawToken(): string {
-  return randomBytes(TOKEN_BYTES).toString('base64url');
-}
-
-function hashToken(rawToken: string): string {
-  return createHash('sha256').update(rawToken).digest('hex');
-}
-
-function buildSetPasswordUrl(rawToken: string): string {
-  const url = new URL('/set-password', env.APP_URL);
-  url.searchParams.set('token', rawToken);
-  return url.toString();
-}
-
-/**
- * Creates a single-use, hashed token for `userId` (AC 1/3). Any previously
- * unused token of the *same* type for the same user is invalidated first
- * (`usedAt` set) — at most one active invite and one active reset link
- * exist per user at a time, so an old emailed link can't be replayed
- * alongside a freshly issued one.
- */
-async function issueAuthToken(userId: string, type: AuthTokenType, ttlMs: number): Promise<string> {
-  const rawToken = generateRawToken();
-  const tokenHash = hashToken(rawToken);
-  const expiresAt = new Date(Date.now() + ttlMs);
-
-  // Interactive transaction (story TD-1, AC 3) — see
-  // `people.service.ts#listPeople`'s doc-comment for the batch-vs-interactive
-  // `pg` DeprecationWarning rationale.
-  await prisma.$transaction(async (tx) => {
-    await tx.authToken.updateMany({
-      where: { userId, type, usedAt: null },
-      data: { usedAt: new Date() },
-    });
-    await tx.authToken.create({
-      data: { userId, type, tokenHash, expiresAt },
-    });
-  });
-
-  return rawToken;
-}
-
-/** Sends the invite email (AC 1) — used by `users.service.ts` on user creation and resend. */
-export async function sendInviteEmail(userId: string, email: string, locale: 'it' | 'en'): Promise<void> {
-  const rawToken = await issueAuthToken(userId, 'INVITE', INVITE_TTL_MS);
-  const { subject, text } = await buildInviteEmail(locale, {
-    setPasswordUrl: buildSetPasswordUrl(rawToken),
-    expiresInDays: Math.round(INVITE_TTL_MS / (24 * 60 * 60 * 1000)),
-  });
-  await getMailSender().send({ to: email, subject, text });
-}
-
 /**
  * A trivial query with the same shape/cost as the real lookup inside
  * `issueAuthToken`'s transaction, run for the "no such user" branch of
@@ -131,20 +73,8 @@ async function dummyEquivalentDbWork(): Promise<void> {
 }
 
 /**
- * Silent by design (AC 3): the response status/body is identical for known
- * and unknown emails, and the SMTP send is fire-and-forget. Residual limit,
- * accepted and documented: the real-account branch still performs the token
- * write transaction on the response path, so a low-noise timing oracle is
- * not fully closed — `dummyEquivalentDbWork` only equalizes the lookup, not
- * the writes. Never throws.
- *
- * H4 (CWE-799/307): throttled BEFORE the account lookup (`ip` is the
- * caller's address, `null` when unresolvable — see
- * `isPasswordResetThrottled`'s doc-comment). A throttled call returns the
- * SAME `undefined`/no-op as every other branch here — no token, no email,
- * no new `PasswordResetAttempt` row — so the throttle itself adds no
- * enumeration or timing signal on top of the residual one already accepted
- * above.
+ * Public acknowledgement remains uniform. The durable reset intent commits before returning;
+ * SMTP is entirely independent of account lookup, throttling and the HTTP request.
  */
 export async function requestPasswordReset(email: string, ip: string | null = null): Promise<void> {
   if (await isPasswordResetThrottled(email, ip)) {
@@ -159,21 +89,13 @@ export async function requestPasswordReset(email: string, ip: string | null = nu
     return;
   }
 
-  const rawToken = await issueAuthToken(user.id, 'PASSWORD_RESET', PASSWORD_RESET_TTL_MS);
-  const locale = user.locale === 'en' ? 'en' : 'it';
-  const { subject, text } = await buildPasswordResetEmail(locale, {
-    setPasswordUrl: buildSetPasswordUrl(rawToken),
-    expiresInHours: Math.round(PASSWORD_RESET_TTL_MS / (60 * 60 * 1000)),
-  });
-
-  // Fire-and-forget: awaiting the SMTP round-trip here would make the HTTP
-  // response slower for a real account than for an unknown one, reopening
-  // the exact timing side-channel AC 3 forbids.
-  void getMailSender()
-    .send({ to: user.email, subject, text })
-    .catch((error: unknown) => {
-      console.error('requestPasswordReset: failed to send password reset email', error);
-    });
+  // Commit the intent without waiting for the transport. The dispatcher owns its retry budget.
+  try {
+    await prisma.$transaction(tx => enqueueCredential(tx, user.id, 'PASSWORD_RESET', undefined, email));
+  } catch {
+    // A storage failure on the active-account branch must not identify an account to the caller.
+    console.error('credential-mail: reset queue unavailable');
+  }
 }
 
 /**
@@ -192,22 +114,34 @@ export async function requestPasswordReset(email: string, ip: string | null = nu
  * admin re-sending an invite to a user who already has a session.
  */
 export async function setPasswordWithToken(rawToken: string, newPassword: string): Promise<void> {
-  const tokenHash = hashToken(rawToken);
+  const tokenHash = createHash('sha256').update(rawToken).digest('hex');
   const authToken = await prisma.authToken.findUnique({ where: { tokenHash } });
 
-  if (!authToken || authToken.usedAt || authToken.expiresAt.getTime() <= Date.now()) {
+  if (!authToken || !['INVITE', 'PASSWORD_RESET'].includes(authToken.type) || authToken.usedAt || authToken.expiresAt.getTime() <= Date.now()) {
     throw new ValidationError('Invalid or expired token.');
   }
 
   const passwordHash = await hashPassword(newPassword);
 
   await prisma.$transaction(async (tx) => {
+    await lockMailAccount(tx, authToken.userId);
+    const user = await tx.user.findUnique({
+      where: { id: authToken.userId }, include: { emailVerification: true },
+    });
+    if (!user || (user.emailVerification && (!credentialEligible(user, authToken.type) || !await accountMailboxUncontested(tx, user.id, user.email)))) {
+      throw new ValidationError('Invalid or expired token.');
+    }
+    if (user.roles.includes('ADMIN') && (!acceptableAdminPassword(newPassword, user.email)
+      || (user.passwordHash && await verifyPassword(user.passwordHash, newPassword)))) {
+      throw new ValidationError('Choose a new single-line administrator password of at least 15 characters.', undefined, 'ADMIN_PASSWORD_POLICY');
+    }
     // Atomic single-use claim: the conditional `usedAt: null` filter makes
     // the database decide exactly one winner between concurrent requests
     // replaying the same token — a plain check-then-update would let both
     // through (TOCTOU).
     const claimed = await tx.authToken.updateMany({
-      where: { id: authToken.id, usedAt: null },
+      where: { id: authToken.id, type: authToken.type, usedAt: null, expiresAt: { gt: new Date() },
+      },
       data: { usedAt: new Date() },
     });
     if (claimed.count === 0) {
@@ -215,7 +149,7 @@ export async function setPasswordWithToken(rawToken: string, newPassword: string
     }
     await tx.user.update({
       where: { id: authToken.userId },
-      data: { passwordHash, tokenVersion: { increment: 1 } },
+      data: { passwordHash, tokenVersion: { increment: 1 }, ...(user.roles.includes('ADMIN') && { adminPasswordVersion: { increment: 1 } }) },
     });
   });
 }

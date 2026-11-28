@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -50,6 +52,8 @@ async function createPilot(page: Page, person: { firstName: string; lastName: st
   await page.goto('/it/dashboard/pilots');
   await page.getByTestId('pilots-new-button').click();
   const form = page.getByTestId('pilot-identity-form');
+  // Story 19.2 (AC 4): the removed field is absent from the new-person form.
+  await expect(form.getByLabel('Codice fiscale', { exact: true })).toHaveCount(0);
   await form.getByLabel('Nome', { exact: true }).fill(person.firstName);
   await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
   await form.getByLabel('Email', { exact: true }).fill(person.email);
@@ -105,7 +109,7 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     await expect(page.getByTestId('toast').filter({ hasText: 'archiviata' })).toBeVisible();
     await page.getByRole('button', { name: 'Chiudi' }).first().click();
 
-    // The default (includeArchived=false) list drops the row as soon as the
+    // The default (non-archived) list drops the row as soon as the
     // archive call resolves and `router.refresh()` re-fetches.
     await expect(row).toHaveCount(0);
 
@@ -113,18 +117,21 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
     await page.goto(`/it/dashboard/pilots?q=${encodeURIComponent(person.lastName)}`);
     await expect(rowFor(page, person.lastName)).toHaveCount(0);
 
-    // With the archived filter (AC 3, story 13.2: a toggle button, not a checkbox).
+    // With the archived filter (AC 3, story 13.2: a toggle button, not a
+    // checkbox; feedback utente 2026-07-28: the toggle shows ONLY archived
+    // persons — actives are NOT mixed in).
     await page.getByTestId('pilots-toggle-archived').click();
     const archivedRow = rowFor(page, person.lastName);
     await expect(archivedRow).toBeVisible();
 
-    // Restoring: the row stays visible under "Mostra archiviati" (unarchived
-    // persons are always included, the filter only adds archived ones).
+    // Restoring from the archived-only view: the row LEAVES this view (it is
+    // no longer archived) and is back in the default list.
     await archivedRow.getByRole('button', { name: 'Modifica' }).click();
     await page.getByTestId('pilot-archive-toggle').click();
     await page.getByTestId('pilot-archive-confirm').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'ripristinata' })).toBeVisible();
     await page.getByRole('button', { name: 'Chiudi' }).first().click();
+    await expect(rowFor(page, person.lastName)).toHaveCount(0);
 
     await page.getByTestId('pilots-toggle-archived').click();
     await expect(rowFor(page, person.lastName)).toBeVisible();
@@ -153,21 +160,20 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
       data: { licenseNumber: `IT-PPL-${Date.now()}`, licenseType: 'PPL(A)' },
     });
     expect(pilotProfileResponse.status()).toBe(200);
+    // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+    await ensureValidSeedExpiries(page, personId, 'PILOTS');
 
     // A UNIQUE aircraft (never reuse seed I-ABCD — avoids rate-collision with
     // parallel specs), created directly via the API (same shape as
     // `flight-log.spec.ts`'s `createAircraftWithRate`).
     const registration = `I-PRF${Date.now()}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase().slice(0, 20);
     const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-      data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+      data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
     });
     expect(aircraftResponse.status()).toBe(201);
     const { id: aircraftId } = (await aircraftResponse.json()) as { id: string };
 
-    const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraftId}/rates`, {
-      data: { priceCentsPerHour: 16000, validFrom: '2026-01-01' },
-    });
-    expect(rateResponse.status()).toBe(201);
+    await seedAircraftRate(aircraftId, { studentPriceCents: 16000, pilotPriceCents: 16000, validFrom: '2026-01-01' });
 
     // Gives ultimo-volo + voli-recenti (90 minutes -> "1:30").
     const flightResponse = await page.request.post('/api/v1/flights', {
@@ -179,6 +185,7 @@ test.describe('Pilots registry with archiving (Story 12.6, rebuilt from Story 2.
         flightType: 'TOURISM',
         takeoffAt: '2026-06-15T10:00:00.000Z',
         landingAt: '2026-06-15T11:30:00.000Z',
+        force: true,
       },
     });
     expect(flightResponse.status()).toBe(201);
@@ -278,8 +285,9 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     expect(ratingType).toBeDefined();
 
     const medicalTypesResponse = await page.request.get('/api/v1/expiry-types?kind=MEDICAL');
-    const medicalTypes = (await medicalTypesResponse.json()) as Array<{ id: string; scope: string }>;
-    const medicalType = medicalTypes.find((type) => type.scope === 'PILOTS');
+    // Story 19.7a (R-19-j): visits have no scope (all `ALL`) — the seeded class 2, by name.
+    const medicalTypes = (await medicalTypesResponse.json()) as Array<{ id: string; name: string }>;
+    const medicalType = medicalTypes.find((type) => type.name === 'Visita medica classe 2');
     expect(medicalType).toBeDefined();
 
     const accessEmail = `composite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@airmanager.local`;
@@ -316,18 +324,18 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await expect(row).toBeVisible();
     await expect(row.getByText('Senza accesso')).toHaveCount(0);
 
-    const inviteEmail = await waitForMailpitMessage(accessEmail, 'invitato');
+    const inviteEmail = await waitForMailpitMessage(accessEmail, 'invito');
     expect(inviteEmail.Text).toContain('set-password');
   });
 
-  test('inline editor: adds and removes a rating via chip + date, without leaving the person editor (AC 2)', async ({ page }) => {
+  test('inline editor: adds and removes a rating via chip + date and the single Salva, without leaving the person editor (AC 2; story 19.4 AD-8)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('Inline');
     await createPilot(page, person);
 
     // No profile activated on this bare pilot -> only `ALL`-scoped chips are offered (the scope filter, AC 1/2).
-    // A run-unique ALL-scope type — NOT the seeded "Quota associativa" (also ALL-scope, kind=RATING), which
-    // review F3 (PO decision 2026-07-24) excludes from this picker (asserted below).
+    // A run-unique ALL-scope type — NOT the seeded "Quota associativa" (kind MEMBERSHIP since story 19.7a),
+    // which is never offered by this picker (asserted below).
     const typeName = `Rating ALL ${Date.now()}`;
     const typeResponse = await page.request.post('/api/v1/expiry-types', { data: { name: typeName, scope: 'ALL' } });
     expect(typeResponse.status()).toBe(201);
@@ -336,30 +344,37 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     const row = rowFor(page, person.lastName);
     await row.getByRole('button', { name: 'Modifica' }).click();
 
+    // The chip adds a draft row (nothing written yet); the Salva writes it.
     const ratingsEditor = page.getByTestId('pilot-ratings-editor');
     await ratingsEditor.getByTestId(`expiry-chip-${ratingTypeId}`).click();
-    await ratingsEditor.getByTestId('expiry-add-date').fill('2099-03-01');
-    await ratingsEditor.getByTestId('expiry-add-confirm').click();
-    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toBeVisible();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toHaveAttribute('data-state', 'new');
+    await ratingsEditor.getByTestId(`expiry-date-${ratingTypeId}`).fill('2099-03-01');
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Dati aggiornati.' })).toBeVisible();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toHaveAttribute('data-state', 'saved');
 
     // The link to the standalone Scadenze page is gone (AC 2).
     await expect(page.getByText('Gestisci in Scadenze')).toHaveCount(0);
 
-    // Regression-guard (review F3, PO decision 2026-07-24): "Quota associativa" is a financial
-    // obligation, not a rating — it must never be offered as a chip here (only in Impostazioni/Scadenze).
-    const catalogResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    // Regression-guard (review F3, PO decision 2026-07-24; story 19.7a D-1): "Quota associativa" is a
+    // financial obligation, its own MEMBERSHIP kind — never offered as a chip here, never among the ratings.
+    const catalogResponse = await page.request.get('/api/v1/expiry-types?kind=MEMBERSHIP');
     const catalog = (await catalogResponse.json()) as Array<{ id: string; name: string }>;
-    const membershipFeeType = catalog.find((type) => type.name === 'Quota associativa');
-    expect(membershipFeeType).toBeDefined();
+    expect(catalog.map((type) => type.name)).toEqual(['Quota associativa']);
+    const membershipFeeType = catalog[0];
+    const ratingsResponse = await page.request.get('/api/v1/expiry-types?kind=RATING');
+    expect(((await ratingsResponse.json()) as Array<{ id: string }>).some((type) => type.id === membershipFeeType!.id)).toBe(false);
     await expect(ratingsEditor.getByTestId(`expiry-chip-${membershipFeeType!.id}`)).toHaveCount(0);
     await expect(ratingsEditor.getByTestId(`expiry-row-${membershipFeeType!.id}`)).toHaveCount(0);
 
+    // "Rimuovi" only marks the row (reversible until the Salva); the Salva deletes it.
     await ratingsEditor.getByTestId(`expiry-remove-${ratingTypeId}`).click();
-    await ratingsEditor.getByTestId(`expiry-remove-confirm-${ratingTypeId}`).click();
+    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toHaveAttribute('data-state', 'removed');
+    await page.getByTestId('pilot-identity-submit').click();
     await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toHaveCount(0);
   });
 
-  test('inline editor: edits the date of an existing rating via the "Modifica" action (PATCH, AC 2)', async ({ page }) => {
+  test('inline editor: moves the date of an existing rating, written by the single Salva (AC 2; story 19.4 AD-8)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('EditDate');
 
@@ -382,11 +397,15 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await row.getByRole('button', { name: 'Modifica' }).click();
 
     const ratingsEditor = page.getByTestId('pilot-ratings-editor');
-    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toBeVisible();
-    await ratingsEditor.getByTestId(`expiry-edit-${ratingTypeId}`).click();
-    await ratingsEditor.getByTestId(`expiry-edit-date-${ratingTypeId}`).fill('2099-12-31');
-    await ratingsEditor.getByTestId(`expiry-edit-save-${ratingTypeId}`).click();
-    await expect(ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`)).toContainText('31/12/2099');
+    const expiryRow = ratingsEditor.getByTestId(`expiry-row-${ratingTypeId}`);
+    await expect(expiryRow).toHaveAttribute('data-state', 'saved');
+    await ratingsEditor.getByTestId(`expiry-date-${ratingTypeId}`).fill('2099-12-31');
+    await expect(expiryRow).toHaveAttribute('data-state', 'changed');
+    await page.getByTestId('pilot-identity-submit').click();
+    await expect(expiryRow).toHaveAttribute('data-state', 'saved');
+    await expect(ratingsEditor.getByTestId(`expiry-date-${ratingTypeId}`)).toHaveValue('2099-12-31');
+    const expiries = (await (await page.request.get(`/api/v1/people/${personId}/expiries`)).json()) as Array<{ expiryTypeId: string; expiresAt: string }>;
+    expect(expiries.find((expiry) => expiry.expiryTypeId === ratingTypeId)?.expiresAt).toBe('2099-12-31');
   });
 
   test('instructor editor: adds a Rating from the catalogue chips (AC 5, gap N6 from 13.1)', async ({ page }) => {
@@ -410,11 +429,21 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
 
     await page.goto('/it/dashboard/instructors');
     await page.getByTestId(`instructor-edit-${personId}`).click();
+    // Story 19.2 (AC 4): the loaded anagrafica (asserted first, so the count
+    // below is not read against the loading placeholder) lacks the removed field.
+    const identityForm = page.getByTestId('instructor-identity-form');
+    await expect(identityForm.getByLabel('Nome', { exact: true })).toHaveValue(person.firstName);
+    await expect(identityForm.getByLabel('Codice fiscale', { exact: true })).toHaveCount(0);
 
     await page.getByTestId(`expiry-chip-${ratingTypeId}`).click();
-    await page.getByTestId('expiry-add-date').fill('2099-05-01');
-    await page.getByTestId('expiry-add-confirm').click();
-    await expect(page.getByTestId(`expiry-row-${ratingTypeId}`)).toBeVisible();
+    await page.getByTestId(`expiry-date-${ratingTypeId}`).fill('2099-05-01');
+    await page.getByTestId('instructor-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Modifiche salvate.' })).toBeVisible();
+    // Asserted on the API: the Salva refreshes the page, and the instructors
+    // console re-mounts (closing the editor) when a parallel spec changed the
+    // number of instructors meanwhile (see `instructor-rates.spec.ts#saveAndReopen`).
+    const expiries = (await (await page.request.get(`/api/v1/people/${personId}/expiries`)).json()) as Array<{ expiryTypeId: string; expiresAt: string }>;
+    expect(expiries.find((expiry) => expiry.expiryTypeId === ratingTypeId)?.expiresAt).toBe('2099-05-01');
   });
 
   test('client blocks submit when a selected Ratings chip has no date — no create request fires (AC 1)', async ({ page }) => {
@@ -452,7 +481,9 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     expect(createRequests).toHaveLength(0);
   });
 
-  test('creates a person with STUDENT and INSTRUCTOR profiles together in ONE composite submit (multi-profile)', async ({ page }) => {
+  // Story 19.3 (Q-19.3-c): the student profile now excludes the instructor
+  // one, so the legal multi-profile combination is pilot + instructor.
+  test('creates a person with PILOT and INSTRUCTOR profiles together in ONE composite submit (multi-profile)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const person = uniquePerson('MultiProfile');
 
@@ -463,8 +494,9 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     await form.getByLabel('Cognome', { exact: true }).fill(person.lastName);
     await form.getByLabel('Email', { exact: true }).fill(person.email);
 
-    await form.getByTestId('new-person-activate-student').check();
-    await form.getByTestId('new-person-student-course-start').fill('2026-01-15');
+    await form.getByTestId('new-person-activate-pilot').check();
+    await form.getByTestId('new-person-pilot-license-number').fill('IT-PPL-MULTI');
+    await form.getByTestId('new-person-pilot-license-type').fill('PPL(A)');
     await form.getByTestId('new-person-activate-instructor').check();
 
     await page.getByTestId('pilot-identity-submit').click();
@@ -478,10 +510,10 @@ test.describe('One-step create form + inline expiries editor (Story 13.2)', () =
     const detailResponse = await page.request.get(`/api/v1/people/${items[0]!.id}`);
     expect(detailResponse.status()).toBe(200);
     const detail = (await detailResponse.json()) as {
-      studentProfile: { deactivatedAt: string | null } | null;
+      pilotProfile: { deactivatedAt: string | null } | null;
       instructorProfile: { deactivatedAt: string | null } | null;
     };
-    expect(detail.studentProfile?.deactivatedAt).toBeNull();
+    expect(detail.pilotProfile?.deactivatedAt).toBeNull();
     expect(detail.instructorProfile?.deactivatedAt).toBeNull();
   });
 });

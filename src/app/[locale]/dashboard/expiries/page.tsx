@@ -1,11 +1,13 @@
+import { PICKER_LIMIT } from '@/lib/picker';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
 import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
-import type { ExpiryItemDto, ExpiryWindowDto } from '@/lib/schemas/expiries';
+import { EXPORT_MAX_ROWS, PDF_EXPORT_MAX_ROWS } from '@/lib/export-caps';
+import type { ExpiryItemDto, ExpiryWindowDto, RegistryCategoryDto } from '@/lib/schemas/expiries';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getMembershipFeeCents } from '@/server/services/app-settings.service';
-import { getExpiryTierCounts, listAllExpiries, listPersonExpiries, type ExpiryListItem } from '@/server/services/expiries.service';
+import { getExpiryTierCounts, getExpiryWindowCounts, listAllExpiries, listPersonExpiries, type ExpiryListItem } from '@/server/services/expiries.service';
 import { listExpiryTypes } from '@/server/services/expiry-types.service';
 import { listPeople } from '@/server/services/people.service';
 import { MyExpiries } from './my-expiries';
@@ -16,17 +18,24 @@ type PageProps = {
   searchParams: Promise<{
     page?: string;
     window?: string;
+    category?: string;
     expiryTypeId?: string;
     personQuery?: string;
   }>;
 };
 
 const REGISTRY_PAGE_SIZE = 20;
-const OPTIONS_PAGE_SIZE = 100;
 const WINDOWS: readonly ExpiryWindowDto[] = ['60', '30', '7', 'expired'];
 
 function sanitizeWindow(value: string | undefined): ExpiryWindowDto | 'all' {
   return value && (WINDOWS as readonly string[]).includes(value) ? (value as ExpiryWindowDto) : value === 'all' ? 'all' : '60';
+}
+
+const CATEGORIES: readonly RegistryCategoryDto[] = ['MEDICAL', 'RATING', 'MEMBERSHIP', 'CURRENCY'];
+
+/** Story 19.7b (D-11): the Categoria filter; anything else in the URL is "every category". */
+function sanitizeCategory(value: string | undefined): RegistryCategoryDto | '' {
+  return value && (CATEGORIES as readonly string[]).includes(value) ? (value as RegistryCategoryDto) : '';
 }
 
 /** Same server-DTO-to-wire-DTO conversion as the pre-12.11 page (`pendingProposal.createdAt` Date -> ISO string) — `MyExpiries` receives its data as a plain server-component prop, but the DTO's own schema expects the wire shape. */
@@ -40,7 +49,7 @@ function toExpiryDto(item: ExpiryListItem): ExpiryItemDto {
 /**
  * Scadenze (epic 6/7, epic 12 story 12.11) — AirOps-native, port of
  * `docs/design-reference/airops/src/ScadenzeView.jsx`. Two faces (Contesto,
- * unchanged since story 6.2): `expiries.manage` (staff/admin) gets the full
+ * unchanged since story 6.2): `expiries.manage` (ADMIN-only) gets the full
  * registry; everyone else (own-access, `self.read`) gets "Le mie scadenze".
  * Story 12.13 (ratifica utente 4b) retired the titolare-facing
  * propose/staff-decide queue this page used to also render.
@@ -63,6 +72,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
   }
 
   const t = await getTranslations('ExpiriesPage');
+  const tExport = await getTranslations('Export');
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
 
   if (canManage) {
@@ -70,23 +80,24 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     const canChargeMembershipFee = hasPermission(actor, 'finance.manage');
 
     const window = sanitizeWindow(sp.window);
+    const category = sanitizeCategory(sp.category) || undefined;
     const expiryTypeId = sp.expiryTypeId || undefined;
     const personQuery = sp.personQuery || undefined;
 
-    // Sequential (not `Promise.all`): `listPeople` runs its own interactive
-    // `$transaction` internally — same "never concurrent with another
-    // `$transaction`-based read" constraint as the billing/fleet/logbook pages.
-    const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
+    const peopleResult = await listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'pilot-or-student', includeArchived: false });
     const personOptions = peopleResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
 
     const allTypes = await listExpiryTypes(actor, { includeInactive: false });
-    const typeOptions = allTypes.map((type) => ({ id: type.id, name: type.name }));
+    // `kind` lets the console offer only the types of the chosen category (story 19.7b, AD-3).
+    const typeOptions = allTypes.map((type) => ({ id: type.id, name: type.name, kind: type.kind }));
 
     const tierCounts = await getExpiryTierCounts(actor);
+    const windowCounts = await getExpiryWindowCounts(actor, { category, expiryTypeId, personQuery, page: 1, pageSize: REGISTRY_PAGE_SIZE });
     const membershipFeeCents = await getMembershipFeeCents(actor);
 
     const registryQuery = {
       ...(window !== 'all' ? { window } : {}),
+      category,
       expiryTypeId,
       personQuery,
       pageSize: REGISTRY_PAGE_SIZE,
@@ -100,43 +111,58 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
     }
     const registryTotalPages = Math.max(1, Math.ceil(registryResult.total / REGISTRY_PAGE_SIZE));
 
-    const exportFilterQuery = { expiryTypeId, scope: undefined, status: undefined };
+    // Story 15.7, ratifica R-15.7-k(1): the export now carries the SAME
+    // filters as the list. It used to send `expiryTypeId` alone, so an admin
+    // who had searched "Rossi" inside the ≤7 days window still downloaded
+    // every scadenza of that type — a file that silently disagrees with the
+    // screen it was exported from. `listAllExpiriesQuerySchema` already
+    // accepts both fields; `window: 'all'` is not one of its values (it is
+    // the ABSENCE of the filter), same shape as `registryQuery` above.
+    const exportFilterQuery = { ...(window !== 'all' ? { window } : {}), category, expiryTypeId, personQuery, scope: undefined, status: undefined };
     const exportHref = buildExportHref('/api/v1/expiries', exportFilterQuery, locale);
     const exportPdfHref = buildPdfExportHref('/api/v1/expiries/pdf', exportFilterQuery, locale);
 
-    const filters: ScadenzeFilters = { window, expiryTypeId: expiryTypeId ?? '', personQuery: personQuery ?? '' };
+    const filters: ScadenzeFilters = { window, category: category ?? '', expiryTypeId: expiryTypeId ?? '', personQuery: personQuery ?? '' };
+
+    // The currency row's "Certificato" (story 19.7b, AD-3): an ICU plural, so
+    // it is resolved HERE, on the server, and handed over by row id.
+    const currencyDetails = Object.fromEntries(
+      registryResult.items.flatMap((item) =>
+        item.currency === null ? [] : [[item.id, t('registry.currency.detail', { count: item.currency.flightsInWindow, days: item.currency.windowDays })]],
+      ),
+    );
 
     return (
-      <main className="page">
+      <main className="page fold-expiries">
         <div className="page-head">
           <div className="page-title-block">
-            <h1>{t('title')}</h1>
+            <h1 className="fold-duplicate-title">{t('title')}</h1>
             <div className="sub">{t('sub', { count: tierCounts.expired + tierCounts.within7 + tierCounts.within30 + tierCounts.within60 })}</div>
           </div>
         </div>
 
         <ScadenzeConsole
           items={registryResult.items}
+          currencyDetails={currencyDetails}
           page={page}
           totalPages={registryTotalPages}
           totalShown={registryResult.total}
           tierCounts={tierCounts}
+          windowCounts={windowCounts}
           filters={filters}
           typeOptions={typeOptions}
           personOptions={personOptions}
           canTriggerReminders={canTriggerReminders}
+          canForce={hasPermission(actor, 'requirements.force')}
           canChargeMembershipFee={canChargeMembershipFee}
           membershipFeeCents={membershipFeeCents}
           exportHref={exportHref}
           exportPdfHref={exportPdfHref}
+          exportPdfUnavailable={registryResult.total > PDF_EXPORT_MAX_ROWS ? tExport('pdfRowsTooLarge', { max: PDF_EXPORT_MAX_ROWS }) : undefined}
+          exportXlsUnavailable={registryResult.total > EXPORT_MAX_ROWS ? tExport('xlsRowsTooLarge', { max: EXPORT_MAX_ROWS }) : undefined}
           locale={displayLocale}
           labels={{
             cardTitle: t('registry.cardTitle'),
-            // `t.raw` (not `t`): `{count}` is interpolated CLIENT-SIDE
-            // (`scadenze-console.tsx`'s own `.replace(...)`, the shown count
-            // changes with client-only filters) — `t()` would try to
-            // interpolate immediately server-side and throw `FORMATTING_ERROR`.
-            shown: t.raw('registry.shown') as string,
             segmented: {
               win60: t('registry.segmented.win60'),
               win30: t('registry.segmented.win30'),
@@ -145,6 +171,14 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               all: t('registry.segmented.all'),
             },
             filters: {
+              categoryLabel: t('registry.filters.categoryLabel'),
+              category: {
+                all: t('registry.filters.category.all'),
+                MEDICAL: t('registry.filters.category.MEDICAL'),
+                RATING: t('registry.filters.category.RATING'),
+                MEMBERSHIP: t('registry.filters.category.MEMBERSHIP'),
+                CURRENCY: t('registry.filters.category.CURRENCY'),
+              },
               allTypes: t('registry.filters.allTypes'),
               allPilots: t('registry.filters.allPilots'),
               pilot: t('registry.filters.pilot'),
@@ -159,6 +193,12 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               daysLeft: t('registry.table.daysLeft'),
               status: t('registry.table.status'),
               empty: t('registry.table.empty'),
+            },
+            category: {
+              MEDICAL: t('registry.category.MEDICAL'),
+              RATING: t('registry.category.RATING'),
+              MEMBERSHIP: t('registry.category.MEMBERSHIP'),
+              CURRENCY: t('registry.category.CURRENCY'),
             },
             statCards: {
               expired: t('registry.statCards.expired'),
@@ -180,8 +220,8 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             daysAgoSuffix: t('registry.daysAgoSuffix'),
             daysSuffix: t('registry.daysSuffix'),
             exportMenu: { label: t('registry.exportMenu.label'), xlsLabel: t('registry.exportMenu.xlsLabel'), pdfLabel: t('registry.exportMenu.pdfLabel') },
-            // `sent`: `t.raw` — `{holders}`/`{digests}` interpolated CLIENT-SIDE (same rationale as `shown` above).
-            reminders: { button: t('registry.reminders.button'), sent: t.raw('registry.reminders.sent') as string, error: t('registry.reminders.error') },
+            // `sent`: `t.raw` — result counts interpolated CLIENT-SIDE (same rationale as `shown` above).
+            reminders: { disabled: t('registry.reminders.disabled'), changed: t('registry.reminders.changed'), button: t('registry.reminders.button'), sent: t.raw('registry.reminders.sent') as string, error: t('registry.reminders.error') },
             membershipFee: {
               button: t('registry.membershipFee.button'),
               disabledHint: t('registry.membershipFee.disabledHint'),
@@ -191,15 +231,35 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
               amountHint: t('registry.membershipFee.amountHint'),
               submit: t('registry.membershipFee.submit'),
               cancel: t('registry.membershipFee.cancel'),
+              requiredPilot: t('registry.membershipFee.requiredPilot'),
               invalidAmount: t('registry.membershipFee.invalidAmount'),
               // `t.raw`: `{balance}`/`{expires}` interpolated CLIENT-SIDE (same rationale as `shown` above).
               success: t.raw('registry.membershipFee.success') as string,
               genericError: t('registry.membershipFee.genericError'),
-              // `t.raw`: `{balance}`/`{amount}` interpolated CLIENT-SIDE, same reason as `success` above.
-              insufficientBalance: t.raw('registry.membershipFee.insufficientBalance') as string,
-              overrideCheckbox: t('registry.membershipFee.overrideCheckbox'),
             },
             pagination: { prev: '←', next: '→' },
+            mobile: {
+              openDetail: t('registry.mobile.openDetail'),
+              close: t('registry.mobile.close'),
+              notes: t('registry.mobile.notes'),
+              scopeLabel: t('registry.mobile.scopeLabel'),
+              scope: {
+                PILOTS: t('registry.mobile.scope.PILOTS'),
+                STUDENTS: t('registry.mobile.scope.STUDENTS'),
+                INSTRUCTORS: t('registry.mobile.scope.INSTRUCTORS'),
+                ALL: t('registry.mobile.scope.ALL'),
+              },
+              openPerson: t('registry.mobile.openPerson'),
+              filters: t('registry.mobile.filters'),
+              // `t.raw`: `{count}` is interpolated CLIENT-SIDE (the number of
+              // active panel filters), same rationale as `shown` above.
+              filtersCount: t.raw('registry.mobile.filtersCount') as string,
+              moreActions: t('registry.mobile.moreActions'),
+              filtersTitle: t('registry.mobile.filtersTitle'),
+              apply: t('registry.mobile.apply'),
+              empty: t('registry.mobile.empty'),
+              noValue: t('registry.mobile.noValue'),
+            },
           }}
         />
       </main>
@@ -237,6 +297,7 @@ export default async function ExpiriesPage({ params, searchParams }: PageProps) 
             },
             pendingBadge: t('own.table.pendingBadge'),
           },
+          mobile: { openDetail: t('own.mobile.openDetail'), close: t('own.mobile.close') },
         }}
       />
     </main>

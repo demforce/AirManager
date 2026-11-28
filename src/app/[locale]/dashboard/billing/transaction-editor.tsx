@@ -1,5 +1,7 @@
 'use client';
 
+import { PICKER_LIMIT, type OptionPage } from '@/lib/picker';
+
 /**
  * "Nuova transazione" SlideOver (story 12.9, AC 4 — D13) — port of
  * `docs/design-reference/airops/src/Forms.jsx#NewTransactionForm` onto the
@@ -11,14 +13,19 @@
  * rettifica as today, server-side, no `effectiveDate` input exists on that
  * model (Dev Notes/`accounts.service.ts`).
  */
-import { useMemo, useState } from 'react';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyInZone } from '@/lib/zoned-time';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DateInput } from '@/components/ui/date-input';
 import { Field, Input, InputGroup, Select } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { SearchCombobox, type SearchComboboxOption } from '@/components/search-combobox';
+import { parseApiError } from '@/lib/api-field-errors';
+import { focusFirstInvalid } from '@/lib/dom-focus';
 import { formatCents, parseCents } from '@/lib/money';
-import { IDEMPOTENCY_KEY_HEADER, useIdempotencyKey } from '@/lib/use-idempotency-key';
+import { useIdempotentSubmission } from '@/lib/use-idempotent-submission';
 
 type PersonOption = { id: string; firstName: string; lastName: string };
 type CategoryOption = { id: string; name: string };
@@ -50,6 +57,8 @@ export type TransactionEditorLabels = {
   invalidAmount: string;
   conflictError: string;
   genericError: string;
+  /** 422 `EFFECTIVE_DATE_IN_FUTURE` of the `TOP_UP`/`CASH` delegate (story 16.6a). */
+  futureDateError: string;
   result: { title: string; newBalance: string; close: string };
   picker: { placeholder: string; noResults: string };
 };
@@ -57,7 +66,7 @@ export type TransactionEditorLabels = {
 type TransactionEditorProps = {
   open: boolean;
   onClose: () => void;
-  /** Refreshes the server-rendered table/KPI (`router.refresh()`) — the slide-over stays open to show the result panel (same ratifica-1 pattern as `flight-editor.tsx`). */
+  /** Reconciles the table/KPI after a write while the result panel stays open (same ratifica-1 pattern as `flight-editor.tsx`). */
   onMutated: () => void;
   personOptions: PersonOption[];
   categoryOptions: CategoryOption[];
@@ -69,17 +78,13 @@ function personLabel(person: { firstName: string; lastName: string }): string {
   return `${person.lastName} ${person.firstName}`;
 }
 
-function todayDateOnly(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** Server-side pilot/student search (same profile-scoped picker as the logbook/billing filter). */
-async function searchPeople(query: string): Promise<SearchComboboxOption[]> {
-  const params = new URLSearchParams({ q: query, pageSize: '50', profile: 'pilot-or-student' });
+async function searchPeople(query: string): Promise<OptionPage<SearchComboboxOption>> {
+  const params = new URLSearchParams({ q: query, pageSize: String(PICKER_LIMIT), picker: 'true', profile: 'pilot-or-student' });
   const response = await fetch(`/api/v1/people?${params.toString()}`);
-  if (!response.ok) return [];
-  const body = (await response.json()) as { items: { id: string; firstName: string; lastName: string }[] };
-  return body.items.map((person) => ({ id: person.id, label: personLabel(person) }));
+  if (!response.ok) throw new Error('Picker search failed');
+  const body = (await response.json()) as { truncated: boolean; items: { id: string; firstName: string; lastName: string }[] };
+  return { truncated: body.truncated, items: body.items.map((person) => ({ id: person.id, label: personLabel(person) })) };
 }
 
 type ResultState = { kind: 'TOP_UP' | 'ADJUSTMENT'; balanceCents: number } | { kind: 'CASH' };
@@ -89,15 +94,38 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
   const [personId, setPersonId] = useState('');
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('CASH');
-  const [date, setDate] = useState(todayDateOnly());
+  const [date, setDate] = useState(() => todayDateOnlyInZone(APP_TIMEZONE));
   const [description, setDescription] = useState('');
   const [reason, setReason] = useState('');
   const [categoryId, setCategoryId] = useState(categoryOptions[0]?.id ?? '');
   const [direction, setDirection] = useState<'in' | 'out'>('in');
   const [formError, setFormError] = useState<string | null>(null);
+  // Story 14.2 (AC 1/2): one boolean per REQUIRED field instead of a single
+  // combined `formError` string — each marks (and clears on correction) only
+  // ITS OWN field; `formError` stays for non-field API failures (conflict/
+  // generic/network) only.
+  const [amountError, setAmountError] = useState(false);
+  const [personError, setPersonError] = useState(false);
+  const [reasonError, setReasonError] = useState(false);
+  const [categoryError, setCategoryError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ResultState | null>(null);
-  const { idempotencyKey, regenerateIdempotencyKey } = useIdempotencyKey();
+  const notifiedResultRef = useRef<ResultState | null>(null);
+  const onMutatedRef = useRef(onMutated);
+  const { submitIdempotently, submissionError } = useIdempotentSubmission();
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  useEffect(() => { onMutatedRef.current = onMutated; }, [onMutated]);
+  // The result panel commits first; then the server-rendered table/KPI refresh
+  // while the panel remains open. One result causes exactly one refresh.
+  useEffect(() => {
+    if (result === null) {
+      notifiedResultRef.current = null;
+    } else if (notifiedResultRef.current !== result) {
+      notifiedResultRef.current = result;
+      onMutatedRef.current();
+    }
+  }, [result]);
 
   const personComboOptions = useMemo<SearchComboboxOption[]>(
     () => personOptions.map((person) => ({ id: person.id, label: personLabel(person) })),
@@ -109,12 +137,16 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     setPersonId('');
     setAmount('');
     setMethod('CASH');
-    setDate(todayDateOnly());
+    setDate(todayDateOnlyInZone(APP_TIMEZONE));
     setDescription('');
     setReason('');
     setCategoryId(categoryOptions[0]?.id ?? '');
     setDirection('in');
     setFormError(null);
+    setAmountError(false);
+    setPersonError(false);
+    setReasonError(false);
+    setCategoryError(false);
     setResult(null);
   }
 
@@ -132,20 +164,19 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     } catch {
       parsedAmount = null;
     }
-    if (parsedAmount === null || parsedAmount <= 0) {
-      setFormError(labels.invalidAmount);
-      return;
-    }
-    if ((kind === 'payment' || kind === 'adjustment') && personId.trim() === '') {
-      setFormError(labels.requiredField);
-      return;
-    }
-    if (kind === 'adjustment' && reason.trim() === '') {
-      setFormError(labels.requiredField);
-      return;
-    }
-    if (kind === 'cash' && categoryId.trim() === '') {
-      setFormError(labels.requiredField);
+    const nextAmountError = parsedAmount === null || parsedAmount <= 0;
+    const nextPersonError = (kind === 'payment' || kind === 'adjustment') && personId.trim() === '';
+    const nextReasonError = kind === 'adjustment' && reason.trim() === '';
+    const nextCategoryError = kind === 'cash' && categoryId.trim() === '';
+    setAmountError(nextAmountError);
+    setPersonError(nextPersonError);
+    setReasonError(nextReasonError);
+    setCategoryError(nextCategoryError);
+    // `parsedAmount === null` is redundant with `nextAmountError` (a `let`
+    // TS narrows on the checked VARIABLE, not on a derived boolean) — kept
+    // explicit so `parsedAmount` narrows to `number` below.
+    if (nextAmountError || nextPersonError || nextReasonError || nextCategoryError || parsedAmount === null) {
+      setTimeout(() => focusFirstInvalid(formRef.current), 0);
       return;
     }
 
@@ -162,27 +193,22 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     setSubmitting(true);
     let response: Response;
     try {
-      response = await fetch('/api/v1/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-        body: JSON.stringify(body),
-      });
-    } catch {
+      response = await submitIdempotently('/api/v1/transactions', body);
+    } catch (error) {
       setSubmitting(false);
-      setFormError(labels.genericError);
+      setFormError(submissionError(error, labels.genericError));
       return;
     }
     setSubmitting(false);
-    regenerateIdempotencyKey();
 
     if (!response.ok) {
-      setFormError(response.status === 409 ? labels.conflictError : labels.genericError);
+      const { code } = await parseApiError(response);
+      setFormError(code === 'EFFECTIVE_DATE_IN_FUTURE' ? labels.futureDateError : response.status === 409 ? labels.conflictError : labels.genericError);
       return;
     }
 
     const data = (await response.json()) as { kind: 'TOP_UP' | 'ADJUSTMENT' | 'CASH'; account?: { balanceCents: number } };
     setResult(data.kind === 'CASH' ? { kind: 'CASH' } : { kind: data.kind, balanceCents: data.account!.balanceCents });
-    onMutated();
   }
 
   const footer =
@@ -196,7 +222,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
     ) : (
       <>
         <div style={{ flex: 1 }} />
-        <button type="button" className="btn" onClick={handleClose}>
+        <button type="button" className="btn" onClick={() => dismissHistoryLayer(handleClose)}>
           {labels.cancel}
         </button>
         <button type="submit" form="transaction-form" className="btn primary" disabled={submitting} data-testid="transaction-submit">
@@ -221,7 +247,20 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
           )}
         </div>
       ) : (
-        <form id="transaction-form" data-testid="transaction-form" onSubmit={(event) => { event.preventDefault(); void submit(); }} noValidate>
+        // `.transaction-form` is the anchor story 15.8a's own CSS block uses to
+        // put the 44px floor under this form's six fields on a phone (AC 15 b):
+        // never `.form-grid` or `.input`, which every editor in the app shares.
+        <form
+          id="transaction-form"
+          className="transaction-form"
+          ref={formRef}
+          data-testid="transaction-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+          noValidate
+        >
           <div className="form-grid">
             <Field label={labels.kind}>
               <Select value={kind} onChange={(event) => setKind(event.target.value as Kind)} data-testid="transaction-kind">
@@ -237,18 +276,30 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
                   id="transaction-person"
                   label={labels.fields.pilot}
                   value={personId}
-                  onChange={setPersonId}
+                  onChange={(id) => {
+                    setPersonId(id);
+                    if (id.trim() !== '') setPersonError(false);
+                  }}
                   fetchOptions={searchPeople}
                   initialOptions={personComboOptions}
                   placeholder={labels.picker.placeholder}
                   emptyText={labels.picker.noResults}
+                  error={personError ? labels.requiredField : undefined}
                 />
               </div>
             ) : null}
 
             {kind === 'cash' ? (
-              <Field label={labels.fields.category}>
-                <Select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} data-testid="transaction-category">
+              <Field label={labels.fields.category} error={categoryError ? labels.requiredField : undefined}>
+                <Select
+                  value={categoryId}
+                  onChange={(event) => {
+                    setCategoryId(event.target.value);
+                    if (event.target.value.trim() !== '') setCategoryError(false);
+                  }}
+                  aria-invalid={categoryError}
+                  data-testid="transaction-category"
+                >
                   {categoryOptions.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
@@ -258,9 +309,20 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
               </Field>
             ) : null}
 
-            <Field label={labels.fields.amount}>
+            <Field label={labels.fields.amount} error={amountError ? labels.invalidAmount : undefined}>
               <InputGroup prefix="€">
-                <Input type="number" step="0.01" min="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} data-testid="transaction-amount" />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={amount}
+                  onChange={(event) => {
+                    setAmount(event.target.value);
+                    if (amountError) setAmountError(false);
+                  }}
+                  aria-invalid={amountError}
+                  data-testid="transaction-amount"
+                />
               </InputGroup>
             </Field>
 
@@ -289,13 +351,21 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
               </Field>
             ) : (
               <Field label={labels.fields.date}>
-                <DateInput value={todayDateOnly()} disabled data-testid="transaction-date" />
+                <DateInput value={todayDateOnlyInZone(APP_TIMEZONE)} disabled data-testid="transaction-date" />
               </Field>
             )}
 
             {kind === 'adjustment' ? (
-              <Field label={labels.fields.reason} wide>
-                <Input value={reason} onChange={(event) => setReason(event.target.value)} data-testid="transaction-reason" />
+              <Field label={labels.fields.reason} wide error={reasonError ? labels.requiredField : undefined}>
+                <Input
+                  value={reason}
+                  onChange={(event) => {
+                    setReason(event.target.value);
+                    if (reasonError && event.target.value.trim() !== '') setReasonError(false);
+                  }}
+                  aria-invalid={reasonError}
+                  data-testid="transaction-reason"
+                />
               </Field>
             ) : (
               <Field label={labels.fields.description} wide>
@@ -305,7 +375,7 @@ export function TransactionEditor({ open, onClose, onMutated, personOptions, cat
           </div>
 
           {formError ? (
-            <p role="alert" data-testid="transaction-form-error" style={{ color: 'var(--bad)', fontSize: 13, marginTop: 14 }}>
+            <p role="alert" data-testid="transaction-form-error" className="fld-error" style={{ marginTop: 14 }}>
               {formError}
             </p>
           ) : null}

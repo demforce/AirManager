@@ -2,6 +2,7 @@ import type { User as NextAuthUser } from 'next-auth';
 import { loginSchema } from '@/lib/schemas/login';
 import { prisma } from '@/server/db/prisma';
 import { recordSuccessfulLogin, reserveLoginAttempt } from './login-throttle';
+import { verifiedTrialAddress } from './email-trial-policy';
 import { hashPassword, verifyPassword } from './password';
 
 // Verified against when the email doesn't match an active user, so the
@@ -23,7 +24,26 @@ async function getTimingDummyHash(): Promise<string> {
  * `null` when unresolvable; passing `null` never disables the throttle,
  * only its per-IP dimension (see `reserveLoginAttempt`'s doc-comment).
  */
-export async function authorizeCredentials(rawCredentials: unknown, ip: string | null = null): Promise<NextAuthUser | null> {
+export async function authorizeCredentials(
+  rawCredentials: unknown, ip: string | null = null, provider?: 'admin-password',
+): Promise<NextAuthUser | null> {
+  if (!provider) return verifyCredentials(rawCredentials, ip);
+  let outcome: 'denied' | 'allowed' | 'error' = 'error';
+  let actorId: string | undefined;
+  try {
+    const user = await verifyCredentials(rawCredentials, ip, provider);
+    outcome = user ? 'allowed' : 'denied';
+    actorId = user?.id;
+    return user;
+  } catch {
+    // Auth.js can log the underlying callback error. Keep provider/DB details private.
+    return null;
+  } finally {
+    console.info(JSON.stringify({ event: 'admin_password_signin', at: new Date().toISOString(), outcome, actorId }));
+  }
+}
+
+async function verifyCredentials(rawCredentials: unknown, ip: string | null, provider?: 'admin-password'): Promise<NextAuthUser | null> {
   const parsed = loginSchema.safeParse(rawCredentials);
   if (!parsed.success) {
     return null;
@@ -35,7 +55,9 @@ export async function authorizeCredentials(rawCredentials: unknown, ip: string |
   // real verify below runs. See `reserveLoginAttempt`'s doc-comment for why
   // this closes the concurrent-burst race that a separate check-then-record
   // could not.
-  if (!(await reserveLoginAttempt(email, ip))) {
+  if (!(await reserveLoginAttempt(email, ip, provider))) {
+    // Suppressed admin attempts do no password work. The decision is independent of account existence.
+    if (provider) return null;
     // Same generic `null` as every other failure path (AC 2), and still runs
     // the constant-time dummy verify so the CredentialsSignin outcome carries
     // no password-shaped timing. This path is measurably FASTER than the
@@ -48,8 +70,9 @@ export async function authorizeCredentials(rawCredentials: unknown, ip: string |
     return null;
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !user.isActive || !user.passwordHash) {
+  const user = await prisma.user.findUnique({ where: { email }, include: { emailVerification: true } });
+  if (!user || !user.isActive || !user.passwordHash || (provider && !user.roles.includes('ADMIN'))
+    || (user.emailVerification && (!provider || !verifiedTrialAddress(user)))) {
     // Same outcome for "no such user", "inactive user", and "invited user
     // who hasn't set a password yet" (story 1.4: `passwordHash` is nullable)
     // as for a wrong password below — never reveal which case it was (AC 2).
@@ -65,9 +88,10 @@ export async function authorizeCredentials(rawCredentials: unknown, ip: string |
     return null;
   }
 
-  await recordSuccessfulLogin(email, ip);
+  await recordSuccessfulLogin(email, ip, provider);
 
   return {
+    ...(provider && { adminPasswordVersion: user.adminPasswordVersion }),
     id: user.id,
     email: user.email,
     roles: user.roles,

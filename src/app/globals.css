@@ -12,8 +12,7 @@
    Geist-backed `--font-sans`/`--font-serif` theme tokens (`@theme inline`),
    and the `flex min-h-full flex-col` utilities on `layout.tsx`'s `<body>`
    are gone. This rule reproduces that body geometry in plain CSS: real shell
-   layout (see airops.css's `.ppr-page` `flex-shrink:0` comment, which
-   documents callers relying on it), not a stray Tailwind leftover.
+   layout, not a stray Tailwind leftover.
    `min-height: 100%` is redundant with airops.css's `html,body{height:100%}`
    but kept for a literal match of the old utility's semantics. */
 body {

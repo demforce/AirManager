@@ -1,0 +1,814 @@
+{
+  "now": "2026-11-26T23:30:00.000Z",
+  "today": "2026-11-27",
+  "tag": "Ex0e1e41",
+  "results": [
+    {
+      "key": "currency-all",
+      "filter": {
+        "window": "all",
+        "category": "CURRENCY",
+        "personQuery": "Ex0e1e41"
+      },
+      "ui": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "0 voli negli ultimi 90 giorni",
+          "26/11/2026",
+          "1 gg fa",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "27/11/2026",
+          "0 gg",
+          "≤ 7 gg"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "04/12/2026",
+          "7 gg",
+          "≤ 7 gg"
+        ],
+        [
+          "Ex0e1e413 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "05/12/2026",
+          "8 gg",
+          "≤ 30 gg"
+        ],
+        [
+          "Ex0e1e414 Ada",
+          "Currency",
+          "2 voli negli ultimi 90 giorni",
+          "27/12/2026",
+          "30 gg",
+          "≤ 30 gg"
+        ],
+        [
+          "Ex0e1e415 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "28/12/2026",
+          "31 gg",
+          "≤ 60 gg"
+        ],
+        [
+          "Ex0e1e416 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "26/01/2027",
+          "60 gg",
+          "≤ 60 gg"
+        ],
+        [
+          "Ex0e1e417 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "27/01/2027",
+          "61 gg",
+          "Valida"
+        ]
+      ],
+      "xlsx": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "—",
+          "04/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e413 Ada",
+          "Currency",
+          "—",
+          "05/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e414 Ada",
+          "Currency",
+          "—",
+          "27/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e415 Ada",
+          "Currency",
+          "—",
+          "28/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e416 Ada",
+          "Currency",
+          "—",
+          "26/01/2027",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e417 Ada",
+          "Currency",
+          "—",
+          "27/01/2027",
+          "Valida"
+        ]
+      ],
+      "pdf": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "—",
+          "04/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e413 Ada",
+          "Currency",
+          "—",
+          "05/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e414 Ada",
+          "Currency",
+          "—",
+          "27/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e415 Ada",
+          "Currency",
+          "—",
+          "28/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e416 Ada",
+          "Currency",
+          "—",
+          "26/01/2027",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e417 Ada",
+          "Currency",
+          "—",
+          "27/01/2027",
+          "Valida"
+        ]
+      ]
+    },
+    {
+      "key": "currency-expired",
+      "filter": {
+        "window": "expired",
+        "category": "CURRENCY",
+        "personQuery": "Ex0e1e41"
+      },
+      "ui": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "0 voli negli ultimi 90 giorni",
+          "26/11/2026",
+          "1 gg fa",
+          "Scaduta"
+        ]
+      ],
+      "xlsx": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ]
+      ],
+      "pdf": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ]
+      ]
+    },
+    {
+      "key": "currency-7",
+      "filter": {
+        "window": "7",
+        "category": "CURRENCY",
+        "personQuery": "Ex0e1e41"
+      },
+      "ui": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "0 voli negli ultimi 90 giorni",
+          "26/11/2026",
+          "1 gg fa",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "27/11/2026",
+          "0 gg",
+          "≤ 7 gg"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "04/12/2026",
+          "7 gg",
+          "≤ 7 gg"
+        ]
+      ],
+      "xlsx": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "—",
+          "04/12/2026",
+          "In scadenza"
+        ]
+      ],
+      "pdf": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "—",
+          "04/12/2026",
+          "In scadenza"
+        ]
+      ]
+    },
+    {
+      "key": "currency-30",
+      "filter": {
+        "window": "30",
+        "category": "CURRENCY",
+        "personQuery": "Ex0e1e41"
+      },
+      "ui": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "0 voli negli ultimi 90 giorni",
+          "26/11/2026",
+          "1 gg fa",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "27/11/2026",
+          "0 gg",
+          "≤ 7 gg"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "04/12/2026",
+          "7 gg",
+          "≤ 7 gg"
+        ],
+        [
+          "Ex0e1e413 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "05/12/2026",
+          "8 gg",
+          "≤ 30 gg"
+        ],
+        [
+          "Ex0e1e414 Ada",
+          "Currency",
+          "2 voli negli ultimi 90 giorni",
+          "27/12/2026",
+          "30 gg",
+          "≤ 30 gg"
+        ]
+      ],
+      "xlsx": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "—",
+          "04/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e413 Ada",
+          "Currency",
+          "—",
+          "05/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e414 Ada",
+          "Currency",
+          "—",
+          "27/12/2026",
+          "In scadenza"
+        ]
+      ],
+      "pdf": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "—",
+          "04/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e413 Ada",
+          "Currency",
+          "—",
+          "05/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e414 Ada",
+          "Currency",
+          "—",
+          "27/12/2026",
+          "In scadenza"
+        ]
+      ]
+    },
+    {
+      "key": "currency-60",
+      "filter": {
+        "window": "60",
+        "category": "CURRENCY",
+        "personQuery": "Ex0e1e41"
+      },
+      "ui": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "0 voli negli ultimi 90 giorni",
+          "26/11/2026",
+          "1 gg fa",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "27/11/2026",
+          "0 gg",
+          "≤ 7 gg"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "04/12/2026",
+          "7 gg",
+          "≤ 7 gg"
+        ],
+        [
+          "Ex0e1e413 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "05/12/2026",
+          "8 gg",
+          "≤ 30 gg"
+        ],
+        [
+          "Ex0e1e414 Ada",
+          "Currency",
+          "2 voli negli ultimi 90 giorni",
+          "27/12/2026",
+          "30 gg",
+          "≤ 30 gg"
+        ],
+        [
+          "Ex0e1e415 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "28/12/2026",
+          "31 gg",
+          "≤ 60 gg"
+        ],
+        [
+          "Ex0e1e416 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "26/01/2027",
+          "60 gg",
+          "≤ 60 gg"
+        ]
+      ],
+      "xlsx": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "—",
+          "04/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e413 Ada",
+          "Currency",
+          "—",
+          "05/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e414 Ada",
+          "Currency",
+          "—",
+          "27/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e415 Ada",
+          "Currency",
+          "—",
+          "28/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e416 Ada",
+          "Currency",
+          "—",
+          "26/01/2027",
+          "In scadenza"
+        ]
+      ],
+      "pdf": [
+        [
+          "Ex0e1e410 Ada",
+          "Currency",
+          "—",
+          "26/11/2026",
+          "Scaduta"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e412 Ada",
+          "Currency",
+          "—",
+          "04/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e413 Ada",
+          "Currency",
+          "—",
+          "05/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e414 Ada",
+          "Currency",
+          "—",
+          "27/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e415 Ada",
+          "Currency",
+          "—",
+          "28/12/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e416 Ada",
+          "Currency",
+          "—",
+          "26/01/2027",
+          "In scadenza"
+        ]
+      ]
+    },
+    {
+      "key": "documento",
+      "filter": {
+        "window": "7",
+        "expiryTypeId": "cmwy6qb40001jmns6hqyrg8mg",
+        "personQuery": "Ex0e1e411"
+      },
+      "ui": [
+        [
+          "Ex0e1e411 Ada",
+          "Rating",
+          "Verifica Ex0e1e41",
+          "04/12/2026",
+          "7 gg",
+          "≤ 7 gg"
+        ]
+      ],
+      "xlsx": [
+        [
+          "Ex0e1e411 Ada",
+          "Verifica Ex0e1e41",
+          "Tutti",
+          "04/12/2026",
+          "In scadenza"
+        ]
+      ],
+      "pdf": [
+        [
+          "Ex0e1e411 Ada",
+          "Verifica Ex0e1e41",
+          "Tutti",
+          "04/12/2026",
+          "In scadenza"
+        ]
+      ]
+    },
+    {
+      "key": "unicode",
+      "filter": {
+        "window": "30",
+        "expiryTypeId": "cmwy6qb40001jmns6hqyrg8mg",
+        "personQuery": "Ex0e1e41U"
+      },
+      "ui": [
+        [
+          "Ex0e1e41U Łukasz",
+          "Rating",
+          "Verifica Ex0e1e41",
+          "27/12/2026",
+          "30 gg",
+          "≤ 30 gg"
+        ]
+      ],
+      "xlsx": [
+        [
+          "Ex0e1e41U Łukasz",
+          "Verifica Ex0e1e41",
+          "Tutti",
+          "27/12/2026",
+          "In scadenza"
+        ]
+      ],
+      "unicodeMatches": false,
+      "pdf": [
+        [
+          "Ex0e1e41U V¶7",
+          "Verifica Ex0e1e41",
+          "Tutti",
+          "27/12/2026",
+          "In scadenza"
+        ]
+      ]
+    }
+  ],
+  "mixed": [
+    {
+      "locale": "it",
+      "ui": [
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "1 volo negli ultimi 90 giorni",
+          "27/11/2026",
+          "0 gg",
+          "≤ 7 gg"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Rating",
+          "Verifica Ex0e1e41",
+          "04/12/2026",
+          "7 gg",
+          "≤ 7 gg"
+        ]
+      ],
+      "xls": [
+        [
+          "Persona",
+          "Tipo",
+          "Ambito",
+          "Scadenza",
+          "Stato"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Verifica Ex0e1e41",
+          "Tutti",
+          "04/12/2026",
+          "In scadenza"
+        ]
+      ],
+      "pdf": [
+        [
+          "Persona",
+          "Tipo",
+          "Ambito",
+          "Scadenza",
+          "Stato"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "In scadenza"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Verifica Ex0e1e41",
+          "Tutti",
+          "04/12/2026",
+          "In scadenza"
+        ]
+      ]
+    },
+    {
+      "locale": "en",
+      "ui": [
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "1 flight in the last 90 days",
+          "27/11/2026",
+          "0 d",
+          "≤ 7 days"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Rating",
+          "Verifica Ex0e1e41",
+          "04/12/2026",
+          "7 d",
+          "≤ 7 days"
+        ]
+      ],
+      "xls": [
+        [
+          "Person",
+          "Type",
+          "Scope",
+          "Expires",
+          "Status"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "Expiring soon"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Verifica Ex0e1e41",
+          "Everyone",
+          "04/12/2026",
+          "Expiring soon"
+        ]
+      ],
+      "pdf": [
+        [
+          "Person",
+          "Type",
+          "Scope",
+          "Expires",
+          "Status"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Currency",
+          "—",
+          "27/11/2026",
+          "Expiring soon"
+        ],
+        [
+          "Ex0e1e411 Ada",
+          "Verifica Ex0e1e41",
+          "Everyone",
+          "04/12/2026",
+          "Expiring soon"
+        ]
+      ]
+    }
+  ]
+}

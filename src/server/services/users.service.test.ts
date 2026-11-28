@@ -1,11 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
 
+// Legacy service fixtures use password invitations; the isolated opt-in flow uses PostgreSQL.
+beforeAll(() => vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '0'));
+afterAll(() => vi.unstubAllEnvs());
+
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
+    $queryRaw: vi.fn(async () => [{ now: new Date() }]),
+    credentialMail: { findFirst: vi.fn(), count: vi.fn(async () => 0), updateMany: vi.fn(), create: vi.fn(async () => ({ id: 'resend' })) },
+    authToken: { updateMany: vi.fn() },
     user: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -17,12 +25,13 @@ vi.mock('@/server/db/prisma', () => ({
   },
 }));
 
-vi.mock('./auth-tokens.service', () => ({
-  sendInviteEmail: vi.fn(),
+vi.mock('./credential-mail.service', async (original) => ({
+  ...await original<typeof import('./credential-mail.service')>(),
+  enqueueCredential: vi.fn(),
 }));
 
 const { prisma } = await import('@/server/db/prisma');
-const { sendInviteEmail } = await import('./auth-tokens.service');
+const { enqueueCredential } = await import('./credential-mail.service');
 const { createUser, resendInvite, updateUser } = await import('./users.service');
 const { ConflictError, NotFoundError } = await import('./errors');
 
@@ -32,7 +41,7 @@ const createMock = vi.mocked(prisma.user.create);
 const updateMock = vi.mocked(prisma.user.update);
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const transactionMock = vi.mocked(prisma.$transaction);
-const sendInviteEmailMock = vi.mocked(sendInviteEmail);
+const enqueueMock = vi.mocked(enqueueCredential);
 
 // Prisma's overloaded delegate types make `mockResolvedValue`'s literal
 // fixtures ambiguous (same workaround as me.service.test.ts): narrow each
@@ -60,6 +69,10 @@ const SELECTED_USER = {
   isActive: true,
   locale: 'it',
   passwordHash: null,
+  // Story 16.7: `updateUser` compares the patch against the stored link —
+  // without it, `null !== undefined` would make every unlink look like a
+  // change even when there was nothing linked to drop.
+  personId: 'person_1',
   person: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -71,7 +84,7 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
     createMock.mockReset();
     updateMock.mockReset();
     personFindUniqueMock.mockReset();
-    sendInviteEmailMock.mockReset();
+    enqueueMock.mockReset();
 
     // `createUser` runs its write inside a trivial `$transaction` (story
     // 13.1, so its own write logic — `createUserCore` — is reusable by
@@ -82,6 +95,27 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
     (transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation((arg: unknown) =>
       typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[]),
     );
+  });
+
+  it('keeps the last usable administrator in the trial when the other admin is awaiting first activation', async () => {
+    const db = 'postgresql://fixture@localhost:55410/airmanager_test';
+    vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '1');
+    vi.stubEnv('DATABASE_URL', db);
+    vi.stubEnv('TEST_DATABASE_URL', db);
+    vi.stubEnv('APP_URL', 'http://localhost:3000');
+    try {
+      userFindUnique.mockResolvedValue({ ...SELECTED_USER, roles: ['ADMIN'] });
+      const email = 'pending@fixture.invalid';
+      const candidates = vi.mocked(prisma.user.findMany) as unknown as { mockResolvedValue(rows: UserFixture[]): void };
+      candidates.mockResolvedValue([{ id: 'pending', isActive: true, roles: ['ADMIN'], passwordHash: null, email, emailVerification: { email, verifiedAt: null } }]);
+      for (const patch of [{ isActive: false }, { roles: ['PILOT'] as ['PILOT'] }]) {
+        await expect(updateUser(adminActor(), 'last-admin', patch)).rejects.toThrow('last active admin');
+      }
+      expect(vi.mocked(prisma.user.findMany).mock.calls[0][0]?.where).toEqual({
+        id: { not: 'last-admin' }, isActive: true, roles: { has: 'ADMIN' },
+      });
+      expect(updateMock).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); vi.stubEnv('AIRMANAGER_EMAIL_TRIAL','0'); }
   });
 
   describe('authorization (AD-5)', () => {
@@ -102,10 +136,10 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
   });
 
   describe('createUser', () => {
-    it('creates the user with passwordHash null and sends the invite email (AC 1)', async () => {
+    it('creates the user with passwordHash null and atomically enqueues the invite (AC 1)', async () => {
       userFindUnique.mockResolvedValue(null); // no existing user with that email
       userCreate.mockResolvedValue(SELECTED_USER);
-      sendInviteEmailMock.mockResolvedValue(undefined);
+      enqueueMock.mockResolvedValue({ id: 'intent', state: 'QUEUED' });
 
       const result = await createUser(adminActor(), {
         email: 'invitee@airmanager.local',
@@ -117,7 +151,7 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       expect(createMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ passwordHash: null, isActive: true }) }),
       );
-      expect(sendInviteEmailMock).toHaveBeenCalledWith('user_1', 'invitee@airmanager.local', 'it');
+      expect(enqueueMock).toHaveBeenCalledWith(prisma, 'user_1', 'INVITE');
       expect(result.passwordSet).toBe(false);
     });
 
@@ -163,19 +197,11 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       ).rejects.toThrow(ConflictError);
     });
 
-    it('still returns the created user when the invite email fails to send', async () => {
+    it('propagates an enqueue failure to the transaction instead of creating an unreachable account', async () => {
       userFindUnique.mockResolvedValue(null);
       userCreate.mockResolvedValue(SELECTED_USER);
-      sendInviteEmailMock.mockRejectedValue(new Error('SMTP unreachable'));
-
-      const result = await createUser(adminActor(), {
-        email: 'invitee@airmanager.local',
-        roles: ['PILOT'],
-        locale: 'it',
-        personId: null,
-      });
-
-      expect(result.id).toBe('user_1');
+      enqueueMock.mockRejectedValue(new Error('fixture storage unavailable'));
+      await expect(createUser(adminActor(), { email: 'x@example.test', roles: ['PILOT'], locale: 'it' })).rejects.toThrow('fixture storage unavailable');
     });
   });
 
@@ -192,19 +218,21 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       const result = await updateUser(adminActor(), 'user_1', { isActive: false });
 
       expect(updateMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'user_1' }, data: { isActive: false } }),
+        expect.objectContaining({ where: { id: 'user_1' }, data: { isActive: false, adminPasswordVersion: { increment: 1 } } }),
       );
       expect(result.isActive).toBe(false);
     });
 
-    it('allows unlinking the person (personId: null) without a Person lookup', async () => {
+    it('allows unlinking the person (personId: null) without a Person lookup — and ends the sessions (story 16.7, R-16-f)', async () => {
       userFindUnique.mockResolvedValue(SELECTED_USER);
       userUpdate.mockResolvedValue(SELECTED_USER);
 
       await updateUser(adminActor(), 'user_1', { personId: null });
 
       expect(personFindUniqueMock).not.toHaveBeenCalled();
-      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { personId: null } }));
+      // ONE write carrying both fields: the bump cannot land without the unlink, or the reverse.
+      expect(updateMock).toHaveBeenCalledTimes(1);
+      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ data: { personId: null, tokenVersion: { increment: 1 } } }));
     });
 
     it('throws ConflictError when re-linking to a person already linked elsewhere', async () => {
@@ -212,6 +240,43 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
       personFindUnique.mockResolvedValue({ id: 'person_2', user: { id: 'someone_else' } });
 
       await expect(updateUser(adminActor(), 'user_1', { personId: 'person_2' })).rejects.toThrow(ConflictError);
+    });
+
+    // Story 16.7 (ops F8, R-16-f): a re-link or an unlink is a change of
+    // identity — `tokenVersion` advances in the same write, and
+    // `applyActiveRecheck` ends every session issued before it.
+    it('re-linking to another person bumps tokenVersion in the SAME update call', async () => {
+      userFindUnique.mockResolvedValue(SELECTED_USER);
+      personFindUnique.mockResolvedValue({ id: 'person_2', user: null });
+      userUpdate.mockResolvedValue(SELECTED_USER);
+
+      await updateUser(adminActor(), 'user_1', { personId: 'person_2' });
+
+      expect(updateMock).toHaveBeenCalledTimes(1);
+      expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'user_1' }, data: { personId: 'person_2', tokenVersion: { increment: 1 } } }));
+    });
+
+    it('re-sending the SAME personId is not a change: no bump', async () => {
+      userFindUnique.mockResolvedValue(SELECTED_USER);
+      personFindUnique.mockResolvedValue({ id: 'person_1', user: { id: 'user_1' } });
+      userUpdate.mockResolvedValue(SELECTED_USER);
+
+      await updateUser(adminActor(), 'user_1', { personId: 'person_1' });
+
+      const data = updateMock.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+      expect(data).toEqual({ personId: 'person_1' });
+      expect(data.tokenVersion).toBeUndefined();
+    });
+
+    it('a patch that does not touch personId (roles, locale, isActive) never bumps — a role change stays a permission change, propagated by the recheck', async () => {
+      userFindUnique.mockResolvedValue(SELECTED_USER);
+      userUpdate.mockResolvedValue(SELECTED_USER);
+
+      await updateUser(adminActor(), 'user_1', { roles: ['STUDENT'], locale: 'en', isActive: true });
+
+      const data = updateMock.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+      expect(data).toEqual({ roles: ['STUDENT'], locale: 'en', isActive: true, adminPasswordVersion: { increment: 1 } });
+      expect(data.tokenVersion).toBeUndefined();
     });
   });
 
@@ -228,11 +293,11 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
 
     it('re-sends the invite for a user who has not set a password yet', async () => {
       userFindUnique.mockResolvedValue(SELECTED_USER);
-      sendInviteEmailMock.mockResolvedValue(undefined);
+      enqueueMock.mockResolvedValue({ id: 'intent', state: 'QUEUED' });
 
       await resendInvite(adminActor(), 'user_1');
 
-      expect(sendInviteEmailMock).toHaveBeenCalledWith('user_1', 'invitee@airmanager.local', 'it');
+      expect(prisma.credentialMail.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: 'user_1', purpose: 'INVITE' }) }));
     });
   });
 });

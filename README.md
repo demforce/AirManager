@@ -1,6 +1,6 @@
 # AirManager
 
-Gestionale per aviosuperficie: piloti, velivoli, voli, PPR, finanze, scuola volo, prenotazioni e scadenze.
+Gestionale per aviosuperficie: piloti, velivoli, voli, finanze, scuola volo, prenotazioni e scadenze.
 
 ## Stack
 
@@ -13,8 +13,11 @@ Vedi `CLAUDE.md` per le convenzioni di progetto e `_bmad-output/planning-artifac
 1. **Dipendenze**
 
    ```bash
-   npm install
+   nvm use  # Node 22, vedi .nvmrc
+   npx --yes npm@10.9.11 ci
    ```
+
+   Il lockfile attuale non viene accettato da npm 11 per alcuni pacchetti opzionali di altre piattaforme.
 
 2. **Variabili d'ambiente**
 
@@ -53,12 +56,15 @@ Vedi `CLAUDE.md` per le convenzioni di progetto e `_bmad-output/planning-artifac
 | Script | Descrizione |
 | --- | --- |
 | `npm run dev` | Avvia il server di sviluppo Next.js |
+| `npm run mail:worker` | Avvia il dispatcher degli inviti e dei recuperi password. [Attivazione e diagnostica](docs/operations/credential-mail.md) |
 | `npm run build` | Build di produzione |
 | `npm run start` | Avvia il build di produzione |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Type-check TypeScript (`tsc --noEmit`) |
 | `npm run test` | Unit test (Vitest) |
 | `npm run test:e2e` | End-to-end test (Playwright); richiede l'app raggiungibile (viene avviata automaticamente in dev) |
+| `npm run db:reset:test` | Ricrea solo `airmanager_test` o `airmanager_e2e` su localhost e su una porta dedicata diversa da 5432, poi applica migrazioni e seed; richiede `TEST_DATABASE_URL` esplicito e un ruolo PostgreSQL con diritto di creare DB. Usa il driver `pg`, senza `sudo` o client `psql`. |
+| `npm run seed:load` | Popola un DB dedicato con migliaia di righe per i test di carico — mai in CI. Vedi `docs/operations/load-testing.md`. |
 
 ## Note
 

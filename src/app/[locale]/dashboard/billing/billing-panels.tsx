@@ -1,13 +1,18 @@
+'use client';
+
 /**
  * The three riquadri (story Billing-2, AC 1) — replaces the old 5-tile
  * `.kpi-row` (`getBillingKpis`, retired). Design
  * `docs/superpowers/specs/2026-07-26-billing-rework-design.md` §5: three
  * independent "books" that never mix into one signed column — Risultato
  * (P&L), Liquidità (running cash/bank), Acconti piloti (debito verso i
- * piloti). Server-rendered (no `'use client'` — plain stat rows plus two
- * `Link`s, same idiom as `pilots-console.tsx`'s server-side table cells);
- * every number arrives ALREADY computed by `getBillingSummary` (Billing-1),
- * this component only formats and lays them out.
+ * piloti). The authorized readers compute every number; this component
+ * formats the shared live snapshot for the desktop and phone faces.
+ *
+ * Story 15.8a (R-15.8a-c) adds the phone face — a tappable KPI per riquadro,
+ * detail in a sheet — as a CLIENT island (`billing-panels-mobile.tsx`), the
+ * smallest thing that needs the open/closed state (AD-1). Both faces now
+ * consume the same client snapshot after a ledger mutation.
  *
  * The "Istruttori" KPI tile the old row had (owed MTD, a single aggregate)
  * is NOT relocated here (Dev Notes, AC 1) — it doesn't fit the three-book
@@ -17,9 +22,13 @@
  * already shows the same figure per-instructor, in more detail.
  */
 import { Link } from '@/i18n/navigation';
+import { useTranslations } from 'next-intl';
+import { NEGATIVE_BALANCES_HREF } from '@/lib/negative-balance-links';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
-import type { BillingSummary } from '@/server/services/billing-summary.service';
+import { formatMonthYear } from '@/lib/time';
+import { BillingPanelsMobile, type BillingPanelsMobileLabels } from './billing-panels-mobile';
+import { useBillingLive } from './billing-live';
 
 export type BillingPanelsLabels = {
   result: { title: string; revenue: string; cost: string; net: string };
@@ -28,13 +37,13 @@ export type BillingPanelsLabels = {
 };
 
 export type BillingPanelsProps = {
-  summary: BillingSummary;
-  monthLabel: string;
   moneyLocale: 'it' | 'en';
   locale: 'it' | 'en';
   /** The secchiello's own filter link (story Billing-2, AC 3) — only rendered when `treasury.unattributedCount > 0` (spec §8: never hidden while non-empty; review F1 — gated on count, not the summed amount, since two opposite-signed unattributed rows sum to 0 but leave the secchiello reachable). */
   unattributedHref: { pathname: '/dashboard/billing'; query: Record<string, string> };
   labels: BillingPanelsLabels;
+  /** Phone-only strings of the KPI strip and its three sheets (story 15.8a, R-15.8a-c). */
+  mobileLabels: BillingPanelsMobileLabels;
 };
 
 /** `--ok`/`--bad` raw are tuned for a small accent (a dot, a badge's own paired ink) and fail WCAG AA as body-sized TEXT directly on `--panel` in light theme (canvas-measured, see the `.stat-tone-*` doc-comment in airops.css) — `.stat-tone-ok`/`.stat-tone-bad` swap in a darker light-mode-only literal instead, same technique `.badge.*` already established. */
@@ -74,70 +83,90 @@ function TotalRow({ label, value, testId, tone }: { label: string; value: string
   );
 }
 
-export function BillingPanels({ summary, monthLabel, moneyLocale, locale, unattributedHref, labels }: BillingPanelsProps) {
+export function BillingPanels({ moneyLocale, locale, unattributedHref, labels, mobileLabels }: BillingPanelsProps) {
+  const { snapshot } = useBillingLive();
+  const summary = snapshot.summary;
+  const monthLabel = formatMonthYear(new Date(snapshot.asOf), moneyLocale);
+  const t = useTranslations('BillingPage');
+  const unattributedLabel = t('panels.treasury.unattributed', { count: summary.treasury.unattributedCount });
   const { result, treasury, deposits } = summary;
 
   return (
-    <div className="billing-panels">
-      <div className="card" data-testid="billing-panel-result">
-        <div className="card-head">
-          <div className="card-title">{labels.result.title}</div>
-          <span className="card-sub">{monthLabel}</span>
+    <>
+      {/* Phone face (story 15.8a): a tappable KPI per riquadro, the full detail
+          in a sheet. `display: none` above 640px through a class this page owns
+          — the desktop `.billing-panels` below is the one that disappears under
+          it, and both sides are measured (AC 12 i/ii). */}
+      <BillingPanelsMobile
+        summary={summary}
+        monthLabel={monthLabel}
+        moneyLocale={moneyLocale}
+        locale={locale}
+        unattributedHref={unattributedHref}
+        labels={{ ...labels, treasury: { ...labels.treasury, unattributed: unattributedLabel } }}
+        mobile={mobileLabels}
+      />
+      <div className="billing-panels">
+        <div className="card" data-testid="billing-panel-result">
+          <div className="card-head">
+            <div className="card-title">{labels.result.title}</div>
+            <span className="card-sub">{monthLabel}</span>
+          </div>
+          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <StatRow label={labels.result.revenue} value={formatCents(result.revenueCents, moneyLocale)} testId="billing-panel-revenue" />
+            <StatRow label={labels.result.cost} value={formatCents(-result.costCents, moneyLocale)} testId="billing-panel-cost" tone={result.costCents > 0 ? 'bad' : undefined} />
+            <TotalRow label={labels.result.net} value={formatCents(result.netCents, moneyLocale)} testId="billing-panel-net" tone={result.netCents >= 0 ? 'ok' : 'bad'} />
+          </div>
         </div>
-        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <StatRow label={labels.result.revenue} value={formatCents(result.revenueCents, moneyLocale)} testId="billing-panel-revenue" />
-          <StatRow label={labels.result.cost} value={formatCents(-result.costCents, moneyLocale)} testId="billing-panel-cost" tone={result.costCents > 0 ? 'bad' : undefined} />
-          <TotalRow label={labels.result.net} value={formatCents(result.netCents, moneyLocale)} testId="billing-panel-net" tone={result.netCents >= 0 ? 'ok' : 'bad'} />
-        </div>
-      </div>
 
-      <div className="card" data-testid="billing-panel-treasury">
-        <div className="card-head">
-          <div className="card-title">{labels.treasury.title}</div>
+        <div className="card" data-testid="billing-panel-treasury">
+          <div className="card-head">
+            <div className="card-title">{labels.treasury.title}</div>
+          </div>
+          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <StatRow label={labels.treasury.cash} value={formatCents(treasury.cashCents, moneyLocale)} testId="billing-panel-cash" />
+            <StatRow label={labels.treasury.bank} value={formatCents(treasury.bankCents, moneyLocale)} testId="billing-panel-bank" />
+            <StatRow label={labels.treasury.deposits} value={formatCents(deposits.totalCents, moneyLocale)} testId="billing-panel-deposits-note" />
+            <TotalRow label={labels.treasury.available} value={formatCents(treasury.availableCents, moneyLocale)} testId="billing-panel-available" tone={treasury.availableCents >= 0 ? 'ok' : 'bad'} />
+            {/* Review F1: gated on COUNT, not the summed amount — two unattributed rows of opposite sign sum to 0 but the secchiello is still non-empty (spec §8: never hidden while non-empty). */}
+            {treasury.unattributedCount > 0 ? (
+              <Link
+                href={unattributedHref}
+                locale={locale as AppLocale}
+                data-testid="billing-panel-unattributed-link"
+                className="stat-tone-warn"
+                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginTop: 2, textDecoration: 'underline' }}
+              >
+                  <span>{unattributedLabel}</span>
+                <span className="mono num" data-testid="billing-panel-unattributed">
+                  {formatCents(treasury.unattributedCents, moneyLocale)}
+                </span>
+              </Link>
+            ) : null}
+          </div>
         </div>
-        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <StatRow label={labels.treasury.cash} value={formatCents(treasury.cashCents, moneyLocale)} testId="billing-panel-cash" />
-          <StatRow label={labels.treasury.bank} value={formatCents(treasury.bankCents, moneyLocale)} testId="billing-panel-bank" />
-          <StatRow label={labels.treasury.deposits} value={formatCents(deposits.totalCents, moneyLocale)} testId="billing-panel-deposits-note" />
-          <TotalRow label={labels.treasury.available} value={formatCents(treasury.availableCents, moneyLocale)} testId="billing-panel-available" tone={treasury.availableCents >= 0 ? 'ok' : 'bad'} />
-          {/* Review F1: gated on COUNT, not the summed amount — two unattributed rows of opposite sign sum to 0 but the secchiello is still non-empty (spec §8: never hidden while non-empty). */}
-          {treasury.unattributedCount > 0 ? (
-            <Link
-              href={unattributedHref}
-              locale={locale as AppLocale}
-              data-testid="billing-panel-unattributed-link"
-              className="stat-tone-warn"
-              style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginTop: 2, textDecoration: 'underline' }}
-            >
-              <span>{labels.treasury.unattributed}</span>
-              <span className="mono num" data-testid="billing-panel-unattributed">
-                {formatCents(treasury.unattributedCents, moneyLocale)}
-              </span>
-            </Link>
-          ) : null}
-        </div>
-      </div>
 
-      <div className="card" data-testid="billing-panel-deposits">
-        <div className="card-head">
-          <div className="card-title">{labels.deposits.title}</div>
-        </div>
-        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <StatRow label={labels.deposits.total} value={formatCents(deposits.totalCents, moneyLocale)} testId="billing-panel-deposits-total" />
-          <StatRow label={labels.deposits.exposure} value={formatCents(-deposits.exposureCents, moneyLocale)} testId="billing-panel-deposits-exposure" tone={deposits.exposureCents > 0 ? 'bad' : undefined} />
-          <StatRow label={labels.deposits.inRed} value={String(deposits.inRedCount)} testId="billing-panel-deposits-inred" />
-          {deposits.inRedCount > 0 ? (
-            <Link
-              href="/dashboard/pilots"
-              locale={locale as AppLocale}
-              data-testid="billing-panel-deposits-link"
-              style={{ fontSize: 11.5, marginTop: 2, textDecoration: 'underline', color: 'var(--ink-2)' }}
-            >
-              {labels.deposits.detailLink}
-            </Link>
-          ) : null}
+        <div className="card" data-testid="billing-panel-deposits">
+          <div className="card-head">
+            <div className="card-title">{labels.deposits.title}</div>
+          </div>
+          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <StatRow label={labels.deposits.total} value={formatCents(deposits.totalCents, moneyLocale)} testId="billing-panel-deposits-total" />
+            <StatRow label={labels.deposits.exposure} value={formatCents(-deposits.exposureCents, moneyLocale)} testId="billing-panel-deposits-exposure" tone={deposits.exposureCents > 0 ? 'bad' : undefined} />
+            <StatRow label={labels.deposits.inRed} value={String(deposits.inRedCount)} testId="billing-panel-deposits-inred" />
+            {deposits.inRedCount > 0 ? (
+              <Link
+                href={NEGATIVE_BALANCES_HREF}
+                locale={locale as AppLocale}
+                data-testid="billing-panel-deposits-link"
+                style={{ fontSize: 11.5, marginTop: 2, textDecoration: 'underline', color: 'var(--ink-2)' }}
+              >
+                {labels.deposits.detailLink}
+              </Link>
+            ) : null}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

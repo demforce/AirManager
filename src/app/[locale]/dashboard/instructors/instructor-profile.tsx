@@ -17,6 +17,7 @@
  */
 import { useEffect, useState } from 'react';
 import { SlideOver } from '@/components/ui/slide-over';
+import { dismissHistoryLayer } from '@/components/ui/history-layer';
 import { formatCents } from '@/lib/money';
 import { formatDateOnly, formatMinutes } from '@/lib/time';
 import type { InstructorRow } from './instructors-console';
@@ -30,13 +31,14 @@ export type InstructorProfileLabels = {
   noValue: string;
 };
 
-type InstructorDetail = {
+/** Exported for the phone sheet (review 15.5 F2), which shows the SAME three facts from the SAME read — one request, on open, never per list row. */
+export type InstructorDetail = {
   mtdMinutes: number;
   recentFlights: Array<{ id: string; flightDate: string; personFirstName: string; personLastName: string; minutes: number }>;
   recentStudents: Array<{ personId: string; firstName: string; lastName: string }>;
 };
 
-async function fetchDetail(personId: string): Promise<InstructorDetail | null> {
+export async function fetchDetail(personId: string): Promise<InstructorDetail | null> {
   const response = await fetch(`/api/v1/instructor-compensation?personId=${personId}`);
   if (!response.ok) return null;
   return (await response.json()) as InstructorDetail;
@@ -81,7 +83,7 @@ export function InstructorProfile({ instructor, onClose, onEdit, locale, labels 
       closeLabel={labels.closeLabel}
       footer={
         <>
-          <button type="button" className="btn" onClick={onClose}>
+          <button type="button" className="btn" onClick={() => dismissHistoryLayer(onClose)}>
             {labels.closeLabel}
           </button>
           <div style={{ flex: 1 }} />
@@ -141,7 +143,7 @@ export function InstructorProfile({ instructor, onClose, onEdit, locale, labels 
         {[
           { label: labels.kpi.hoursTotal, value: formatMinutes(instructor.totalMinutes) },
           { label: labels.kpi.hoursMtd, value: detail ? formatMinutes(detail.mtdMinutes) : '…' },
-          { label: labels.kpi.owedTotal, value: instructor.owedTotalCents === null ? labels.noValue : formatCents(instructor.owedTotalCents, locale) },
+          { label: labels.kpi.owedTotal, value: formatCents(instructor.owedTotalCents, locale) },
           { label: labels.kpi.rate, value: instructor.payoutRateCents === null ? labels.noValue : `${formatCents(instructor.payoutRateCents, locale)}/h` },
         ].map((kpi) => (
           <div key={kpi.label} style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 14px' }}>

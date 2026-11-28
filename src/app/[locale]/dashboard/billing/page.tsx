@@ -1,12 +1,13 @@
+import { PICKER_LIMIT } from '@/lib/picker';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { redirect } from '@/i18n/navigation';
-import { buildExportHref, buildPdfExportHref } from '@/lib/export-href';
-import { currentMonthRange } from '@/lib/period-presets';
+import { buildExportHref } from '@/lib/export-href';
 import type { BookTypeDto } from '@/lib/schemas/transactions';
+import { projectBillingCompensation, projectBillingNegativeBalances } from '@/lib/billing-live';
 import { formatDateOnly } from '@/lib/time';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
-import { listNegativeBalances } from '@/server/services/accounts.service';
+import { getNegativeBalanceSummary } from '@/server/services/accounts.service';
 import { getBillingSummary } from '@/server/services/billing-summary.service';
 import { listCashCategories } from '@/server/services/cash.service';
 import { getCompensationSummary } from '@/server/services/instructor-compensation.service';
@@ -14,14 +15,12 @@ import { listPeople } from '@/server/services/people.service';
 import { listTransactions } from '@/server/services/transactions.service';
 import { BillingConsole, type BillingFilters } from './billing-console';
 import { BillingPanels } from './billing-panels';
+import { BillingLiveProvider, BillingPageSub } from './billing-live';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
   searchParams: Promise<{ page?: string; dateFrom?: string; dateTo?: string; bookType?: string; categoryId?: string; personQuery?: string; unattributed?: string }>;
 };
-
-/** Form pickers' seed candidates (story TD-3 convention, same as logbook/fleet/pilots). */
-const OPTIONS_PAGE_SIZE = 100;
 
 /** The ledger's own page size. */
 const TX_PAGE_SIZE = 20;
@@ -37,7 +36,7 @@ function sanitizeDateParam(value: string | undefined): string | undefined {
  * Contabilità (epic 12, story 12.9; reworked story Billing-2) — AirOps-
  * native, port of `docs/design-reference/airops/src/BillingView.jsx`,
  * replacing the legacy `/dashboard/finance` + `/dashboard/finance/report`
- * (deleted by story 12.9). `finance.manage` only (ADMIN+STAFF) — no
+ * (deleted by story 12.9). `finance.manage` only (ADMIN-only, story 14.9) — no
  * own-access face, unlike logbook/bookings (the titolare's own estratto
  * conto stays on `people/[id]/account`, untouched — AC 7).
  *
@@ -78,21 +77,19 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   const personQuery = sp.personQuery || undefined;
   const unattributed = sp.unattributed === 'true';
 
-  // Sequential (not `Promise.all`): `listPeople` runs an interactive
-  // `$transaction` internally — same "never concurrent with another
-  // `$transaction`-based read" constraint documented on the logbook/fleet
-  // pages' own options-fetch blocks.
-  const peopleResult = await listPeople(actor, { page: 1, pageSize: OPTIONS_PAGE_SIZE, profile: 'pilot-or-student', includeArchived: false });
+  const peopleResult = await listPeople(actor, { page: 1, pageSize: PICKER_LIMIT + 1, profile: 'pilot-or-student', includeArchived: false });
   const personOptions = peopleResult.items.map((person) => ({ id: person.id, firstName: person.firstName, lastName: person.lastName }));
 
   const cashCategories = await listCashCategories(actor, { includeInactive: false });
   const categoryOptions = cashCategories.map((category) => ({ id: category.id, name: category.name }));
 
-  const summary = await getBillingSummary(actor);
+  const asOf = new Date();
+  const summary = await getBillingSummary(actor, asOf);
   const compensation = await getCompensationSummary(actor);
-  const negativeBalances = await listNegativeBalances(actor);
+  const negativeBalances = await getNegativeBalanceSummary(actor);
 
-  const txQuery = { pageSize: TX_PAGE_SIZE, from: dateFrom, to: dateTo, personQuery, bookType: bookTypeParam, categoryId, unattributed };
+  const transactionFilters = { from: dateFrom, to: dateTo, personQuery, bookType: bookTypeParam, categoryId };
+  const txQuery = { ...transactionFilters, pageSize: TX_PAGE_SIZE, unattributed };
   let page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1);
   let result = await listTransactions(actor, { ...txQuery, page });
   const lastPage = Math.max(1, Math.ceil(result.total / TX_PAGE_SIZE));
@@ -100,22 +97,14 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
     page = lastPage;
     result = await listTransactions(actor, { ...txQuery, page });
   }
-  const totalPages = Math.max(1, Math.ceil(result.total / TX_PAGE_SIZE));
 
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const t = await getTranslations('BillingPage');
 
-  const filterQuery = {
-    ...(dateFrom ? { dateFrom } : {}),
-    ...(dateTo ? { dateTo } : {}),
-    ...(bookTypeParam ? { bookType: bookTypeParam } : {}),
-    ...(categoryId ? { categoryId } : {}),
-    ...(personQuery ? { personQuery } : {}),
-    ...(unattributed ? { unattributed: 'true' } : {}),
-  };
-  const exportHref = buildExportHref('/api/v1/transactions', filterQuery, locale);
-  const reportPeriod = dateFrom && dateTo ? { from: dateFrom, to: dateTo } : currentMonthRange();
-  const cashReportPdfHref = buildPdfExportHref('/api/v1/cash-report/pdf', reportPeriod, locale);
+  const exportHref = buildExportHref('/api/v1/transactions', {
+    ...transactionFilters,
+    unattributed: unattributed ? 'true' : undefined,
+  }, locale);
 
   const periodLabel = dateFrom && dateTo
     ? `${formatDateOnly(dateFrom, displayLocale)} – ${formatDateOnly(dateTo, displayLocale)}`
@@ -125,7 +114,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
         ? `${t('filters.dateTo')} ${formatDateOnly(dateTo, displayLocale)}`
         : t('periodAll');
 
-  const monthLabel = new Intl.DateTimeFormat(displayLocale === 'en' ? 'en-IE' : 'it-IT', { month: 'long', year: 'numeric' }).format(new Date());
 
   const filters: BillingFilters = {
     dateFrom: dateFrom ?? '',
@@ -137,17 +125,20 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
   };
 
   return (
-    <main className="page">
+    <main className="page fold-billing">
+      <BillingLiveProvider
+        key={JSON.stringify({ page, ...transactionFilters, unattributed })}
+        initial={{ asOf: asOf.toISOString(), transactions: result, summary, compensation: projectBillingCompensation(compensation), negativeBalances: { count: negativeBalances.count, top: projectBillingNegativeBalances(negativeBalances.top) } }}
+        filters={filters}
+      >
       <div className="page-head">
         <div className="page-title-block">
-          <h1>{t('title')}</h1>
-          <div className="sub">{t('sub', { count: result.total, period: periodLabel })}</div>
+          <h1 className="fold-duplicate-title">{t('title')}</h1>
+          <BillingPageSub period={periodLabel} />
         </div>
       </div>
 
       <BillingPanels
-        summary={summary}
-        monthLabel={monthLabel}
         moneyLocale={displayLocale}
         locale={displayLocale}
         unattributedHref={{ pathname: '/dashboard/billing', query: { unattributed: 'true' } }}
@@ -169,42 +160,40 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             detailLink: t('panels.deposits.detailLink'),
           },
         }}
+        mobileLabels={{
+          kpiResult: t('mobile.kpiResult'),
+          kpiAvailable: t('mobile.kpiAvailable'),
+          kpiDeposits: t('mobile.kpiDeposits'),
+          openPanel: t('mobile.openPanel'),
+          treasurySub: t('mobile.treasurySub'),
+          depositsSub: t('mobile.depositsSub'),
+          close: t('mobile.close'),
+        }}
       />
 
       <BillingConsole
-        key={JSON.stringify({ page, ...filterQuery })}
-        items={result.items}
-        page={page}
-        totalPages={totalPages}
         filters={filters}
         personOptions={personOptions}
         categoryOptions={categoryOptions}
-        byCategory={summary.byCategory.categories}
-        compensation={compensation.map((row) => ({
-          personId: row.personId,
-          firstName: row.firstName,
-          lastName: row.lastName,
-          mtdMinutes: row.mtdMinutes,
-          payoutRateCents: row.payoutRateCents,
-          owedMtdCents: row.owedMtdCents,
-        }))}
-        negativeBalances={negativeBalances.map((item) => ({ personId: item.personId, firstName: item.firstName, lastName: item.lastName, balanceCents: item.balanceCents }))}
         exportHref={exportHref}
-        cashReportPdfHref={cashReportPdfHref}
         moneyLocale={displayLocale}
         locale={displayLocale}
         labels={{
           newTransaction: t('newTransaction'),
           byCategory: {
             title: t('byCategory.title'),
-            sub: t('byCategory.sub', { month: monthLabel }),
             empty: t('byCategory.empty'),
             in: t('byCategory.in'),
             out: t('byCategory.out'),
             net: t('byCategory.net'),
           },
           instructorCompensation: { title: t('instructorCompensation.title'), sub: t('instructorCompensation.sub'), noRate: t('instructorCompensation.noRate'), empty: t('instructorCompensation.empty') },
-          negativeBalances: { title: t('negativeBalances.title'), empty: t('negativeBalances.empty'), link: t('negativeBalances.link') },
+          negativeBalances: {
+            title: t('negativeBalances.title'),
+            count: t('negativeBalances.count', { count: negativeBalances.count }),
+            preview: t('negativeBalances.preview', { count: negativeBalances.top.length }),
+            link: t('negativeBalances.link'),
+          },
           exportMenu: { label: t('exportMenu.label'), xlsLabel: t('exportMenu.xlsLabel'), pdfLabel: t('exportMenu.pdfLabel') },
           table: {
             cardTitle: t('table.cardTitle'),
@@ -226,7 +215,6 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
               ADJUSTMENT: t('table.kinds.ADJUSTMENT'),
               PACKAGE_PURCHASE: t('table.kinds.PACKAGE_PURCHASE'),
               FLIGHT_CHARGE: t('table.kinds.FLIGHT_CHARGE'),
-              FLIGHT_CHARGE_REVERSAL: t('table.kinds.FLIGHT_CHARGE_REVERSAL'),
             },
             methods: { CASH: t('table.methods.CASH'), BANK_TRANSFER: t('table.methods.BANK_TRANSFER'), POS: t('table.methods.POS') },
             bookTypes: {
@@ -311,11 +299,35 @@ export default async function BillingPage({ params, searchParams }: PageProps) {
             invalidAmount: t('newTransactionForm.invalidAmount'),
             conflictError: t('newTransactionForm.conflictError'),
             genericError: t('newTransactionForm.genericError'),
+            futureDateError: t('newTransactionForm.futureDateError'),
             result: { title: t('newTransactionForm.result.title'), newBalance: t('newTransactionForm.result.newBalance'), close: t('newTransactionForm.result.close') },
             picker: { placeholder: t('newTransactionForm.picker.placeholder'), noResults: t('newTransactionForm.picker.noResults') },
           },
+          mobile: {
+            bookTypeAll: t('mobile.bookTypeAll'),
+            unattributedChip: t('filters.unattributedChip'),
+            filters: t('mobile.filters'),
+            // Placeholder filled client-side (the count is client state) — `t.raw`, per the convention.
+            filtersCount: t.raw('mobile.filtersCount') as string,
+            moreActions: t('mobile.moreActions'),
+            filtersTitle: t('mobile.filtersTitle'),
+            apply: t('mobile.apply'),
+            close: t('mobile.close'),
+            back: t('mobile.back'),
+            openDetail: t('mobile.openDetail'),
+            empty: t('mobile.empty'),
+            source: t('mobile.source'),
+            sourceAccount: t('mobile.sourceAccount'),
+            sourceCash: t('mobile.sourceCash'),
+            reference: t('mobile.reference'),
+            id: t('mobile.id'),
+            reclassify: t('mobile.reclassify'),
+            reclassifyConfirm: t('mobile.reclassifyConfirm'),
+            unattributedMethod: t('mobile.unattributedMethod'),
+          },
         }}
       />
+      </BillingLiveProvider>
     </main>
   );
 }

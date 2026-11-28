@@ -109,7 +109,7 @@ test.describe('AirOps theme toggle (story 12.1, AC 2, 6)', () => {
     await expect(page).toHaveURL(/\/it\/dashboard$/);
 
     const html = page.locator('html');
-    // Fresh session, no am-theme cookie yet — default is light (AC 2).
+    // With no manual choice the default Playwright light system theme applies.
     await expect(html).toHaveAttribute('data-theme', 'light');
 
     await page.getByRole('button', { name: 'Cambia tema' }).click();

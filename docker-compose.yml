@@ -2,6 +2,54 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    # Parallel query allocates its shared hash tables in /dev/shm (DSM,
+    # `dynamic_shared_memory_type = posix`); Docker's 64 MB default makes them
+    # fail with `53100 could not resize shared memory segment` -> HTTP 500 on
+    # /reports and /dashboard under load (perf report F4/F10, 2026-09-10).
+    # The DSM/hash-table context is allocated per PARALLEL QUERY -- even when
+    # its workers don't launch and the leader runs alone -- so consumption
+    # scales with CONCURRENT CONNECTIONS, not with `max_parallel_workers`
+    # (fixed at its default, 8, throughout; `max_parallel_workers_per_gather`
+    # stays at 2, see below). Measured at ~20 MB per concurrently active
+    # parallel query (review 17.1, same query, worker count pinned at <= 7):
+    #   6 connections  (pool 3,  mixed API+page burst)          ~113 MB peak
+    #   10 connections (pool 10, `stats year` burst alone)      ~214 MB peak
+    #   20 connections (pool 10, 10 API + 10 page `reports`)    ~353 MB peak
+    #   40 connections (pool 20, 10 API + 10 page `reports`)    ~510 MB peak,
+    #                                                            capped at
+    #                                                            512mb, 7x 53100
+    # so 512 MB was NOT enough once `DATABASE_POOL_MAX` and page traffic
+    # combine (that row is exactly the failure this fix targets) -- and it
+    # was a hard cap, not the true demand: re-measured uncapped at 1 GB, the
+    # same 40-connection burst peaks at ~692 MB with ZERO `53100` (verified
+    # on the retuned container, review 17.1), consistent with the roughly
+    # linear ~20 MB/connection scaling above. 1 GB covers that measured
+    # demand with room to spare. tmpfs is a cap, not an allocation -- unused
+    # space costs nothing. NOTE: `shared_buffers` does NOT live here
+    # (`shared_memory_type = mmap`), so this value is unrelated to it.
+    shm_size: '1gb'
+    # Dev-machine tuning (assumes 4-8 GB RAM; this box: 7.9 GB / 4 CPU).
+    # Postgres 16 factory defaults are 128MB/4MB/4GB (verified 2026-09-10).
+    #  - shared_buffers 512MB: the whole load DB (121 MB) plus the e2e DB
+    #    (12 MB) fit in cache, so measurements stop depending on the page
+    #    cache; still only ~6% of RAM, which a box that also runs Next and
+    #    Chromium can afford.
+    #  - work_mem 16MB: the 24-26 monthly aggregates each page issues hash and
+    #    sort over 104k-row scans (perf 2.4). Measured (review 17.1): `temp_bytes`
+    #    on `airmanager_load` stayed flat across every burst at 16MB, i.e.
+    #    nothing spills to disk at this value -- whether 4MB (the factory
+    #    default) would have spilled these specific queries was NOT verified
+    #    (SQL approximations of them didn't spill even at 4MB either). NOT a
+    #    fix for F8 - the report measured that even 64MB does not help that
+    #    query (the fix is one GROUP BY, story 17.4). Raising it also raises
+    #    the /dev/shm demand above: the two values move together.
+    #  - effective_cache_size 3GB: planner hint only, allocates nothing;
+    #    ~RAM/2 is honest on a shared dev box (the 4GB default is a lie on a
+    #    4GB machine).
+    # max_parallel_workers_per_gather is DELIBERATELY not set: it must stay at
+    # its default (2) so the shm fix is proven by shm, not by disabling
+    # parallelism (which is what the audit had to do to measure at all).
+    command: postgres -c shared_buffers=512MB -c work_mem=16MB -c effective_cache_size=3GB
     environment:
       POSTGRES_USER: airmanager
       POSTGRES_PASSWORD: airmanager

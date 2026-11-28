@@ -1,7 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Prisma } from '@/generated/prisma/client';
+import { parseDateOnlyUtc } from '@/lib/date-only';
 import { recordAdjustmentSchema, recordTopUpSchema } from '@/lib/schemas/accounts';
 import type { Actor } from '@/server/auth/rbac';
 import { ForbiddenError } from './errors';
+
+// These fixtures exercise the default legacy configuration. The opt-in path uses
+// PostgreSQL and local SMTP in scripts/test-single-account-address.ts.
+beforeAll(() => vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '0'));
+afterAll(() => vi.unstubAllEnvs());
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
@@ -15,7 +22,6 @@ vi.mock('@/server/db/prisma', () => ({
       findMany: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
-      count: vi.fn(),
       groupBy: vi.fn(),
     },
     person: {
@@ -44,14 +50,23 @@ vi.mock('@/server/adapters/mail', () => ({
 }));
 
 vi.mock('@/server/adapters/mail/templates', () => ({
-  buildNegativeBalanceAlertEmail: vi.fn(async () => ({ subject: 'Alert subject', text: 'Alert text' })),
+  buildNegativeBalanceAlertEmail: vi.fn(async () => ({ subject: 'Alert subject', text: 'Alert text', html: '<p>Alert text</p>' })),
 }));
 
 const { prisma } = await import('@/server/db/prisma');
 const { buildNegativeBalanceAlertEmail } = await import('@/server/adapters/mail/templates');
-const { balanceBand, getAccountOverview, listAccountMovements, listNegativeBalances, recordAdjustment, recordTopUp } =
-  await import('./accounts.service');
-const { ConflictError, NotFoundError } = await import('./errors');
+const {
+  balanceBand,
+  getAccountOverview,
+  getNegativeBalanceSummary,
+  getOwnAccountOverview,
+  listAccountMovements,
+  listOwnAccountMovements,
+  listNegativeBalances,
+  recordAdjustment,
+  recordTopUp,
+} = await import('./accounts.service');
+const { ConflictError, NotFoundError, ValidationError } = await import('./errors');
 
 const accountFindUniqueMock = vi.mocked(prisma.account.findUnique);
 const accountFindManyMock = vi.mocked(prisma.account.findMany);
@@ -60,7 +75,6 @@ const accountMovementAggregateMock = vi.mocked(prisma.accountMovement.aggregate)
 const accountMovementFindManyMock = vi.mocked(prisma.accountMovement.findMany);
 const accountMovementFindUniqueMock = vi.mocked(prisma.accountMovement.findUnique);
 const accountMovementCreateMock = vi.mocked(prisma.accountMovement.create);
-const accountMovementCountMock = vi.mocked(prisma.accountMovement.count);
 const accountMovementGroupByMock = vi.mocked(prisma.accountMovement.groupBy);
 const personFindUniqueMock = vi.mocked(prisma.person.findUnique);
 const userFindUniqueMock = vi.mocked(prisma.user.findUnique);
@@ -74,7 +88,6 @@ const queryRawMock = vi.mocked(prisma.$queryRaw);
 // fixtures ambiguous (same workaround as aircraft.service.test.ts / people.service.test.ts).
 type Fixture = Record<string, unknown> | null;
 const accountFindUnique = accountFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const accountFindMany = accountFindManyMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const accountUpsert = accountUpsertMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const accountMovementAggregate = accountMovementAggregateMock as unknown as {
   mockResolvedValue: (v: { _sum: { amountCents: number | null } }) => void;
@@ -88,28 +101,16 @@ const accountMovementFindMany = accountMovementFindManyMock as unknown as {
   mockRejectedValue: (v: unknown) => void;
 };
 const accountMovementFindUnique = accountMovementFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const accountMovementCount = accountMovementCountMock as unknown as { mockResolvedValue: (v: number) => void };
 const accountMovementCreate = accountMovementCreateMock as unknown as {
   mockResolvedValue: (v: Fixture) => void;
   mockRejectedValue: (v: unknown) => void;
 };
-const accountMovementGroupBy = accountMovementGroupByMock as unknown as { mockResolvedValue: (v: Fixture[]) => void };
 const personFindUnique = personFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const userFindUnique = userFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
-const appSettingFindUnique = appSettingFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const cashCategoryFindUnique = cashCategoryFindUniqueMock as unknown as { mockResolvedValue: (v: Fixture) => void };
 const queryRaw = queryRawMock as unknown as { mockResolvedValue: (v: unknown[]) => void };
 
-/**
- * Every call site in this service now uses the interactive-callback overload
- * (`$transaction(async (tx) => ...)`, story TD-1 AC 3 hardened `buildOverview`/
- * `listAccountMovements` off the batch/array form — same as `recordTopUp`/
- * `recordAdjustment` already did, and same as `adjustHourMeter` in
- * aircraft.service.ts). This stand-in still accepts a legacy array argument
- * too (`Promise.all` over it) for robustness, but a function is the only
- * form this service's production code sends: it is invoked with the mocked
- * `prisma` itself as `tx`.
- */
+// Write transactions receive the mocked client as their transaction client.
 const transaction = transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void };
 
 function mockTransaction(): void {
@@ -118,8 +119,8 @@ function mockTransaction(): void {
   );
 }
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
+function adminActor(): Actor {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
 function pilotActor(personId: string | null = 'person_pilot'): Actor {
@@ -140,7 +141,6 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     accountMovementFindManyMock.mockReset();
     accountMovementFindUniqueMock.mockReset();
     accountMovementCreateMock.mockReset();
-    accountMovementCountMock.mockReset();
     accountMovementGroupByMock.mockReset();
     personFindUniqueMock.mockReset();
     userFindUniqueMock.mockReset();
@@ -160,10 +160,10 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
   });
 
   describe('getAccountOverview — own-access (story 2.3 pattern, AC 1)', () => {
-    it('staff (people.read) can read any account', async () => {
+    it('admin (people.read) can read any account', async () => {
       accountFindUnique.mockResolvedValue(null);
 
-      const result = await getAccountOverview(staffActor(), 'person_1');
+      const result = await getAccountOverview(adminActor(), 'person_1');
 
       expect(result).toEqual({ account: null, balanceCents: 0, recentMovements: [] });
     });
@@ -196,7 +196,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     it('returns { account: null, balanceCents: 0 } when the person never activated pilot/student (AC 1)', async () => {
       accountFindUnique.mockResolvedValue(null);
 
-      const result = await getAccountOverview(staffActor(), 'person_1');
+      const result = await getAccountOverview(adminActor(), 'person_1');
 
       expect(result).toEqual({ account: null, balanceCents: 0, recentMovements: [] });
       expect(accountMovementAggregateMock).not.toHaveBeenCalled();
@@ -207,7 +207,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: null } });
       accountMovementFindMany.mockResolvedValue([]);
 
-      const result = await getAccountOverview(staffActor(), 'person_1');
+      const result = await getAccountOverview(adminActor(), 'person_1');
 
       expect(result.balanceCents).toBe(0);
       expect(result.recentMovements).toEqual([]);
@@ -224,13 +224,17 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
           paymentMethod: 'CASH',
           description: null,
           effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
-          actorUserId: 'staff_1',
+          actorUserId: 'admin_1',
           createdAt: new Date('2026-03-01T10:00:00.000Z'),
         },
       ]);
 
-      const result = await getAccountOverview(staffActor(), 'person_1');
+      const result = await getAccountOverview(adminActor(), 'person_1');
 
+      expect(transactionMock).not.toHaveBeenCalled();
+      const accountFilter = { accountId: 'account_1' };
+      expect(accountMovementAggregateMock.mock.calls[0]?.[0]?.where).toEqual(accountFilter);
+      expect(accountMovementFindManyMock.mock.calls[0]?.[0]?.where).toEqual(accountFilter);
       expect(result.balanceCents).toBe(15000);
       expect(result.recentMovements).toEqual([
         {
@@ -240,7 +244,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
           paymentMethod: 'CASH',
           description: null,
           effectiveDate: '2026-03-01',
-          actorUserId: 'staff_1',
+          actorUserId: 'admin_1',
           createdAt: new Date('2026-03-01T10:00:00.000Z'),
         },
       ]);
@@ -251,7 +255,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 500 } });
       accountMovementFindMany.mockResolvedValue([]);
 
-      await getAccountOverview(staffActor(), 'person_1');
+      await getAccountOverview(adminActor(), 'person_1');
 
       expect(accountMovementFindManyMock).toHaveBeenCalledWith(
         // `id` tie-break keeps same-millisecond rows deterministic (review 3.1 F3).
@@ -262,32 +266,67 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     it('throws NotFoundError for an unknown person instead of an empty overview (review 3.1 F4)', async () => {
       personFindUnique.mockResolvedValue(null);
 
-      await expect(getAccountOverview(staffActor(), 'missing')).rejects.toThrow(NotFoundError);
+      await expect(getAccountOverview(adminActor(), 'missing')).rejects.toThrow(NotFoundError);
       expect(accountFindUniqueMock).not.toHaveBeenCalled();
     });
   });
 
-  describe('listAccountMovements — own-access (story 3.2, AC 1/2)', () => {
+  describe('listAccountMovements (story 3.2, AC 1/2; story 19.11 — one SQL statement, running balance, period)', () => {
     const query = { page: 1, pageSize: 20 };
 
-    it('staff (people.read) can read any statement, WITH actorEmail (AC 2)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([
-        {
-          id: 'movement_1',
-          type: 'TOP_UP',
-          amountCents: 10000,
-          description: 'Contanti',
-          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
-          createdAt: new Date('2026-03-01T10:00:00.000Z'),
-          actorUser: { email: 'staff@airmanager.local' },
-          reversalOfId: null,
-          reversal: null,
-        },
-      ]);
-      accountMovementCount.mockResolvedValue(1);
+    /** One row of the statement SQL: the period summary (repeated on every row) plus one movement. */
+    function sqlRow(overrides: Record<string, unknown> = {}) {
+      return {
+        openingCents: BigInt(0),
+        total: BigInt(1),
+        periodCents: BigInt(10000),
+        id: 'movement_1',
+        type: 'TOP_UP',
+        amountCents: 10000,
+        description: 'Contanti',
+        effectiveDateText: '2026-03-01',
+        createdAt: new Date('2026-03-01T10:00:00.000Z'),
+        reversalOfId: null,
+        cumulativeCents: BigInt(10000),
+        reversalOfEffectiveDate: null,
+        hasReversal: false,
+        actorEmail: 'staff@airmanager.local',
+        ...overrides,
+      };
+    }
 
-      const result = await listAccountMovements(staffActor(), 'person_1', query);
+    /** The summary-only row of a page without movements (the `LEFT JOIN page`): every movement column `null`. */
+    function summaryOnlyRow(summary: { openingCents: bigint; total: bigint; periodCents: bigint }) {
+      return {
+        ...summary,
+        id: null,
+        type: null,
+        amountCents: null,
+        description: null,
+        effectiveDateText: null,
+        createdAt: null,
+        reversalOfId: null,
+        cumulativeCents: null,
+        reversalOfEffectiveDate: null,
+        hasReversal: false,
+        actorEmail: null,
+      };
+    }
+
+    /** The Postgres text (`$n` placeholders) and bound values of the n-th `$queryRaw` call — the service passes ONE composed `Prisma.sql` object. */
+    function rawCall(index = 0): { sql: string; values: unknown[] } {
+      const [statement] = queryRawMock.mock.calls[index] as unknown as [Prisma.Sql];
+      return { sql: statement.text, values: statement.values };
+    }
+
+    beforeEach(() => {
+      accountFindUnique.mockResolvedValue({ id: 'account_1' });
+    });
+
+    it('staff (people.read) reads any statement WITH actorEmail; bigint sums become numbers and the period echo is null without bounds (AC 2)', async () => {
+      queryRaw.mockResolvedValue([sqlRow()]);
+
+      const result = await listAccountMovements(adminActor(), 'person_1', query);
 
       expect(result).toEqual({
         items: [
@@ -301,64 +340,52 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
             actorEmail: 'staff@airmanager.local',
             reversalOfId: null,
             hasReversal: false,
+            balanceAfterCents: 10000,
+            reversalOfEffectiveDate: null,
           },
         ],
         total: 1,
         page: 1,
         pageSize: 20,
+        from: null,
+        to: null,
+        openingBalanceCents: 0,
+        closingBalanceCents: 10000,
       });
+      expect(typeof result.total).toBe('number');
     });
 
-    it('maps a linked ADJUSTMENT row (reversalOfId set) and flags the reversed original (hasReversal, story 3.3 AC 1)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([
-        {
-          id: 'movement_adj',
-          type: 'ADJUSTMENT',
-          amountCents: -5000,
-          description: 'Errore di registrazione',
-          effectiveDate: new Date('2026-03-02T00:00:00.000Z'),
-          createdAt: new Date('2026-03-02T10:00:00.000Z'),
-          actorUser: { email: 'staff@airmanager.local' },
-          reversalOfId: 'movement_1',
-          reversal: null,
-        },
-        {
-          id: 'movement_1',
-          type: 'TOP_UP',
-          amountCents: 5000,
-          description: null,
-          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
-          createdAt: new Date('2026-03-01T10:00:00.000Z'),
-          actorUser: { email: 'staff@airmanager.local' },
-          reversalOfId: null,
-          reversal: { id: 'movement_adj' },
-        },
+    it('balanceAfterCents = opening balance + the running sum of the PERIOD; closing = opening + the period sum', async () => {
+      queryRaw.mockResolvedValue([
+        sqlRow({ id: 'movement_2', amountCents: -2500, openingCents: BigInt(7000), total: BigInt(2), periodCents: BigInt(7500), cumulativeCents: BigInt(7500) }),
+        sqlRow({ id: 'movement_1', amountCents: 10000, openingCents: BigInt(7000), total: BigInt(2), periodCents: BigInt(7500), cumulativeCents: BigInt(10000) }),
       ]);
-      accountMovementCount.mockResolvedValue(2);
 
-      const result = await listAccountMovements(staffActor(), 'person_1', query);
+      const result = await listAccountMovements(adminActor(), 'person_1', { page: 1, pageSize: 20, from: '2026-03-01', to: '2026-03-31' });
 
-      expect(result.items[0]).toMatchObject({ id: 'movement_adj', reversalOfId: 'movement_1', hasReversal: false });
-      expect(result.items[1]).toMatchObject({ id: 'movement_1', reversalOfId: null, hasReversal: true });
+      expect(result.items.map((item) => [item.id, item.balanceAfterCents])).toEqual([
+        ['movement_2', 14500],
+        ['movement_1', 17000],
+      ]);
+      expect(result).toMatchObject({ from: '2026-03-01', to: '2026-03-31', openingBalanceCents: 7000, closingBalanceCents: 14500, total: 2 });
+      // The first row of page 1 IS the closing balance — the invariant AC 4 proves end to end.
+      expect(result.items[0]!.balanceAfterCents).toBe(result.closingBalanceCents);
     });
 
-    it('a titolare can read their own statement, WITHOUT actorEmail (AC 1)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([
-        {
-          id: 'movement_1',
-          type: 'TOP_UP',
-          amountCents: 10000,
-          description: 'Contanti',
-          effectiveDate: new Date('2026-03-01T00:00:00.000Z'),
-          createdAt: new Date('2026-03-01T10:00:00.000Z'),
-          actorUser: { email: 'staff@airmanager.local' },
-          reversalOfId: null,
-          reversal: null,
-        },
+    it("maps a linked ADJUSTMENT (reversalOfId + the original's value date) and flags the corrected original (hasReversal, story 3.3 AC 1; D-9)", async () => {
+      queryRaw.mockResolvedValue([
+        sqlRow({ id: 'movement_adj', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'movement_1', reversalOfEffectiveDate: '2025-12-31', total: BigInt(2) }),
+        sqlRow({ id: 'movement_1', hasReversal: true, total: BigInt(2) }),
       ]);
-      accountMovementCount.mockResolvedValue(1);
+
+      const result = await listAccountMovements(adminActor(), 'person_1', query);
+
+      expect(result.items[0]).toMatchObject({ id: 'movement_adj', reversalOfId: 'movement_1', reversalOfEffectiveDate: '2025-12-31', hasReversal: false });
+      expect(result.items[1]).toMatchObject({ id: 'movement_1', reversalOfId: null, reversalOfEffectiveDate: null, hasReversal: true });
+    });
+
+    it('a titolare reads their own statement, WITHOUT actorEmail (AC 1; AD-5: the service drops it)', async () => {
+      queryRaw.mockResolvedValue([sqlRow()]);
 
       const result = await listAccountMovements(pilotActor('person_pilot'), 'person_pilot', query);
 
@@ -369,70 +396,138 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       await expect(listAccountMovements(pilotActor('person_pilot'), 'person_other', query)).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
       expect(accountFindUniqueMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
     it('rejects a pilot with no linked person (personId: null)', async () => {
       await expect(listAccountMovements(pilotActor(null), 'person_1', query)).rejects.toThrow(ForbiddenError);
       expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundError for an unknown person', async () => {
       personFindUnique.mockResolvedValue(null);
 
-      await expect(listAccountMovements(staffActor(), 'missing', query)).rejects.toThrow(NotFoundError);
+      await expect(listAccountMovements(adminActor(), 'missing', query)).rejects.toThrow(NotFoundError);
+      expect(accountFindUniqueMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
+    });
+
+    it('returns the empty statement (total 0, both balances 0, the period echoed), NOT a 404, for a person with no account yet — without the SQL', async () => {
+      accountFindUnique.mockResolvedValue(null);
+
+      const result = await listAccountMovements(adminActor(), 'person_1', { page: 1, pageSize: 20, from: '2026-01-01', to: '2026-12-31' });
+
+      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20, from: '2026-01-01', to: '2026-12-31', openingBalanceCents: 0, closingBalanceCents: 0 });
+      expect(queryRawMock).not.toHaveBeenCalled();
+    });
+
+    it('is ONE $queryRaw after the person/account lookups and NEVER a $transaction; the bounds are bound as YYYY-MM-DD text cast ::date, plus take/skip (D-4, D-14)', async () => {
+      queryRaw.mockResolvedValue([sqlRow()]);
+
+      await listAccountMovements(adminActor(), 'person_1', { page: 3, pageSize: 10, from: '2026-07-01', to: '2026-07-31' });
+
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(personFindUniqueMock.mock.invocationCallOrder[0]).toBeLessThan(queryRawMock.mock.invocationCallOrder[0]!);
+      expect(accountFindUniqueMock.mock.invocationCallOrder[0]).toBeLessThan(queryRawMock.mock.invocationCallOrder[0]!);
+      const { sql, values } = rawCall();
+      expect(values).toEqual(['account_1', '2026-07-01', '2026-07-31', 'account_1', '2026-07-01', 10, 20]);
+      expect(sql).toContain('m."effectiveDate" >= $2::date');
+      expect(sql).toContain('m."effectiveDate" <= $3::date');
+      expect(sql).toContain('o."effectiveDate" < $5::date');
+      // The running sum in the statement key, ascending; the page in the same key, descending (Q-19.11-a = A).
+      expect(sql).toContain('SUM(m."amountCents") OVER (ORDER BY m."effectiveDate", m."createdAt", m."id" ROWS UNBOUNDED PRECEDING)');
+      expect(sql).toContain('ORDER BY "effectiveDate" DESC, "createdAt" DESC, "id" DESC LIMIT $6 OFFSET $7');
+      expect(sql).toContain('ORDER BY p."effectiveDate" DESC, p."createdAt" DESC, p."id" DESC');
+    });
+
+    it('without from/to: no date predicate at all (never an "optional" `IS NULL OR`), and an opening balance of 0 without a sub-select', async () => {
+      queryRaw.mockResolvedValue([sqlRow()]);
+
+      await listAccountMovements(adminActor(), 'person_1', query);
+
+      const { sql, values } = rawCall();
+      expect(values).toEqual(['account_1', 20, 0]);
+      expect(sql).not.toContain('::date');
+      expect(sql).not.toContain('IS NULL OR');
+      expect(sql).toContain('0::bigint AS "openingCents"');
+    });
+
+    it('a page past the end still returns the period summary — the summary-only row carries total and balances, no item (AC 6)', async () => {
+      queryRaw.mockResolvedValue([summaryOnlyRow({ openingCents: BigInt(5000), total: BigInt(3), periodCents: BigInt(-1200) })]);
+
+      const result = await listAccountMovements(adminActor(), 'person_1', { page: 999, pageSize: 20, from: '2026-01-01', to: '2026-01-31' });
+
+      expect(result).toEqual({ items: [], total: 3, page: 999, pageSize: 20, from: '2026-01-01', to: '2026-01-31', openingBalanceCents: 5000, closingBalanceCents: 3800 });
+    });
+  });
+
+  describe('getOwnAccountOverview / listOwnAccountMovements (story 14.6, AC 2/5 — self-service, no personId parameter)', () => {
+    it('getOwnAccountOverview reads actor.personId, never an externally supplied id', async () => {
+      accountFindUnique.mockResolvedValue({ id: 'account_1' });
+      accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 5000 } });
+      accountMovementFindMany.mockResolvedValue([]);
+
+      const result = await getOwnAccountOverview(pilotActor('person_pilot'));
+
+      expect(result.balanceCents).toBe(5000);
+      // The only person looked up is the actor's OWN id — same guard as `getAccountOverview`.
+      expect(personFindUniqueMock).toHaveBeenCalledWith({ where: { id: 'person_pilot' }, select: { id: true } });
+    });
+
+    it('getOwnAccountOverview returns the empty shape for an actor with no linked person, WITHOUT a query (AC 5)', async () => {
+      const result = await getOwnAccountOverview(pilotActor(null));
+
+      expect(result).toEqual({ account: null, balanceCents: 0, recentMovements: [] });
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
       expect(accountFindUniqueMock).not.toHaveBeenCalled();
     });
 
-    it('returns an empty page (total 0), NOT a 404, for a person with no account yet', async () => {
-      accountFindUnique.mockResolvedValue(null);
-
-      const result = await listAccountMovements(staffActor(), 'person_1', query);
-
-      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
-      expect(accountMovementFindManyMock).not.toHaveBeenCalled();
+    it('getOwnAccountOverview never accepts a second id — there is no personId parameter to pass one through', () => {
+      expect(getOwnAccountOverview).toHaveLength(1);
     });
 
-    it('paginates with the id tie-break, most-recent-first (review 3.1 F3 pattern)', async () => {
+    it("listOwnAccountMovements reads the actor's OWN statement, without actorEmail", async () => {
       accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([]);
-      accountMovementCount.mockResolvedValue(0);
+      queryRaw.mockResolvedValue([
+        {
+          openingCents: BigInt(0),
+          total: BigInt(1),
+          periodCents: BigInt(10000),
+          id: 'movement_1',
+          type: 'TOP_UP',
+          amountCents: 10000,
+          description: 'Contanti',
+          effectiveDateText: '2026-03-01',
+          createdAt: new Date('2026-03-01T10:00:00.000Z'),
+          reversalOfId: null,
+          cumulativeCents: BigInt(10000),
+          reversalOfEffectiveDate: null,
+          hasReversal: false,
+          actorEmail: 'staff@airmanager.local',
+        },
+      ]);
 
-      await listAccountMovements(staffActor(), 'person_1', { page: 2, pageSize: 10 });
+      const result = await listOwnAccountMovements(pilotActor('person_pilot'), { page: 1, pageSize: 20 });
 
-      expect(accountMovementFindManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { accountId: 'account_1' },
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          skip: 10,
-          take: 10,
-        }),
-      );
+      expect(result.total).toBe(1);
+      expect(result.items[0]).not.toHaveProperty('actorEmail');
+      expect(personFindUniqueMock).toHaveBeenCalledWith({ where: { id: 'person_pilot' }, select: { id: true } });
     });
 
-    it('applies from/to inclusive on effectiveDate — items AND total (story 12.9 AC 5, the statement-PDF period; review 12.9 F2)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([]);
-      accountMovementCount.mockResolvedValue(0);
+    it('listOwnAccountMovements returns the empty statement for an actor with no linked person, WITHOUT a query (AC 5 — isolation)', async () => {
+      const result = await listOwnAccountMovements(pilotActor(null), { page: 1, pageSize: 20, from: '2026-01-01', to: '2026-12-31' });
 
-      await listAccountMovements(staffActor(), 'person_1', { page: 1, pageSize: 20, from: '2026-07-01', to: '2026-07-31' });
-
-      const periodWhere = {
-        accountId: 'account_1',
-        effectiveDate: { gte: new Date('2026-07-01'), lte: new Date('2026-07-31') },
-      };
-      expect(accountMovementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: periodWhere }));
-      // The cap (`assertWithinPdfExportCap`) reads `total`: the count MUST see the same period filter.
-      expect(accountMovementCountMock).toHaveBeenCalledWith({ where: periodWhere });
+      expect(result).toEqual({ items: [], total: 0, page: 1, pageSize: 20, from: '2026-01-01', to: '2026-12-31', openingBalanceCents: 0, closingBalanceCents: 0 });
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
+      expect(queryRawMock).not.toHaveBeenCalled();
     });
 
-    it('absent from/to leaves the where untouched (pre-12.9 callers: full statement, unchanged)', async () => {
-      accountFindUnique.mockResolvedValue({ id: 'account_1' });
-      accountMovementFindMany.mockResolvedValue([]);
-      accountMovementCount.mockResolvedValue(0);
-
-      await listAccountMovements(staffActor(), 'person_1', { page: 1, pageSize: 20 });
-
-      expect(accountMovementFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { accountId: 'account_1' } }));
+    it('rejects an actor with neither self.read (stale/unknown role) — fails closed like every other self-service reader', async () => {
+      await expect(getOwnAccountOverview(noRoleActor())).rejects.toThrow(ForbiddenError);
+      await expect(listOwnAccountMovements(noRoleActor(), { page: 1, pageSize: 20 })).rejects.toThrow(ForbiddenError);
+      expect(personFindUniqueMock).not.toHaveBeenCalled();
     });
   });
 
@@ -457,7 +552,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     it('throws NotFoundError for a missing person', async () => {
       personFindUnique.mockResolvedValue(null);
 
-      await expect(recordTopUp(staffActor(), 'missing', input)).rejects.toThrow(NotFoundError);
+      await expect(recordTopUp(adminActor(), 'missing', input)).rejects.toThrow(NotFoundError);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -465,7 +560,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       personFindUnique.mockResolvedValue({ id: 'person_1' });
       cashCategoryFindUnique.mockResolvedValue(null);
 
-      await expect(recordTopUp(staffActor(), 'person_1', input)).rejects.toThrow(/Ricariche/);
+      await expect(recordTopUp(adminActor(), 'person_1', input)).rejects.toThrow(/Ricariche/);
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
@@ -476,7 +571,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       // path, deliberately, per the Dev Notes.
       cashCategoryFindUnique.mockResolvedValue(null);
 
-      await expect(recordTopUp(staffActor(), 'person_1', input)).rejects.toThrow(/Ricariche/);
+      await expect(recordTopUp(adminActor(), 'person_1', input)).rejects.toThrow(/Ricariche/);
       expect(cashCategoryFindUniqueMock).toHaveBeenCalledWith({
         where: { name: 'Ricariche', isActive: true },
         select: { id: true },
@@ -493,7 +588,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10000 } });
       accountMovementFindMany.mockResolvedValue([]);
 
-      const result = await recordTopUp(staffActor(), 'person_1', input);
+      const result = await recordTopUp(adminActor(), 'person_1', input);
 
       expect(accountUpsertMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { personId: 'person_1' }, create: { personId: 'person_1' } }),
@@ -507,7 +602,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
             paymentMethod: 'CASH',
             description: 'Contanti in segreteria',
             effectiveDate: new Date('2026-03-01'),
-            actorUserId: 'staff_1',
+            actorUserId: 'admin_1',
           }),
         }),
       );
@@ -519,7 +614,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
             paymentMethod: 'CASH',
             description: 'Contanti in segreteria',
             effectiveDate: new Date('2026-03-01'),
-            actorUserId: 'staff_1',
+            actorUserId: 'admin_1',
             accountMovementId: 'movement_1',
           }),
         }),
@@ -536,7 +631,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10000 } });
       accountMovementFindMany.mockResolvedValue([]);
 
-      await recordTopUp(staffActor(), 'person_1', { ...input, description: null });
+      await recordTopUp(adminActor(), 'person_1', { ...input, description: null });
 
       expect(accountMovementCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ description: null }) }),
@@ -554,7 +649,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       accountMovementAggregate.mockResolvedValue({ _sum: { amountCents: 10000 } });
       accountMovementFindMany.mockResolvedValue([]);
 
-      await recordTopUp(staffActor(), 'person_1', input);
+      await recordTopUp(adminActor(), 'person_1', input);
 
       // Before the fix, `buildOverview` opened its OWN separate
       // `$transaction` after the mutation's had already committed — a
@@ -576,7 +671,42 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       // whatever it does — a real Postgres transaction rolls back identically
       // on an uncaught throw from an interactive-transaction callback, so
       // this failure never reaches the caller as "committed, then errored".
-      await expect(recordTopUp(staffActor(), 'person_1', input)).rejects.toThrow('transient read failure');
+      await expect(recordTopUp(adminActor(), 'person_1', input)).rejects.toThrow('transient read failure');
+    });
+
+    // Story 16.6a (R-16-h, ledger-audit MAJOR-4) — discriminant: before the
+    // guard, a top-up dated a year ahead was written verbatim, with its cash twin.
+    it('rejects a value date after today (Roma) with 422 EFFECTIVE_DATE_IN_FUTURE — the transaction never opens, neither movement is written', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-01T10:00:00.000Z'));
+      try {
+        personFindUnique.mockResolvedValue({ id: 'person_1' });
+        cashCategoryFindUnique.mockResolvedValue({ id: 'category_ricariche' });
+
+        const rejection = recordTopUp(adminActor(), 'person_1', { ...input, effectiveDate: '2027-07-01' });
+
+        await expect(rejection).rejects.toThrow(ValidationError);
+        await expect(rejection).rejects.toMatchObject({ code: 'EFFECTIVE_DATE_IN_FUTURE', details: { effectiveDate: '2027-07-01' } });
+        expect(transactionMock).not.toHaveBeenCalled();
+        expect(accountMovementCreateMock).not.toHaveBeenCalled();
+        expect(cashMovementCreateMock).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('the state wins over the date (review 16.6a, R8 on the top-up side): tomorrow for an unknown person is still the 404, never the 422', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-01T10:00:00.000Z'));
+      try {
+        personFindUnique.mockResolvedValue(null);
+        cashCategoryFindUnique.mockResolvedValue({ id: 'category_ricariche' });
+
+        await expect(recordTopUp(adminActor(), 'missing', { ...input, effectiveDate: '2026-07-02' })).rejects.toThrow(NotFoundError);
+        expect(transactionMock).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -596,6 +726,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       amountCents: number;
       personEmail?: string | null;
       thresholdValue?: string;
+      disableBalanceMail?: boolean;
       userLocale?: string | null;
     };
 
@@ -605,10 +736,14 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         email: options.personEmail === undefined ? PERSON.email : options.personEmail,
       });
       accountFindUnique.mockResolvedValue(ACCOUNT);
-      appSettingFindUnique.mockResolvedValue(options.thresholdValue === undefined ? null : { value: options.thresholdValue });
+      appSettingFindUniqueMock.mockImplementation((async ({ where }: { where: { key: string } }) => {
+        if (where.key === 'mail.operational') return options.disableBalanceMail
+          ? { value: JSON.stringify({ switches: { negativeBalance: false }, holderSince: null, digestSince: null }) } : null;
+        return options.thresholdValue === undefined ? null : { value: options.thresholdValue };
+      }) as never);
       queryRaw.mockResolvedValue([]);
       // First aggregate = the locked "balance before" read inside the tx;
-      // second = buildOverview's post-commit balance.
+      // second = readOverview's post-commit balance.
       accountMovementAggregate
         .mockResolvedValueOnce({ _sum: { amountCents: options.balanceBeforeCents } })
         .mockResolvedValueOnce({ _sum: { amountCents: options.balanceBeforeCents + options.amountCents } });
@@ -630,7 +765,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     it('throws NotFoundError for a missing person', async () => {
       personFindUnique.mockResolvedValue(null);
 
-      await expect(recordAdjustment(staffActor(), 'missing', { amountCents: -100, reason: 'Errore' })).rejects.toThrow(
+      await expect(recordAdjustment(adminActor(), 'missing', { amountCents: -100, reason: 'Errore' })).rejects.toThrow(
         NotFoundError,
       );
       expect(transactionMock).not.toHaveBeenCalled();
@@ -640,7 +775,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       personFindUnique.mockResolvedValue(PERSON);
       accountFindUnique.mockResolvedValue(null);
 
-      await expect(recordAdjustment(staffActor(), 'person_1', { amountCents: -100, reason: 'Errore' })).rejects.toThrow(
+      await expect(recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore' })).rejects.toThrow(
         NotFoundError,
       );
       expect(transactionMock).not.toHaveBeenCalled();
@@ -649,9 +784,9 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
 
     it('creates the ADJUSTMENT movement (reason in description, actor, linked original) WITHOUT ever updating the original (AD-3) and with NO CashMovement (story 3.4)', async () => {
       mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
-      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', reversal: null });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', type: 'TOP_UP', amountCents: 10000, reversalRootBook: null, reversal: null });
 
-      const result = await recordAdjustment(staffActor(), 'person_1', {
+      const result = await recordAdjustment(adminActor(), 'person_1', {
         amountCents: -2500,
         reason: 'Importo errato',
         originalMovementId: 'movement_1',
@@ -665,8 +800,9 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
             type: 'ADJUSTMENT',
             amountCents: -2500,
             description: 'Importo errato',
-            actorUserId: 'staff_1',
+            actorUserId: 'admin_1',
             reversalOfId: 'movement_1',
+            reversalRootBook: 'DEPOSIT',
           }),
         }),
       );
@@ -678,10 +814,66 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       expect(result.balanceCents).toBe(7500);
     });
 
+    // Story 16.1, AC 4 — discriminant: `recordAdjustment` used to date the
+    // rettifica on the UTC calendar day, one day BEHIND the Roma day the
+    // ledger's month aggregates (`currentMonthRange`) delimit on
+    // (ledger-audit MAJOR-3).
+    describe('story 16.1, AC 4 — Europe/Rome effectiveDate', () => {
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('at 00:30 Rome on the 1st (CEST), the ADJUSTMENT is dated on the NEW (Roma) month', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-31T22:30:00.000Z')); // 00:30 CEST, 1 Sep in Rome
+        mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
+
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -2500, reason: 'Importo errato' });
+
+        expect(accountMovementCreateMock).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ effectiveDate: parseDateOnlyUtc('2026-09-01') }) }),
+        );
+      });
+    });
+
+    // Story 16.6b (ledger MINOR-3, AC 15; review F5 fix, ratifica PO
+    // 2026-11-04): the one writer of `reversalOfId` is the one writer of
+    // `reversalRootBook` — a root computes its own BOOK (`rootBookType`), a
+    // link passes on the book it already carries, a standalone row has none.
+    // A root's TYPE alone can't tell a giroconto from a quota/addebito (both
+    // `ADJUSTMENT`): the two standalone-ADJUSTMENT cases below differ only
+    // by sign, and must NOT land on the same book (the review F5 regression).
+    it.each([
+      ['a standalone DEBIT ADJUSTMENT (a quota, the root)', 'REVENUE', { type: 'ADJUSTMENT', amountCents: -3000, reversalRootBook: null }],
+      ['a standalone CREDIT ADJUSTMENT (a giroconto, the root)', 'TRANSFER', { type: 'ADJUSTMENT', amountCents: 2000, reversalRootBook: null }],
+      ['a link of a TOP_UP chain (depth 2 written)', 'DEPOSIT', { type: 'ADJUSTMENT', reversalRootBook: 'DEPOSIT' }],
+      ['a legacy link of a FLIGHT_CHARGE chain', 'REVENUE', { type: 'ADJUSTMENT', reversalRootBook: 'REVENUE' }],
+    ] as const)('story 16.6b: the rettifica of %s is written with reversalRootBook %s', async (_label, expectedBook, original) => {
+      mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: 2500 });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', ...original, reversal: null });
+
+      await recordAdjustment(adminActor(), 'person_1', { amountCents: 2500, reason: 'Storno', originalMovementId: 'movement_1' });
+
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ reversalOfId: 'movement_1', reversalRootBook: expectedBook }) }),
+      );
+    });
+
+    it('story 16.6b: a standalone rettifica is written with NO root book (reversalOfId and reversalRootBook both null)', async () => {
+      mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
+
+      await recordAdjustment(adminActor(), 'person_1', { amountCents: -2500, reason: 'Addebito manuale' });
+
+      expect(accountMovementFindUniqueMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ reversalOfId: null, reversalRootBook: null }) }),
+      );
+    });
+
     it('locks the Account row (FOR UPDATE) inside the movement transaction (review 2.5 F1 pattern)', async () => {
       mockAdjustmentHappyPath({ balanceBeforeCents: 0, amountCents: 100 });
 
-      await recordAdjustment(staffActor(), 'person_1', { amountCents: 100, reason: 'Quota mancante' });
+      await recordAdjustment(adminActor(), 'person_1', { amountCents: 100, reason: 'Quota mancante' });
 
       expect(queryRawMock).toHaveBeenCalledTimes(1);
       const [strings] = queryRawMock.mock.calls[0] as unknown as [TemplateStringsArray];
@@ -691,12 +883,11 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
     it('throws NotFoundError for an originalMovementId belonging to ANOTHER account (never reveal it exists)', async () => {
       personFindUnique.mockResolvedValue(PERSON);
       accountFindUnique.mockResolvedValue(ACCOUNT);
-      accountMovementFindUnique.mockResolvedValue({ id: 'movement_x', accountId: 'account_OTHER', reversal: null });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_x', accountId: 'account_OTHER', type: 'TOP_UP', reversalRootBook: null, reversal: null });
 
       await expect(
-        recordAdjustment(staffActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_x' }),
+        recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_x' }),
       ).rejects.toThrow(NotFoundError);
-      expect(transactionMock).not.toHaveBeenCalled();
       expect(accountMovementCreateMock).not.toHaveBeenCalled();
     });
 
@@ -706,7 +897,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       accountMovementFindUnique.mockResolvedValue(null);
 
       await expect(
-        recordAdjustment(staffActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'ghost' }),
+        recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'ghost' }),
       ).rejects.toThrow(NotFoundError);
       expect(accountMovementCreateMock).not.toHaveBeenCalled();
     });
@@ -717,13 +908,15 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       accountMovementFindUnique.mockResolvedValue({
         id: 'movement_1',
         accountId: 'account_1',
+        type: 'TOP_UP',
+        reversalRootBook: null,
         reversal: { id: 'movement_adj' },
       });
 
       await expect(
-        recordAdjustment(staffActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
+        recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
       ).rejects.toThrow(ConflictError);
-      expect(transactionMock).not.toHaveBeenCalled();
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
     });
 
     it('throws ConflictError when the original is a PACKAGE_PURCHASE (zero-amount marker, story TD-1 AC 6)', async () => {
@@ -737,37 +930,75 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       });
 
       await expect(
-        recordAdjustment(staffActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
+        recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
       ).rejects.toThrow(ConflictError);
-      expect(transactionMock).not.toHaveBeenCalled();
       expect(accountMovementCreateMock).not.toHaveBeenCalled();
+    });
+
+    // Story 16.6b Q4, anticipated by review 19.6 F1: a flight's charge lives
+    // and dies with its flight (AD-3 exception) — a rettifica linked to it
+    // would become a stray credit when the flight is deleted.
+    it('422 ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE when the original is a FLIGHT_CHARGE — nothing written (story 16.6b Q4, review 19.6 F1)', async () => {
+      personFindUnique.mockResolvedValue(PERSON);
+      accountFindUnique.mockResolvedValue(ACCOUNT);
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', type: 'FLIGHT_CHARGE', reversal: null });
+
+      const attempt = recordAdjustment(adminActor(), 'person_1', { amountCents: 12000, reason: 'Volo non dovuto', originalMovementId: 'movement_1' });
+
+      await expect(attempt).rejects.toThrow(ValidationError);
+      await expect(attempt).rejects.toMatchObject({ code: 'ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE' });
+      expect(accountMovementCreateMock).not.toHaveBeenCalled();
+    });
+
+    // Review 19.6 F1/F2: the only lock a flight delete/edit shares with this
+    // path is the Account row, so the original must be read UNDER it — a
+    // charge deleted meanwhile is then a clean 404 (never a P2003/500), and
+    // the row checked is the row the insert links to.
+    it('reads the original UNDER the Account lock: lock -> original read -> balance read -> create (review 19.6 F1/F2)', async () => {
+      mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', type: 'TOP_UP', reversal: null });
+
+      await recordAdjustment(adminActor(), 'person_1', { amountCents: -2500, reason: 'Importo errato', originalMovementId: 'movement_1' });
+
+      const order = (mock: { mock: { invocationCallOrder: number[] } }) => mock.mock.invocationCallOrder[0]!;
+      expect(order(queryRawMock)).toBeLessThan(order(accountMovementFindUniqueMock));
+      expect(order(accountMovementFindUniqueMock)).toBeLessThan(order(accountMovementAggregateMock));
+      expect(order(accountMovementAggregateMock)).toBeLessThan(order(accountMovementCreateMock));
     });
 
     it('maps a concurrent P2002 on the unique reversalOfId to ConflictError (TOCTOU backstop)', async () => {
       mockAdjustmentHappyPath({ balanceBeforeCents: 0, amountCents: -100 });
-      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', reversal: null });
+      accountMovementFindUnique.mockResolvedValue({ id: 'movement_1', accountId: 'account_1', type: 'TOP_UP', reversalRootBook: null, reversal: null });
       accountMovementCreate.mockRejectedValue({ code: 'P2002' });
 
       await expect(
-        recordAdjustment(staffActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
+        recordAdjustment(adminActor(), 'person_1', { amountCents: -100, reason: 'Errore', originalMovementId: 'movement_1' }),
       ).rejects.toThrow(ConflictError);
     });
 
     describe('negative-balance band alert (AC 2/3 — stateless: only a WORSENING transition emails)', () => {
+      it('a worsening adjustment commits with the balance notification off', async () => {
+        mockAdjustmentHappyPath({ balanceBeforeCents: 5000, amountCents: -10000, disableBalanceMail: true });
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -10000, reason: 'Synthetic adjustment' });
+        await flushAsync();
+        expect(accountMovementCreateMock).toHaveBeenCalledTimes(1);
+        expect(sendMock).not.toHaveBeenCalled();
+      });
+
       it('ok → negative sends the alert email once, after the commit', async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: 5000, amountCents: -10000 });
 
-        await recordAdjustment(staffActor(), 'person_1', { amountCents: -10000, reason: 'Storno pacchetto' });
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -10000, reason: 'Storno pacchetto' });
         await flushAsync();
 
         expect(sendMock).toHaveBeenCalledTimes(1);
-        expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'mario@example.com' }));
+        expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'mario@example.com', html: '<p>Alert text</p>' }));
       });
 
       it('ok → belowThreshold (a double worsening in one movement) sends exactly ONE email', async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: 0, amountCents: -30000 });
 
-        await recordAdjustment(staffActor(), 'person_1', { amountCents: -30000, reason: 'Storno pacchetto' });
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -30000, reason: 'Storno pacchetto' });
         await flushAsync();
 
         expect(sendMock).toHaveBeenCalledTimes(1);
@@ -776,7 +1007,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       it('negative → belowThreshold sends the alert (a further worsening within negative territory)', async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: -5000, amountCents: -20000 });
 
-        await recordAdjustment(staffActor(), 'person_1', { amountCents: -20000, reason: 'Storno' });
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -20000, reason: 'Storno' });
         await flushAsync();
 
         expect(sendMock).toHaveBeenCalledTimes(1);
@@ -786,7 +1017,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         // -5000 → -6000: both plain "negative" with the default -20000 threshold.
         mockAdjustmentHappyPath({ balanceBeforeCents: -5000, amountCents: -1000 });
 
-        await recordAdjustment(staffActor(), 'person_1', { amountCents: -1000, reason: 'Piccola correzione' });
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -1000, reason: 'Piccola correzione' });
         await flushAsync();
 
         expect(sendMock).not.toHaveBeenCalled();
@@ -795,7 +1026,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       it('does NOT send when the band improves (negative → ok)', async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: -5000, amountCents: 10000 });
 
-        await recordAdjustment(staffActor(), 'person_1', { amountCents: 10000, reason: 'Quota dimenticata' });
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: 10000, reason: 'Quota dimenticata' });
         await flushAsync();
 
         expect(sendMock).not.toHaveBeenCalled();
@@ -806,7 +1037,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         // (With the default -20000 both sides would be plain "negative": no alert.)
         mockAdjustmentHappyPath({ balanceBeforeCents: -5000, amountCents: -10000, thresholdValue: '-10000' });
 
-        await recordAdjustment(staffActor(), 'person_1', { amountCents: -10000, reason: 'Storno' });
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -10000, reason: 'Storno' });
         await flushAsync();
 
         expect(appSettingFindUniqueMock).toHaveBeenCalledWith(
@@ -818,7 +1049,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       it('skips silently when the person has no email — the movement stays valid', async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: 0, amountCents: -10000, personEmail: null });
 
-        const result = await recordAdjustment(staffActor(), 'person_1', { amountCents: -10000, reason: 'Storno' });
+        const result = await recordAdjustment(adminActor(), 'person_1', { amountCents: -10000, reason: 'Storno' });
         await flushAsync();
 
         expect(sendMock).not.toHaveBeenCalled();
@@ -831,7 +1062,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
         sendMock.mockRejectedValue(new Error('SMTP down'));
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-        const result = await recordAdjustment(staffActor(), 'person_1', { amountCents: -10000, reason: 'Storno' });
+        const result = await recordAdjustment(adminActor(), 'person_1', { amountCents: -10000, reason: 'Storno' });
         await flushAsync();
 
         expect(result.balanceCents).toBe(-10000);
@@ -842,7 +1073,7 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       it("uses the recipient User's locale for the email (AD-7), not the actor's", async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: 0, amountCents: -10000, userLocale: 'en' });
 
-        await recordAdjustment(staffActor(), 'person_1', { amountCents: -10000, reason: 'Storno' });
+        await recordAdjustment(adminActor(), 'person_1', { amountCents: -10000, reason: 'Storno' });
         await flushAsync();
 
         expect(vi.mocked(buildNegativeBalanceAlertEmail)).toHaveBeenCalledWith(
@@ -852,78 +1083,122 @@ describe('accounts.service (story 3.1 — AD-3 append-only ledger + AD-2 integer
       });
     });
 
+    // Story 14.4 review F7 (ratifica R-14.4-d) — the IN-APP `balanceAlert`,
+    // deliberately a DIFFERENT condition from the email's band-worsening gate
+    // above: "saldo prima < 0 OR saldo dopo < 0", so it also fires on a
+    // worsening move that stays WITHIN the same band (no email, in-app alert
+    // still true) — exactly the gap the review found on the flight side.
+    describe('in-app "saldo in rosso" signal (F7 — different condition from the email above)', () => {
+      it('fires when the balance was ALREADY negative before, even if the adjustment stays within the SAME band (no email in this case)', async () => {
+        // -5000 -> -6000: both plain "negative" with the default -20000
+        // threshold — same band, so `bandWorsened` (the email gate) is false
+        // (same fixture as the "does NOT resend" email test above).
+        mockAdjustmentHappyPath({ balanceBeforeCents: -5000, amountCents: -1000 });
+
+        const result = await recordAdjustment(adminActor(), 'person_1', { amountCents: -1000, reason: 'Ulteriore addebito' });
+        await flushAsync();
+
+        expect(sendMock).not.toHaveBeenCalled();
+        expect(result.balanceAlert).toBe(true);
+      });
+
+      it('fires when the balance BECOMES negative (ok -> negative), same case the email also fires on', async () => {
+        mockAdjustmentHappyPath({ balanceBeforeCents: 5000, amountCents: -10000 });
+
+        const result = await recordAdjustment(adminActor(), 'person_1', { amountCents: -10000, reason: 'Storno pacchetto' });
+
+        expect(result.balanceAlert).toBe(true);
+      });
+
+      it('stays false when the balance is non-negative both before and after', async () => {
+        mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
+
+        const result = await recordAdjustment(adminActor(), 'person_1', { amountCents: -2500, reason: 'Importo errato' });
+
+        expect(result.balanceAlert).toBe(false);
+      });
+
+      it('fires on a POSITIVE adjustment (a credit) that leaves the balance still negative (before<0 AND after<0)', async () => {
+        // -5000 + 1000 = -4000: a rettifica in the OPERATOR'S favor direction
+        // (crediting the person), but the account is still red — the signal
+        // is about the RESULTING state, not the sign of this one movement.
+        mockAdjustmentHappyPath({ balanceBeforeCents: -5000, amountCents: 1000 });
+
+        const result = await recordAdjustment(adminActor(), 'person_1', { amountCents: 1000, reason: 'Rettifica parziale' });
+
+        expect(result.balanceAlert).toBe(true);
+      });
+    });
+
     describe('H3 fix (docs/security/owasp-audit-2026-07-22.md) — the adjustment already committed by the time the post-commit re-read runs', () => {
       it('does NOT throw when the post-commit overview re-read fails — degrades to the balance already computed inside the transaction', async () => {
         mockAdjustmentHappyPath({ balanceBeforeCents: 10000, amountCents: -2500 });
-        // `buildOverview`'s post-commit read calls BOTH `aggregate` and
+        // `readOverview`'s post-commit read calls BOTH `aggregate` and
         // `findMany`; the mutation's own in-tx read only calls `aggregate`.
         // Failing `findMany` isolates the failure to the read that runs
         // AFTER the movement create above has already committed.
         accountMovementFindMany.mockRejectedValue(new Error('transient read failure'));
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-        const result = await recordAdjustment(staffActor(), 'person_1', { amountCents: -2500, reason: 'Importo errato' });
+        const result = await recordAdjustment(adminActor(), 'person_1', { amountCents: -2500, reason: 'Importo errato' });
 
         // The write already happened — exactly once — before the failing read.
         expect(accountMovementCreateMock).toHaveBeenCalledTimes(1);
         // Degraded but correct: the balance the transaction itself computed,
         // never a throw that would have freed the caller's Idempotency-Key
         // (`apiRoute`'s AC 4) and let a retry double-record the adjustment.
-        expect(result).toEqual({ account: ACCOUNT, balanceCents: 7500, recentMovements: [] });
+        // Story 14.4 review F7: 10000 -> 7500, both non-negative -> no in-app alert.
+        expect(result).toEqual({ account: ACCOUNT, balanceCents: 7500, recentMovements: [], balanceAlert: false });
         expect(consoleErrorSpy).toHaveBeenCalledWith('recordAdjustment: post-commit account overview read failed', expect.any(Error));
         consoleErrorSpy.mockRestore();
       });
     });
   });
 
-  describe('listNegativeBalances (story 3.3, AC 2 — the staff "saldi negativi" list)', () => {
-    it('rejects an actor without finance.manage', async () => {
-      await expect(listNegativeBalances(pilotActor())).rejects.toThrow(ForbiddenError);
+  describe('negative balance pages and summary (17.3)', () => {
+    const lastMovementAt = new Date('2026-07-01T10:00:00.000Z');
+    const pageQuery = { page: 1, pageSize: 20 };
+
+    it('does not read the ledger without finance.manage', async () => {
+      await expect(listNegativeBalances(pilotActor(), pageQuery)).rejects.toThrow(ForbiddenError);
+      expect(queryRawMock).not.toHaveBeenCalled();
+    });
+
+    it('takes the totals and bounded rows from one query and represents bigint sums as cents', async () => {
+      queryRawMock.mockResolvedValue([
+        { personId: 'a', firstName: 'Aldo', lastName: 'Neri', balanceCents: BigInt(-4000000000), lastMovementAt, total: BigInt(3000), exposureCents: BigInt(5000000000) },
+        { personId: 'b', firstName: 'Bruna', lastName: 'Bianchi', balanceCents: BigInt(-500), lastMovementAt, total: BigInt(3000), exposureCents: BigInt(5000000000) },
+      ]);
+      const summary = await getNegativeBalanceSummary(adminActor());
+      expect(summary).toEqual({
+        count: 3000,
+        exposureCents: 5000000000,
+        top: [
+          { personId: 'a', firstName: 'Aldo', lastName: 'Neri', balanceCents: -4000000000, lastMovementAt },
+          { personId: 'b', firstName: 'Bruna', lastName: 'Bianchi', balanceCents: -500, lastMovementAt },
+        ],
+      });
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
       expect(accountMovementGroupByMock).not.toHaveBeenCalled();
-    });
-
-    it('returns [] when no account is negative (without the enrichment lookup)', async () => {
-      accountMovementGroupBy.mockResolvedValue([]);
-
-      const result = await listNegativeBalances(staffActor());
-
-      expect(result).toEqual([]);
       expect(accountFindManyMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
     });
 
-    it('queries only negative SUMs, most-negative first (the DB orders — SUM, never a stored column, AD-3)', async () => {
-      accountMovementGroupBy.mockResolvedValue([]);
-
-      await listNegativeBalances(staffActor());
-
-      expect(accountMovementGroupByMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          by: ['accountId'],
-          _sum: { amountCents: true },
-          having: { amountCents: { _sum: { lt: 0 } } },
-          orderBy: { _sum: { amountCents: 'asc' } },
-        }),
-      );
+    it('does not lose total on an empty page beyond the end', async () => {
+      queryRawMock.mockResolvedValue([{ personId: null, total: BigInt(29), exposureCents: BigInt(5000) }]);
+      const result = await listNegativeBalances(adminActor(), { page: 99, pageSize: 20, q: 'R%_\\' });
+      expect(result).toEqual({ items: [], total: 29, page: 99, pageSize: 20 });
+      expect(queryRawMock).toHaveBeenCalledTimes(1);
+      const [sql] = queryRawMock.mock.calls[0]!;
+      expect((sql as Prisma.Sql).text).toMatch(/HAVING SUM\("amountCents"\) < 0/);
+      expect((sql as Prisma.Sql).text).toContain('ORDER BY "balanceCents", "personId"');
+      expect((sql as Prisma.Sql).text).not.toContain('"archivedAt"');
+      expect((sql as Prisma.Sql).values).toContain('%R\\%\\_\\\\%');
     });
 
-    it('maps groups to person names + balance + last movement date, preserving the DB order', async () => {
-      const lastA = new Date('2026-07-01T10:00:00.000Z');
-      const lastB = new Date('2026-07-02T10:00:00.000Z');
-      accountMovementGroupBy.mockResolvedValue([
-        { accountId: 'account_a', _sum: { amountCents: -30000 }, _max: { createdAt: lastA } },
-        { accountId: 'account_b', _sum: { amountCents: -500 }, _max: { createdAt: lastB } },
-      ]);
-      accountFindMany.mockResolvedValue([
-        { id: 'account_b', person: { id: 'person_b', firstName: 'Bruna', lastName: 'Bianchi' } },
-        { id: 'account_a', person: { id: 'person_a', firstName: 'Aldo', lastName: 'Neri' } },
-      ]);
-
-      const result = await listNegativeBalances(staffActor());
-
-      expect(result).toEqual([
-        { personId: 'person_a', firstName: 'Aldo', lastName: 'Neri', balanceCents: -30000, lastMovementAt: lastA },
-        { personId: 'person_b', firstName: 'Bruna', lastName: 'Bianchi', balanceCents: -500, lastMovementAt: lastB },
-      ]);
+    it('reports zero for an empty ledger', async () => {
+      queryRawMock.mockResolvedValue([{ personId: null, total: BigInt(0), exposureCents: BigInt(0) }]);
+      await expect(getNegativeBalanceSummary(adminActor())).resolves.toEqual({ count: 0, exposureCents: 0, top: [] });
     });
   });
 });

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureBookingRequirements, personIdByEmail } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -91,7 +92,7 @@ async function createAircraft(page: Page): Promise<{ id: string; registration: s
   const registration = `I-WF${suffix}`.toUpperCase().slice(0, 20);
 
   const response = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 50 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(response.status()).toBe(201);
   const aircraft = (await response.json()) as { id: string };
@@ -129,10 +130,27 @@ function futureInterval(): { startsAt: string; endsAt: string } {
   return { startsAt: start.toISOString(), endsAt: end.toISOString() };
 }
 
+/**
+ * Three days ago, 07:30Z-08:30Z (story 16.3, ops F9): a booking is closed as
+ * FLOWN only once its slot has STARTED, and nobody can CREATE one in the past —
+ * so the fixture is created in the future and moved here by staff (exempt from
+ * `BOOKING_IN_PAST` on a move). Deliberately OUTSIDE the 48 h window every
+ * list and the Overview card read (`listFrom = now - 48h`): the closed booking
+ * stays behind, and inside that window it would crowd the soonest-first cards
+ * other specs assert on (`home-dashboard.spec.ts`). Inside every opening window
+ * the suite sets (07:00-21:00 Europe/Rome, both DST offsets).
+ */
+function longPastInterval(): { startsAt: string; endsAt: string } {
+  const day = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+  return { startsAt: `${day}T07:30:00.000Z`, endsAt: `${day}T08:30:00.000Z` };
+}
+
 test.describe('Booking approval workflow — API (Story 12.2)', () => {
-  test('pilot creates a self-booking (PENDING); staff approves it (re-checking create-time rules) then marks it FLOWN', async ({ page }) => {
+  test('pilot creates a self-booking (PENDING); staff moves it into the past, approves it (re-checking create-time rules, R-16-b: a past booking stays approvable) then marks it FLOWN', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    // Story 19.10 (AD-9 rule 2): the seed pilot books for themself below.
+    await ensureBookingRequirements(page, { personId: await personIdByEmail(page, PILOT_EMAIL), scope: 'PILOTS', solo: true });
 
     // The seeded demo pilot (`prisma/seed.ts`) already has an active
     // PilotProfile and a login — no signup flow needed for this actor.
@@ -157,21 +175,42 @@ test.describe('Booking approval workflow — API (Story 12.2)', () => {
     await page.context().clearCookies();
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
-    const approveResponse = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'APPROVED' } });
-    expect(approveResponse.status()).toBe(200);
-    const approved = (await approveResponse.json()) as { status: string; decidedAt: string | null };
-    expect(approved.status).toBe('APPROVED');
-    expect(approved.decidedAt).not.toBeNull();
+    // Review 16.3 LOW-1: the seed pilot is shared by the whole suite and the
+    // slot below is the same for every run of the day — a failure between the
+    // approval and FLOWN would leave them APPROVED there, and the retry's move
+    // onto that slot would answer 409 PERSON_BUSY by construction. Whatever
+    // fails below, a booking that did not reach FLOWN is cancelled.
+    let reachedFlown = false;
+    try {
+      // Story 16.3 (ops F9): FLOWN needs a slot that has STARTED — staff moves
+      // the booking into the past first, so the approval below also proves,
+      // end to end, that a past booking stays approvable (ratifica R-16-b).
+      const moveResponse = await page.request.patch(`/api/v1/bookings/${bookingId}`, { data: longPastInterval() });
+      expect(moveResponse.status(), await moveResponse.text()).toBe(200);
 
-    const flownResponse = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'FLOWN' } });
-    expect(flownResponse.status()).toBe(200);
-    const flown = (await flownResponse.json()) as { status: string };
-    expect(flown.status).toBe('FLOWN');
+      const approveResponse = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'APPROVED' } });
+      expect(approveResponse.status()).toBe(200);
+      const approved = (await approveResponse.json()) as { status: string; decidedAt: string | null };
+      expect(approved.status).toBe('APPROVED');
+      expect(approved.decidedAt).not.toBeNull();
+
+      const flownResponse = await page.request.post(`/api/v1/bookings/${bookingId}/transition`, { data: { to: 'FLOWN' } });
+      expect(flownResponse.status()).toBe(200);
+      const flown = (await flownResponse.json()) as { status: string };
+      expect(flown.status).toBe('FLOWN');
+      reachedFlown = true;
+    } finally {
+      if (!reachedFlown) {
+        await page.request.post(`/api/v1/bookings/${bookingId}/cancel`);
+      }
+    }
   });
 
   test('staff denies a PENDING booking with a reason — the pilot receives the denial email (AC 5)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const aircraft = await createAircraft(page);
+    // Story 19.10 (AD-9 rule 2): the seed pilot books for themself below.
+    await ensureBookingRequirements(page, { personId: await personIdByEmail(page, PILOT_EMAIL), scope: 'PILOTS', solo: true });
 
     await page.context().clearCookies();
     await loginExpectingDashboard(page, PILOT_EMAIL);
@@ -261,7 +300,7 @@ test.describe('POST /api/v1/people — one-step composite create (story 13.1, AC
     expect(expiries.some((item) => item.typeName === pilotRatingType!.name && item.expiresAt === '2099-01-01')).toBe(true);
 
     // The invite really went out post-commit (AC 5's `access` block, fire-and-forget).
-    const inviteEmail = await waitForMailpitMessage(email, 'invitato');
+    const inviteEmail = await waitForMailpitMessage(email, 'invito');
     expect(inviteEmail.Text).toContain('set-password');
   });
 
@@ -283,5 +322,52 @@ test.describe('POST /api/v1/people — one-step composite create (story 13.1, AC
     expect(response.status()).toBe(422);
     const body = await response.json();
     expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+test.describe('Removed fields — API contract (story 19.2)', () => {
+  test('aircraft and person writes drop the removed keys (201/200, never a 422), no read carries them, the hour-meter adjustment API answers 404 and the served OpenAPI documents none of it', async ({
+    page,
+  }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const removedAircraftKeys = ['hourMeterMinutes', 'seats', 'fuelType', 'based', 'notes'];
+
+    // AC 6/11: a stale client still sending the five aircraft fields gets a 201;
+    // none of them is stored or returned.
+    const registration = `I-RM${uniqueSuffix()}`.toUpperCase().slice(0, 20);
+    const created = await page.request.post('/api/v1/aircraft', {
+      data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 750, seats: 2, fuelType: 'Mogas', based: false, notes: 'Nota' },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const aircraft = (await created.json()) as Record<string, unknown> & { id: string };
+    const patched = await page.request.patch(`/api/v1/aircraft/${aircraft.id}`, { data: { model: 'Test Model 2', seats: 4, notes: 'Altra nota' } });
+    expect(patched.status(), await patched.text()).toBe(200);
+    const read = await page.request.get(`/api/v1/aircraft/${aircraft.id}`);
+    expect(read.status()).toBe(200);
+    for (const body of [aircraft, await patched.json(), await read.json()]) {
+      for (const key of removedAircraftKeys) expect(body).not.toHaveProperty(key);
+    }
+
+    // AC 10: the route folder is gone.
+    expect((await page.request.get(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments`)).status()).toBe(404);
+    expect(
+      (await page.request.post(`/api/v1/aircraft/${aircraft.id}/hour-meter-adjustments`, { data: { newMinutes: 10, reason: 'x' } })).status(),
+    ).toBe(404);
+
+    // AC 2: same for the person.
+    const person = await page.request.post('/api/v1/people', { data: { firstName: 'Senza', lastName: `Codice-${uniqueSuffix()}`, fiscalCode: 'RSSMRA80A01H501U' } });
+    expect(person.status(), await person.text()).toBe(201);
+    const personBody = (await person.json()) as Record<string, unknown> & { id: string };
+    const personPatched = await page.request.patch(`/api/v1/people/${personBody.id}`, { data: { phone: '+39 333 1234567', fiscalCode: 'RSSMRA80A01H501U' } });
+    expect(personPatched.status(), await personPatched.text()).toBe(200);
+    const personRead = await page.request.get(`/api/v1/people/${personBody.id}`);
+    expect(personRead.status()).toBe(200);
+    for (const body of [personBody, await personPatched.json(), await personRead.json()]) expect(body).not.toHaveProperty('fiscalCode');
+
+    // AC 24: the contract the future Flutter app reads.
+    const openapi = await (await page.request.get('/api/v1/openapi.json')).text();
+    for (const token of ['hour-meter-adjustments', 'hourMeterMinutes', 'hourMeterStart', 'hourMeterEnd', 'fiscalCode', '"seats"', '"fuelType"', '"based"']) {
+      expect(openapi, token).not.toContain(token);
+    }
   });
 });

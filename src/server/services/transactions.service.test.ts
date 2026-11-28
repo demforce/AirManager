@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { currentMonthRange } from '@/lib/period-presets';
 import { listTransactionsQuerySchema } from '@/lib/schemas/transactions';
 import type { Actor } from '@/server/auth/rbac';
-import { ForbiddenError } from './errors';
+import { ForbiddenError, ValidationError } from './errors';
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
-    accountMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
-    cashMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
+    flight: { groupBy: vi.fn().mockResolvedValue([]) },
+    accountMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn(), groupBy: vi.fn() },
+    cashMovement: { findMany: vi.fn(), count: vi.fn(), aggregate: vi.fn(), groupBy: vi.fn() },
   },
 }));
 
@@ -19,8 +21,14 @@ vi.mock('@/server/db/prisma', () => ({
 vi.mock('./accounts.service', () => ({ recordTopUp: vi.fn(), recordAdjustment: vi.fn() }));
 vi.mock('./cash.service', () => ({ recordCashMovement: vi.fn() }));
 
+vi.mock('./stats-rankings.service', () => ({
+  readStatsRankingPreviewPair: async () => ({ hours: { items: [], total: 0 }, money: { items: [], total: 0 } }),
+  listStatsRanking: async () => ({ items: [], total: 0 }),
+}));
+vi.mock('./app-settings.service', () => ({ getSchedulingSettings: async () => ({ openTime: null, closeTime: null }) }));
+const { getStats } = await import('./stats.service');
 const { prisma } = await import('@/server/db/prisma');
-const { getLedgerRevenueCents, listTransactions, recordTransaction } = await import('./transactions.service');
+const { getLedgerRevenueByDay, getLedgerRevenueCents, listTransactions, recordTransaction } = await import('./transactions.service');
 const { recordTopUp, recordAdjustment } = await import('./accounts.service');
 const { recordCashMovement } = await import('./cash.service');
 
@@ -58,8 +66,8 @@ const cashAggregate = cashAggregateMock as unknown as {
   mockImplementation: (fn: (args: AggregateArgs) => Promise<{ _sum: { amountCents: number | null } }>) => void;
 };
 
-function staffActor(): Actor {
-  return { userId: 'staff_1', personId: null, roles: ['STAFF'] };
+function adminActor(): Actor {
+  return { userId: 'admin_1', personId: null, roles: ['ADMIN'] };
 }
 
 function pilotActor(): Actor {
@@ -82,7 +90,7 @@ const baseAccountRow: Fixture = {
   createdAt: new Date('2026-07-10T09:00:00.000Z'),
   flightId: null,
   reversalOfId: null,
-  reversalOf: null,
+  reversalRootBook: null,
   reversal: null,
   cashMovement: null,
   account: { personId: 'person_1', person: { firstName: 'Elena', lastName: 'Nakamura' } },
@@ -98,9 +106,9 @@ const baseCashRow: Fixture = {
   reversalOfId: null,
   reversal: null,
   accountMovementId: null,
+  instructorPayoutId: null,
   category: { name: 'Manutenzione' },
   accountMovement: null,
-  pprRequest: null,
 };
 
 beforeEach(() => {
@@ -171,7 +179,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([{ ...baseCashRow, id: 'cm_mid', effectiveDate: new Date('2026-07-09T00:00:00.000Z') }]);
     cashCount.mockResolvedValue(1);
 
-    const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+    const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
     expect(result.items.map((item) => item.id)).toEqual(['am_new', 'cm_mid', 'am_old']);
     expect(result.total).toBe(3);
@@ -194,7 +202,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     ]);
     cashCount.mockResolvedValue(2);
 
-    const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+    const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
     expect(result.items.map((item) => item.id)).toEqual(['id_d', 'id_c', 'id_b', 'id_a']);
   });
@@ -205,7 +213,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([]);
     cashCount.mockResolvedValue(0);
 
-    const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+    const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
     expect(result.items[0]).toMatchObject({ id: 'am_1', source: 'ACCOUNT', amountCents: 10000, bookType: 'DEPOSIT', personName: 'Nakamura Elena' });
   });
@@ -216,22 +224,22 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([baseCashRow]);
     cashCount.mockResolvedValue(1);
 
-    const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+    const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
     expect(result.items[0]).toMatchObject({ id: 'cm_1', source: 'CASH', amountCents: -3000, bookType: 'COST', method: 'CASH', personId: null, personName: null });
   });
 
   describe('bookType classification (story Billing-2, AC 2 — mirrors ACCOUNT_REVENUE_OR/CASH_REVENUE_OR/CASH_COST_OR exactly)', () => {
-    it('ACCOUNT: FLIGHT_CHARGE and FLIGHT_CHARGE_REVERSAL are always REVENUE regardless of sign', async () => {
+    it('ACCOUNT: FLIGHT_CHARGE is always REVENUE, at 0 too (a no-charge flight, story 19.6)', async () => {
       accountFindMany.mockResolvedValue([
         { ...baseAccountRow, id: 'am_charge', type: 'FLIGHT_CHARGE', amountCents: -12000 },
-        { ...baseAccountRow, id: 'am_reversal', type: 'FLIGHT_CHARGE_REVERSAL', amountCents: 12000, reversalOfId: 'am_charge' },
+        { ...baseAccountRow, id: 'am_no_charge', type: 'FLIGHT_CHARGE', amountCents: 0 },
       ]);
       accountCount.mockResolvedValue(2);
       cashFindMany.mockResolvedValue([]);
       cashCount.mockResolvedValue(0);
 
-      const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
       expect(result.items.map((item) => item.bookType)).toEqual(['REVENUE', 'REVENUE']);
     });
@@ -240,13 +248,13 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       accountFindMany.mockResolvedValue([
         { ...baseAccountRow, id: 'am_debit', type: 'ADJUSTMENT', amountCents: -3000, reversalOfId: null },
         { ...baseAccountRow, id: 'am_giroconto', type: 'ADJUSTMENT', amountCents: 1500, reversalOfId: null },
-        { ...baseAccountRow, id: 'am_storno', type: 'ADJUSTMENT', amountCents: 3000, reversalOfId: 'am_debit' },
+        { ...baseAccountRow, id: 'am_storno', type: 'ADJUSTMENT', amountCents: 3000, reversalOfId: 'am_debit', reversalRootBook: 'REVENUE' },
       ]);
       accountCount.mockResolvedValue(3);
       cashFindMany.mockResolvedValue([]);
       cashCount.mockResolvedValue(0);
 
-      const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
       const byId = new Map(result.items.map((item) => [item.id, item.bookType]));
       expect(byId.get('am_debit')).toBe('REVENUE');
@@ -256,14 +264,14 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
 
     it('review Billing-2 F3: a rettifica whose original is a TOP_UP is DEPOSIT (never REVENUE), any sign — the reviewer\'s own ghost-revenue case (correcting a wrong ricarica must never show +50,00 € of ricavo)', async () => {
       accountFindMany.mockResolvedValue([
-        { ...baseAccountRow, id: 'am_rettifica_down', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'am_topup', reversalOf: { type: 'TOP_UP', reversalOf: null } },
-        { ...baseAccountRow, id: 'am_rettifica_up', type: 'ADJUSTMENT', amountCents: 5000, reversalOfId: 'am_topup', reversalOf: { type: 'TOP_UP', reversalOf: null } },
+        { ...baseAccountRow, id: 'am_rettifica_down', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'am_topup', reversalRootBook: 'DEPOSIT' },
+        { ...baseAccountRow, id: 'am_rettifica_up', type: 'ADJUSTMENT', amountCents: 5000, reversalOfId: 'am_topup', reversalRootBook: 'DEPOSIT' },
       ]);
       accountCount.mockResolvedValue(2);
       cashFindMany.mockResolvedValue([]);
       cashCount.mockResolvedValue(0);
 
-      const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
       const byId = new Map(result.items.map((item) => [item.id, item.bookType]));
       expect(byId.get('am_rettifica_down')).toBe('DEPOSIT');
@@ -278,28 +286,94 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
           type: 'ADJUSTMENT',
           amountCents: 5000,
           reversalOfId: 'am_rettifica_down',
-          reversalOf: { type: 'ADJUSTMENT', reversalOf: { type: 'TOP_UP' } },
+          reversalRootBook: 'DEPOSIT',
         },
       ]);
       accountCount.mockResolvedValue(1);
       cashFindMany.mockResolvedValue([]);
       cashCount.mockResolvedValue(0);
 
-      const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
       expect(result.items[0]?.bookType).toBe('DEPOSIT');
+    });
+
+    // Story 16.6b (ledger MINOR-3): the two-level check above left a ghost
+    // ricavo one link further — the ROOT stored on the row has no depth.
+    it('story 16.6b: a link of a chain ROOTED in a TOP_UP is DEPOSIT at depth 3, 4 and 5, either sign, and when the signs do not alternate (the audit\'s TOP_UP <- A1 <- A2 <- A3)', async () => {
+      accountFindMany.mockResolvedValue([
+        { ...baseAccountRow, id: 'am_depth3', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'am_depth2', reversalRootBook: 'DEPOSIT' },
+        { ...baseAccountRow, id: 'am_depth4', type: 'ADJUSTMENT', amountCents: 5000, reversalOfId: 'am_depth3', reversalRootBook: 'DEPOSIT' },
+        { ...baseAccountRow, id: 'am_depth5', type: 'ADJUSTMENT', amountCents: -5000, reversalOfId: 'am_depth4', reversalRootBook: 'DEPOSIT' },
+        { ...baseAccountRow, id: 'am_negative_of_negative', type: 'ADJUSTMENT', amountCents: -500, reversalOfId: 'am_rettifica_down', reversalRootBook: 'DEPOSIT' },
+      ]);
+      accountCount.mockResolvedValue(4);
+      cashFindMany.mockResolvedValue([]);
+      cashCount.mockResolvedValue(0);
+
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
+
+      expect(Object.fromEntries(result.items.map((item) => [item.id, item.bookType]))).toEqual({
+        am_depth3: 'DEPOSIT',
+        am_depth4: 'DEPOSIT',
+        am_depth5: 'DEPOSIT',
+        am_negative_of_negative: 'DEPOSIT',
+      });
+    });
+
+    it('story 16.6b: a chain rooted in a debit ADJUSTMENT or in a legacy FLIGHT_CHARGE stays REVENUE at any depth, either sign', async () => {
+      accountFindMany.mockResolvedValue([
+        { ...baseAccountRow, id: 'am_quota_depth3', type: 'ADJUSTMENT', amountCents: 3000, reversalOfId: 'am_quota_depth2', reversalRootBook: 'REVENUE' },
+        { ...baseAccountRow, id: 'am_quota_depth4', type: 'ADJUSTMENT', amountCents: -3000, reversalOfId: 'am_quota_depth3', reversalRootBook: 'REVENUE' },
+        { ...baseAccountRow, id: 'am_flight_depth1', type: 'ADJUSTMENT', amountCents: 12000, reversalOfId: 'am_charge', reversalRootBook: 'REVENUE' },
+        { ...baseAccountRow, id: 'am_flight_depth2', type: 'ADJUSTMENT', amountCents: -12000, reversalOfId: 'am_flight_depth1', reversalRootBook: 'REVENUE' },
+      ]);
+      accountCount.mockResolvedValue(4);
+      cashFindMany.mockResolvedValue([]);
+      cashCount.mockResolvedValue(0);
+
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
+
+      expect(Object.fromEntries(result.items.map((item) => [item.id, item.bookType]))).toEqual({
+        am_quota_depth3: 'REVENUE',
+        am_quota_depth4: 'REVENUE',
+        am_flight_depth1: 'REVENUE',
+        am_flight_depth2: 'REVENUE',
+      });
+    });
+
+    // Review F5 (2026-11-04): a chain rooted in a GIROCONTO (a standalone
+    // CREDIT ADJUSTMENT) used to land in REVENUE — the old two-level check
+    // read "negative with a storno" as revenue regardless of what the root
+    // actually was (+20,00 € of ricavo fantasma on a -20,00 € correction of a
+    // +20,00 € giroconto). The root's BOOK, frozen at write time, fixes it.
+    it('story 16.6b review F5 fix: a chain rooted in a GIROCONTO (a standalone credit ADJUSTMENT) is TRANSFER at any depth, either sign — never REVENUE', async () => {
+      accountFindMany.mockResolvedValue([
+        { ...baseAccountRow, id: 'am_giroconto_storno', type: 'ADJUSTMENT', amountCents: -2000, reversalOfId: 'am_giroconto', reversalRootBook: 'TRANSFER' },
+        { ...baseAccountRow, id: 'am_giroconto_depth2', type: 'ADJUSTMENT', amountCents: 2000, reversalOfId: 'am_giroconto_storno', reversalRootBook: 'TRANSFER' },
+      ]);
+      accountCount.mockResolvedValue(2);
+      cashFindMany.mockResolvedValue([]);
+      cashCount.mockResolvedValue(0);
+
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
+
+      expect(Object.fromEntries(result.items.map((item) => [item.id, item.bookType]))).toEqual({
+        am_giroconto_storno: 'TRANSFER',
+        am_giroconto_depth2: 'TRANSFER',
+      });
     });
 
     it('review Billing-2 F9: the three "unreachable today" edges align with their predicate — a zero-amount PACKAGE_PURCHASE-shaped ACCOUNT row and a zero-amount storno ADJUSTMENT are TRANSFER, a zero-amount CASH row is TRANSFER (never badged COST)', async () => {
       accountFindMany.mockResolvedValue([
         { ...baseAccountRow, id: 'am_package', type: 'PACKAGE_PURCHASE', amountCents: 0, reversalOfId: null },
-        { ...baseAccountRow, id: 'am_zero_storno', type: 'ADJUSTMENT', amountCents: 0, reversalOfId: 'am_debit', reversalOf: { type: 'ADJUSTMENT', reversalOf: null } },
+        { ...baseAccountRow, id: 'am_zero_storno', type: 'ADJUSTMENT', amountCents: 0, reversalOfId: 'am_debit', reversalRootBook: 'REVENUE' },
       ]);
       accountCount.mockResolvedValue(2);
       cashFindMany.mockResolvedValue([{ ...baseCashRow, id: 'cm_zero', amountCents: 0, reversalOfId: null }]);
       cashCount.mockResolvedValue(1);
 
-      const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
       const byId = new Map(result.items.map((item) => [item.id, item.bookType]));
       expect(byId.get('am_package')).toBe('TRANSFER');
@@ -318,7 +392,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       accountFindMany.mockResolvedValue([]);
       accountCount.mockResolvedValue(0);
 
-      const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+      const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
       const byId = new Map(result.items.map((item) => [item.id, item.bookType]));
       expect(byId.get('cm_in')).toBe('REVENUE');
@@ -335,20 +409,10 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       cashFindMany.mockResolvedValue([]);
       cashCount.mockResolvedValue(0);
 
-      await listTransactions(staffActor(), { page: 1, pageSize: 20, bookType: 'REVENUE' });
+      await listTransactions(adminActor(), { page: 1, pageSize: 20, bookType: 'REVENUE' });
 
       expect(whereArg(accountFindManyMock).AND).toContainEqual({
-        OR: [
-          { type: 'FLIGHT_CHARGE' },
-          { type: 'FLIGHT_CHARGE_REVERSAL' },
-          { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
-          {
-            type: 'ADJUSTMENT',
-            amountCents: { gt: 0 },
-            reversalOfId: { not: null },
-            NOT: { OR: [{ reversalOf: { type: 'TOP_UP' } }, { reversalOf: { reversalOf: { type: 'TOP_UP' } } }] },
-          },
-        ],
+        OR: [{ type: 'FLIGHT_CHARGE' }, { type: 'ADJUSTMENT', reversalOfId: null, amountCents: { lt: 0 } }, { type: 'ADJUSTMENT', reversalRootBook: 'REVENUE' }],
       });
       expect(whereArg(cashFindManyMock).AND).toContainEqual({
         OR: [{ reversalOfId: null, amountCents: { gt: 0 } }, { reversalOfId: { not: null }, amountCents: { lt: 0 } }],
@@ -359,7 +423,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       cashFindMany.mockResolvedValue([]);
       cashCount.mockResolvedValue(0);
 
-      await listTransactions(staffActor(), { page: 1, pageSize: 20, bookType: 'COST' });
+      await listTransactions(adminActor(), { page: 1, pageSize: 20, bookType: 'COST' });
 
       expect(whereArg(cashFindManyMock).AND).toContainEqual({
         OR: [{ reversalOfId: null, amountCents: { lt: 0 } }, { reversalOfId: { not: null }, amountCents: { gt: 0 } }],
@@ -372,9 +436,25 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       accountFindMany.mockResolvedValue([]);
       accountCount.mockResolvedValue(0);
 
-      await listTransactions(staffActor(), { page: 1, pageSize: 20, bookType: 'DEPOSIT' });
+      await listTransactions(adminActor(), { page: 1, pageSize: 20, bookType: 'DEPOSIT' });
 
-      expect(whereArg(accountFindManyMock).AND).toContainEqual({ type: 'TOP_UP' });
+      expect(whereArg(accountFindManyMock).AND).toContainEqual({ OR: [{ type: 'TOP_UP' }, { type: 'ADJUSTMENT', reversalRootBook: 'DEPOSIT' }] });
+      expect(cashFindManyMock).not.toHaveBeenCalled();
+      expect(cashCountMock).not.toHaveBeenCalled();
+    });
+
+    // Story 16.6b review F5 fix: the "Giroconti" filter must match the badge
+    // (a correction of a giroconto), not just a bare standalone credit.
+    it('bookType=TRANSFER matches a standalone credit ADJUSTMENT AND every link of a chain rooted in a giroconto', async () => {
+      accountFindMany.mockResolvedValue([]);
+      accountCount.mockResolvedValue(0);
+
+      await listTransactions(adminActor(), { page: 1, pageSize: 20, bookType: 'TRANSFER' });
+
+      expect(whereArg(accountFindManyMock).AND).toContainEqual({
+        type: 'ADJUSTMENT',
+        OR: [{ reversalOfId: null, amountCents: { gte: 0 } }, { reversalRootBook: 'TRANSFER' }],
+      });
       expect(cashFindManyMock).not.toHaveBeenCalled();
       expect(cashCountMock).not.toHaveBeenCalled();
     });
@@ -385,7 +465,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
       cashFindMany.mockResolvedValue([]);
       cashCount.mockResolvedValue(0);
 
-      await listTransactions(staffActor(), { page: 1, pageSize: 20, unattributed: true });
+      await listTransactions(adminActor(), { page: 1, pageSize: 20, unattributed: true });
 
       expect(whereArg(cashFindManyMock).AND).toContainEqual({ paymentMethod: null });
       expect(accountFindManyMock).not.toHaveBeenCalled();
@@ -403,7 +483,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([{ ...baseCashRow, id: 'cm_1', effectiveDate: new Date('2026-07-09T00:00:00.000Z') }]);
     cashCount.mockResolvedValue(1);
 
-    const result = await listTransactions(staffActor(), { page: 2, pageSize: 2 });
+    const result = await listTransactions(adminActor(), { page: 2, pageSize: 2 });
 
     // Global order: am_1 (07-10), cm_1 (07-09), am_2 (07-08) — page 2 of size 2 is just [am_2].
     expect(result.items.map((item) => item.id)).toEqual(['am_2']);
@@ -417,7 +497,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([]);
     cashCount.mockResolvedValue(0);
 
-    await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+    await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
     const where = whereArg(accountFindManyMock);
     expect(where.AND).toContainEqual({ NOT: { AND: [{ amountCents: 0 }, { cashMovement: { isNot: null } }] } });
@@ -429,7 +509,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([]);
     cashCount.mockResolvedValue(0);
 
-    await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+    await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
     const where = whereArg(cashFindManyMock);
     expect(where.AND).toContainEqual({
@@ -451,9 +531,23 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     ]);
     cashCount.mockResolvedValue(1);
 
-    const result = await listTransactions(staffActor(), { page: 1, pageSize: 20 });
+    const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
 
     expect(result.items[0]).toMatchObject({ id: 'cm_package', personId: 'person_2', personName: 'Osei Paolo', actionable: false });
+  });
+
+  it('hides the reverse action for a payout cash twin while leaving a manual cash movement actionable', async () => {
+    accountFindMany.mockResolvedValue([]);
+    accountCount.mockResolvedValue(0);
+    cashFindMany.mockResolvedValue([
+      { ...baseCashRow, id: 'cm_payout', instructorPayoutId: 'payout_1' },
+      { ...baseCashRow, id: 'cm_manual', instructorPayoutId: null },
+    ]);
+    cashCount.mockResolvedValue(2);
+
+    const result = await listTransactions(adminActor(), { page: 1, pageSize: 20 });
+    expect(result.items.find((row) => row.id === 'cm_payout')?.actionable).toBe(false);
+    expect(result.items.find((row) => row.id === 'cm_manual')?.actionable).toBe(true);
   });
 
   it('applies from/to inclusive on effectiveDate to BOTH sources', async () => {
@@ -462,7 +556,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([]);
     cashCount.mockResolvedValue(0);
 
-    await listTransactions(staffActor(), { page: 1, pageSize: 20, from: '2026-07-01', to: '2026-07-31' });
+    await listTransactions(adminActor(), { page: 1, pageSize: 20, from: '2026-07-01', to: '2026-07-31' });
 
     const accountWhere = whereArg(accountFindManyMock);
     const cashWhere = whereArg(cashFindManyMock);
@@ -478,7 +572,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([]);
     cashCount.mockResolvedValue(0);
 
-    await listTransactions(staffActor(), { page: 1, pageSize: 20, personId: 'person_9' });
+    await listTransactions(adminActor(), { page: 1, pageSize: 20, personId: 'person_9' });
 
     expect(whereArg(accountFindManyMock).AND).toContainEqual({ account: { personId: 'person_9' } });
     expect(whereArg(cashFindManyMock).AND).toContainEqual({ accountMovement: { account: { personId: 'person_9' } } });
@@ -488,7 +582,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     accountFindMany.mockResolvedValue([]);
     accountCount.mockResolvedValue(0);
 
-    await listTransactions(staffActor(), { page: 1, pageSize: 20, movementType: 'ADJUSTMENT' });
+    await listTransactions(adminActor(), { page: 1, pageSize: 20, movementType: 'ADJUSTMENT' });
 
     expect(whereArg(accountFindManyMock).AND).toContainEqual({ type: 'ADJUSTMENT' });
     expect(cashFindManyMock).not.toHaveBeenCalled();
@@ -499,7 +593,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([]);
     cashCount.mockResolvedValue(0);
 
-    await listTransactions(staffActor(), { page: 1, pageSize: 20, categoryId: 'cat_1' });
+    await listTransactions(adminActor(), { page: 1, pageSize: 20, categoryId: 'cat_1' });
 
     expect(whereArg(cashFindManyMock).AND).toContainEqual({ categoryId: 'cat_1' });
     expect(accountFindManyMock).not.toHaveBeenCalled();
@@ -512,7 +606,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([]);
     cashCount.mockResolvedValue(0);
 
-    await listTransactions(staffActor(), { page: 1, pageSize: 20, direction: 'charge' });
+    await listTransactions(adminActor(), { page: 1, pageSize: 20, direction: 'charge' });
 
     expect(whereArg(accountFindManyMock).AND).toContainEqual({ amountCents: { lt: 0 } });
     expect(whereArg(cashFindManyMock).AND).toContainEqual({ amountCents: { gt: 0 } });
@@ -524,7 +618,7 @@ describe('listTransactions (AC 1 — unified ledger)', () => {
     cashFindMany.mockResolvedValue([]);
     cashCount.mockResolvedValue(0);
 
-    await listTransactions(staffActor(), { page: 1, pageSize: 20, direction: 'payment' });
+    await listTransactions(adminActor(), { page: 1, pageSize: 20, direction: 'payment' });
 
     expect(whereArg(accountFindManyMock).AND).toContainEqual({ amountCents: { gt: 0 } });
     expect(whereArg(cashFindManyMock).AND).toContainEqual({ amountCents: { lt: 0 } });
@@ -541,22 +635,12 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
     cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
 
-    await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+    await getLedgerRevenueCents(adminActor(), '2026-07-01', '2026-07-31');
 
     expect(accountAggregateMock.mock.calls[0]?.[0]).toEqual({
       where: {
         effectiveDate: { gte: new Date('2026-07-01'), lte: new Date('2026-07-31') },
-        OR: [
-          { type: 'FLIGHT_CHARGE' },
-          { type: 'FLIGHT_CHARGE_REVERSAL' },
-          { type: 'ADJUSTMENT', amountCents: { lt: 0 }, NOT: { reversalOf: { type: 'TOP_UP' } } },
-          {
-            type: 'ADJUSTMENT',
-            amountCents: { gt: 0 },
-            reversalOfId: { not: null },
-            NOT: { OR: [{ reversalOf: { type: 'TOP_UP' } }, { reversalOf: { reversalOf: { type: 'TOP_UP' } } }] },
-          },
-        ],
+        OR: [{ type: 'FLIGHT_CHARGE' }, { type: 'ADJUSTMENT', reversalOfId: null, amountCents: { lt: 0 } }, { type: 'ADJUSTMENT', reversalRootBook: 'REVENUE' }],
       },
       _sum: { amountCents: true },
     });
@@ -571,12 +655,12 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     });
   });
 
-  it('a FLIGHT_CHARGE reversed in the SAME period nets to ZERO revenue (storno annulla il ricavo — the bug the old Σ-positivi definition had: it only ever summed the positive side and never subtracted a same-period storno)', async () => {
-    // -18500 (the original FLIGHT_CHARGE) + 18500 (its FLIGHT_CHARGE_REVERSAL, same period) = 0.
+  it('a FLIGHT_CHARGE reversed by a rettifica in the SAME period nets to ZERO revenue (storno annulla il ricavo — the bug the old Σ-positivi definition had: it only ever summed the positive side and never subtracted a same-period storno)', async () => {
+    // -18500 (the original FLIGHT_CHARGE) + 18500 (its reversal ADJUSTMENT, same period) = 0.
     accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: -18500 + 18500 } }));
     cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: null } }));
 
-    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+    const revenueCents = await getLedgerRevenueCents(adminActor(), '2026-07-01', '2026-07-31');
 
     expect(revenueCents).toBe(0);
   });
@@ -585,7 +669,7 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: -18500 } }));
     cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: null } }));
 
-    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+    const revenueCents = await getLedgerRevenueCents(adminActor(), '2026-07-01', '2026-07-31');
 
     expect(revenueCents).toBe(18500);
   });
@@ -595,7 +679,7 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
     cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 5000 + -5000 } }));
 
-    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+    const revenueCents = await getLedgerRevenueCents(adminActor(), '2026-07-01', '2026-07-31');
 
     expect(revenueCents).toBe(0);
   });
@@ -605,7 +689,7 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
     cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: -5000 } }));
 
-    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-08-01', '2026-08-31');
+    const revenueCents = await getLedgerRevenueCents(adminActor(), '2026-08-01', '2026-08-31');
 
     expect(revenueCents).toBe(-5000);
   });
@@ -615,7 +699,7 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 800 } }));
     cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
 
-    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-08-01', '2026-08-31');
+    const revenueCents = await getLedgerRevenueCents(adminActor(), '2026-08-01', '2026-08-31');
 
     expect(revenueCents).toBe(-800);
   });
@@ -624,7 +708,7 @@ describe('getLedgerRevenueCents (story Billing-1, AC 5/6 — replaces the old Σ
     accountAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
     cashAggregate.mockImplementation(async () => ({ _sum: { amountCents: 0 } }));
 
-    const revenueCents = await getLedgerRevenueCents(staffActor(), '2026-07-01', '2026-07-31');
+    const revenueCents = await getLedgerRevenueCents(adminActor(), '2026-07-01', '2026-07-31');
 
     expect(revenueCents).toBe(0);
   });
@@ -634,7 +718,7 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
   it('TOP_UP delegates to recordTopUp with the SAME sign (a top-up is already positive on the wire)', async () => {
     recordTopUpMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: 10000, recentMovements: [] });
 
-    const result = await recordTransaction(staffActor(), {
+    const result = await recordTransaction(adminActor(), {
       kind: 'TOP_UP',
       personId: 'person_1',
       amountCents: 10000,
@@ -651,9 +735,9 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
   });
 
   it('ADJUSTMENT negates the positive wire amount into recordAdjustment\'s DB "addebito" sign convention, standalone (no originalMovementId)', async () => {
-    recordAdjustmentMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: -5000, recentMovements: [] });
+    recordAdjustmentMock.mockResolvedValue({ account: { id: 'acc_1', createdAt: new Date() }, balanceCents: -5000, recentMovements: [], balanceAlert: true });
 
-    const result = await recordTransaction(staffActor(), { kind: 'ADJUSTMENT', personId: 'person_1', amountCents: 5000, reason: 'Addebito manuale' });
+    const result = await recordTransaction(adminActor(), { kind: 'ADJUSTMENT', personId: 'person_1', amountCents: 5000, reason: 'Addebito manuale' });
 
     expect(recordAdjustmentMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -679,7 +763,7 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
       isAutomatic: false,
     });
 
-    await recordTransaction(staffActor(), {
+    await recordTransaction(adminActor(), {
       kind: 'CASH',
       categoryId: 'cat_1',
       direction: 'in',
@@ -689,7 +773,7 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
     });
     expect(recordCashMovementMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountCents: 5000, paymentMethod: 'CASH' }));
 
-    await recordTransaction(staffActor(), {
+    await recordTransaction(adminActor(), {
       kind: 'CASH',
       categoryId: 'cat_1',
       direction: 'out',
@@ -698,5 +782,73 @@ describe('recordTransaction (AC 4 — pure dispatcher onto the 3 pre-existing wr
       effectiveDate: '2026-07-10',
     });
     expect(recordCashMovementMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amountCents: -5000, paymentMethod: 'BANK_TRANSFER' }));
+  });
+
+  // Story 16.6a (R-16-h): the future-value-date guard lives in the two
+  // delegates only — the dispatcher forwards `effectiveDate` untouched and
+  // lets their 422 through (the real chain: `e2e/accounts-topups.spec.ts`, `e2e/cash-register.spec.ts`).
+  it.each([
+    { kind: 'TOP_UP' as const, input: { kind: 'TOP_UP' as const, personId: 'person_1', amountCents: 1000, paymentMethod: 'CASH' as const, effectiveDate: '2099-01-01' } },
+    { kind: 'CASH' as const, input: { kind: 'CASH' as const, categoryId: 'cat_1', direction: 'in' as const, amountCents: 1000, paymentMethod: 'CASH' as const, effectiveDate: '2099-01-01' } },
+  ])('$kind lets the delegate\'s 422 EFFECTIVE_DATE_IN_FUTURE through, with the date forwarded as sent', async ({ kind, input }) => {
+    const futureDate = new ValidationError('effectiveDate cannot be in the future.', { effectiveDate: '2099-01-01' }, 'EFFECTIVE_DATE_IN_FUTURE');
+    const delegate = kind === 'TOP_UP' ? recordTopUpMock : recordCashMovementMock;
+    delegate.mockRejectedValue(futureDate);
+
+    await expect(recordTransaction(adminActor(), input)).rejects.toBe(futureDate);
+    expect(delegate.mock.calls[0]?.at(-1)).toMatchObject({ effectiveDate: '2099-01-01' });
+  });
+});
+
+
+describe('daily ledger revenue (17.4)', () => {
+  it('the overview ledger total equals the monthly statistics KPI across a Rome month boundary', async () => {
+    const now = new Date('2026-07-31T22:30:00Z'); // Already August in Rome.
+    const { from, to } = currentMonthRange(now);
+    const prior = new Date('2026-07-31T00:00:00Z');
+    const first = new Date('2026-08-01T00:00:00Z');
+    const last = new Date('2026-08-31T00:00:00Z');
+    vi.mocked(prisma.accountMovement.groupBy).mockResolvedValue([
+      { effectiveDate: prior, _sum: { amountCents: -999 } },
+      { effectiveDate: first, _sum: { amountCents: -1750 } },
+      { effectiveDate: last, _sum: { amountCents: 250 } },
+    ] as never);
+    vi.mocked(prisma.cashMovement.groupBy).mockResolvedValue([{ effectiveDate: first, _sum: { amountCents: -300 } }] as never);
+    aggregateByRange(accountAggregate, { '2026-08-01': -1500 });
+    aggregateByRange(cashAggregate, { '2026-08-01': -300 });
+
+    const stats = await getStats(adminActor(), { period: 'month' }, now);
+    const revenue = await getLedgerRevenueCents(adminActor(), from, to);
+    expect(revenue).toBe(1200);
+    expect(revenue).toBe(stats.kpis.revenueCents);
+    for (const mock of [accountAggregateMock, cashAggregateMock]) {
+      expect(mock.mock.calls[0]?.[0]?.where).toMatchObject({ effectiveDate: { gte: first, lte: last } });
+    }
+  });
+
+  it('aggregates each book once and uses the same date bounds, sign and ledger classification as totals', async () => {
+    const from = new Date('2026-01-01T00:00:00.000Z');
+    const to = new Date('2026-02-28T00:00:00.000Z');
+    const feb = new Date('2026-02-01T00:00:00.000Z');
+    const cashOnly = new Date('2026-02-02T00:00:00.000Z');
+    const account = vi.mocked(prisma.accountMovement.groupBy);
+    const cash = vi.mocked(prisma.cashMovement.groupBy);
+    account.mockResolvedValue([{ effectiveDate: from, _sum: { amountCents: -1750 } }, { effectiveDate: feb, _sum: { amountCents: 250 } }] as never);
+    cash.mockResolvedValue([{ effectiveDate: from, _sum: { amountCents: 300 } }, { effectiveDate: cashOnly, _sum: { amountCents: -500 } }] as never);
+
+    const rows = await getLedgerRevenueByDay(adminActor(), '2026-01-01', '2026-02-28');
+    expect(Object.fromEntries(rows)).toEqual({ '2026-01-01': 2050, '2026-02-01': -250, '2026-02-02': -500 });
+    expect(account).toHaveBeenCalledTimes(1);
+    expect(cash).toHaveBeenCalledTimes(1);
+    await getLedgerRevenueCents(adminActor(), '2026-01-01', '2026-02-28');
+    expect(account.mock.calls[0]?.[0]).toMatchObject({ by: ['effectiveDate'], where: accountAggregateMock.mock.calls[0]?.[0]?.where });
+    expect(cash.mock.calls[0]?.[0]).toMatchObject({ by: ['effectiveDate'], where: cashAggregateMock.mock.calls[0]?.[0]?.where });
+    expect(account.mock.calls[0]?.[0].where).toMatchObject({ effectiveDate: { gte: from, lte: to } });
+  });
+
+  it('does not query either ledger without finance.manage', async () => {
+    await expect(getLedgerRevenueByDay(pilotActor(), '2026-01-01', '2026-02-28')).rejects.toThrow(ForbiddenError);
+    expect(prisma.accountMovement.groupBy).not.toHaveBeenCalled();
+    expect(prisma.cashMovement.groupBy).not.toHaveBeenCalled();
   });
 });

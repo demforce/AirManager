@@ -3,7 +3,9 @@ import { KPI } from '@/components/ui/kpi';
 import { Link, redirect } from '@/i18n/navigation';
 import type { AppLocale } from '@/i18n/routing';
 import { formatCents } from '@/lib/money';
-import { formatMinutes } from '@/lib/time';
+import { formatMinutes, formatMonthYear } from '@/lib/time';
+import { statsQuerySchema } from '@/lib/schemas/stats';
+import { resolveStatsPeriod } from '@/server/services/stats-period';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { getStats } from '@/server/services/stats.service';
@@ -11,7 +13,7 @@ import { ReportsConsole, type ReportsLabels } from './reports-console';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; ref?: string }>;
 };
 
 /** `YYYY-MM` -> a locale-appropriate short month label (e.g. "Lug"/"Jul") for the chart x-axis, UTC-parsed (a series bucket is already a Rome CALENDAR month, no further timezone conversion needed to just NAME it). */
@@ -25,10 +27,8 @@ function shortMonthLabel(yyyymm: string, locale: 'it' | 'en'): string {
 /**
  * Statistiche / reports (epic 12, story 12.10) — AirOps-native, port of
  * `docs/design-reference/airops/src/ReportsView.jsx`. `finance.manage` only
- * (ADMIN+STAFF, same perimeter as `/dashboard/billing`). The page itself
- * only ever requests the CURRENT period (`ref` defaults server-side) — the
- * `?ref=` history support lives in the API for now (ratifica utente 3), no
- * UI picker for it in this story.
+ * (ADMIN-only, same perimeter as `/dashboard/billing`). The page itself
+ * preserves the resolved period when returning from a ranking. It has no historical month picker.
  */
 export default async function ReportsPage({ params, searchParams }: PageProps) {
   const { locale } = await params;
@@ -48,26 +48,27 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
   const isYear = sp.period !== 'month';
   const period: 'month' | 'year' = isYear ? 'year' : 'month';
 
-  const stats = await getStats(actor, { period });
+  const now = new Date();
+  const parsed = statsQuerySchema.safeParse({ period, ref: sp.ref });
+  const latestRef = resolveStatsPeriod({ period }, now).ref;
+  const ref = parsed.success && parsed.data.ref && parsed.data.ref <= latestRef ? parsed.data.ref : undefined;
+  const stats = await getStats(actor, { period, ref }, now);
 
   const displayLocale: 'it' | 'en' = locale === 'en' ? 'en' : 'it';
   const intlLocale = displayLocale === 'en' ? 'en-IE' : 'it-IT';
   const t = await getTranslations('ReportsPage');
 
-  const now = new Date();
-  const monthLabel = new Intl.DateTimeFormat(intlLocale, { month: 'long', year: 'numeric' }).format(now);
-  const yearLabel = t('periodToggle.year', { year: now.getFullYear() });
+  const monthLabel = formatMonthYear(new Date(`${stats.referenceMonth}-15T12:00:00Z`), displayLocale);
+  const yearLabel = t('periodToggle.year', { year: Number(stats.referenceMonth.slice(0, 4)) });
   const periodLabel = isYear ? yearLabel : monthLabel;
 
   const chartCount = isYear ? 12 : 6;
   const seriesLabels = stats.series.months.map((month) => shortMonthLabel(month, displayLocale));
-  const transitSharePercent = new Intl.NumberFormat(intlLocale, { style: 'percent', maximumFractionDigits: 1 }).format(stats.kpis.transitShare);
 
   const labels: ReportsLabels = {
     charts: {
       revenue: { title: t('charts.revenue.title'), sub: t('charts.revenue.sub', { count: chartCount }) },
       hours: { title: t('charts.hours.title'), sub: t('charts.hours.sub', { count: chartCount }) },
-      transits: { title: t('charts.transits.title'), sub: t('charts.transits.sub', { count: chartCount }) },
       fleet: { title: t('charts.fleet.title'), sub: t('charts.fleet.sub', { period: periodLabel }), empty: t('charts.fleet.empty') },
     },
     movementMix: {
@@ -76,8 +77,6 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
       keys: {
         SCHOOL: t('movementMix.keys.SCHOOL'),
         TOURISM: t('movementMix.keys.TOURISM'),
-        AERIAL_WORK: t('movementMix.keys.AERIAL_WORK'),
-        TRANSIT: t('movementMix.keys.TRANSIT'),
       },
     },
     instructors: {
@@ -104,12 +103,16 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
     <main className="page">
       <div className="page-head">
         <div className="page-title-block">
-          <h1>{t('title')}</h1>
+          <h1 className="fold-duplicate-title">{t('title')}</h1>
           <div className="sub">{t('sub', { period: periodLabel })}</div>
         </div>
-        <div className="segmented" title={t('periodToggle.title')}>
+        {/* `.segmented` has SIX consumers app-wide (Pianificazione, Panoramica,
+            Scadenze, both `RankBars`, the primitive): the phone's 44px floor is
+            hung on this page-owned class, anchored with `>`, never on
+            `.segmented` itself (lesson 15.3 F1, reconfirmed 15.5 F5 / 15.7). */}
+        <div className="segmented reports-period" title={t('periodToggle.title')}>
           <Link
-            href={{ pathname: '/dashboard/reports', query: { period: 'month' } }}
+            href={{ pathname: '/dashboard/reports', query: ref ? { period: 'month', ref } : { period: 'month' } }}
             locale={locale as AppLocale}
             className={!isYear ? 'on' : ''}
             data-testid="reports-period-month"
@@ -117,7 +120,7 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
             {monthLabel}
           </Link>
           <Link
-            href={{ pathname: '/dashboard/reports', query: { period: 'year' } }}
+            href={{ pathname: '/dashboard/reports', query: ref ? { period: 'year', ref } : { period: 'year' } }}
             locale={locale as AppLocale}
             className={isYear ? 'on' : ''}
             data-testid="reports-period-year"
@@ -127,11 +130,10 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
         </div>
       </div>
 
-      <div className="kpi-row">
+      <div className="kpi-row kpi-row-four">
         <KPI label={t('kpi.revenue')} value={formatCents(stats.kpis.revenueCents, displayLocale)} />
         <KPI label={t('kpi.hours')} value={formatMinutes(stats.kpis.flightMinutes)} />
         <KPI label={t('kpi.movements')} value={stats.kpis.movements} />
-        <KPI label={t('kpi.transitShare')} value={transitSharePercent} />
         {/* Story 12.11, AC 6: OMITTED entirely (never a fake 0%) when sched.openTime/closeTime aren't configured or there is no OPERATIONAL aircraft. */}
         {stats.kpis.fleetUtilization !== null ? (
           <KPI
@@ -141,7 +143,7 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
         ) : null}
       </div>
 
-      <ReportsConsole stats={stats} seriesLabels={seriesLabels} moneyLocale={displayLocale} labels={labels} />
+      <ReportsConsole stats={stats} period={period} seriesLabels={seriesLabels} moneyLocale={displayLocale} labels={labels} />
     </main>
   );
 }

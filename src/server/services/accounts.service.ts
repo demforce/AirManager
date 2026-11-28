@@ -1,12 +1,19 @@
-import type { AccountMovementType, Prisma, PaymentMethod } from '@/generated/prisma/client';
+import { captureEventRecipients, holderMailbox, holderDeliveryFence, type EventRecipients } from './account-mailbox';
+import { Prisma, type AccountMovementRootBook, type AccountMovementType, type PaymentMethod } from '@/generated/prisma/client';
 import { paginate, paginationOffset, type PaginatedResult, type PaginationQuery } from '@/lib/api/pagination';
 import type { AppLocale } from '@/i18n/routing';
-import type { RecordAdjustmentInput, RecordTopUpInput } from '@/lib/schemas/accounts';
+import type { NegativeBalancesQuery, RecordAdjustmentInput, RecordTopUpInput } from '@/lib/schemas/accounts';
+import { rootBookType } from '@/lib/schemas/transactions';
+import { escapeLikePattern } from '@/lib/sql-like';
+import { APP_TIMEZONE } from '@/lib/time';
+import { todayDateOnlyUtcInZone } from '@/lib/zoned-time';
+import { getOperationalMailPolicy } from './operational-mail-settings';
 import { getMailSender } from '@/server/adapters/mail';
 import { buildNegativeBalanceAlertEmail } from '@/server/adapters/mail/templates';
 import { authorize, hasPermission, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
-import { ConflictError, ForbiddenError, NotFoundError } from './errors';
+import { assertEffectiveDateNotInFuture } from './cash.service';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 /** The cash category top-ups land in (story 3.1, AC 2) — seeded, never created on the fly (Dev Notes). */
 const TOP_UP_CASH_CATEGORY_NAME = 'Ricariche';
@@ -131,24 +138,11 @@ export async function getAccountOverview(actor: Actor, personId: string): Promis
     return { account: null, balanceCents: 0, recentMovements: [] };
   }
 
-  return buildOverview(account);
+  return readOverview(prisma, account);
 }
 
-/**
- * Assembles the overview for an account the caller is already authorized to
- * see. Kept guard-free on purpose (review 3.1 F1): `recordTopUp` returns the
- * fresh overview through here after its committed write, and routing that
- * read back through `assertReadAccess` would couple `finance.manage` to also
- * holding a read permission — a future write-only role would get its top-up
- * committed and then a 403 on the response.
- */
-/**
- * The two reads `buildOverview` needs, against a GIVEN client — either
- * `prisma` itself (wrapped in `buildOverview`'s own transaction below) or an
- * outer `tx` a caller is already inside (`recordTopUp`, H3 fix: see its
- * doc-comment). Extracted so the read can run atomically WITH a mutation's
- * own transaction instead of only ever as a separate one after it commits.
- */
+// READ COMMITTED gives each statement its own snapshot. Standalone reads use
+// the pool directly; a writer passes its transaction client to see its own changes.
 async function readOverview(client: Prisma.TransactionClient, account: { id: string; createdAt: Date }): Promise<AccountOverview> {
   const aggregate = await client.accountMovement.aggregate({
     where: { accountId: account.id },
@@ -173,15 +167,9 @@ async function readOverview(client: Prisma.TransactionClient, account: { id: str
   };
 }
 
-async function buildOverview(account: { id: string; createdAt: Date }): Promise<AccountOverview> {
-  // Interactive transaction (story TD-1, AC 3) — see `people.service.ts#listPeople`'s
-  // doc-comment for the batch-vs-interactive `pg` DeprecationWarning rationale.
-  return prisma.$transaction((tx) => readOverview(tx, account));
-}
-
 /**
  * Records a prepaid-account top-up (story 3.1, AC 2/3). Write access:
- * `finance.manage` (staff/admin) — never "own" (a pilot cannot top up their
+ * `finance.manage` (ADMIN-only) — never "own" (a pilot cannot top up their
  * own account). In ONE transaction: get-or-create the `Account` (idempotent
  * upsert on `personId` — same 1-to-0/1 guarantee `upsertProfile` relies on,
  * AD-11), create the immutable `AccountMovement` (TOP_UP, signed positive
@@ -224,6 +212,9 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
     );
   }
 
+  // Story 16.6a (R-16-h): before the transaction — a 404 person still wins
+  // over the 422, the same "state before input" order as `recordCashMovement`.
+  assertEffectiveDateNotInFuture(input.effectiveDate);
   const effectiveDate = new Date(input.effectiveDate);
   const description = input.description ?? null;
 
@@ -269,7 +260,7 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
     // Idempotency-Key (`apiRoute`'s AC 4) and let a retry double the top-up.
     // Guard-free on purpose: the write was authorized by `finance.manage`,
     // and the fresh overview must not require a separate read permission
-    // (review 3.1 F1 — see `buildOverview`).
+    // (review 3.1 F1).
     return readOverview(tx, upserted);
   });
 }
@@ -277,9 +268,9 @@ export async function recordTopUp(actor: Actor, personId: string, input: RecordT
 /**
  * One entry of the full, paginated account statement (story 3.2, AC 1/2).
  * `actorEmail` is a display-only join over `actorUserId` (same enrichment
- * pattern as `listHourMeterAdjustments`, story 2.5) but, unlike that list,
+ * pattern as `rates.service.ts#listAircraftRates`, story 4.1) but, unlike that list,
  * it is conditional: only present when the caller has `people.read` (AC
- * 2's "dettaglio operativo" for staff) — a titolare reading their own
+ * 2's "dettaglio operativo" for an admin) — a titolare reading their own
  * statement never sees who registered a movement (Dev Notes, AD-5: the
  * service is the guardian of the data, not just the UI).
  */
@@ -295,64 +286,163 @@ export type AccountStatementItem = {
   reversalOfId: string | null;
   /** Story 3.3: true when this movement already has a linked adjustment — hides the row's "Rettifica questo movimento" action. */
   hasReversal: boolean;
+  /** Story 19.11 (AD-3): the account's balance right AFTER this movement — the period's opening balance plus the running sum of the period up to this row, in the statement's key order. */
+  balanceAfterCents: number;
+  /** Story 19.11 (D-9): the value date of the movement this one corrects, wherever that original sits (another page, before the period); `null` exactly when `reversalOfId` is. */
+  reversalOfEffectiveDate: string | null;
 };
 
-export type AccountStatementResult = PaginatedResult<AccountStatementItem>;
+/**
+ * A page of the statement plus the period it covers (story 19.11, AD-1):
+ * `from`/`to` echo the bounds applied (`null` = unbounded on that side),
+ * `openingBalanceCents` is the sum of every movement dated BEFORE `from` (0
+ * without `from`), `closingBalanceCents` the opening plus the period's own
+ * sum. `total` counts the period's movements.
+ */
+export type AccountStatementResult = PaginatedResult<AccountStatementItem> & {
+  from: string | null;
+  to: string | null;
+  openingBalanceCents: number;
+  closingBalanceCents: number;
+};
 
-const ACCOUNT_STATEMENT_SELECT = {
-  id: true,
-  type: true,
-  amountCents: true,
-  description: true,
-  effectiveDate: true,
-  createdAt: true,
-  actorUser: { select: { email: true } },
-  reversalOfId: true,
-  reversal: { select: { id: true } },
-} as const;
+type StatementPeriod = { from?: string; to?: string };
 
-type SelectedStatementMovement = {
-  id: string;
-  type: AccountMovementType;
-  amountCents: number;
+/**
+ * One row of {@link statementSql}: the period summary (on EVERY row, from the
+ * one-row `summary` CTE) plus one statement row — or, on an empty page, the
+ * summary alone with every movement column `null` (the `LEFT JOIN`).
+ * `bigint` columns come back as `BigInt` and are converted in the mapper: a
+ * `BigInt` cannot reach `JSON.stringify`.
+ */
+type StatementSqlRow = {
+  openingCents: bigint;
+  total: bigint;
+  periodCents: bigint;
+  id: string | null;
+  type: AccountMovementType | null;
+  amountCents: number | null;
   description: string | null;
-  effectiveDate: Date;
-  createdAt: Date;
-  actorUser: { email: string };
+  effectiveDateText: string | null;
+  createdAt: Date | null;
   reversalOfId: string | null;
-  reversal: { id: string } | null;
+  cumulativeCents: bigint | null;
+  reversalOfEffectiveDate: string | null;
+  hasReversal: boolean;
+  actorEmail: string | null;
 };
 
-function toStatementItem(movement: SelectedStatementMovement, includeActor: boolean): AccountStatementItem {
+type StatementSqlMovementRow = StatementSqlRow & { id: string; type: AccountMovementType; amountCents: number; effectiveDateText: string; createdAt: Date; cumulativeCents: bigint };
+
+function isMovementRow(row: StatementSqlRow): row is StatementSqlMovementRow {
+  return row.id !== null;
+}
+
+function toStatementItem(row: StatementSqlMovementRow, openingBalanceCents: number, includeActor: boolean): AccountStatementItem {
   return {
-    id: movement.id,
-    type: movement.type,
-    amountCents: movement.amountCents,
-    effectiveDate: toDateOnlyString(movement.effectiveDate),
-    description: movement.description,
-    createdAt: movement.createdAt,
-    reversalOfId: movement.reversalOfId,
-    hasReversal: movement.reversal !== null,
-    ...(includeActor ? { actorEmail: movement.actorUser.email } : {}),
+    id: row.id,
+    type: row.type,
+    amountCents: row.amountCents,
+    effectiveDate: row.effectiveDateText,
+    description: row.description,
+    createdAt: row.createdAt,
+    reversalOfId: row.reversalOfId,
+    hasReversal: row.hasReversal,
+    balanceAfterCents: openingBalanceCents + Number(row.cumulativeCents),
+    reversalOfEffectiveDate: row.reversalOfEffectiveDate,
+    ...(includeActor && row.actorEmail !== null ? { actorEmail: row.actorEmail } : {}),
   };
 }
 
+function emptyStatement(query: PaginationQuery & StatementPeriod): AccountStatementResult {
+  return { ...paginate([], 0, query), from: query.from ?? null, to: query.to ?? null, openingBalanceCents: 0, closingBalanceCents: 0 };
+}
+
 /**
- * Lists a person's full account statement, paginated and most-recent-first
- * (story 3.2, AC 1/2). Read access: the same own-access rule as
- * `getAccountOverview` (`assertReadAccess`) — checked BEFORE any query. A
- * person that exists but never activated an account gets an empty page
- * (`total: 0`), NOT a 404 — only an unknown person is (same 404-vs-null
- * split as `getAccountOverview`, review 3.1 F4). `from`/`to` (epic 12, story
- * 12.9, AC 5) are OPTIONAL, inclusive on `effectiveDate` — additive over the
- * pre-existing `PaginationQuery`-only signature; absent (every pre-12.9
- * caller: the JSON list, the xlsx export, the drill-down page) means the
- * full, unfiltered statement, unchanged.
+ * The ONE SQL statement of the estratto conto (story 19.11, AD-3, A13). Every
+ * number it returns comes from the same snapshot of the ledger, so the first
+ * row's running balance IS the closing balance even under a concurrent write
+ * (D-4) — two queries could disagree, and the interactive transaction that
+ * used to pair `findMany` + `count` is what story 17.5 removes.
+ *
+ * - `period`: the movements in [from, to] with the running sum in the
+ *   statement's key `(effectiveDate, createdAt, id)` (D-3 — the libro
+ *   contabile's own key; `createdAt` keeps insertion order by definition, a
+ *   cuid only by how Prisma generates it today). `ROWS` is explicit: the key
+ *   is unique, but the default `RANGE` reads as if ties were summed together.
+ * - `summary`: opening balance (every movement before `from`), count and sum
+ *   of the period — ONE row, so it survives a page past the end (the
+ *   `LEFT JOIN page`).
+ * - `page`: the period most recent first (Q-19.11-a = A), `LIMIT`/`OFFSET`.
+ *   The details join only the page's rows: who recorded it, the original's
+ *   value date (the badge, D-9), whether a correction already points at it.
+ *
+ * The bounds are bound as TEXT and cast `::date` (D-14): a JS `Date` binds as
+ * `timestamptz` and the session timezone would move the boundary day (review
+ * 3.5 F1, `cash.service.ts#getCashReport`) — the one deroga to `date-only.ts`'s
+ * "never raw SQL", forced by the window function Prisma does not have. An
+ * absent bound is an absent fragment, never `(x IS NULL OR …)`: an "optional"
+ * predicate forces a generic plan that cannot range-scan the index. Dates
+ * leave as `to_char` text, and the outer `ORDER BY` names the `p.` COLUMNS,
+ * never the text aliases.
+ */
+function statementSql(accountId: string, period: StatementPeriod, page: { skip: number; take: number }): Prisma.Sql {
+  const fromBound = period.from ? Prisma.sql`AND m."effectiveDate" >= ${period.from}::date` : Prisma.empty;
+  const toBound = period.to ? Prisma.sql`AND m."effectiveDate" <= ${period.to}::date` : Prisma.empty;
+  const opening = period.from
+    ? Prisma.sql`(SELECT COALESCE(SUM(o."amountCents"), 0) FROM "AccountMovement" o WHERE o."accountId" = ${accountId} AND o."effectiveDate" < ${period.from}::date)`
+    : Prisma.sql`0`;
+  return Prisma.sql`
+    WITH "period" AS (
+      SELECT m."id", m."type", m."amountCents", m."description", m."effectiveDate", m."createdAt", m."actorUserId", m."reversalOfId",
+             SUM(m."amountCents") OVER (ORDER BY m."effectiveDate", m."createdAt", m."id" ROWS UNBOUNDED PRECEDING) AS "cumulativeCents"
+      FROM "AccountMovement" m
+      WHERE m."accountId" = ${accountId} ${fromBound} ${toBound}
+    ), "summary" AS (
+      SELECT ${opening}::bigint AS "openingCents",
+             (SELECT COUNT(*) FROM "period")::bigint AS "total",
+             (SELECT COALESCE(SUM(pr."amountCents"), 0) FROM "period" pr)::bigint AS "periodCents"
+    ), "page" AS (
+      SELECT * FROM "period" ORDER BY "effectiveDate" DESC, "createdAt" DESC, "id" DESC LIMIT ${page.take} OFFSET ${page.skip}
+    )
+    SELECT s."openingCents", s."total", s."periodCents",
+           p."id", p."type"::text AS "type", p."amountCents", p."description", to_char(p."effectiveDate", 'YYYY-MM-DD') AS "effectiveDateText",
+           p."createdAt", p."reversalOfId", p."cumulativeCents"::bigint AS "cumulativeCents",
+           to_char(orig."effectiveDate", 'YYYY-MM-DD') AS "reversalOfEffectiveDate",
+           (rev."id" IS NOT NULL) AS "hasReversal", u."email" AS "actorEmail"
+    FROM "summary" s
+    LEFT JOIN "page" p ON TRUE
+    LEFT JOIN "AccountMovement" orig ON orig."id" = p."reversalOfId"
+    LEFT JOIN "AccountMovement" rev ON rev."reversalOfId" = p."id"
+    LEFT JOIN "User" u ON u."id" = p."actorUserId"
+    ORDER BY p."effectiveDate" DESC, p."createdAt" DESC, p."id" DESC`;
+}
+
+/**
+ * Lists a person's account statement for a period (story 3.2; story 19.11):
+ * one page of it, ordered by VALUE date most recent first, each row with the
+ * balance right after it, plus the period's opening and closing balances.
+ * Read access: the same own-access rule as `getAccountOverview`
+ * (`assertReadAccess`) — checked BEFORE any query. A person that exists but
+ * never activated an account gets the empty statement (`total: 0`, both
+ * balances 0), NOT a 404 — only an unknown person is (same 404-vs-null split
+ * as `getAccountOverview`, review 3.1 F4).
+ *
+ * `from`/`to` are OPTIONAL and inclusive on `effectiveDate`; absent means the
+ * complete history (D-1: the 12-month default lives in the two pages, which
+ * always pass an explicit period — an API client that sends none must not
+ * silently lose its oldest movements). The balances are computed at read
+ * time from `SUM(amountCents)` (AD-3: no stored balance), so a flight charge
+ * rewritten or deleted with its flight (story 19.6) moves every later
+ * balance by itself. The only reader of the JSON list, the xlsx and the PDF
+ * exports and both statement pages: ONE definition of the running balance.
+ * No transaction: the page, the count and the balances are one statement
+ * ({@link statementSql}).
  */
 export async function listAccountMovements(
   actor: Actor,
   personId: string,
-  query: PaginationQuery & { from?: string; to?: string },
+  query: PaginationQuery & StatementPeriod,
 ): Promise<AccountStatementResult> {
   assertReadAccess(actor, personId);
 
@@ -363,41 +453,66 @@ export async function listAccountMovements(
 
   const account = await prisma.account.findUnique({ where: { personId }, select: { id: true } });
   if (!account) {
-    return paginate([], 0, query);
+    return emptyStatement(query);
   }
 
   const includeActor = hasPermission(actor, 'people.read');
-  const where = {
-    accountId: account.id,
-    ...(query.from || query.to
-      ? {
-          effectiveDate: {
-            ...(query.from ? { gte: new Date(query.from) } : {}),
-            ...(query.to ? { lte: new Date(query.to) } : {}),
-          },
-        }
-      : {}),
-  };
-  // Interactive transaction (story TD-1, AC 3) — see `buildOverview`'s
-  // doc-comment above for the batch-vs-interactive `pg` DeprecationWarning rationale.
-  const [items, total] = await prisma.$transaction(async (tx) => {
-    const items = await tx.accountMovement.findMany({
-      select: ACCOUNT_STATEMENT_SELECT,
-      where,
-      // `id` tie-break: same-millisecond rows (batch imports/seeds) must not
-      // make the page order non-deterministic (same pattern as `buildOverview`, review 3.1 F3).
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      ...paginationOffset(query),
-    });
-    const total = await tx.accountMovement.count({ where });
-    return [items, total] as const;
-  });
+  const rows = await prisma.$queryRaw<StatementSqlRow[]>(statementSql(account.id, query, paginationOffset(query)));
+  // The `summary` CTE is one row and the page joins it LEFT: there is always a first row.
+  const summary = rows[0]!;
+  const openingBalanceCents = Number(summary.openingCents);
 
-  return paginate(
-    items.map((item) => toStatementItem(item, includeActor)),
-    total,
-    query,
-  );
+  return {
+    ...paginate(
+      rows.filter(isMovementRow).map((row) => toStatementItem(row, openingBalanceCents, includeActor)),
+      Number(summary.total),
+      query,
+    ),
+    from: query.from ?? null,
+    to: query.to ?? null,
+    openingBalanceCents,
+    closingBalanceCents: openingBalanceCents + Number(summary.periodCents),
+  };
+}
+
+// --- Story 14.6: self-service ("Le mie transazioni") ------------------------
+
+/**
+ * Self-service account overview (story 14.6, AC 2) — the ONLY personId ever
+ * read is `actor.personId`. Unlike {@link getAccountOverview}, there is no
+ * personId parameter a caller could substitute: nothing "travels" for an
+ * IDOR probe to override, by construction, not by a check. `self.read` is
+ * granted to every role (same rationale as `me.service.ts#getMe`), so this
+ * never actually 403s a logged-in user; an actor with no linked person
+ * (AC 5 — e.g. an admin-managed login unlinked from any `Person`,
+ * `users.service.ts#updateUser`) gets the same empty shape a person who
+ * never activated a pilot/student profile gets from `getAccountOverview`,
+ * never a query.
+ */
+export async function getOwnAccountOverview(actor: Actor): Promise<AccountOverview> {
+  authorize(actor, 'self.read');
+  if (actor.personId === null) {
+    return { account: null, balanceCents: 0, recentMovements: [] };
+  }
+  return getAccountOverview(actor, actor.personId);
+}
+
+/**
+ * Self-service account statement (story 14.6, AC 2/3) — same "personId
+ * never travels" guarantee as {@link getOwnAccountOverview}. `includeActor`
+ * inside `listAccountMovements` is driven by `people.read`, which a
+ * PILOT/STUDENT actor never holds, so the rows this returns never carry
+ * `actorEmail` — the pilota-centric perspective the page wants (AC 3), not
+ * the staff "registrato da" column, with no separate flag to keep in sync.
+ * Same period contract as `listAccountMovements` (story 19.11); an actor with
+ * no linked person gets the empty statement, never a query.
+ */
+export async function listOwnAccountMovements(actor: Actor, query: PaginationQuery & StatementPeriod): Promise<AccountStatementResult> {
+  authorize(actor, 'self.read');
+  if (actor.personId === null) {
+    return emptyStatement(query);
+  }
+  return listAccountMovements(actor, actor.personId, query);
 }
 
 // --- Story 3.3: motivated adjustments and negative-balance band alerts ----
@@ -436,6 +551,25 @@ export function bandWorsened(before: BalanceBand, after: BalanceBand): boolean {
 }
 
 /**
+ * Story 14.4 review F7 (ratifica R-14.4-d, PO verbatim: "l'avviso scatta sia
+ * se il conto è già in rosso sia se l'importo da addebitare porterà il conto
+ * in rosso... per QUALSIASI addebito non solo per i voli") — the ONE shared
+ * condition for the in-app "saldo in rosso" banner shown to the OPERATOR on
+ * every surface that can debit a person's account: `true` when the balance
+ * was ALREADY negative before the write OR ends up negative after it.
+ * Deliberately NOT `bandWorsened` (that stays the email's own, UNCHANGED
+ * band-transition gate, story 5.1/3.3): a debit on a balance already at
+ * -150,00 € never "worsens the band" (still `negative`, same as before) yet
+ * the operator staring at the result still needs to see red. Every writer
+ * below computes `balanceBeforeCents`/`balanceAfterCents` for its OWN
+ * purposes already (the email's before/after read) — this is never a second,
+ * independent balance read.
+ */
+export function hasNegativeBalanceAlert(balanceBeforeCents: number, balanceAfterCents: number): boolean {
+  return balanceBeforeCents < 0 || balanceAfterCents < 0;
+}
+
+/**
  * Reads the configurable alert threshold from `AppSetting` (Task 1), falling
  * back to `DEFAULT_NEGATIVE_BALANCE_THRESHOLD_CENTS` when the row is absent
  * — an admin settings UI to manage it is out of scope here (epic 10). A
@@ -468,29 +602,30 @@ export async function getNegativeBalanceThresholdCents(): Promise<number> {
  */
 export async function sendNegativeBalanceAlert(
   personId: string,
-  person: { firstName: string; lastName: string; email: string | null },
+  person: { firstName: string; lastName: string; email: string | null; atEvent?: EventRecipients },
   balanceCents: number,
 ): Promise<void> {
-  if (!person.email) {
-    console.warn('sendNegativeBalanceAlert: person has no email, skipping alert.');
-    return;
-  }
-
   try {
+    const recipient = await holderMailbox(personId, person.email, person.atEvent);
+    if (!recipient) {
+      console.warn('sendNegativeBalanceAlert: no eligible recipient, skipping alert.');
+      return;
+    }
     // `User.locale` (AD-7) — the recipient's own language, not the staff
     // actor's. No linked `User` (a titolare who never got app access) falls
     // back to Italian, same default as `User.locale`'s own schema default.
     const user = await prisma.user.findUnique({ where: { personId }, select: { locale: true } });
     const locale: AppLocale = user?.locale === 'en' ? 'en' : 'it';
-    const { subject, text } = await buildNegativeBalanceAlertEmail(locale, {
+    const content = await buildNegativeBalanceAlertEmail(locale, {
       personName: `${person.firstName} ${person.lastName}`,
       balanceCents,
     });
-    await getMailSender().send({ to: person.email, subject, text });
-  } catch (error) {
+    if (!(await getOperationalMailPolicy()).switches.negativeBalance) return;
+    await getMailSender().send({ ...content, to: recipient.email, ...holderDeliveryFence(personId, recipient) });
+  } catch {
     // Never let a mail failure surface to the caller — the movement is
     // already committed and must stay valid (Dev Notes).
-    console.error('sendNegativeBalanceAlert: failed to send alert email', error);
+    console.error('sendNegativeBalanceAlert: failed to send alert email');
   }
 }
 
@@ -509,11 +644,16 @@ export async function sendNegativeBalanceAlert(
  * `ConflictError` (409). To correct a wrong adjustment, Dev Notes says to
  * record another one, either standalone or linked to the adjustment itself
  * (an `ADJUSTMENT` row can itself be `originalMovementId` for a later one).
+ * A `FLIGHT_CHARGE` original is a 422 `ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE`
+ * (story 16.6b Q4, anticipated by review 19.6 F1): a flight's charge is
+ * corrected by editing or deleting its flight. The original is read under
+ * the `Account` lock below, never before it (review 19.6 F1/F2).
  *
  * No `effectiveDate` in the input (Task 2's signature is deliberately just
  * `amountCents`/`reason`/`originalMovementId`) — a rettifica always values
- * as of today, the server clock's UTC calendar date (no time-of-day, same
- * `@db.Date` convention as every other ledger date).
+ * as of today, the aviosuperficie's own Europe/Rome calendar date (story
+ * 16.1; no time-of-day, same `@db.Date` convention as every other ledger
+ * date).
  *
  * No automatic `CashMovement` (Dev Notes: cash-side stornos are story 3.4).
  *
@@ -525,7 +665,7 @@ export async function sendNegativeBalanceAlert(
  * commits (Dev Notes: SMTP failures must never hold the lock nor invalidate
  * the movement).
  */
-export async function recordAdjustment(actor: Actor, personId: string, input: RecordAdjustmentInput): Promise<AccountOverview> {
+export async function recordAdjustment(actor: Actor, personId: string, input: RecordAdjustmentInput): Promise<AccountOverview & { balanceAlert: boolean }> {
   authorize(actor, 'finance.manage');
 
   const person = await prisma.person.findUnique({
@@ -542,38 +682,62 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
   }
 
   const originalMovementId = input.originalMovementId ?? null;
-  if (originalMovementId) {
-    // Ownership pre-check BEFORE any write (same "never reveal someone
-    // else's data" rationale as `assertReadAccess`): a movement id from a
-    // different account is reported exactly like an unknown one.
-    const original = await prisma.accountMovement.findUnique({
-      where: { id: originalMovementId },
-      select: { id: true, accountId: true, type: true, reversal: { select: { id: true } } },
-    });
-    if (!original || original.accountId !== account.id) {
-      throw new NotFoundError('Movement not found.');
-    }
-    if (original.type === 'PACKAGE_PURCHASE') {
-      // TD-1, AC 6: a PACKAGE_PURCHASE row is a zero-amount marker (story
-      // 4.4) — the real payment is external to the account, so there is
-      // nothing here for a rettifica to correct. Correcting a wrong sale
-      // goes through the cash register instead.
-      throw new ConflictError('A package purchase is a zero-amount marker — correct the sale on the cash register instead.');
-    }
-    if (original.reversal) {
-      throw new ConflictError('This movement already has a linked adjustment.');
-    }
-  }
-
   const thresholdCents = await getNegativeBalanceThresholdCents();
   const reason = input.reason;
 
-  const { balanceBeforeCents, balanceAfterCents } = await prisma.$transaction(async (tx) => {
+  const { balanceBeforeCents, balanceAfterCents, atEvent } = await prisma.$transaction(async (tx) => {
     // Row lock (FOR UPDATE): serializes concurrent adjustments/top-ups on
     // THIS account so their "balance before" reads never race (review 2.5
     // F1 pattern) — `Account` has no balance column, the lock is a pure
     // serialization mutex around the SUM read below.
     await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${account.id} FOR UPDATE`;
+
+    // Story 16.6b (ledger MINOR-3; review F5 fix, ratifica PO 2026-11-04):
+    // the BOOK of the chain's ROOT, `null` for a standalone rettifica — this
+    // is the one writer of `reversalOfId`, so the one writer of
+    // `reversalRootBook` (the migration's CHECK holds them together).
+    let reversalRootBook: AccountMovementRootBook | null = null;
+    if (originalMovementId) {
+      // Read UNDER the lock (review 19.6 F1/F2): a flight charge is the one
+      // movement that can be deleted or moved to another account
+      // (`flights.service.ts#deleteFlight`/`updateFlight`), both under this
+      // same `Account` lock — so the row checked here is the row the insert
+      // below links to, and one deleted meanwhile is a 404, never a P2003/500.
+      // Ownership check BEFORE any write (same "never reveal someone else's
+      // data" rationale as `assertReadAccess`): a movement id from a
+      // different account is reported exactly like an unknown one.
+      const original = await tx.accountMovement.findUnique({
+        where: { id: originalMovementId },
+        select: { id: true, accountId: true, type: true, amountCents: true, reversalRootBook: true, reversal: { select: { id: true } } },
+      });
+      if (!original || original.accountId !== account.id) {
+        throw new NotFoundError('Movement not found.');
+      }
+      if (original.type === 'FLIGHT_CHARGE') {
+        // Story 16.6b Q4, anticipated by review 19.6 F1: since story 19.6
+        // (AD-3 exception) a flight's charge lives and dies with its flight.
+        // A rettifica linked to it would become a stray credit when the
+        // flight is deleted, or stay on the old account when the flight
+        // changes person.
+        throw new ValidationError(
+          'A flight charge is corrected by editing or deleting the flight, not by a manual adjustment.',
+          undefined,
+          'ADJUSTMENT_ORIGINAL_NOT_ADJUSTABLE',
+        );
+      }
+      if (original.type === 'PACKAGE_PURCHASE') {
+        // TD-1, AC 6: a PACKAGE_PURCHASE row is a zero-amount marker (story
+        // 4.4) — the real payment is external to the account, so there is
+        // nothing here for a rettifica to correct. Correcting a wrong sale
+        // goes through the cash register instead.
+        throw new ConflictError('A package purchase is a zero-amount marker — correct the sale on the cash register instead.');
+      }
+      if (original.reversal) {
+        throw new ConflictError('This movement already has a linked adjustment.');
+      }
+      // A root computes its own book (`rootBookType`); a link passes on the book it already carries.
+      reversalRootBook = original.reversalRootBook ?? rootBookType(original.type, original.amountCents);
+    }
 
     const aggregate = await tx.accountMovement.aggregate({
       where: { accountId: account.id },
@@ -588,21 +752,25 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
           type: 'ADJUSTMENT',
           amountCents: input.amountCents,
           description: reason,
-          effectiveDate: todayDateOnlyUtc(),
+          effectiveDate: todayDateOnlyUtcInZone(APP_TIMEZONE),
           actorUserId: actor.userId,
           reversalOfId: originalMovementId,
+          reversalRootBook,
         },
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
-        // Concurrent-race backstop for the pre-check above (TOCTOU): two
-        // requests linking to the same original at once.
+        // DB-level backstop for the check above (two requests linking to the
+        // same original are already serialized by the `Account` lock).
         throw new ConflictError('This movement already has a linked adjustment.');
       }
       throw error;
     }
 
-    return { balanceBeforeCents: beforeCents, balanceAfterCents: beforeCents + input.amountCents };
+    const afterCents = beforeCents + input.amountCents;
+    const atEvent = bandWorsened(balanceBand(beforeCents, thresholdCents), balanceBand(afterCents, thresholdCents))
+      ? await captureEventRecipients(tx, [personId]) : undefined;
+    return { balanceBeforeCents: beforeCents, balanceAfterCents: afterCents, atEvent };
   });
 
   // Guard-free re-read, same rationale as `recordTopUp` (review 3.1 F1) —
@@ -616,7 +784,7 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
   // the (committed) transaction instead of throwing.
   let overview: AccountOverview;
   try {
-    overview = await buildOverview(account);
+    overview = await readOverview(prisma, account);
   } catch (error) {
     console.error('recordAdjustment: post-commit account overview read failed', error);
     overview = { account, balanceCents: balanceAfterCents, recentMovements: [] };
@@ -631,16 +799,15 @@ export async function recordAdjustment(actor: Actor, personId: string, input: Re
     // `balanceAfterCents` decides the band transition, but a concurrent
     // top-up committed in parallel (recordTopUp takes no Account lock) could
     // make it stale by send time — the freshly re-read overview can't.
-    void sendNegativeBalanceAlert(personId, person, overview.balanceCents);
+    void sendNegativeBalanceAlert(personId, { ...person, atEvent }, overview.balanceCents);
   }
 
-  return overview;
-}
-
-/** `@db.Date` calendar-only "today" (server clock, UTC) — a rettifica always values as of today (Dev Notes: no `effectiveDate` input). */
-function todayDateOnlyUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  // Story 14.4 review F7 (ratifica R-14.4-d) — the in-app signal, deliberately
+  // NOT the same condition as the email above (this function's own doc-comment
+  // on `hasNegativeBalanceAlert`): fires for BOTH directions of a rettifica
+  // (this endpoint's `amountCents` is signed) whenever the account IS or
+  // BECOMES red, even when the band itself doesn't worsen.
+  return { ...overview, balanceAlert: hasNegativeBalanceAlert(balanceBeforeCents, balanceAfterCents) };
 }
 
 export type NegativeBalanceItem = {
@@ -651,56 +818,67 @@ export type NegativeBalanceItem = {
   lastMovementAt: Date | null;
 };
 
+export const NEGATIVE_BALANCE_PREVIEW_SIZE = 20;
+
+type NegativeBalanceSqlRow = Omit<NegativeBalanceItem, 'balanceCents' | 'personId'> & {
+  personId: string | null;
+  balanceCents: bigint | null;
+  total: bigint;
+  exposureCents: bigint;
+};
+
 /**
- * Lists every account with a negative balance, most-negative first (AC 2,
- * Task 2) — the staff-facing "saldi negativi" list, shown on `/dashboard/billing`
- * since story 12.9 (the legacy `/dashboard/finance` it originally lived on is gone).
- * `finance.manage` only.
- *
- * Balance is ALWAYS the `SUM(AccountMovement.amountCents)` computation
- * (AD-3) — implemented here as a Prisma `groupBy` with a `having` filter on
- * the aggregate (pushes the "< 0" filter and the ordering into Postgres,
- * rather than fetching every account and filtering in JS) followed by one
- * `Account`+`Person` lookup to enrich the surviving groups with a display
- * name — `groupBy` cannot itself join across relations.
- *
- * ARCHIVED people are deliberately NOT filtered out (review 3.3 F1,
- * conscious deviation from the people/aircraft list convention): a debtor
- * who left the airfield is exactly who staff must still see here —
- * archiving must never hide money owed.
+ * Read the bounded rows and the matching ledger totals from one snapshot.
+ * Archived people are deliberately included: archiving never hides debt.
  */
-export async function listNegativeBalances(actor: Actor): Promise<NegativeBalanceItem[]> {
+async function readNegativeBalances(actor: Actor, query: NegativeBalancesQuery) {
   authorize(actor, 'finance.manage');
+  const offset = BigInt(query.page - 1) * BigInt(query.pageSize);
+  const search = query.q ? `%${escapeLikePattern(query.q)}%` : null;
+  const nameFilter = search
+    ? Prisma.sql`WHERE concat_ws(' ', p."firstName", p."lastName") ILIKE ${search} ESCAPE '\\'
+        OR concat_ws(' ', p."lastName", p."firstName") ILIKE ${search} ESCAPE '\\'`
+    : Prisma.empty;
+  const rows = await prisma.$queryRaw<NegativeBalanceSqlRow[]>(Prisma.sql`
+    WITH balances AS (
+      SELECT "accountId", SUM("amountCents")::bigint AS "balanceCents", MAX("createdAt") AS "lastMovementAt"
+      FROM "AccountMovement"
+      GROUP BY "accountId"
+      HAVING SUM("amountCents") < 0
+    ), matching AS (
+      SELECT p.id AS "personId", p."firstName", p."lastName", b."balanceCents", b."lastMovementAt"
+      FROM balances b
+      JOIN "Account" a ON a.id = b."accountId"
+      JOIN "Person" p ON p.id = a."personId"
+      ${nameFilter}
+    ), totals AS (
+      SELECT COUNT(*) AS total, COALESCE(-SUM("balanceCents"), 0)::bigint AS "exposureCents"
+      FROM matching
+    ), page_rows AS (
+      SELECT * FROM matching
+      ORDER BY "balanceCents", "personId"
+      LIMIT ${query.pageSize} OFFSET ${offset}
+    )
+    SELECT pr.*, totals.total, totals."exposureCents"
+    FROM totals LEFT JOIN page_rows pr ON true
+    ORDER BY pr."balanceCents", pr."personId"
+  `);
 
-  const grouped = await prisma.accountMovement.groupBy({
-    by: ['accountId'],
-    _sum: { amountCents: true },
-    _max: { createdAt: true },
-    having: { amountCents: { _sum: { lt: 0 } } },
-    orderBy: { _sum: { amountCents: 'asc' } },
-  });
+  return {
+    items: rows.flatMap(({ personId, firstName, lastName, balanceCents, lastMovementAt }): NegativeBalanceItem[] =>
+      personId === null || balanceCents === null ? [] : [{ personId, firstName, lastName, balanceCents: Number(balanceCents), lastMovementAt }],
+    ),
+    total: Number(rows[0]?.total ?? BigInt(0)),
+    exposureCents: Number(rows[0]?.exposureCents ?? BigInt(0)),
+  };
+}
 
-  if (grouped.length === 0) return [];
+export async function listNegativeBalances(actor: Actor, query: NegativeBalancesQuery): Promise<PaginatedResult<NegativeBalanceItem>> {
+  const { items, total } = await readNegativeBalances(actor, query);
+  return paginate(items, total, query);
+}
 
-  const accounts = await prisma.account.findMany({
-    where: { id: { in: grouped.map((group) => group.accountId) } },
-    select: { id: true, person: { select: { id: true, firstName: true, lastName: true } } },
-  });
-  const accountById = new Map(accounts.map((account) => [account.id, account]));
-
-  const items: NegativeBalanceItem[] = [];
-  for (const group of grouped) {
-    const account = accountById.get(group.accountId);
-    // Cannot happen (every AccountMovement.accountId is FK-backed) — skip
-    // defensively rather than throw on a display-only listing.
-    if (!account) continue;
-    items.push({
-      personId: account.person.id,
-      firstName: account.person.firstName,
-      lastName: account.person.lastName,
-      balanceCents: group._sum.amountCents ?? 0,
-      lastMovementAt: group._max.createdAt,
-    });
-  }
-  return items;
+export async function getNegativeBalanceSummary(actor: Actor) {
+  const { items, total, exposureCents } = await readNegativeBalances(actor, { page: 1, pageSize: NEGATIVE_BALANCE_PREVIEW_SIZE });
+  return { count: total, exposureCents, top: items };
 }

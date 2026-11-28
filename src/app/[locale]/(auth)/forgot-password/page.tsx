@@ -2,6 +2,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { Icon } from '@/components/ui/icons';
 import type { AppLocale } from '@/i18n/routing';
 import { ForgotPasswordForm } from './forgot-password-form';
+import { AuthLanguageSwitch } from '../auth-language-switch';
 
 type PageProps = {
   params: Promise<{ locale: string }>;
@@ -20,6 +21,7 @@ export default async function ForgotPasswordPage({ params }: PageProps) {
 
   return (
     <main
+      className="auth-page"
       style={{
         display: 'flex',
         minHeight: '100vh',
@@ -30,6 +32,7 @@ export default async function ForgotPasswordPage({ params }: PageProps) {
         color: 'var(--ink)',
       }}
     >
+      <AuthLanguageSwitch locale={locale as AppLocale} pathname="/forgot-password" />
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 28 }}>
           <div className="brand-mark">
@@ -55,6 +58,7 @@ export default async function ForgotPasswordPage({ params }: PageProps) {
               submitting: t('submitting'),
               confirmation: t('confirmation'),
               backToLogin: t('backToLogin'),
+              requiredField: t('requiredField'),
             }}
           />
         </div>

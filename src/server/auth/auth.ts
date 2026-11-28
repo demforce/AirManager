@@ -1,3 +1,5 @@
+import { emailTrialEnabled } from './email-trial-policy';
+import { consumeTrialLink, loginRequestOrigin, trustedProxyIp } from '@/server/services/email-trial.service';
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { extractClientIp } from '@/lib/api/client-ip';
@@ -22,6 +24,13 @@ import { applyActiveRecheck } from './jwt-active-check';
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   providers: [
+    ...(emailTrialEnabled() ? [Credentials({
+      id: 'email-link', name: 'Email link', credentials: { token: {}, email: {} },
+      authorize: async (credentials, request) => {
+        const user = await consumeTrialLink('LOGIN_LINK', credentials.token, credentials.email, loginRequestOrigin(request.headers));
+        return user ? { ...user, emailTrialLogin: true } : null;
+      },
+    })] : []),
     Credentials({
       credentials: {
         email: {},
@@ -29,10 +38,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       // H1 (CWE-307): the Credentials provider's `authorize()` receives the
       // original `Request` as its second argument — extract the client IP
-      // from it (same `x-forwarded-for` convention as `ppr.service.ts`) and
+      // from it (`x-forwarded-for`, `client-ip.ts`) and
       // forward it to `authorizeCredentials` so the login throttle can
       // apply its per-IP dimension.
       authorize: (credentials, request) => authorizeCredentials(credentials, extractClientIp(request.headers.get('x-forwarded-for'))),
+    }),
+    Credentials({
+      id: 'admin-password',
+      name: 'Administrator password',
+      credentials: { email: {}, password: {} },
+      authorize: (credentials, request) => {
+        return authorizeCredentials(credentials, trustedProxyIp(request.headers), 'admin-password');
+      },
     }),
   ],
   callbacks: {

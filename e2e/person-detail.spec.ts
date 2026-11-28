@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -60,6 +62,8 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     await expect(page.getByRole('heading', { name: `${person.lastName} ${person.firstName}` })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Dati anagrafici' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Profili' })).toBeVisible();
+    // Story 19.2 (AC 4): the anagrafica rows, exactly (the removed one is gone).
+    await expect(page.locator('.person-identity .info-row .k')).toHaveText(['Nome', 'Cognome', 'Email', 'Telefono', 'Indirizzo']);
 
     // Story 13.3, AC 2: the standalone "estratto conto" drill-down is now a
     // SECTION here ("Estratto conto"), replacing the old "Saldo conto" panel.
@@ -137,7 +141,7 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     expect(otherBody.error.code).toBe('FORBIDDEN');
   });
 
-  test('the "Ultimi voli" panel shows the person\'s flights (data, tratta, durata, stato) and "Vedi tutti" opens the pre-filtered registry (Story 11.2, AC 4)', async ({
+  test('the "Ultimi voli" panel shows the person\'s flights (data, tratta, durata — no status since story 19.6) and "Vedi tutti" opens the pre-filtered registry (Story 11.2, AC 4)', async ({
     page,
   }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
@@ -150,15 +154,14 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
       data: { licenseNumber: `IT-PPL-${suffix}`, licenseType: 'PPL(A)' },
     });
     expect(profileResponse.status()).toBe(200);
+    // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+    await ensureValidSeedExpiries(page, personId, 'PILOTS');
     const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-      data: { registration: `I-PD${suffix}`.toUpperCase().slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 50 },
+      data: { registration: `I-PD${suffix}`.toUpperCase().slice(0, 20), type: 'Ultraleggero 3 assi', model: 'Test Model' },
     });
     expect(aircraftResponse.status()).toBe(201);
     const aircraft = (await aircraftResponse.json()) as { id: string };
-    const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, {
-      data: { priceCentsPerHour: 10000, validFrom: '2020-01-01' },
-    });
-    expect(rateResponse.status()).toBe(201);
+    await seedAircraftRate(aircraft.id, { studentPriceCents: 10000, pilotPriceCents: 10000, validFrom: '2020-01-01' });
     const flightResponse = await page.request.post('/api/v1/flights', {
       data: {
         aircraftId: aircraft.id,
@@ -168,6 +171,7 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
         flightType: 'TOURISM',
         takeoffAt: '2020-01-01T10:00:00.000Z',
         landingAt: '2020-01-01T10:40:00.000Z',
+        force: true,
       },
     });
     expect(flightResponse.status()).toBe(201);
@@ -179,7 +183,8 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     await expect(row).toContainText('01/01/2020');
     await expect(row).toContainText('Campo Prova → Base Prova');
     await expect(row).toContainText('0:40');
-    await expect(row).toContainText('Registrato');
+    // Story 19.6 (AC 26): every existing flight is a flown one — the row says no status.
+    await expect(row).not.toContainText('Registrato');
 
     const viewAllLink = panel.getByTestId('recent-flights-view-all');
     await expect(viewAllLink).toHaveAttribute('href', `/it/dashboard/logbook?personId=${personId}`);
@@ -201,6 +206,8 @@ test.describe('Person detail page (Story 2.3; rebuilt AirOps-native, Story 13.3)
     const form = page.getByTestId('pilot-identity-form');
     await expect(form.getByLabel('Nome', { exact: true })).toHaveValue(person.firstName);
     await expect(form.getByLabel('Cognome', { exact: true })).toHaveValue(person.lastName);
+    // Story 19.2 (AC 4): the removed field is absent from the edit form too.
+    await expect(form.getByLabel('Codice fiscale', { exact: true })).toHaveCount(0);
 
     const updatedPhone = '333' + Date.now().toString().slice(-7);
     await form.getByLabel('Telefono').fill(updatedPhone);

@@ -56,8 +56,7 @@ export function formatTimeOfDay(date: Date, locale: 'it' | 'en' = 'it'): string 
 
 /**
  * Formats a UTC `Date` as a full `DD/MM/YYYY HH:MM` timestamp in the
- * Europe/Rome timezone (story 2.5, AC 2: "quando" column of the hour-meter
- * adjustment history) — display only, wire format stays ISO 8601 UTC.
+ * Europe/Rome timezone — display only, wire format stays ISO 8601 UTC.
  */
 export function formatDateTime(date: Date, locale: 'it' | 'en' = 'it'): string {
   return new Intl.DateTimeFormat(locale === 'it' ? 'it-IT' : 'en-IE', {
@@ -92,6 +91,15 @@ export function formatDateOnly(dateOnly: string, locale: 'it' | 'en' = 'it'): st
     timeZone: 'UTC',
     day: '2-digit',
     month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
+/** Month and year of an instant in the airfield's calendar, not the process timezone. */
+export function formatMonthYear(date: Date, locale: 'it' | 'en' = 'it'): string {
+  return new Intl.DateTimeFormat(locale === 'it' ? 'it-IT' : 'en-IE', {
+    timeZone: APP_TIMEZONE,
+    month: 'long',
     year: 'numeric',
   }).format(date);
 }

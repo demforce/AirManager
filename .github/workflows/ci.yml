@@ -38,6 +38,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Ensure Poppler for PDF text regression tests
+        run: command -v pdftotext || (sudo apt-get update && sudo apt-get install -y poppler-utils)
+
       - name: Unit tests
         run: npm run test:quiet
 
@@ -48,6 +51,17 @@ jobs:
         run: npm run build
 
   e2e:
+    name: ${{ matrix.check }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: e2e
+            mode: normal
+            email_trial: "0"
+          - check: e2e (email trial)
+            mode: trial
+            email_trial: "1"
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
@@ -56,21 +70,27 @@ jobs:
         env:
           POSTGRES_USER: airmanager
           POSTGRES_PASSWORD: airmanager
-          POSTGRES_DB: airmanager
+          POSTGRES_DB: airmanager_test
         ports:
-          - 5432:5432
+          - 127.0.0.1:55432:5432
         options: >-
-          --health-cmd "pg_isready -U airmanager -d airmanager"
+          --health-cmd "pg_isready -U airmanager -d airmanager_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
       mailpit:
         image: axllent/mailpit
         ports:
-          - 1025:1025
-          - 8025:8025
+          - 127.0.0.1:1025:1025
+          - 127.0.0.1:8025:8025
     env:
-      DATABASE_URL: postgresql://airmanager:airmanager@localhost:5432/airmanager?schema=public
+      DATABASE_URL: postgresql://airmanager:airmanager@localhost:55432/airmanager_test?schema=public
+      AIRMANAGER_EMAIL_TRIAL: ${{ matrix.email_trial }}
+      APP_URL: http://localhost:3000
+      TEST_DATABASE_URL: postgresql://airmanager:airmanager@localhost:55432/airmanager_test?schema=public
+      # Story 17.1 — documents the env contract only; equals the code
+      # default (src/lib/env.ts), so CI behaviour is unchanged.
+      DATABASE_POOL_MAX: 10
       AUTH_SECRET: ci-e2e-secret-not-used-anywhere-0123456789
       # Specs and seed both read this from env (see .env.example); dummy value.
       SEED_ADMIN_PASSWORD: ChangeMe123!
@@ -98,14 +118,25 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      # playwright.config.ts starts the dev server itself (webServer).
-      - name: Run e2e tests
+      - name: Complete normal-mode browser regression
+        if: matrix.mode == 'normal'
         run: npm run test:e2e
+
+      - name: Email-trial browser contracts
+        if: matrix.mode == 'trial'
+        run: npm run test:e2e -- --grep @email-trial --no-deps --workers=1
+
+      - name: Security recipient readiness on a fresh disposable database
+        if: matrix.mode == 'trial'
+        run: |
+          npm run db:reset:test
+          node --import tsx --test scripts/test-access-security.ts
+          node --import tsx --test scripts/test-profile-password.ts
 
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.mode }}
           path: test-results/
           retention-days: 7

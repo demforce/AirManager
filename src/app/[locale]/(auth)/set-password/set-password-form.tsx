@@ -28,6 +28,8 @@ type Labels = {
   goToLogin: string;
   errorMismatch: string;
   errorTooShort: string;
+  adminPolicy: string;
+  adminRejected: string;
   errorGeneric: string;
 };
 
@@ -61,10 +63,8 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
     });
 
     if (!response.ok) {
-      // AC 1/3: an unknown/expired/reused token is the only failure mode
-      // exposed here — the service doesn't distinguish invite from reset,
-      // so neither does this message.
-      setFormError(labels.errorGeneric);
+      const body = await response.json().catch(() => null);
+      setFormError(body?.error?.code === 'ADMIN_PASSWORD_POLICY' ? labels.adminPolicy + ' ' + labels.adminRejected : labels.errorGeneric);
       return;
     }
 
@@ -86,19 +86,14 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Field label={labels.password}>
+      <Field label={labels.password} error={errors.password ? labels.errorTooShort : undefined}>
         <Input type="password" autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...register('password')} />
       </Field>
-      {errors.password ? (
-        <p style={{ margin: 0, fontSize: 11.5, color: 'var(--bad)' }}>{labels.errorTooShort}</p>
-      ) : null}
 
-      <Field label={labels.confirmPassword}>
+      <p className="fld-hint">{labels.adminPolicy}</p>
+      <Field label={labels.confirmPassword} error={errors.confirmPassword ? labels.errorMismatch : undefined}>
         <Input type="password" autoComplete="new-password" aria-invalid={Boolean(errors.confirmPassword)} {...register('confirmPassword')} />
       </Field>
-      {errors.confirmPassword ? (
-        <p style={{ margin: 0, fontSize: 11.5, color: 'var(--bad)' }}>{labels.errorMismatch}</p>
-      ) : null}
 
       {formError ? (
         <p role="alert" data-testid="set-password-error" className="alert-box bad">

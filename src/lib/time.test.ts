@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateTime, formatMinutes, formatTimeOfDay, parseMinutes } from './time';
+import { formatDateTime, formatMonthYear, formatMinutes, formatTimeOfDay, parseMinutes } from './time';
 
 describe('formatMinutes', () => {
   it('formats minutes under an hour', () => {
@@ -92,5 +92,14 @@ describe('formatDateTime', () => {
   it('defaults to the Italian locale', () => {
     const date = new Date(Date.UTC(2026, 0, 15, 12, 0));
     expect(formatDateTime(date)).toBe(formatDateTime(date, 'it'));
+  });
+});
+
+describe('formatMonthYear (story 16.9)', () => {
+  it('labels the new Rome month even while the UTC date is in the previous month', () => {
+    const now = new Date('2026-08-31T22:30:00.000Z');
+    expect(formatMonthYear(now, 'it')).toBe('settembre 2026');
+    expect(formatMonthYear(now, 'en')).toBe('September 2026');
+    expect(new Intl.DateTimeFormat('it-IT', { timeZone: 'UTC', month: 'long', year: 'numeric' }).format(now)).toBe('agosto 2026');
   });
 });

@@ -5,7 +5,7 @@ import { exportBookingsPdf } from '@/server/services/exports.service';
 
 /**
  * Dedicated PDF route (story 13.7, AC 2 — spine :105, same pattern as
- * `ppr-requests/pdf/route.ts`, story 13.6). Reuses the SAME query schema as
+ * `flights/pdf/route.ts`). Reuses the SAME query schema as
  * `GET /api/v1/bookings` (period/aircraft/person/status filters + `locale`)
  * — `page`/`pageSize`/`format`, also present on that schema, are simply
  * ignored here (`exportBookingsPdf` always re-pages internally, same as the

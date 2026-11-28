@@ -1,3 +1,4 @@
+import { boundedOptions, PICKER_LIMIT } from '@/lib/picker';
 import { apiRoute } from '@/lib/api/handler';
 import { createAircraftSchema, listAircraftQuerySchema } from '@/lib/schemas/aircraft';
 import { xlsxResponse } from '@/server/adapters/excel/response';
@@ -16,6 +17,10 @@ export const GET = apiRoute({
     if (query.format === 'xlsx') {
       const { buffer, filename } = await exportAircraftXlsx(actor, query);
       return xlsxResponse(buffer, filename);
+    }
+    if (query.picker) {
+      const result = await listAircraft(actor, { ...query, page: 1, pageSize: PICKER_LIMIT + 1 });
+      return boundedOptions(result.items.map(({ id, registration, model, status, statusReason, archivedAt }) => ({ id, registration, model, status, statusReason, archivedAt })));
     }
     return listAircraft(actor, query);
   },

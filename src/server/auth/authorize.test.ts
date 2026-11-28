@@ -39,6 +39,55 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
     recordSuccessMock.mockResolvedValue(undefined);
   });
 
+  it('denies a valid ordinary password through the admin provider and retains its reservation', async () => {
+    const password = 'synthetic-admin-fixture';
+    findUniqueMock.mockResolvedValue({
+      id: 'fixture', email: 'pilot@example.invalid', passwordHash: await hashPassword(password),
+      roles: ['PILOT'], isActive: true, locale: 'it', personId: null, tokenVersion: 0,
+      createdAt: new Date(), updatedAt: new Date(), adminPasswordVersion: 0,
+    });
+    const result = await authorizeCredentials({ email: 'pilot@example.invalid', password }, null, 'admin-password');
+    expect(result).toBeNull();
+    expect(recordSuccessMock).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on an internal provider error without forwarding its diagnostic to Auth.js', async () => {
+    const audit = vi.spyOn(console, 'info').mockImplementation(() => {});
+    reserveLoginAttemptMock.mockRejectedValueOnce(new Error('synthetic-private-diagnostic'));
+    try {
+      expect(await authorizeCredentials({ email: 'fixture@example.invalid', password: 'fixture' }, null, 'admin-password')).toBeNull();
+      expect(JSON.parse(audit.mock.calls[0]![0])).toEqual({
+        event: 'admin_password_signin', at: expect.any(String), outcome: 'error',
+      });
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
+  it('audits the admin provider using only the event, timestamp, outcome and successful internal actor ID', async () => {
+    const audit = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const password = 'synthetic-admin-fixture';
+    const email = 'audit@example.invalid';
+    try {
+      findUniqueMock.mockResolvedValue({
+        id: 'user_fixture', email, passwordHash: await hashPassword(password), roles: ['ADMIN'],
+        isActive: true, locale: 'it', personId: null, tokenVersion: 2, adminPasswordVersion: 4,
+        createdAt: new Date(), updatedAt: new Date(),
+      });
+      const user = await authorizeCredentials({ email, password }, '192.0.2.4', 'admin-password');
+      expect(user?.adminPasswordVersion).toBe(4);
+      expect(await authorizeCredentials({ email, password: 'invalid' }, null, 'admin-password')).toBeNull();
+      const events = audit.mock.calls.map(args => {
+        expect(args).toHaveLength(1);
+        return JSON.parse(String(args[0]));
+      });
+      const event = { event: 'admin_password_signin', at: expect.any(String) };
+      expect(events).toEqual([{ ...event, outcome: 'allowed', actorId: 'user_fixture' }, { ...event, outcome: 'denied' }]);
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
   it('returns the user for correct credentials of an active user', async () => {
     const passwordHash = await hashPassword('CorrectHorseBatteryStaple1!');
     findUniqueMock.mockResolvedValue({
@@ -47,6 +96,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
       passwordHash,
       isActive: true,
       tokenVersion: 3,
+      adminPasswordVersion: 0,
       locale: 'it',
       roles: ['PILOT'],
       personId: 'person_1',
@@ -89,6 +139,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
       passwordHash,
       isActive: false,
       tokenVersion: 0,
+      adminPasswordVersion: 0,
       locale: 'it',
       roles: ['PILOT'],
       personId: null,
@@ -111,6 +162,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
       passwordHash: null,
       isActive: true,
       tokenVersion: 0,
+      adminPasswordVersion: 0,
       locale: 'it',
       roles: ['PILOT'],
       personId: null,
@@ -134,6 +186,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
       passwordHash,
       isActive: true,
       tokenVersion: 0,
+      adminPasswordVersion: 0,
       locale: 'it',
       roles: ['PILOT'],
       personId: null,
@@ -162,7 +215,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
 
       await authorizeCredentials({ email: 'Pilot@AirManager.local', password: 'whatever' }, '203.0.113.5');
 
-      expect(reserveLoginAttemptMock).toHaveBeenCalledWith('pilot@airmanager.local', '203.0.113.5');
+      expect(reserveLoginAttemptMock).toHaveBeenCalledWith('pilot@airmanager.local', '203.0.113.5', undefined);
     });
 
     it('defaults the IP to null when the caller omits it', async () => {
@@ -170,7 +223,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
 
       await authorizeCredentials({ email: 'pilot@airmanager.local', password: 'whatever' });
 
-      expect(reserveLoginAttemptMock).toHaveBeenCalledWith('pilot@airmanager.local', null);
+      expect(reserveLoginAttemptMock).toHaveBeenCalledWith('pilot@airmanager.local', null, undefined);
     });
 
     it('returns null and skips the DB user lookup entirely when not reserved (locked), but still pays the constant-time Argon2id cost (no new timing oracle)', async () => {
@@ -199,7 +252,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
 
       await authorizeCredentials({ email: 'nobody@airmanager.local', password: 'whatever' }, '203.0.113.9');
 
-      expect(reserveLoginAttemptMock).toHaveBeenCalledWith('nobody@airmanager.local', '203.0.113.9');
+      expect(reserveLoginAttemptMock).toHaveBeenCalledWith('nobody@airmanager.local', '203.0.113.9', undefined);
       expect(recordSuccessMock).not.toHaveBeenCalled();
     });
 
@@ -211,6 +264,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
         passwordHash,
         isActive: true,
         tokenVersion: 0,
+        adminPasswordVersion: 0,
         locale: 'it',
         roles: ['PILOT'],
         personId: null,
@@ -231,6 +285,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
         passwordHash,
         isActive: true,
         tokenVersion: 0,
+        adminPasswordVersion: 0,
         locale: 'it',
         roles: ['PILOT'],
         personId: 'person_1',
@@ -244,7 +299,7 @@ describe('authorizeCredentials (Credentials provider authorize())', () => {
       );
 
       expect(result).not.toBeNull();
-      expect(recordSuccessMock).toHaveBeenCalledWith('pilot@airmanager.local', '203.0.113.9');
+      expect(recordSuccessMock).toHaveBeenCalledWith('pilot@airmanager.local', '203.0.113.9', undefined);
     });
   });
 });

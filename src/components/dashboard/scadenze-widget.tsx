@@ -11,6 +11,7 @@
  * shared function `scadenze-console.tsx` uses (`@/lib/expiry-status`,
  * story 12.11) — no second implementation of the day-count boundaries.
  */
+import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icons';
@@ -50,8 +51,8 @@ export type ScadenzeWidgetLabels = {
   agoTemplate: string;
   /** `t.raw` template, `"tra {n}g"`. */
   inDaysTemplate: string;
-  /** `t.raw` template, `"+{count} altre · Vedi tutte"`. */
-  seeAll: string;
+  /** Story 19.7b: the sub-line of the currency row, which has no type of its own. */
+  currency: string;
 };
 
 export type ScadenzeWidgetProps = {
@@ -62,6 +63,9 @@ export type ScadenzeWidgetProps = {
 };
 
 export function ScadenzeWidget({ items, locale, viewAllHref, labels }: ScadenzeWidgetProps) {
+  // Story 19.12a: "+N altre" inflects on a count that changes with the
+  // client-only toggle, so it is an ICU plural formatted here.
+  const t = useTranslations('DashboardPage.scadenzeWidget');
   const [win, setWin] = useState<WindowChoice>('30');
 
   const inWindow = useMemo(() => items.filter((item) => item.daysUntil <= Number(win)), [items, win]);
@@ -103,7 +107,8 @@ export function ScadenzeWidget({ items, locale, viewAllHref, labels }: ScadenzeW
                 <div className="list-title">
                   {item.personLastName} {item.personFirstName}
                 </div>
-                <div className="list-sub">{item.typeName}</div>
+                {/* Only the currency row (story 19.7b) has no type of its own. */}
+                <div className="list-sub">{item.typeName ?? labels.currency}</div>
               </div>
               <Badge tone={badgeToneOf(item.daysUntil)} dot>
                 {dayLabel(item.daysUntil)}
@@ -121,7 +126,7 @@ export function ScadenzeWidget({ items, locale, viewAllHref, labels }: ScadenzeW
             style={{ width: '100%', justifyContent: 'center' }}
             data-testid="scadenze-widget-see-all"
           >
-            {labels.seeAll.replace('{count}', String(remaining))}
+            {t('seeAll', { count: remaining })}
           </Link>
         </div>
       ) : null}

@@ -1,0 +1,49 @@
+{
+  "base": "http://127.0.0.1:3001",
+  "email": "admin@airmanager.local",
+  "iter": 1,
+  "conc": 1,
+  "at": "2026-11-25T15:58:49.303Z",
+  "person": "ec7947fa-e8ab-42b6-889c-82e53475b468",
+  "personFrom": "env",
+  "aircraft": "cmwwatua5000bw2s6ggjsoh15",
+  "aircraftFrom": "api",
+  "results": [
+    {
+      "name": "flights count 41 days",
+      "path": "/api/v1/flights?dateFrom=2026-10-15&dateTo=2026-11-25&pageSize=1",
+      "status": 200,
+      "ct": "application/json",
+      "bytes": 804,
+      "count": 1594,
+      "cold_ms": 65,
+      "p50_ms": 30,
+      "p95_ms": 30,
+      "max_ms": 30
+    },
+    {
+      "name": "expiries count 7 days",
+      "path": "/api/v1/expiries?window=7&pageSize=1",
+      "status": 200,
+      "ct": "application/json",
+      "bytes": 466,
+      "count": 4216,
+      "cold_ms": 195,
+      "p50_ms": 197,
+      "p95_ms": 197,
+      "max_ms": 197
+    },
+    {
+      "name": "account count",
+      "path": "/api/v1/people/ec7947fa-e8ab-42b6-889c-82e53475b468/account/movements?pageSize=1",
+      "status": 200,
+      "ct": "application/json",
+      "bytes": 454,
+      "count": 45,
+      "cold_ms": 300,
+      "p50_ms": 24,
+      "p95_ms": 24,
+      "max_ms": 24
+    }
+  ]
+}

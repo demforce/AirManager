@@ -394,3 +394,30 @@ Restano aperte:
 - **NFR-7 Affidabilità**: backup giornaliero del database documentato; gli invii email falliti sono ritentati e visibili in una coda di errore.
 - **NFR-8 Accessibilità**: la web app segue le basi WCAG 2.1 AA (navigazione da tastiera, contrasti, label).
 - **NFR-9 Test**: logica di calcolo costi/pacchetti/scadenze coperta da test unitari; flussi critici (login, prenotazione, registrazione volo, PPR) coperti da e2e.
+
+---
+
+## Change record — CR PO 2026-11-01 (approvata)
+
+Fonte vincolante: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md` §4.7. Le sezioni sopra restano
+come testo storico: dove contraddicono questa tabella, vale questa tabella.
+
+| FR | Modifica |
+|---|---|
+| FR-7 | CRUD Velivoli senza contaore iniziale (anche posti, carburante, note, basato rimossi) |
+| FR-9 | Eliminato (nessun contaore) |
+| FR-10 | Prezzo allievo + prezzo pilota per velivolo, scelto dal profilo della persona (profili pilota/allievo esclusivi); validFrom ≥ oggi; storico non mostrato |
+| FR-11 | Tariffe istruttore con validFrom ≥ oggi; storico non mostrato |
+| FR-14 | Tipo volo: Turismo o Scuola (Lavoro aereo eliminato); doppio comando/solista solo sui voli Scuola |
+| FR-16 | Annullare = cancellare volo e addebito; modificare = aggiornamento in place |
+| FR-21 | Check su scadenze, currency, saldo (copertura del costo), quota associativa per voli e prenotazioni; avviso + conferma per l'admin, nessuna deroga per piloti/istruttori |
+| FR-22, FR-23, FR-24 | Eliminati (dominio PPR rimosso, §4.7) |
+| FR-26 | + periodo, saldo iniziale e progressivo, ordinamento per data valuta, export sul periodo |
+| FR-29 | Niente movimenti di cassa automatici da PPR |
+| FR-35 | Licenza non è una scadenza; visite mediche senza ambito (ne basta una valida); quota associativa a sé, 12 mesi dal pagamento |
+| FR-46 (nuovo) | Currency: almeno X voli negli ultimi Y giorni (configurabili); non current = solo voli con istruttore |
+| FR-47 (nuovo) | Volo senza addebito (solo admin) |
+| FR-48 (nuovo) | Un solo Salva per form |
+| FR-49 (nuovo) | Profili pilota e allievo mutuamente esclusivi |
+| NFR-1 | UI ed email bilingui (il form PPR non esiste più) |
+

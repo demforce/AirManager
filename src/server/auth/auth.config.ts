@@ -45,6 +45,8 @@ export const authConfig = {
         // so `user.tokenVersion` here is fresh — `applyActiveRecheck`
         // compares it against the DB on every future recheck.
         token.tokenVersion = user.tokenVersion;
+        if (user.emailTrialLogin) token.emailTrialLogin = true;
+        if (user.adminPasswordVersion !== undefined) token.adminPasswordVersion = user.adminPasswordVersion;
       }
       return token;
     },

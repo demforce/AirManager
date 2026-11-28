@@ -11,6 +11,8 @@ vi.mock('@/lib/env', () => ({
 
 vi.mock('@/server/db/prisma', () => ({
   prisma: {
+    $queryRaw: vi.fn(async () => [{ now: new Date() }]),
+    credentialMail: { updateMany: vi.fn(), create: vi.fn(async () => ({ id: 'intent' })) },
     user: {
       findUnique: vi.fn(),
       update: vi.fn(),
@@ -31,6 +33,7 @@ vi.mock('@/server/db/prisma', () => ({
 }));
 
 vi.mock('@/server/auth/password', () => ({
+  verifyPassword: vi.fn(async (hash: string, value: string) => hash === 'hashed:' + value),
   hashPassword: vi.fn(async (plain: string) => `hashed:${plain}`),
 }));
 
@@ -49,7 +52,6 @@ const { hashPassword } = await import('@/server/auth/password');
 const { buildInviteEmail, buildPasswordResetEmail } = await import('@/server/adapters/mail/templates');
 const {
   requestPasswordReset,
-  sendInviteEmail,
   setPasswordWithToken,
   isPasswordResetThrottled,
   INVITE_TTL_MS,
@@ -71,11 +73,11 @@ const resetAttemptCreateMock = vi.mocked(prisma.passwordResetAttempt.create);
 // fixtures ambiguous (same workaround as me.service.test.ts): narrow to the
 // shapes this service actually reads.
 const userFindUnique = findUniqueUserMock as unknown as {
-  mockResolvedValue: (v: { id: string; email: string; isActive: boolean; locale: string } | null) => void;
+  mockResolvedValue: (v: { id: string; email: string; isActive: boolean; locale: string; roles?: string[]; passwordHash?: string } | null) => void;
 };
 const tokenFindUnique = findUniqueTokenMock as unknown as {
   mockResolvedValue: (
-    v: { id: string; userId: string; usedAt: Date | null; expiresAt: Date } | null,
+    v: { id: string; userId: string; type?: 'PASSWORD_RESET'; usedAt: Date | null; expiresAt: Date } | null,
   ) => void;
 };
 
@@ -85,6 +87,7 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
     updateUserMock.mockReset();
     updateManyTokenMock.mockReset();
     createTokenMock.mockReset();
+    vi.mocked(prisma.credentialMail.create).mockClear();
     findUniqueTokenMock.mockReset();
     findFirstTokenMock.mockReset();
     transactionMock.mockReset();
@@ -114,6 +117,22 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
     });
   });
 
+  it('a valid reset request does not call the transport from the request path', async () => {
+    userFindUnique.mockResolvedValue({ id: 'queue-test', email: 'fixture@example.test', isActive: true, locale: 'it' });
+    await requestPasswordReset('fixture@example.test');
+    expect(sendMock.mock.calls.length).toBe(0);
+  });
+
+  it('keeps the public acknowledgement and sanitizes a storage failure carrying fixture details', async () => {
+    userFindUnique.mockResolvedValue({ id: 'queue-test', email: 'sensitive@example.test', isActive: true, locale: 'it' });
+    transactionMock.mockRejectedValueOnce(new Error('fixture-sensitive token=fixture sensitive@example.test'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(requestPasswordReset('sensitive@example.test')).resolves.toBeUndefined();
+      expect(log.mock.calls).toEqual([['credential-mail: reset queue unavailable']]);
+    } finally { log.mockRestore(); }
+  });
+
   describe('token lifetimes', () => {
     it('invite tokens live for 7 days', () => {
       expect(INVITE_TTL_MS).toBe(7 * 24 * 60 * 60 * 1000);
@@ -121,31 +140,6 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
 
     it('password-reset tokens live for 2 hours', () => {
       expect(PASSWORD_RESET_TTL_MS).toBe(2 * 60 * 60 * 1000);
-    });
-  });
-
-  describe('sendInviteEmail (AC 1)', () => {
-    it('invalidates prior unused invite tokens, creates a new one, and sends the invite email', async () => {
-      await sendInviteEmail('user_1', 'invitee@airmanager.local', 'it');
-
-      expect(updateManyTokenMock).toHaveBeenCalledWith({
-        where: { userId: 'user_1', type: 'INVITE', usedAt: null },
-        data: { usedAt: expect.any(Date) },
-      });
-      expect(createTokenMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ userId: 'user_1', type: 'INVITE' }),
-        }),
-      );
-      expect(buildInviteEmail).toHaveBeenCalledWith(
-        'it',
-        expect.objectContaining({ expiresInDays: 7, setPasswordUrl: expect.stringContaining('/set-password?token=') }),
-      );
-      expect(sendMock).toHaveBeenCalledWith({
-        to: 'invitee@airmanager.local',
-        subject: 'Invite subject',
-        text: 'Invite text',
-      });
     });
   });
 
@@ -175,27 +169,12 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
       expect(sendMock).not.toHaveBeenCalled();
     });
 
-    it('issues a reset token and sends the email (fire-and-forget) for an active user', async () => {
-      userFindUnique.mockResolvedValue({
-        id: 'user_1',
-        email: 'pilot@airmanager.local',
-        isActive: true,
-        locale: 'en',
-      });
-
-      await requestPasswordReset('pilot@airmanager.local');
-      // Let the fire-and-forget `.send(...)` microtask settle.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(createTokenMock).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ userId: 'user_1', type: 'PASSWORD_RESET' }) }),
-      );
-      expect(buildPasswordResetEmail).toHaveBeenCalledWith('en', expect.objectContaining({ expiresInHours: 2 }));
-      expect(sendMock).toHaveBeenCalledWith({
-        to: 'pilot@airmanager.local',
-        subject: 'Reset subject',
-        text: 'Reset text',
-      });
+    it('commits the reset intent and invalidates the previous generation before the worker runs', async () => {
+      userFindUnique.mockResolvedValue({ id: 'user_1', email: 'pilot@example.test', isActive: true, locale: 'en' });
+      await requestPasswordReset('pilot@example.test');
+      expect(prisma.credentialMail.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ userId: 'user_1', purpose: 'PASSWORD_RESET' }) }));
+      expect(updateManyTokenMock).toHaveBeenCalledWith({ where: { userId: 'user_1', type: 'PASSWORD_RESET', usedAt: null }, data: { usedAt: expect.any(Date) } });
+      expect(createTokenMock).not.toHaveBeenCalled();
     });
 
     it('never throws even if the mail send fails (fire-and-forget)', async () => {
@@ -262,7 +241,7 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
         expect(resetAttemptCreateMock).not.toHaveBeenCalled();
       });
 
-      it('under-limit: still issues the token and sends, same as before the throttle existed', async () => {
+      it('under-limit: queues the request once', async () => {
         userFindUnique.mockResolvedValue({
           id: 'user_1',
           email: 'pilot@airmanager.local',
@@ -273,8 +252,8 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
         await requestPasswordReset('pilot@airmanager.local', '203.0.113.5');
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(createTokenMock).toHaveBeenCalled();
-        expect(sendMock).toHaveBeenCalled();
+        expect(prisma.credentialMail.create).toHaveBeenCalledTimes(1);
+        expect(sendMock).not.toHaveBeenCalled();
       });
 
       it('the response is identical (both resolve to undefined) whether throttled or not — no signal leaks through the return value', async () => {
@@ -294,6 +273,19 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
   });
 
   describe('setPasswordWithToken (AC 1/3 — monouso)', () => {
+    beforeEach(() => {
+      userFindUnique.mockResolvedValue({ id: 'user_fixture', email: 'fixture@example.test', isActive: true, locale: 'it', roles: ['PILOT'] });
+    });
+    it('protects the individual admin password on renewal without consuming the token on a policy failure', async () => {
+      userFindUnique.mockResolvedValue({ id: 'admin_fixture', email: 'fixture@example.test', isActive: true, locale: 'it',
+        roles: ['ADMIN'], passwordHash: 'hashed:previous long fixture phrase' });
+      tokenFindUnique.mockResolvedValue({ id: 'token', userId: 'admin_fixture', type: 'PASSWORD_RESET', usedAt: null, expiresAt: new Date(Date.now() + 60000) });
+      for (const password of ['short-fixture', 'previous long fixture phrase']) {
+        await expect(setPasswordWithToken('fixture', password)).rejects.toMatchObject({code: 'ADMIN_PASSWORD_POLICY'});
+      }
+      expect(updateManyTokenMock).not.toHaveBeenCalled();
+    });
+
     it('throws ValidationError for an unknown token', async () => {
       tokenFindUnique.mockResolvedValue(null);
 
@@ -305,7 +297,7 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
 
     it('throws ValidationError for an already-used token (monouso)', async () => {
       tokenFindUnique.mockResolvedValue({
-        id: 'token_1',
+        id: 'token_1', type: 'PASSWORD_RESET',
         userId: 'user_1',
         usedAt: new Date('2026-01-01T00:00:00.000Z'),
         expiresAt: new Date(Date.now() + 1000 * 60 * 60),
@@ -318,7 +310,7 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
 
     it('throws ValidationError for an expired token', async () => {
       tokenFindUnique.mockResolvedValue({
-        id: 'token_1',
+        id: 'token_1', type: 'PASSWORD_RESET',
         userId: 'user_1',
         usedAt: null,
         expiresAt: new Date(Date.now() - 1000),
@@ -331,7 +323,7 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
 
     it('hashes the password, marks the token used, and updates the user for a valid token', async () => {
       tokenFindUnique.mockResolvedValue({
-        id: 'token_1',
+        id: 'token_1', type: 'PASSWORD_RESET',
         userId: 'user_1',
         usedAt: null,
         expiresAt: new Date(Date.now() + 1000 * 60 * 60),
@@ -348,7 +340,7 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
 
       expect(hashPassword).toHaveBeenCalledWith('a-long-enough-password');
       expect(transactionMock).toHaveBeenCalled();
-      expect(updateManyTokenMock).toHaveBeenCalledWith({ where: { id: 'token_1', usedAt: null }, data: { usedAt: expect.any(Date) } });
+      expect(updateManyTokenMock).toHaveBeenCalledWith({ where: expect.objectContaining({ id: 'token_1', type: 'PASSWORD_RESET', usedAt: null, expiresAt: { gt: expect.any(Date) } }), data: { usedAt: expect.any(Date) } });
       expect(updateUserMock).toHaveBeenCalledWith({
         where: { id: 'user_1' },
         data: { passwordHash: expect.any(String), tokenVersion: { increment: 1 } },
@@ -357,7 +349,7 @@ describe('auth-tokens.service (story 1.4, AC 1/3)', () => {
 
     it('bumps tokenVersion (TD-6, F1, CWE-613) in the SAME user.update call as the password change — same transaction, same atomicity as the token claim', async () => {
       tokenFindUnique.mockResolvedValue({
-        id: 'token_2',
+        id: 'token_2', type: 'PASSWORD_RESET',
         userId: 'user_2',
         usedAt: null,
         expiresAt: new Date(Date.now() + 1000 * 60 * 60),

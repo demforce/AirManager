@@ -11,7 +11,6 @@ const prisma = new PrismaClient({ adapter });
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
-const STAFF_EMAIL = 'staff@airmanager.local';
 const INSTRUCTOR_EMAIL = 'instructor@airmanager.local';
 const STUDENT_EMAIL = 'student@airmanager.local';
 
@@ -66,37 +65,9 @@ async function seedPilotUser(passwordHash: string): Promise<void> {
 }
 
 /**
- * Story 8.2: a STAFF test user — needed so the e2e suite can exercise
- * `ppr.manage` through a REAL staff role, not an ADMIN-who-has-everything
- * (Contesto). Same idempotent upsert pattern, same seed password, as
- * `seedPilotUser`; useful to the whole epic, not just this story.
- */
-async function seedStaffUser(passwordHash: string): Promise<void> {
-  await prisma.user.upsert({
-    where: { email: STAFF_EMAIL },
-    update: { passwordHash, isActive: true, roles: ['STAFF'] },
-    create: {
-      email: STAFF_EMAIL,
-      passwordHash,
-      isActive: true,
-      roles: ['STAFF'],
-      person: {
-        create: {
-          firstName: 'Staff',
-          lastName: 'AirManager',
-          email: STAFF_EMAIL,
-        },
-      },
-    },
-  });
-
-  console.log(`Seed: demo staff user ready (${STAFF_EMAIL}).`);
-}
-
-/**
  * Story 9.1 (AC 5): an INSTRUCTOR test user with an active `InstructorProfile`
  * so `/dashboard/instructors` and the e2e suite have a real instructor to
- * log in as. Same idempotent upsert pattern as `seedStaffUser`.
+ * log in as. Same idempotent upsert pattern as `seedPilotUser`.
  */
 async function seedInstructorUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
@@ -123,7 +94,7 @@ async function seedInstructorUser(passwordHash: string): Promise<void> {
 /**
  * Story 9.1 (AC 5): a STUDENT test user with an active `StudentProfile`
  * (`courseStartDate` valorizzata) — the demo allievo assignable to the demo
- * instructor. Same idempotent upsert pattern as `seedStaffUser`.
+ * instructor. Same idempotent upsert pattern as `seedPilotUser`.
  */
 async function seedStudentUser(passwordHash: string): Promise<void> {
   await prisma.user.upsert({
@@ -225,8 +196,7 @@ async function seedStudentProfile(): Promise<void> {
 /**
  * Story 2.4: a demo aircraft so the fleet CRUD UI/e2e have real data.
  * Idempotent like the rest of the seed — upsert keyed on the unique
- * `registration`. `hourMeterMinutes` is an integer (AD-2), never a decimal
- * hours value.
+ * `registration`.
  */
 async function seedAircraft(): Promise<void> {
   await prisma.aircraft.upsert({
@@ -236,8 +206,6 @@ async function seedAircraft(): Promise<void> {
       registration: 'I-ABCD',
       type: 'Ultraleggero 3 assi',
       model: 'Tecnam P92 Eaglet',
-      hourMeterMinutes: 12 * 60 + 30,
-      notes: 'Velivolo scuola volo demo.',
     },
   });
 
@@ -256,7 +224,7 @@ async function seedAircraft(): Promise<void> {
 // untouched (no destructive migration, §9).
 // Story Billing-1 (AC 4): "Compensi istruttori" — the instructor payout's
 // automatic money twin (`instructor-compensation.service.ts#recordPayout`).
-const CASH_CATEGORY_NAMES = ['Ricariche', 'PPR', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
+const CASH_CATEGORY_NAMES = ['Ricariche', 'Carburante', 'Assicurazione', 'Manutenzione', 'Utenze', 'Altro', 'Compensi istruttori'];
 
 async function seedCashCategories(): Promise<void> {
   for (const name of CASH_CATEGORY_NAMES) {
@@ -285,33 +253,56 @@ async function seedCashCategories(): Promise<void> {
  * description instead (find-or-skip), same rationale every other seed
  * function's `upsert` serves.
  */
-const UNATTRIBUTED_SEED_DESCRIPTION = 'Movimento storico pre-Billing-1 (seed)';
+/**
+ * TWO of them, one per CONSUMER (story 15.8a): the fixture is consumed by a
+ * real write and there is no way to restore it, so a single row cannot serve
+ * two specs. `billing-global.spec.ts` (last project of the serialized chain)
+ * reclassifies the first through the desktop inline `<select>`;
+ * `mobile-billing.spec.ts` reclassifies the second through the phone sheet's
+ * explicit choose-then-confirm step. Each guards on ITS OWN marker and skips
+ * when a previous run against the same dirty DB already consumed it — the
+ * trade-off review Billing-2 F4/F5 already accepted.
+ *
+ * Both are dated in 2019, outside every spec's isolation window, and neither
+ * is reachable through any HTTP writer: since Billing-1 AC2 (+ review F8/D2)
+ * every live path REQUIRES a `paymentMethod`, which is why an e2e cannot
+ * create its own.
+ */
+const UNATTRIBUTED_SEED_ROWS: readonly { description: string; amountCents: number; effectiveDate: string }[] = [
+  { description: 'Movimento storico pre-Billing-1 (seed)', amountCents: 500, effectiveDate: '2019-06-15' },
+  { description: 'Movimento storico pre-Billing-1 mobile (seed)', amountCents: 700, effectiveDate: '2019-06-16' },
+];
 
 async function seedUnattributedHistoricalMovement(): Promise<void> {
-  const existing = await prisma.cashMovement.findFirst({ where: { description: UNATTRIBUTED_SEED_DESCRIPTION }, select: { id: true } });
-  if (existing) {
-    return;
-  }
-
   const category = await prisma.cashCategory.findUnique({ where: { name: 'Altro' }, select: { id: true } });
   const admin = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL }, select: { id: true } });
   if (!category || !admin) {
-    console.warn('Seed: "Altro" category or admin user not found — skipping the unattributed historical movement.');
+    console.warn('Seed: "Altro" category or admin user not found — skipping the unattributed historical movements.');
     return;
   }
 
-  await prisma.cashMovement.create({
-    data: {
-      categoryId: category.id,
-      amountCents: 500,
-      paymentMethod: null,
-      description: UNATTRIBUTED_SEED_DESCRIPTION,
-      effectiveDate: new Date('2019-06-15'),
-      actorUserId: admin.id,
-    },
-  });
+  let created = 0;
+  for (const row of UNATTRIBUTED_SEED_ROWS) {
+    const existing = await prisma.cashMovement.findFirst({ where: { description: row.description }, select: { id: true } });
+    if (existing) {
+      continue;
+    }
+    await prisma.cashMovement.create({
+      data: {
+        categoryId: category.id,
+        amountCents: row.amountCents,
+        paymentMethod: null,
+        description: row.description,
+        effectiveDate: new Date(row.effectiveDate),
+        actorUserId: admin.id,
+      },
+    });
+    created += 1;
+  }
 
-  console.log('Seed: 1 unattributed historical cash movement ready (story Billing-2, AC 3 secchiello).');
+  if (created > 0) {
+    console.log(`Seed: ${created} unattributed historical cash movement(s) ready (story Billing-2 AC 3 secchiello; story 15.8a phone twin).`);
+  }
 }
 
 /**
@@ -342,39 +333,36 @@ async function seedPilotAccount(): Promise<void> {
 }
 
 /**
- * Story 6.1, AC 1: the six standard expiry types (visita medica classe 1/2/
- * LAPL, licenza, rating SEP, inglese ICAO), each with a sensible default
- * `scope` for a demo aviosuperficie — the admin adapts these afterwards
- * (Dev Notes: "l'admin li adatta"; `ALL` is deliberately not covered here,
- * the e2e custom-type test covers it). Idempotent like the rest of this
- * seed — `upsert` keyed on the unique `name`, `update: {}` so a re-seed
- * NEVER overwrites an admin's rename/re-scope/deactivation of a standard
- * type (same principle as `seedCashCategories`/`seedAircraft`).
+ * Story 6.1, AC 1: the standard expiry types (visita medica classe 1/2/LAPL,
+ * rating SEP, inglese ICAO, plus the membership fee), each with a sensible
+ * default for a demo aviosuperficie — the admin adapts these afterwards
+ * (Dev Notes: "l'admin li adatta"). Idempotent like the rest of this seed —
+ * `upsert` keyed on the unique `name`, `update: {}` so a re-seed NEVER
+ * overwrites an admin's rename/re-scope/deactivation of a standard type
+ * (same principle as `seedCashCategories`/`seedAircraft`).
  */
-// Story 7.4 (FR-21): `blocksBooking` marks the 4 critical (medica/licenza)
-// types — the migration's own backfill UPDATE uses these EXACT same names.
-// `update: {}` stays untouched below (existing seed pattern): an admin's own
-// `blocksBooking` toggle (`types-manager.tsx`) is never overwritten by a re-seed.
-// Story 13.1 (AC 1, R-13.1-a): `kind` defaults to `RATING` in the Prisma
-// schema, so only the 3 medical-visit types need it spelled out here —
-// same exact names the migration's own data-backfill matches on.
+// Story 19.7a (R-19-j/k, D-1/D-3): the medical visits have no scope — always
+// `ALL` + `blocksBooking: true` (an invariant `expiry-types.service.ts` keeps),
+// one valid visit of any class covers whoever is on board; "Licenza" is no
+// longer an expiry type (the licence is `PilotProfile.licenseType`); the
+// membership fee is the one `MEMBERSHIP` row. For the ratings, `blocksBooking`
+// (story 7.4) stays per type and `update: {}` never overwrites an admin's toggle.
 const STANDARD_EXPIRY_TYPES: Array<{
   name: string;
   scope: 'PILOTS' | 'STUDENTS' | 'INSTRUCTORS' | 'ALL';
   blocksBooking: boolean;
   validityMonths?: number;
-  kind?: 'RATING' | 'MEDICAL';
+  kind?: 'RATING' | 'MEDICAL' | 'MEMBERSHIP';
 }> = [
-  { name: 'Visita medica classe 1', scope: 'INSTRUCTORS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Visita medica classe 2', scope: 'PILOTS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Visita medica LAPL', scope: 'STUDENTS', blocksBooking: true, kind: 'MEDICAL' },
-  { name: 'Licenza', scope: 'PILOTS', blocksBooking: true },
+  { name: 'Visita medica classe 1', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica classe 2', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
+  { name: 'Visita medica LAPL', scope: 'ALL', blocksBooking: true, kind: 'MEDICAL' },
   { name: 'Rating SEP', scope: 'PILOTS', blocksBooking: false },
   { name: 'Inglese ICAO', scope: 'PILOTS', blocksBooking: false },
   // Story 12.11 (ratifica utente 1): also created lazily by `membership.service.ts#chargeMembershipFee`'s
-  // own upsert-by-name on the FIRST charge — seeded here too so a fresh
-  // install's catalogue (Impostazioni "Abilitazioni") already lists it.
-  { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12 },
+  // own upsert-by-name (`MEMBERSHIP_FEE_TYPE_NAME`) on the FIRST charge —
+  // seeded here too so a fresh install's catalogue already carries it.
+  { name: 'Quota associativa', scope: 'ALL', blocksBooking: false, validityMonths: 12, kind: 'MEMBERSHIP' },
 ];
 
 async function seedExpiryTypes(): Promise<void> {
@@ -403,7 +391,6 @@ async function main() {
 
   await seedAdminUser(passwordHash);
   await seedPilotUser(passwordHash);
-  await seedStaffUser(passwordHash);
   await seedInstructorUser(passwordHash);
   await seedStudentUser(passwordHash);
   await seedPilotProfile();

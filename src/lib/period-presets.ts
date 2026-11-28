@@ -72,3 +72,16 @@ export function currentYearRange(now: Date = new Date()): DateRange {
   const { year } = romeDateParts(now);
   return { from: `${year}-01-01`, to: `${year}-12-31` };
 }
+
+/**
+ * The last 12 months in Europe/Rome, inclusive (story 19.11, A13 — the
+ * estratto conto's default period): `to` = today, `from` = the same day 12
+ * months earlier, clamped to the end of that month (29/02 → 28/02).
+ */
+export function lastTwelveMonthsRange(now: Date = new Date()): DateRange {
+  const { year, month, day } = romeDateParts(now);
+  return {
+    from: `${year - 1}-${pad2(month)}-${pad2(Math.min(day, lastDayOfMonth(year - 1, month)))}`,
+    to: `${year}-${pad2(month)}-${pad2(day)}`,
+  };
+}

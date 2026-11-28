@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ALL_TIME_STATEMENT, allTimeStatement } from './helpers';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const PILOT_EMAIL = 'pilot@airmanager.local';
@@ -69,9 +70,10 @@ test.describe('Account statement (Story 3.2; "Estratto conto" section, Story 13.
 
     // Story 13.3 (R-13.3-b): the standalone `/account` route now redirects
     // to the consolidated scheda persona — the estratto conto is a SECTION
-    // there, not a separate page.
-    await page.goto(`/it/dashboard/people/${personId}/account`);
-    await expect(page).toHaveURL(new RegExp(`/it/dashboard/people/${personId}$`));
+    // there, not a separate page. Story 19.11: the redirect carries the period
+    // too, and the wide one keeps the fixed-date fixtures in view (D-15).
+    await page.goto(allTimeStatement(`/it/dashboard/people/${personId}/account`));
+    await expect(page).toHaveURL(new RegExp(`/it/dashboard/people/${personId}\\?from=${ALL_TIME_STATEMENT.from}&to=${ALL_TIME_STATEMENT.to}$`));
     await expect(page.getByRole('heading', { name: `${person.lastName} ${person.firstName}` })).toBeVisible();
     await expect(page.getByTestId('account-balance')).toHaveText(/150,00\s€/);
 
@@ -99,11 +101,17 @@ test.describe('Account statement (Story 3.2; "Estratto conto" section, Story 13.
     await recordTopUp(page, pilotPersonId, 10000); // 100,00 €
     await loginExpectingDashboard(page, PILOT_EMAIL);
 
-    await page.getByRole('link', { name: 'Il mio conto' }).click();
-    // Story 13.3: lands on the scheda persona itself (the account link's
-    // `/account` suffix redirects there — R-13.3-b).
-    await expect(page).toHaveURL(/\/it\/dashboard\/people\/[^/]+$/);
+    // Story 19.12b: «Estratto conto» is also the menu entry, so the landing's KPI link is read by its testid.
+    await page.getByTestId('kpi-balance').click();
+    // Story 14.6 (review F5): the pilot's own statement now lives on the
+    // self-service page; the KPI link points THERE instead of the staff-shaped
+    // scheda persona (which stays reachable from the "Profilo" CTA). Story
+    // 13.3's `/account` → scheda-persona redirect is unchanged and still
+    // covered by `people-management.spec.ts`.
+    await expect(page).toHaveURL(/\/it\/dashboard\/my-account$/);
 
+    // Story 19.11 (D-15): the fixture is dated 2026-07-01, so the movement is read over the wide period.
+    await page.goto(allTimeStatement('/it/dashboard/my-account'));
     await expect(page.getByTestId('account-balance')).toHaveText(/€/);
     await expect(page.getByTestId('account-movement-row').first()).toBeVisible();
     await expect(page.getByTestId('account-statement-header-row')).not.toContainText('Registrato da');
@@ -133,8 +141,8 @@ test.describe('Account statement (Story 3.2; "Estratto conto" section, Story 13.
     const personId = await createPilotPerson(page, person);
     await recordTopUp(page, personId, 10000); // 100,00 €
 
-    await page.goto(`/en/dashboard/people/${personId}/account`);
-    await expect(page).toHaveURL(new RegExp(`/en/dashboard/people/${personId}$`));
+    await page.goto(allTimeStatement(`/en/dashboard/people/${personId}/account`));
+    await expect(page).toHaveURL(new RegExp(`/en/dashboard/people/${personId}\\?from=${ALL_TIME_STATEMENT.from}&to=${ALL_TIME_STATEMENT.to}$`));
     await expect(page.getByTestId('account-balance')).toHaveText(/€100\.00/);
     await expect(page.getByTestId('account-movement-row').first()).toContainText('+€100.00');
   });

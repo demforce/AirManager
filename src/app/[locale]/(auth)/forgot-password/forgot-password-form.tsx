@@ -14,6 +14,7 @@ type Labels = {
   submitting: string;
   confirmation: string;
   backToLogin: string;
+  requiredField: string;
 };
 
 type ForgotPasswordFormProps = {
@@ -63,7 +64,7 @@ export function ForgotPasswordForm({ locale, labels }: ForgotPasswordFormProps) 
 
   return (
     <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Field label={labels.email}>
+      <Field label={labels.email} error={errors.email ? labels.requiredField : undefined}>
         <Input type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
       </Field>
 

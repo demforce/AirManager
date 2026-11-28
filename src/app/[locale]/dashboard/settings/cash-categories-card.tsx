@@ -1,22 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { Badge } from '@/components/ui/badge';
-import { Field, Input } from '@/components/ui/field';
+import { useTranslations } from 'next-intl';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { BottomSheet, type BottomSheetRow } from '@/components/ui/bottom-sheet';
+import { Field } from '@/components/ui/field';
 import { Icon } from '@/components/ui/icons';
-import { useRouter } from '@/i18n/navigation';
-
-export type CashCategoryRow = {
-  id: string;
-  name: string;
-  isActive: boolean;
-  movementCount: number;
-  /** Reserved for automatic flows (`cash.service.ts`'s `SYSTEM_CASH_CATEGORY_NAMES`, e.g. "Ricariche") — rename/delete are refused server-side, so the delete action is hidden here (same choice as the pre-12.13 `categories-manager.tsx`). */
-  isSystem: boolean;
-};
+import { cashCategorySheetSub, cashCategorySubLine } from '@/lib/mobile-settings';
+import { cashCategoryRowState, type CashCategoryDraftItem, type RowState } from '@/lib/settings-draft';
 
 export type CashCategoriesCardLabels = {
   title: string;
@@ -25,246 +16,317 @@ export type CashCategoriesCardLabels = {
   table: { name: string; movements: string; status: string; actions: string; empty: string };
   status: { active: string; inactive: string };
   systemBadge: string;
-  actions: { rename: string; deactivate: string; reactivate: string; delete: string; confirmDelete: string; confirmYes: string; confirmCancel: string };
-  form: {
-    createTitle: string;
-    renameTitle: string;
-    name: string;
-    submitCreate: string;
-    submitRename: string;
-    cancel: string;
-    requiredField: string;
-    conflictError: string;
-    genericError: string;
-  };
-  feedback: { created: string; renamed: string; deactivated: string; reactivated: string; deleted: string; deleteInUseError: string; genericError: string };
+  actions: { rename: string; deactivate: string; reactivate: string; delete: string; restore: string };
+  rowState: Record<Exclude<RowState, 'saved'>, string>;
+  form: { createTitle: string; renameTitle: string; name: string; close: string };
+  /** Phone face (story 15.8b, R-15.8b-d). */
+  mobile: { openDetail: string; empty: string };
 };
 
 type CashCategoriesCardProps = {
-  categories: CashCategoryRow[];
+  items: CashCategoryDraftItem[];
+  savedItems: CashCategoryDraftItem[];
+  onChange: (items: CashCategoryDraftItem[], touchedRowKey: string) => void;
+  newRowKey: () => string;
+  itemErrors: Record<string, { field: 'name' | 'validity' | null; message: string }>;
   labels: CashCategoriesCardLabels;
 };
 
-type Panel = { mode: 'create' } | { mode: 'rename'; category: CashCategoryRow };
-
 const COLS = '1fr 110px 130px 220px';
 
+const STATE_TONE: Record<Exclude<RowState, 'saved'>, BadgeTone> = { new: 'info', changed: 'warn', removed: 'bad' };
+
 /**
- * "Categorie di cassa" card (story 12.13 review, F2 — PO decision
- * 2026-07-20): a minimal management UI for the `cash-categories` API, which
- * lost its dedicated page (`dashboard/finance/categories`) in this same
- * story's AC1 without a replacement. AirOps `.card`/`.students` structure,
- * ported 1:1 from `RatingsCard` (the "Abilitazioni" card just above); domain
- * logic (create/rename/deactivate/reactivate/delete, hide delete for a
- * system category) ported from the removed `categories-manager.tsx`. Backend
- * untouched — same `cash.service.ts` functions, same `settings.manage` gate
- * this page already enforces.
+ * "Categorie di cassa" card (story 12.13 review, F2) — same structure as
+ * `RatingsCard`, and since story 19.8 the same draft model (R-19-m, D-7):
+ * adding, renaming, (de)activating and deleting write nothing until the
+ * page's single "Salva". A SYSTEM category ("Ricariche", "Compensi
+ * istruttori") keeps its name read-only in the panel and has no "Elimina"
+ * (absent, not disabled) — the server refuses both anyway (409
+ * `SYSTEM_CATEGORY`); deactivating it stays allowed, as before.
  */
-export function CashCategoriesCard({ categories, labels }: CashCategoriesCardProps) {
-  const router = useRouter();
-  const [panel, setPanel] = useState<Panel | null>(null);
-  const [feedback, setFeedback] = useState<{ text: string; isError: boolean } | null>(null);
-  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+export function CashCategoriesCard({ items, savedItems, onChange, newRowKey, itemErrors, labels }: CashCategoriesCardProps) {
+  // Story 19.12a: the phone row's movement count inflects (ICU plural).
+  const t = useTranslations('SettingsPage.cashCategories.mobile');
+  const [panelKey, setPanelKey] = useState<string | null>(null);
+  const [sheetKey, setSheetKey] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  /** Set only by the sheet's "Rinomina" — the desktop never scrolls (the 15.8a `preventScroll` lesson). */
+  const revealPanelRef = useRef(false);
+  const focusNameRef = useRef(false);
 
-  function handleSuccess(message: string): void {
-    setPanel(null);
-    setFeedback({ text: message, isError: false });
-    router.refresh();
-  }
+  const savedById = new Map(savedItems.map((item) => [item.rowKey, item]));
+  const stateOf = (item: CashCategoryDraftItem): RowState => cashCategoryRowState(item, item.id !== undefined ? savedById.get(item.id) : undefined);
 
-  async function handleLifecycleAction(category: CashCategoryRow, action: 'deactivate' | 'reactivate'): Promise<void> {
-    setPendingActionId(category.id);
-    const response = await fetch(`/api/v1/cash-categories/${category.id}/${action}`, { method: 'POST' });
-    setPendingActionId(null);
-    setFeedback(
-      response.ok
-        ? { text: action === 'deactivate' ? labels.feedback.deactivated : labels.feedback.reactivated, isError: false }
-        : { text: labels.feedback.genericError, isError: true },
-    );
-    router.refresh();
-  }
+  /** Stable by contract: `MobileSheet` gates its focus effect on this callback's identity. */
+  const closeSheet = useCallback((): void => setSheetKey(null), []);
 
-  async function handleDelete(category: CashCategoryRow): Promise<void> {
-    setPendingActionId(category.id);
-    const response = await fetch(`/api/v1/cash-categories/${category.id}`, { method: 'DELETE' });
-    setPendingActionId(null);
-    setConfirmingDeleteId(null);
-    if (response.ok) {
-      setFeedback({ text: labels.feedback.deleted, isError: false });
-    } else if (response.status === 409) {
-      // A category with recorded movements is not deletable (AC 1 of story
-      // 3.4) — the service already refused, this only explains why.
-      setFeedback({ text: labels.feedback.deleteInUseError, isError: true });
-    } else {
-      setFeedback({ text: labels.feedback.genericError, isError: true });
+  const panelItem = items.find((item) => item.rowKey === panelKey && !item.removed) ?? null;
+  const sheetItem = items.find((item) => item.rowKey === sheetKey) ?? null;
+
+  useEffect(() => {
+    if (panelItem === null) return;
+    if (revealPanelRef.current) {
+      revealPanelRef.current = false;
+      panelRef.current?.scrollIntoView({ block: 'center' });
     }
-    router.refresh();
+    if (focusNameRef.current) {
+      focusNameRef.current = false;
+      nameInputRef.current?.focus();
+    }
+  }, [panelItem]);
+
+  function update(rowKey: string, patch: Partial<CashCategoryDraftItem>): void {
+    onChange(
+      items.map((item) => (item.rowKey === rowKey ? { ...item, ...patch } : item)),
+      rowKey,
+    );
   }
+
+  function add(): void {
+    const rowKey = newRowKey();
+    onChange([{ rowKey, name: '', isActive: true, removed: false, movementCount: 0, isSystem: false }, ...items], rowKey);
+    focusNameRef.current = true;
+    setPanelKey(rowKey);
+  }
+
+  function toggleRemove(item: CashCategoryDraftItem): void {
+    if (stateOf(item) === 'new') {
+      if (sheetKey === item.rowKey) closeSheet();
+      onChange(
+        items.filter((other) => other.rowKey !== item.rowKey),
+        item.rowKey,
+      );
+      return;
+    }
+    update(item.rowKey, { removed: !item.removed });
+  }
+
+  const statusLabel = (item: CashCategoryDraftItem): string => (item.isActive ? labels.status.active : labels.status.inactive);
+  const displayName = (item: CashCategoryDraftItem): string => item.name.trim() || '—';
+  const movementsLabel = (item: CashCategoryDraftItem): string => t('movementsCount', { count: item.movementCount });
+
+  function stateBadge(state: RowState) {
+    return state === 'saved' ? null : <Badge tone={STATE_TONE[state]}>{labels.rowState[state]}</Badge>;
+  }
+
+  function sheetRows(item: CashCategoryDraftItem): BottomSheetRow[] {
+    return [
+      { k: labels.table.movements, v: String(item.movementCount) },
+      { k: labels.table.status, v: statusLabel(item) },
+    ];
+  }
+
+  const nameError = (item: CashCategoryDraftItem): string | undefined => (itemErrors[item.rowKey]?.field === 'name' ? itemErrors[item.rowKey]!.message : undefined);
 
   return (
-    <div className="card" data-testid="cash-categories-settings-card">
+    <div className="card settings-card" data-testid="cash-categories-settings-card">
       <div className="card-head">
         <div className="card-title">{labels.title}</div>
         <span className="card-sub">{labels.sub}</span>
         <div className="spacer" />
-        <button type="button" className="btn primary" onClick={() => setPanel({ mode: 'create' })} data-testid="cash-category-add-button">
+        <button type="button" className="btn primary" onClick={add} data-testid="cash-category-add-button">
           <Icon.plus /> {labels.addAction}
         </button>
       </div>
 
-      {feedback ? (
-        <p role="status" data-testid="cash-categories-feedback" style={{ padding: '10px 20px 0', fontSize: 12.5, color: feedback.isError ? 'var(--bad)' : 'var(--ok)' }}>
-          {feedback.text}
-        </p>
-      ) : null}
-
-      {panel ? (
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
-          <CashCategoryForm
-            // Remount on target change (create <-> rename A <-> rename B) —
-            // react-hook-form reads defaultValues only at mount (review 2.4 F1).
-            key={panel.mode === 'rename' ? panel.category.id : 'create'}
-            category={panel.mode === 'rename' ? panel.category : null}
-            labels={labels.form}
-            onCancel={() => setPanel(null)}
-            onSuccess={(mode) => handleSuccess(mode === 'create' ? labels.feedback.created : labels.feedback.renamed)}
-          />
+      {panelItem ? (
+        <div
+          ref={panelRef}
+          role="group"
+          aria-label={stateOf(panelItem) === 'new' ? labels.form.createTitle : labels.form.renameTitle}
+          className="catalog-panel"
+          data-testid="cash-category-form"
+        >
+          <div className="fld-label" style={{ marginBottom: 10 }}>
+            {stateOf(panelItem) === 'new' ? labels.form.createTitle : labels.form.renameTitle}
+          </div>
+          <div className="form-grid">
+            <Field label={labels.form.name} wide error={nameError(panelItem)}>
+              <input
+                ref={nameInputRef}
+                className="input"
+                maxLength={100}
+                value={panelItem.name}
+                readOnly={panelItem.isSystem}
+                onChange={(event) => update(panelItem.rowKey, { name: event.target.value })}
+                aria-invalid={nameError(panelItem) !== undefined}
+                data-testid="cash-category-name-input"
+              />
+            </Field>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+            <button type="button" className="btn" onClick={() => setPanelKey(null)} data-testid="cash-category-form-close">
+              {labels.form.close}
+            </button>
+          </div>
         </div>
       ) : null}
 
-      <div className="students">
+      <div className="students cash-categories-desktop-body">
         <div className="student-row header" style={{ gridTemplateColumns: COLS }}>
           <div>{labels.table.name}</div>
           <div>{labels.table.movements}</div>
           <div>{labels.table.status}</div>
           <div>{labels.table.actions}</div>
         </div>
-        {categories.length === 0 ? (
+        {items.length === 0 ? (
           <div className="student-row" style={{ gridTemplateColumns: '1fr' }}>
             <div style={{ color: 'var(--ink-3)', padding: '8px 0' }}>{labels.table.empty}</div>
           </div>
         ) : (
-          categories.map((category) => (
-            <div key={category.id} className="student-row" data-testid="cash-category-row" style={{ gridTemplateColumns: COLS, alignItems: 'center' }}>
-              <div>
-                <div className="student-name">{category.name}</div>
-                {category.isSystem ? (
-                  <div style={{ marginTop: 2 }}>
-                    <Badge tone="info">{labels.systemBadge}</Badge>
-                  </div>
-                ) : null}
-              </div>
-              <div className="mono" style={{ fontSize: 12.5 }}>
-                {category.movementCount}
-              </div>
-              <div>
-                <Badge tone={category.isActive ? 'ok' : ''} dot>
-                  {category.isActive ? labels.status.active : labels.status.inactive}
-                </Badge>
-              </div>
-              <div>
-                {confirmingDeleteId === category.id ? (
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>{labels.actions.confirmDelete}</span>
-                    <button type="button" className="btn mini bad" disabled={pendingActionId === category.id} onClick={() => void handleDelete(category)}>
-                      {labels.actions.confirmYes}
-                    </button>
-                    <button type="button" className="btn mini" onClick={() => setConfirmingDeleteId(null)}>
-                      {labels.actions.confirmCancel}
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <button type="button" className="btn mini" onClick={() => setPanel({ mode: 'rename', category })} data-testid="cash-category-rename-button">
+          items.map((item) => {
+            const state = stateOf(item);
+            const error = itemErrors[item.rowKey];
+            return (
+              <div
+                key={item.rowKey}
+                className="student-row catalog-row"
+                data-testid="cash-category-row"
+                data-state={state}
+                data-invalid={error ? 'true' : undefined}
+                style={{ gridTemplateColumns: COLS, alignItems: 'center' }}
+              >
+                <div>
+                  <div className="student-name">{displayName(item)}</div>
+                  {state !== 'saved' || item.isSystem ? (
+                    <div style={{ marginTop: 2, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {stateBadge(state)}
+                      {item.isSystem ? <Badge tone="info">{labels.systemBadge}</Badge> : null}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mono" style={{ fontSize: 12.5 }}>
+                  {item.movementCount}
+                </div>
+                <div>
+                  <Badge tone={item.isActive ? 'ok' : ''} dot>
+                    {statusLabel(item)}
+                  </Badge>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {item.removed ? null : (
+                    <button type="button" className="btn mini" onClick={() => setPanelKey(item.rowKey)} data-testid="cash-category-rename-button">
                       {labels.actions.rename}
                     </button>
-                    <button type="button" className="btn mini" disabled={pendingActionId === category.id} onClick={() => void handleLifecycleAction(category, category.isActive ? 'deactivate' : 'reactivate')}>
-                      {category.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+                  )}
+                  {item.removed || state === 'new' ? null : (
+                    <button type="button" className="btn mini" onClick={() => update(item.rowKey, { isActive: !item.isActive })} data-testid="cash-category-toggle-button">
+                      {item.isActive ? labels.actions.deactivate : labels.actions.reactivate}
                     </button>
-                    {category.isSystem ? null : (
-                      <button type="button" className="btn mini bad" disabled={pendingActionId === category.id} onClick={() => setConfirmingDeleteId(category.id)} data-testid="cash-category-delete-button">
-                        {labels.actions.delete}
-                      </button>
-                    )}
-                  </div>
-                )}
+                  )}
+                  {item.isSystem ? null : (
+                    <button type="button" className={item.removed ? 'btn mini' : 'btn mini bad'} onClick={() => toggleRemove(item)} data-testid="cash-category-delete-button">
+                      {item.removed ? labels.actions.restore : labels.actions.delete}
+                    </button>
+                  )}
+                </div>
+                {error ? (
+                  <p role="alert" tabIndex={-1} className="fld-error catalog-row-error" data-focus-error data-testid="cash-category-row-error">
+                    {error.message}
+                  </p>
+                ) : null}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
-    </div>
-  );
-}
 
-const cashCategoryFormSchema = z.object({
-  name: z.string().trim().min(1).max(100),
-});
-
-type CashCategoryFormValues = z.infer<typeof cashCategoryFormSchema>;
-
-type CashCategoryFormProps = {
-  /** `null` = create mode; a row = rename mode. */
-  category: CashCategoryRow | null;
-  labels: CashCategoriesCardLabels['form'];
-  onCancel: () => void;
-  onSuccess: (mode: 'create' | 'rename') => void;
-};
-
-function CashCategoryForm({ category, labels, onCancel, onSuccess }: CashCategoryFormProps) {
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<CashCategoryFormValues>({
-    resolver: zodResolver(cashCategoryFormSchema),
-    defaultValues: { name: category?.name ?? '' },
-  });
-
-  async function onSubmit(values: CashCategoryFormValues): Promise<void> {
-    setFormError(null);
-    const body = JSON.stringify({ name: values.name.trim() });
-    const response = category
-      ? await fetch(`/api/v1/cash-categories/${category.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body })
-      : await fetch('/api/v1/cash-categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
-
-    if (!response.ok) {
-      setFormError(response.status === 409 ? labels.conflictError : labels.genericError);
-      return;
-    }
-
-    onSuccess(category ? 'rename' : 'create');
-  }
-
-  return (
-    <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate data-testid="cash-category-form">
-      <div className="fld-label" style={{ marginBottom: 10 }}>
-        {category ? labels.renameTitle : labels.createTitle}
-      </div>
-      <div className="form-grid">
-        <Field label={labels.name} wide>
-          <Input maxLength={100} aria-invalid={Boolean(errors.name)} data-testid="cash-category-name-input" {...register('name')} />
-        </Field>
+      {/* --- the phone face of this catalogue (story 15.8b, R-15.8b-d) ------
+          Same shape as the two expiry-type catalogues. On a SYSTEM category
+          the "Elimina" action stays ABSENT — not disabled — exactly as on the
+          desktop row. */}
+      <div className="cash-categories-mobile" data-testid="mobile-cash-category-list">
+        {items.length === 0 ? (
+          <p className="mobile-card-empty" data-testid="mobile-cash-category-empty">
+            {labels.mobile.empty}
+          </p>
+        ) : (
+          items.map((item) => {
+            const state = stateOf(item);
+            const error = itemErrors[item.rowKey];
+            return (
+              <div key={item.rowKey}>
+                <button
+                  type="button"
+                  className="mobile-row mobile-row-catalog"
+                  aria-label={`${labels.mobile.openDetail}: ${displayName(item)}`}
+                  onClick={() => setSheetKey(item.rowKey)}
+                  data-state={state}
+                  data-invalid={error ? 'true' : undefined}
+                  data-testid="cash-category-row-mobile"
+                >
+                  <span className="mobile-row-main">
+                    <span className="mobile-row-title">
+                      <span className="mobile-row-name">{displayName(item)}</span>
+                    </span>
+                    <span className="mobile-row-sub">
+                      {cashCategorySubLine({ movementsLabel: movementsLabel(item), systemLabel: item.isSystem ? labels.systemBadge : null })}
+                    </span>
+                  </span>
+                  <span className="mobile-row-side">
+                    <Badge tone={item.isActive ? 'ok' : ''} dot>
+                      {statusLabel(item)}
+                    </Badge>
+                    {stateBadge(state)}
+                  </span>
+                </button>
+                {error ? (
+                  <p role="alert" tabIndex={-1} className="fld-error catalog-row-error" data-focus-error data-testid="cash-category-row-error-mobile">
+                    {error.message}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })
+        )}
       </div>
 
-      {errors.name ? <p style={{ marginTop: 6, fontSize: 12, color: 'var(--bad)' }}>{labels.requiredField}</p> : null}
-      {formError ? (
-        <p role="alert" data-testid="cash-category-form-error" style={{ marginTop: 8, fontSize: 12.5, color: 'var(--bad)' }}>
-          {formError}
-        </p>
+      {sheetItem ? (
+        <BottomSheet
+          open
+          onClose={closeSheet}
+          testId="mobile-cash-category-sheet"
+          sub={cashCategorySheetSub({ catalogLabel: labels.title, systemLabel: sheetItem.isSystem ? labels.systemBadge : null })}
+          title={displayName(sheetItem)}
+          badge={
+            <Badge tone={sheetItem.isActive ? 'ok' : ''} dot>
+              {statusLabel(sheetItem)}
+            </Badge>
+          }
+          rows={sheetRows(sheetItem)}
+          closeLabel={labels.form.close}
+          actions={
+            <>
+              {sheetItem.removed ? null : (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => {
+                    revealPanelRef.current = true;
+                    setPanelKey(sheetItem.rowKey);
+                    closeSheet();
+                  }}
+                  data-testid="cash-category-rename-button-mobile"
+                >
+                  {labels.actions.rename}
+                </button>
+              )}
+              {sheetItem.removed || stateOf(sheetItem) === 'new' ? null : (
+                <button type="button" className="btn" onClick={() => update(sheetItem.rowKey, { isActive: !sheetItem.isActive })} data-testid="cash-category-toggle-button-mobile">
+                  {sheetItem.isActive ? labels.actions.deactivate : labels.actions.reactivate}
+                </button>
+              )}
+              {sheetItem.isSystem ? null : (
+                <button type="button" className={sheetItem.removed ? 'btn' : 'btn mini bad'} onClick={() => toggleRemove(sheetItem)} data-testid="cash-category-delete-button-mobile">
+                  {sheetItem.removed ? labels.actions.restore : labels.actions.delete}
+                </button>
+              )}
+            </>
+          }
+        />
       ) : null}
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        <button type="submit" className="btn primary" disabled={isSubmitting} data-testid="cash-category-form-submit">
-          {category ? labels.submitRename : labels.submitCreate}
-        </button>
-        <button type="button" className="btn" onClick={onCancel}>
-          {labels.cancel}
-        </button>
-      </div>
-    </form>
+    </div>
   );
 }

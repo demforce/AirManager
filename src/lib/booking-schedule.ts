@@ -11,7 +11,7 @@ import { APP_TIMEZONE } from '@/lib/time';
 import { addDaysDateOnly, zonedMidnightUtc, zonedWallTime } from '@/lib/zoned-time';
 import type { BookingListItem } from '@/server/services/bookings.service';
 
-/** A day-view block, already positioned — `top`/`height` are percentages of the day-view window, reused as `left`/`width` by `schedule.tsx`. */
+/** A day-view block, already positioned — `top`/`height` are percentages of the day-view window, reused as `left`/`width` by `schedule.tsx`. `personName`/`instructorName` are already masked upstream (story 14.5, `bookings.service.ts#maskBookingNames`) — `null` means "render Occupato", same signal as `BookingListItem`'s own. */
 export type CalendarDayBlock = {
   id: string;
   aircraftId: string;
@@ -20,12 +20,12 @@ export type CalendarDayBlock = {
   clampedTop: boolean;
   clampedBottom: boolean;
   timeLabel: string;
-  personName: string;
+  personName: string | null;
   instructorProfileId: string | null;
   instructorName: string | null;
 };
 
-/** A week-view (booking, day) overlap — story 12.3 only reads this for PER-DAY COUNTS, never individual chips. */
+/** A week-view (booking, day) overlap — story 12.3 only reads this for PER-DAY COUNTS, never individual chips. `personName`/`instructorName` carried through unused, same masking as `CalendarDayBlock`'s (story 14.5). */
 export type CalendarWeekChip = {
   id: string;
   aircraftId: string;
@@ -33,7 +33,7 @@ export type CalendarWeekChip = {
   timeLabel: string;
   clampedStart: boolean;
   clampedEnd: boolean;
-  personName: string;
+  personName: string | null;
   instructorProfileId: string | null;
   instructorName: string | null;
 };

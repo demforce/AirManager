@@ -10,16 +10,17 @@ import { requestPasswordReset } from '@/server/services/auth-tokens.service';
  * that could leak account existence via status code, body, or (server-side)
  * timing. A malformed email still gets a distinct 422 — rejecting an
  * obviously-invalid input shape isn't an enumeration channel. H4
- * (CWE-799/307): the client IP (same `x-forwarded-for` extraction as
- * `ppr-requests/route.ts`) feeds `requestPasswordReset`'s per-IP throttle
+ * (CWE-799/307): the client IP (`x-forwarded-for`, `client-ip.ts`) feeds
+ * `requestPasswordReset`'s per-IP throttle
  * dimension — a throttled call still returns this SAME 200.
  */
-export const POST = apiRoute({
+export const POST = apiRoute({ sanitizeUnexpected: true,
   auth: 'public',
   bodySchema: forgotPasswordSchema,
   handle: async ({ body, request }) => {
     const ip = extractClientIp(request.headers.get('x-forwarded-for'));
-    await requestPasswordReset(body.email, ip);
+    try { await requestPasswordReset(body.email, ip); }
+    catch { console.error('credential-mail: reset request unavailable'); }
     return { ok: true };
   },
 });

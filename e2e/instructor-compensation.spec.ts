@@ -1,14 +1,16 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+import { ensureValidSeedExpiries } from './helpers';
+import { seedAircraftRate, seedInstructorRate } from './db-fixtures';
 
 const ADMIN_EMAIL = 'admin@airmanager.local';
+const PILOT_EMAIL = 'pilot@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
 if (!SEED_PASSWORD) {
   throw new Error('e2e/instructor-compensation.spec.ts requires SEED_ADMIN_PASSWORD (see .env.example).');
 }
 
-const MAILPIT_API = 'http://localhost:8025/api/v1';
 const PAST_DATE = '2020-01-01';
 const XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -25,37 +27,6 @@ function uniqueSuffix(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function uniqueEmail(prefix: string): string {
-  return `${prefix}-${uniqueSuffix()}@airmanager.local`;
-}
-
-type MailpitMessageSummary = { ID: string; Subject: string };
-type MailpitFullMessage = { Text: string; Subject: string };
-
-/** Same Mailpit-polling helper as the other e2e specs (school.spec.ts, instructor-rates.spec.ts). */
-async function waitForMailpitMessage(to: string, subjectIncludes: string, timeoutMs = 15_000): Promise<MailpitFullMessage> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const searchResponse = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${to}`)}`);
-    const searchBody = (await searchResponse.json()) as { messages: MailpitMessageSummary[] };
-    const found = searchBody.messages.find((message) => message.Subject.includes(subjectIncludes));
-    if (found) {
-      const messageResponse = await fetch(`${MAILPIT_API}/message/${found.ID}`);
-      return (await messageResponse.json()) as MailpitFullMessage;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`No Mailpit message to "${to}" with subject containing "${subjectIncludes}" within ${timeoutMs}ms`);
-}
-
-function extractSetPasswordUrl(emailText: string): URL {
-  const match = /(https?:\/\/\S*\/set-password\?token=\S+)/.exec(emailText);
-  if (!match) {
-    throw new Error(`Email body did not contain a /set-password link:\n${emailText}`);
-  }
-  return new URL(match[1]);
-}
-
 /** Creates a fresh person with an active INSTRUCTOR profile — a BRAND NEW person every call (never the shared seed, `fullyParallel: true`), same helper shape as `school.spec.ts#createInstructorPerson`. */
 async function createInstructorPerson(page: Page, tag: string): Promise<{ personId: string; firstName: string; lastName: string }> {
   const suffix = uniqueSuffix();
@@ -68,6 +39,8 @@ async function createInstructorPerson(page: Page, tag: string): Promise<{ person
 
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/instructor`, { data: { ratings: 'FI(A)' } });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'INSTRUCTORS');
 
   return { personId: person.id, firstName, lastName };
 }
@@ -81,72 +54,102 @@ async function createStudentPerson(page: Page, tag: string): Promise<{ personId:
 
   const profileResponse = await page.request.put(`/api/v1/people/${person.id}/profiles/student`, { data: { courseStartDate: PAST_DATE } });
   expect(profileResponse.status()).toBe(200);
+  // Story 14.4 blast-radius fixture fix — see `ensureValidSeedExpiries`'s own doc-comment (e2e/helpers.ts).
+  await ensureValidSeedExpiries(page, person.id, 'STUDENTS');
 
   return { personId: person.id };
 }
 
 /** Aircraft + rate (`NO_AIRCRAFT_RATE` 422 otherwise), same helper shape as `school.spec.ts#createAircraftWithRate`. */
-async function createAircraftWithRate(page: Page, priceCentsPerHour: number): Promise<{ id: string }> {
+async function createAircraftWithRate(page: Page, priceCents: number): Promise<{ id: string }> {
   const suffix = uniqueSuffix();
   const registration = `I-CP${suffix}`.toUpperCase().slice(0, 20);
 
   const aircraftResponse = await page.request.post('/api/v1/aircraft', {
-    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model', hourMeterMinutes: 100 },
+    data: { registration, type: 'Ultraleggero 3 assi', model: 'Test Model' },
   });
   expect(aircraftResponse.status()).toBe(201);
   const aircraft = (await aircraftResponse.json()) as { id: string };
 
-  const rateResponse = await page.request.post(`/api/v1/aircraft/${aircraft.id}/rates`, { data: { priceCentsPerHour, validFrom: PAST_DATE } });
-  expect(rateResponse.status()).toBe(201);
+  await seedAircraftRate(aircraft.id, { studentPriceCents: priceCents, pilotPriceCents: priceCents, validFrom: PAST_DATE });
 
   return { id: aircraft.id };
 }
 
 /** A SCHOOL flight ALSO bills the instructor (`flights.service.ts` 422 `NO_INSTRUCTOR_RATE` otherwise) — the STUDENT-charged rate (D8), unrelated to the payout rate this story adds. Same helper as `school.spec.ts#createInstructorRate`. */
 async function createInstructorRate(page: Page, instructorPersonId: string, priceCentsPerHour: number): Promise<void> {
-  const rateResponse = await page.request.post(`/api/v1/people/${instructorPersonId}/instructor-rates`, {
-    data: { priceCentsPerHour, validFrom: PAST_DATE },
-  });
-  expect(rateResponse.status()).toBe(201);
+  await seedInstructorRate(instructorPersonId, { priceCentsPerHour, validFrom: PAST_DATE });
 }
 
-/** Registers a SCHOOL flight (same wire shape as `school.spec.ts#registerSchoolFlight`, story 11.1's `takeoffAt`/`landingAt`). */
-async function registerSchoolFlight(
-  page: Page,
-  params: { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number },
-): Promise<void> {
-  const takeoffAt = `${params.flightDate}T10:00:00.000Z`;
+/**
+ * Registers a SCHOOL flight (same wire shape as `school.spec.ts#registerSchoolFlight`,
+ * story 11.1's `takeoffAt`/`landingAt`). Story 14.4 blast-radius fixture fix:
+ * re-runs `ensureValidSeedExpiries` for BOTH the student and the instructor
+ * right before submitting — `createStudentPerson`/`createInstructorPerson`
+ * already cover this at person-creation time, but this file's tests do
+ * several MORE awaited setup calls (aircraft, rate, instructor rate) in
+ * between, widening the window for a CONCURRENTLY-running sibling test
+ * (`flights.spec.ts`'s own custom-type tests) to leave a type active just
+ * long enough to be missed by the earlier scan (e2e/helpers.ts's own
+ * doc-comment).
+ */
+type SchoolFlightParams = { aircraftId: string; personId: string; instructorPersonId: string; flightDate: string; minutes: number; takeoffTimeUtc?: string };
+
+/** The `POST`/`PUT /api/v1/flights` body — `force` for the same reason as everywhere in this file: these tests are not about the requirements. Distinct `takeoffTimeUtc` per flight on one aircraft (`FLIGHT_OVERLAP`, story 16.2). */
+function schoolFlightBody(params: SchoolFlightParams): Record<string, unknown> {
+  const takeoffAt = `${params.flightDate}T${params.takeoffTimeUtc ?? '10:00'}:00.000Z`;
   const landingAt = new Date(new Date(takeoffAt).getTime() + params.minutes * 60_000).toISOString();
-  const response = await page.request.post('/api/v1/flights', {
-    data: {
-      aircraftId: params.aircraftId,
-      personId: params.personId,
-      instructorPersonId: params.instructorPersonId,
-      flightType: 'SCHOOL',
-      departureAirfield: 'Base Airfield',
-      arrivalAirfield: 'Base Airfield',
-      takeoffAt,
-      landingAt,
-    },
-  });
-  expect(response.status()).toBe(201);
+  return {
+    aircraftId: params.aircraftId,
+    personId: params.personId,
+    instructorPersonId: params.instructorPersonId,
+    flightType: 'SCHOOL',
+    departureAirfield: 'Base Airfield',
+    arrivalAirfield: 'Base Airfield',
+    takeoffAt,
+    landingAt,
+    force: true,
+  };
 }
 
-/** Creates a STAFF-only user (Mailpit invite flow), same helper as `instructor-rates.spec.ts`. */
-async function createStaffUserAndSetPassword(page: Page, password: string): Promise<string> {
-  const email = uniqueEmail('staff-comp');
-  const response = await page.request.post('/api/v1/users', { data: { email, roles: ['STAFF'] } });
+async function registerSchoolFlight(page: Page, params: SchoolFlightParams): Promise<{ id: string }> {
+  await ensureValidSeedExpiries(page, params.personId, 'STUDENTS');
+  await ensureValidSeedExpiries(page, params.instructorPersonId, 'INSTRUCTORS');
+  const response = await page.request.post('/api/v1/flights', { data: schoolFlightBody(params) });
   expect(response.status()).toBe(201);
+  return { id: ((await response.json()) as { flight: { id: string } }).flight.id };
+}
 
-  const inviteEmail = await waitForMailpitMessage(email, 'invitato');
-  const url = extractSetPasswordUrl(inviteEmail.Text);
-  await page.goto(url.pathname + url.search);
-  await page.getByLabel('Nuova password').fill(password);
-  await page.getByLabel('Conferma password').fill(password);
-  await page.getByRole('button', { name: 'Imposta password' }).click();
-  await expect(page.getByTestId('set-password-success')).toBeVisible();
+async function setPayoutRate(page: Page, personId: string, payoutRateCents: number | null): Promise<void> {
+  const response = await page.request.put(`/api/v1/instructor-compensation/${personId}/rate`, { data: { payoutRateCents } });
+  expect(response.status()).toBe(200);
+}
 
-  return email;
+type SummaryRow = { personId: string; totalMinutes: number; owedTotalCents: number; isActive: boolean };
+
+/** This instructor's row of the compensation summary, from the API — `undefined` when the summary leaves them out. Never a global aggregate (AC 14). */
+async function summaryRowOf(page: Page, personId: string): Promise<SummaryRow | undefined> {
+  const response = await page.request.get('/api/v1/instructor-compensation');
+  expect(response.status()).toBe(200);
+  return ((await response.json()) as SummaryRow[]).find((row) => row.personId === personId);
+}
+
+/** The four cells of a roster-shaped row (name, rate, hours, owed), each asserted EXACTLY — never `hasText` on an amount or an H:MM (lesson 11.2). */
+function cellsOf(row: Locator): { rate: Locator; hours: Locator; owed: Locator } {
+  const cells = row.locator(':scope > div');
+  return { rate: cells.nth(1), hours: cells.nth(2), owed: cells.nth(3) };
+}
+
+/** "1.234,56 €" / "-40,00 €" -> cents (same parser as `billing.spec.ts`). */
+function parseEuroText(text: string): number {
+  const normalized = text.replace(/−/g, '-').replace(/[^\d,.-]/g, '');
+  return Math.round(Number.parseFloat(normalized.replace(/\./g, '').replace(',', '.')) * 100);
+}
+
+/** "H:MM" -> minutes. */
+function parseHours(text: string): number {
+  const [hours, minutes] = text.trim().split(':');
+  return Number(hours) * 60 + Number(minutes);
 }
 
 test.describe('Instructor compensation (story 12.7)', () => {
@@ -157,41 +160,58 @@ test.describe('Instructor compensation (story 12.7)', () => {
     const student = await createStudentPerson(page, 'Owed');
     const aircraft = await createAircraftWithRate(page, 15000);
     await createInstructorRate(page, instructor.personId, 4000);
-    // 60 minutes of SCHOOL flying with this instructor -> 1:00 (AC 2's minutes model).
-    await registerSchoolFlight(page, { aircraftId: aircraft.id, personId: student.personId, instructorPersonId: instructor.personId, flightDate: PAST_DATE, minutes: 60 });
 
     await page.goto('/it/dashboard/instructors');
     const row = page.getByTestId(`instructor-row-${instructor.personId}`);
     await expect(row).toBeVisible();
-    // No rate set yet -> "—" for both rate and owed (never a bare "0,00 €", AC 4).
-    await expect(row.getByTestId(`instructor-edit-${instructor.personId}`)).toBeVisible();
-    await expect(row).toContainText('—');
+    // No rate set yet: the rate says "—"; nothing flown, so nothing owed (story 16.5, R-16-k: an owed is always a number).
+    await expect(cellsOf(row).rate).toHaveText('—');
+    await expect(cellsOf(row).owed).toHaveText(/^0,00\s€$/);
 
-    // Set the payout rate to 30,00 €/h via the editor.
+    // Set the payout rate to 30,00 €/h via the editor's single Salva (story
+    // 19.4) — BEFORE the flight (story 16.5): the flight freezes the rate in
+    // force when it is registered, so a rate set afterwards would not reach it.
     await row.getByTestId(`instructor-edit-${instructor.personId}`).click();
     const rateForm = page.getByTestId('instructor-payout-rate-form');
-    await rateForm.getByLabel('Tariffa oraria').fill('30,00');
-    await page.getByTestId('instructor-payout-rate-submit').click();
-    await expect(page.getByTestId('toast').filter({ hasText: 'Tariffa payout aggiornata' })).toBeVisible();
-
-    // 60 min / 60 * 3000 c = 3000 c = 30,00 € owed (AC 2's rounding rule).
-    const refreshedRow = page.getByTestId(`instructor-row-${instructor.personId}`);
-    await expect(refreshedRow).toContainText(/30,00\s€/);
+    // Story 16.5 (AC 12): the field says the rate applies from the next flights on.
+    await expect(rateForm).toContainText('Vale dai prossimi voli');
+    await rateForm.getByLabel('Compenso orario (€/h)').fill('30,00');
+    await page.getByTestId('instructor-identity-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Modifiche salvate.' })).toBeVisible();
 
     // Close the editor slide-over first — it overlays the table and would
     // otherwise intercept the "Paga" click below.
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('instructor-payout-rate-form')).toHaveCount(0);
 
+    // 60 minutes of SCHOOL flying with this instructor -> 1:00 (AC 2's minutes model).
+    await registerSchoolFlight(page, { aircraftId: aircraft.id, personId: student.personId, instructorPersonId: instructor.personId, flightDate: PAST_DATE, minutes: 60 });
+    await page.reload();
+
+    // 60 min at 3000 c/h = 3000 c = 30,00 € owed.
+    const refreshedRow = page.getByTestId(`instructor-row-${instructor.personId}`);
+    await expect(cellsOf(refreshedRow).owed).toHaveText(/^30,00\s€$/);
+
     // "Paga" 20,00 € -> dovuto scala to 10,00 € (AC 5).
     await refreshedRow.getByTestId(`instructor-pay-${instructor.personId}`).click();
     const payForm = page.getByTestId('instructor-pay-form');
     await payForm.getByLabel('Importo (€)').fill('20,00');
+    // The form's own default period (ISO, native date inputs) — it is what the movement's description carries.
+    const [periodStart, periodEnd] = await payForm.locator('input[type="date"]').evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value));
     await page.getByTestId('instructor-pay-submit').click();
     await expect(page.getByTestId('toast').filter({ hasText: 'Pagamento registrato' })).toBeVisible();
 
     const afterPayRow = page.getByTestId(`instructor-row-${instructor.personId}`);
-    await expect(afterPayRow).toContainText(/10,00\s€/);
+    await expect(cellsOf(afterPayRow).owed).toHaveText(/^10,00\s€$/);
+
+    // Story 19.12b AC 20: the payout's own Contabilità row names it «Compenso istruttore {inizio} – {fine}».
+    // Today's costs only, so the fresh row is on page 1; its period and amount single it out from the API payouts of other specs.
+    // Both dates follow Europe/Rome; include the following day in case the run crosses midnight.
+    const dayAfter = new Date(`${periodEnd}T00:00:00Z`);
+    dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+    await page.goto(`/it/dashboard/billing?${new URLSearchParams({ dateFrom: periodEnd!, dateTo: dayAfter.toISOString().slice(0, 10), bookType: 'COST' }).toString()}`);
+    const payoutMovement = page.getByTestId('transaction-row').filter({ hasText: `Compenso istruttore ${periodStart} – ${periodEnd}` }).filter({ hasText: /\b20,00\s€/ });
+    await expect(payoutMovement.first()).toBeVisible();
   });
 
   test('a payout replayed with the SAME Idempotency-Key records only ONE payout (AC 3/5)', async ({ page }) => {
@@ -201,11 +221,10 @@ test.describe('Instructor compensation (story 12.7)', () => {
     const student = await createStudentPerson(page, 'Idem');
     const aircraft = await createAircraftWithRate(page, 15000);
     await createInstructorRate(page, instructor.personId, 4000);
+    // The rate BEFORE the flight (story 16.5: the flight freezes it).
+    await setPayoutRate(page, instructor.personId, 6000);
     await registerSchoolFlight(page, { aircraftId: aircraft.id, personId: student.personId, instructorPersonId: instructor.personId, flightDate: PAST_DATE, minutes: 120 });
-
-    const rateResponse = await page.request.put(`/api/v1/instructor-compensation/${instructor.personId}/rate`, { data: { payoutRateCents: 6000 } });
-    expect(rateResponse.status()).toBe(200);
-    // 120 min / 60 * 6000 c = 12000 c = 120,00 € owed before any payout.
+    // 120 min at 6000 c/h = 12000 c = 120,00 € owed before any payout.
 
     const idempotencyKey = `e2e-${uniqueSuffix()}`;
     const payoutBody = { instructorPersonId: instructor.personId, amountCents: 5000, periodStart: PAST_DATE, periodEnd: PAST_DATE, method: 'CASH', notes: null };
@@ -219,7 +238,7 @@ test.describe('Instructor compensation (story 12.7)', () => {
     // Owed reflects ONE payout (12000 - 5000 = 7000 c = 70,00 €), not two (which would be 20,00 €).
     const summaryResponse = await page.request.get('/api/v1/instructor-compensation');
     expect(summaryResponse.status()).toBe(200);
-    const summary = (await summaryResponse.json()) as Array<{ personId: string; owedTotalCents: number | null }>;
+    const summary = (await summaryResponse.json()) as Array<{ personId: string; owedTotalCents: number }>;
     const row = summary.find((item) => item.personId === instructor.personId);
     expect(row?.owedTotalCents).toBe(7000);
   });
@@ -236,7 +255,7 @@ test.describe('Instructor compensation (story 12.7)', () => {
     expect(body.error.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
   });
 
-  test('an instructor with no payout rate shows "—" and is absent from "Ciclo pagamenti"; the rated one with dovuto>0 IS listed (AC 4/5)', async ({ page }) => {
+  test('an instructor with no payout rate shows "—" for the rate, 0,00 € owed, and is absent from "Compensi da liquidare"; the rated one with dovuto>0 IS listed (AC 4/5)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const unratedInstructor = await createInstructorPerson(page, 'Unrated');
@@ -244,38 +263,251 @@ test.describe('Instructor compensation (story 12.7)', () => {
     const student = await createStudentPerson(page, 'Cycle');
     const aircraft = await createAircraftWithRate(page, 15000);
     await createInstructorRate(page, ratedInstructor.personId, 4000);
+    await setPayoutRate(page, ratedInstructor.personId, 5000);
     await registerSchoolFlight(page, { aircraftId: aircraft.id, personId: student.personId, instructorPersonId: ratedInstructor.personId, flightDate: PAST_DATE, minutes: 60 });
-    const rateResponse = await page.request.put(`/api/v1/instructor-compensation/${ratedInstructor.personId}/rate`, { data: { payoutRateCents: 5000 } });
-    expect(rateResponse.status()).toBe(200);
 
     await page.goto('/it/dashboard/instructors');
     const unratedRow = page.getByTestId(`instructor-row-${unratedInstructor.personId}`);
-    await expect(unratedRow).toContainText('—');
-    // No "Paga" action for an instructor without a rate is still shown (payouts.manage still lets admin pay ANY instructor), but it is excluded from the payment cycle below regardless (dovuto is null, never > 0).
+    await expect(cellsOf(unratedRow).rate).toHaveText('—');
+    await expect(cellsOf(unratedRow).owed).toHaveText(/^0,00\s€$/);
+    // "Paga" is still offered on that row (payouts.manage lets the admin pay ANY active instructor — an advance), but the payment cycle below lists only dovuto > 0.
 
     await page.getByTestId('instructors-payment-cycle-button').click();
     await expect(page.getByTestId(`payment-cycle-row-${ratedInstructor.personId}`)).toBeVisible();
     await expect(page.getByTestId(`payment-cycle-row-${unratedInstructor.personId}`)).toHaveCount(0);
   });
 
-  test('RBAC: staff sees the summary but NOT "Paga" or the payout-rate field; POST payout / PUT rate answer 403 (AC 3/4/6)', async ({ page }) => {
+  // Story 16.5 (AC 10/24a, MAJOR-1): the flight freezes the rate in force when
+  // it is registered. Before the story the owed was recomputed from TODAY's
+  // rate, so a rate set afterwards reached every flight already flown.
+  test('a flight registered while the instructor had no payout rate stays at 0 after the rate is set; only the next flights accrue it (story 16.5, AC 10)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorPerson(page, 'Frozen');
+    const student = await createStudentPerson(page, 'Frozen');
+    const aircraft = await createAircraftWithRate(page, 15000);
+    await createInstructorRate(page, instructor.personId, 4000);
+    const flight = { aircraftId: aircraft.id, personId: student.personId, instructorPersonId: instructor.personId, flightDate: PAST_DATE, minutes: 60 };
+
+    await registerSchoolFlight(page, flight);
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ totalMinutes: 60, owedTotalCents: 0 });
+
+    await setPayoutRate(page, instructor.personId, 5000);
+    // Pre-fix: 60 min at today's 5000 c/h = 5000 c, out of a flight that froze nothing.
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ totalMinutes: 60, owedTotalCents: 0 });
+
+    await registerSchoolFlight(page, { ...flight, takeoffTimeUtc: '12:00' });
+    // Only the second flight accrues: 5000 c — never round(120/60 x 5000) = 10000.
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ totalMinutes: 120, owedTotalCents: 5000 });
+
+    await page.goto('/it/dashboard/instructors');
+    await expect(cellsOf(page.getByTestId(`instructor-row-${instructor.personId}`)).owed).toHaveText(/^50,00\s€$/);
+  });
+
+  // Story 16.5 (Q-16.5-a, AC 6/7): an edit in place keeps the rate the flight
+  // froze while the instructor stays the same, and a delete takes away exactly
+  // what the flight accrued — no arithmetic of its own on either path.
+  test('editing a flight keeps its frozen rate and follows the new minutes; deleting it lowers the owed by exactly its snapshot (story 16.5, AC 6/7)', async ({ page }) => {
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorPerson(page, 'Edit');
+    const student = await createStudentPerson(page, 'Edit');
+    const aircraft = await createAircraftWithRate(page, 15000);
+    await createInstructorRate(page, instructor.personId, 4000);
+    await setPayoutRate(page, instructor.personId, 3000);
+    const params = { aircraftId: aircraft.id, personId: student.personId, instructorPersonId: instructor.personId, flightDate: PAST_DATE, minutes: 60 };
+    const { id: flightId } = await registerSchoolFlight(page, params);
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ owedTotalCents: 3000 });
+
+    // A new rate moves no owed of a flight already registered (MAJOR-1).
+    await setPayoutRate(page, instructor.personId, 6000);
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ owedTotalCents: 3000 });
+
+    // 60 -> 90 min, same instructor: 90 min at the FROZEN 3000 c/h = 4500 c (today's 6000 would give 9000).
+    const edited = await page.request.put(`/api/v1/flights/${flightId}`, { data: schoolFlightBody({ ...params, minutes: 90 }) });
+    expect(edited.status(), await edited.text()).toBe(200);
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ totalMinutes: 90, owedTotalCents: 4500 });
+
+    expect((await page.request.delete(`/api/v1/flights/${flightId}`)).status()).toBe(204);
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ totalMinutes: 0, owedTotalCents: 0 });
+  });
+
+  // Story 16.5 (P4, R-16-i, Q-16.5-b/c — AC 13/14/16/17; ledger audit MAJOR-2):
+  // an instructor who left was in no summary, and the money owed to them in no
+  // total. Now: their own card, the KPI, "Compensi da liquidare", and "Paga".
+  test('an instructor no longer active with 1 000,00 € owed: their own card, inside the KPI, paid 200 then 800 down to zero, and nothing more to pay (story 16.5, P4)', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorPerson(page, 'Gone');
+    const student = await createStudentPerson(page, 'Gone');
+    const aircraft = await createAircraftWithRate(page, 15000);
+    await createInstructorRate(page, instructor.personId, 4000);
+    await setPayoutRate(page, instructor.personId, 10000);
+    // 600 min at 100,00 €/h = 100 000 c = 1 000,00 €.
+    await registerSchoolFlight(page, { aircraftId: aircraft.id, personId: student.personId, instructorPersonId: instructor.personId, flightDate: PAST_DATE, minutes: 600 });
+    expect((await page.request.post(`/api/v1/people/${instructor.personId}/profiles/instructor/deactivate`)).status()).toBe(200);
+
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ isActive: false, totalMinutes: 600, owedTotalCents: 100_000 });
+    // Q-16.5-c: their detail stays a 404 — the row offers "Paga" only.
+    expect((await page.request.get(`/api/v1/instructor-compensation?personId=${instructor.personId}`)).status()).toBe(404);
+
+    // AD-9 (review 16.5 F4): Contabilità's month-to-date widget lists the active instructors only — this one is in the summary, yet absent there.
+    await page.goto('/it/dashboard/billing');
+    const widgetRows = page.getByTestId('billing-instructor-compensation-row');
+    await expect(widgetRows.first()).toBeVisible();
+    await expect(widgetRows.filter({ hasText: instructor.lastName })).toHaveCount(0);
+
+    await page.goto('/it/dashboard/instructors');
+    const row = page.getByTestId(`inactive-instructor-row-${instructor.personId}`);
+    await expect(row).toBeVisible();
+    await expect(page.getByTestId(`instructor-row-${instructor.personId}`)).toHaveCount(0);
+    await expect(cellsOf(row).hours).toHaveText('10:00');
+    await expect(cellsOf(row).owed).toHaveText(/^1\.000,00\s€$/);
+    // No click on the name (AC 16): no detail behind it.
+    await expect(row.getByTestId(`instructor-name-${instructor.personId}`)).toHaveCount(0);
+
+    // AC 14 — the KPIs are global aggregates, so never compared with a number
+    // read at another instant: the SAME server render must agree with itself.
+    // "Totale dovuto" and the hours sum BOTH lists; "Istruttori attivi" counts
+    // the roster alone.
+    const page1 = await page.evaluate(() => {
+      const cell = (row: Element, index: number) => (row.querySelectorAll(':scope > div')[index] as HTMLElement).innerText;
+      const roster = [...document.querySelectorAll('[data-testid^="instructor-row-"]')];
+      const inactive = [...document.querySelectorAll('[data-testid^="inactive-instructor-row-"]')];
+      const kpis = [...document.querySelectorAll('.kpi-row .kpi .kpi-value')].map((value) => (value as HTMLElement).innerText);
+      return {
+        rosterCount: roster.length,
+        inactiveCount: inactive.length,
+        owed: [...roster, ...inactive].map((row) => cell(row, 3)),
+        hours: [...roster, ...inactive].map((row) => cell(row, 2)),
+        rosterRates: roster.map((row) => cell(row, 1)),
+        kpis,
+        sub: (document.querySelector('.page-head .sub') as HTMLElement).innerText,
+      };
+    });
+    expect(Number(page1.kpis[0])).toBe(page1.rosterCount);
+    expect(parseHours(page1.kpis[1]!)).toBe(page1.hours.reduce((sum, text) => sum + parseHours(text), 0));
+    expect(parseEuroText(page1.kpis[2]!)).toBe(page1.owed.reduce((sum, text) => sum + parseEuroText(text), 0));
+    // Review 16.5 F4: the average rate is the ACTIVE instructors' with a rate — this one's 100,00 €/h is not in it.
+    const rosterRates = page1.rosterRates.filter((text) => text !== '—').map(parseEuroText);
+    if (rosterRates.length === 0) expect(page1.kpis[3]).toBe('—');
+    else expect(parseEuroText(page1.kpis[3]!)).toBe(Math.round(rosterRates.reduce((sum, cents) => sum + cents, 0) / rosterRates.length));
+    // ...and the page sub counts the card's rows in its own clause.
+    expect(page1.sub).toMatch(new RegExp(`^${page1.rosterCount} attiv[oi] · .+ da liquidare · ${page1.inactiveCount} non più attiv[oi] con dovuto$`));
+
+    // Q-16.5-b: "Compensi da liquidare" lists them, labelled.
+    await page.getByTestId('instructors-payment-cycle-button').click();
+    const cycleRow = page.getByTestId(`payment-cycle-row-${instructor.personId}`);
+    await expect(cycleRow).toContainText('Non più attivo');
+    await cycleRow.getByTestId(`payment-cycle-pay-${instructor.personId}`).click();
+    const payForm = page.getByTestId('instructor-pay-form');
+    await expect(payForm.getByLabel('Importo (€)')).toHaveValue('1000,00');
+    await page.getByTestId('instructor-pay-form').getByRole('button', { name: 'Annulla', exact: true }).click();
+    await expect(page.getByTestId('instructor-pay-form')).toHaveCount(0);
+
+    // R-16-i: "Paga" 200,00 € on the card -> 800,00 € still owed.
+    await row.getByTestId(`inactive-instructor-pay-${instructor.personId}`).click();
+    await page.getByTestId('instructor-pay-form').getByLabel('Importo (€)').fill('200,00');
+    await page.getByTestId('instructor-pay-submit').click();
+    await expect(page.getByTestId('toast').filter({ hasText: 'Pagamento registrato' })).toBeVisible();
+    await expect(cellsOf(row).owed).toHaveText(/^800,00\s€$/);
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ isActive: false, owedTotalCents: 80_000 });
+
+    // The phone face (AC 17): the row is not a trigger, and its "Paga" is a 44px target.
+    await page.setViewportSize({ width: 375, height: 812 });
+    const mobileRow = page.getByTestId(`mobile-inactive-instructor-row-${instructor.personId}`);
+    await expect(mobileRow).toBeVisible();
+    await expect(row).toBeHidden();
+    expect(await mobileRow.evaluate((element) => element.tagName)).toBe('DIV');
+    const mobilePay = page.getByTestId(`inactive-instructor-pay-${instructor.personId}-mobile`);
+    expect((await mobilePay.boundingBox())!.height).toBeGreaterThanOrEqual(43.5);
+
+    // Review 16.5 F2: the name stays readable. Beside the name down to 361px,
+    // under it at 360px and below — at 320px "Paga" in a fourth track left
+    // the name 5-22px.
+    const nameLayout = () =>
+      mobileRow.evaluate((element) => {
+        const name = element.querySelector('.mobile-row-name') as HTMLElement;
+        const pay = element.querySelector('.btn') as HTMLElement;
+        return { nameWidth: name.clientWidth, nameBottom: name.getBoundingClientRect().bottom, payTop: pay.getBoundingClientRect().top };
+      });
+    const at375 = await nameLayout();
+    expect(at375.nameWidth, 'name width at 375px').toBeGreaterThanOrEqual(48);
+    expect(at375.payTop, '"Paga" beside the name at 375px').toBeLessThan(at375.nameBottom);
+    await page.setViewportSize({ width: 320, height: 812 });
+    const at320 = await nameLayout();
+    expect(at320.nameWidth, 'name width at 320px').toBeGreaterThanOrEqual(48);
+    expect(at320.payTop, '"Paga" under the name at 320px').toBeGreaterThanOrEqual(at320.nameBottom);
+    expect((await mobilePay.boundingBox())!.height).toBeGreaterThanOrEqual(43.5);
+
+    await mobilePay.click();
+    await expect(page.getByTestId('instructor-pay-form').getByLabel('Importo (€)')).toHaveValue('800,00');
+    // Review 16.5 F4/I-4: someone else pays the 800,00 € behind the UI while the
+    // panel is open — the submit then answers 409, the panel says why, and the
+    // page behind it refreshes.
+    const behind = await page.request.post('/api/v1/instructor-payouts', {
+      headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
+      data: { instructorPersonId: instructor.personId, amountCents: 80_000, periodStart: PAST_DATE, periodEnd: PAST_DATE, method: 'CASH', notes: null },
+    });
+    expect(behind.status()).toBe(201);
+    // Fix post-arbitro 16.6a: an instructor added meanwhile moves the roster's
+    // count in that refresh. The console was keyed on that count, and the remount
+    // closed this panel with its 409 — before, only when a parallel worker did it.
+    await createInstructorPerson(page, 'Behind');
+    await page.getByTestId('instructor-pay-submit').click();
+    await expect(page.getByTestId('instructor-pay-form-error')).toHaveText('Questo istruttore non è più attivo e non ha compensi da liquidare.');
+
+    // Owed back to zero: out of the card (the refresh behind the panel) and of the summary —
+    // while the panel, still open, still says why...
+    await expect(mobileRow).toHaveCount(0);
+    await expect(page.getByTestId('instructor-pay-form-error')).toHaveText('Questo istruttore non è più attivo e non ha compensi da liquidare.');
+    expect(await summaryRowOf(page, instructor.personId)).toBeUndefined();
+    // ...and nothing more to pay (409, never a silent overpayment).
+    const again = await page.request.post('/api/v1/instructor-payouts', {
+      headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
+      data: { instructorPersonId: instructor.personId, amountCents: 1000, periodStart: PAST_DATE, periodEnd: PAST_DATE, method: 'CASH', notes: null },
+    });
+    expect(again.status()).toBe(409);
+    expect(((await again.json()) as { error: { code: string } }).error.code).toBe('INSTRUCTOR_NOTHING_OWED');
+  });
+
+  // Story 16.5 D-b (review F4): a negative owed — paid more than accrued —
+  // keeps the row in sight, but there is nothing to pay.
+  test('an instructor no longer active who was paid more than accrued stays listed with the negative owed, and offers no "Paga" (story 16.5, D-b)', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+
+    const instructor = await createInstructorPerson(page, 'Overpaid');
+    // An advance while active (always allowed), then the instructor leaves: owed -50,00 €.
+    const advance = await page.request.post('/api/v1/instructor-payouts', {
+      headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
+      data: { instructorPersonId: instructor.personId, amountCents: 5000, periodStart: PAST_DATE, periodEnd: PAST_DATE, method: 'CASH', notes: null },
+    });
+    expect(advance.status()).toBe(201);
+    expect((await page.request.post(`/api/v1/people/${instructor.personId}/profiles/instructor/deactivate`)).status()).toBe(200);
+    expect(await summaryRowOf(page, instructor.personId)).toMatchObject({ isActive: false, owedTotalCents: -5000 });
+
+    await page.goto('/it/dashboard/instructors');
+    const row = page.getByTestId(`inactive-instructor-row-${instructor.personId}`);
+    await expect(row).toBeVisible();
+    await expect(cellsOf(row).owed).toHaveText(/^[-−]50,00\s€$/);
+    await expect(page.getByTestId(`inactive-instructor-pay-${instructor.personId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`inactive-instructor-pay-${instructor.personId}-mobile`)).toHaveCount(0);
+    await expect(page.getByTestId(`mobile-inactive-instructor-row-${instructor.personId}`)).toHaveCount(1);
+
+    // Nor in "Compensi da liquidare" (owed > 0 only).
+    await page.getByTestId('instructors-payment-cycle-button').click();
+    await expect(page.getByText('Istruttori con compensi da liquidare', { exact: true })).toBeVisible();
+    await expect(page.getByTestId(`payment-cycle-row-${instructor.personId}`)).toHaveCount(0);
+  });
+
+  test('RBAC: POST payout / PUT rate answer 403 for a non-admin actor (AC 3/4/6, payouts.manage)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     const instructor = await createInstructorPerson(page, 'Rbac');
 
-    const staffPassword = 'StaffComp123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-
     await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
-    await page.goto('/it/dashboard/instructors');
-    const row = page.getByTestId(`instructor-row-${instructor.personId}`);
-    await expect(row).toBeVisible();
-    await expect(row.getByTestId(`instructor-pay-${instructor.personId}`)).toHaveCount(0);
-    await expect(page.getByTestId('instructors-payment-cycle-button')).toHaveCount(0);
-
-    await row.getByTestId(`instructor-edit-${instructor.personId}`).click();
-    await expect(page.getByTestId('instructor-payout-rate-form')).toHaveCount(0);
+    await loginExpectingDashboard(page, PILOT_EMAIL);
 
     const payoutResponse = await page.request.post('/api/v1/instructor-payouts', {
       headers: { 'Idempotency-Key': `e2e-${uniqueSuffix()}` },
@@ -287,20 +519,11 @@ test.describe('Instructor compensation (story 12.7)', () => {
     expect(rateResponse.status()).toBe(403);
   });
 
-  test('the compensation summary export answers xlsx 200 for both staff and admin (AC 3/8, finance.manage)', async ({ page }) => {
+  test('the compensation summary export answers xlsx 200 (AC 3/8, finance.manage)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     const adminExport = await page.request.get('/api/v1/instructor-compensation?format=xlsx&locale=it');
     expect(adminExport.status()).toBe(200);
     expect(adminExport.headers()['content-type']).toBe(XLSX_CONTENT_TYPE);
-
-    const staffPassword = 'StaffExportComp123!';
-    const staffEmail = await createStaffUserAndSetPassword(page, staffPassword);
-    await page.context().clearCookies();
-    await loginExpectingDashboard(page, staffEmail, staffPassword);
-
-    const staffExport = await page.request.get('/api/v1/instructor-compensation?format=xlsx&locale=it');
-    expect(staffExport.status()).toBe(200);
-    expect(staffExport.headers()['content-type']).toBe(XLSX_CONTENT_TYPE);
   });
 });

@@ -1,0 +1,32 @@
+# Revisione indipendente BMAD 18.7a
+
+**Verdetto: approvata sul tree `7c73be797f1fe3e3826ae00fc478d062b3b50580`.** Nessun rilievo bloccante o maggiore nell'implementazione. Il gate integrato finale ha exit 0; tre test precedenti alla story sono risultati flaky e sono distinti dai passaggi al primo tentativo. La review riguarda solo AC 1–4 e la ratifica Q-18.7-a; non attesta la 18.7b.
+
+Base `a7dff74c6572308632901ee7a0776cfa720892cd`. Il codice applicativo era già nel tree `3fdef6ecea8a5a646f7c1d122ad77510f7abffd4`; il delta fino a `7c73be7` modifica solo `e2e/desktop-registries.spec.ts` e `e2e/empty-18-2b.spec.ts`. La revisione ha usato snapshot Git isolati in `/workspace/am187a-review` e `/workspace/am187a-base`, DB sintetico `airmanager_test` su loopback 55484 e porte HTTP separate 3307/3308. Nessun file, indice, branch o ref del repository è stato modificato dalla review. Al controllo finale `git write-tree` coincide con `7c73be7` e `git diff --quiet` ha exit 0.
+
+## Criteri e prove indipendenti
+
+| Criterio | Riscontro |
+|---|---|
+| AC1, azioni visibili | Senza scroll orizzontale a 1100/1280, il centro dei primi due pulsanti del Registro passa da 0/2 sulla base a 2/2 sul candidato. Piloti passa da 0/2 e 1/2 rispettivamente a 2/2. `elementFromPoint` conferma 2/2 anche a 641, 768, 1000, 1200, 1201 e 1440 nei due temi. Le coordinate vengono lette prima di ogni scroll orizzontale. Misure `/tmp/am187a/baseline.json` e `candidate.json`. |
+| AC2, Q-18.7-a | Nel riquadro del candidato, alto 328 px con viewport 400, `scrollTop=800` effettivi; intestazione a circa 66 px, sopra il bordo inferiore della topbar a circa 64 px. L'angolo Azioni e due pulsanti di una riga successiva sono hit-testable. Sulla base il riquadro non scorre verticalmente (`scrollTop=0`). |
+| AC3, sei superfici e Compensi | Panoramica admin, landing istruttore e pilota, Statistiche, Registro voli e Istruttori: quattro KPI completano la riga a 1280 (gap destro 0); a 1000 sono 2+2. Statistiche con tre KPI completa tre colonne. Compensi reale mantiene cinque card, 5 a 1280 e 3+2 a 1000. Misure `/tmp/am187a/{baseline,candidate}-kpi.json`. |
+| AC3, cifre grandi e carico | Un valore sintetico estremo `9.999.999.999.999,99 €` resta entro i rettangoli delle card del candidato; la base taglia il valore in Registro e Statistiche. Nel CSV di sviluppo verificato `/tmp/am187a/evidence/misure.csv`, su dataset di carico sintetico, Registro «15.589.074,93 €» passa da +42,09 px di taglio a −25,52 px; Statistiche «5.047.865,46 €» da +24,91 a −108,95 px. Il DB di carico è stato preparato dallo sviluppo, non ricreato dal revisore. |
+| AC4, due temi e stacking | Header e celle Azioni hanno fondo computato opaco in chiaro/scuro. Il pannello e il popover Export risultano in cima all'effettivo punto di sovrapposizione con l'header sticky per entrambi i registri e temi (`/tmp/am187a/overlay.json`). Il mirato conserva le facce mobili a 375 px. |
+| Semantica e tastiera | Le tabelle sono regioni con nome e focus visibile. ArrowDown e ArrowRight scorrono davvero il riquadro; Tab entra dalla CTA precedente, raggiunge le azioni e lascia il riquadro dall'ultima; Shift+Tab torna alla CTA. Prova indipendente `/tmp/am187a/keyboard.json`. L'ACL non è stata cambiata: i pulsanti restano soggetti ai `canManage*` esistenti. |
+
+La nuova prova versionata è discriminante. Copiati **solo spec e fixture** sullo snapshot dell'app di base, `scripts/e2e.sh start desktop-registries.spec.ts --no-deps --project=chromium --workers=2 --retries=0 -g 'sticky header'` dà `E2E_EXIT=1`, due falliti con `[false,false]` all'hit-test, senza click né auto-scroll (`/tmp/am187a/base-target/airmanager-e2e/last-run.log`). Sul candidato lo spec aggiornato dà `E2E_EXIT=0`, 5 passati senza retry (`/tmp/am187a/candidate-target2/airmanager-e2e/last-run.log`). In un altro doppio isolato la rimozione temporanea di `aria-label` al Registro e `tabindex` a Piloti rende rossi entrambi i casi nei controlli di nome/focus (`E2E_EXIT=1`, `/tmp/am187a/a11y-mutant/airmanager-e2e/last-run.log`). Lo spec è stato ripristinato e il suo SHA-256 coincide con l'indice. Nessun permesso o codice applicativo è stato alterato dalla controprova.
+
+## Gate finali
+
+- `npm run gates`: exit 0; lint 46 s, typecheck 6 s, **2.351 unit passati** in 18 s, build 70 s (`/tmp/am187a/gates-v2.log`).
+- Suite browser completa `scripts/e2e.sh start --workers=2` sul tree `7c73be7` e DB e2e sintetico nuovo: **`E2E_EXIT=0`, 710 passed + 3 flaky, 713 casi complessivi**, zero skipped riportati; 28,7 min. Log con cookie oscurato: `/tmp/am187a/full2-sanitized.log`. I cinque casi 18.7a e `empty-18-2b.spec.ts:4` sono passati al primo tentativo nella suite. Il caso 18.2b corretto passa anche isolato: `E2E_EXIT=0`, 1 passed (`/tmp/am187a/empty-target/airmanager-e2e/last-run.log`).
+- Prima del fix dei soli spec, il primo full aveva `E2E_EXIT=130`: 227 passed, 5 flaky, 1 failed (`empty-18-2b`), 2 interrotti, 478 non eseguiti. Non è stato conteggiato come gate superato. Il fix di 18.2b azzera lo scroll della pagina prima di misurare `.page-head` dopo 320→1280; la prova corretta è passata nel full finale.
+
+I tre flaky del full finale, tutti recuperati al primo retry, sono: `account-adjustments.spec.ts:94` (attesa Mailpit locale di 15 s), `mobile-reports.spec.ts:506` (guardia del testo troncato, primo campione 0), `mobile-self-public.spec.ts:282` (timeout di 30 s durante una POST di fixture). Non sono stati osservati fallimenti finali. Questi retry non dimostrano un difetto della 18.7a; restano una nota di affidabilità della suite. Nessuno dei tre è contato come pass al primo tentativo.
+
+## Rilievi e limiti
+
+- **Bloccanti/maggiori:** nessuno.
+- **Non bloccanti:** i tre flaky sopra, fuori dalle superfici modificate. Lo studio indipendente usa Chromium e dati sintetici; non attesta altri motori browser o una sessione con screen reader fisico. I controlli di ruolo non sono stati allargati a nuovi permessi: le ACL applicative sono invariate e la suite completa copre le regressioni di ruolo pertinenti.
+- Due errori del setup della review sono stati risolti senza cambiare l'app: il primo snapshot mancava del client Prisma generato (`npx prisma generate` poi reset riuscito); un primo mirato candidato è partito con spec vuoto dopo `git show` eseguito fuori repository (`No tests found`, exit 1), poi lo spec è stato ripristinato dal tree e il mirato valido ha 5 passati. Questi tentativi non sono prove del prodotto.

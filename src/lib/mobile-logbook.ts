@@ -1,0 +1,44 @@
+/**
+ * Pure derivations of the mobile logbook (story 15.6, AD-5) — the phone card
+ * and the detail sheet's over-line. They live here, outside
+ * the console, for the same reason `mobile-registries.ts`/`mobile-agenda.ts`
+ * do: they encode edge cases that are invisible on a happy-path screenshot
+ * (a historical flight with no airfields) and are cheaper to prove with a
+ * unit test than with a fixture.
+ *
+ * Pure by construction: no import of a service, hence no `@/lib/env` dragged
+ * into the test (CLAUDE.md's eager-env rule).
+ */
+import { joinSegments } from './mobile-sub-line';
+
+/**
+ * `DEP→ARR`, the template's own form (script 666), or `null` when the flight
+ * has no route to show. Both airfields are nullable on a pre-11.1 flight
+ * (`schemas/flights.ts:163-164`) and the desktop prints its `noValue`
+ * placeholder for the pair; the caller decides whether `null` becomes that
+ * placeholder (a table cell) or simply disappears (a composed line).
+ */
+export function flightRouteLabel(departureAirfield: string | null, arrivalAirfield: string | null): string | null {
+  const departure = (departureAirfield ?? '').trim();
+  const arrival = (arrivalAirfield ?? '').trim();
+  if (departure === '' || arrival === '') return null;
+  return `${departure}→${arrival}`;
+}
+
+/**
+ * The card's mono sub-line — the template's own `date · dep→arr · kind
+ * [· CFI name]` (script 666), minus whatever this flight does not have.
+ */
+export function flightCardSubLine(parts: { date: string; route: string | null; typeLabel: string; instructorLabel: string | null }): string {
+  return joinSegments([parts.date, parts.route, parts.typeLabel, parts.instructorLabel]);
+}
+
+/**
+ * The detail sheet's mono over-line. It is NOT only displayed: `BottomSheet`
+ * composes the dialog's accessible name out of it (`${sub} — ${title}`,
+ * `bottom-sheet.tsx:61`), which is why it goes through `joinSegments` like
+ * the card's does — an empty segment here would be audible.
+ */
+export function flightSheetSub(parts: { date: string; registration: string; typeLabel: string }): string {
+  return joinSegments([parts.date, parts.registration, parts.typeLabel]);
+}

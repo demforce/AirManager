@@ -1,0 +1,254 @@
+[
+  {
+    "key": "due",
+    "ui": [
+      [
+        "04/03/2004",
+        "—",
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 4",
+        "Contanti",
+        "4,04 €",
+        "—",
+        "Registrata"
+      ],
+      [
+        "03/03/2004",
+        "—",
+        "Costo",
+        "Export 1795725602425-5kggqz — Movimento 3",
+        "Contanti",
+        "—",
+        "3,03 €",
+        "Registrata"
+      ],
+      [
+        "02/03/2004",
+        "—",
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 2",
+        "Contanti",
+        "2,02 €",
+        "—",
+        "Registrata"
+      ]
+    ],
+    "url": "/api/v1/transactions?from=2004-03-02&to=2004-03-04&categoryId=cmwy6qb400002mns62zuhld2a&format=xlsx&locale=it",
+    "rows": [
+      [
+        "04/03/2004",
+        null,
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 4",
+        "Contanti",
+        4.04,
+        null,
+        "Registrata"
+      ],
+      [
+        "03/03/2004",
+        null,
+        "Costo",
+        "Export 1795725602425-5kggqz — Movimento 3",
+        "Contanti",
+        null,
+        3.03,
+        "Registrata"
+      ],
+      [
+        "02/03/2004",
+        null,
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 2",
+        "Contanti",
+        2.02,
+        null,
+        "Registrata"
+      ]
+    ]
+  },
+  {
+    "key": "da",
+    "ui": [
+      [
+        "05/03/2004",
+        "—",
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 5",
+        "Contanti",
+        "5,05 €",
+        "—",
+        "Registrata"
+      ],
+      [
+        "04/03/2004",
+        "—",
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 4",
+        "Contanti",
+        "4,04 €",
+        "—",
+        "Registrata"
+      ],
+      [
+        "03/03/2004",
+        "—",
+        "Costo",
+        "Export 1795725602425-5kggqz — Movimento 3",
+        "Contanti",
+        "—",
+        "3,03 €",
+        "Registrata"
+      ]
+    ],
+    "url": "/api/v1/transactions?from=2004-03-03&categoryId=cmwy6qb400002mns62zuhld2a&format=xlsx&locale=it",
+    "rows": [
+      [
+        "05/03/2004",
+        null,
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 5",
+        "Contanti",
+        5.05,
+        null,
+        "Registrata"
+      ],
+      [
+        "04/03/2004",
+        null,
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 4",
+        "Contanti",
+        4.04,
+        null,
+        "Registrata"
+      ],
+      [
+        "03/03/2004",
+        null,
+        "Costo",
+        "Export 1795725602425-5kggqz — Movimento 3",
+        "Contanti",
+        null,
+        3.03,
+        "Registrata"
+      ]
+    ]
+  },
+  {
+    "key": "a",
+    "ui": [
+      [
+        "03/03/2004",
+        "—",
+        "Costo",
+        "Export 1795725602425-5kggqz — Movimento 3",
+        "Contanti",
+        "—",
+        "3,03 €",
+        "Registrata"
+      ],
+      [
+        "02/03/2004",
+        "—",
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 2",
+        "Contanti",
+        "2,02 €",
+        "—",
+        "Registrata"
+      ],
+      [
+        "01/03/2004",
+        "—",
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 1",
+        "Contanti",
+        "1,01 €",
+        "—",
+        "Registrata"
+      ]
+    ],
+    "url": "/api/v1/transactions?to=2004-03-03&categoryId=cmwy6qb400002mns62zuhld2a&format=xlsx&locale=it",
+    "rows": [
+      [
+        "03/03/2004",
+        null,
+        "Costo",
+        "Export 1795725602425-5kggqz — Movimento 3",
+        "Contanti",
+        null,
+        3.03,
+        "Registrata"
+      ],
+      [
+        "02/03/2004",
+        null,
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 2",
+        "Contanti",
+        2.02,
+        null,
+        "Registrata"
+      ],
+      [
+        "01/03/2004",
+        null,
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 1",
+        "Contanti",
+        1.01,
+        null,
+        "Registrata"
+      ]
+    ]
+  },
+  {
+    "key": "due-ricavo",
+    "ui": [
+      [
+        "04/03/2004",
+        "—",
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 4",
+        "Contanti",
+        "4,04 €",
+        "—",
+        "Registrata"
+      ],
+      [
+        "02/03/2004",
+        "—",
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 2",
+        "Contanti",
+        "2,02 €",
+        "—",
+        "Registrata"
+      ]
+    ],
+    "url": "/api/v1/transactions?from=2004-03-02&to=2004-03-04&bookType=REVENUE&categoryId=cmwy6qb400002mns62zuhld2a&format=xlsx&locale=it",
+    "rows": [
+      [
+        "04/03/2004",
+        null,
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 4",
+        "Contanti",
+        4.04,
+        null,
+        "Registrata"
+      ],
+      [
+        "02/03/2004",
+        null,
+        "Ricavo",
+        "Export 1795725602425-5kggqz — Movimento 2",
+        "Contanti",
+        2.02,
+        null,
+        "Registrata"
+      ]
+    ]
+  }
+]

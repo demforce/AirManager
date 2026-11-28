@@ -21,7 +21,12 @@
 // `npx playwright test billing-global.spec.ts --no-deps`.
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { formatCents } from '../src/lib/money';
+import type { BillingLiveSnapshot } from '../src/lib/billing-live';
 
+import { negativeBalanceControl, seedAccountAdjustments } from './db-fixtures';
+
+const DESKTOP_UNATTRIBUTED_MARKER = 'Movimento storico pre-Billing-1 (seed)';
 const ADMIN_EMAIL = 'admin@airmanager.local';
 const SEED_PASSWORD = process.env['SEED_ADMIN_PASSWORD'];
 
@@ -37,7 +42,7 @@ async function loginExpectingDashboard(page: Page, email: string): Promise<void>
   await expect(page).toHaveURL(/\/it\/dashboard$/);
 }
 
-/** Same far-future scheme as `billing.spec.ts#dateAt` — used here only to build a date range that DEFINITELY excludes everything (no per-run uniqueness needed, this test never collides with itself). */
+/** A far-future day — used here only as a QUERY bound for a date range that DEFINITELY excludes everything (no row can be dated after today since story 16.6a, and no per-run uniqueness is needed: this test never collides with itself). */
 function dateAt(daysFromBase: number): string {
   return new Date(Date.UTC(2033, 0, 1) + daysFromBase * 86_400_000).toISOString().slice(0, 10);
 }
@@ -53,7 +58,7 @@ async function gotoBilling(page: Page, query: Record<string, string>): Promise<v
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', () => {
+test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', { tag: '@ledger-global' }, () => {
   test('the three riquadri (Risultato/Liquidità/Acconti) do NOT change when the table filters do (AC 1 — same invariant getBillingKpis had); DETERMINISTIC now that no concurrent worker touches the ledger (review F4)', async ({ page }) => {
     await loginExpectingDashboard(page, ADMIN_EMAIL);
     await gotoBilling(page, {});
@@ -85,10 +90,11 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', ()
 
   test('the seeded unattributed historical movement is reachable via the Liquidità riquadro\'s link; reclassifying it via the inline select PATCHes the method and drops it out of the secchiello', async ({ page }) => {
     // Every LIVE writer now requires a paymentMethod (Billing-1 AC2 + review
-    // F8/D2 closed the last gap, `completePprRequest`) — the ONLY reachable
-    // unattributed row on a test DB is the ONE seeded directly via Prisma in
+    // F8/D2 closed the last gap) — the reachable
+    // historical unattributed rows on a fresh test DB are seeded directly via Prisma in
     // `prisma/seed.ts` (simulating a genuinely pre-migration historical
-    // entry, exactly what this feature exists for).
+    // entry, exactly what this feature exists for). This test uses the desktop
+    // marker only, whether or not the separate mobile fixture has been consumed.
     await loginExpectingDashboard(page, ADMIN_EMAIL);
 
     // Guard rewritten on the SEEDED ROW itself (review F4/F5) — the OLD
@@ -101,7 +107,7 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', ()
     // reads it again.
     const seedCheckResponse = await page.request.get('/api/v1/transactions?unattributed=true&pageSize=100');
     const seedCheckBody = (await seedCheckResponse.json()) as { items: Array<{ description: string | null }> };
-    const seedStillPresent = seedCheckBody.items.some((item) => item.description === 'Movimento storico pre-Billing-1 (seed)');
+    const seedStillPresent = seedCheckBody.items.some((item) => item.description === DESKTOP_UNATTRIBUTED_MARKER);
     if (!seedStillPresent) {
       test.skip(true, 'The seeded unattributed movement was already reclassified by a previous run against the same DB (no reset in between) — consuming this fixture without restore is accepted (review F4/F5).');
     }
@@ -114,21 +120,92 @@ test.describe('Billing — global/serialized cases (review Billing-2 F4/F5)', ()
     await unattributedLink.click();
     await expect(page).toHaveURL(/unattributed=true/);
 
-    const row = billingRows(page).filter({ hasText: 'Movimento storico pre-Billing-1' });
+    const row = billingRows(page).filter({ hasText: DESKTOP_UNATTRIBUTED_MARKER });
     await expect(row).toHaveCount(1);
     await expect(row).toContainText(/5,00\s€/);
 
     const select = row.getByTestId('transaction-reclassify-method');
     await expect(select).toBeVisible();
+    const reconciled = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/api/v1/billing-view?'));
     await select.selectOption('CASH');
     await expect(page.getByTestId('billing-reclassify-feedback')).toHaveText('Metodo assegnato.');
+    const viewResponse = await reconciled;
+    expect(viewResponse.status()).toBe(200);
+    const view = (await viewResponse.json()) as BillingLiveSnapshot;
 
-    // `router.refresh()` re-runs the server-side `unattributed=true` filter — the row, now attributed, drops out on its own.
-    await expect(billingRows(page).filter({ hasText: 'Movimento storico pre-Billing-1' })).toHaveCount(0);
+    // The canonical live view re-runs the same unattributed filter and KPI read.
+    await expect(billingRows(page).filter({ hasText: DESKTOP_UNATTRIBUTED_MARKER })).toHaveCount(0);
+    await expect(page.getByTestId('billing-panel-available')).toHaveText(formatCents(view.summary.treasury.availableCents));
 
     // A direct API check closes the loop independently of the UI's own filtered view.
     const stillUnattributedResponse = await page.request.get('/api/v1/transactions?unattributed=true&pageSize=100');
     const stillUnattributed = (await stillUnattributedResponse.json()) as { items: Array<{ description: string | null }> };
-    expect(stillUnattributed.items.some((item) => item.description === 'Movimento storico pre-Billing-1 (seed)')).toBe(false);
+    expect(stillUnattributed.items.some((item) => item.description === DESKTOP_UNATTRIBUTED_MARKER)).toBe(false);
+  });
+
+  test('17.3: preview is bounded while summary, list search and paging retain every debtor', async ({ page }) => {
+    test.setTimeout(60_000);
+    await loginExpectingDashboard(page, ADMIN_EMAIL);
+    const token = `Saldo${crypto.randomUUID().slice(0, 8)}`;
+    const ids: string[] = [];
+    for (let index = 0; index < 21; index++) {
+      const person = await page.request.post('/api/v1/people', {
+        data: {
+          firstName: 'Prova', lastName: `${token}${index === 0 ? '%_' : ''}`,
+          profiles: { pilot: { licenseNumber: `TEST-${token}-${index}`, licenseType: 'PPL(A)' } },
+        },
+      });
+      expect(person.status()).toBe(201);
+      const { id } = await person.json() as { id: string };
+      ids.push(id);
+      await seedAccountAdjustments(id, [{ amountCents: -900_000, effectiveDate: '2026-01-01' }]);
+    }
+    expect((await page.request.post(`/api/v1/people/${ids[0]}/archive`)).status()).toBe(200);
+
+    const control = await negativeBalanceControl();
+    expect(control.count).toBeGreaterThanOrEqual(21);
+    const summary = await page.request.get('/api/v1/accounts/negative-balances/summary');
+    expect(summary.status()).toBe(200);
+    const data = await summary.json() as { count: number; exposureCents: number; top: Array<{ personId: string; balanceCents: number }> };
+    expect(data.count).toBe(control.count);
+    expect(data.exposureCents).toBe(control.exposureCents);
+    expect(data.top.map(({ personId, balanceCents }) => ({ personId, balanceCents }))).toEqual(control.top);
+
+    await page.goto('/it/dashboard/billing');
+    const card = page.getByTestId('billing-negative-balances-card');
+    await expect(card.getByTestId('negative-balance-row')).toHaveCount(20);
+    await expect(card.getByTestId('negative-balances-count')).toHaveAttribute('data-count', String(control.count));
+    await expect(page.getByTestId('billing-panel-deposits-inred')).toHaveText(String(control.count));
+    const shown = await card.getByTestId('negative-balance-row').evaluateAll((rows) => rows.map((row) => ({
+      personId: row.getAttribute('data-person-id'),
+      balanceCents: Number(row.querySelector('[data-balance-cents]')?.getAttribute('data-balance-cents')),
+    })));
+    expect(shown).toEqual(control.top);
+
+    await expect(page.getByTestId('billing-panel-deposits-link')).toHaveAttribute('href', '/it/dashboard/billing/negative-balances');
+    await card.getByRole('link', { name: 'Vedi tutte le persone' }).click();
+    await expect(page).toHaveURL(/\/dashboard\/billing\/negative-balances$/);
+    await page.locator('#negative-balance-search').fill(token.toLowerCase());
+    await page.getByRole('button', { name: 'Cerca', exact: true }).click();
+    await expect(page.getByTestId('negative-balances-total')).toContainText('21 conti');
+    await expect(page.getByTestId('negative-balances-item')).toHaveCount(20);
+    await page.getByRole('link', { name: 'Successiva' }).click();
+    await expect(page.getByTestId('negative-balances-item')).toHaveCount(1);
+    await expect(page.getByTestId('negative-balances-page')).toHaveText('Pagina 2 di 2');
+    const literal = await page.request.get('/api/v1/accounts/negative-balances?' + new URLSearchParams({ q: token + '%_' }));
+    expect(literal.status()).toBe(200);
+    expect((await page.request.get('/api/v1/accounts/negative-balances?pageSize=101')).status()).toBe(422);
+    expect(await literal.json()).toMatchObject({ total: 1, page: 1, items: [{ personId: ids[0] }] });
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.getByTestId('negative-balances-item')).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+    await page.context().clearCookies();
+    await loginExpectingDashboard(page, 'pilot@airmanager.local');
+    expect((await page.request.get('/api/v1/accounts/negative-balances')).status()).toBe(403);
+    expect((await page.request.get('/api/v1/accounts/negative-balances/summary')).status()).toBe(403);
+    await page.goto('/it/dashboard/billing/negative-balances');
+    await expect(page).toHaveURL(/\/it\/dashboard$/);
   });
 });

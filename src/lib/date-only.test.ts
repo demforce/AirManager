@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMonthsClampUtc, parseDateOnlyUtc, toDateOnlyString, todayDateOnlyUtc } from './date-only';
+import { addMonthsClampUtc, parseDateOnlyUtc, toDateOnlyString } from './date-only';
 
 describe('date-only helpers (story 4.2 — shared by rates.service.ts/instructor-rates.service.ts)', () => {
   describe('parseDateOnlyUtc', () => {
@@ -19,20 +19,6 @@ describe('date-only helpers (story 4.2 — shared by rates.service.ts/instructor
     it('handles end-of-year / leap-day boundaries correctly', () => {
       expect(parseDateOnlyUtc('2026-12-31').toISOString()).toBe('2026-12-31T00:00:00.000Z');
       expect(parseDateOnlyUtc('2028-02-29').toISOString()).toBe('2028-02-29T00:00:00.000Z');
-    });
-  });
-
-  describe('todayDateOnlyUtc', () => {
-    it('returns a UTC-midnight Date matching the current UTC calendar day', () => {
-      const now = new Date();
-      const result = todayDateOnlyUtc();
-      expect(result.getUTCFullYear()).toBe(now.getUTCFullYear());
-      expect(result.getUTCMonth()).toBe(now.getUTCMonth());
-      expect(result.getUTCDate()).toBe(now.getUTCDate());
-      expect(result.getUTCHours()).toBe(0);
-      expect(result.getUTCMinutes()).toBe(0);
-      expect(result.getUTCSeconds()).toBe(0);
-      expect(result.getUTCMilliseconds()).toBe(0);
     });
   });
 

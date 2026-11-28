@@ -83,12 +83,12 @@ describe('getMe (Story 1.3 Task 3 — first real service)', () => {
   it('returns a null person when the user has none linked yet', async () => {
     findUnique.mockResolvedValue({
       id: 'user_1',
-      email: 'staff@airmanager.local',
-      roles: ['STAFF'],
+      email: 'admin@airmanager.local',
+      roles: ['ADMIN'],
       person: null,
     });
 
-    const result = await getMe(actorWith(['STAFF']));
+    const result = await getMe(actorWith(['ADMIN']));
 
     expect(result.person).toBeNull();
   });
