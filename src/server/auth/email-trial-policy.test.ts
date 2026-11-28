@@ -28,6 +28,22 @@ describe('email access trial boundary', () => {
       expect(credentialEligible(suspended, 'REACTIVATE_ACCOUNT')).toBe(false);
     } finally { vi.unstubAllEnvs(); }
   });
+  it('requires an active, verified trial account for both steps of an address change', () => {
+    for (const [key, value] of Object.entries(valid)) vi.stubEnv(key, value);
+    const email = 'holder@fixture.invalid';
+    const holder = { email, roles: ['PILOT'], isActive: true, emailVerification: { email, verifiedAt: new Date() } };
+    try {
+      for (const purpose of ['CHANGE_EMAIL_CURRENT', 'CHANGE_EMAIL_NEW'] as const) {
+        expect(credentialEligible(holder, purpose)).toBe(true);
+        expect(credentialEligible({ ...holder, isActive: false }, purpose)).toBe(false);
+        expect(credentialEligible({ ...holder, emailVerification: null }, purpose)).toBe(false);
+        expect(credentialEligible({ ...holder, email: 'different@fixture.invalid' }, purpose)).toBe(false);
+      }
+      vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '0');
+      expect(credentialEligible(holder, 'CHANGE_EMAIL_CURRENT')).toBe(false);
+      expect(credentialEligible(holder, 'CHANGE_EMAIL_NEW')).toBe(false);
+    } finally { vi.unstubAllEnvs(); }
+  });
   it('accepts exactly one mailbox and only the email field', () => {
     for (const invalid of ['one@example.invalid,two@example.invalid', 'A <one@example.invalid>',
       'one@example.invalid; two@example.invalid', 'one@example.invalid two@example.invalid',

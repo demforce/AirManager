@@ -1,7 +1,7 @@
 import { accountMailboxUncontested, lockMailboxWrites } from './account-mailbox';
 import { randomUUID } from 'node:crypto';
 import type { Prisma, AuthTokenType } from '@/generated/prisma/client';
-import { credentialEligible, emailTrialEnabled } from '@/server/auth/email-trial-policy';
+import { addressChangePurpose, credentialEligible, emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import { authorize, type Actor } from '@/server/auth/rbac';
 import { prisma } from '@/server/db/prisma';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
@@ -22,7 +22,7 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
   operatorId: string;
   key: string;
 }, expectedEmail?: string) {
-  if (purpose === 'REACTIVATE_ACCOUNT') await lockMailboxWrites(tx);
+  if (purpose === 'REACTIVATE_ACCOUNT' || addressChangePurpose(purpose)) await lockMailboxWrites(tx);
   await lockMailAccount(tx, userId);
   const user = await tx.user.findUnique({
     where: {
@@ -139,7 +139,7 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
     data: {
       userId,
       purpose,
-      expiresAt: new Date(now.getTime() + ((purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT') ? LOGIN_LINK_TTL_MS : purpose === 'PASSWORD_RESET' ? PASSWORD_RESET_TTL_MS : INVITE_TTL_MS)),
+      expiresAt: new Date(now.getTime() + ((purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT' || addressChangePurpose(purpose)) ? LOGIN_LINK_TTL_MS : purpose === 'PASSWORD_RESET' ? PASSWORD_RESET_TTL_MS : INVITE_TTL_MS)),
       createdAt: now,
       observedAt: now,
       nextAt: now,

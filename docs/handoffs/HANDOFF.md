@@ -1,5 +1,10 @@
 # Handoff AirManager · 27 novembre 2026
 
+## Cambio sequenziale dell’indirizzo verificato
+
+La [story cambio indirizzo](../../_bmad-output/implementation-artifacts/cambio-indirizzo-verificato.md) è chiusa dalla base `abd20cab` dopo il riesame indipendente del tree applicativo `76678724869a053d482dc27b6a12a332b331473f`. Il titolare usa due link successivi, ciascuno di dieci minuti. L’avvio assistito si trova nella sezione Accesso dell’editor Piloti e indirizza il primo messaggio alla casella attuale del titolare. Al completamento il successivo accesso usa la nuova casella. Sulla copia migrata, i due POST sono riusciti a +543,0 e +662,3 secondi. La richiesta protetta con la vecchia sessione ha restituito 401 e la successiva rettifica del saldo ha generato una sola email per la nuova casella. Il gate ha superato 2.413 unitari, le otto suite PostgreSQL hanno superato 128 casi. Nel browser con trial spento ci sono stati 724 passati, un caso passato al retry e sei skip coperti dal run con trial acceso. La prova resta locale e spenta di default. Dopo questa story sono previsti readiness, poi Unicode e sola rimozione della colonna «Ambito» dal PDF Scadenze.
+
+
 ## Stato del progetto
 
 AirManager gestisce voli, flotta, prenotazioni e contabilità dell’aviosuperficie. L’Epic 18 ha completato i miglioramenti dell’interfaccia mobile e desktop. Le sette story risultano concluse. Per lo stato delle altre iniziative fa fede lo [sprint BMAD](../../_bmad-output/implementation-artifacts/sprint-status.yaml). Lo [storico fino alla 18.7a](HANDOFF-2026-11-26-1827.md) conserva esiti e limiti delle singole story.

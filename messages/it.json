@@ -150,7 +150,20 @@
       "reactivateTitle": "Conferma la riattivazione",
       "reactivateHelp": "Conferma per riattivare il tuo account. Poi potrai accedere di nuovo.",
       "reactivate": "Conferma riattivazione",
-      "reactivated": "Account riattivato. Ora puoi accedere."
+      "reactivated": "Account riattivato. Ora puoi accedere.",
+      "changeStart": "Cambia indirizzo email",
+      "changeQueued": "Link in coda per la casella attuale del titolare.",
+      "changeUnavailable": "Richiesta non disponibile. Attendi prima di riprovare.",
+      "newEmail": "Nuovo indirizzo email",
+      "changeSubmitted": "Controlla la nuova casella per confermare il cambio.",
+      "changeCompleted": "Indirizzo aggiornato. Accedi con la nuova email.",
+      "changeInvalid": "Impossibile completare il passaggio. Verifica il link e l’indirizzo.",
+      "change-currentTitle": "Scegli il nuovo indirizzo",
+      "change-currentHelp": "Il recapito attuale resterà in uso finché non confermi quello nuovo.",
+      "change-current": "Invia link al nuovo indirizzo",
+      "change-newTitle": "Conferma il nuovo indirizzo",
+      "change-newHelp": "Dopo la conferma userai questa casella per l’accesso e le comunicazioni. Dovrai accedere di nuovo.",
+      "change-new": "Conferma nuovo indirizzo"
     }
   },
   "DashboardPage": {
@@ -1896,6 +1909,16 @@
       "action": "Riattiva account",
       "subject": "Riattiva il tuo account AirManager",
       "deadlineBody": "Un amministratore ha richiesto la riattivazione del tuo account. Conferma entro {expiry}.\n\n{url}"
+    },
+    "changeCurrent": {
+      "subject": "Cambio indirizzo AirManager",
+      "action": "Scegli il nuovo indirizzo",
+      "deadlineBody": "È stato richiesto il cambio del tuo indirizzo AirManager. Apri il link entro {expiry} per inserire il nuovo indirizzo. Se non hai richiesto il cambio, ignora il messaggio: la casella attuale resta in uso.\n\n{url}"
+    },
+    "changeNew": {
+      "subject": "Conferma il nuovo indirizzo AirManager",
+      "action": "Conferma nuovo indirizzo",
+      "deadlineBody": "Per usare questa casella per accesso e comunicazioni AirManager, apri il link e conferma entro {expiry}.\n\n{url}"
     }
   },
   "NegativeBalancesPage": {

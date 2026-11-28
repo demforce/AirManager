@@ -478,6 +478,8 @@ model EmailVerification {
   verifiedAt DateTime?
   /// Start of the latest confirmed return to active service; preserves the original mailbox proof.
   reactivatedAt DateTime?
+  /// Last atomic address switch. Separate from the expiry notification activation boundary.
+  addressChangedAt DateTime?
   /// Expiry cycle at first verification, upgrade of an existing proof, or latest confirmed reactivation.
   expiryStartCycle Int?
 }
@@ -493,6 +495,8 @@ model EmailTrialRequest {
 }
 
 enum AuthTokenType {
+  CHANGE_EMAIL_CURRENT
+  CHANGE_EMAIL_NEW
   REACTIVATE_ACCOUNT
   VERIFY_EMAIL
   LOGIN_LINK
@@ -1581,6 +1585,8 @@ model CredentialMail {
   userId      String
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   purpose     AuthTokenType
+  /// AEAD-protected candidate tied to this second-stage intent, cleared on completion or expiry.
+  candidateBox String?
   state       String        @default("QUEUED")
   reason      String?
   createdAt   DateTime      @default(now())

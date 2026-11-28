@@ -34,6 +34,13 @@ export async function accountMailboxUncontested(db: Db, userId: string, email: s
   return owner?.eligible === true;
 }
 
+// Uses the persisted association, including archived contacts in the collision check.
+export async function candidateMailboxAvailable(db: Db, userId: string, personId: string | null, email: string) {
+  const [row] = await db.$queryRaw<{ available: boolean }[]>`
+    SELECT NOT ${otherOwner(Prisma.sql`${email}::text`, Prisma.sql`${userId}::text`, Prisma.sql`${personId}::text`)} AS available`;
+  return row.available;
+}
+
 // Only identity writers in the isolated trial take this lock; never held for mail.
 export async function lockMailboxWrites(tx: Db) {
   await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(19021, 4)`;

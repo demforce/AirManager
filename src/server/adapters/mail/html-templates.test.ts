@@ -14,6 +14,8 @@ describe.each(['it', 'en'] as const)('HTML mail in %s', (locale) => {
     ['INVITE', passwordUrl, 'Imposta la password', 'Set your password'],
     ['PASSWORD_RESET', passwordUrl, 'Reimposta la password', 'Reset your password'],
     ['VERIFY_EMAIL', origin + '/' + locale + '/email-access?purpose=verify#sample', 'Verifica il tuo indirizzo', 'Verify your email address'],
+    ['CHANGE_EMAIL_CURRENT', origin + '/' + locale + '/email-access?purpose=change-current#sample', 'Scegli il nuovo indirizzo', 'Choose new address'],
+    ['CHANGE_EMAIL_NEW', origin + '/' + locale + '/email-access?purpose=change-new#sample', 'Conferma nuovo indirizzo', 'Confirm new address'],
     ['LOGIN_LINK', origin + '/' + locale + '/email-access?purpose=login#sample', 'Conferma l’accesso', 'Confirm sign-in'],
   ] as const;
 

@@ -1249,6 +1249,13 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'post', path: '/api/v1/users/{id}/request-email-change', summary: 'Start the verified holder’s sequential address change (self or users.manage, isolated trial)',
+  tags: ['Users'], security,
+  request: { params: idParams, headers: z.object({ Origin: z.string(), 'Idempotency-Key': z.string().min(8).max(128).optional() }) },
+  responses: { 200: { description: 'First link queued for the registered address.', content: jsonContent(okResponseSchema) }, ...errorResponses(401,403,404,409,422) },
+});
+
+registry.registerPath({
   method: 'post', path: '/api/v1/users/{id}/request-reactivation', summary: 'Request reactivation of a verified suspended account in the isolated trial',
   tags: ['Users'], security,
   request: { params: idParams, headers: z.object({ 'Idempotency-Key': z.string().min(8).max(128).optional() }) },

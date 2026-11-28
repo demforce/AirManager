@@ -15,8 +15,12 @@ export function emailTrialEnabled(vars: Record<string, string | undefined> = pro
   } catch { return false; }
 }
 
+export function addressChangePurpose(purpose: AuthTokenType) {
+  return purpose === 'CHANGE_EMAIL_CURRENT' || purpose === 'CHANGE_EMAIL_NEW';
+}
+
 export function trialPurpose(purpose: AuthTokenType) {
-  return purpose === 'VERIFY_EMAIL' || purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT';
+  return addressChangePurpose(purpose) || purpose === 'VERIFY_EMAIL' || purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT';
 }
 
 type Account = {
@@ -41,5 +45,5 @@ export function credentialEligible(user: Account, purpose: AuthTokenType): boole
   if (!emailTrialEnabled()) return false;
   if (purpose === 'PASSWORD_RESET') return verifiedTrialAddress(user) && user.roles.includes('ADMIN');
   if (purpose === 'VERIFY_EMAIL') return enrollment.verifiedAt === null;
-  return purpose === 'LOGIN_LINK' && enrollment.verifiedAt !== null;
+  return (purpose === 'LOGIN_LINK' || addressChangePurpose(purpose)) && enrollment.verifiedAt !== null;
 }

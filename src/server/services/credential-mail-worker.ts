@@ -1,4 +1,5 @@
-import { accountMailboxUncontested } from './account-mailbox';
+import { openCandidate } from '@/server/crypto/address-candidate';
+import { accountMailboxUncontested, candidateMailboxAvailable } from './account-mailbox';
 import { createHash, randomBytes } from 'node:crypto';
 import type { CredentialMail, MailAttempt, MailChannel, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/server/db/prisma';
@@ -254,6 +255,10 @@ async function cancelReservation(tx: Tx, attempt: MailAttempt, now: Date) {
   }
 }
 export async function reserveMail(manual: boolean, intervalMs: number) {
+  // Standalone sweep before taking the channel or account locks: its intent row
+  // locks are released even when recovering a worker with an abandoned handoff.
+  await prisma.$executeRaw`UPDATE "CredentialMail" SET "candidateBox" = NULL
+    WHERE "candidateBox" IS NOT NULL AND "expiresAt" <= clock_timestamp()`;
   return prisma.$transaction(async tx => {
     await lockChannel(tx);
     const now = await databaseNow(tx);
@@ -374,7 +379,10 @@ export async function beginHandoff(reserved: MailAttempt, raw = randomBytes(32).
         await cancelReservation(tx, attempt, now);
         return null;
       }
-      if (!credentialEligible(intent.user, intent.purpose)
+      const to = intent.purpose === 'CHANGE_EMAIL_NEW' ? openCandidate(intent) : intent.user.email;
+      if (!to || intent.purpose === 'CHANGE_EMAIL_NEW' &&
+          (to === intent.user.email || !await candidateMailboxAvailable(tx, intent.userId, intent.user.personId, to))
+        || !credentialEligible(intent.user, intent.purpose)
         || intent.user.emailVerification && !await accountMailboxUncontested(tx, intent.userId, intent.user.email)) {
         await tx.credentialMail.update({ where: { id: intent.id }, data: { state: 'SUPPRESSED', reason: 'REVOKED', revokedAt: now, observedAt: now } });
         await cancelReservation(tx, attempt, now);
@@ -447,7 +455,8 @@ export async function beginHandoff(reserved: MailAttempt, raw = randomBytes(32).
         expiresAt: intent.expiresAt,
         purpose: intent.purpose,
         locale: intent.user.locale === 'en' ? 'en' as const : 'it' as const,
-        to: intent.user.email
+        to,
+        accountEmail: intent.user.email
       };
     }
     await tx.mailAttempt.update({
@@ -593,8 +602,14 @@ export async function processMailAttempt(attempt: MailAttempt, club?: string, lo
         const channel = await prisma.mailChannel.findUniqueOrThrow({ where: { id: 1 }, select: { loginLinksPaused: true, loginPauseThrough: true } });
         if (channel.loginLinksPaused || credential.generation <= channel.loginPauseThrough) return false;
       }
-      return Boolean(token && !token.usedAt && token.expiresAt > await databaseNow(prisma)
-        && token.user.email === credential.to && credentialEligible(token.user, token.type) && await accountMailboxUncontested(prisma, token.userId, token.user.email));
+      if (!token || token.usedAt || token.expiresAt <= await databaseNow(prisma) || token.user.email !== credential.accountEmail
+        || !credentialEligible(token.user, token.type) || !await accountMailboxUncontested(prisma, token.userId, token.user.email)) return false;
+      if (token.type === 'CHANGE_EMAIL_NEW') {
+        const intent = await prisma.credentialMail.findFirst({ where: { generation: credential.generation, tokenId: token.id, revokedAt: null } });
+        return Boolean(intent && openCandidate(intent) === credential.to &&
+          await candidateMailboxAvailable(prisma, token.userId, token.user.personId, credential.to));
+      }
+      return token.user.email === credential.to;
     } : undefined);
   } catch {
     result = { outcome: 'UNCERTAIN', phase: 'MESSAGE', channel: false };

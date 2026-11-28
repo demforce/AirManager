@@ -3,6 +3,7 @@
 import { headers } from 'next/headers';
 import { formMailbox } from '@/lib/schemas/email-trial';
 import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
+import { submitAddressChange } from '@/server/services/account-email-change';
 import { consumeTrialLink, loginRequestOrigin, requestEmailLogin } from '@/server/services/email-trial.service';
 
 async function localRequest() {
@@ -28,4 +29,16 @@ export async function confirmReactivation(token: string): Promise<boolean> {
 export async function confirmMailbox(token: string): Promise<boolean> {
   const h = await localRequest();
   return Boolean(h && await consumeTrialLink('VERIFY_EMAIL', token, undefined, loginRequestOrigin(h)));
+}
+
+export async function proposeNewAddress(token: string, form: FormData): Promise<boolean> {
+  const h = await localRequest();
+  if (!h || !(form instanceof FormData)) return false;
+  const email = formMailbox(form);
+  return Boolean(email && await submitAddressChange('CHANGE_EMAIL_CURRENT', token, email, loginRequestOrigin(h)));
+}
+
+export async function confirmNewAddress(token: string): Promise<boolean> {
+  const h = await localRequest();
+  return Boolean(h && await submitAddressChange('CHANGE_EMAIL_NEW', token, undefined, loginRequestOrigin(h)));
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { RequestEmailChange } from '@/components/shell/request-email-change';
+
 /**
  * Pilot slide-over editor (story 12.6, AC 3/4; rebuilt story 13.2) — port of
  * `docs/design-reference/airops/src/People.jsx#PilotEditor` extended to
@@ -1302,6 +1304,7 @@ function AccessSection({
             {user.emailVerified !== undefined ? (user.emailVerified ? labels.verifiedEmail : labels.pendingEmail) : user.passwordSet ? labels.statusActive : labels.statusPending}
           </Badge>
         </div>
+        {labels.verifiedInvites && user.isActive && user.emailVerified && <RequestEmailChange userId={user.id} className="btn mini" />}
         {(labels.verifiedInvites ? user.canResendVerificationInvite : user.emailVerified === undefined && !user.passwordSet) ? (
           <button type="button" className="btn mini" disabled={pending} onClick={() => void handleResendInvite()} style={{ marginTop: 10 }}>
             {labels.resendInvite}

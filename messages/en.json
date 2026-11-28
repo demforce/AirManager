@@ -150,7 +150,20 @@
       "reactivateTitle": "Confirm account reactivation",
       "reactivateHelp": "Confirm to reactivate your account. You can then sign in again.",
       "reactivate": "Confirm reactivation",
-      "reactivated": "Account reactivated. You can now sign in."
+      "reactivated": "Account reactivated. You can now sign in.",
+      "changeStart": "Change email address",
+      "changeQueued": "Link queued for the account holder’s current address.",
+      "changeUnavailable": "Request unavailable. Wait before trying again.",
+      "newEmail": "New email address",
+      "changeSubmitted": "Check your new inbox to confirm the change.",
+      "changeCompleted": "Email address updated. Sign in with your new address.",
+      "changeInvalid": "This step could not be completed. Check the link and address.",
+      "change-currentTitle": "Choose your new address",
+      "change-currentHelp": "Your current address remains in use until you confirm the new one.",
+      "change-current": "Send link to new address",
+      "change-newTitle": "Confirm your new address",
+      "change-newHelp": "After confirmation, this inbox will be used for sign-in and notifications. You will need to sign in again.",
+      "change-new": "Confirm new address"
     }
   },
   "DashboardPage": {
@@ -1896,6 +1909,16 @@
       "action": "Reactivate account",
       "subject": "Reactivate your AirManager account",
       "deadlineBody": "An administrator requested reactivation of your account. Confirm by {expiry}.\n\n{url}"
+    },
+    "changeCurrent": {
+      "subject": "Change your AirManager email address",
+      "action": "Choose new address",
+      "deadlineBody": "A change to your AirManager email address was requested. Open the link by {expiry} to enter the new address. If you did not request this change, ignore this message. Your current address remains in use.\n\n{url}"
+    },
+    "changeNew": {
+      "subject": "Confirm your new AirManager email address",
+      "action": "Confirm new address",
+      "deadlineBody": "To use this inbox for AirManager sign-in and notifications, open the link and confirm by {expiry}.\n\n{url}"
     }
   },
   "NegativeBalancesPage": {

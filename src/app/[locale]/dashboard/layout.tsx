@@ -13,6 +13,8 @@ import { signOut } from '@/server/auth/auth';
 import { getSessionActor } from '@/server/auth/session';
 import { getAirfieldBranding, getAirfieldIcao, getMetarStation } from '@/server/services/app-settings.service';
 import { getOwnInstructorProfileId } from '@/server/services/bookings.service';
+import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
+import { prisma } from '@/server/db/prisma';
 import { getMe } from '@/server/services/me.service';
 import { getMetar, type MetarCategory } from '@/server/services/metar.service';
 
@@ -86,6 +88,9 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
     // item follows the actor's ACTIVE profile, not just the role (14.6 F2's lesson).
     actor.roles.includes('INSTRUCTOR') ? getOwnInstructorProfileId(actor) : Promise.resolve(null),
   ]);
+  const changeEmailUserId = emailTrialEnabled() && await prisma.emailVerification.findFirst({
+    where: { userId: actor.userId, email: me.email, verifiedAt: { not: null } }, select: { userId: true },
+  }) ? actor.userId : undefined;
   // Story 12.11, AC 5: depends on `metarStation` above, so it cannot join the `Promise.all` batch.
   const metarData = await getMetar(metarStation);
 
@@ -166,6 +171,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             themeToggleLabel={t('themeToggle.label')}
             localeSwitchLabel={t('localeSwitch.label')}
             userChip={userChip}
+            changeEmailUserId={changeEmailUserId}
             logoutAction={logoutAction}
             logoutLabel={t('logout')}
           />
@@ -177,6 +183,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             themeToggleLabel={t('themeToggle.label')}
             localeSwitchLabel={t('localeSwitch.label')}
             userChip={userChip}
+            changeEmailUserId={changeEmailUserId}
             roleLabel={roleLabel}
             profileLabel={t('mobile.profile')}
             logoutAction={logoutAction}

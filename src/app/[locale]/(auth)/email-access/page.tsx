@@ -13,7 +13,7 @@ export default async function EmailAccessPage({ params, searchParams }: {
   if (!emailTrialEnabled()) notFound();
   const { locale } = await params;
   const { purpose } = await searchParams;
-  if (purpose !== undefined && purpose !== 'verify' && purpose !== 'login' && purpose !== 'reactivate') notFound();
+  if (purpose !== undefined && purpose !== 'verify' && purpose !== 'login' && purpose !== 'reactivate' && purpose !== 'change-current' && purpose !== 'change-new') notFound();
   setRequestLocale(locale);
   const t = await getTranslations('auth.emailTrial');
   const mode = purpose ?? 'request';

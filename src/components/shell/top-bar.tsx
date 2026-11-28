@@ -8,6 +8,7 @@
  * current route from; every string is resolved server-side and passed in
  * (house convention — no `useTranslations` in client components).
  */
+import { RequestEmailChange } from './request-email-change';
 import { useLocale } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import type { AvatarColor } from '@/components/ui/avatar';
@@ -33,6 +34,7 @@ export type TopBarProps = {
   /** Aria-label/title for the IT/EN switcher (AC 1, house convention: resolved server-side, never `useTranslations` in a client component) — the visible chip text is the target locale's own ISO code (`otherLocale.toUpperCase()`), not a translated string. */
   localeSwitchLabel: string;
   userChip: TopBarUserChip;
+  changeEmailUserId?: string;
   /**
    * Server Action (story 12.12 fix — see `layout.tsx`'s own doc-comment):
    * the ONLY logout control in the app used to live on the legacy home
@@ -52,6 +54,7 @@ export function TopBar({
   themeToggleLabel,
   localeSwitchLabel,
   userChip,
+  changeEmailUserId,
   logoutAction,
   logoutLabel,
 }: TopBarProps) {
@@ -107,6 +110,7 @@ export function TopBar({
         <Avatar init={userChip.initials} color={userChip.color} />
         <span className="user-chip-name" style={{ fontSize: 12.5, fontWeight: 500 }}>{userChip.displayName}</span>
       </div>
+      {changeEmailUserId && <RequestEmailChange userId={changeEmailUserId} className="btn" />}
       <form action={logoutAction}>
         <button type="submit" className="btn" data-testid="logout-button">
           {logoutLabel}

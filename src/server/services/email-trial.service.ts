@@ -35,7 +35,7 @@ function bucket(kind: string, value: string) {
   return createHmac('sha256', env.AUTH_SECRET).update('email-trial:' + kind + ':' + value).digest('hex');
 }
 
-async function reserveRequest(tx: Prisma.TransactionClient, step: 'request' | 'confirmation', identity: string, origin: string) {
+export async function reserveRequest(tx: Prisma.TransactionClient, step: 'request' | 'confirmation', identity: string, origin: string) {
   if (step === 'request') await lockLoginRequests(tx);
   else await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(19021, 2)`;
   const now = await databaseNow(tx);
@@ -67,12 +67,13 @@ export async function requestEmailLogin(rawEmail: string, origin: string): Promi
       const now = await reserveRequest(tx, 'request', email, origin);
       if (!now) return;
       const since = (minutes: number) => new Date(+now - minutes * MINUTE);
-      const account = await tx.user.findUnique({ where: { email }, select: { id: true } });
+      const account = await tx.user.findUnique({ where: { email }, select: { id: true, emailVerification: { select: { addressChangedAt: true } } } });
       if (!account) return;
       const login = { purpose: 'LOGIN_LINK' as const };
       if (await tx.credentialMail.count({ where: { ...login, createdAt: { gt: since(20) } } }) >= 10) return;
       const forAccount = { ...login, userId: account.id };
-      if (await tx.credentialMail.findFirst({ where: { ...forAccount, expiresAt: { gt: now }, OR: [{ reason: null }, { reason: { not: 'LOGIN_PAUSED' } }] }, select: { id: true } })
+      if (await tx.credentialMail.findFirst({ where: { ...forAccount, expiresAt: { gt: now },
+        ...(account.emailVerification?.addressChangedAt && { createdAt: { gte: account.emailVerification.addressChangedAt } }), OR: [{ reason: null }, { reason: { not: 'LOGIN_PAUSED' } }] }, select: { id: true } })
         || await tx.credentialMail.count({ where: { ...forAccount, createdAt: { gt: since(60) } } }) >= 3) return;
       await enqueueCredential(tx, account.id, 'LOGIN_LINK', undefined, email);
     });
