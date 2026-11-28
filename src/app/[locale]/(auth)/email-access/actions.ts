@@ -26,9 +26,11 @@ export async function confirmReactivation(token: string): Promise<boolean> {
   return Boolean(h && await consumeTrialLink('REACTIVATE_ACCOUNT', token, undefined, loginRequestOrigin(h)));
 }
 
-export async function confirmMailbox(token: string): Promise<boolean> {
+export async function confirmMailbox(token: string, newPassword?: string) {
   const h = await localRequest();
-  return Boolean(h && await consumeTrialLink('VERIFY_EMAIL', token, undefined, loginRequestOrigin(h)));
+  const result = h && await consumeTrialLink('VERIFY_EMAIL', token, newPassword, loginRequestOrigin(h));
+  if (result === 'passwordRequired') return result;
+  return result ? 'verified' : 'invalid';
 }
 
 export async function proposeNewAddress(token: string, form: FormData): Promise<boolean> {

@@ -307,28 +307,67 @@ test('composite enrollment uses a single account address and rolls back divergen
   assert.equal(await prisma.user.count({ where: { personId: contact.id } }), 0);
 });
 
-test('a verified new trial admin provisions an individual fallback with the normal reset, independently of onboarding', async () => {
+test('first admin invitation verifies the mailbox and sets exactly the holder’s winning password together', async () => {
   const { requestPasswordReset } = await import('../src/server/services/auth-tokens.service');
   const { authorizeCredentials } = await import('../src/server/auth/authorize');
-  const admin = await createUser(actor, { email: address(), roles: ['ADMIN'], locale: 'it' });
-  await requestPasswordReset(admin.email);
-  assert.equal(await prisma.credentialMail.count({ where: { userId: admin.id, purpose: 'PASSWORD_RESET' } }), 0);
-  const verification = await reserveMail(false, 250);
-  assert.ok(verification);
-  const verifyToken = randomBytes(32).toString('base64url');
-  assert.ok(await beginHandoff(verification, verifyToken));
-  assert.ok(await consumeTrialLink('VERIFY_EMAIL', verifyToken));
-  await completeHandoff(verification.id, { outcome: 'ACCEPTED', phase: 'FINAL', channel: false });
-  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: admin.id } })).passwordHash, null);
-  await requestPasswordReset(admin.email);
-  const reset = await reserveMail(false, 250);
-  assert.ok(reset);
-  const resetToken = randomBytes(32).toString('base64url');
-  const resetMail = await beginHandoff(reset, resetToken);
-  assert.equal(resetMail?.credential?.purpose, 'PASSWORD_RESET');
-  const password = randomUUID();
-  await setPasswordWithToken(resetToken, password);
-  assert.equal((await authorizeCredentials({ email: admin.email, password }, null, 'admin-password'))?.id, admin.id);
+  const { verifyPassword } = await import('../src/server/auth/password');
+  const account = await createUser(actor, { email: address(), roles: ['ADMIN'], locale: 'it' });
+  const raw = await prepareVerification();
+  const passwords = [randomUUID(), randomUUID()];
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw), 'passwordRequired');
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw, '🙂'.repeat(8)), 'passwordRequired');
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw, 'a'.repeat(257)), 'passwordRequired');
+  await requestPasswordReset(account.email);
+  await requestEmailLogin(account.email, 'direct');
+  assert.equal(await prisma.credentialMail.count({ where: { userId: account.id, purpose: { in: ['PASSWORD_RESET', 'LOGIN_LINK'] } } }), 0);
+  assert.equal(await authorizeCredentials({ email: account.email, password: passwords[0] }, null, 'admin-password'), null);
+  const pending = await prisma.user.findUniqueOrThrow({ where: { id: account.id }, include: { emailVerification: true } });
+  assert.equal(pending.passwordHash, null);
+  assert.equal(pending.emailVerification?.verifiedAt, null);
+  assert.equal(await prisma.authToken.count({ where: { userId: account.id, usedAt: null } }), 1);
+  const results = await Promise.all(passwords.map(password => consumeTrialLink('VERIFY_EMAIL', raw, password)));
+  assert.equal(results.filter(result => typeof result === 'object' && result !== null).length, 1);
+  const after = await prisma.user.findUniqueOrThrow({ where: { id: account.id }, include: { emailVerification: true } });
+  assert.ok(after.passwordHash && after.emailVerification?.verifiedAt);
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw, randomUUID()), null);
+  for (const [i, password] of passwords.entries()) assert.equal(await verifyPassword(after.passwordHash, password), results[i] !== null);
+  await requestEmailLogin(account.email, 'direct');
+  assert.equal(await prisma.credentialMail.count({ where: { userId: account.id, purpose: 'LOGIN_LINK' } }), 1);
+});
+
+test('pending invitations follow the role under the account lock at completion', async () => {
+  const { updateUser } = await import('../src/server/services/users.service');
+  const owner = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@airmanager.local' } });
+  const operator = { ...actor, userId: owner.id };
+  const account = await createUser(operator, { email: address(), roles: ['PILOT'], locale: 'it' });
+  const raw = await prepareVerification();
+  await updateUser(operator, account.id, { roles: ['PILOT', 'ADMIN'] });
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw), 'passwordRequired');
+  await updateUser(operator, account.id, { roles: ['PILOT'] });
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw, randomUUID()), null);
+  const confirmed = await consumeTrialLink('VERIFY_EMAIL', raw);
+  assert.ok(confirmed && confirmed !== 'passwordRequired');
+  assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: account.id } })).passwordHash, null);
+});
+
+test('expired and replaced admin invitations leave the holder pending', async () => {
+  const { resendInvite } = await import('../src/server/services/credential-mail.service');
+  const owner = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@airmanager.local' } });
+  const operator = { ...actor, userId: owner.id };
+  const account = await createUser(operator, { email: address(), roles: ['ADMIN'], locale: 'en' });
+  const old = await prepareVerification();
+  const invitation = await prisma.credentialMail.findFirstOrThrow({ where: { userId: account.id } });
+  assert.equal(+invitation.expiresAt - +invitation.createdAt, 7 * 86400_000);
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', old), 'passwordRequired');
+  await resendInvite(operator, account.id, randomUUID());
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', old, randomUUID()), null);
+  const fresh = await prepareVerification();
+  await prisma.authToken.updateMany({ where: { userId: account.id, usedAt: null }, data: { expiresAt: new Date(0) } });
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', fresh), null);
+  assert.equal(await consumeTrialLink('VERIFY_EMAIL', fresh, randomUUID()), null);
+  const row = await prisma.user.findUniqueOrThrow({ where: { id: account.id }, include: { emailVerification: true } });
+  assert.equal(row.passwordHash, null);
+  assert.equal(row.emailVerification?.verifiedAt, null);
 });
 
 test('trial off preserves normal and composite legacy invitation and separate contact-only ownership', async () => {
@@ -525,7 +564,8 @@ test('each admin digest starts with its own activation and includes a later thre
   const mails = async (email: string) =>
     (await (await fetch(sink+'/search?query='+encodeURIComponent('to:'+email))).json()).messages as {ID:string}[];
   try {
-    assert.ok(await consumeTrialLink('VERIFY_EMAIL', await prepareVerification()));
+    const confirmed = await consumeTrialLink('VERIFY_EMAIL', await prepareVerification(), randomUUID());
+    assert.ok(confirmed && confirmed !== 'passwordRequired');
     // At +2 days the second row has both old (30/60) and new (7) thresholds.
     context.mock.timers.enable({ apis: ['Date'], now: +today + 2 * 86400_000 + 12 * 3600_000 });
     await runExpiryAlertsJob();
@@ -637,7 +677,8 @@ for (const when of ['between digests', 'at the next handoff'] as const) test('pe
     return { name: type.name, id: expiry.id };
   };
   const hidden = await newExpiry();
-  assert.ok(await consumeTrialLink('VERIFY_EMAIL', await prepareVerification()));
+  const confirmed = await consumeTrialLink('VERIFY_EMAIL', await prepareVerification(), randomUUID());
+  assert.ok(confirmed && confirmed !== 'passwordRequired');
   const visible = await newExpiry();
   const key = 'mail.operational';
   const prior = await prisma.appSetting.findUnique({ where: { key } });

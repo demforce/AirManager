@@ -174,7 +174,8 @@ test('recipient readiness after legacy upgrade and an explicit mailbox confirmat
     assert.equal(await prisma.securityDelivery.count({ where: { incidentId: incident.id } }), 0);
 
     // Confirm the credential actually submitted to Mailpit. No verification rows are manufactured by the fixture.
-    assert.equal((await consumeTrialLink('VERIFY_EMAIL', invite.hash.slice(1)))?.id, pendingAdmin.id);
+    const confirmed = await consumeTrialLink('VERIFY_EMAIL', invite.hash.slice(1), randomUUID());
+    assert.ok(confirmed && confirmed !== 'passwordRequired' && confirmed.id === pendingAdmin.id);
     await Promise.all([scanAccessSecurity(), scanAccessSecurity()]);
     const deliveries = await prisma.securityDelivery.findMany({ where: { incidentId: incident.id } });
     assert.equal(deliveries.length, 1);

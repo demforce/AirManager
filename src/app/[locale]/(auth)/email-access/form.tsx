@@ -3,15 +3,19 @@
 import { signIn } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
+import { adminPasswordSchema } from '@/lib/schemas/auth-tokens';
 import { Field, Input } from '@/components/ui/field';
 import { confirmMailbox, confirmNewAddress, confirmReactivation, proposeNewAddress, requestLink } from './actions';
 
 export function EmailAccessForm({ purpose, locale }: { purpose: 'verify' | 'login' | 'request' | 'reactivate' | 'change-current' | 'change-new'; locale: string }) {
   const t = useTranslations('auth.emailTrial');
+  const tPassword = useTranslations('auth.setPassword');
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<'adminPolicy' | 'errorMismatch' | 'tooLong' | null>(null);
   const token = useRef('');
   const busy = useRef(false);
   const [pending, setPending] = useState(false);
-  const [outcome, setOutcome] = useState<'invalid' | 'sent' | 'verified' | 'reactivated' | 'changeSubmitted' | 'changeCompleted' | 'changeInvalid' | null>(null);
+  const [outcome, setOutcome] = useState<'invalid' | 'sent' | 'verified' | 'adminVerified' | 'reactivated' | 'changeSubmitted' | 'changeCompleted' | 'changeInvalid' | null>(null);
   useEffect(() => {
     if (window.location.hash) {
       token.current = window.location.hash.slice(1);
@@ -37,7 +41,27 @@ export function EmailAccessForm({ purpose, locale }: { purpose: 'verify' | 'logi
         if (confirmed) token.current = '';
         setOutcome(confirmed ? 'reactivated' : 'invalid');
       } else if (purpose === 'verify') {
-        setOutcome(await confirmMailbox(token.current) ? 'verified' : 'invalid');
+        const password = needsPassword ? form.get('password') : undefined;
+        if (needsPassword) {
+          const parsed = adminPasswordSchema.safeParse(password);
+          if (!parsed.success) {
+            setPasswordError(parsed.error.issues.some(issue => issue.code === 'too_big') ? 'tooLong' : 'adminPolicy');
+            return;
+          }
+          if (password !== form.get('confirmPassword')) { setPasswordError('errorMismatch'); return; }
+        }
+        setPasswordError(null);
+        const result = await confirmMailbox(token.current, typeof password === 'string' ? password : undefined);
+        if (result === 'passwordRequired') {
+          setNeedsPassword(true);
+          setOutcome(null);
+        } else {
+          setOutcome(result === 'verified' && needsPassword ? 'adminVerified' : result);
+          if (result === 'verified') {
+            token.current = '';
+            setNeedsPassword(false);
+          }
+        }
       } else {
         const result = await signIn('email-link', { email: form.get('email'), token: token.current, redirect: false });
         if (result?.ok && !result.error) {
@@ -50,7 +74,15 @@ export function EmailAccessForm({ purpose, locale }: { purpose: 'verify' | 'logi
   }} style={{ display: 'grid', gap: 14 }}>
     {(purpose === 'request' || purpose === 'login') && <Field label={t('email')}><Input type="email" name="email" autoComplete="email" required maxLength={254} /></Field>}
     {purpose === 'change-current' && <Field label={t('newEmail')}><Input type="email" name="email" autoComplete="email" required maxLength={254} /></Field>}
-    <button type="submit" className="btn primary" disabled={pending || outcome === 'verified' || outcome === 'reactivated' || outcome === 'changeCompleted' || outcome === 'changeSubmitted'}>{t(purpose)}</button>
+    {needsPassword && <>
+      <Field label={tPassword('passwordLabel')} hint={tPassword('adminPolicy')} error={passwordError === 'tooLong' ? t('passwordTooLong') : passwordError === 'adminPolicy' ? tPassword(passwordError) : undefined}>
+        <Input type="password" name="password" autoComplete="new-password" autoFocus required aria-invalid={passwordError === 'adminPolicy' || passwordError === 'tooLong'} />
+      </Field>
+      <Field label={tPassword('confirmPasswordLabel')} error={passwordError === 'errorMismatch' ? tPassword(passwordError) : undefined}>
+        <Input type="password" name="confirmPassword" autoComplete="new-password" required aria-invalid={passwordError === 'errorMismatch'} />
+      </Field>
+    </>}
+    <button type="submit" className="btn primary" disabled={pending || outcome === 'verified' || outcome === 'adminVerified' || outcome === 'reactivated' || outcome === 'changeCompleted' || outcome === 'changeSubmitted'}>{t(needsPassword ? 'verifyAdmin' : purpose)}</button>
     {outcome && <p role="status">{t(outcome)}</p>}
   </form>;
 }

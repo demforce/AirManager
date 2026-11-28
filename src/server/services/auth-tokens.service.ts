@@ -1,4 +1,5 @@
 import { accountMailboxUncontested } from './account-mailbox';
+import { adminPasswordSchema } from '@/lib/schemas/auth-tokens';
 import { createHash } from 'node:crypto';
 import { credentialEligible } from '@/server/auth/email-trial-policy';
 import { hashPassword, verifyPassword } from '@/server/auth/password';
@@ -130,7 +131,7 @@ export async function setPasswordWithToken(rawToken: string, newPassword: string
     if (!user || (user.emailVerification && (!credentialEligible(user, authToken.type) || !await accountMailboxUncontested(tx, user.id, user.email)))) {
       throw new ValidationError('Invalid or expired token.');
     }
-    if (user.roles.includes('ADMIN') && (Array.from(newPassword).length < 15
+    if (user.roles.includes('ADMIN') && (!adminPasswordSchema.safeParse(newPassword).success
       || (user.passwordHash && await verifyPassword(user.passwordHash, newPassword)))) {
       throw new ValidationError('Choose a new individual administrator password of at least 15 characters.', undefined, 'ADMIN_PASSWORD_POLICY');
     }

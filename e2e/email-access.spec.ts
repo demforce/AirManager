@@ -139,11 +139,33 @@ test('verified invitation and one email session through the public forms', { tag
              v."verifiedAt" IS NULL AS pending, q.purpose FROM "User" u JOIN "Person" p ON p.id=u."personId"
         JOIN "EmailVerification" v ON v."userId"=u.id JOIN "CredentialMail" q ON q."userId"=u.id WHERE u.email=$1`,[adminEmail]);
     expect(stored.rows).toEqual([{noPassword:true, noPersonEmail:true, pending:true, purpose:'VERIFY_EMAIL'}]);
+    const firstPassword = randomUUID();
     await openCaptured(second,adminEmail,'verify');
-    await second.getByRole('button',{name:'Conferma indirizzo'}).click();
+    await second.getByRole('button',{name:'Conferma indirizzo', exact: true}).click();
+    await expect(second.getByLabel('Nuova password', {exact: true})).toBeFocused();
+    expect((await second.request.get('/api/v1/me')).status()).toBe(401);
+    const complete = second.getByRole('button',{name:'Conferma indirizzo e imposta password', exact:true});
+    const passwordError = second.locator('form').filter({ has: complete }).getByRole('alert');
+    const overlong = 'a'.repeat(257);
+    await second.getByLabel('Nuova password',{exact:true}).fill(overlong);
+    await second.getByLabel('Conferma password',{exact:true}).fill(overlong);
+    await complete.click();
+    await expect(passwordError).toHaveText('La password è troppo lunga. Scegli una password più corta.');
+    await second.getByLabel('Nuova password',{exact:true}).fill(firstPassword);
+    await second.getByLabel('Conferma password',{exact:true}).fill(randomUUID());
+    await complete.click();
+    await expect(passwordError).toHaveText('Le password non coincidono.');
+    await second.getByLabel('Conferma password',{exact:true}).fill(firstPassword);
+    await complete.click();
     await expect(second.getByRole('status')).toContainText('Indirizzo verificato.');
+    expect((await second.request.get('/api/v1/me')).status()).toBe(401);
+    await first.goto('/it/login?access=admin');
+    await first.getByLabel('Email',{exact:true}).fill(adminEmail);
+    await first.getByLabel('Password',{exact:true}).fill(firstPassword);
+    await first.getByRole('button',{name:'Accedi',exact:true}).click();
+    await expect(first).toHaveURL(/\/dashboard$/, {timeout:20_000});
 
-    // The existing reset provisions the optional personal fallback after verification.
+    // Recovery is still available later, after the owner already used the first password.
     await second.goto('/it/forgot-password');
     await second.getByLabel('Email',{exact:true}).fill(adminEmail);
     await second.getByRole('button',{name:'Invia link di reimpostazione'}).click();
@@ -165,4 +187,65 @@ test('verified invitation and one email session through the public forms', { tag
   } finally {
     await Promise.all([first.close(),second.close(),db.end()]);
   }
+});
+
+test('direct admin invitation stays pending through preview and replacement; the owner signs in by email', { tag: '@email-trial' }, async ({page, browser}) => {
+  test.skip(process.env.AIRMANAGER_EMAIL_TRIAL !== '1', 'Requires isolated email trial.');
+  test.setTimeout(150_000);
+  const email = randomUUID() + '@fixture.invalid';
+  const surname = 'Admin-' + randomUUID();
+  const holder = await browser.newPage();
+  try {
+    await page.goto('/it/login');
+    await page.getByLabel('Email', {exact:true}).fill('admin@airmanager.local');
+    await page.getByLabel('Password', {exact:true}).fill(process.env.SEED_ADMIN_PASSWORD!);
+    await page.getByRole('button', {name:'Accedi',exact:true}).click();
+    await expect(page).toHaveURL(/\/dashboard$/, {timeout:20_000});
+    expect((await page.request.post('/api/v1/people', {data:{firstName:'Fixture',lastName:surname}})).status()).toBe(201);
+    await page.goto('/it/dashboard/pilots?q='+surname);
+    const row = page.locator('[data-testid^="pilot-row-"]').filter({hasText:surname});
+    await row.getByRole('button', {name:'Modifica'}).click();
+    const access = page.getByTestId('pilot-access-none');
+    await expect(access.locator('input[type=password]')).toHaveCount(0);
+    await access.getByLabel('Email', {exact:true}).fill(email);
+    await access.getByLabel('Amministratore', {exact:true}).check();
+    const [created] = await Promise.all([
+      page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/users'),
+      access.getByTestId('pilot-access-create').click(),
+    ]);
+    expect(created.status()).toBe(201);
+    const {id} = await created.json();
+    await openCaptured(holder, email, 'verify');
+    expect((await holder.request.get('/api/v1/me')).status()).toBe(401);
+    await holder.getByRole('button', {name:'Conferma indirizzo',exact:true}).click();
+    await expect(holder.getByLabel('Nuova password', {exact:true})).toBeVisible();
+    expect((await page.request.patch('/api/v1/users/'+id, {data:{locale:'en'}})).ok()).toBe(true);
+    const [replacement] = await Promise.all([
+      page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/resend-invite')),
+      page.getByRole('button', {name:'Reinvia invito',exact:true}).click(),
+    ]);
+    expect(replacement.ok()).toBe(true);
+    const password = randomUUID();
+    await holder.getByLabel('Nuova password', {exact:true}).fill(password);
+    await holder.getByLabel('Conferma password', {exact:true}).fill(password);
+    await holder.getByRole('button', {name:'Conferma indirizzo e imposta password',exact:true}).click();
+    await expect(holder.getByRole('status')).toHaveText('Impossibile completare la richiesta.');
+    await holder.goto('/it/login?access=admin');
+    await holder.getByLabel('Email', {exact:true}).fill(email);
+    await holder.getByLabel('Password', {exact:true}).fill(password);
+    await holder.getByRole('button', {name:'Accedi',exact:true}).click();
+    await expect(holder.getByTestId('login-error')).toBeVisible();
+    await openCaptured(holder, email, 'verify', 'en');
+    await holder.getByRole('button', {name:'Confirm address',exact:true}).click();
+    await holder.getByLabel('New password', {exact:true}).fill(password);
+    await holder.getByLabel('Confirm password', {exact:true}).fill(password);
+    await holder.getByRole('button', {name:'Confirm email and set password',exact:true}).click();
+    await expect(holder.getByRole('status')).toContainText('Email verified.');
+    expect((await page.request.post('/api/v1/users/'+id+'/resend-invite')).status()).toBe(409);
+    await requestFromForm(holder, email);
+    await openCaptured(holder, email, 'login', 'en');
+    await holder.getByLabel('Email', {exact:true}).fill(email);
+    await holder.getByRole('button', {name:'Confirm and sign in',exact:true}).click();
+    await expect(holder).toHaveURL(/\/dashboard$/, {timeout:20_000});
+  } finally { await holder.close(); }
 });

@@ -1,8 +1,10 @@
 import { accountMailboxUncontested, lockMailboxWrites } from './account-mailbox';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
-import type { Prisma } from '@/generated/prisma/client';
+import type { Prisma, User } from '@/generated/prisma/client';
 import { env } from '@/lib/env';
+import { hashPassword } from '@/server/auth/password';
+import { adminPasswordSchema } from '@/lib/schemas/auth-tokens';
 import { singleMailbox } from '@/lib/schemas/email-trial';
 import { prisma } from '@/server/db/prisma';
 import { credentialEligible, emailTrialEnabled } from '@/server/auth/email-trial-policy';
@@ -82,16 +84,44 @@ export async function requestEmailLogin(rawEmail: string, origin: string): Promi
   }
 }
 
-export async function consumeTrialLink(purpose: 'VERIFY_EMAIL' | 'LOGIN_LINK' | 'REACTIVATE_ACCOUNT', raw: unknown, loginEmail?: unknown, origin = 'direct') {
+type TrialIdentity = Pick<User, 'id' | 'email' | 'roles' | 'personId' | 'tokenVersion'>;
+type TrialPurpose = 'VERIFY_EMAIL' | 'LOGIN_LINK' | 'REACTIVATE_ACCOUNT';
+
+export function consumeTrialLink(purpose: 'VERIFY_EMAIL', raw: unknown, newPassword?: unknown, origin?: string): Promise<TrialIdentity | 'passwordRequired' | null>;
+export function consumeTrialLink(purpose: 'LOGIN_LINK' | 'REACTIVATE_ACCOUNT', raw: unknown, loginEmail?: unknown, origin?: string): Promise<TrialIdentity | null>;
+export async function consumeTrialLink(purpose: TrialPurpose, raw: unknown, proof?: unknown, origin = 'direct') {
   if (!emailTrialEnabled() || typeof raw !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(raw)) return null;
-  const mailbox = singleMailbox.safeParse(loginEmail);
+  const mailbox = singleMailbox.safeParse(purpose === 'LOGIN_LINK' ? proof : undefined);
   if (purpose === 'LOGIN_LINK' && !mailbox.success) return null;
   const tokenHash = createHash('sha256').update(raw).digest('hex');
+
+  async function reserveConfirmation(tx: Prisma.TransactionClient) {
+    const token = await tx.authToken.findUnique({ where: { tokenHash }, select: {
+      id: true, userId: true, type: true, usedAt: true, expiresAt: true,
+    } });
+    const now = await reserveRequest(tx, 'confirmation', mailbox.data ?? token?.userId ?? 'unmatched', origin);
+    return now && token?.type === purpose && !token.usedAt && token.expiresAt > now ? token : null;
+  }
+
   try {
+    // Only hash a conforming password for a live, rate-limited admin invitation.
+    // Release the reservation transaction before Argon2; check the role and claim again at commit.
+    const password = purpose === 'VERIFY_EMAIL' ? adminPasswordSchema.safeParse(proof) : null;
+    let prepared;
+    if (password?.success) {
+      const token = await prisma.$transaction(async tx => {
+        const reserved = await reserveConfirmation(tx);
+        if (!reserved) return null;
+        const admin = await tx.user.findFirst({ where: { id: reserved.userId, isActive: true, roles: { has: 'ADMIN' } }, select: { id: true } });
+        return admin ? reserved : null;
+      });
+      if (!token) return null;
+      prepared = { token, passwordHash: await hashPassword(password.data) };
+    }
+    const adminInvite = prepared;
     return await prisma.$transaction(async tx => {
-      const token = await tx.authToken.findUnique({ where: { tokenHash }, select: { id: true, userId: true, type: true } });
-      if (!await reserveRequest(tx, 'confirmation', mailbox.data ?? token?.userId ?? 'unmatched', origin)) return null;
-      if (!token || token.type !== purpose) return null;
+      const token = adminInvite?.token ?? await reserveConfirmation(tx);
+      if (!token) return null;
       if (purpose === 'REACTIVATE_ACCOUNT') await lockMailboxWrites(tx);
       await lockMailAccount(tx, token.userId);
       const user = await tx.user.findUnique({ where: { id: token.userId }, select: {
@@ -99,11 +129,16 @@ export async function consumeTrialLink(purpose: 'VERIFY_EMAIL' | 'LOGIN_LINK' | 
       } });
       if (!user || !credentialEligible(user, purpose) || !await accountMailboxUncontested(tx, user.id, user.email) || (purpose === 'LOGIN_LINK' && mailbox.data !== user.email)) return null;
       const now = await databaseNow(tx);
+      if (purpose === 'VERIFY_EMAIL') {
+        if (user.roles.includes('ADMIN') && !adminInvite) return 'passwordRequired' as const;
+        if (!user.roles.includes('ADMIN') && proof !== undefined) return null;
+      }
       const claim = await tx.authToken.updateMany({
         where: { id: token.id, type: purpose, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now },
       });
       if (claim.count !== 1) return null;
       if (purpose === 'VERIFY_EMAIL') {
+        if (adminInvite) await tx.user.update({ where: { id: user.id }, data: { passwordHash: adminInvite.passwordHash } });
         await tx.$executeRaw`UPDATE "EmailVerification"
           SET "verifiedAt" = ${now}, "expiryStartCycle" = nextval('"Expiry_notificationCycle_seq"')
           WHERE "userId" = ${user.id}`;

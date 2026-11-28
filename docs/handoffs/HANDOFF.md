@@ -1,5 +1,9 @@
 # Handoff AirManager · 28 novembre 2026
 
+## Primo accesso dell’amministratore invitato
+
+La [story di onboarding](../../_bmad-output/implementation-artifacts/primo-accesso-admin.md) riguarda la creazione di un nuovo admin nel trial locale. Il titolare conferma la sua casella e imposta la password personale dallo stesso invito di sette giorni. Il bootstrap del primo admin e le promozioni successive di account già attivati rimangono percorsi distinti. La prova è spenta per default. La [revisione indipendente](../../_bmad-output/implementation-artifacts/primo-accesso-admin-review-report.md) ha approvato il candidato. Sono passati i gate e tutti i 15 casi Chromium del trial. Il titolare ha anche salvato e riletto un pilota con la nuova password, a worker e relay dedicati fermi.
+
 ## Unicode nei PDF e colonne di Scadenze
 
 I cinque export PDF usano Liberation Sans incorporato. Il PDF Scadenze dedica le quattro colonne a Persona, Tipo, Scadenza e Stato. Per le 48 scadenze sintetiche della prova ogni cella corrisponde all’Excel nello stesso ordine sia in italiano sia in inglese. Il campione scaricato dal menu dell’app contiene «Łukasz», nomi su più righe e due pagine A4. [Scarica il PDF sintetico](../../_bmad-output/implementation-artifacts/evidence/pdf-unicode/Scadenze-Unicode-AirManager.pdf).

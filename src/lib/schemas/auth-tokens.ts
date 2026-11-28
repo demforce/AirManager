@@ -11,6 +11,9 @@ export const setPasswordSchema = z.object({
   password: z.string().min(10).max(256),
 });
 
+// Match the login input bound and count Unicode code points for the admin minimum.
+export const adminPasswordSchema = setPasswordSchema.shape.password.refine(value => Array.from(value).length >= 15);
+
 export type SetPasswordInput = z.infer<typeof setPasswordSchema>;
 
 /** `/forgot-password` (form + `POST /api/v1/auth/forgot-password`). */
