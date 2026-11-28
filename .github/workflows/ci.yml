@@ -38,6 +38,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Ensure Poppler for PDF text regression tests
+        run: command -v pdftotext || (sudo apt-get update && sudo apt-get install -y poppler-utils)
+
       - name: Unit tests
         run: npm run test:quiet
 

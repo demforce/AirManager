@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import PDFDocument from 'pdfkit';
 
 /** Preformatted report cell. A width is a relative column weight. */
@@ -21,6 +22,10 @@ export type PdfReportDocumentProps<T> = {
   pageLabel: (pageNumber: number, totalPages: number) => string;
 };
 
+// Local assets traced into the five server-side PDF routes by next.config.ts.
+const REGULAR = join(process.cwd(), 'src/server/adapters/pdf/fonts/LiberationSans-Regular.ttf');
+const BOLD = join(process.cwd(), 'src/server/adapters/pdf/fonts/LiberationSans-Bold.ttf');
+
 const COLOR = {
   text: '#111111', muted: '#787774', border: '#EAEAEA', headerBg: '#F7F6F3',
 };
@@ -29,20 +34,19 @@ const CONTENT_BOTTOM_MARGIN = 48;
 const CELL_PADDING = 4;
 const ROW_PADDING = 5;
 const BORDER = 1;
-// react-pdf's Helvetica line box is 9.9 pt; pdfkit measures 10.404 pt.
-// Use the former for pagination while keeping pdfkit's own text placement.
+// Preserve the compact line box of the original report for ordinary cells.
 const LINE_BOX_ADJUSTMENT = 0.5;
 const REACT_LINE_HEIGHT = 9.9;
 const CONTINUATION_ROW_ADJUSTMENT = 0.5;
 
 /**
- * Draws the report with pdfkit's standard Helvetica fonts. Rows are measured
+ * Draws the report with embedded, subsetted Liberation Sans fonts. Rows are measured
  * before drawing; a page break occurs before, never inside, a row. The HTTP
  * contract remains a Buffer, so render errors are handled before the route
  * sends a response. `bufferPages` lets the footer include the final total.
  */
 export async function renderReportPdf<T>(props: PdfReportDocumentProps<T>): Promise<Buffer> {
-  const doc = new PDFDocument({ autoFirstPage: false, size: 'A4', margins: { top: PAGE_MARGIN, bottom: CONTENT_BOTTOM_MARGIN, left: PAGE_MARGIN, right: PAGE_MARGIN }, bufferPages: true, compress: true });
+  const doc = new PDFDocument({ font: REGULAR, autoFirstPage: false, size: 'A4', margins: { top: PAGE_MARGIN, bottom: CONTENT_BOTTOM_MARGIN, left: PAGE_MARGIN, right: PAGE_MARGIN }, bufferPages: true, compress: true });
   const chunks: Buffer[] = [];
   const complete = new Promise<Buffer>((resolve, reject) => {
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -60,26 +64,29 @@ export async function renderReportPdf<T>(props: PdfReportDocumentProps<T>): Prom
   let rowsOnPage = 0;
 
   const measure = (text: string, width: number, bold: boolean, size: number): number => {
-    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size);
+    doc.font(bold ? BOLD : REGULAR).fontSize(size);
     return doc.heightOfString(text, { width: Math.max(1, width - CELL_PADDING * 2), lineGap: 0 });
   };
   const rowHeight = (values: string[]): number => {
     const lineHeight = measure('M', tableWidth, false, 9);
-    const maxLines = Math.max(0, ...values.map((value, i) => {
-      const lines = Math.round(measure(value, widths[i], false, 9) / lineHeight);
+    return Math.max(ROW_PADDING * 2 + BORDER, ...values.map((value, i) => {
+      const measured = measure(value, widths[i], false, 9);
+      const lines = Math.round(measured / lineHeight);
       // The old renderer hyphenates long words. In a multi-line cell this
       // can cost another line compared with pdfkit's character break.
       const available = Math.max(1, widths[i] - CELL_PADDING * 2);
       const longWord = lines >= 4 && value.split(/\s+/).some((word) => doc.widthOfString(word) > available && /[A-Za-zÀ-ÿ]{5}/.test(word));
-      return lines + (longWord ? 1 : 0);
+      const compactHeight = ROW_PADDING * 2 + BORDER + (lines + (longWord ? 1 : 0)) * REACT_LINE_HEIGHT;
+      // A many-line Unicode cell can exhaust the compact layout's spare padding.
+      // Keep the actual text above the rule, including on continuation pages.
+      return Math.max(compactHeight, ROW_PADDING + measured + BORDER + CONTINUATION_ROW_ADJUSTMENT);
     }));
-    return ROW_PADDING * 2 + BORDER + maxLines * REACT_LINE_HEIGHT;
   };
   const drawCells = (values: string[], colors: (string | undefined)[], height: number, header: boolean) => {
     if (header) doc.rect(PAGE_MARGIN, y, tableWidth, height).fill(COLOR.headerBg);
     let x = PAGE_MARGIN;
     for (let i = 0; i < values.length; i++) {
-      doc.font(header ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor(colors[i] ?? COLOR.text);
+      doc.font(header ? BOLD : REGULAR).fontSize(9).fillColor(colors[i] ?? COLOR.text);
       doc.text(values[i], x + CELL_PADDING, y + ROW_PADDING, { width: Math.max(1, widths[i] - CELL_PADDING * 2), lineGap: 0 });
       x += widths[i];
     }
@@ -103,19 +110,19 @@ export async function renderReportPdf<T>(props: PdfReportDocumentProps<T>): Prom
   };
 
   doc.addPage();
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(COLOR.text).text(props.branding.name, PAGE_MARGIN, y, { width: tableWidth });
+  doc.font(BOLD).fontSize(11).fillColor(COLOR.text).text(props.branding.name, PAGE_MARGIN, y, { width: tableWidth });
   y = doc.y + 18;
-  doc.font('Helvetica-Bold').fontSize(16).text(props.title, PAGE_MARGIN, y, { width: tableWidth });
+  doc.font(BOLD).fontSize(16).text(props.title, PAGE_MARGIN, y, { width: tableWidth });
   y = doc.y + 2;
   if (props.subtitle) {
-    doc.font('Helvetica').fontSize(10).fillColor(COLOR.muted).text(props.subtitle, PAGE_MARGIN, y, { width: tableWidth });
+    doc.font(REGULAR).fontSize(10).fillColor(COLOR.muted).text(props.subtitle, PAGE_MARGIN, y, { width: tableWidth });
     y = doc.y + 14;
   }
   y += 6;
   drawTableHeader();
 
   if (props.rows.length === 0) {
-    doc.font('Helvetica').fontSize(9).fillColor(COLOR.muted);
+    doc.font(REGULAR).fontSize(9).fillColor(COLOR.muted);
     doc.text('—', PAGE_MARGIN, y + 12, { width: tableWidth, align: 'center' });
     y = doc.y + 12;
   }
@@ -137,7 +144,7 @@ export async function renderReportPdf<T>(props: PdfReportDocumentProps<T>): Prom
         if (y + expandedHeight > contentBottom) throw new Error('PDF row exceeds one-page capacity even in expanded layout');
         let lineY = y + ROW_PADDING;
         for (let i = 0; i < lines.length; i++) {
-          doc.font('Helvetica').fontSize(9).fillColor(colors[i] ?? COLOR.text);
+          doc.font(REGULAR).fontSize(9).fillColor(colors[i] ?? COLOR.text);
           doc.text(lines[i], PAGE_MARGIN + CELL_PADDING, lineY, { width: tableWidth - CELL_PADDING * 2, lineGap: 0 });
           lineY += heights[i] + 2;
         }
@@ -153,7 +160,7 @@ export async function renderReportPdf<T>(props: PdfReportDocumentProps<T>): Prom
 
   if (props.totals?.length) {
     y += 10;
-    doc.font('Helvetica-Bold').fontSize(10);
+    doc.font(BOLD).fontSize(10);
     let x = PAGE_MARGIN;
     let lineHeight = 0;
     for (const total of props.totals) {
@@ -172,7 +179,7 @@ export async function renderReportPdf<T>(props: PdfReportDocumentProps<T>): Prom
   for (let index = 0; index < pages; index++) {
     doc.switchToPage(index);
     doc.page.margins.bottom = 0;
-    doc.font('Helvetica').fontSize(8).fillColor(COLOR.muted);
+    doc.font(REGULAR).fontSize(8).fillColor(COLOR.muted);
     doc.text(`${props.generatedAtLabel} — ${props.pageLabel(index + 1, pages)}`, PAGE_MARGIN, pageHeight - 27.35, { width: tableWidth, align: 'center', lineBreak: false });
   }
   doc.end();

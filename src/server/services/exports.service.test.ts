@@ -433,14 +433,15 @@ describe('exportExpiriesXlsx / exportExpiriesPdf — the currency row of the uni
     expect(sheet.getRow(2).getCell(2).value).toBe('Currency');
   });
 
-  it('pdf: same cells, the status in its own colour', async () => {
+  it('pdf: four compact columns, the status in its own colour', async () => {
     listAllExpiriesMock.mockResolvedValue({ total: 1, page: 1, pageSize: PDF_EXPORT_MAX_ROWS, items: [CURRENCY_REGISTRY_ROW] } as never);
 
     await exportExpiriesPdf(ACTOR, { page: 1, pageSize: 20, locale: 'it' });
     const props = lastPdfProps();
     const column = (header: string) => props.columns.find((c) => c.header === header)!;
 
-    expect(['Tipo', 'Ambito', 'Scadenza', 'Stato'].map((header) => column(header).value(props.rows[0]!))).toEqual(['Currency', '—', '05/11/2026', 'In scadenza']);
+    expect(props.columns.map((col) => col.header)).toEqual(['Persona', 'Tipo', 'Scadenza', 'Stato']);
+    expect(props.columns.map((col) => col.value(props.rows[0]!))).toEqual(['Rossi Mario', 'Currency', '05/11/2026', 'In scadenza']);
     expect(column('Stato').color!(props.rows[0]!)).toBe('#956400');
   });
 });
@@ -856,7 +857,7 @@ describe('exportFlightsPdf (story 10.2, AC 2/3/4; story 11.3, AC 3/4 — compact
     const durationColumn = props.columns.find((c) => c.header === 'Durata')!;
     expect(durationColumn.value(row1)).toBe('1:00');
     const routeColumn = props.columns.find((c) => c.header === 'Tratta')!;
-    expect(routeColumn.value(row1)).toBe('Campo Sud -> Campo Nord'); // ASCII arrow: `→` is outside the PDF's WinAnsi font (AC 3)
+    expect(routeColumn.value(row1)).toBe('Campo Sud -> Campo Nord'); // Preserve the PDF's established route separator (AC 3).
     expect(routeColumn.value(row2)).toBe(''); // historical, no logbook data — empty string, never null
     const timesColumn = props.columns.find((c) => c.header === 'Orari')!;
     expect(timesColumn.value(row1)).toBe('11:00 – 12:00'); // 09:00Z–10:00Z -> CEST +2 (spaced dash, AC 3: wrap point)

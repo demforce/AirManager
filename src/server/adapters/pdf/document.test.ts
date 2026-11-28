@@ -1,4 +1,4 @@
-import { inflateSync } from 'node:zlib';
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { renderReportPdf, type PdfColumn } from './document';
 
@@ -13,25 +13,51 @@ const props = (rows: Row[], columns = COLUMNS) => ({
   pageLabel: (page: number, total: number) => `Pag. ${page} di ${total}`,
 });
 
-/** Read only Flate content streams + WinAnsi hex text; no PDF parser dependency. */
+/** Extract actual Unicode text in drawing order, with Poppler's page boundaries. */
 function pageTexts(pdf: Buffer): string[] {
-  const source = pdf.toString('latin1');
-  const objects = new Map([...source.matchAll(/(\d+) 0 obj([\s\S]*?)endobj/g)].map((match) => [Number(match[1]), match[2]]));
-  const pages = [...objects.values()].filter((body) => /\/Type \/Page\b/.test(body));
-  return pages.map((page) => {
-    const contentId = Number(page.match(/\/Contents (\d+) 0 R/)?.[1]);
-    const content = objects.get(contentId);
-    if (!content) throw new Error('Missing page content');
-    const encoded = content.match(/stream\r?\n([\s\S]*?)\r?\nendstream/)?.[1];
-    if (!encoded) throw new Error('Missing page stream');
-    const decoded = inflateSync(Buffer.from(encoded, 'latin1')).toString('latin1');
-    return [...decoded.matchAll(/\[([^\]]+)\]\s*TJ/g)].map((array) =>
-      [...array[1].matchAll(/<([0-9A-Fa-f]+)>/g)].map((part) => new TextDecoder('windows-1252').decode(Buffer.from(part[1], 'hex'))).join(''),
-    ).join(' ');
-  });
+  const text = execFileSync('pdftotext', ['-raw', '-enc', 'UTF-8', '-', '-'], { input: pdf, encoding: 'utf8' });
+  return text.trimEnd().split('\f').map((page) => page.replace(/\s+/g, ' ').trim());
 }
 
 describe('renderReportPdf (story 17.7)', () => {
+  it('preserves readable and searchable names in body, headings, totals and footer', async () => {
+    const name = 'Łukasz Żółć';
+    const pdf = await renderReportPdf({
+      ...props([{ id: 1, status: 'Élodie Ștefan Őri' }]),
+      branding: { name: 'Aeroclub Łódź' },
+      title: name,
+      subtitle: 'Scuola di volo – Łódź',
+      columns: [{ header: 'Attività a Łódź', value: (row) => row.status }],
+      totals: [{ label: 'Totale Łódź', value: '€ 123' }],
+      generatedAtLabel: 'Generato a Łódź',
+    });
+    const [page] = pageTexts(pdf);
+    for (const text of ['Aeroclub Łódź', name, 'Scuola di volo – Łódź', 'Attività a Łódź',
+      'Élodie Ștefan Őri', 'Totale Łódź: € 123', 'Generato a Łódź — Pag. 1 di 1']) {
+      expect(page).toContain(text);
+    }
+  });
+
+  it('keeps the last wrapped Unicode line above the next row in the four-column layout', async () => {
+    const pdf = await renderReportPdf({
+      ...props([]),
+      rows: ['Łukasz '.repeat(200) + 'Fine', 'Nuova'],
+      columns: [
+        { header: 'Persona', width: 1.25, value: (name) => name },
+        { header: 'Tipo', width: 1.25, value: () => 'Visita' },
+        { header: 'Scadenza', value: () => '27/11/2026' },
+        { header: 'Stato', value: () => 'Valida' },
+      ],
+    });
+    expect(pageTexts(pdf)).toHaveLength(1);
+    const boxes = execFileSync('pdftotext', ['-bbox', '-', '-'], { input: pdf, encoding: 'utf8' });
+    const lastLine = boxes.match(/yMax="([\d.]+)">Fine<\/word>/);
+    const nextRow = boxes.match(/yMin="([\d.]+)"[^>]*>Nuova<\/word>/);
+    expect(lastLine).toBeTruthy();
+    expect(nextRow).toBeTruthy();
+    expect(Number(lastLine![1])).toBeLessThan(Number(nextRow![1]));
+  });
+
   it('renders rows, repeated headers, and an accurate footer on every page', async () => {
     const buffer = await renderReportPdf(props(Array.from({ length: 120 }, (_, id) => ({ id, status: `STATO-${id}` }))));
     expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-');

@@ -1,8 +1,14 @@
 # Handoff AirManager · 28 novembre 2026
 
+## Unicode nei PDF e colonne di Scadenze
+
+I cinque export PDF usano Liberation Sans incorporato. Il PDF Scadenze dedica le quattro colonne a Persona, Tipo, Scadenza e Stato. Per le 48 scadenze sintetiche della prova ogni cella corrisponde all’Excel nello stesso ordine sia in italiano sia in inglese. Il campione scaricato dal menu dell’app contiene «Łukasz», nomi su più righe e due pagine A4. [Scarica il PDF sintetico](../../_bmad-output/implementation-artifacts/evidence/pdf-unicode/Scadenze-Unicode-AirManager.pdf).
+
+Il tree applicativo `049666c90fbdcbfc3a5bf60cd07bef94372d333b` ha superato la revisione indipendente, 2.415 unitari e 725 casi Chromium ordinari al primo tentativo. I sei skip di modalità sono coperti dall’esecuzione trial (14/14). Il tema dell’amministratore legacy resta registrato nel collaudo readiness. [Criteri, misure e prove della story](../../_bmad-output/implementation-artifacts/pdf-unicode-scadenze.md).
+
 ## Readiness email sintetica
 
-Il [collaudo readiness](../../_bmad-output/implementation-artifacts/readiness-email.md) è chiuso dopo revisione indipendente. Sul candidato sono passati 2.413 unitari, 129 casi PostgreSQL e tutti i 14 casi Chromium con trial acceso. La suite ordinaria ha registrato 724 passati al primo tentativo, un retry riuscito e sei skip coperti nel trial. Il prossimo step concordato riguarda il PDF Scadenze, con Unicode e la sola rimozione della colonna «Ambito». L’admin legacy che ha già impostato la password accede dal fallback, ma per il medesimo account manca ancora il percorso di verifica della casella. Il rollout resta NO-GO per questa transizione. Per un admin creato nel trial, il vero invito seguito dalla conferma ha sbloccato l’avviso in attesa una sola volta. La [lista go/no-go](../operations/credential-mail.md#readiness-prima-di-una-decisione-sul-login-email) distingue le prove sintetiche dalle responsabilità del gestore. La CI comprende l’intera regressione ordinaria e un job autonomo per i contratti del trial.
+Il [collaudo readiness](../../_bmad-output/implementation-artifacts/readiness-email.md) è chiuso dopo revisione indipendente. Sul candidato sono passati 2.413 unitari, 129 casi PostgreSQL e tutti i 14 casi Chromium con trial acceso. La suite ordinaria ha registrato 724 passati al primo tentativo, un retry riuscito e sei skip coperti nel trial. L’admin legacy che ha già impostato la password accede dal fallback, ma per il medesimo account manca ancora il percorso di verifica della casella. Il rollout resta NO-GO per questa transizione. Per un admin creato nel trial, il vero invito seguito dalla conferma ha sbloccato l’avviso in attesa una sola volta. La [lista go/no-go](../operations/credential-mail.md#readiness-prima-di-una-decisione-sul-login-email) distingue le prove sintetiche dalle responsabilità del gestore. La CI comprende l’intera regressione ordinaria e un job autonomo per i contratti del trial.
 
 ## Cambio sequenziale dell’indirizzo verificato
 

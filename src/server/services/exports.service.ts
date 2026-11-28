@@ -445,14 +445,19 @@ type RegistryExportRow = Awaited<ReturnType<typeof listAllExpiries>>['items'][nu
 type ExpiriesTranslator = ReturnType<typeof createTranslator<Messages, 'ExpiriesPage'>>;
 type ExpiryTypesTranslator = ReturnType<typeof createTranslator<Messages, 'ExpiryTypesPage'>>;
 
+/** Both compact reports use the registry category for a derived currency row. */
+function registryTypeLabel(row: RegistryExportRow, t: ExpiriesTranslator) {
+  return row.typeName ?? t(`registry.category.${row.category}`);
+}
+
 /**
- * The two cells the xlsx and the PDF share for a row of the UNIFIED registry
+ * The xlsx type and scope for a row of the unified registry
  * (story 19.7b, AD-4): the currency row has no type, so it shows its category,
  * and no type scope, so «—» — the screen's own words.
  */
 function registryExportCells(t: ExpiriesTranslator, tScope: ExpiryTypesTranslator) {
   return {
-    type: (row: RegistryExportRow) => row.typeName ?? t(`registry.category.${row.category}`),
+    type: (row: RegistryExportRow) => registryTypeLabel(row, t),
     scope: (row: RegistryExportRow) => (row.typeScope === null ? '—' : tScope(`scope.${row.typeScope}`)),
   };
 }
@@ -647,10 +652,7 @@ export async function exportFlightsPdf(actor: Actor, query: ListFlightsQuery): P
     // Compact columns (equal-flex A4 columns leave no room for the xlsx
     // export's separate partenza/arrivo/orari) — SAME keys/format as the
     // registry's own compact columns (story 11.2), EXCEPT the separator:
-    // the registry's `→` (U+2192) is outside the PDF's built-in Helvetica /
-    // WinAnsiEncoding repertoire (story 10.2: no `Font.register`, no new
-    // assets) — verified on a real render it comes out as a stray `'`, not
-    // an arrow. `->` is plain ASCII, renders correctly in any Latin-1 font.
+    // Keep the established ASCII separator of the compact PDF (story 11.3).
     // Empty string, never `null` (a PDF cell is always plain text) on a
     // historical flight with no logbook data.
     {
@@ -713,13 +715,10 @@ export async function exportExpiriesPdf(actor: Actor, query: ListAllExpiriesQuer
   const locale = resolveLocale(query);
   const messages = await loadMessages(locale);
   const t = createTranslator({ locale, messages, namespace: 'ExpiriesPage' });
-  const tScope = createTranslator({ locale, messages, namespace: 'ExpiryTypesPage' });
 
-  const cells = registryExportCells(t, tScope);
   const columns: PdfColumn<(typeof result.items)[number]>[] = [
-    { header: t('dashboard.table.person'), value: (row) => `${row.personLastName} ${row.personFirstName}` },
-    { header: t('dashboard.table.type'), value: cells.type },
-    { header: t('dashboard.table.scope'), value: cells.scope },
+    { header: t('dashboard.table.person'), value: (row) => `${row.personLastName} ${row.personFirstName}`, width: 1.25 },
+    { header: t('dashboard.table.type'), value: (row) => registryTypeLabel(row, t), width: 1.25 },
     { header: t('dashboard.table.expiresAt'), value: (row) => formatDateOnly(row.expiresAt, locale) },
     {
       header: t('dashboard.table.status'),
