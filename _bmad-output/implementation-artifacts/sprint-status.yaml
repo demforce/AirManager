@@ -527,6 +527,7 @@ development_status:
   readiness-email: done  # Collaudo non produttivo approvato. La transizione degli admin legacy è aperta.
   pdf-unicode-scadenze: done  # Cinque export PDF, tabella Scadenze a quattro colonne, prove Poppler e Chromium.
   primo-accesso-admin: done
+  cambio-password-admin-dal-profilo: backlog
   # EPIC 19 — Semplificazione e regole operative (change request PO 2026-11-01,
   # _bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md, ratifiche R-19-a..p).
   # Tutte con UI: dev Opus 5 xhigh, review Opus 5 xhigh. Eseguito dopo la chiusura della 16.3.
