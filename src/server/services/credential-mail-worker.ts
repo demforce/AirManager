@@ -4,6 +4,7 @@ import type { CredentialMail, MailAttempt, MailChannel, Prisma } from '@/generat
 import { prisma } from '@/server/db/prisma';
 import { credentialEligible, emailTrialEnabled, trialPurpose } from '@/server/auth/email-trial-policy';
 import { env } from '@/lib/env';
+import { trialActionModes } from '@/server/adapters/mail/credential-action';
 import { buildCredentialEmail, buildSmtpTestEmail } from '@/server/adapters/mail/templates';
 import { NonLocalTestRelay, InvalidMailConfiguration, readObservedSmtpConfig, submitObservedMail } from '@/server/adapters/mail/observed-smtp';
 import { deliverSecurityAlerts, recoverSecurityLeases } from './security-alert-delivery';
@@ -554,8 +555,8 @@ export async function processMailAttempt(attempt: MailAttempt, club?: string, lo
         if (isolatedDelivery && config.host === 'localhost') config.host = '127.0.0.1';
         const locale = intent.user.locale === 'en' ? 'en' : 'it';
         const url = new URL(trialDelivery ? '/' + locale + '/email-access' : '/set-password', env.APP_URL);
-        if (trialDelivery) {
-          url.searchParams.set('purpose', intent.purpose === 'VERIFY_EMAIL' ? 'verify' : 'login');
+        if (intent.purpose !== 'INVITE' && intent.purpose !== 'PASSWORD_RESET') {
+          url.searchParams.set('purpose', trialActionModes[intent.purpose]);
           url.hash = raw;
         } else {
           url.searchParams.set('token', raw);

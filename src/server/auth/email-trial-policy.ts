@@ -16,7 +16,7 @@ export function emailTrialEnabled(vars: Record<string, string | undefined> = pro
 }
 
 export function trialPurpose(purpose: AuthTokenType) {
-  return purpose === 'VERIFY_EMAIL' || purpose === 'LOGIN_LINK';
+  return purpose === 'VERIFY_EMAIL' || purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT';
 }
 
 type Account = {
@@ -29,6 +29,10 @@ export function verifiedTrialAddress(user: Pick<Account, 'email' | 'emailVerific
 }
 
 export function credentialEligible(user: Account, purpose: AuthTokenType): boolean {
+  if (purpose === 'REACTIVATE_ACCOUNT') {
+    return emailTrialEnabled() && !user.isActive && verifiedTrialAddress(user)
+      && singleMailbox.safeParse(user.email).data === user.email;
+  }
   if (!user.isActive) return false;
   const enrollment = user.emailVerification;
   if (!enrollment) return !trialPurpose(purpose) && (purpose !== 'INVITE' || user.passwordHash === null);

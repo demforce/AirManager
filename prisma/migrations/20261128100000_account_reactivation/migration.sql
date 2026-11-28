@@ -1,0 +1,2 @@
+ALTER TYPE "AuthTokenType" ADD VALUE 'REACTIVATE_ACCOUNT';
+ALTER TABLE "EmailVerification" ADD COLUMN "reactivatedAt" TIMESTAMP(3);

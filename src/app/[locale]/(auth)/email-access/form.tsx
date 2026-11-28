@@ -4,14 +4,14 @@ import { signIn } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { Field, Input } from '@/components/ui/field';
-import { confirmMailbox, requestLink } from './actions';
+import { confirmMailbox, confirmReactivation, requestLink } from './actions';
 
-export function EmailAccessForm({ purpose, locale }: { purpose: 'verify' | 'login' | 'request'; locale: string }) {
+export function EmailAccessForm({ purpose, locale }: { purpose: 'verify' | 'login' | 'request' | 'reactivate'; locale: string }) {
   const t = useTranslations('auth.emailTrial');
   const token = useRef('');
   const busy = useRef(false);
   const [pending, setPending] = useState(false);
-  const [outcome, setOutcome] = useState<'invalid' | 'sent' | 'verified' | null>(null);
+  const [outcome, setOutcome] = useState<'invalid' | 'sent' | 'verified' | 'reactivated' | null>(null);
   useEffect(() => {
     if (window.location.hash) {
       token.current = window.location.hash.slice(1);
@@ -28,6 +28,10 @@ export function EmailAccessForm({ purpose, locale }: { purpose: 'verify' | 'logi
     try {
       if (purpose === 'request') {
         setOutcome(await requestLink(form) ? 'sent' : 'invalid');
+      } else if (purpose === 'reactivate') {
+        const confirmed = await confirmReactivation(token.current);
+        if (confirmed) token.current = '';
+        setOutcome(confirmed ? 'reactivated' : 'invalid');
       } else if (purpose === 'verify') {
         setOutcome(await confirmMailbox(token.current) ? 'verified' : 'invalid');
       } else {
@@ -40,8 +44,8 @@ export function EmailAccessForm({ purpose, locale }: { purpose: 'verify' | 'logi
     } catch { setOutcome('invalid'); }
     finally { busy.current = false; setPending(false); }
   }} style={{ display: 'grid', gap: 14 }}>
-    {purpose !== 'verify' && <Field label={t('email')}><Input type="email" name="email" autoComplete="email" required maxLength={254} /></Field>}
-    <button type="submit" className="btn primary" disabled={pending || outcome === 'verified'}>{t(purpose)}</button>
+    {(purpose === 'request' || purpose === 'login') && <Field label={t('email')}><Input type="email" name="email" autoComplete="email" required maxLength={254} /></Field>}
+    <button type="submit" className="btn primary" disabled={pending || outcome === 'verified' || outcome === 'reactivated'}>{t(purpose)}</button>
     {outcome && <p role="status">{t(outcome)}</p>}
   </form>;
 }

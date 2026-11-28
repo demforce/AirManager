@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { formMailbox, singleMailbox } from '@/lib/schemas/email-trial';
-import { emailTrialEnabled } from './email-trial-policy';
+import { credentialEligible, emailTrialEnabled } from './email-trial-policy';
 
 describe('email access trial boundary', () => {
   const db = 'postgresql://fixture@localhost:55410/airmanager_test';
@@ -12,6 +12,21 @@ describe('email access trial boundary', () => {
       { DATABASE_URL: db.replace('airmanager_test', 'other'), TEST_DATABASE_URL: db.replace('airmanager_test', 'other') }]) {
       expect(emailTrialEnabled({ ...valid, ...patch })).toBe(false);
     }
+  });
+  it('separates reactivation of verified suspended accounts from first invitation and login', () => {
+    for (const [key,value] of Object.entries(valid)) vi.stubEnv(key,value);
+    try {
+      const email = 'pilot@fixture.invalid';
+      const suspended = { email, isActive: false, roles: ['PILOT'], emailVerification: { email, verifiedAt: new Date() } };
+      expect(credentialEligible(suspended, 'REACTIVATE_ACCOUNT')).toBe(true);
+      expect(credentialEligible(suspended, 'VERIFY_EMAIL')).toBe(false);
+      expect(credentialEligible(suspended, 'LOGIN_LINK')).toBe(false);
+      expect(credentialEligible({ ...suspended, isActive: true }, 'REACTIVATE_ACCOUNT')).toBe(false);
+      expect(credentialEligible({ ...suspended, emailVerification: null }, 'REACTIVATE_ACCOUNT')).toBe(false);
+      expect(credentialEligible({ ...suspended, emailVerification: { email, verifiedAt: null } }, 'REACTIVATE_ACCOUNT')).toBe(false);
+      vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '0');
+      expect(credentialEligible(suspended, 'REACTIVATE_ACCOUNT')).toBe(false);
+    } finally { vi.unstubAllEnvs(); }
   });
   it('accepts exactly one mailbox and only the email field', () => {
     for (const invalid of ['one@example.invalid,two@example.invalid', 'A <one@example.invalid>',

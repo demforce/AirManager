@@ -1249,6 +1249,13 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'post', path: '/api/v1/users/{id}/request-reactivation', summary: 'Request reactivation of a verified suspended account in the isolated trial',
+  tags: ['Users'], security,
+  request: { params: idParams, headers: z.object({ 'Idempotency-Key': z.string().min(8).max(128).optional() }) },
+  responses: { 200: { description: 'Reactivation request recorded.', content: jsonContent(okResponseSchema) }, ...errorResponses(401,403,404,409,422) },
+});
+
+registry.registerPath({
   method: 'get', path: '/api/v1/users/{id}/resend-invite', summary: 'Read invitation status (users.manage)', tags: ['Users'], security,
   request: { params: idParams }, responses: { 200: { description: 'Latest invitation, if available.', content: jsonContent(z.object({ invite: z.object({
     state: z.string(), credentialValidUntil: z.iso.datetime().nullable(), reason: z.string().nullable(), observedAt: z.iso.datetime(), nextAt: z.iso.datetime(), expiresAt: z.iso.datetime(), revokedAt: z.iso.datetime().nullable(),

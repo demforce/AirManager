@@ -136,13 +136,14 @@ function eligible(boundary: MailBoundary | null, cycle: number | null, expiresAt
     || expiresAt.getTime() - threshold * MS_PER_DAY > Date.parse(boundary.day);
 }
 
-type EnrollmentBoundary = { verifiedAt: Date | null; expiryStartCycle: number | null };
+type EnrollmentBoundary = { verifiedAt: Date | null; reactivatedAt?: Date | null; expiryStartCycle: number | null };
 function afterFirstActivation(proof: EnrollmentBoundary | null | undefined, expiry: {
   createdAt: Date; notificationCycle: number | null; expiresAt: Date;
 }, threshold: number) {
-  if (!proof?.verifiedAt || expiry.createdAt > proof.verifiedAt) return true;
+  const activeSince = proof?.reactivatedAt ?? proof?.verifiedAt;
+  if (!activeSince || !proof || expiry.createdAt > activeSince) return true;
   if (proof.expiryStartCycle !== null && expiry.notificationCycle !== null && expiry.notificationCycle > proof.expiryStartCycle) return true;
-  const day = dateOnlyInZone(proof.verifiedAt, APP_TIMEZONE);
+  const day = dateOnlyInZone(activeSince, APP_TIMEZONE);
   return expiry.expiresAt.getTime() - threshold * MS_PER_DAY > Date.parse(day);
 }
 
@@ -182,7 +183,7 @@ async function claimExpiry(selected: { id: string; expiresAt: Date }, today: Dat
       // If the ownership query failed, still distinguish historical thresholds from
       // current attempts. Only the latter enter the existing failure/retry path.
       const enrollment = lookupFailed ? await tx.emailVerification.findFirst({
-        where: { user: { personId: candidate.person.id } }, select: { verifiedAt: true, expiryStartCycle: true },
+        where: { user: { personId: candidate.person.id } }, select: { verifiedAt: true, reactivatedAt: true, expiryStartCycle: true },
       }) : snapshot?.proof;
       const pendingAtClaim = enrollment?.verifiedAt === null;
       const due = dueThresholds(daysLeft).filter((threshold) => !consumed.has(threshold));
@@ -376,7 +377,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
     const adminUsers = await prisma.user.findMany({
       where: { isActive: true, roles: { has: 'ADMIN' } },
       select: { id: true, email: true, locale: true, ...(emailTrialEnabled() && {
-        emailVerification: { select: { email: true, verifiedAt: true, expiryStartCycle: true } },
+        emailVerification: { select: { email: true, verifiedAt: true, reactivatedAt: true, expiryStartCycle: true } },
       }) },
     });
 
@@ -422,7 +423,7 @@ export async function runExpiryAlertsJob(maxPerRun = EXPIRY_ALERTS_MAX_PER_RUN):
           }
           let rowsChanged = false;
           const confirmRecipient = async () => {
-            if (!await digestRecipientCurrent(adminUser.id, adminUser.email)) return false;
+            if (!await digestRecipientCurrent(adminUser.id, adminUser.email, proof?.expiryStartCycle ?? null)) return false;
             rowsChanged = (await ownedDigestClaims(ids)).length !== ids.length;
             return !rowsChanged;
           };

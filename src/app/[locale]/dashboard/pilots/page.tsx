@@ -2,6 +2,7 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { buildExportHref } from '@/lib/export-href';
 import { APP_TIMEZONE } from '@/lib/time';
 import { todayDateOnlyInZone, todayDateOnlyUtcInZone } from '@/lib/zoned-time';
+import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
 import { hasPermission } from '@/server/auth/rbac';
 import { getSessionActor } from '@/server/auth/session';
 import { redirect } from '@/i18n/navigation';
@@ -105,6 +106,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
         initialArchivedOnly={archivedOnly}
         canManagePeople={hasPermission(actor, 'people.manage')}
         canManageFinance={hasPermission(actor, 'finance.manage')}
+        reactivationByEmail={emailTrialEnabled()}
         canManageUsers={hasPermission(actor, 'users.manage')}
         exportHref={exportHref}
         locale={locale as 'it' | 'en'}
@@ -131,7 +133,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
           },
           role: { pilot: tProfiles('profilesPanel.pilot.title'), student: tProfiles('profilesPanel.student.title'), instructor: tProfiles('profilesPanel.instructor.title') },
           status: { active: t('status.active'), suspended: t('status.suspended'), none: t('status.none') },
-          actions: { edit: t('actions.edit'), topUp: t('actions.topUp'), suspend: t('actions.suspend'), reactivate: t('actions.reactivate') },
+          actions: { edit: t('actions.edit'), topUp: t('actions.topUp'), suspend: t('actions.suspend'), reactivate: t(emailTrialEnabled() ? 'actions.requestReactivation' : 'actions.reactivate') },
           mobile: {
             openDetail: t('mobile.openDetail'),
             close: t('mobile.close'),
@@ -142,7 +144,7 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
             flagExpired: t.raw('mobile.flagExpired') as string,
             flagExpiring: t.raw('mobile.flagExpiring') as string,
             confirmSuspend: t('mobile.confirmSuspend'),
-            confirmReactivate: t('mobile.confirmReactivate'),
+            confirmReactivate: t(emailTrialEnabled() ? 'mobile.confirmReactivationLink' : 'mobile.confirmReactivate'),
             dismiss: t('mobile.dismiss'),
             sheet: {
               email: t('table.email'),
@@ -187,7 +189,8 @@ export default async function PilotsPage({ params, searchParams }: PageProps) {
             ...buildPilotEditorToastLabels(t),
             topUpRecorded: t('toast.topUpRecorded'),
             suspended: t('toast.suspended'),
-            reactivated: t('toast.reactivated'),
+            reactivationCooldown: t('toast.reactivationCooldown'),
+            reactivated: t(emailTrialEnabled() ? 'toast.reactivationQueued' : 'toast.reactivated'),
             lastAdminError: t('toast.lastAdminError'),
           },
         }}

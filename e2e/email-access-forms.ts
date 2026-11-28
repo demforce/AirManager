@@ -27,8 +27,9 @@ export async function openCapturedReset(page: Page, email: string) {
   await expect(page.getByLabel('Nuova password', {exact: true})).toBeVisible();
 }
 
-export async function openCaptured(page: Page, email: string, purpose: 'verify' | 'login') {
-  const subject = purpose === 'verify' ? 'Verifica il tuo indirizzo AirManager' : 'Link di accesso AirManager';
+export async function openCaptured(page: Page, email: string, purpose: 'verify' | 'login' | 'reactivate', locale: 'it' | 'en' = 'it') {
+  const subject = purpose === 'reactivate' ? (locale === 'it' ? 'Riattiva il tuo account AirManager' : 'Reactivate your AirManager account')
+    : purpose === 'verify' ? 'Verifica il tuo indirizzo AirManager' : 'Link di accesso AirManager';
   const link = await capturedLink(email, subject);
   expect(link.searchParams.get('purpose')).toBe(purpose);
   expect(/^#[A-Za-z0-9_-]{43}$/.test(link.hash) && !link.searchParams.has('token')).toBe(true);
@@ -48,7 +49,8 @@ export async function openCaptured(page: Page, email: string, purpose: 'verify' 
     expect(response.headers()['referrer-policy']).toBe('no-referrer');
     expect(response.headers()['cache-control']).toContain('no-store');
     expect(response.headers()['content-security-policy']).toContain("connect-src 'self'");
-    await expect(page.getByRole('heading', { name: purpose === 'verify' ? 'Verifica il tuo indirizzo' : 'Conferma l’accesso' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: purpose === 'reactivate' ? (locale === 'it' ? 'Conferma la riattivazione' : 'Confirm account reactivation')
+      : purpose === 'verify' ? 'Verifica il tuo indirizzo' : 'Conferma l’accesso' })).toBeVisible();
     await expect.poll(() => new URL(page.url()).hash.length).toBe(0);
     expect(thirdParty).toBe(false);
   } finally { page.off('request', observe); }

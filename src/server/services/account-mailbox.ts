@@ -49,7 +49,7 @@ export async function assertContactAvailable(tx: Db, email: string, personId: st
   if (other.taken) throw new ConflictError('Email already belongs to another account.');
 }
 
-type Recipient = { email: string; userId: string | null };
+type Recipient = { email: string; userId: string | null; activationCycle?: number | null };
 type HolderRow = { personId: string; personal: string | null; registered: string | null; userId: string | null;
   enrolled: boolean; verifiedAt: Date | null; expiryStartCycle: number | null;
   verified: boolean; uncontested: boolean; contactContested: boolean };
@@ -64,7 +64,7 @@ export type EventRecipients = ReadonlyMap<string, HolderSnapshot>;
 async function readRecipients(db: Db, personIds: string[]): Promise<EventRecipients> {
   const rows = await db.$queryRaw<HolderRow[]>`
     SELECT p.id AS "personId", p.email AS personal, u.email AS registered, u.id AS "userId",
-      v."userId" IS NOT NULL AS enrolled, v."verifiedAt", v."expiryStartCycle",
+      v."userId" IS NOT NULL AS enrolled, COALESCE(v."reactivatedAt", v."verifiedAt") AS "verifiedAt", v."expiryStartCycle",
       u."isActive" AND v.email = u.email AND v."verifiedAt" IS NOT NULL AS verified,
       EXISTS (SELECT 1 FROM "User" claimant
               WHERE claimant.id IS DISTINCT FROM u.id AND ${sameMailbox(Prisma.sql`claimant.email`, Prisma.sql`p.email`)}) AS "contactContested",
@@ -81,7 +81,7 @@ async function readRecipients(db: Db, personIds: string[]): Promise<EventRecipie
     } else {
       const canonical = singleMailbox.safeParse(row.registered);
       if (row.verified && row.uncontested && canonical.success && canonical.data === row.registered) {
-        recipient = { email: canonical.data, userId: row.userId };
+        recipient = { email: canonical.data, userId: row.userId, activationCycle: row.expiryStartCycle };
       }
     }
     const proof = row.enrolled ? { verifiedAt: row.verifiedAt, expiryStartCycle: row.expiryStartCycle } : null;
@@ -116,14 +116,14 @@ export async function holderMailbox(personId: string, legacyEmail: string | null
 export async function holderStillCurrent(personId: string, recipient: Recipient): Promise<boolean> {
   if (!emailTrialEnabled()) return true;
   const fresh = await holderMailbox(personId, recipient.email);
-  return fresh?.email === recipient.email && fresh.userId === recipient.userId;
+  return fresh?.email === recipient.email && fresh.userId === recipient.userId && fresh.activationCycle === recipient.activationCycle;
 }
 
 export function holderDeliveryFence(personId: string, recipient: Recipient) {
   return emailTrialEnabled() ? { confirmRecipient: () => holderStillCurrent(personId, recipient) } : {};
 }
 
-export async function digestRecipientCurrent(userId: string, address: string): Promise<boolean> {
+export async function digestRecipientCurrent(userId: string, address: string, expectedCycle: number | null): Promise<boolean> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: {
     email: true, isActive: true, roles: true, emailVerification: true,
   } });
@@ -131,5 +131,5 @@ export async function digestRecipientCurrent(userId: string, address: string): P
   const checked = singleMailbox.safeParse(address);
   if (!user.emailVerification) return false;
   return checked.success && checked.data === address && user.emailVerification.verifiedAt !== null
-    && user.emailVerification.email === address && await accountMailboxUncontested(prisma, userId, user.email);
+    && user.emailVerification.expiryStartCycle === expectedCycle && user.emailVerification.email === address && await accountMailboxUncontested(prisma, userId, user.email);
 }

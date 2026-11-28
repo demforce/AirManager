@@ -1,4 +1,4 @@
-import { accountMailboxUncontested } from './account-mailbox';
+import { accountMailboxUncontested, lockMailboxWrites } from './account-mailbox';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { Prisma } from '@/generated/prisma/client';
@@ -6,7 +6,7 @@ import { env } from '@/lib/env';
 import { singleMailbox } from '@/lib/schemas/email-trial';
 import { prisma } from '@/server/db/prisma';
 import { credentialEligible, emailTrialEnabled } from '@/server/auth/email-trial-policy';
-import { databaseNow, enqueueCredential, lockMailAccount } from './credential-mail.service';
+import { databaseNow, enqueueCredential, lockMailAccount, revokeAccountCredentials } from './credential-mail.service';
 
 import { lockLoginRequests } from './access-security';
 
@@ -81,7 +81,7 @@ export async function requestEmailLogin(rawEmail: string, origin: string): Promi
   }
 }
 
-export async function consumeTrialLink(purpose: 'VERIFY_EMAIL' | 'LOGIN_LINK', raw: unknown, loginEmail?: unknown, origin = 'direct') {
+export async function consumeTrialLink(purpose: 'VERIFY_EMAIL' | 'LOGIN_LINK' | 'REACTIVATE_ACCOUNT', raw: unknown, loginEmail?: unknown, origin = 'direct') {
   if (!emailTrialEnabled() || typeof raw !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(raw)) return null;
   const mailbox = singleMailbox.safeParse(loginEmail);
   if (purpose === 'LOGIN_LINK' && !mailbox.success) return null;
@@ -91,6 +91,7 @@ export async function consumeTrialLink(purpose: 'VERIFY_EMAIL' | 'LOGIN_LINK', r
       const token = await tx.authToken.findUnique({ where: { tokenHash }, select: { id: true, userId: true, type: true } });
       if (!await reserveRequest(tx, 'confirmation', mailbox.data ?? token?.userId ?? 'unmatched', origin)) return null;
       if (!token || token.type !== purpose) return null;
+      if (purpose === 'REACTIVATE_ACCOUNT') await lockMailboxWrites(tx);
       await lockMailAccount(tx, token.userId);
       const user = await tx.user.findUnique({ where: { id: token.userId }, select: {
         id: true, email: true, isActive: true, roles: true, tokenVersion: true, personId: true, emailVerification: true,
@@ -105,6 +106,15 @@ export async function consumeTrialLink(purpose: 'VERIFY_EMAIL' | 'LOGIN_LINK', r
         await tx.$executeRaw`UPDATE "EmailVerification"
           SET "verifiedAt" = ${now}, "expiryStartCycle" = nextval('"Expiry_notificationCycle_seq"')
           WHERE "userId" = ${user.id}`;
+      }
+      if (purpose === 'REACTIVATE_ACCOUNT') {
+        await revokeAccountCredentials(tx, user.id, now);
+        await tx.$executeRaw`UPDATE "EmailVerification"
+          SET "reactivatedAt" = ${now}, "expiryStartCycle" = nextval('"Expiry_notificationCycle_seq"')
+          WHERE "userId" = ${user.id}`;
+        await tx.user.update({ where: { id: user.id }, data: {
+          isActive: true, tokenVersion: { increment: 1 }, adminPasswordVersion: { increment: 1 },
+        } });
       }
       return { id: user.id, email: user.email, roles: user.roles, personId: user.personId, tokenVersion: user.tokenVersion };
     });

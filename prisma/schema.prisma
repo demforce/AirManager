@@ -476,7 +476,9 @@ model EmailVerification {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   email      String
   verifiedAt DateTime?
-  /// First verification (or the upgrade watermark for an existing proof), in the expiry cycle sequence.
+  /// Start of the latest confirmed return to active service; preserves the original mailbox proof.
+  reactivatedAt DateTime?
+  /// Expiry cycle at first verification, upgrade of an existing proof, or latest confirmed reactivation.
   expiryStartCycle Int?
 }
 
@@ -491,6 +493,7 @@ model EmailTrialRequest {
 }
 
 enum AuthTokenType {
+  REACTIVATE_ACCOUNT
   VERIFY_EMAIL
   LOGIN_LINK
   INVITE

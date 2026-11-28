@@ -88,7 +88,8 @@ for (const change of ['demote', 'deactivate', 'reset'] as const) {
         await fresh.close();
       }
       if (change !== 'reset') {
-        expect((await manager.request.patch('/api/v1/users/' + id, { data: { roles: ['ADMIN'], isActive: true } })).ok()).toBe(true);
+        const restore = await manager.request.patch('/api/v1/users/' + id, { data: { roles: ['ADMIN'], isActive: true } });
+        expect(restore.status()).toBe(change === 'deactivate' && process.env.AIRMANAGER_EMAIL_TRIAL === '1' ? 409 : 200);
         expect((await page.request.get('/api/v1/me')).status()).toBe(401);
       }
     } finally {

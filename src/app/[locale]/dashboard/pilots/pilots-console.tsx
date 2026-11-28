@@ -117,6 +117,7 @@ export type PilotsConsoleLabels = {
     topUpRecorded: string;
     suspended: string;
     reactivated: string;
+    reactivationCooldown: string;
     userCreated: string;
     inviteResent: string;
     genericError: string;
@@ -133,6 +134,7 @@ type PilotsConsoleProps = {
   canManagePeople: boolean;
   canManageFinance: boolean;
   canManageUsers: boolean;
+  reactivationByEmail: boolean;
   exportHref: string;
   locale: 'it' | 'en';
   /** Story 15.5 (R-15.5-c): blocking documents (`ExpiryType.blocksBooking`) of the people on THIS page, expired or due within 30 days. Missing key = nothing blocking. */
@@ -176,6 +178,7 @@ export function PilotsConsole({
   canManagePeople,
   canManageFinance,
   canManageUsers,
+  reactivationByEmail,
   exportHref,
   locale,
   blockingDocumentsById,
@@ -270,22 +273,27 @@ export function PilotsConsole({
    */
   async function setUserActive(userId: string, nextActive: boolean): Promise<void> {
     setPendingUserId(userId);
-    const response = await fetch(`/api/v1/users/${userId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: nextActive }),
-    });
-    setPendingUserId(null);
-
-    if (!response.ok) {
-      const body: unknown = await response.json().catch(() => null);
-      const code = (body as { error?: { code?: string } } | null)?.error?.code;
-      toast.show(code === 'CONFLICT' ? labels.toast.lastAdminError : labels.toast.genericError, 'bad');
-      return;
+    const sendLink = nextActive && reactivationByEmail;
+    try {
+      const url = `/api/v1/users/${userId}`;
+      const response = sendLink
+        ? await fetch(url + '/request-reactivation', { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } })
+        : await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: nextActive }) });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const code = body?.error?.code;
+        const message = sendLink && code === 'INVITE_COOLDOWN' ? labels.toast.reactivationCooldown
+          : !sendLink && code === 'CONFLICT' ? labels.toast.lastAdminError : labels.toast.genericError;
+        toast.show(message, 'bad');
+        return;
+      }
+      toast.show(nextActive ? labels.toast.reactivated : labels.toast.suspended, 'ok');
+      router.refresh();
+    } catch {
+      toast.show(labels.toast.genericError, 'bad');
+    } finally {
+      setPendingUserId(null);
     }
-
-    toast.show(nextActive ? labels.toast.reactivated : labels.toast.suspended, 'ok');
-    router.refresh();
   }
 
   async function handleSuspendConfirm(): Promise<void> {
@@ -465,13 +473,14 @@ export function PilotsConsole({
                         {labels.actions.topUp}
                       </button>
                     ) : null}
-                    {canManageUsers && hasUser ? (
+                    {canManageUsers && hasUser && (pilot.user!.isActive || !reactivationByEmail || pilot.user!.emailVerified) ? (
                       suspendConfirm?.personId === pilot.id ? (
                         <>
                           <button
                             type="button"
                             className="btn mini bad"
                             disabled={pendingUserId === pilot.user!.id}
+                            aria-label={suspendConfirm.nextActive ? labels.actions.reactivate : labels.actions.suspend}
                             onClick={() => void handleSuspendConfirm()}
                             data-testid={`pilot-suspend-confirm-${pilot.id}`}
                           >
@@ -668,7 +677,7 @@ export function PilotsConsole({
                   {labels.actions.topUp}
                 </button>
               ) : null}
-              {canManageUsers && sheetPilot.user ? (
+              {canManageUsers && sheetPilot.user && (sheetPilot.user.isActive || !reactivationByEmail || sheetPilot.user.emailVerified) ? (
                 <button
                   type="button"
                   className={sheetPilot.user.isActive ? 'btn mini bad' : 'btn mini ok'}

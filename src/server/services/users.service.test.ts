@@ -13,6 +13,7 @@ vi.mock('@/server/db/prisma', () => ({
     authToken: { updateMany: vi.fn() },
     user: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -94,6 +95,27 @@ describe('users.service (story 1.4 — users.manage RBAC + create/update/resend)
     (transactionMock as unknown as { mockImplementation: (fn: (arg: unknown) => unknown) => void }).mockImplementation((arg: unknown) =>
       typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(prisma) : Promise.all(arg as unknown[]),
     );
+  });
+
+  it('keeps the last usable administrator in the trial when the other admin is awaiting first activation', async () => {
+    const db = 'postgresql://fixture@localhost:55410/airmanager_test';
+    vi.stubEnv('AIRMANAGER_EMAIL_TRIAL', '1');
+    vi.stubEnv('DATABASE_URL', db);
+    vi.stubEnv('TEST_DATABASE_URL', db);
+    vi.stubEnv('APP_URL', 'http://localhost:3000');
+    try {
+      userFindUnique.mockResolvedValue({ ...SELECTED_USER, roles: ['ADMIN'] });
+      const email = 'pending@fixture.invalid';
+      const candidates = vi.mocked(prisma.user.findMany) as unknown as { mockResolvedValue(rows: UserFixture[]): void };
+      candidates.mockResolvedValue([{ id: 'pending', isActive: true, roles: ['ADMIN'], passwordHash: null, email, emailVerification: { email, verifiedAt: null } }]);
+      for (const patch of [{ isActive: false }, { roles: ['PILOT'] as ['PILOT'] }]) {
+        await expect(updateUser(adminActor(), 'last-admin', patch)).rejects.toThrow('last active admin');
+      }
+      expect(vi.mocked(prisma.user.findMany).mock.calls[0][0]?.where).toEqual({
+        id: { not: 'last-admin' }, isActive: true, roles: { has: 'ADMIN' },
+      });
+      expect(updateMock).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); vi.stubEnv('AIRMANAGER_EMAIL_TRIAL','0'); }
   });
 
   describe('authorization (AD-5)', () => {

@@ -317,7 +317,7 @@ export async function buildAircraftArchivedEmail(
 /** Retries preserve the original absolute expiry, including its time zone. */
 export async function buildCredentialEmail(locale: AppLocale, purpose: CredentialPurpose, url: string, expiresAt: Date) {
   const messages = await loadMessages(locale);
-  const namespaces = { INVITE: 'Emails.invite', PASSWORD_RESET: 'Emails.passwordReset', VERIFY_EMAIL: 'Emails.verifyEmail', LOGIN_LINK: 'Emails.loginLink' } as const;
+  const namespaces = { INVITE: 'Emails.invite', PASSWORD_RESET: 'Emails.passwordReset', VERIFY_EMAIL: 'Emails.verifyEmail', LOGIN_LINK: 'Emails.loginLink', REACTIVATE_ACCOUNT: 'Emails.reactivateAccount' } as const;
   const t = createTranslator({ locale, messages, namespace: namespaces[purpose] });
   const expiry = new Intl.DateTimeFormat(locale, { dateStyle: 'long', timeStyle: 'long', timeZone: 'Europe/Rome' }).format(expiresAt);
   const { credentialAction } = await import('./credential-action');

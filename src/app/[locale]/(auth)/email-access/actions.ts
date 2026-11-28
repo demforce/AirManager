@@ -20,6 +20,11 @@ export async function requestLink(form: FormData): Promise<boolean> {
   return true;
 }
 
+export async function confirmReactivation(token: string): Promise<boolean> {
+  const h = await localRequest();
+  return Boolean(h && await consumeTrialLink('REACTIVATE_ACCOUNT', token, undefined, loginRequestOrigin(h)));
+}
+
 export async function confirmMailbox(token: string): Promise<boolean> {
   const h = await localRequest();
   return Boolean(h && await consumeTrialLink('VERIFY_EMAIL', token, undefined, loginRequestOrigin(h)));

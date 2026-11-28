@@ -146,7 +146,11 @@
       "login": "Conferma e accedi",
       "invalid": "Impossibile completare la richiesta.",
       "sent": "Se l’account è abilitato, riceverai un link via email.",
-      "verified": "Indirizzo verificato. Puoi richiedere il tuo link di accesso."
+      "verified": "Indirizzo verificato. Puoi richiedere il tuo link di accesso.",
+      "reactivateTitle": "Conferma la riattivazione",
+      "reactivateHelp": "Conferma per riattivare il tuo account. Poi potrai accedere di nuovo.",
+      "reactivate": "Conferma riattivazione",
+      "reactivated": "Account riattivato. Ora puoi accedere."
     }
   },
   "DashboardPage": {
@@ -353,7 +357,8 @@
       "edit": "Modifica",
       "topUp": "Ricarica",
       "suspend": "Sospendi",
-      "reactivate": "Riattiva"
+      "reactivate": "Riattiva",
+      "requestReactivation": "Invia link di riattivazione"
     },
     "mobile": {
       "openDetail": "Apri dettaglio",
@@ -367,7 +372,8 @@
       "sheet": {
         "phone": "Telefono",
         "documents": "Documenti"
-      }
+      },
+      "confirmReactivationLink": "Inviare il link all’indirizzo registrato? L’accesso resterà sospeso fino alla conferma."
     },
     "currency": {
       "label": "Currency",
@@ -494,7 +500,9 @@
       "userCreated": "Accesso creato. Invito in attesa.",
       "inviteResent": "Nuovo invito in attesa.",
       "genericError": "Si è verificato un errore. Riprova.",
-      "lastAdminError": "Impossibile sospendere l'ultimo amministratore attivo."
+      "lastAdminError": "Impossibile sospendere l'ultimo amministratore attivo.",
+      "reactivationQueued": "Link di riattivazione in coda.",
+      "reactivationCooldown": "Attendi prima di richiedere un altro link di riattivazione."
     },
     "exportMenu": {
       "xlsLabel": "Persone (Excel)"
@@ -1883,6 +1891,11 @@
       "action": "Conferma l’accesso",
       "subject": "Link di accesso AirManager",
       "deadlineBody": "Conferma il tuo accesso entro {expiry}.\n\n{url}"
+    },
+    "reactivateAccount": {
+      "action": "Riattiva account",
+      "subject": "Riattiva il tuo account AirManager",
+      "deadlineBody": "Un amministratore ha richiesto la riattivazione del tuo account. Conferma entro {expiry}.\n\n{url}"
     }
   },
   "NegativeBalancesPage": {

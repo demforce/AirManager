@@ -173,7 +173,7 @@ test('only a contact without an account may receive at its own address in the tr
   await assert.rejects(updatePerson(actor, standalone.id, { email: address() }), /account/i);
   const { digestRecipientCurrent } = await import('../src/server/services/account-mailbox');
   await prisma.user.update({ where: { id: legacy.id }, data: { roles: ['ADMIN'] } });
-  assert.equal(await digestRecipientCurrent(legacy.id, legacy.email), false);
+  assert.equal(await digestRecipientCurrent(legacy.id, legacy.email, null), false);
   const { user, person } = await fixture(address());
   try {
     delete process.env.AIRMANAGER_EMAIL_TRIAL;
@@ -253,10 +253,10 @@ test('contact mail permits one legacy mailbox; admin digests require current pro
   const person = await prisma.person.create({ data: { firstName: 'Fixture', lastName: randomUUID(), email: raw } });
   assert.equal((await holderMailbox(person.id, raw))?.email, raw);
   const admin = await prisma.user.create({ data: { email: raw, roles: ['ADMIN'], personId: person.id } });
-  assert.equal(await digestRecipientCurrent(admin.id, raw), false);
+  assert.equal(await digestRecipientCurrent(admin.id, raw, null), false);
   const joined = address() + ', ' + address();
   await prisma.person.update({ where: { id: person.id }, data: { email: joined } });
   await prisma.user.update({ where: { id: admin.id }, data: { email: joined } });
   assert.equal(await holderMailbox(person.id, joined), null);
-  assert.equal(await digestRecipientCurrent(admin.id, joined), false);
+  assert.equal(await digestRecipientCurrent(admin.id, joined, null), false);
 });

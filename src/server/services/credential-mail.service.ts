@@ -1,4 +1,4 @@
-import { accountMailboxUncontested } from './account-mailbox';
+import { accountMailboxUncontested, lockMailboxWrites } from './account-mailbox';
 import { randomUUID } from 'node:crypto';
 import type { Prisma, AuthTokenType } from '@/generated/prisma/client';
 import { credentialEligible, emailTrialEnabled } from '@/server/auth/email-trial-policy';
@@ -22,6 +22,7 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
   operatorId: string;
   key: string;
 }, expectedEmail?: string) {
+  if (purpose === 'REACTIVATE_ACCOUNT') await lockMailboxWrites(tx);
   await lockMailAccount(tx, userId);
   const user = await tx.user.findUnique({
     where: {
@@ -35,8 +36,8 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
   });
   if (purpose === 'INVITE' && user?.emailVerification) purpose = 'VERIFY_EMAIL';
   const now = await databaseNow(tx);
-  if (action && user && (purpose === 'VERIFY_EMAIL' || emailTrialEnabled()) &&
-      (purpose !== 'VERIFY_EMAIL' || !credentialEligible(user, purpose))) {
+  if (action && user && (purpose === 'VERIFY_EMAIL' || purpose === 'REACTIVATE_ACCOUNT' || emailTrialEnabled()) &&
+      (purpose === 'INVITE' || !credentialEligible(user, purpose))) {
     throw new ConflictError('This account has no eligible pending invitation.');
   }
   if (action) {
@@ -138,7 +139,7 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
     data: {
       userId,
       purpose,
-      expiresAt: new Date(now.getTime() + (purpose === 'LOGIN_LINK' ? LOGIN_LINK_TTL_MS : purpose === 'PASSWORD_RESET' ? PASSWORD_RESET_TTL_MS : INVITE_TTL_MS)),
+      expiresAt: new Date(now.getTime() + ((purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT') ? LOGIN_LINK_TTL_MS : purpose === 'PASSWORD_RESET' ? PASSWORD_RESET_TTL_MS : INVITE_TTL_MS)),
       createdAt: now,
       observedAt: now,
       nextAt: now,
@@ -163,6 +164,24 @@ export async function resendInvite(actor: Actor, userId: string, key: string = r
     invite
   };
 }
+/** Account row is already locked. The transport may have accepted a message, but its token can no longer authorize anything. */
+export async function revokeAccountCredentials(tx: Tx, userId: string, now: Date) {
+  await tx.authToken.updateMany({ where: { userId, usedAt: null }, data: { usedAt: now } });
+  await tx.credentialMail.updateMany({
+    where: { userId, revokedAt: null, state: { in: ['QUEUED', 'CLAIMED'] } },
+    data: { state: 'SUPPRESSED', reason: 'REVOKED', observedAt: now, revokedAt: now },
+  });
+  await tx.credentialMail.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } });
+}
+
+export async function requestReactivation(actor: Actor, userId: string, key: string = randomUUID()) {
+  authorize(actor, 'users.manage');
+  if (!emailTrialEnabled()) throw new NotFoundError('Account reactivation is unavailable.');
+  if (!/^[a-zA-Z0-9_-]{8,128}$/.test(key)) throw new ValidationError('Invalid request key.');
+  await prisma.$transaction(tx => enqueueCredential(tx, userId, 'REACTIVATE_ACCOUNT', { operatorId: actor.userId, key }));
+  return { ok: true as const };
+}
+
 export async function readInviteStatus(actor: Actor, userId: string) {
   authorize(actor, 'users.manage');
   const latest = await prisma.credentialMail.findFirst({

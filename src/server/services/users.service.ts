@@ -5,7 +5,7 @@ import { authorize, type Actor } from '@/server/auth/rbac';
 import { credentialEligible, emailTrialEnabled, verifiedTrialAddress } from '@/server/auth/email-trial-policy';
 import { prisma } from '@/server/db/prisma';
 import { accountMailboxUncontested, assertContactAvailable, lockMailboxWrites } from './account-mailbox';
-import { enqueueCredential } from './credential-mail.service';
+import { databaseNow, enqueueCredential, lockMailAccount, revokeAccountCredentials } from './credential-mail.service';
 export { resendInvite } from './credential-mail.service';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 
@@ -74,8 +74,8 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /** Throws if `personId` doesn't exist, or is already linked to a *different* user. */
-async function assertPersonAvailable(personId: string, excludeUserId?: string): Promise<void> {
-  const person = await prisma.person.findUnique({
+async function assertPersonAvailable(personId: string, excludeUserId?: string, db: Prisma.TransactionClient = prisma): Promise<void> {
+  const person = await db.person.findUnique({
     where: { id: personId },
     select: { id: true, user: { select: { id: true } } },
   });
@@ -145,80 +145,71 @@ export async function createUser(actor: Actor, input: CreateUserInput): Promise<
   return toListItem(user);
 }
 
+async function hasOtherActiveAdmin(db: Prisma.TransactionClient, id: string, trial: boolean): Promise<boolean> {
+  const where = { id: { not: id }, isActive: true, roles: { has: 'ADMIN' as const } };
+  if (!trial) return await db.user.count({ where }) > 0;
+  const candidates = await db.user.findMany({ where, select: {
+    id: true, email: true, isActive: true, roles: true, passwordHash: true, emailVerification: true,
+  } });
+  for (const user of candidates) {
+    if (user.passwordHash && (!user.emailVerification || verifiedTrialAddress(user))) return true;
+    if (credentialEligible(user, 'LOGIN_LINK') && await accountMailboxUncontested(db, user.id, user.email)) return true;
+  }
+  return false;
+}
+
 /** Partial update: roles, locale, linked person (incl. unlinking with `null`), active status (AC 2). */
 export async function updateUser(actor: Actor, id: string, patch: UpdateUserInput): Promise<UserListItem> {
   authorize(actor, 'users.manage');
 
-  const existing = await prisma.user.findUnique({ where: { id } });
-  if (!existing) {
-    throw new NotFoundError('User not found.');
-  }
-
-  if (patch.personId !== undefined && patch.personId !== null) {
-    await assertPersonAvailable(patch.personId, id);
-  }
-
-  // Last-admin protection: user management must never lock itself out.
-  // Deactivating (or de-admining) the last active ADMIN would leave nobody
-  // able to manage users (FR-3), with no recovery path via UI/API.
-  const losesAdmin =
-    existing.isActive &&
-    existing.roles.includes('ADMIN') &&
-    (patch.isActive === false || (patch.roles !== undefined && !patch.roles.includes('ADMIN')));
-  if (losesAdmin) {
-    const otherActiveAdmins = await prisma.user.count({
-      where: { id: { not: id }, isActive: true, roles: { has: 'ADMIN' } },
-    });
-    if (otherActiveAdmins === 0) {
+  const trial = emailTrialEnabled();
+  async function apply(db: Prisma.TransactionClient) {
+    if (trial) {
+      // Membership, last-admin count and state transitions share this short transaction.
+      await lockMailboxWrites(db);
+      await lockMailAccount(db, id);
+    }
+    const existing = await db.user.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('User not found.');
+    if (trial && !existing.isActive && patch.isActive === true) {
+      throw new ConflictError('Confirmation of the registered mailbox is required to reactivate access.', undefined, 'REACTIVATION_REQUIRED');
+    }
+    if (patch.personId != null) await assertPersonAvailable(patch.personId, id, db);
+    const losesAdmin = existing.isActive && existing.roles.includes('ADMIN') &&
+      (patch.isActive === false || (patch.roles !== undefined && !patch.roles.includes('ADMIN')));
+    if (losesAdmin && !await hasOtherActiveAdmin(db, id, trial)) {
       throw new ConflictError('Cannot deactivate or demote the last active admin.');
     }
-  }
-
-  // Story 16.7 (ops F8, R-16-f): re-linking or unlinking the person is a
-  // change of identity, and every "own" check reads `personId` from the
-  // session — so it ends that user's sessions, through the same
-  // `tokenVersion` bump as a password set (TD-6), in the same write.
-  // `applyActiveRecheck` evicts a stale session at its next recheck (≤ 15
-  // min). Only on a REAL change: an API client re-sending the current link
-  // is not one. Roles and `isActive` do not bump: the recheck already
-  // propagates them.
-  const personIdChanges = patch.personId !== undefined && patch.personId !== existing.personId;
-
-  let user;
-  try {
-    const write = (db: Prisma.TransactionClient) => db.user.update({
+    const personChanges = patch.personId !== undefined && patch.personId !== existing.personId;
+    const suspending = trial && existing.isActive && patch.isActive === false;
+    // A pending reactivation belongs to the identity and privileges the admin reviewed.
+    const newRoles = patch.roles;
+    const rolesChange = newRoles && (newRoles.some(role => !existing.roles.includes(role))
+      || existing.roles.some(role => !newRoles.includes(role)));
+    if (trial && (patch.isActive === false || (!existing.isActive && (personChanges || rolesChange)))) {
+      await revokeAccountCredentials(db, id, await databaseNow(db));
+    }
+    const updated = await db.user.update({
       where: { id },
       data: {
-        ...(patch.roles !== undefined && { roles: patch.roles }),
-        ...(patch.locale !== undefined && { locale: patch.locale }),
-        ...(patch.personId !== undefined && { personId: patch.personId }),
-        ...(patch.isActive !== undefined && { isActive: patch.isActive }),
-        // Invalidate in the same write even if a later update restores eligibility.
+        ...patch,
         ...((patch.isActive === false || (patch.roles && !patch.roles.includes('ADMIN'))) && {
           adminPasswordVersion: { increment: 1 },
         }),
-        ...(personIdChanges && { tokenVersion: { increment: 1 } }),
+        ...((personChanges || suspending) && { tokenVersion: { increment: 1 } }),
       },
       select: USER_SELECT,
     });
-    if (emailTrialEnabled() && patch.personId !== undefined) {
-      user = await prisma.$transaction(async tx => {
-        await lockMailboxWrites(tx);
-        const updated = await write(tx);
-        if (updated.emailVerification && !await accountMailboxUncontested(tx, updated.id, updated.email)) {
-          throw new ConflictError('The registered account email belongs to a different record.');
-        }
-        return updated;
-      });
-    } else {
-      user = await write(prisma);
+    if (trial && patch.personId !== undefined && updated.emailVerification
+      && !await accountMailboxUncontested(db, updated.id, updated.email)) {
+      throw new ConflictError('The registered account email belongs to a different record.');
     }
+    return updated;
+  }
+  try {
+    return toListItem(trial ? await prisma.$transaction(apply) : await apply(prisma));
   } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new ConflictError('Email or person already linked to another user.');
-    }
+    if (isUniqueViolation(error)) throw new ConflictError('Email or person already linked to another user.');
     throw error;
   }
-
-  return toListItem(user);
 }

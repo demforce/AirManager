@@ -146,7 +146,11 @@
       "login": "Confirm and sign in",
       "invalid": "Unable to complete the request.",
       "sent": "If your account is eligible, you will receive a sign-in email.",
-      "verified": "Email verified. You can now request a sign-in link."
+      "verified": "Email verified. You can now request a sign-in link.",
+      "reactivateTitle": "Confirm account reactivation",
+      "reactivateHelp": "Confirm to reactivate your account. You can then sign in again.",
+      "reactivate": "Confirm reactivation",
+      "reactivated": "Account reactivated. You can now sign in."
     }
   },
   "DashboardPage": {
@@ -353,7 +357,8 @@
       "edit": "Edit",
       "topUp": "Top up",
       "suspend": "Suspend",
-      "reactivate": "Reactivate"
+      "reactivate": "Reactivate",
+      "requestReactivation": "Send reactivation link"
     },
     "mobile": {
       "openDetail": "Open detail",
@@ -367,7 +372,8 @@
       "sheet": {
         "phone": "Phone",
         "documents": "Documents"
-      }
+      },
+      "confirmReactivationLink": "Send a link to the registered address? Access will remain suspended until confirmation."
     },
     "currency": {
       "label": "Currency",
@@ -494,7 +500,9 @@
       "userCreated": "Account created. Invitation queued.",
       "inviteResent": "New invitation queued.",
       "genericError": "Something went wrong. Please try again.",
-      "lastAdminError": "Cannot suspend the last active admin."
+      "lastAdminError": "Cannot suspend the last active admin.",
+      "reactivationQueued": "Reactivation link queued.",
+      "reactivationCooldown": "Wait before requesting another reactivation link."
     },
     "exportMenu": {
       "xlsLabel": "People (Excel)"
@@ -1883,6 +1891,11 @@
       "action": "Confirm sign-in",
       "subject": "Your AirManager sign-in link",
       "deadlineBody": "Confirm your sign-in by {expiry}.\n\n{url}"
+    },
+    "reactivateAccount": {
+      "action": "Reactivate account",
+      "subject": "Reactivate your AirManager account",
+      "deadlineBody": "An administrator requested reactivation of your account. Confirm by {expiry}.\n\n{url}"
     }
   },
   "NegativeBalancesPage": {

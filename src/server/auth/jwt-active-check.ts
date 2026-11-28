@@ -37,7 +37,7 @@ export async function applyActiveRecheck(token: JWT, now: number = Date.now()): 
   const adminPassword = token.adminPasswordVersion !== undefined;
   const trial = token.emailTrialLogin === true;
   if (trial && !emailTrialEnabled()) return null;
-  if (!trial && !adminPassword && now - lastCheck < ACTIVE_RECHECK_INTERVAL_MS) {
+  if (!emailTrialEnabled() && !trial && !adminPassword && now - lastCheck < ACTIVE_RECHECK_INTERVAL_MS) {
     return token;
   }
 
