@@ -17,7 +17,7 @@ async function passwordSignIn(page: Page, email: string, password: string, fallb
 
 for (const assisted of [false, true]) {
   const locale = assisted ? 'en' : 'it';
-  test(`sequential email change from ${assisted ? 'Piloti for another holder (EN)' : 'the administrator’s own profile (IT)'}`, async ({ page, browser }) => {
+  test(`sequential email change from ${assisted ? 'Piloti for another holder (EN)' : 'the administrator’s own profile (IT)'}`, { tag: '@email-trial' }, async ({ page, browser }) => {
     test.skip(process.env.AIRMANAGER_EMAIL_TRIAL !== '1', 'Requires isolated email trial.');
     test.setTimeout(180_000);
     const info = await (await fetch('http://127.0.0.1:8025/api/v1/webui')).json();

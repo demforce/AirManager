@@ -523,6 +523,7 @@ development_status:
   recapito-account-verificato: done
   riattivazione-account-con-link: done
   cambio-indirizzo-verificato: done  # Due link sequenziali, ciascuno di 10 minuti. Gate e riesame nel record.
+  readiness-email: done  # Collaudo non produttivo approvato. La transizione degli admin legacy è aperta.
   # EPIC 19 — Semplificazione e regole operative (change request PO 2026-11-01,
   # _bmad-output/planning-artifacts/sprint-change-proposal-2026-11-01.md, ratifiche R-19-a..p).
   # Tutte con UI: dev Opus 5 xhigh, review Opus 5 xhigh. Eseguito dopo la chiusura della 16.3.

@@ -17,7 +17,7 @@ async function enterPassword(page: Page, email: string, password: string, admin 
   await page.getByRole('button', { name: 'Accedi', exact: true }).click();
 }
 
-test('admin password from a signed-out browser saves a pilot in the registry', async ({ page }) => {
+test('admin password from a signed-out browser saves a pilot in the registry', { tag: '@email-trial' }, async ({ page }) => {
   await enterPassword(page, 'admin@airmanager.local', process.env.SEED_ADMIN_PASSWORD!);
   await expect(page).toHaveURL(/\/dashboard$/, { timeout: 20_000 });
   await page.goto('/it/dashboard/pilots');
@@ -32,7 +32,7 @@ test('admin password from a signed-out browser saves a pilot in the registry', a
   await expect(page.locator('[data-testid^="pilot-row-"]').filter({ hasText: lastName })).toBeVisible();
 });
 
-test('the administrator entry keeps its method and return path across languages', async ({ page }) => {
+test('the administrator entry keeps its method and return path across languages', { tag: '@email-trial' }, async ({ page }) => {
   await page.goto('/it/login?callbackUrl=%2Fit%2Fdashboard%2Fpilots');
   await page.getByRole('link', { name: heading, exact: true }).click();
   await expect(page).toHaveURL(url => url.pathname === '/it/login' && url.searchParams.get('access') === 'admin'
@@ -47,7 +47,7 @@ test('the administrator entry keeps its method and return path across languages'
 });
 
 for (const change of ['demote', 'deactivate', 'reset'] as const) {
-  test(`admin password session ends on the first protected request after ${change}`, async ({ page, browser }) => {
+  test(`admin password session ends on the first protected request after ${change}`, { tag: '@email-trial' }, async ({ page, browser }) => {
     const db = new Client({ connectionString: requireMailTestDatabase('browser') });
     const manager = await browser.newPage();
     const id = randomUUID();

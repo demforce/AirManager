@@ -7,7 +7,7 @@ import { requireMailTestDatabase } from '../scripts/mail-test-database';
 // A capture, a trace or an error attachment must never archive a bearer link.
 test.use({ trace: 'off', screenshot: 'off', video: 'off' });
 
-test('verified invitation and one email session through the public forms', async ({page, browser}) => {
+test('verified invitation and one email session through the public forms', { tag: '@email-trial' }, async ({page, browser}) => {
   test.skip(process.env.AIRMANAGER_EMAIL_TRIAL !== '1', 'Disposable email-access trial disabled.');
   test.setTimeout(210_000);
   const db = new Client({connectionString:requireMailTestDatabase('browser')});

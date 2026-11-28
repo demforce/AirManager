@@ -9,7 +9,7 @@ test.use({ trace: 'off', screenshot: 'off', video: 'off' });
 
 for (const locale of ['it', 'en'] as const) {
   const mobile = locale === 'en';
-  test(`Piloti requests reactivation and the holder confirms without signing in (${mobile ? 'mobile' : 'desktop'}, ${locale})`, async ({ page, browser }) => {
+  test(`Piloti requests reactivation and the holder confirms without signing in (${mobile ? 'mobile' : 'desktop'}, ${locale})`, { tag: '@email-trial' }, async ({ page, browser }) => {
     test.skip(process.env.AIRMANAGER_EMAIL_TRIAL !== '1', 'Requires isolated email trial.');
     test.setTimeout(120_000);
     await page.setViewportSize({ width: mobile ? 375 : 1280, height: 800 });

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('admin pauses and resumes sign-in emails from Settings using the personal fallback', async ({ page }) => {
+test('admin pauses and resumes sign-in emails from Settings using the personal fallback', { tag: '@email-trial' }, async ({ page }) => {
   await page.goto('/it/login');
   await page.getByRole('link', { name: 'Accesso amministratori con password', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Accesso amministratori con password', exact: true })).toBeVisible();

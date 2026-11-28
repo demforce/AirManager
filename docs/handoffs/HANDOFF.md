@@ -1,4 +1,8 @@
-# Handoff AirManager · 27 novembre 2026
+# Handoff AirManager · 28 novembre 2026
+
+## Readiness email sintetica
+
+Il [collaudo readiness](../../_bmad-output/implementation-artifacts/readiness-email.md) è chiuso dopo revisione indipendente. Sul candidato sono passati 2.413 unitari, 129 casi PostgreSQL e tutti i 14 casi Chromium con trial acceso. La suite ordinaria ha registrato 724 passati al primo tentativo, un retry riuscito e sei skip coperti nel trial. Il prossimo step concordato riguarda il PDF Scadenze, con Unicode e la sola rimozione della colonna «Ambito». L’admin legacy che ha già impostato la password accede dal fallback, ma per il medesimo account manca ancora il percorso di verifica della casella. Il rollout resta NO-GO per questa transizione. Per un admin creato nel trial, il vero invito seguito dalla conferma ha sbloccato l’avviso in attesa una sola volta. La [lista go/no-go](../operations/credential-mail.md#readiness-prima-di-una-decisione-sul-login-email) distingue le prove sintetiche dalle responsabilità del gestore. La CI comprende l’intera regressione ordinaria e un job autonomo per i contratti del trial.
 
 ## Cambio sequenziale dell’indirizzo verificato
 

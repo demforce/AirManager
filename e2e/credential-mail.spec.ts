@@ -7,7 +7,7 @@ test.describe.configure({
   mode: 'serial'
 });
 for (const locale of ['it', 'en'] as const) {
-  test(`credential queue in ${locale}: invitation during a 451, recovery and separate club/automatic observations`, async ({
+  test(`credential queue in ${locale}: invitation during a 451, recovery and separate club/automatic observations`, { tag: '@email-trial' }, async ({
     page
   }) => {
     const db = new Client({ connectionString: requireMailTestDatabase('browser') });

@@ -7,7 +7,7 @@ import { startSyntheticSmtp } from '../scripts/synthetic-smtp';
 
 test.use({ trace: 'off', screenshot: 'off', video: 'off' });
 
-test('keeps the original deadline and refuses confirmation after expiry', async ({ page }) => {
+test('keeps the original deadline and refuses confirmation after expiry', { tag: '@email-trial' }, async ({ page }) => {
   test.skip(process.env.AIRMANAGER_EMAIL_TRIAL !== '1', 'Disposable email-access trial disabled.');
   test.setTimeout(90_000);
   const db = new Client({ connectionString: requireMailTestDatabase('browser') });

@@ -6,7 +6,10 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { after, beforeEach, test } from 'node:test';
 import { prisma } from '../src/server/db/prisma';
 import { consumeTrialLink, requestEmailLogin } from '../src/server/services/email-trial.service';
-import { beginHandoff, completeHandoff, processMailAttempt, reserveMail } from '../src/server/services/credential-mail-worker';
+import { beginHandoff, completeHandoff, processMailAttempt, reserveMail, runMailCycle } from '../src/server/services/credential-mail-worker';
+import { setPasswordWithToken } from '../src/server/services/auth-tokens.service';
+import { resendInvite } from '../src/server/services/credential-mail.service';
+import { createUser } from '../src/server/services/users.service';
 import { inspectAccessSecurity, setLoginPause, scanAccessSecurity } from '../src/server/services/access-security';
 import { deliverSecurityAlerts, processSecurityAlert } from '../src/server/services/security-alert-delivery';
 import { setSmtpSettings, writeSmtpSettingsCore } from '../src/server/services/app-settings.service';
@@ -116,6 +119,103 @@ async function incidentForWorker() {
 async function dueAgain() {
   await prisma.securityDelivery.updateMany({ where: { state: 'QUEUED' }, data: { nextAt: new Date(0) } });
 }
+
+test('recipient readiness after legacy upgrade and an explicit mailbox confirmation', async () => {
+  const sink = 'http://127.0.0.1:8025/api/v1';
+  assert.equal((await (await fetch(sink + '/webui')).json()).MessageRelay.Enabled, false);
+  const club = mailbox();
+  const contactKey = 'airfield.contactEmail';
+  const previous = await prisma.appSetting.findUnique({ where: { key: contactKey } });
+  await prisma.appSetting.upsert({ where: { key: contactKey }, create: { key: contactKey, value: club }, update: { value: club } });
+  const captured = async (address: string) => {
+    const list = await (await fetch(sink + '/search?query=' + encodeURIComponent('to:' + address))).json();
+    return list.messages as { ID: string; Subject: string }[];
+  };
+  async function issuedLink(address: string) {
+    const attempt = await reserveMail(false, 250);
+    assert.ok(attempt);
+    assert.equal((await processMailAttempt(attempt, undefined, true))?.outcome, 'ACCEPTED');
+    const mails = await captured(address);
+    assert.equal(mails.length, 1);
+    const message = await (await fetch(sink + '/message/' + mails[0].ID)).json();
+    assert.ok(message.To.length === 1 && message.To[0].Address === address && !message.Cc?.length && !message.Bcc?.length);
+    const url = new URL(message.Text.match(/https?:\/\/[^\s]+/)[0]);
+    assert.ok(url.origin === new URL(process.env.APP_URL!).origin);
+    return url;
+  }
+  try {
+    await localRelay(1025);
+    process.env.AIRMANAGER_EMAIL_TRIAL = '0';
+    const legacy = await createUser(operator, { email: mailbox(), roles: ['ADMIN'], locale: 'it' });
+    const provision = await issuedLink(legacy.email);
+    assert.equal(provision.pathname, '/set-password');
+    const passwordToken = provision.searchParams.get('token');
+    assert.ok(passwordToken);
+    await setPasswordWithToken(passwordToken, randomUUID());
+    const legacyState = await prisma.user.findUniqueOrThrow({ where: { id: legacy.id } });
+    assert.ok(legacyState.passwordHash);
+    process.env.AIRMANAGER_EMAIL_TRIAL = '1';
+    assert.equal(await prisma.emailVerification.count({ where: { userId: legacy.id } }), 0);
+    await assert.rejects(resendInvite(operator, legacy.id), { code: 'CONFLICT' });
+    await requestEmailLogin(legacy.email, 'direct');
+    assert.equal(await prisma.credentialMail.count({ where: { userId: legacy.id, purpose: { in: ['VERIFY_EMAIL', 'LOGIN_LINK'] } } }), 0);
+
+    const pendingAdmin = await createUser(operator, { email: mailbox(), roles: ['ADMIN'], locale: 'it' });
+    const invite = await issuedLink(pendingAdmin.email);
+    assert.equal(invite.searchParams.get('purpose'), 'verify');
+    const stale = new Date(Date.now() - 5 * 60_000);
+    await prisma.mailChannel.update({ where: { id: 1 }, data: { heartbeatAt: stale, monitorAt: stale } });
+    await scanAccessSecurity();
+    const health = await prisma.mailChannel.findUniqueOrThrow({ where: { id: 1 } });
+    assert.ok(health.monitorAt && health.monitorAt > stale);
+    assert.equal(health.heartbeatAt?.getTime(), +stale);
+    const incident = await prisma.securityIncident.findFirstOrThrow({ where: { kind: 'MAIL_WORKER' } });
+    assert.equal(incident.needsRecipients, true);
+    assert.equal(await prisma.securityDelivery.count({ where: { incidentId: incident.id } }), 0);
+
+    // Confirm the credential actually submitted to Mailpit. No verification rows are manufactured by the fixture.
+    assert.equal((await consumeTrialLink('VERIFY_EMAIL', invite.hash.slice(1)))?.id, pendingAdmin.id);
+    await Promise.all([scanAccessSecurity(), scanAccessSecurity()]);
+    const deliveries = await prisma.securityDelivery.findMany({ where: { incidentId: incident.id } });
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].userId, pendingAdmin.id);
+    assert.equal(deliveries[0].state, 'QUEUED');
+
+    // The refused loopback connection definitely precedes SMTP acceptance.
+    const stopped = await startSyntheticSmtp();
+    await stopped.close();
+    await localRelay(stopped.port);
+    await deliverSecurityAlerts(true);
+    let delivery = await prisma.securityDelivery.findUniqueOrThrow({ where: { id: deliveries[0].id } });
+    assert.equal(delivery.state, 'QUEUED');
+    assert.equal(delivery.attempts, 1);
+    assert.equal(delivery.recipientFailures, 0);
+    assert.ok(delivery.nextAt.getTime() > Date.now());
+    await localRelay(1025);
+    await dueAgain();
+    const lastMonitor = (await inspectAccessSecurity(operator)).monitoredAt;
+    await runMailCycle(250, true);
+    const recovered = await prisma.mailChannel.findUniqueOrThrow({ where: { id: 1 } });
+    assert.ok(recovered.heartbeatAt && recovered.heartbeatAt > stale);
+    assert.equal(recovered.monitorAt?.getTime(), lastMonitor?.getTime());
+    await Promise.all([scanAccessSecurity(), scanAccessSecurity()]);
+    await deliverSecurityAlerts(true);
+    delivery = await prisma.securityDelivery.findUniqueOrThrow({ where: { id: deliveries[0].id } });
+    assert.equal(delivery.state, 'ACCEPTED');
+    assert.equal(delivery.attempts, 2);
+    const alert = 'AirManager — Avviso di sicurezza';
+    const accepted = (await captured(pendingAdmin.email)).filter(m => m.Subject === alert);
+    assert.equal(accepted.length, 1);
+    const message = await (await fetch(sink + '/message/' + accepted[0].ID)).json();
+    assert.ok(message.To.length === 1 && message.To[0].Address === pendingAdmin.email && !message.Cc?.length && !message.Bcc?.length);
+    assert.equal((await captured(legacy.email)).filter(m => m.Subject === alert).length, 0);
+    assert.equal((await captured(club)).length, 0);
+  } finally {
+    process.env.AIRMANAGER_EMAIL_TRIAL = '1';
+    if (previous) await prisma.appSetting.update({ where: { key: contactKey }, data: { value: previous.value } });
+    else await prisma.appSetting.delete({ where: { key: contactKey } });
+  }
+});
 
 test('role checks, a healthy startup grace period and aggregate retention', async () => {
   const pilot = { ...operator, roles: ['PILOT'] as ['PILOT'] };
