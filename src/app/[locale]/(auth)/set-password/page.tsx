@@ -60,6 +60,7 @@ export default async function SetPasswordPage({ params, searchParams }: PageProp
               labels={{
                 password: t('passwordLabel'),
                 adminPolicy: t('adminPolicy'),
+                adminRejected: t('adminBlocked'),
                 confirmPassword: t('confirmPasswordLabel'),
                 submit: t('submit'),
                 submitting: t('submitting'),

@@ -1,5 +1,7 @@
 'use server';
 
+import { getSessionActor } from '@/server/auth/session';
+import { requestProfilePassword, saveProfilePassword } from '@/server/services/profile-password';
 import { headers } from 'next/headers';
 import { formMailbox } from '@/lib/schemas/email-trial';
 import { emailTrialEnabled } from '@/server/auth/email-trial-policy';
@@ -43,4 +45,27 @@ export async function proposeNewAddress(token: string, form: FormData): Promise<
 export async function confirmNewAddress(token: string): Promise<boolean> {
   const h = await localRequest();
   return Boolean(h && await submitAddressChange('CHANGE_EMAIL_NEW', token, undefined, loginRequestOrigin(h)));
+}
+
+// The action has no recipient or account argument. Its only principal is the current session.
+export async function requestMyPasswordChange() {
+  if (!await localRequest()) return false;
+  try {
+    const actor = await getSessionActor();
+    if (!actor) return false;
+    await requestProfilePassword(actor);
+    return true;
+  } catch { return false; }
+}
+
+export async function confirmMyPasswordChange(token: string, form: FormData) {
+  const h = await localRequest();
+  if (!h || !(form instanceof FormData) || form.getAll('password').length !== 1
+    || form.getAll('confirmPassword').length !== 1) return 'invalid';
+  try {
+    return await saveProfilePassword(token, form.get('password'), form.get('confirmPassword'), loginRequestOrigin(h));
+  } catch {
+    console.error('email-trial: password change unavailable');
+    return 'invalid';
+  }
 }

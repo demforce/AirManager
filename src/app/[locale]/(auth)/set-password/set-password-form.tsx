@@ -29,6 +29,7 @@ type Labels = {
   errorMismatch: string;
   errorTooShort: string;
   adminPolicy: string;
+  adminRejected: string;
   errorGeneric: string;
 };
 
@@ -63,7 +64,7 @@ export function SetPasswordForm({ token, locale, labels }: SetPasswordFormProps)
 
     if (!response.ok) {
       const body = await response.json().catch(() => null);
-      setFormError(body?.error?.code === 'ADMIN_PASSWORD_POLICY' ? labels.adminPolicy : labels.errorGeneric);
+      setFormError(body?.error?.code === 'ADMIN_PASSWORD_POLICY' ? labels.adminPolicy + ' ' + labels.adminRejected : labels.errorGeneric);
       return;
     }
 

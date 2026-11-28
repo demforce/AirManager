@@ -11,8 +11,9 @@ export const setPasswordSchema = z.object({
   password: z.string().min(10).max(256),
 });
 
-// Match the login input bound and count Unicode code points for the admin minimum.
-export const adminPasswordSchema = setPasswordSchema.shape.password.refine(value => Array.from(value).length >= 15);
+// HTML password inputs strip CR/LF. Reject those values intact on assignment so the browser can verify them.
+export const adminPasswordSchema = setPasswordSchema.shape.password
+  .refine(value => Array.from(value).length >= 15 && !/[\r\n\uD800-\uDFFF]/u.test(value));
 
 export type SetPasswordInput = z.infer<typeof setPasswordSchema>;
 

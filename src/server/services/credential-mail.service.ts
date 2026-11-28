@@ -22,7 +22,7 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
   operatorId: string;
   key: string;
 }, expectedEmail?: string) {
-  if (purpose === 'REACTIVATE_ACCOUNT' || addressChangePurpose(purpose)) await lockMailboxWrites(tx);
+  if (purpose === 'REACTIVATE_ACCOUNT' || addressChangePurpose(purpose) || purpose === 'CHANGE_ADMIN_PASSWORD') await lockMailboxWrites(tx);
   await lockMailAccount(tx, userId);
   const user = await tx.user.findUnique({
     where: {
@@ -31,7 +31,7 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
     select: {
       email: true,
       isActive: true,
-      passwordHash: true, roles: true, emailVerification: true
+      passwordHash: true, roles: true, emailVerification: true, adminPasswordVersion: true
     }
   });
   if (purpose === 'INVITE' && user?.emailVerification) purpose = 'VERIFY_EMAIL';
@@ -62,6 +62,14 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
     if (purpose === 'PASSWORD_RESET' || purpose === 'LOGIN_LINK') return null;
     if (!user) throw new NotFoundError('User not found.');
     throw new ConflictError('This account has no eligible pending invitation.');
+  }
+  if (purpose === 'CHANGE_ADMIN_PASSWORD') {
+    // Even clicks with different keys reuse the live link. Issuance never evicts a session or other credential.
+    const live = await tx.credentialMail.findFirst({ where: { userId, purpose, revokedAt: null,
+      expectedAdminPasswordVersion: user.adminPasswordVersion, expiresAt: { gt: now },
+      state: { in: ['QUEUED', 'CLAIMED', 'HANDOFF', 'ACCEPTED', 'UNCERTAIN'] },
+    }, select: { id: true } });
+    if (live) return { id: live.id, state: 'QUEUED' as const };
   }
   if (action) {
     // All operators share the recipient cooldown. The separate operator limit also spans accounts.
@@ -139,7 +147,8 @@ export async function enqueueCredential(tx: Tx, userId: string, purpose: AuthTok
     data: {
       userId,
       purpose,
-      expiresAt: new Date(now.getTime() + ((purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT' || addressChangePurpose(purpose)) ? LOGIN_LINK_TTL_MS : purpose === 'PASSWORD_RESET' ? PASSWORD_RESET_TTL_MS : INVITE_TTL_MS)),
+      ...(purpose === 'CHANGE_ADMIN_PASSWORD' && { expectedAdminPasswordVersion: user.adminPasswordVersion }),
+      expiresAt: new Date(now.getTime() + ((purpose === 'CHANGE_ADMIN_PASSWORD' || purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT' || addressChangePurpose(purpose)) ? LOGIN_LINK_TTL_MS : purpose === 'PASSWORD_RESET' ? PASSWORD_RESET_TTL_MS : INVITE_TTL_MS)),
       createdAt: now,
       observedAt: now,
       nextAt: now,

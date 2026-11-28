@@ -315,6 +315,9 @@ test('first admin invitation verifies the mailbox and sets exactly the holder’
   const raw = await prepareVerification();
   const passwords = [randomUUID(), randomUUID()];
   assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw), 'passwordRequired');
+  for (const separator of ['\n', '\r']) {
+    assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw, randomUUID() + separator + 'fixture'), 'passwordRequired');
+  }
   assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw, '🙂'.repeat(8)), 'passwordRequired');
   assert.equal(await consumeTrialLink('VERIFY_EMAIL', raw, 'a'.repeat(257)), 'passwordRequired');
   await requestPasswordReset(account.email);

@@ -42,6 +42,12 @@ Il pannello amministrativo riporta separatamente la sonda manuale, la sonda di r
 
 Il worker registra soltanto diagnostica normalizzata. Per verificare il servizio usare le osservazioni amministrative e dati sintetici. Il login corrente continua a funzionare. Qualsiasi futura dipendenza del login dall’email richiede anche una procedura di recupero indipendente per l’ultimo amministratore, approvata e collaudata separatamente.
 
+### Cambio della propria password dal profilo
+
+Nel trial, un amministratore attivo con casella già verificata e password già impostata apre il proprio profilo e sceglie **Cambia password**. Il messaggio arriva alla casella registrata. Il link dura dieci minuti dalla richiesta, anche se il trasporto deve ritentare. Finché il link è valido, un secondo clic riutilizza la richiesta. Aprire il messaggio o il form lascia valida la password corrente.
+
+Il titolare inserisce e conferma la nuova password su una sola riga, poi sceglie **Salva password**. Dopo il salvataggio accede di nuovo. La nuova password permette di operare dal fallback anche a posta ferma. Il primo invito di sette giorni e il recupero pubblico hanno percorsi e scadenze propri.
+
 ### Collaudo preventivo del fallback amministrativo
 
 Prima di qualsiasi passaggio al login via email, ogni amministratore attivo prepara una credenziale individuale in un gestore di password personale. Al primo invito con password o al rinnovo il server richiede almeno 15 caratteri e rifiuta la password corrente. La persona genera una password esclusiva per AirManager e non la comunica ad altri amministratori. L'applicazione non confronta i segreti di persone diverse e non può verificarne l'uso presso altri servizi. Le credenziali e le sessioni esistenti non richiedono un reset. Le identità e le password del seed sono esclusivamente dimostrative.

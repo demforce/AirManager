@@ -4,6 +4,7 @@ import { isIP } from 'node:net';
 import type { Prisma, User } from '@/generated/prisma/client';
 import { env } from '@/lib/env';
 import { hashPassword } from '@/server/auth/password';
+import { acceptableAdminPassword } from '@/server/auth/admin-password-policy';
 import { adminPasswordSchema } from '@/lib/schemas/auth-tokens';
 import { singleMailbox } from '@/lib/schemas/email-trial';
 import { prisma } from '@/server/db/prisma';
@@ -112,9 +113,11 @@ export async function consumeTrialLink(purpose: TrialPurpose, raw: unknown, proo
       const token = await prisma.$transaction(async tx => {
         const reserved = await reserveConfirmation(tx);
         if (!reserved) return null;
-        const admin = await tx.user.findFirst({ where: { id: reserved.userId, isActive: true, roles: { has: 'ADMIN' } }, select: { id: true } });
-        return admin ? reserved : null;
+        const admin = await tx.user.findFirst({ where: { id: reserved.userId, isActive: true, roles: { has: 'ADMIN' } }, select: { email: true } });
+        if (!admin) return null;
+        return acceptableAdminPassword(password.data, admin.email) ? reserved : 'passwordBlocked' as const;
       });
+      if (token === 'passwordBlocked') return 'passwordRequired' as const;
       if (!token) return null;
       prepared = { token, passwordHash: await hashPassword(password.data) };
     }

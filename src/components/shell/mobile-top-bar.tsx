@@ -17,6 +17,7 @@
  * same `findNavItemByPathname` + `pageTitles` + fallback lookup as the
  * desktop `TopBar`, so the two never disagree.
  */
+import { RequestPasswordChange } from './request-password-change';
 import { RequestEmailChange } from './request-email-change';
 import { useLocale } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
@@ -41,6 +42,7 @@ export type MobileTopBarProps = {
   localeSwitchLabel: string;
   userChip: TopBarUserChip;
   changeEmailUserId?: string;
+  canChangePassword?: boolean;
   /** Primary role of the actor, already translated (`shell.roles.*`) — the profile menu's identity sub-row. */
   roleLabel: string;
   /** Accessible name of the avatar button and of the profile sheet. */
@@ -59,6 +61,7 @@ export function MobileTopBar({
   localeSwitchLabel,
   userChip,
   changeEmailUserId,
+  canChangePassword,
   roleLabel,
   profileLabel,
   logoutAction,
@@ -124,6 +127,7 @@ export function MobileTopBar({
             {localeSwitchLabel}
             <span className="mono">{otherLocale.toUpperCase()}</span>
           </Link>
+          {canChangePassword && <RequestPasswordChange mobile />}
           {changeEmailUserId && <RequestEmailChange userId={changeEmailUserId} className="mobile-sheet-row" />}
           <form action={logoutAction}>
             <button type="submit" className="mobile-sheet-row" data-testid="logout-button-mobile">

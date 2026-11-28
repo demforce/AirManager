@@ -91,6 +91,9 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
   const changeEmailUserId = emailTrialEnabled() && await prisma.emailVerification.findFirst({
     where: { userId: actor.userId, email: me.email, verifiedAt: { not: null } }, select: { userId: true },
   }) ? actor.userId : undefined;
+  const canChangePassword = Boolean(changeEmailUserId && actor.roles.includes('ADMIN') && await prisma.user.count({
+    where: { id: actor.userId, isActive: true, roles: { has: 'ADMIN' }, passwordHash: { not: null } },
+  }));
   // Story 12.11, AC 5: depends on `metarStation` above, so it cannot join the `Promise.all` batch.
   const metarData = await getMetar(metarStation);
 
@@ -172,6 +175,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             localeSwitchLabel={t('localeSwitch.label')}
             userChip={userChip}
             changeEmailUserId={changeEmailUserId}
+            canChangePassword={canChangePassword}
             logoutAction={logoutAction}
             logoutLabel={t('logout')}
           />
@@ -184,6 +188,7 @@ export default async function DashboardLayout({ children, params }: LayoutProps)
             localeSwitchLabel={t('localeSwitch.label')}
             userChip={userChip}
             changeEmailUserId={changeEmailUserId}
+            canChangePassword={canChangePassword}
             roleLabel={roleLabel}
             profileLabel={t('mobile.profile')}
             logoutAction={logoutAction}

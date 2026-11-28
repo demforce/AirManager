@@ -8,6 +8,7 @@
  * current route from; every string is resolved server-side and passed in
  * (house convention — no `useTranslations` in client components).
  */
+import { RequestPasswordChange } from './request-password-change';
 import { RequestEmailChange } from './request-email-change';
 import { useLocale } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
@@ -35,6 +36,7 @@ export type TopBarProps = {
   localeSwitchLabel: string;
   userChip: TopBarUserChip;
   changeEmailUserId?: string;
+  canChangePassword?: boolean;
   /**
    * Server Action (story 12.12 fix — see `layout.tsx`'s own doc-comment):
    * the ONLY logout control in the app used to live on the legacy home
@@ -55,6 +57,7 @@ export function TopBar({
   localeSwitchLabel,
   userChip,
   changeEmailUserId,
+  canChangePassword,
   logoutAction,
   logoutLabel,
 }: TopBarProps) {
@@ -110,6 +113,7 @@ export function TopBar({
         <Avatar init={userChip.initials} color={userChip.color} />
         <span className="user-chip-name" style={{ fontSize: 12.5, fontWeight: 500 }}>{userChip.displayName}</span>
       </div>
+      {canChangePassword && <RequestPasswordChange />}
       {changeEmailUserId && <RequestEmailChange userId={changeEmailUserId} className="btn" />}
       <form action={logoutAction}>
         <button type="submit" className="btn" data-testid="logout-button">

@@ -497,6 +497,7 @@ model EmailTrialRequest {
 enum AuthTokenType {
   CHANGE_EMAIL_CURRENT
   CHANGE_EMAIL_NEW
+  CHANGE_ADMIN_PASSWORD
   REACTIVATE_ACCOUNT
   VERIFY_EMAIL
   LOGIN_LINK
@@ -1587,6 +1588,8 @@ model CredentialMail {
   purpose     AuthTokenType
   /// AEAD-protected candidate tied to this second-stage intent, cleared on completion or expiry.
   candidateBox String?
+  /// Credential generation captured when the administrator requests their own password change.
+  expectedAdminPasswordVersion Int?
   state       String        @default("QUEUED")
   reason      String?
   createdAt   DateTime      @default(now())

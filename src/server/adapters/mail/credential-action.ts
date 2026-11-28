@@ -1,10 +1,10 @@
 import type { AppLocale } from '@/i18n/routing';
 import { env } from '@/lib/env';
 
-export type CredentialPurpose = 'INVITE' | 'PASSWORD_RESET' | 'VERIFY_EMAIL' | 'LOGIN_LINK' | 'REACTIVATE_ACCOUNT' | 'CHANGE_EMAIL_CURRENT' | 'CHANGE_EMAIL_NEW';
+export type CredentialPurpose = 'INVITE' | 'PASSWORD_RESET' | 'VERIFY_EMAIL' | 'LOGIN_LINK' | 'REACTIVATE_ACCOUNT' | 'CHANGE_EMAIL_CURRENT' | 'CHANGE_EMAIL_NEW' | 'CHANGE_ADMIN_PASSWORD';
 const validated = Symbol('mail action');
 export type Action = { url: string; label: string; [validated]: true };
-export const trialActionModes = { VERIFY_EMAIL: 'verify', LOGIN_LINK: 'login', REACTIVATE_ACCOUNT: 'reactivate', CHANGE_EMAIL_CURRENT: 'change-current', CHANGE_EMAIL_NEW: 'change-new' } as const;
+export const trialActionModes = { VERIFY_EMAIL: 'verify', LOGIN_LINK: 'login', REACTIVATE_ACCOUNT: 'reactivate', CHANGE_EMAIL_CURRENT: 'change-current', CHANGE_EMAIL_NEW: 'change-new', CHANGE_ADMIN_PASSWORD: 'change-password' } as const;
 export function credentialAction(locale: AppLocale, purpose: CredentialPurpose, url: string, label: string): Action {
   // URL.parse returns null on malformed input. A thrown parser error may contain the whole credential.
   const link = URL.parse(url);

@@ -131,6 +131,7 @@ jobs:
         run: |
           npm run db:reset:test
           node --import tsx --test scripts/test-access-security.ts
+          node --import tsx --test scripts/test-profile-password.ts
 
       - name: Upload traces on failure
         if: failure()

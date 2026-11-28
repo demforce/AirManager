@@ -1,5 +1,9 @@
 # Handoff AirManager · 28 novembre 2026
 
+## Cambio password personale dal profilo admin
+
+La [story](../../_bmad-output/implementation-artifacts/cambio-password-admin-dal-profilo.md) aggiunge al trial locale il cambio su richiesta del titolare già verificato. Il link dura dieci minuti e il salvataggio riuscito revoca le vecchie sessioni. Il reset pubblico e il primo invito mantengono le rispettive scadenze. Il candidato ha superato i gate con 2.421 unitari, 108 verifiche su PostgreSQL/SMTP, 17/17 prove del trial in Chromium e la prova del fallback a posta spenta con un salvataggio riletto dal titolare. La suite ordinaria ha riportato 725 passati al primo tentativo, 1 intermittenti e 9 skip. [Revisione indipendente](../../_bmad-output/implementation-artifacts/cambio-password-admin-dal-profilo-review-report.md).
+
 ## Primo accesso dell’amministratore invitato
 
 La [story di onboarding](../../_bmad-output/implementation-artifacts/primo-accesso-admin.md) riguarda la creazione di un nuovo admin nel trial locale. Il titolare conferma la sua casella e imposta la password personale dallo stesso invito di sette giorni. Il bootstrap del primo admin e le promozioni successive di account già attivati rimangono percorsi distinti. La prova è spenta per default. La [revisione indipendente](../../_bmad-output/implementation-artifacts/primo-accesso-admin-review-report.md) ha approvato il candidato. Sono passati i gate e tutti i 15 casi Chromium del trial. Il titolare ha anche salvato e riletto un pilota con la nuova password, a worker e relay dedicati fermi.

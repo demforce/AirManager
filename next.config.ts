@@ -20,7 +20,11 @@ const contentSecurityPolicy = [
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['pdfkit'],
-  outputFileTracingIncludes: { '/api/v1/**/pdf': ['./src/server/adapters/pdf/fonts/*'] },
+  outputFileTracingIncludes: {
+    '/api/v1/**/pdf': ['./src/server/adapters/pdf/fonts/*'],
+    '/*/email-access': ['./src/server/auth/data/*'],
+    '/api/v1/auth/set-password': ['./src/server/auth/data/*'],
+  },
   // Dev-only: Next 16 blocks /_next/* dev resources from non-localhost
   // origins, which silently prevents hydration when browsing the dev
   // server via LAN IP (VirtualBox host-only adapter).

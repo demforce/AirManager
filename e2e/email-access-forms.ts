@@ -30,9 +30,9 @@ export async function openCapturedReset(page: Page, email: string) {
   await expect(page.getByLabel('Nuova password', {exact: true})).toBeVisible();
 }
 
-export async function openCaptured(page: Page, email: string, purpose: 'verify' | 'login' | 'reactivate' | 'change-current' | 'change-new', locale: 'it' | 'en' = 'it') {
+export async function openCaptured(page: Page, email: string, purpose: 'verify' | 'login' | 'reactivate' | 'change-current' | 'change-new' | 'change-password', locale: 'it' | 'en' = 'it') {
   const messages = locale === 'it' ? it : en;
-  const kinds = { verify: 'verifyEmail', login: 'loginLink', reactivate: 'reactivateAccount', 'change-current': 'changeCurrent', 'change-new': 'changeNew' } as const;
+  const kinds = { verify: 'verifyEmail', login: 'loginLink', reactivate: 'reactivateAccount', 'change-current': 'changeCurrent', 'change-new': 'changeNew', 'change-password': 'changePassword' } as const;
   const link = await capturedLink(email, messages.Emails[kinds[purpose]].subject);
   expect(link.searchParams.get('purpose')).toBe(purpose);
   expect(/^#[A-Za-z0-9_-]{43}$/.test(link.hash) && !link.searchParams.has('token')).toBe(true);

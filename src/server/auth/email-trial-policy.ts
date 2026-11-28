@@ -20,7 +20,7 @@ export function addressChangePurpose(purpose: AuthTokenType) {
 }
 
 export function trialPurpose(purpose: AuthTokenType) {
-  return addressChangePurpose(purpose) || purpose === 'VERIFY_EMAIL' || purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT';
+  return purpose === 'CHANGE_ADMIN_PASSWORD' || addressChangePurpose(purpose) || purpose === 'VERIFY_EMAIL' || purpose === 'LOGIN_LINK' || purpose === 'REACTIVATE_ACCOUNT';
 }
 
 type Account = {
@@ -43,6 +43,7 @@ export function credentialEligible(user: Account, purpose: AuthTokenType): boole
   const canonical = singleMailbox.safeParse(user.email);
   if (!canonical.success || canonical.data !== user.email || enrollment.email !== user.email) return false;
   if (!emailTrialEnabled()) return false;
+  if (purpose === 'CHANGE_ADMIN_PASSWORD') return verifiedTrialAddress(user) && user.roles.includes('ADMIN') && Boolean(user.passwordHash);
   if (purpose === 'PASSWORD_RESET') return verifiedTrialAddress(user) && user.roles.includes('ADMIN');
   if (purpose === 'VERIFY_EMAIL') return enrollment.verifiedAt === null;
   return (purpose === 'LOGIN_LINK' || addressChangePurpose(purpose)) && enrollment.verifiedAt !== null;

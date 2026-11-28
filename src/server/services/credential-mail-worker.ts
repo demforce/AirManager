@@ -382,6 +382,7 @@ export async function beginHandoff(reserved: MailAttempt, raw = randomBytes(32).
       const to = intent.purpose === 'CHANGE_EMAIL_NEW' ? openCandidate(intent) : intent.user.email;
       if (!to || intent.purpose === 'CHANGE_EMAIL_NEW' &&
           (to === intent.user.email || !await candidateMailboxAvailable(tx, intent.userId, intent.user.personId, to))
+        || (intent.purpose === 'CHANGE_ADMIN_PASSWORD' && intent.expectedAdminPasswordVersion !== intent.user.adminPasswordVersion)
         || !credentialEligible(intent.user, intent.purpose)
         || intent.user.emailVerification && !await accountMailboxUncontested(tx, intent.userId, intent.user.email)) {
         await tx.credentialMail.update({ where: { id: intent.id }, data: { state: 'SUPPRESSED', reason: 'REVOKED', revokedAt: now, observedAt: now } });
@@ -456,6 +457,7 @@ export async function beginHandoff(reserved: MailAttempt, raw = randomBytes(32).
         purpose: intent.purpose,
         locale: intent.user.locale === 'en' ? 'en' as const : 'it' as const,
         to,
+        expectedAdminPasswordVersion: intent.expectedAdminPasswordVersion,
         accountEmail: intent.user.email
       };
     }
@@ -603,6 +605,7 @@ export async function processMailAttempt(attempt: MailAttempt, club?: string, lo
         if (channel.loginLinksPaused || credential.generation <= channel.loginPauseThrough) return false;
       }
       if (!token || token.usedAt || token.expiresAt <= await databaseNow(prisma) || token.user.email !== credential.accountEmail
+        || (token.type === 'CHANGE_ADMIN_PASSWORD' && credential.expectedAdminPasswordVersion !== token.user.adminPasswordVersion)
         || !credentialEligible(token.user, token.type) || !await accountMailboxUncontested(prisma, token.userId, token.user.email)) return false;
       if (token.type === 'CHANGE_EMAIL_NEW') {
         const intent = await prisma.credentialMail.findFirst({ where: { generation: credential.generation, tokenId: token.id, revokedAt: null } });
